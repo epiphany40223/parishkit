@@ -22,6 +22,7 @@ from parishkit.stewardship.reports.digest_presentation import (
 from parishkit.stewardship.reports.money import MoneyAmount
 from parishkit.stewardship.reports.spreadsheets import participation_xlsx
 from parishkit.stewardship.reports.workspace import RenderedReport, ReportQuery
+from parishkit.stewardship.reports.workspace_views import statistics_panel
 
 from .test_daily_digest_content import document
 
@@ -233,6 +234,32 @@ def test_live_presentation_is_the_digest_presentation_without_population_mixing(
     assert cards[0] == ("Active Families", "1,000")
     assert cards[-1] == ("Last year's pledges (all Families)", "$982,657.00")
     assert [label for label, _ in cards if "Last year" in label] == [cards[-1][0]]
+
+
+def test_statistics_panel_draws_reach_and_keeps_the_other_cards_as_tiles():
+    """Responded and email reach become the progress chart (#720); the
+    other cards stay tiles in their order. Without an observation nothing
+    is drawn and every card is a tile reading Unavailable, never zero."""
+    statistics = document().statistics
+    panel = statistics_panel(statistics)
+    assert [label for label, _value in panel["tiles"]] == [
+        "Active Families",
+        "Active Members",
+        "Current annual pledges",
+        "Last year's pledges (all Families)",
+    ]
+    assert [row[0] for row in panel["progress"].table.rows] == [
+        "Families that have responded",
+        "Families with eligible email",
+        "Families with deliverable email",
+    ]
+    missing = statistics_panel(
+        replace(statistics, active=None, comparison_pledge_all=MoneyAmount(None))
+    )
+    assert missing["progress"] is None
+    assert missing["tiles"] == statistics_cards(
+        replace(statistics, active=None, comparison_pledge_all=MoneyAmount(None))
+    )
 
 
 def test_xlsx_is_complete_typed_formula_safe_and_keeps_original_request():

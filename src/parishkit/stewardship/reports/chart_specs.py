@@ -22,7 +22,8 @@ from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.web.dates import format_date, format_instant
-from parishkit.stewardship.web.presentation import number, percentage
+from parishkit.stewardship.web.presentation import number, out_of, percentage
+from parishkit.stewardship.web.report_markup import TRACK
 
 from .chart_assets import VEGA_LITE_SCHEMA
 from .response_metrics import STAGES, ActivityBucket
@@ -437,7 +438,12 @@ def label_room(texts):
     return round(LABEL_GAP + LABEL_CHAR * max((len(text) for text in texts), default=0))
 
 
-def count_bars(key, title, bars, *, total, compared, noun="Families"):
+# Joins a progress bar's label and value in its axis label, which the axis
+# splits into two lines; the y axis's description reads it as a pause.
+TICK = " — "
+
+
+def count_bars(key, title, bars, *, total, compared, noun="Families", progress=False):
     """A labelled horizontal bar per ``(label, count)`` pair, in the given order.
 
     The Financial stewardship summary's charts (#720) draw with this. Each
@@ -453,80 +459,107 @@ def count_bars(key, title, bars, *, total, compared, noun="Families"):
     needs, whatever the chart's width (``label_room``, in pixels, read
     against Vega's ``width`` signal), so at phone width the label after a
     full-length bar still ends inside the chart instead of being cut off.
+
+    With ``progress`` each bar is a progress bar against ``total`` instead
+    (the Participation statistics, #720): the axis runs from zero to
+    ``total`` and a grey track behind each bar shows the remainder. Each
+    bar's "463 out of 1,240 (37.3%)" (the wording the statistics cards
+    always used) is the second line of its axis label rather than text
+    after the bar: beside a bar it would need more room than a phone-width
+    plot has, while the axis column always fits it.
     """
     rows = []
     for index, (label, count) in enumerate(bars):
-        shown = percentage(Percentage(count, total))
-        rows.append(
-            {
-                "label": label,
-                "count": count,
-                "order": index,
-                "share": shown,
-                # No matching Families: the share is a dash, so the label
-                # is the count alone.
-                "text": number(count) if shown == "—" else f"{number(count)} ({shown})",
-                # The bar's accessible name, in place of Vega's
-                # field-by-field default ("Families: 3; label: Weekly; …").
-                "name": (
-                    f"{label}: {number(count)} {noun.lower()}, "
-                    f"{shown} {compared[0].lower()}{compared[1:]}"
-                ),
-            }
-        )
+        part = Percentage(count, total)
+        shown = percentage(part)
+        row = {"label": label, "count": count, "order": index, "share": shown}
+        if progress:
+            row |= {"text": out_of(part), "total": total}
+            # The axis label: the bar's label, then its value on a second
+            # line (split at TICK by the axis's labelExpr).
+            row["tick"] = f"{label}{TICK}{row['text']}"
+            row["name"] = f"{label}: {row['text']}"
+        else:
+            # No matching Families: the share is a dash, so the label is
+            # the count alone.
+            row["text"] = (
+                number(count) if shown == "—" else f"{number(count)} ({shown})"
+            )
+            # The bar's accessible name, in place of Vega's field-by-field
+            # default ("Families: 3; label: Weekly; …").
+            row["name"] = (
+                f"{label}: {number(count)} {noun.lower()}, "
+                f"{shown} {compared[0].lower()}{compared[1:]}"
+            )
+        rows.append(row)
     parts = ", ".join(f"{row['label']} {row['text']}" for row in rows)
     summary = f"{title}: {parts}." if rows else f"{title}: none."
-    largest = max((row["count"] for row in rows), default=0)
-    room = label_room(row["text"] for row in rows)
-    spec = {
-        "$schema": VEGA_LITE_SCHEMA,
-        "description": summary,
-        "width": WIDTH,
-        "height": {"step": 36},
-        "data": {"values": rows},
-        "encoding": {
-            "y": {
-                "field": "label",
-                "type": "nominal",
-                "sort": {"field": "order"},
-                "title": None,
-                "axis": {"labelLimit": 300},
-            },
-            "x": {
-                "field": "count",
-                "type": "quantitative",
-                "title": noun,
-                # The stretched domain rarely ends on a round tick, so a
-                # tick just before the right edge would have its centred
-                # label cut off there; labelBound hides such a label.
-                "axis": {"format": ",d", "tickMinStep": 1, "labelBound": True},
-                # The longest bar ends ``room`` pixels before the plot's
-                # right edge: the domain grows by the share of the plot's
-                # width that the label needs. No floor short of the whole
-                # room, so a long share-method name on a phone still leaves
-                # the label its room; only a plot narrower than the label
-                # itself (a 1-pixel floor) cannot fit it.
-                "scale": {
-                    "domainMin": 0,
-                    "domainMax": {
-                        "expr": f"{max(largest, 1)} * width / max(width - {room}, 1)"
-                    },
-                    "nice": False,
-                },
-            },
-        },
-        "layer": [
+    tooltip = [
+        {"field": "label", "title": title},
+        {"field": "count", "title": noun, "format": ","},
+        {"field": "share", "title": compared},
+    ]
+    y = {
+        "field": "label",
+        "type": "nominal",
+        "sort": {"field": "order"},
+        "title": None,
+        "axis": {"labelLimit": 300},
+    }
+    x = {
+        "field": "count",
+        "type": "quantitative",
+        "title": noun,
+        "axis": {"format": ",d", "tickMinStep": 1},
+    }
+    bar = {
+        "mark": {"type": "bar", "color": BAR},
+        "encoding": {"description": {"field": "name"}, "tooltip": tooltip},
+    }
+    if progress:
+        x["scale"] = {"domain": [0, max(total, 1)], "nice": False}
+        # At phone width the centred axis title sits under the middle and
+        # end ticks' labels; Vega's default 4-pixel gap leaves Firefox's
+        # taller text boxes overlapping them, so give the title more room.
+        x["axis"] |= {"titlePadding": 8}
+        # Every layer reads the same rows untransformed, so the y domain is
+        # not a union and keeps the "order" sort (a filtered layer would
+        # make Vega-Lite drop it and sort the labels alphabetically).
+        y |= {
+            "field": "tick",
+            "axis": {"labelLimit": 300, "labelExpr": f"split(datum.label, '{TICK}')"},
+        }
+        layers = [
             {
-                "mark": {"type": "bar", "color": BAR},
+                "mark": {"type": "bar", "color": TRACK, "aria": False},
                 "encoding": {
-                    "description": {"field": "name"},
-                    "tooltip": [
-                        {"field": "label", "title": title},
-                        {"field": "count", "title": noun, "format": ","},
-                        {"field": "share", "title": compared},
-                    ],
+                    "x": {"field": "total", "type": "quantitative"},
+                    "tooltip": tooltip,
                 },
             },
+            bar,
+        ]
+    else:
+        largest = max((row["count"] for row in rows), default=0)
+        room = label_room(row["text"] for row in rows)
+        # The longest bar ends ``room`` pixels before the plot's right edge:
+        # the domain grows by the share of the plot's width that the label
+        # needs. No floor short of the whole room, so a long share-method
+        # name on a phone still leaves the label its room; only a plot
+        # narrower than the label itself (a 1-pixel floor) cannot fit it.
+        x["scale"] = {
+            "domainMin": 0,
+            "domainMax": {
+                "expr": f"{max(largest, 1)} * width / max(width - {room}, 1)"
+            },
+            "nice": False,
+        }
+        # The stretched domain rarely ends on a round tick, so a tick just
+        # before the right edge would have its centred label cut off there;
+        # labelBound hides such a label.
+        x["axis"] |= {"labelBound": True}
+        layers = [
+            bar,
             # The value drawn after each bar repeats the bar's name, so
             # assistive technology hears it once, from the bar.
             {
@@ -540,7 +573,15 @@ def count_bars(key, title, bars, *, total, compared, noun="Families"):
                 },
                 "encoding": {"text": {"field": "text"}},
             },
-        ],
+        ]
+    spec = {
+        "$schema": VEGA_LITE_SCHEMA,
+        "description": summary,
+        "width": WIDTH,
+        "height": {"step": 36},
+        "data": {"values": rows},
+        "encoding": {"y": y, "x": x},
+        "layer": layers,
     }
     table = ChartTable(
         (title, noun, compared),
@@ -587,4 +628,32 @@ def financial_charts(summary, choices):
             total=families,
             compared=compared,
         ),
+    )
+
+
+# The statistics drawn as progress against active Families (#720), in the
+# order the cards listed them: (card label, PopulationStatistics field).
+PROGRESS = (
+    ("Families that have responded", "responses"),
+    ("Families with eligible email", "eligible_email"),
+    ("Families with deliverable email", "deliverable_email"),
+)
+
+
+def population_progress(active):
+    """The Participation statistics' progress bars against active Families.
+
+    ``active`` is ``CampaignStatistics.active``, the current active
+    population's counts. Without an observation there is nothing to draw:
+    ``None`` is returned and the cards say Unavailable, never zero.
+    """
+    if active is None:
+        return None
+    return count_bars(
+        "active-population",
+        "Responses and email reach",
+        [(label, getattr(active, field)) for label, field in PROGRESS],
+        total=active.families,
+        compared="Share of active Families",
+        progress=True,
     )

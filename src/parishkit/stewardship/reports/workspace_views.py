@@ -29,6 +29,7 @@ from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
 from parishkit.stewardship.web.tables import paginate
 
+from .chart_specs import PROGRESS, population_progress
 from .charts import participation_png
 from .daily_digest import statistics_cards
 from .digest_presentation import participation_context
@@ -280,6 +281,24 @@ def fund_names(statistics):
     }
 
 
+def statistics_panel(statistics):
+    """The statistics panel's tiles and its progress chart (#720).
+
+    The responded and email cards are drawn as progress bars against active
+    Families; the other cards stay tiles. Without an observation nothing is
+    drawn, and every card, those three included, is a tile reading
+    Unavailable.
+    """
+    progress = population_progress(statistics.active)
+    drawn = set(dict(PROGRESS)) if progress else set()
+    return {
+        "tiles": tuple(
+            card for card in statistics_cards(statistics) if card[0] not in drawn
+        ),
+        "progress": progress,
+    }
+
+
 def _page_context(campaign_id, query, selected, principal):
     """Format detached shared observations; never recompute money in templates."""
     campaign = Campaign.objects.select_related("active_configuration").get(
@@ -296,7 +315,7 @@ def _page_context(campaign_id, query, selected, principal):
         "query": query,
         "selection": selected,
         "statistics": statistics,
-        "cards": statistics_cards(statistics),
+        **statistics_panel(statistics),
         "fund_names": fund_names(statistics),
         "export_key": uuid4(),
         "exact_key": uuid4(),
