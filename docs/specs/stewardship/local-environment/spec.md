@@ -1210,11 +1210,12 @@ refuses when the clock-mode marker says `normal`.
 
 **`wizard`.** For an unattended install (and the documented VM seed runs),
 `wizard` completes the setup wizard through the wizard pages' own service
-layer (`pk-stewardship local-seed --step wizard` under `web`: the parish,
-access, mail, Slack and Testing-recipient settings, the fake ParishSoft key
-and organization, the source load, the mail-catcher document, a generated
-logo through the real branding staging, the review, the setup test mail and
-the final confirmation), then follows the deployment runbook's post-wizard
+layer, in the wizard's page order (`pk-stewardship local-seed --step wizard`
+under `web`: the parish, mail and Testing-recipient settings, the
+mail-catcher document, the Slack setting, a generated logo through the real
+branding staging, the access lists, the fake ParishSoft key and organization,
+the source load, the review, the setup test mail and the final
+confirmation), then follows the deployment runbook's post-wizard
 step: once the credential installers report `awaiting_ack`, it recreates
 `worker` and `mail-dispatch` from `compose.json` and acknowledges each
 request inside them, which lets the installer complete setup. Setup collects

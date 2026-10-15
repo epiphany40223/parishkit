@@ -280,12 +280,13 @@ def test_schedule_patch_installs_through_the_real_configuration_path(tmp_path):
 def test_wizard_logo_is_accepted_by_the_real_draft_owner(
     setup_service, monkeypatch, tmp_path, settings
 ):
-    """The unattended wizard's post-load step saves through the draft owner.
+    """The unattended wizard's logo step saves through the draft owner.
 
     The load itself, the Workspace credential (LOCAL's mail-catcher document
     is refused under the test profile) and the test mail need the running
-    services, so this uses the test suite's completed load. Setup collects no
-    campaign (#142): after the load the wizard saves only the generated logo.
+    services, so this uses the test suite's completed load. The logo page
+    comes before the load in the wizard (#1353), but it accepts a save
+    whenever the attempt collects. Setup collects no campaign (#142).
     """
     from parishkit.stewardship.accounts.setup_drafts import view_draft
     from parishkit.stewardship.local import seed_web
