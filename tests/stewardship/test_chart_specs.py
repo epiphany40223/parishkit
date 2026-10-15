@@ -34,7 +34,6 @@ from parishkit.stewardship.reports.chart_specs import (
     stage_label,
     whole_dollars,
 )
-from parishkit.stewardship.reports.digest_funnel import digest_charts
 from parishkit.stewardship.reports.money import MoneyAmount
 from parishkit.stewardship.reports.participation import ParticipationDay
 from parishkit.stewardship.reports.response_metrics import (
@@ -739,10 +738,10 @@ def page_warnings(spec, capfd):
 
 
 def page_charts():
-    """Every chart the app builds, as its page or saved digest draws it.
+    """Every chart the app builds, as its page draws it.
 
     The response dashboard's funnel and activity (by hour and by day), the
-    digest's trimmed pair, the Financial stewardship summary's count bars,
+    Financial stewardship summary's count bars,
     the Participation page's progress bars and daily chart, and the
     Campaign comparison's day-by-day, final-figures and pledge-band charts.
     """
@@ -755,7 +754,6 @@ def page_charts():
         funnel_chart(metrics()),
         activity_chart(metrics()),
         activity_chart(metrics(grain="day")),
-        *digest_charts(metrics()),
         *financial_charts(financial_summary(), CHOICES),
         population_progress(PopulationStatistics(4, 2, 1, 1, 0, MoneyAmount(0))),
         participation_chart(participation()),
@@ -771,8 +769,8 @@ def test_every_page_chart_compiles_without_warnings(capfd):
     the container width warned that fit-y was dropped, #1325). A step
     height still warns, so the check can fail."""
     documents = page_charts()
-    # Every kind of chart is here: 2 + 1 + 2 + 2 + 1 + 1 + 3 + 2 + 3.
-    assert len(documents) == 17
+    # Every kind of chart is here: 2 + 1 + 2 + 1 + 1 + 3 + 2 + 3.
+    assert len(documents) == 15
     for document in documents:
         assert page_warnings(document.spec, capfd) == [], document.key
     # A bar chart (here the funnel and the final figures) given back a step
@@ -801,9 +799,9 @@ def test_bar_chart_heights_match_their_old_step_heights():
         }
         assert document.spec["height"] == step * len(bars), document.key
         checked.append(document.key)
-    # The dashboard's and the digest's funnels, two final-figure charts and
+    # The dashboard's funnel, two final-figure charts and
     # three years' pledge bands.
-    assert len(checked) == 7
+    assert len(checked) == 6
 
 
 @pytest.mark.parametrize(
