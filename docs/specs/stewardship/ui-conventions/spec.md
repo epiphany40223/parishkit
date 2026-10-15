@@ -1060,6 +1060,12 @@ section says how every Review behaves.
   computes impact (affected Families, re-planned schedules, counts), or
   renders what Families will see (an email sample, staged images) keeps its
   full review. Each feature specification says which kind its Review is.
+  An editor whose Review is a confirmation for some changes and a full
+  review for others (a one-time scheduled email against a repeat; leaders
+  ticked on the page against Import all) answers with whichever the change
+  needs, and the answer sets the dialog's question and description; its
+  form's button carries the action's own label ("Add the scheduled email",
+  "Import selected") either way.
   **Precedent.** Administrator decision, 2026-10-14, on
   [#1356](https://github.com/epiphany40223/parishkit/issues/1356); the
   [Delete dialogs](#row-actions-and-confirmation) already confirm over a
