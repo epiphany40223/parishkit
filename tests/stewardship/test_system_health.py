@@ -2213,6 +2213,32 @@ def test_a_held_request_explains_itself_in_a_toggletip():
     assert 'aria-describedby="backup-held"' in details
 
 
+def test_every_backup_request_line_keeps_its_room():
+    """No layout shift: the line under Take a backup now has reserved room
+    in every state, including none, and its mirror target waits for the
+    pointer (data-live-mirror-hold); the held and did_not_finish lines
+    render (#1317)."""
+    for status, words in (
+        ("held", "is held while a Family email send is in progress."),
+        ("did_not_finish", "did not complete; the Backups problems above"),
+        ("waiting", "is waiting for the server"),
+        ("finished", "finished at"),
+    ):
+        details = backups_details(
+            tiles({"health": health(backup_request=backup_request(status))})
+        )
+        region = details[details.index('id="backup-now"') :]
+        region = region[: region.index("</section>")]
+        assert words in region, status
+        line = re.search(r'<p class="help reserve-lines-wrap backup-line"', region)
+        assert line, status
+    none = backups_details(tiles({"health": health(backup_request=None)}))
+    assert (
+        'class="help reserve-lines-wrap backup-line" data-backup-request-none' in none
+    )
+    assert 'data-live-mirror-target="backup-now-button" data-live-mirror-hold' in none
+
+
 def test_the_debug_summary_names_the_first_that_holds():
     """Each Working summary in DEBUG_SUMMARIES's order: a set switch with who
     set it, then Testing's debug logging, then Off."""

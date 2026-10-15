@@ -31,5 +31,5 @@
 {% elif backup_now.refused == "denied" %}<p class="notice notice-error" data-backup-refused="denied">{% translate "The server refused this backup request, so nothing was requested. System logs record why; ask the server operator to check the database grants." %}</p>
 {% elif backup_now.refused == "invalid" %}<p class="notice notice-error" data-backup-refused="invalid">{% translate "That request could not be read. Nothing was requested; try again." %}</p>
 {% else %}<p>{% translate "Ask the server to take a backup now, for example before a risky change. It needs a recent Google sign-in." %}</p>{% endif %}
-<div data-live-mirror-target="backup-now-button">{% include 'stewardship/system-health-backup-button.html' %}</div>{% endif %}
+<div data-live-mirror-target="backup-now-button" data-live-mirror-hold>{% include 'stewardship/system-health-backup-button.html' %}</div>{% endif %}
 </section>

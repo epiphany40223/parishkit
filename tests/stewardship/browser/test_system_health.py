@@ -898,7 +898,7 @@ def test_a_requested_backups_progress_follows_under_its_button(page, component_o
         body(f"{BACKUP_LIVE}/status-{state}") for state in ("running", "finished")
     ]
     before = body(BACKUP_LIVE + "/status")
-    confirmed = {"done": False, "checks": 0}
+    confirmed = {"done": False, "away": False, "checks": 0}
 
     def respond(route):
         """The page for a GET; for a POST, the answer to its action."""
@@ -910,12 +910,16 @@ def test_a_requested_backups_progress_follows_under_its_button(page, component_o
         route.fulfill(status=200, content_type="text/html", body=answers[action])
 
     def status(route):
-        """No request until it is confirmed; then running, then finished."""
+        """No request until it is confirmed; then running, then finished.
+
+        The held copy waits while the pointer is over the grid, so the
+        states advance only once the test has moved the pointer away.
+        """
         if not confirmed["done"]:
             text = before
         else:
             text = states[min(confirmed["checks"], 1)]
-            confirmed["checks"] += 1
+            confirmed["checks"] += confirmed["away"]
         route.fulfill(status=200, content_type="text/html", body=text)
 
     page.route(f"{component_origin}{BACKUP_PAGE}", respond)
@@ -923,7 +927,10 @@ def test_a_requested_backups_progress_follows_under_its_button(page, component_o
     page.goto(component_origin + BACKUP_PAGE + "#health-backups")
     kept = _not_reloaded(page)
     region = page.locator("#backup-now")
-    region.get_by_role("button", name="Take a backup now", exact=True).click()
+    # The progress line keeps its room (reserve-lines-wrap), so the region
+    # keeps its height as the line changes (measured below).
+    button = region.get_by_role("button", name="Take a backup now", exact=True)
+    button.click()
     confirm = region.get_by_role("button", name="Confirm: take a backup now")
     expect(confirm).to_be_focused()
     confirm.click()
@@ -931,7 +938,12 @@ def test_a_requested_backups_progress_follows_under_its_button(page, component_o
         "The line under the button follows its progress"
     )
     line = region.locator("[data-backup-request]")
+    # The polled line waits while the pointer is over the grid
+    # (data-live-mirror-hold); once the pointer is away it follows.
+    page.mouse.move(0, 0)
+    confirmed["away"] = True
     expect(line).to_have_attribute("data-backup-request", "running")
+    running_height = region.bounding_box()["height"]
     expect(line).to_contain_text("and is running; it started at")
     expect(
         region.get_by_role("button", name="Take a backup now", exact=True)
@@ -942,6 +954,8 @@ def test_a_requested_backups_progress_follows_under_its_button(page, component_o
         region.get_by_role("button", name="Take a backup now", exact=True)
     ).to_be_enabled()
     assert "UTC" not in region.inner_text()
+    # Running to finished moves nothing under the pointer.
+    assert same_place(region.bounding_box()["height"], running_height)
     assert kept()
 
 
