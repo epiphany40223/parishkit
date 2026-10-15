@@ -583,9 +583,10 @@ a changed schedule; until then every stored schedule is an existing one.
    shading, labels, current-time mark and narrow-screen scrolling.
    Administrator check on pk-local before merge.
 5. **Command line.** `integration preview parishsoft
-   --refresh-schedule` and `integration schedule-preview`, through the
-   functions of slices 2 and 3. It follows ADM-11 PR 10, which adds the
-   `integration` commands.
+   --refresh-schedule` (5b) and `integration schedule-preview` (5a),
+   through the functions of slices 2 and 3. They follow ADM-11 PR 10,
+   which adds the `integration` commands. 5b posts the document as the
+   editor's own rows, so the page's editor checks it.
 
 **Reuse of the mail repeat rules (#469, PR #855).** That engine expands
 calendar dates (daily, weekly on chosen days, monthly) into one-off

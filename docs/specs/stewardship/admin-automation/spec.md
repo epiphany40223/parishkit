@@ -2923,16 +2923,38 @@ lists the fields.
 | Backup encryption key change, through `integration_settings` with proof of possession | `integration backup-key challenge`, `integration backup-key preview`, `integration backup-key confirm` (PR 10) |
 
 The refresh schedule is given to `integration preview parishsoft` as
-`--refresh-schedule FILE` (`-` reads standard input): a YAML or JSON
-document in the stored `refresh_rules` shape (rules, skips and the skip
-switch), never the derived time lists. The command derives the lists and
-runs the page's validator, with the same kept off-quarter-hour times, and a
-refusal carries each problem with the page's words. A new or changed
-schedule has at most 64 rules and 16 skips, the
-[schedule editor](../admin-portal/spec.md#schedule-editor)'s caps; one past
-them is refused like any other malformed schedule, without echoing it
+`--refresh-schedule DOCUMENT` (`-` reads standard input), with or without
+`--changes` and never with `--remove`: a YAML or JSON document in the
+stored `refresh_rules` shape, never the derived time lists. `rules` is
+required (each `{"kind", "at"}` or `{"kind", "every", "from", "to"}`),
+`skips` defaults to none, and `skip_around_family_emails` left out keeps
+the schedule's current value as the page shows it (an explicit null is
+refused). Times are wall-clock `HH:MM` in the zone the schedule runs in,
+as on the page. Another member, a row of another shape, a `kind` other
+than `full` or `quick`, a time that is not exactly `HH:MM` or an `every`
+that is not one of the editor's intervals is `invalid` at
+`refresh_schedule`, `refresh_schedule.rules[N]` or
+`refresh_schedule.skips[N]` in fixed words, before the page's form could
+quote it back, so no refusal echoes the input; any other target is
+`invalid` at `refresh_schedule`. A quick rule is accepted only as the
+shown schedule has it, since the page no longer offers adding one
+([#1122](https://github.com/epiphany40223/parishkit/issues/1122)); the
+mode posted is the one the page opens in. The command posts
+the document as the [schedule editor](../admin-portal/spec.md#schedule-editor)'s
+own rows to the page's form, so the page's editor reads it: the same row
+checks, kept off-quarter-hour times, validator, derived lists and mode, and
+"an unchanged schedule keeps its stored keys exactly" (posted back
+unchanged, in any row order, it is "No settings have changed."). A
+refusal carries each problem with the page's words at its row. A new or
+changed schedule has at most 64 rules and 16 skips, the editor's caps; one
+past them is refused like any other malformed schedule, without echoing it
 ([#936](https://github.com/epiphany40223/parishkit/issues/936)).
-Its preview lists the same differences the page's review does. `integration schedule-preview`
+Its preview adds `schedule` (null unless the schedule changes):
+`timezone`, `before` (the schedule as the page showed it), `after` and
+`differences`, the page review's list in words. `integration show
+parishsoft` prints the schedule as the page shows it as
+`refresh_schedule`, the document this option takes (an existing schedule
+converted to rules). `integration schedule-preview`
 takes the same option for a proposed schedule, or reads the applied one
 without it, and its JSON document carries the page's seven days, cost and
 freshness. Both follow the ParishSoft page's
@@ -2974,9 +2996,10 @@ document to the page's own form in one read snapshot, and prints
 stored `before` and `after`) and `preview.token`, the page's own signed
 binding (salt per integration). It records nothing. The page's refusals
 are `invalid` at `settings.<name>` or `settings` (no change); Slack not yet
-set up is `invalid` at `key`, as its key sets it up; keys and refresh
-schedule keys are never accepted, and an unchanged ParishSoft schedule
-keeps its stored keys exactly. `integration confirm TARGET --token TOKEN`
+set up is `invalid` at `key`, as its key sets it up; keys and stored
+refresh schedule keys are never accepted in `--changes` (the schedule is
+changed only through `--refresh-schedule`, above), and an unchanged
+ParishSoft schedule keeps its stored keys exactly. `integration confirm TARGET --token TOKEN`
 is the page's Apply, through `admin_editing.confirm_intent` with the
 page's salt and fresh gate: it is fresh-gated and prompts, naming the
 integration and the settings the review changes, never their values. In the

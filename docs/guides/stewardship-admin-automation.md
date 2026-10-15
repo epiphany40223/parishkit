@@ -1084,6 +1084,7 @@ Workspace mail or Outgoing email addresses not set up is exit 1
 | `configured` | Whether it is set up; Slack and Off-site backups are optional |
 | `removable` | Whether the page offers Remove (Slack and Off-site backups, once set up) |
 | `settings` | The saved settings the page shows, such as the ParishSoft organization ID and refresh schedule, the mailbox and addresses, the Slack channel or the Drive folder link; empty when not set up |
+| `refresh_schedule` | For ParishSoft, the refresh schedule as its editor shows it, in the shape `integration preview --refresh-schedule` takes (see [Changing the refresh schedule](#changing-the-refresh-schedule)); an older schedule is shown converted to rules; null otherwise |
 | `key` | For ParishSoft, Google Workspace mail and Slack, the latest key change line: `state` (`pending`, `updated`, `unselected` when Finish switching is needed, or `failed`), `at`, `message` and `request_id`; null when the page shows none |
 | `source` | For ParishSoft, the same refresh facts as `refresh status`'s `source`; null otherwise |
 | `offsite_backup` | For Off-site backups, the newest copy: `state`, `message`, `at`, `last_copy_at` and `set_name`; null otherwise |
@@ -1119,7 +1120,8 @@ fields for that integration (`organization_id`; `delegated_email`;
 folder link). A field you leave out keeps its saved value; only
 `sender_name` may be null or empty, which drops the From name so mail uses
 the parish name. Keys are never accepted (they have their own steps), and
-the ParishSoft refresh schedule is kept exactly as saved. Slack, which its
+the ParishSoft refresh schedule is kept exactly as saved unless you give
+`--refresh-schedule` (below). Slack, which its
 first key sets up, can't be set up here: the preview is exit 1 (`invalid`
 at `key`). `--remove` reviews removing Slack or Off-site backups; anything
 else, or one not set up, is `not_available`.
@@ -1138,6 +1140,61 @@ applies when the request installs. System logs records
 also alerts every Administrator by email and Slack, as other notification
 setting changes do. Repeating the confirmation with the same token returns
 the same request and records nothing new.
+
+#### Changing the refresh schedule
+
+`integration preview parishsoft --refresh-schedule DOCUMENT` (or `-` for
+standard input) changes the ParishSoft refresh schedule, alone or with
+`--changes`. Start from `integration show parishsoft`'s `refresh_schedule`,
+edit it, and preview it:
+
+```sh
+pk-admin integration show parishsoft
+pk-admin integration preview parishsoft --expected-version VERSION \
+    --refresh-schedule - < schedule.json
+pk-admin integration confirm parishsoft --token TOKEN
+```
+
+The document is YAML or JSON, the rules the page's Advanced mode shows:
+
+```json
+{
+  "rules": [
+    {"kind": "full", "at": "02:00"},
+    {"kind": "full", "every": 120, "from": "08:00", "to": "18:00"}
+  ],
+  "skips": [{"from": "12:00", "to": "13:00"}],
+  "skip_around_family_emails": true
+}
+```
+
+| Member | What it holds |
+| --- | --- |
+| `rules` | Required. Each rule is `{"kind": "full", "at": "HH:MM"}`, or `{"kind": "full", "every": MINUTES, "from": "HH:MM", "to": "HH:MM"}` with `every` one of 15, 30, 60, 120, 180, 240, 360, 480 or 720. A `"quick"` rule is accepted only exactly as `integration show` printed it, so an older schedule's quick updates can be kept; new quick updates can't be added, as on the page |
+| `skips` | Optional (none when left out). Each skip is `{"at": "HH:MM"}` or `{"from": "HH:MM", "to": "HH:MM"}` (`to` itself is not skipped) |
+| `skip_around_family_emails` | Optional: `true` or `false` (not null), the page's "Skip refreshes around Family emails". Left out, it keeps its current value |
+
+Times are the parish's wall-clock times, in the zone the schedule runs in
+(the current campaign's, else the parish's), as on the page; the preview
+names it. Give each time as exactly `HH:MM` text; in YAML, quote it
+(`"12:30"`), since YAML reads an unquoted `12:30` as a number. A kind,
+time or interval that is not one of these is refused in fixed words that
+never repeat what you sent. The page's own editor checks the schedule,
+so the rules are exactly the page's: times on the quarter hour (an older
+schedule's off-quarter-hour times may be kept), refreshes at least 15
+minutes apart, at least one full refresh a day, at most 64 rules and 16
+skips. Each problem is exit 1 (`invalid`) at `refresh_schedule.rules[N]`,
+`refresh_schedule.skips[N]` or `refresh_schedule`, with the page's words.
+The schedule you were shown, posted back unchanged, is "No settings have
+changed." The editor's mode (Basic or Advanced) is saved as the page would
+save it with its toggle untouched.
+
+The preview's `schedule` holds `timezone`, `before` (the schedule as the
+page showed it), `after` and `differences`, the review page's list of
+what changes in words; it is null when the schedule does not change. The
+preview changes nothing. `integration confirm` prompts with the stored
+setting names that change (such as `refresh_rules`) and records the
+request as above; the new schedule applies when the request installs.
 
 ## Past campaigns
 
@@ -2526,3 +2583,9 @@ print is exit 1 (`invalid`).
   settings page's Save and Remove (full scope, Administrators only;
   `integration confirm` fresh-gated and prompting, recording
   `admin_cmd_integration_confirm`).
+- `pk-admin/1` (#632): additive. `integration preview parishsoft
+  --refresh-schedule DOCUMENT|-` changes the refresh schedule through the
+  page's editor (with or without `--changes`, which is no longer required
+  when it is given); the preview gains `schedule` (null unless the
+  schedule changes) and `integration show` gains `refresh_schedule`
+  (ParishSoft only, else null).

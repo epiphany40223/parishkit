@@ -48,7 +48,11 @@ class IntegrationShow(ReadModel):
     """One integration's settings page, as it opens.
 
     ``settings`` are the stored public settings (``{}`` for an optional
-    integration not set up); ``removable`` is the page's Remove. ``key`` is
+    integration not set up); ``removable`` is the page's Remove.
+    ``refresh_schedule`` is ParishSoft's refresh schedule as its editor
+    shows it, in the stored ``refresh_rules`` shape (an existing schedule
+    converted to rules, #632), the document ``integration preview
+    --refresh-schedule`` takes; None for any other page. ``key`` is
     the latest key change line (key targets only), ``source`` the ParishSoft
     page's refresh facts, and ``offsite_backup`` and ``probe`` the
     Off-site backups page's copy status and this Administrator's latest
@@ -61,6 +65,7 @@ class IntegrationShow(ReadModel):
     configured: bool
     removable: bool
     settings: dict
+    refresh_schedule: dict | None
     key: dict | None
     source: dict | None
     offsite_backup: dict | None
@@ -186,8 +191,10 @@ def show_model(configuration, target, *, key, refresh, backup):
     from .accounts.integration_forms import LABELS
     from .accounts.integration_views import REMOVABLE, _optional
     from .admin_refresh import refresh_fields
+    from .source.refresh_rules import converted_rules
 
     record = _optional(configuration, target)
+    settings = {} if record is None else dict(record["values"]["settings"])
     offsite, probe = backup or (None, None)
     return IntegrationShow(
         version=configuration.active_configuration.digest,
@@ -195,7 +202,12 @@ def show_model(configuration, target, *, key, refresh, backup):
         name=str(LABELS[target]),
         configured=record is not None,
         removable=record is not None and target in REMOVABLE,
-        settings={} if record is None else dict(record["values"]["settings"]),
+        settings=settings,
+        refresh_schedule=(
+            converted_rules(settings)
+            if target == "parishsoft" and record is not None
+            else None
+        ),
         key=key_document(key),
         source=None if refresh is None else refresh_fields(refresh),
         offsite_backup=offsite,

@@ -878,6 +878,18 @@ on the page and a page token by the command, the page's refusals, Slack and
 mail not set up, foreign tokens, a read-only session and Staff denied, an
 ended session) and the unchanged integration page suites.
 
+`integration preview parishsoft --refresh-schedule` (#632 slice 5b) posts
+a stored-shape refresh schedule as the page editor's own rows, so the
+page's `ScheduleEditor` checks it and derives the stored settings, and
+`integration show parishsoft` prints the schedule as the page shows it,
+with no schema change; proven by the schedule tests in
+`tests/stewardship/test_admin_integration_changes.py` (the document's
+shape, the rows read back, the switch and mode, the page's problems at
+each row, the review) and
+`tests/stewardship/database/test_admin_integration_changes_cli_postgresql.py`
+(a schedule reviewed and applied, the same patch as the page's review of
+the same rows, an unchanged schedule kept exactly, the refusals).
+
 ## ADM-12: Admin navigation overhaul
 
 Scope and dependencies: [ADM-12 work package](../../plans/stewardship/admin-portal.md#adm-12-admin-navigation-overhaul).
