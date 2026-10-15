@@ -574,7 +574,11 @@ def test_only_an_applied_change_refreshes_its_settings_page(state):
     receipt = SimpleNamespace(state=state, request_id=uuid4(), failure_code="")
     html = render_to_string(
         "stewardship/configuration-request-status.html",
-        {"receipt": receipt, "follow_url": "/admin/parish/settings/?request=x"},
+        # A page that still reads ?request= (the last in_place page).
+        {
+            "receipt": receipt,
+            "follow_url": reverse("admin:reminder_workgroup") + "?request=x",
+        },
     )
     assert ("data-live-follow" in html) == (state == "applied")
 
