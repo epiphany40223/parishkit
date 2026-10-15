@@ -46,10 +46,11 @@ from parishkit.stewardship.web.contracts import ErrorCode, filters
 
 from .admin_editing import editable_configuration
 from .authentication import runtime
+from .branding_context import local_environment
 from .content_views import resave_recommended
 from .policy import Capability, allows
 from .runtime_models import SystemConfiguration
-from .sessions import authenticated_admin
+from .sessions import authenticated_admin, freshness
 from .source_form_views import source_form_summary
 
 # How often the open page re-reads the status, in ms (the specification's
@@ -163,11 +164,19 @@ def _read(request, template, *, page):
             context["source_form_tile"] = source_form_tile(source_form)
             context["resave_tile"] = resave_tile(resave)
             context["status_url"] = _status_url(loaded)
+            # Whether the sign-in is recent now, fixed for the page's life:
+            # it picks Accept this change once's offered or step-up form,
+            # and no poll changes it (#1159, #1331 item 18). A sign-in that
+            # ages later gets the step-up answer when the form is sent.
+            context["fresh"] = freshness(request)[0]
             # The Admin chrome reuses this instant instead of reading the clock.
             request._stewardship_display_now = health.checked_at
             response = render(request, template, context)
         else:
             context = _context(health, extra, loaded=parse_loaded(query.get("loaded")))
+            # The step-up notice's LOCAL wording, which a full page render
+            # gets from its context processor (#619).
+            context |= local_environment(request)
             # The fragment needs no Admin chrome, so it skips the context
             # processors (and their queries) a full page render runs.
             response = HttpResponse(render_to_string(template, context))

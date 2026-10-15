@@ -132,6 +132,15 @@ LOADED = loaded_states(0, list(RESAVE))
 # checks unable to run.
 TILE_STATES = ("working", "warning", "error", "unchecked")
 TILE_PAGES = "/system-health-tiles-"
+# Accept this change once while the sign-in was stale when the page was
+# drawn (#1331 item 18): the offer shows the step-up notice and greys the
+# button; a fresh page offers it, and no poll changes which (#1159).
+ACCEPT_STEP_UP = "/system-health-accept-step-up"
+ACCEPT_STEP_UP_STATUS = "/system-health-accept-step-up/status"
+ACCEPT_FRESH = "/system-health-accept-fresh"
+ACCEPT_FRESH_STATUS = "/system-health-accept-fresh/status"
+ACCEPT_STEP_UP_LATE = "/system-health-accept-step-up-late"
+ACCEPT_STEP_UP_LATE_STATUS = "/system-health-accept-step-up-late/status"
 TROUBLED_STATUS = canonical(f"{STATUS}?{urlencode({'loaded': loaded_query(LOADED)})}")
 
 
@@ -445,6 +454,8 @@ def components(context, admin):
                 "source_form_count": form,
                 "source_form_tile": source_form_tile(form),
                 "resave_tile": resave_tile(resave),
+                # A sign-in recent enough for the step-up gated actions.
+                "fresh": True,
                 "debug_actor": "other@example.org" if switch else None,
                 "accept_actor": "other@example.org" if accepted is True else None,
                 "refused_attempt": attempt if refused else None,
@@ -537,6 +548,28 @@ def components(context, admin):
         extra[canonical(f"{url}?{urlencode({'loaded': query})}") if query else url] = (
             status(found)
         )
+    # Accept this change once with a stale sign-in (#1331 item 18). The
+    # status is the same whatever the sign-in; only the page's own
+    # data-health-fresh, set when it was drawn, picks the form.
+    stale_sign_in = {"fresh": False, "status_url": ACCEPT_STEP_UP_STATUS}
+    extra[ACCEPT_STEP_UP] = page(values(False, refused=True) | stale_sign_in)
+    extra[ACCEPT_STEP_UP_STATUS] = status(values(False, refused=True))
+    # A page drawn with a recent sign-in, whose polls bring the same refusal.
+    extra[ACCEPT_FRESH] = page(
+        values(False, refused=True) | {"status_url": ACCEPT_FRESH_STATUS}
+    )
+    extra[ACCEPT_FRESH_STATUS] = status(values(False, refused=True))
+    # A stale page drawn before any refusal, carrying a CSRF token, whose
+    # poll brings one: the swapped-in step-up form takes the page's token.
+    extra[ACCEPT_STEP_UP_LATE] = page(
+        values(False)
+        | {
+            "fresh": False,
+            "csrf_token": "component-token",
+            "status_url": ACCEPT_STEP_UP_LATE_STATUS,
+        }
+    )
+    extra[ACCEPT_STEP_UP_LATE_STATUS] = status(values(False, refused=True))
     return extra | {
         PAGE: (
             "text/html",

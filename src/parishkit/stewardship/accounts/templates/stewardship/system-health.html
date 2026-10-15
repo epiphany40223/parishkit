@@ -16,7 +16,7 @@
 </dl>{% endaboutpage %}
 {# Screen readers hear only this line: the overall line's sentence when the tiles it counts change, and when the page turns Not current or current again. #}
 <p class="visually-hidden" role="status" data-live-announcer="system-health"></p>
-<div class="health-dashboard" data-health-dashboard data-health-not-current-announce="{% translate 'System health is not current; last checked at %(time)s. The tiles show what was last known.' %}">
+{# data-health-fresh: the sign-in was recent when the page was drawn, which picks Accept this change once's offered or step-up form (system-health-accept-offer.html). Set once; no poll or answer changes it (#1159). #}<div class="health-dashboard" data-health-dashboard{% if fresh %} data-health-fresh{% endif %} data-health-not-current-announce="{% translate 'System health is not current; last checked at %(time)s. The tiles show what was last known.' %}">
 {# The box is the container whose width decides whether the line wraps (ui-v1.css). #}<div class="health-line-box"><div class="health-line">{% include 'stewardship/system-health-status.html' %}
 {# Checks again at once (live-status-v1.js); shown only while the line says Not current, its space always kept. #}{% button type="button" variant="secondary" class="health-restart" data-live-restart="system-health" %}{% translate "Refresh System health" %}{% endbutton %}</div></div>
 {# Outside the polled region, so an unchanged poll leaves the region alone; live-status-v1.js moves it to each successful check. #}

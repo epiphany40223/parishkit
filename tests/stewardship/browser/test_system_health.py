@@ -7,12 +7,15 @@ import pytest
 from .system_health_components import (
     ACCEPT_CHANGED,
     ACCEPT_DONE,
+    ACCEPT_FRESH,
     ACCEPT_LAPSED,
     ACCEPT_LATE,
     ACCEPT_PAGE,
     ACCEPT_PREVIEW,
     ACCEPT_SETTLED,
     ACCEPT_STALE,
+    ACCEPT_STEP_UP,
+    ACCEPT_STEP_UP_LATE,
     ALLOW_CLEARED,
     ALLOW_PAGE,
     ALLOW_PREVIEW,
@@ -1977,3 +1980,81 @@ def test_a_page_load_tiles_toggletip_moves_no_row(page, component_origin):
     expect(button).to_have_attribute("aria-expanded", "true")
     assert same_place(page.evaluate(TOPS), tops)
     assert same_place(band.bounding_box()["height"], height)
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_a_stale_sign_in_greys_accept_this_change_once(
+    page, component_origin, axe_source, width
+):
+    """#1331 item 18: on a page drawn with a stale sign-in, the offer shows
+    the shared step-up notice and greys its button, naming the notice; the
+    polled copy is the same whatever the sign-in, so a poll leaves both in
+    place."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + ACCEPT_STEP_UP)
+    region = page.locator("#accept-change")
+    notice = region.locator("[data-step-up-notice][data-accept-step-up]")
+    expect(notice).to_be_visible()
+    expect(notice).to_contain_text("accepting this change needs")
+    button = region.get_by_role("button", name="Accept this change once")
+    expect(button).to_be_disabled()
+    expect(button).to_have_attribute("aria-describedby", "accept-change-fresh-reason")
+    expect(page.locator("#accept-change-fresh-reason")).to_be_visible()
+    assert "needs a recent Google sign-in" not in region.inner_text()
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert _axe(page, axe_source) == []
+    page.evaluate(
+        "document.querySelector('[data-accept-step-up]').dataset.kept = 'yes'"
+    )
+    _away(page)
+    checked = page.locator("time[data-live-checked]")
+    first = checked.get_attribute("datetime")
+    expect(checked).not_to_have_attribute("datetime", first, timeout=30000)
+    assert notice.get_attribute("data-kept") == "yes"
+    expect(button).to_be_disabled()
+
+
+def _polls(page, count=2):
+    """Wait for ``count`` successful status checks."""
+    checked = page.locator("time[data-live-checked]")
+    for _ in range(count):
+        first = checked.get_attribute("datetime")
+        expect(checked).not_to_have_attribute("datetime", first, timeout=30000)
+
+
+def test_a_page_drawn_fresh_never_turns_stale_on_a_poll(page, component_origin):
+    """The sign-in is judged once, when the page is drawn (#1159): polls
+    never bring the step-up notice to a fresh page; a sign-in that ages
+    later gets the step-up answer when the button is used."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + ACCEPT_FRESH)
+    region = page.locator("#accept-change")
+    button = region.get_by_role("button", name="Accept this change once")
+    expect(button).to_be_enabled()
+    expect(region.locator("[data-step-up-notice]")).to_be_hidden()
+    _away(page)
+    _polls(page)
+    expect(button).to_be_enabled()
+    expect(region.locator("[data-step-up-notice]")).to_be_hidden()
+
+
+def test_a_step_up_form_swapped_in_by_a_poll_takes_the_pages_token(
+    page, component_origin
+):
+    """A poll that brings a refusal to a stale page swaps in the offer with
+    its step-up notice; the Confirm with Google form's empty CSRF field
+    takes the page's own token, so it posts a valid one."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + ACCEPT_STEP_UP_LATE)
+    region = page.locator("#accept-change")
+    expect(region.locator("[data-step-up-notice]")).to_have_count(0)
+    # The tile is Working, so closed; a poll never opens it.
+    _toggle(page, "source").click()
+    _away(page)
+    notice = region.locator("[data-step-up-notice][data-accept-step-up]")
+    expect(notice).to_be_visible(timeout=30000)
+    expect(
+        region.get_by_role("button", name="Accept this change once")
+    ).to_be_disabled()
+    token = notice.locator('form input[name="csrfmiddlewaretoken"]')
+    expect(token).to_have_value("component-token")

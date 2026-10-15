@@ -6860,7 +6860,14 @@ refresh" and is no longer counted among the problems that need attention
 (Home keeps the refusal's own line). Its rules (what the next full
 refresh must meet, how the acceptance ends, that a refusal is accepted only
 once and an empty load never, and the server operator's override as the
-emergency path) are in "i" toggletips. The preview, the refusals and the
+emergency path) are in "i" toggletips. The section does not always say
+that the button needs a recent sign-in: only when the sign-in was too old
+for it as the page was drawn does the shared step-up notice stand above
+the greyed button, which names it, as the
+[step-up rule](../ui-conventions/spec.md#page-help) asks (#1159, #1331).
+That is fixed for the page's life, so no status update shows or hides the
+notice; a sign-in that ages after the page was drawn gets the step-up
+answer when the button is used. The preview, the refusals and the
 result are answered in place, as the
 [in-place controls](../ui-conventions/spec.md#in-place-controls) convention
 requires. The preview's binding is signed for the Administrator who
