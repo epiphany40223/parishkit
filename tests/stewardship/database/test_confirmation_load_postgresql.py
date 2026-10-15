@@ -16,7 +16,6 @@ from parishkit.stewardship.accounts import confirmation_commands
 from parishkit.stewardship.accounts.confirmation_commands import confirm
 from parishkit.stewardship.accounts.family_authentication import FamilyRuntime
 from parishkit.stewardship.accounts.sessions import database_now
-from parishkit.stewardship.accounts.setup_drafts import save_section
 from parishkit.stewardship.campaigns.catchup_preparation import prepare_batch
 from parishkit.stewardship.campaigns.catchup_tasks import TASK_TYPE, catchup_handler
 from parishkit.stewardship.campaigns.confirmation_models import ActivationImpactRevision
@@ -227,14 +226,6 @@ def reference_inputs(monkeypatch):
         request, status, initial, row = original_schedules(service, patch)
         reminder = content(str(status.attempt_id), kind="email", slot="reminder")
         with web_login():
-            status = save_section(
-                request,
-                service,
-                status.attempt_id,
-                step="email_reminder",
-                values=reminder,
-                expected_version=status.version,
-            )
             records = [row] + [
                 schedule(
                     str(status.attempt_id),
@@ -246,13 +237,10 @@ def reference_inputs(monkeypatch):
                 )
                 for hour in range(19)
             ]
-            status = save_section(
+            status = setup_inputs.stage(
                 request,
-                service,
                 status.attempt_id,
-                step="schedules",
-                values={"records": records},
-                expected_version=status.version,
+                {"email_reminder": reminder, "schedules": {"records": records}},
             )
         return request, status, initial, row
 

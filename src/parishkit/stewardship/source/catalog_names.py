@@ -79,8 +79,8 @@ def clean_ministry_name(duid, name):
 def fund_display_name(duid, name):
     """A safe fund display name, "Fund <DUID>" when blank or missing.
 
-    Fund names appear only on Admin catalog pages (campaign settings and
-    first-campaign setup), so a repair there is not separately logged.
+    Fund names appear only on Admin catalog pages (Campaign settings and
+    Create the campaign), so a repair there is not separately logged.
     """
     return clean_source_name(name, f"Fund {duid}")[0]
 
