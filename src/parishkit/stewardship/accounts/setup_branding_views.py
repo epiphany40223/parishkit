@@ -3,12 +3,13 @@
 from io import BytesIO
 from uuid import UUID
 
+from django import forms
 from django.http import FileResponse
 from django.shortcuts import render
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods, require_safe
 
-from parishkit.stewardship.web.content import prepare_graphics
+from parishkit.stewardship.web.content import MAX_IMAGE_BYTES, prepare_graphics
 from parishkit.stewardship.web.contracts import expected_version, filters
 from parishkit.stewardship.web.refusals import stale_page, unexpected_fields
 
@@ -16,8 +17,16 @@ from . import setup_help
 from .authentication import runtime
 from .branding_files import read_variant
 from .branding_models import BrandingAsset
+from .branding_slots import file_size
 from .branding_staging import file_receipt, stage_branding, staged_bundle
-from .branding_views import ERRORS, LogoForm, _error, media_root
+from .branding_views import (
+    ERRORS,
+    LOGO_TOO_LARGE,
+    SIZE_FIELD_TEMPLATE,
+    LogoForm,
+    _error,
+    media_root,
+)
 from .setup_drafts import save_section, view_draft
 from .setup_policy import SetupState
 from .setup_views import _checked, _context, page_error
@@ -30,15 +39,35 @@ class SetupLogoForm(LogoForm):
     base_digest = None
 
     def __init__(self, *args, saved=False, **kwargs):
-        """Explain the logo; once one is saved, choosing no file keeps it."""
+        """Explain the logo; once one is saved, choosing no file keeps it.
+
+        As on Parish logos (#1062), the page refuses a file over the limit
+        as soon as it is chosen, in the server's words, in the field's
+        reserved error line (file-size-field.html), and Save and continue
+        waits for a file that fits (#1332 item 29).
+        """
         super().__init__(*args, **kwargs)
-        self.fields["logo"].required = not saved
+        logo = self.fields["logo"]
+        logo.required = not saved
+        logo.template_name = SIZE_FIELD_TEMPLATE
+        logo.widget.attrs.update(
+            {
+                "data-max-bytes": MAX_IMAGE_BYTES,
+                "data-max-bytes-message": LOGO_TOO_LARGE,
+            }
+        )
         setup_help.apply(self, setup_help.LOGO, replace=True)
 
     def clean_logo(self):
-        """An empty optional upload keeps the saved logo; others are checked."""
-        if self.cleaned_data.get("logo") is None:
+        """An empty optional upload keeps the saved logo; others are checked.
+        A file over the limit is refused in the words the page uses for it."""
+        value = self.cleaned_data.get("logo")
+        if value is None:
             return None
+        if value.size > MAX_IMAGE_BYTES:
+            raise forms.ValidationError(
+                str(LOGO_TOO_LARGE).replace("{size}", file_size(value.size))
+            )
         return super().clean_logo()
 
 

@@ -304,3 +304,44 @@ def test_setup_mail_step_waits_for_every_address(page, component_origin):
     waits_with(save, hint, MAIL_HINT)
     page.get_by_label("Reply-to address").fill("office@example.org")
     ready(save, hint)
+
+
+LOGO_HINT = "Choose the parish logo image to save."
+LOGO_LIMIT = 5 * 1024 * 1024
+
+
+def logo_file(size):
+    """A file for the logo field, ``size`` bytes long (the fixture server
+    never reads it; the page checks only its size)."""
+    return {"name": "logo.png", "mimeType": "image/png", "buffer": b"\0" * size}
+
+
+def test_setup_logo_is_refused_at_its_field_when_too_large(page, component_origin):
+    """Setup › Parish logos refuses a file over 5 MB at its field as soon as
+    it is chosen, in the server's words, and Save waits for a file that fits
+    (#1332 item 29). The error line keeps its height, so a message coming
+    or going moves nothing; only the shared error border marks the field."""
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.goto(component_origin + "/setup-branding")
+    save = page.get_by_role("button", name="Save and continue")
+    hint = page.locator("#setup-complete-hint")
+    field = page.locator("#id_logo")
+    error = page.locator("#id_logo_error")
+    line = page.locator("#id_logo_error").locator("xpath=..")
+    height = line.evaluate("node => node.getBoundingClientRect().height")
+    waits_with(save, hint, LOGO_HINT)
+    field.set_input_files(logo_file(LOGO_LIMIT + 1))
+    visible(error)
+    assert error.inner_text().startswith("Parish logo: the file is ")
+    assert error.inner_text().endswith("the limit is 5 MB.")
+    assert field.get_attribute("aria-invalid") == "true"
+    assert save.is_disabled()
+    assert hint.text_content() == error.inner_text()
+    assert line.evaluate("node => node.getBoundingClientRect().height") == height
+    field.set_input_files(logo_file(1024))
+    ready(save, hint)
+    hidden(error)
+    assert field.get_attribute("aria-invalid") != "true"
+    assert line.evaluate("node => node.getBoundingClientRect().height") == height
+    assert not failures

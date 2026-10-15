@@ -1,10 +1,13 @@
 """Actual wizard logo upload, original-login private PNGs and terminal scrubbing."""
 
+import re
+
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from parishkit.stewardship.accounts.branding_models import BrandingAsset, BrandingBundle
 from parishkit.stewardship.accounts.setup_models import SetupAttempt, SetupDraftSection
+from parishkit.stewardship.web.content import MAX_IMAGE_BYTES
 
 from .auth_builders import signed_in
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
@@ -78,5 +81,29 @@ def test_setup_logo_rejects_invalid_stale_and_extra_inputs_before_selection(requ
             ),
         ):
             assert post(browser, "/admin/setup/branding", values).status_code == status
+        assert not BrandingBundle.objects.exists()
+        assert not SetupDraftSection.objects.exists()
+
+
+def test_setup_logo_over_the_limit_is_refused_at_its_field(request):
+    """A hand-built upload over 5 MB, which the page would never send, is
+    still refused (400), at the logo field, in the words the page uses for
+    it, and stages nothing (#1332 item 29)."""
+    request.getfixturevalue("setup_http")
+    request.getfixturevalue("google")
+    request.getfixturevalue("media")
+    with web_login():
+        browser = started()
+        large = SimpleUploadedFile(
+            "large.png", b"\0" * (MAX_IMAGE_BYTES + 1), content_type="image/png"
+        )
+        result = post(browser, "/admin/setup/branding", {"version": "1", "logo": large})
+        assert result.status_code == 400
+        html = result.content.decode()
+        (line,) = re.findall(
+            r'<ul class="errorlist" id="id_logo_error">(.*?)</ul>', html
+        )
+        assert "Parish logo: the file is " in line
+        assert "the limit is 5 MB." in line
         assert not BrandingBundle.objects.exists()
         assert not SetupDraftSection.objects.exists()
