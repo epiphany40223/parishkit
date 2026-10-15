@@ -24,11 +24,11 @@ FROZEN_SQL = (
 
 class Migration(migrations.Migration):
     dependencies = [
-        # The migration that installed the previous frozen file (0096), so
-        # the files apply in prefix order. Files 0097-0100 are held by an
-        # open stack (#1293 -> #1326); once it merges, this must depend on
-        # the migration installing 0100 instead.
         ("stewardship_responses", "0006_proposal_review"),
+        # The migration that installed the previous frozen file (0100, the
+        # Additional information status counts), so the files apply in
+        # prefix order.
+        ("stewardship_reports", "0028_information_status_counts"),
     ]
 
     operations = [migrations.RunSQL(FROZEN_SQL.read_text(encoding="utf-8"))]
