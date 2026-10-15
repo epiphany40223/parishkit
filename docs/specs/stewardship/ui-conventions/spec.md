@@ -47,6 +47,7 @@ when it lands.
 - Admin interaction: [JavaScript requirement](#javascript-requirement),
   [in-place controls](#in-place-controls),
   [no layout shift](#no-layout-shift),
+  [disclosures](#disclosures),
   [prerequisite gates](#prerequisite-gates),
   [field errors and live checks](#field-errors-and-live-checks),
   [Review, Apply and Change status](#review-apply-and-change-status),
@@ -750,6 +751,47 @@ attempt history sits above the resolution forms, so paging it with the
 upper pager can change its height and move the forms and the evidence list
 below it. The Administrator accepted this so the page reads in the order
 asked for.
+
+### Disclosures
+
+**Rule.** Two rules for Admin disclosures (Administrator, pk-local batch
+24c, on [#1214](https://github.com/epiphany40223/parishkit/issues/1214)).
+
+- **A fragment opens only its target.** An address whose fragment names a
+  disclosure, or the card that holds one, opens exactly that disclosure
+  when the page loads, and every other disclosure in its group starts
+  closed, whatever its default (a troubled tile that would start open
+  included). The page then brings the target into view, since closing
+  what was above it moves it. Without a fragment, or with one that names
+  no disclosure (an [in-place control](#in-place-controls)'s region, for
+  example), every disclosure keeps its default. After the load, a link on
+  the page to a disclosure, or a changed fragment, opens that disclosure
+  and closes nothing: the reader's own choices stand, and nothing moves
+  under the pointer.
+- **A click anywhere on a disclosure card toggles it.** Where a disclosure
+  is drawn as a card (a summary row with its details beside or below it),
+  the whole summary row is the toggle, and a click on the open details'
+  blank space or plain text closes it too. A click on or inside a link,
+  button, form field, label, `summary`, dialog, toggletip or other
+  focusable element does that element's own job and never toggles. A
+  click that makes a text selection, clears one, or is part of a double
+  or triple click does not toggle either: a details click waits out the
+  second click before it closes. Closing from the details moves focus to
+  the toggle, so focus is never left in hidden content.
+- **Accessibility is unchanged.** The toggle stays one real `button`
+  (with `aria-expanded` and `aria-controls`) or `summary`, the card's only
+  tab stop and the only control a screen reader announces; Enter and
+  Space work as before. The details get no extra role or tab stop: the
+  details click is a pointer convenience. The details keep the text
+  cursor, so selection still looks possible.
+
+**Why.** A link to one area should show that area, not every area that
+starts open; and a card that looks like one thing should answer a click
+anywhere on it, not only on its "Show details" cue. **Shared code.**
+`system-health-v1.js`; a page that adds fragment-opened disclosures or
+disclosure cards follows the same rules. Opening and closing still moves
+only content after the toggle ([no layout shift](#no-layout-shift)).
+**Precedent.** The [System health tiles](../admin-portal/spec.md#opening-and-closing-tiles).
 
 ### Prerequisite gates
 

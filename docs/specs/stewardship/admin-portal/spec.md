@@ -5748,13 +5748,20 @@ cannot disagree.
 #### Opening and closing tiles
 
 - **On page load:** Working tiles are closed. Warning and Error tiles are
-  open. A link to a tile's anchor (for example
+  open. An address whose anchor names a tile (for example
   `/admin/system/health/#health-backups`, which Home's lines use) opens
-  that tile too. The browser stores nothing, so every load applies this
-  rule again ([decision 9](#administrator-decisions-2026-10-13)).
+  only that tile and leaves every other closed, whatever its state, as
+  [a fragment opens only its target](../ui-conventions/spec.md#disclosures)
+  requires (Administrator, pk-local batch 24c). The browser stores
+  nothing, so every load applies this rule again
+  ([decision 9](#administrator-decisions-2026-10-13)).
 - **The Administrator decides after that.** Opening and closing is the
   summary row's disclosure button, by pointer or keyboard (Enter or
-  Space). A poll never opens or closes a
+  Space). The whole summary row is that button, and a click on an open
+  tile's band, outside its controls and not selecting text, closes it too
+  ([whole-card clicks](../ui-conventions/spec.md#disclosures)). A link on
+  the page to a tile, or a changed anchor, opens that tile and closes
+  nothing. A poll never opens or closes a
   tile: a tile whose state changes keeps its open or closed state, and only
   its icon, state word and summary change, in place and at the same height.
   A tile that turns Working while open stays open.
