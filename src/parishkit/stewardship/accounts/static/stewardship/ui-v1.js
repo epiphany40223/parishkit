@@ -3610,7 +3610,15 @@
   // The server checks every chosen row itself.
   const CONFIRM_POLL_MS = 1000;
   const CONFIRM_WAIT_MS = 30000;
+  // A refusal with no explanation of its own, by status. A bare 400 means
+  // the page sent something the server did not expect (most often a page
+  // left open while it changed), never an outage: retrying cannot help, a
+  // reload can (#1400, #1401). A 404 or 410 means the item is gone; only an
+  // outage (5xx, or no status here) keeps "try again in a moment".
   const CONFIRM_REFUSED = {
+    400: "This was not done: the page sent something the server did not expect. Reload the page, then try again.",
+    404: "This was not done: it no longer exists. Reload the page.",
+    410: "This was not done: it no longer exists. Reload the page.",
     403: "This was not done: you are not allowed to do this now, or your sign-in has ended. Reload the page.",
     409: "This was not done: the page is out of date. Reload the page, then try again.",
   };
