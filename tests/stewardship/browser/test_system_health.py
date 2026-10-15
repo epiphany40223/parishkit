@@ -307,7 +307,9 @@ def test_take_a_backup_now_previews_and_confirms_in_place(
     )
     page.goto(component_origin + BACKUP_PAGE)
     kept = _not_reloaded(page)
-    page.locator("#backup-now").get_by_role("button", name="Take a backup now…").click()
+    page.locator("#backup-now").get_by_role(
+        "button", name="Take a backup now", exact=True
+    ).click()
     confirm = page.get_by_role("button", name="Confirm: take a backup now")
     expect(confirm).to_be_visible()
     expect(confirm).to_be_focused()
@@ -332,7 +334,9 @@ def test_refusals_answer_inside_the_region(page, component_origin):
     _routed(page, component_origin, {"preview": (403, BACKUP_STEP_UP)})
     page.goto(component_origin + BACKUP_PAGE)
     kept = _not_reloaded(page)
-    page.locator("#backup-now").get_by_role("button", name="Take a backup now…").click()
+    page.locator("#backup-now").get_by_role(
+        "button", name="Take a backup now", exact=True
+    ).click()
     region = page.locator("#backup-now")
     expect(region.get_by_role("button", name="Confirm with Google")).to_be_visible()
     assert kept()
@@ -341,7 +345,9 @@ def test_refusals_answer_inside_the_region(page, component_origin):
     _routed(page, component_origin, {"preview": (409, BACKUP_BUSY)})
     page.goto(component_origin + BACKUP_PAGE)
     kept = _not_reloaded(page)
-    page.locator("#backup-now").get_by_role("button", name="Take a backup now…").click()
+    page.locator("#backup-now").get_by_role(
+        "button", name="Take a backup now", exact=True
+    ).click()
     expect(region.get_by_text("A backup is already requested")).to_be_visible()
     assert kept()
 
@@ -350,10 +356,12 @@ def test_the_button_follows_a_request_made_elsewhere(page, component_origin):
     """The poll greys the button when another request starts waiting."""
     page.goto(component_origin + BACKUP_PAGE)
     region = page.locator("#backup-now")
-    expect(region.get_by_role("button", name="Take a backup now…")).to_be_enabled()
-    expect(region.get_by_role("button", name="Take a backup now…")).to_be_disabled(
-        timeout=30000
-    )
+    expect(
+        region.get_by_role("button", name="Take a backup now", exact=True)
+    ).to_be_enabled()
+    expect(
+        region.get_by_role("button", name="Take a backup now", exact=True)
+    ).to_be_disabled(timeout=30000)
     visible(region.get_by_text("and is waiting."))
 
 
@@ -385,7 +393,7 @@ def test_the_button_catches_up_once_the_reader_leaves_it(page, component_origin)
     """
     page.goto(component_origin + BACKUP_PAGE)
     region = page.locator("#backup-now")
-    button = region.get_by_role("button", name="Take a backup now…")
+    button = region.get_by_role("button", name="Take a backup now", exact=True)
     button.focus()
     # The first poll brings the waiting request; the focused button is left.
     eventually(
@@ -419,14 +427,14 @@ def test_turn_off_debug_logging_previews_and_confirms_in_place(
     page.goto(component_origin + BACKUP_PAGE)
     kept = _not_reloaded(page)
     region = page.locator("#debug-off")
-    heading = region.get_by_role("heading", name="Turn off debug logging")
+    heading = region.get_by_role("heading", name="Turn off debug logging", exact=True)
 
     def place():
         """The heading's place in the document, wherever the page is scrolled."""
         return heading.evaluate("e => e.getBoundingClientRect().top + window.scrollY")
 
     top = place()
-    region.get_by_role("button", name="Turn off debug logging…").click()
+    region.get_by_role("button", name="Turn off debug logging", exact=True).click()
     confirm = page.get_by_role("button", name="Confirm: turn off debug logging")
     expect(confirm).to_be_visible()
     expect(confirm).to_be_focused()
@@ -469,7 +477,7 @@ def test_a_stale_sign_in_offers_the_step_up_in_the_debug_region(page, component_
     page.goto(component_origin + BACKUP_PAGE)
     kept = _not_reloaded(page)
     region = page.locator("#debug-off")
-    region.get_by_role("button", name="Turn off debug logging…").click()
+    region.get_by_role("button", name="Turn off debug logging", exact=True).click()
     expect(region.get_by_role("button", name="Confirm with Google")).to_be_visible()
     visible(region.get_by_text("For your security"))
     assert kept()
@@ -480,7 +488,7 @@ def test_the_debug_button_follows_a_switch_set_elsewhere(page, component_origin)
     """The poll greys the button, naming who set the switch and when."""
     page.goto(component_origin + DEBUG_PAGE)
     region = page.locator("#debug-off")
-    button = region.get_by_role("button", name="Turn off debug logging…")
+    button = region.get_by_role("button", name="Turn off debug logging", exact=True)
     expect(button).to_be_enabled()
     expect(button).to_be_disabled(timeout=30000)
     reason = region.locator("#debug-off-reason")
@@ -527,10 +535,10 @@ def test_accept_this_change_once_previews_and_confirms_in_place(
     page.goto(component_origin + BACKUP_PAGE)
     kept = _not_reloaded(page)
     region = page.locator("#accept-change")
-    heading = region.get_by_role("heading", name="Accept this change once")
+    heading = region.get_by_role("heading", name="Accept this change once", exact=True)
     _beside_the_refusal(page)
     places = _places(page, heading)
-    region.get_by_role("button", name="Accept this change once…").click()
+    region.get_by_role("button", name="Accept this change once", exact=True).click()
     confirm = region.get_by_role("button", name="Confirm: accept this change once")
     expect(confirm).to_be_visible()
     visible(region.get_by_text("Families with an email address"))
@@ -629,8 +637,8 @@ def test_an_open_preview_survives_a_poll(page, component_origin):
     )
     page.goto(component_origin + BACKUP_PAGE)
     region = page.locator("#accept-change")
-    heading = region.get_by_role("heading", name="Accept this change once")
-    region.get_by_role("button", name="Accept this change once…").click()
+    heading = region.get_by_role("heading", name="Accept this change once", exact=True)
+    region.get_by_role("button", name="Accept this change once", exact=True).click()
     confirm = region.get_by_role("button", name="Confirm: accept this change once")
     expect(confirm).to_be_visible()
     box = region.get_by_label("I checked this in ParishSoft, and the change is real.")
@@ -675,7 +683,7 @@ def test_an_open_preview_of_an_older_refusal_is_marked_changed(page, component_o
     )
     page.goto(component_origin + BACKUP_PAGE)
     region = page.locator("#accept-change")
-    region.get_by_role("button", name="Accept this change once…").click()
+    region.get_by_role("button", name="Accept this change once", exact=True).click()
     confirm = region.get_by_role("button", name="Confirm: accept this change once")
     expect(confirm).to_be_visible()
     region.get_by_label("I checked this in ParishSoft, and the change is real.").check()
@@ -683,7 +691,7 @@ def test_an_open_preview_of_an_older_refusal_is_marked_changed(page, component_o
     note = region.locator("[data-live-stale-note]")
     expect(note).to_have_text("")
     where = confirm.evaluate("e => e.getBoundingClientRect().top + window.scrollY")
-    heading = region.get_by_role("heading", name="Accept this change once")
+    heading = region.get_by_role("heading", name="Accept this change once", exact=True)
     places = _places(page, heading)
     expect(note).to_have_text(
         "This changed since you looked; review it again.", timeout=30000
@@ -705,7 +713,7 @@ def test_a_refusal_shown_by_a_poll_brings_its_accept_region(page, component_orig
     page.goto(component_origin + ACCEPT_LATE)
     assert page.locator("#accept-change").count() == 0
     button = page.locator("#accept-change").get_by_role(
-        "button", name="Accept this change once…"
+        "button", name="Accept this change once", exact=True
     )
     expect(button).to_be_enabled(timeout=30000)
     _beside_the_refusal(page)
@@ -722,7 +730,7 @@ def test_a_changed_refusal_is_said_in_the_region(page, component_origin):
     page.goto(component_origin + BACKUP_PAGE)
     kept = _not_reloaded(page)
     region = page.locator("#accept-change")
-    region.get_by_role("button", name="Accept this change once…").click()
+    region.get_by_role("button", name="Accept this change once", exact=True).click()
     visible(region.get_by_text("This changed since you looked; review it again."))
     assert kept()
     assert '"errors"' not in page.content()
@@ -734,7 +742,7 @@ def test_the_accept_button_follows_an_acceptance_given_elsewhere(
     """The poll greys the button, naming who accepted, when and until when."""
     page.goto(component_origin + ACCEPT_PAGE)
     region = page.locator("#accept-change")
-    button = region.get_by_role("button", name="Accept this change once…")
+    button = region.get_by_role("button", name="Accept this change once", exact=True)
     expect(button).to_be_enabled()
     expect(button).to_be_disabled(timeout=30000)
     reason = region.locator("#accept-change-reason")

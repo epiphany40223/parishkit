@@ -132,7 +132,9 @@ def test_find_settle_and_preview_release_in_place(page, component_origin):
     # Release is unavailable, with its visible reason, until the held emails
     # are found (prerequisite gates).
     expect(region.get_by_text("52 emails still need a hold")).to_be_visible()
-    expect(region.get_by_role("button", name="Release the site…")).to_be_disabled()
+    expect(
+        region.get_by_role("button", name="Release the site", exact=True)
+    ).to_be_disabled()
     region.get_by_role("button", name="Find emails that may have gone out").click()
     expect(region.get_by_text("Found 52 more emails")).to_be_visible()
     # Mid-hand-off emails are counted, not held: the delivery warning owns them.
@@ -140,7 +142,9 @@ def test_find_settle_and_preview_release_in_place(page, component_origin):
     expect(
         region.get_by_role("rowheader", name="Invitation", exact=False)
     ).to_be_visible()
-    region.get_by_role("button", name="Assume these were sent…").first.click()
+    region.get_by_role(
+        "button", name="Assume these were sent", exact=True
+    ).first.click()
     confirm = region.get_by_role("button", name="Confirm: assume sent")
     expect(confirm).to_be_visible()
     # Only Families that can be emailed are counted; the rest are named apart.
@@ -156,7 +160,7 @@ def test_find_settle_and_preview_release_in_place(page, component_origin):
     expect(confirm).to_be_enabled()
     confirm.click()
     expect(region.get_by_text("12 held emails settled.")).to_be_visible()
-    region.get_by_role("button", name="Release the site…").click()
+    region.get_by_role("button", name="Release the site", exact=True).click()
     release = region.get_by_role("button", name="Confirm: release the site")
     expect(release).to_be_visible()
     expect(
@@ -192,8 +196,8 @@ def test_refusals_answer_inside_the_region(page, component_origin):
     page.goto(component_origin + PAGE)
     kept = _not_reloaded(page)
     region = page.locator(REGION)
-    release = region.get_by_role("button", name="Release the site…")
-    resend = region.get_by_role("button", name="Send these again…").first
+    release = region.get_by_role("button", name="Release the site", exact=True)
+    resend = region.get_by_role("button", name="Send these again", exact=True).first
     before = (_top(release), _top(resend))
     release.click()
     expect(region.get_by_text("confirm it's you with Google first")).to_be_visible()
@@ -218,7 +222,7 @@ def test_a_superseded_resend_is_explained_in_place(page, component_origin):
     page.goto(component_origin + PAGE)
     kept = _not_reloaded(page)
     region = page.locator(REGION)
-    region.get_by_role("button", name="Send these again…").first.click()
+    region.get_by_role("button", name="Send these again", exact=True).first.click()
     region.get_by_label("Why (kept in the System logs)").fill("Not in the log.")
     region.get_by_role("button", name="Confirm: send again").click()
     expect(region.get_by_text("would arrive out of order")).to_be_visible()
@@ -237,10 +241,10 @@ def test_a_send_with_only_inert_holds_says_so(page, component_origin):
 
 
 def test_a_blocked_resend_is_unavailable_with_its_reason(page, component_origin):
-    """ "Send these again…" is greyed out, named by a visible reason."""
+    """ "Send these again" is greyed out, named by a visible reason."""
     page.goto(component_origin + BLOCKED)
     region = page.locator(REGION)
-    buttons = region.get_by_role("button", name="Send these again…")
+    buttons = region.get_by_role("button", name="Send these again", exact=True)
     expect(buttons).to_have_count(2)
     for index in range(2):
         expect(buttons.nth(index)).to_be_disabled()
@@ -250,9 +254,9 @@ def test_a_blocked_resend_is_unavailable_with_its_reason(page, component_origin)
     expect(region.get_by_text("schedule removed")).to_be_visible()
     reason = buttons.first.get_attribute("aria-describedby")
     assert region.locator(f"#{reason}").is_visible()
-    # "Assume these were sent…" stays available.
+    # "Assume these were sent" stays available.
     expect(
-        region.get_by_role("button", name="Assume these were sent…").first
+        region.get_by_role("button", name="Assume these were sent", exact=True).first
     ).to_be_enabled()
 
 
@@ -271,7 +275,9 @@ def _open_preview(page, component_origin, close):
     )
     page.goto(component_origin + PAGE)
     region = page.locator(REGION)
-    region.get_by_role("button", name="Assume these were sent…").first.click()
+    region.get_by_role(
+        "button", name="Assume these were sent", exact=True
+    ).first.click()
     button = region.get_by_role(
         "button", name="Cancel" if close == "cancel" else "Confirm: assume sent"
     )

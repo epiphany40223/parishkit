@@ -40,8 +40,8 @@ from .test_restore_review_postgresql import (
 pytestmark = pytest.mark.django_db(transaction=True)
 
 PAGE = "/admin/maintenance"
-# "Release the site…" drawn unavailable (the {% button %} tag's disabled).
-RELEASE_UNAVAILABLE = re.compile(r"<button[^>]*\bdisabled\b[^>]*>\s*Release the site…")
+# "Release the site" drawn unavailable (the {% button %} tag's disabled).
+RELEASE_UNAVAILABLE = re.compile(r"<button[^>]*\bdisabled\b[^>]*>\s*Release the site")
 
 
 def post(browser, **fields):

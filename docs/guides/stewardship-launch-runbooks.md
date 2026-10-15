@@ -498,7 +498,7 @@ is the emergency path.
    The worker's log line for the refusal, a CRITICAL
    `source_destructive_change`, carries `source_loss` with the first count
    that failed (`docker compose ... logs worker | grep source_loss`).
-2. Check it in ParishSoft. **Accept this change once…** lists, under each
+2. Check it in ParishSoft. **Accept this change once** lists, under each
    Family, Member or contact count that fell too far, up to five example
    Families (name and Family DUID) that the current data has and the
    refused refresh lost or no longer counted: look a few of them up in
