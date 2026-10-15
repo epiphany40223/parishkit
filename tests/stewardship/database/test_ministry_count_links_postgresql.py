@@ -6,9 +6,11 @@ queue's own closed Request and Status values, so the view it opens lists
 exactly the requests counted; only Ministries the reader may follow up get
 links, and a zero count is plain text. A leader of one Ministry gets one
 line, a leader of several and Staff and Administrators a table. The totals
-count what the table's filters select, within the reader's scope.
+count what the table's filters select, within the reader's scope, and never
+a request for a Member no longer in ParishSoft.
 """
 
+import json
 import re
 from uuid import UUID, uuid4
 
@@ -27,7 +29,7 @@ from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_information_followup_postgresql import search
 from .test_ministry_exports_postgresql import leader
-from .test_ministry_followup_postgresql import edit, requests
+from .test_ministry_followup_postgresql import edit, member_gone, requests
 from .test_ministry_reports_postgresql import prepare, setup
 from .test_ministry_responses_postgresql import configure, ministry_source, respond
 from .test_report_workspace_postgresql import read as get
@@ -251,3 +253,42 @@ def test_totals_cover_every_page_and_follow_the_filters(
         response, body = search(browser, PAGE, {"size": "1"})
         assert totals(body.decode()) == (["1", "1"], ["ministry-followup-spec"])
         assert "1 out of 3" in body.decode()
+
+
+def test_members_no_longer_in_parishsoft_stay_out_of_the_totals(
+    response_service, google
+):
+    """Requests for a Member ParishSoft no longer lists as current (#1217)
+    count nowhere on the merged page (#1133): once Member 3 is inactive,
+    Staff's tiles, Follow-up progress chart and By Ministry counts all read
+    zero, though the chart is still drawn, and only the Members no longer
+    in ParishSoft view lists the requests."""
+    harness = setup(response_service)
+    browser, _ = signed_in_as(harness, google, "staff@example.org", ["staff"])
+    join, leave = requests()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        body = page(browser, PAGE)
+        assert totals(body) == (["1", "1"], ["ministry-followup-spec"])
+        assert href(JOIN_9) in by_ministry(body)
+    member_gone(harness, "inactive")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        body = page(browser, PAGE)
+        assert totals(body) == (["0", "0"], ["ministry-followup-spec"])
+        spec = json.loads(
+            re.search(
+                r'<script id="ministry-followup-spec" type="application/json">'
+                r"(.*?)</script>",
+                body,
+                re.S,
+            )[1]
+        )
+        assert [row["count"] for row in spec["data"]["values"]] == [0, 0]
+        assert {row["total"] for row in spec["data"]["values"]} == {0}
+        section = by_ministry(body)
+        assert "<a " not in section
+        # Staff's table: every count cell of both Ministries is zero.
+        cells = re.findall(r'<td class="numeric">([^<]*)</td>', section)
+        assert len(cells) == 6 and set(cells) == {"0"}
+        assert listed(body) == set()
+        _, gone = search(browser, PAGE, {"state": "not_in_parishsoft"})
+        assert listed(gone.decode()) == {join.pk, leave.pk}
