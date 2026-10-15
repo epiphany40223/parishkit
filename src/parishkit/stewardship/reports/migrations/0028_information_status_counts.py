@@ -27,10 +27,10 @@ FROZEN_SQL = (
 
 class Migration(migrations.Migration):
     dependencies = [
-        # The migration that installs the previous frozen file, so the files
-        # apply in prefix order: 0095 (#1286) on this branch. Re-point it at
-        # whichever migration installs 0099 once 0096-0099 land first.
         ("stewardship_reports", "0027_canonical_timezone"),
+        # The migration that installed the previous frozen file (0099, the
+        # WorkGroup rename keep), so the files apply in prefix order.
+        ("stewardship_campaigns", "0012_workgroup_rename_keep"),
     ]
 
     operations = [migrations.RunSQL(FROZEN_SQL.read_text(encoding="utf-8"))]
