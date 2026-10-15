@@ -1,6 +1,7 @@
 """Ministry requests (#1133): the follow-up queue with its totals, By Ministry
 counts and Follow-up packet, across engines and widths."""
 
+import re
 from urllib.parse import quote
 
 import pytest
@@ -10,6 +11,7 @@ from .followup_components import (
     COUNTED,
     GATED_REQUESTS,
     LEADER,
+    NOTHING,
     REQUESTS,
     SEARCHED,
 )
@@ -143,6 +145,52 @@ def test_applied_filters_redraw_the_totals_in_place(page, component_origin):
         "Resolved or closed",
         "51 out of 60 (85%)",
     ]
+    assert_clean(page, errors)
+
+
+def test_an_empty_search_keeps_the_chart_so_a_count_moves_nothing(
+    page, component_origin
+):
+    """A search that matches nothing still draws the chart, its bars at
+    zero, so a By Ministry count clicked next brings no chart back to push
+    By Ministry down under the pointer (no layout shift, #736)."""
+    from playwright.sync_api import expect
+
+    page.set_viewport_size({"width": 1280, "height": 700})
+    errors = watch(page)
+    answer = page.request.get(component_origin + NOTHING).text()
+    page.goto(component_origin + REQUESTS)
+    totals = page.locator("#ministry-totals")
+    expect(totals.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
+    # Only the Apply filters post is answered with the empty search.
+    page.route(
+        "**" + reverse("admin:ministry_report"),
+        lambda route: (
+            route.fulfill(body=answer, content_type="text/html")
+            if route.request.method == "POST"
+            else route.continue_()
+        ),
+    )
+    page.get_by_role("button", name="Apply filters").click()
+    expect(page.locator("#table tbody tr")).to_have_text(
+        [re.compile("No matching requests")]
+    )
+    expect(totals.locator(".stat-value")).to_have_text(["0", "0"])
+    expect(totals.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
+    eventually(page, FITTED)
+    link = page.locator("#by-ministry").get_by_role("link", name=JOINS)
+    # Scroll the count to the window's middle, as a reader would, so the
+    # click itself scrolls nothing.
+    page.mouse.move(640, 350)
+    page.mouse.wheel(0, link.bounding_box()["y"] - 350)
+    eventually(page, "() => window.scrollY > 0")
+    before = link.bounding_box()
+    link.click()
+    expect(totals.locator(".stat-value")).to_have_text(["51", "0"])
+    expect(totals.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
+    eventually(page, FITTED)
+    after = page.locator("#by-ministry").get_by_role("link", name=JOINS)
+    assert abs(after.bounding_box()["y"] - before["y"]) < 2
     assert_clean(page, errors)
 
 

@@ -29,8 +29,8 @@ SUBMITTED = datetime(2054, 10, 5, 14, 30, tzinfo=UTC)
 def ministry_page(rows=(), *, summaries=(), packet_choices=(), totals=None, **extra):
     """Render Ministry requests (#1133) as its queue view does, from detached
     values: the queue's ``rows``, the By Ministry ``summaries`` and the
-    packet's choices. ``totals`` default to none of either request, so no
-    follow-up chart is drawn; ``extra`` overrides any other context value.
+    packet's choices. ``totals`` default to none of either request, so the
+    follow-up chart's bars read zero; ``extra`` overrides any other context value.
     """
     query = FollowupQuery()
     rows = list(rows)

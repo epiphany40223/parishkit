@@ -101,10 +101,12 @@ GONE_QUEUE, GONE_ITEM = "/followup-gone", "/followup-gone-item"
 # "51 join requests" count, and a leader of one Ministry.
 REQUESTS = reverse("admin:ministry_report")
 COUNTED = REQUESTS + "?ministry=9&action=join&state=any"
-LEADER, SORTED, SEARCHED = (
+LEADER, SORTED, SEARCHED, NOTHING = (
     "/ministry-requests-leader",
     "/ministry-requests-sorted",
     "/ministry-requests-searched",
+    # A search that matches no request: every total is zero.
+    "/ministry-requests-nothing",
 )
 GATED_REQUESTS = "/ministry-requests-gated"
 # The fixture server's answers to a Save (status, Location, body).
@@ -408,6 +410,10 @@ def components(context, admin):
     sorted_query = FollowupQuery(sort="ministry")
     joined = dict(joining=51, leaving=0, requests=51, unresolved=40, completed=11)
     searched = dict(joining=0, leaving=9, requests=60, unresolved=9, completed=51)
+    nothing_query = FollowupQuery(search="No such Member")
+    nothing = dict.fromkeys(
+        ("joining", "leaving", "requests", "unresolved", "completed"), 0
+    )
     requests_page = values | dict(
         query=unfiltered,
         export_fields=unfiltered.form_values(),
@@ -436,6 +442,16 @@ def components(context, admin):
         ),
         SEARCHED: requests_page
         | dict(totals=searched, followup_chart=ministry_followup(searched)),
+        NOTHING: requests_page
+        | dict(
+            query=nothing_query,
+            export_fields=nothing_query.form_values(),
+            rows=[],
+            total=0,
+            table=_table([], nothing_query, 0, campaign),
+            totals=nothing,
+            followup_chart=ministry_followup(nothing),
+        ),
         # A leader of one Ministry: one line, no marks or campaign help.
         LEADER: requests_page
         | dict(

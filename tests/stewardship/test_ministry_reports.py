@@ -276,11 +276,12 @@ def test_totals_tiles_and_chart_render_between_the_filters_and_the_table():
     assert html.index('id="by-ministry"') < html.index("data-table-region")
 
 
-def test_totals_without_requests_show_tiles_and_no_chart():
-    """With no request nothing is drawn: the tiles still read zero."""
+def test_totals_without_requests_keep_the_chart():
+    """With no request the tiles read zero and the chart still draws, so
+    its box never comes and goes under By Ministry (no layout shift, #736)."""
     html = render_report([])
     assert 'id="ministry-totals"' in html
-    assert "data-chart=" not in html
+    assert 'data-chart="ministry-followup-spec"' in html
 
 
 def counts(duid, name, joining=0, leaving=0, unresolved=0, links=None):

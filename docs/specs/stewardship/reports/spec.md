@@ -1489,9 +1489,12 @@ From the top, the page shows:
    is an implementation default pending Administrator confirmation on #1133.
    The chart draws its values the way the
    [Participation statistics](#campaign-statistics) chart does, in each
-   bar's axis label, so it has no exact-values table. The page draws no chart
-   when there is no request, nor for the Staff-only "Members no longer in
-   ParishSoft" status choice, which has nothing to record. The totals follow
+   bar's axis label, so it has no exact-values table. The chart is always
+   drawn, so its box never appears or disappears and By Ministry below never
+   moves ([no layout shift](../ui-conventions/spec.md#no-layout-shift)): when
+   there is no request, and for the Staff-only "Members no longer in
+   ParishSoft" status choice, which has nothing to record, its bars read zero
+   out of zero. The totals follow
    every filter change, sort and page change
    [in place](../ui-conventions/spec.md#in-place-controls) (#519).
 4. **By Ministry**, a compact table described below.
