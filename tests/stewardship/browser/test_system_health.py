@@ -20,6 +20,7 @@ from .system_health_components import (
     BACKUP_REQUESTED,
     BACKUP_STEP_UP,
     DATED,
+    DEBUG_LIVE,
     DEBUG_PAGE,
     DEBUG_PREVIEW,
     DEBUG_SET,
@@ -1011,6 +1012,96 @@ def test_turn_off_debug_logging_previews_and_confirms_in_place(
     )
 
 
+def _answered_then_set(page, component_origin, base, answers):
+    """Serve ``base`` at the page's real address and answer its POSTs from
+    ``answers`` (action to component path), as ``_routed`` does; the page's
+    status reads ``base``'s ``/status`` until the confirmation is answered,
+    then ``/status-set``, as the server's would once the switch is set."""
+    from urllib.request import urlopen
+
+    def body(path):
+        """The component at ``path``, as text."""
+        with urlopen(component_origin + path) as response:
+            return response.read().decode()
+
+    bodies = {action: body(path) for action, path in answers.items()}
+    shown, before, after = (body(base + end) for end in ("", "/status", "/status-set"))
+    state = {"set": False}
+
+    def respond(route):
+        """The page for a GET; for a POST, the answer to its action."""
+        data = route.request.post_data or ""
+        if route.request.method != "POST":
+            route.fulfill(status=200, content_type="text/html", body=shown)
+            return
+        action = next(
+            name for name in bodies if re.search(rf"(^|&)action={name}(&|$)", data)
+        )
+        state["set"] = state["set"] or action.endswith("_confirm")
+        route.fulfill(status=200, content_type="text/html", body=bodies[action])
+
+    def status(route):
+        """The status as of now: the switch is set once confirmed."""
+        text = after if state["set"] else before
+        route.fulfill(status=200, content_type="text/html", body=text)
+
+    page.route(f"{component_origin}{BACKUP_PAGE}", respond)
+    page.route(f"{component_origin}{base}/status", status)
+
+
+@pytest.mark.parametrize("mode", ["production", "testing"])
+def test_turning_off_debug_logging_updates_the_tile_and_both_buttons_at_once(
+    page, component_origin, mode
+):
+    """Confirming updates the Debug logging tile's word and summary, the
+    overall line and both buttons without a reload, and without waiting for
+    the next poll (a minute away here): the answer checks the status at once
+    (#1317). Allow debug logging again becomes available in Testing only;
+    in Production it stays greyed, saying why."""
+    base = DEBUG_LIVE + mode
+    _answered_then_set(
+        page,
+        component_origin,
+        base,
+        {"debug_off_preview": DEBUG_PREVIEW, "debug_off_confirm": base + "/set"},
+    )
+    page.goto(component_origin + BACKUP_PAGE)
+    kept = _not_reloaded(page)
+    region = page.locator("#debug-off")
+    word = _word(page, "debug")
+    if mode == "production":
+        expect(word).to_have_text("Warning")
+    region.get_by_role("button", name="Turn off debug logging", exact=True).click()
+    confirm = region.get_by_role("button", name="Confirm: turn off debug logging")
+    expect(confirm).to_be_focused()
+    # The preview's own check found the switch not yet set.
+    if mode == "production":
+        expect(word).to_have_text("Warning")
+    confirm.click()
+    expect(region.locator("[data-debug-off-set]")).to_be_visible()
+    # The pointer stays on the tile grid: the summary row and the buttons
+    # still follow at once.
+    expect(word).to_have_text("Working", timeout=5000)
+    expect(_said(page, "debug")).to_contain_text(
+        "Turned off from this page by other@example.org at"
+    )
+    expect(page.locator(LINE)).to_contain_text("All working")
+    turn_off = region.get_by_role("button", name="Turn off debug logging", exact=True)
+    expect(turn_off).to_be_disabled()
+    expect(region.locator("#debug-off-reason")).to_contain_text(
+        "Debug logging was turned off by other@example.org at"
+    )
+    allow = region.get_by_role("button", name="Allow debug logging again")
+    if mode == "testing":
+        expect(allow).to_be_enabled()
+    else:
+        expect(allow).to_be_disabled()
+        expect(region.locator("#debug-allow-reason")).to_have_text(
+            "In Production only the server operator can clear the debug-off switch."
+        )
+    assert kept()
+
+
 def test_a_stale_sign_in_offers_the_step_up_in_the_debug_region(page, component_origin):
     """The shared "For security" notice and Confirm with Google, in place."""
     _routed(
@@ -1513,7 +1604,9 @@ def test_turn_off_debug_logging_from_its_tile(page, component_origin):
     stamp = said.locator("time")
     expect(stamp).not_to_have_text(stamp.get_attribute("datetime"))
     expect(band).to_be_visible()
-    expect(band.locator("[data-problem]")).to_have_count(0)
+    # The answer's own check came while the pointer was over the grid, so
+    # the problems follow on the first poll after it left (#1317).
+    expect(band.locator("[data-problem]")).to_have_count(0, timeout=30000)
     assert same_place(page.evaluate(TOPS)[: len(row)], row)
     assert "UTC" not in band.inner_text()
     assert kept()

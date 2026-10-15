@@ -1400,11 +1400,24 @@ def _image_migrations():
 # this row into the statement Home already runs, and the page runs it alone.
 # Every column is read whatever the data, so Home's query count never
 # depends on which problems are open. Times travel as JSON and are parsed.
+#
+# A record's ``debug_logging`` is the process's effective state, except that
+# a record written before the debug-off switch now set no longer counts as
+# debug logging in effect: the process applies the switch before its next
+# record (``service_status``), so only a record written after the switch
+# can say whether it did. Without this, the Debug logging tile and Home
+# kept naming every service for up to a minute after Turn off debug logging
+# (an idle web worker until it stopped counting as running), although the
+# switch had been set. A process that cannot apply the switch reports debug
+# logging again in its next record, and is named again.
 HEALTH_SQL = (
     "SELECT (SELECT coalesce(json_agg(json_build_object("
     "'service',service,'process',process,'target',target,"
     "'started_at',started_at,'reported_at',reported_at,"
-    "'application_version',application_version,'debug_logging',debug_logging,"
+    "'application_version',application_version,"
+    "'debug_logging',debug_logging AND NOT EXISTS(SELECT 1 "
+    "FROM public.stewardship_debug_off_switch d "
+    "WHERE d.cleared_at IS NULL AND d.set_at>reported_at),"
     "'sender_state',sender_state,'sender_since',sender_since,"
     "'sender_until',sender_until)),'[]'::json) "
     "FROM public.stewardship_service_status),"

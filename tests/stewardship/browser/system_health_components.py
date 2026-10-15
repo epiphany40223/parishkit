@@ -62,6 +62,12 @@ DEBUG_STEP_UP = "/system-health-debug-step-up"
 # finds the switch set and no service logging in debug form any more.
 DEBUG_TILE = "/system-health-debug-tile"
 DEBUG_TILE_STATUS = "/system-health-debug-tile/status"
+# Turn off debug logging, answered and followed in place (#1317): per mode,
+# a page whose web portal reports debug logging and which polls only once a
+# minute, so only the answer's own check can bring the tile up to date; its
+# status before the switch is set (``/status``) and after (``/status-set``),
+# with no service named any more; and the confirmation's answer (``/set``).
+DEBUG_LIVE = "/system-health-debug-live-"
 # Accept this change once (ADM-13 PR 5b): a page showing only a refused
 # large change, the answers its steps get, and its next poll, in which
 # another Administrator has accepted it. The browser test serves the page at
@@ -368,22 +374,56 @@ def components(context, admin):
             | extra
         )
 
-    mail = {}
+    def page(context):
+        """The whole page rendered from ``context``, as a component."""
+        return "text/html", render_to_string("stewardship/system-health.html", context)
+
+    def status(context):
+        """The polled status fragment rendered from ``context``."""
+        return "text/html", render_to_string(
+            "stewardship/system-health-status.html", context
+        )
+
+    # The Mail tile's pages and the live Turn off debug logging pages.
+    extra = {}
     for state in MAIL_STATES:
-        mail[MAIL + state] = (
+        extra[MAIL + state] = (
             "text/html",
             render_to_string(
                 "stewardship/system-health.html",
                 values(False, mail=state, status_url=f"{MAIL}{state}/status"),
             ),
         )
-        mail[f"{MAIL}{state}/status"] = (
+        extra[f"{MAIL}{state}/status"] = (
             "text/html",
             render_to_string(
                 "stewardship/system-health-status.html", values(False, mail=state)
             ),
         )
-    return mail | {
+    for mode in ("production", "testing"):
+        base = DEBUG_LIVE + mode
+        extra[base] = page(
+            values(
+                False,
+                debug=True,
+                mode=mode,
+                status_url=f"{base}/status",
+                poll_interval=60000,
+            )
+        )
+        extra[f"{base}/status"] = status(values(False, debug=True, mode=mode))
+        extra[f"{base}/status-set"] = status(values(False, switch=True, mode=mode))
+        extra[f"{base}/set"] = page(
+            values(
+                False,
+                switch=True,
+                mode=mode,
+                status_url=f"{base}/status",
+                debug_off={"requested": SimpleNamespace(set_at=now), "created": True},
+                debug_off_shown=True,
+            )
+        )
+    return extra | {
         PAGE: (
             "text/html",
             render_to_string(

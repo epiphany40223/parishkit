@@ -89,6 +89,14 @@
 // out or no longer allowed): the page's line says Not current, and the
 // Admin session's own dialog offers to sign in again.
 //
+// An in-place region marked [data-live-recheck="<name>"] (System health's
+// action regions, #1317) checks that region again at once when ui-v1.js
+// swaps in the answer to a form submitted inside it, as the restart button
+// does: the action's answer replaces only the page's in-place regions, so
+// the tile's summary and buttons elsewhere would otherwise keep their old
+// state until the next poll, up to 10 seconds later. Another region's
+// answer, which redraws this one too, does not check again.
+//
 // A mirror target marked data-live-mirror-hold waits, as a focused one does,
 // while the pointer is over its closest [data-live-hover-hold] ancestor:
 // its copy can change its height, which would move what the reader is
@@ -701,13 +709,23 @@
     else schedule();
     watchers.add(gone);
   };
+  // Check the region named ``name`` again now (see the header).
+  const recheck = (name) => {
+    const region = [...document.querySelectorAll("[data-live-status]")]
+      .find((node) => node.getAttribute("data-live-status") === name);
+    if (region) restarts.get(region)?.();
+  };
+  // The id of the [data-live-recheck] region whose form was last submitted,
+  // until its answer is swapped in.
+  let answering = null;
+  document.addEventListener("submit", (event) => {
+    const owner = event.target instanceof Element && event.target.closest("[data-live-recheck][id]");
+    answering = owner ? owner.id : null;
+  }, true);
   document.addEventListener("click", (event) => {
     // A [data-live-restart="<name>"] button checks that region again now.
     const button = event.target instanceof Element && event.target.closest("[data-live-restart]");
-    if (!button) return;
-    const region = [...document.querySelectorAll("[data-live-status]")]
-      .find((node) => node.getAttribute("data-live-status") === button.getAttribute("data-live-restart"));
-    if (region) restarts.get(region)?.();
+    if (button) recheck(button.getAttribute("data-live-restart"));
   });
   const first = document.querySelector("[data-live-status]");
   if (first) spoken.set(first.getAttribute("data-live-status"), first.getAttribute("data-live-announce") || "");
@@ -717,6 +735,11 @@
     [...watchers].forEach((gone) => gone());
     const fresh = event.target;
     if (!(fresh instanceof Element)) return;
+    // An action region's answer: bring the rest of the page up to date.
+    if (answering && fresh.id === answering && fresh.hasAttribute("data-live-recheck")) {
+      answering = null;
+      recheck(fresh.getAttribute("data-live-recheck"));
+    }
     const region = fresh.matches("[data-live-status]") ? fresh : fresh.querySelector("[data-live-status]");
     if (!region) return;
     // A manual Refresh reads out a changed coarse status, as a poll would.

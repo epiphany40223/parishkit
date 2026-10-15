@@ -5729,7 +5729,11 @@ cannot disagree.
   and a ticked box survive every poll. As today, a target that holds focus
   is skipped, and an unchanged copy is not applied. Action buttons follow
   the poll through their own mirror copies, as pull requests 1206 and 1210
-  already do.
+  already do. An action's answer replaces only its own region, so once it
+  is swapped in, the page checks the status at once instead of at the next
+  poll, and the tile's summary and the action buttons follow the change
+  without a reload
+  ([in-place controls](../ui-conventions/spec.md#in-place-controls)).
 - **No shift under the pointer**
   ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). The
   summary row is the toggle and never moves when its tile opens or closes,
@@ -6868,10 +6872,15 @@ switch stays set until it is cleared.
    helper or sibling process started while the switch is set keeps that
    environment, so it stays off after a clear until its service is
    recreated.
-4. The page shows when every service reports debug logging off. The debug
-   logging banner, which reads only the web process's own state, ends when
-   the web process applies the switch; System health and Home keep naming
-   any other service until it reports debug logging off.
+4. The page follows the switch at once. A service status record written
+   before the switch was set no longer counts as debug logging in effect:
+   the process applies the switch before its next record, so only a later
+   record can say whether it did. System health and Home therefore stop
+   naming the services as soon as the switch is set (the tile turns Working
+   and its summary names who set the switch), and name again any service
+   whose next record still reports debug logging, because it could not
+   apply the switch. The debug logging banner, which reads only the web
+   process's own state, ends when that process applies the switch.
 5. Lines written before a process first reads the switch at startup are not
    covered. The preview says so.
 

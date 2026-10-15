@@ -13,9 +13,12 @@
   Testing only) answers in this region too, its result marked ``allow``:
   ``preview`` is then a system_health.DebugAllowPreview and ``allowed`` the
   switch it cleared. Without a preview, the buttons are shown in a
-  data-live-mirror-target that the polled region keeps current. The server
-  checks every condition again; greying only helps the reader.
-{% endcomment %}<section class="panel" id="debug-off" data-in-place-region aria-labelledby="debug-off-heading">
+  data-live-mirror-target that the polled region keeps current. Once a step's
+  answer is swapped in, the page checks its status at once
+  (data-live-recheck), so the tile's summary and buttons follow the switch
+  without waiting for the next poll. The server checks every condition
+  again; greying only helps the reader.
+{% endcomment %}<section class="panel" id="debug-off" data-in-place-region data-live-recheck="system-health" aria-labelledby="debug-off-heading">
 <h3 id="debug-off-heading">{% translate "Turn off debug logging" %}</h3>
 {% if health.mode == "testing" %}{% translate "In Testing, Allow debug logging again on this page clears the switch. The server operator can also clear it, offline, with the services stopped, using pk-stewardship debug-off-clear. When the services start again, those whose server setting is still on log in debug form again." as clear_tip %}{% else %}{% translate "Only the server operator can clear the switch, offline, with the services stopped, using pk-stewardship debug-off-clear; this page cannot. When the services start again, those whose server setting is still on log in debug form again." as clear_tip %}{% endif %}
 {% if debug_off.allow and debug_off.preview %}{% with preview=debug_off.preview %}<p>{% translate "This clears the debug-off switch set at" %} <time datetime="{{ preview.set_at|instant }}" data-local-instant>{{ preview.set_at|instant }}</time>. {% translate "Testing only." %}</p>

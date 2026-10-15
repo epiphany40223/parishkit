@@ -2331,3 +2331,17 @@ def test_the_debug_regions_answers_point_where_things_are_said():
     assert "The greyed button below says who did it and when." in busy
     assert "Turn off debug logging works here too" in debug_page(mode="testing")
     assert "works here too" not in debug_page(switch=SET, mode="testing")
+
+
+def test_the_debug_region_checks_the_status_again_once_answered():
+    """Its answer replaces only the region, so the page checks the status at
+    once (data-live-recheck) and the tile and both buttons follow (#1317)."""
+    for body in (
+        debug_page(),
+        debug_page(switch=SET, debug_off={"requested": SimpleNamespace(set_at=NOW)}),
+    ):
+        region = body[body.index('id="debug-off"') :]
+        assert region[: region.index(">")].endswith(
+            'data-in-place-region data-live-recheck="system-health" '
+            'aria-labelledby="debug-off-heading"'
+        )
