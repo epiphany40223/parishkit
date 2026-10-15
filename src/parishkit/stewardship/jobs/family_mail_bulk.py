@@ -22,6 +22,12 @@ one-at-a-time path makes, and only changes how they are grouped:
   its one SMTP session, outside any transaction, and records every outcome and
   completes every task before it begins the next batch.
 
+Since BG-12 (#447) both build their next items' content outside the lock
+first (``family_mail_builds`` for preparation, ``family_mail_send_builds``
+for sending), and the lock transaction writes a build only if its
+fingerprint still matches; otherwise the item is built under the lock as
+before.
+
 The rows written are the rows the one-at-a-time path writes, with the same
 owners, so either path can finish or recover what the other started, and
 turning the switch off mid-send is safe.
@@ -302,7 +308,15 @@ def _run_batch(ids, item, *, limit, seconds=None):
     return done, tried, pace
 
 
-def _timing(kind, pace, *, items, tried, work=(), built=(), prebuilt=0, rebuilt=0):
+# A random label for this process, written only into its timing lines so the
+# rehearsal can tell two mail consumers' batches apart (BG-12). It names
+# nothing in the database.
+CONSUMER = uuid4().hex[:8]
+
+
+def _timing(
+    kind, pace, *, items, tried, work=(), built=(), prebuilt=0, rebuilt=0, unbuilt=0
+):
     """Debug-log one lock transaction's timings for the local rehearsal (BG-12).
 
     One line per batch transaction, ``bulk timing: {...}``, with a JSON
@@ -323,13 +337,18 @@ def _timing(kind, pace, *, items, tried, work=(), built=(), prebuilt=0, rebuilt=
       (BG-12), whether used or dropped, so the rehearsal can see what the
       lock no longer holds;
     - ``prebuilt`` and ``rebuilt``: items written from a build made outside
-      the lock, and items whose build was stale (its fingerprint changed)
-      and was redone under the lock (BG-12). An item with no build, such
-      as a Testing item or one whose build was dropped, is neither.
+      the lock, and items whose build was redone under the lock because it
+      no longer matched (its fingerprint or identity changed) (BG-12);
+    - ``unbuilt``: items that had no build, such as a Testing preparation
+      item, one whose build was dropped, or a send beyond the messages
+      built before its batch (reached because another mail consumer had
+      already taken some of those);
+    - ``consumer``: this process's random label (``CONSUMER``), so the
+      rehearsal can count each mail consumer's builds apart.
 
     Observation only: nothing is built unless DEBUG is enabled, any failure
     here is swallowed, so it can never change what a batch does or delay a
-    send, and the line holds no identifiers, addresses or content.
+    send, and the line holds no row identifiers, addresses or content.
     """
     try:
         if not DEBUG.isEnabledFor(logging.DEBUG):
@@ -347,6 +366,8 @@ def _timing(kind, pace, *, items, tried, work=(), built=(), prebuilt=0, rebuilt=
                     "build_ms": [round(value * 1000) for value in built],
                     "prebuilt": prebuilt,
                     "rebuilt": rebuilt,
+                    "unbuilt": unbuilt,
+                    "consumer": CONSUMER,
                 },
                 sort_keys=True,
             ),
@@ -535,6 +556,7 @@ def preparation_bulk(handler, *, general, mac, public, public_origin, settings):
                 built=built,
                 prebuilt=sum(used is True for _, used in done),
                 rebuilt=sum(used is False for _, used in done),
+                unbuilt=sum(used is None for _, used in done),
             )
             return len(done), tried
 
@@ -571,6 +593,80 @@ class _Sending:
     stats: dict | None = None
     held: str | None = None
     retry_seconds: int = HOLD_RETRY_SECONDS
+    # Whether its send build was written (True), redone under the lock
+    # (False) or absent (None), for the commit timing line (BG-12).
+    prebuilt: bool | None = None
+
+
+class _Lookahead:
+    """A send drain's builds made outside the lock (BG-12 PR 3).
+
+    Before each send batch the drain builds the content of every message
+    the batch could commit (``ahead``); the batch's commit half then writes
+    each build whose fingerprint still matches, and builds a stale or
+    dropped one under the lock as before. The batch still tries the same
+    messages in the same order, with the same limits, so only its hold
+    time changes. Builds a batch does not reach (its hold budget ended it
+    first) carry over to the next one and are rechecked there; all are
+    dropped when the drain ends (``clear``). Builds hold an opened code in
+    memory only and are never logged.
+    """
+
+    def __init__(self, build, stop):
+        """Start an empty lookahead for one drain.
+
+        ``build(task_id)`` returns a send build or None; ``stop`` is the
+        drain's stop event, if any.
+        """
+        self.build, self.stop = build, stop
+        # Unused builds by task id, and every task this drain has tried to
+        # build (built or dropped), so a dropped build is not retried
+        # within the drain.
+        self.builds, self.attempted = {}, set()
+        # Each build's time outside the lock before the current batch.
+        self.times = []
+
+    def ahead(self, ids, limit):
+        """Build the first ``limit`` of ``ids`` not yet built or tried.
+
+        ``limit`` is the batch size B, the most the batch can commit. In
+        ``ids`` order, which is the order the batch tries them. Serial, on
+        this process's own connection, outside any transaction; stops early
+        if the drain is asked to stop.
+        """
+        self.times.clear()
+        # A carried build whose message is no longer a candidate (taken by
+        # the other consumer, say) is dropped.
+        for task_id in self.builds.keys() - set(ids):
+            self.builds.pop(task_id)
+        for task_id in ids[:limit]:
+            if self.stop is not None and self.stop.is_set():
+                return
+            if task_id in self.builds or task_id in self.attempted:
+                continue
+            self.attempted.add(task_id)
+            begun = monotonic()
+            build = self.build(task_id)
+            self.times.append(monotonic() - begun)
+            if build is not None:
+                self.builds[task_id] = build
+
+    def take(self, task_id):
+        """The build for ``task_id``, removed from the lookahead, or None."""
+        return self.builds.pop(task_id, None)
+
+    def after(self, tried):
+        """Forget every build a batch tried.
+
+        Used, refused or rolled back: a build is never reused for a message
+        a batch has tried (a refusal leaves it to the one-at-a-time path).
+        """
+        for task_id in tried:
+            self.builds.pop(task_id, None)
+
+    def clear(self):
+        """Drop every build: none outlives its drain."""
+        self.builds.clear()
 
 
 def delivery_bulk(
@@ -605,18 +701,24 @@ def delivery_bulk(
         DAILY_SEND_LIMIT,
         RESERVED_SENDS,
         TASK_TYPE,
-        begin_submission,
         bound_dispatch,
+        commit_submission,
         disposition,
         family_retry_seconds,
         finish_submission,
     )
+    from .family_mail_send_builds import build_submission
     from .outbox_models import OutboxMessage
 
     batch = settings.send_batch
 
-    def begin_item(run_id, position, context, current):
-        """Claim one message's task and commit its "submitting" state."""
+    def begin_item(run_id, position, context, current, lookahead):
+        """Claim one message's task and commit its "submitting" state.
+
+        Its send build, if the lookahead made one, is handed to the commit
+        half, which writes it only if its fingerprint still matches.
+        """
+        prebuilt, used = lookahead.take(run_id), []
         claim, correlation_id = _claim(run_id, current, uuid4(), SEND_LEASE_SECONDS)
         _transition(
             claim,
@@ -641,17 +743,18 @@ def delivery_bulk(
             raise _Skip
         begun = monotonic()
         try:
-            prepared = begin_submission(
+            prepared = commit_submission(
                 message.pk,
                 claim,
                 private=private,
                 public_origin=public_origin,
                 configuration_id=context["configuration_id"],
-                nested=True,
                 provider_seconds=min(
                     MAX_DEADLINE_SECONDS,
                     FIRST_DEADLINE_SECONDS + DEADLINE_STEP_SECONDS * position,
                 ),
+                prebuilt=prebuilt,
+                report=used.append,
             )
         finally:
             context["work"].append(monotonic() - begun)
@@ -662,10 +765,17 @@ def delivery_bulk(
         # Returned, not recorded: the caller keeps it only once this item's
         # savepoint has been released.
         return _Sending(
-            claim, correlation_id, message.pk, mail, deadline, attempt, recipients
+            claim,
+            correlation_id,
+            message.pk,
+            mail,
+            deadline,
+            attempt,
+            recipients,
+            prebuilt=used[0] if used else None,
         )
 
-    def begin(exclude, candidate, current, first):
+    def begin(exclude, candidate, current, first, lookahead):
         """One lock transaction: up to B messages committed as "submitting".
 
         The transaction also stops at the lock-hold budget, so a batch is
@@ -674,12 +784,16 @@ def delivery_bulk(
         hold no fewer lock turns (each is budget-bound anyway), but would
         widen what a crash leaves unknown and let early messages' provider
         deadlines run out before their turn to be sent.
+
+        Each message's content is built first, outside the lock
+        (``lookahead.ahead``).
         """
         ids = _candidates(
             TASK_TYPE, batch * 2, exclude, purposes=BULK_PURPOSES, first=first
         )
         if not ids:
             return None, ()
+        lookahead.ahead(ids, batch)
         context = {
             "sent": circuit.daily_sends(),
             "recipients": 0,
@@ -692,7 +806,7 @@ def delivery_bulk(
 
         def item(run_id, position):
             """Begin one message, counting its recipients only on success."""
-            sending = begin_item(run_id, position, context, current)
+            sending = begin_item(run_id, position, context, current, lookahead)
             context["recipients"] += sending.recipients
             return sending
 
@@ -715,8 +829,17 @@ def delivery_bulk(
             # before commit, paired with this process's monotonic clock.
             context["db_now"], context["mono"] = database_now(), monotonic()
         context["items"] = items
+        lookahead.after(tried)
         _timing(
-            "commit", pace, items=len(items), tried=len(tried), work=context["work"]
+            "commit",
+            pace,
+            items=len(items),
+            tried=len(tried),
+            work=context["work"],
+            built=lookahead.times,
+            prebuilt=sum(item.prebuilt is True for item in items),
+            rebuilt=sum(item.prebuilt is False for item in items),
+            unbuilt=sum(item.prebuilt is None for item in items),
         )
         return context, tried
 
@@ -945,6 +1068,12 @@ def delivery_bulk(
             raise RuntimeError("Bulk sending must own its transactions.")
         current = owner or handler
         first = [run_id]
+        lookahead = _Lookahead(
+            lambda task_id: build_submission(
+                task_id, private=private, public_origin=public_origin
+            ),
+            stop,
+        )
 
         def step(exclude):
             """One send batch: submitting commit, sends, outcome commit."""
@@ -955,7 +1084,7 @@ def delivery_bulk(
             # failing to reap one is fatal, and must not strand sent mail.
             session.reap()
             context, tried = begin(
-                exclude, candidate, current, first.pop() if first else None
+                exclude, candidate, current, first.pop() if first else None, lookahead
             )
             if context is None:
                 return 0, ()
@@ -978,6 +1107,9 @@ def delivery_bulk(
                 return 0
             return _drain(step, stop, pulse)
         finally:
+            # Builds hold opened codes in memory only; none outlives its
+            # drain.
+            lookahead.clear()
             release()
 
     return run

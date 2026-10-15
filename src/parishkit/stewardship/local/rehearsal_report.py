@@ -209,8 +209,31 @@ def hold_summary(bulk):
             ),
             "prebuilt": sum(row.get("prebuilt", 0) for row in rows),
             "rebuilt": sum(row.get("rebuilt", 0) for row in rows),
+            "unbuilt": sum(row.get("unbuilt", 0) for row in rows),
+            "consumers": _consumers(rows),
         }
     return summary
+
+
+def _consumers(rows):
+    """Per process label: items, prebuilt, rebuilt and unbuilt (BG-12).
+
+    With two mail consumers both building the head of the queue, the
+    rehearsal compares their counts to see how often one consumer's builds
+    were taken first by the other's batch (its sends then go unbuilt).
+    Lines written before the label existed are left out.
+    """
+    counts = {}
+    for row in rows:
+        label = row.get("consumer")
+        if not isinstance(label, str):
+            continue
+        entry = counts.setdefault(
+            label, {"items": 0, "prebuilt": 0, "rebuilt": 0, "unbuilt": 0}
+        )
+        for name in entry:
+            entry[name] += row.get(name, 0)
+    return dict(sorted(counts.items()))
 
 
 def _instant(value):
@@ -434,7 +457,16 @@ def render(summary):
         lines += [
             f"  {kind}: {values['batches']} batches, {values['items']} items "
             f"({values['items_per_batch']}/batch, {values['tried']} tried), "
-            f"prebuilt {values['prebuilt']}, rebuilt {values['rebuilt']}",
+            f"prebuilt {values['prebuilt']}, rebuilt {values['rebuilt']}, "
+            f"unbuilt {values['unbuilt']}",
+        ]
+        lines += [
+            f"    consumer {label}: {entry['items']} items, prebuilt "
+            f"{entry['prebuilt']}, rebuilt {entry['rebuilt']}, "
+            f"unbuilt {entry['unbuilt']}"
+            for label, entry in values["consumers"].items()
+        ]
+        lines += [
             f"    hold    {_p(values['hold_ms'])}",
             f"    item    {_p(values['item_ms'])}",
             f"    work    {_p(values['work_ms'])}",
