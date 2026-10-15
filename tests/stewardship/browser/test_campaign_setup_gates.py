@@ -264,3 +264,43 @@ def test_slack_channel_shows_and_is_required_only_while_enabled(page, component_
     visible(channel)
     waits_with(save, hint, SLACK_HINT)
     assert not failures
+
+
+TESTING_HINT = "Enter a valid Testing email address to save."
+MAIL_HINT = "Enter a valid mailbox, From address and Reply-to address to save."
+
+
+def test_setup_testing_step_waits_for_a_valid_address(page, component_origin):
+    """Setup › Testing's Save waits for a valid address, with its hint after
+    the action row, so the line coming or going never moves Save (#1332
+    item 27). A history restore is worked out again."""
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.goto(component_origin + "/setup-testing")
+    save = page.get_by_role("button", name="Save and continue")
+    hint = page.locator("#setup-complete-hint")
+    address = page.get_by_label("Testing email address")
+    waits_with(save, hint, TESTING_HINT)
+    place = spot(save)
+    address.fill("not an address")
+    waits_with(save, hint, TESTING_HINT)
+    address.fill("testing@example.org")
+    ready(save, hint)
+    assert spot(save) == place
+    restore(address, "field => { field.value = ''; }")
+    waits_with(save, hint, TESTING_HINT)
+    assert not failures
+
+
+def test_setup_mail_step_waits_for_every_address(page, component_origin):
+    """Setup › Outgoing email's Save waits for all three addresses (#1332
+    item 27); the optional From name does not hold it."""
+    page.goto(component_origin + "/setup-mail")
+    save = page.get_by_role("button", name="Save and continue")
+    hint = page.locator("#setup-complete-hint")
+    waits_with(save, hint, MAIL_HINT)
+    page.get_by_label("Delegated mailbox").fill("stewardship@example.org")
+    page.get_by_label("From address").fill("stewardship@example.org")
+    waits_with(save, hint, MAIL_HINT)
+    page.get_by_label("Reply-to address").fill("office@example.org")
+    ready(save, hint)

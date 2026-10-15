@@ -143,7 +143,11 @@ steps keep their status but are not links. The stepper is presentation only;
 each page still enforces its own prerequisites. Each page has one identical
 row of Back (secondary) and Save-and-continue (primary) controls (Save and
 continue validates, saves and opens the next applicable page, or redisplays
-the page with its errors), a short introduction, and plain-language help for
+the page with its errors; on the Parish, Administrative access,
+Outgoing email, Slack and Testing pages it is unavailable until every shown
+required field is valid, with a short hint after the row saying what is
+missing, as [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)
+describe), a short introduction, and plain-language help for
 every field. Revisiting a page shows its saved values; a credential page never
 shows the secret but says that one is saved (with its public scope, such as
 the ParishSoft organization), lets it be kept by leaving the key empty
