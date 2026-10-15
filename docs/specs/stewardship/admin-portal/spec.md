@@ -6477,7 +6477,16 @@ checks.
   can change (a halt, a refusal), the confirmation carries the signed
   preview binding that other Admin previews use, and the server refuses it
   when that state has changed ("This changed since you looked; review it
-  again"). A repeated click returns the first result.
+  again"). A repeated click returns the first result. **Take a backup
+  now** confirms in the shared
+  [review dialog](../ui-conventions/spec.md#review-dialog) as a
+  confirmation (#1356): its preview would only repeat what the page shows
+  (the last backup in the Backups details, the request's rules in "About
+  this page"), so the dialog says in one sentence what Apply does and adds
+  only what the server worked out. Its refusals, the step-up included, show
+  in the dialog, and Apply's answer redraws the action's region, its button
+  greyed with the reason. The server's checks, the preview's key and the
+  audit are unchanged.
 - **Unavailable buttons are greyed, never hidden.** A button that cannot be
   used right now stays in place, unavailable, with its reason shown and
   announced the same way as an unavailable menu entry's (see
@@ -6586,10 +6595,14 @@ the backup login. Instead:
    `created_at`), so a restored request is never run and the page shows it
    as cancelled by a restore, not as not picked up.
 
-**Preview.** When the last backup finished, whether off-site copies are on,
-and the last backup's size; that the new backup follows the usual retention
-rules and adds to disk use until they remove it; and, during a bulk send,
-that the backup will wait until the send finishes.
+**Preview.** A confirmation in the review dialog (#1356), "Take a backup
+now?": one sentence says the server takes one backup soon, of the same kind
+as the scheduled ones, and whether it is copied off-site or stays on the
+server; during a bulk send, it adds that the backup will wait until the send
+finishes, with the send's progress link. When the last backup finished and
+its size are in the Backups details behind the dialog, and that a requested
+backup follows the usual retention rules and adds to disk use until they
+remove it is in "About this page".
 
 **Unavailable when** (greyed, with the reason): a request is already waiting
 or running ("A backup was requested at 10:42 AM and is running; it started

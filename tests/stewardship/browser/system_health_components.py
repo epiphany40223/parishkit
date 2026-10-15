@@ -39,16 +39,21 @@ STATUS = "/system-health/status"
 STEADY = "/system-health-steady"
 STEADY_STATUS = "/system-health-steady/status"
 # Take a backup now (ADM-13 PR 3b): the page, and the answers its preview and
-# confirmation POSTs get (the browser test routes the POSTs to them).
-# The page is served at its real address, so the answers (at the same
-# address in the real app) are swapped in place rather than shown as a
-# page from elsewhere.
+# confirmation POSTs get (the browser test routes the POSTs to them). The
+# page is served at its real address, where the review dialog posts.
 BACKUP_PAGE = "/admin/system/health/"
 BACKUP_STATUS = "/system-health-backup/status"
 BACKUP_PREVIEW = "/system-health-backup-preview"
 BACKUP_REQUESTED = "/system-health-backup-requested"
 BACKUP_STEP_UP = "/system-health-backup-step-up"
 BACKUP_BUSY = "/system-health-backup-busy"
+# The page with a request held while a Family email send is in progress;
+# its polls (BACKUP_STATUS) bring the same state.
+BACKUP_HELD = "/system-health-backup-held"
+# Take a backup now's steps answer the review dialog with this fragment
+# (#1356): the preview's confirmation, the region drawn again once the
+# request is made, or a refusal.
+BACKUP_ANSWER = "stewardship/system-health-backup-review.html"
 # Turn off debug logging (ADM-13 PR 6b): a page whose web portal reports
 # debug logging, and the answers its steps get. The browser test serves the
 # page at the real address (BACKUP_PAGE) by routing, as the POSTs are.
@@ -71,7 +76,7 @@ DEBUG_LIVE = "/system-health-debug-live-"
 # Take a backup now, followed in place (#1317): a page with no request that
 # polls every 2 seconds; its status with no request (``/status``), with the
 # request running (``/status-running``) and finished (``/status-finished``);
-# and the confirmation's answer, the request waiting (``/requested``).
+# and Apply's review-dialog answer, the request waiting (``/requested``).
 BACKUP_LIVE = "/system-health-backup-live"
 # Accept this change once (ADM-13 PR 5b): a page showing only a refused
 # large change, the answers its steps get, and its next poll, in which
@@ -447,13 +452,21 @@ def components(context, admin):
     extra[f"{BACKUP_LIVE}/status"] = status(values(False))
     for state in ("running", "finished"):
         extra[f"{BACKUP_LIVE}/status-{state}"] = status(values(False, request=state))
-    extra[f"{BACKUP_LIVE}/requested"] = page(
-        values(
-            False,
-            request="waiting",
-            status_url=f"{BACKUP_LIVE}/status",
-            backup_now={"requested": SimpleNamespace(created_at=now), "created": True},
-        )
+    # Apply's answer in the review dialog (#1356): the region drawn again.
+    extra[f"{BACKUP_LIVE}/requested"] = (
+        "text/html",
+        render_to_string(
+            BACKUP_ANSWER,
+            values(
+                False,
+                request="waiting",
+                status_url=f"{BACKUP_LIVE}/status",
+                backup_now={
+                    "requested": SimpleNamespace(created_at=now),
+                    "created": True,
+                },
+            ),
+        ),
     )
     return extra | {
         PAGE: (
@@ -514,6 +527,13 @@ def components(context, admin):
             ),
         ),
         # The next poll: another Administrator's request is now waiting.
+        BACKUP_HELD: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(False, status_url=BACKUP_STATUS, waiting=True),
+            ),
+        ),
         BACKUP_STATUS: (
             "text/html",
             render_to_string(
@@ -523,7 +543,7 @@ def components(context, admin):
         BACKUP_STEP_UP: (
             "text/html",
             render_to_string(
-                "stewardship/system-health.html",
+                BACKUP_ANSWER,
                 values(
                     False,
                     status_url=BACKUP_STATUS,
@@ -534,14 +554,14 @@ def components(context, admin):
         BACKUP_BUSY: (
             "text/html",
             render_to_string(
-                "stewardship/system-health.html",
+                BACKUP_ANSWER,
                 values(False, status_url=BACKUP_STATUS, backup_now={"refused": "busy"}),
             ),
         ),
         BACKUP_PREVIEW: (
             "text/html",
             render_to_string(
-                "stewardship/system-health.html",
+                BACKUP_ANSWER,
                 values(
                     False,
                     status_url=BACKUP_STATUS,
@@ -560,7 +580,7 @@ def components(context, admin):
         BACKUP_REQUESTED: (
             "text/html",
             render_to_string(
-                "stewardship/system-health.html",
+                BACKUP_ANSWER,
                 values(
                     False,
                     status_url=BACKUP_STATUS,

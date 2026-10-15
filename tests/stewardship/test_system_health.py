@@ -7,11 +7,13 @@ projection, without a database.
 
 import re
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from parishkit.stewardship.source.data_age import Connection
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
@@ -25,6 +27,7 @@ from parishkit.stewardship.system_health import (
     SOURCE_SUMMARIES,
     TILES,
     AcceptPreview,
+    BackupPreview,
     BackupRequestStatus,
     DebugAllowPreview,
     DebugOffPreview,
@@ -47,6 +50,10 @@ from parishkit.stewardship.system_health import (
 )
 
 NOW = datetime(2026, 10, 6, 15, 0, tzinfo=UTC)
+TEMPLATES = (
+    Path(__file__).parents[2]
+    / "src/parishkit/stewardship/accounts/templates/stewardship"
+)
 
 
 def row(service="web", process="main", *, age=0, started=600, **values):
@@ -1090,6 +1097,79 @@ def test_a_requested_backup_reads_as_the_page_words_it():
         assert f'data-backup-request="{code}"' in body
     body = whole({"health": health()})
     assert "Its size is 3.0" in body and "taken by version 1.4.2" in body
+
+
+def backup_answer(**result):
+    """Take a backup now's review dialog fragment for one step's result."""
+    return render_to_string(
+        "stewardship/system-health-backup-review.html",
+        {"health": health(), "poll_interval": 10000, "backup_now": result},
+    )
+
+
+def test_take_a_backup_now_opens_its_confirmation_in_the_review_dialog():
+    """The button posts the preview step to the page's review dialog (#1356),
+    not in place, and the page draws that dialog, a confirmation redrawn from
+    Apply's answer, with the region's status line after the region."""
+    body = whole({"health": health()})
+    region = section(body, 'id="backup-now"')
+    assert 'data-review-open="backup-review"' in region
+    assert 'value="preview"' in region and "data-in-place=" not in region
+    assert 'action="/admin/system/health/"' in region
+    assert 'id="backup-now-outcome"' in body
+    assert body.index('id="backup-now-outcome"') > body.index('id="backup-now"')
+    page = (TEMPLATES / "system-health.html").read_text()
+    assert 'dialog_id="backup-review"' in page and "review=True" in page
+    assert 'describedby="backup-review-summary"' in page
+    assert 'outcome_id="backup-now-outcome"' in page and "redraw_body=True" in page
+    assert 'translate "Take a backup now?" as backup_title' in page
+    # The request's retention moved to the page's help, out of the preview.
+    assert "follows the usual retention rules" in page
+
+
+def test_the_backup_confirmation_says_only_what_the_page_does_not():
+    """One sentence, off-site or not; the held-send warning only when a send
+    is in progress; the key Apply posts. Never the last backup's time or
+    size, which the Backups details show."""
+    preview = BackupPreview(
+        key="k-9", backup_at=NOW, backup_bytes=1024, offsite=True, held=False
+    )
+    text = backup_answer(preview=preview)
+    assert '<div data-review-answer data-review-done="Backup requested.">' in text
+    assert (
+        '<p id="backup-review-summary">This asks the server to take one backup soon,'
+        " of the same kind as the scheduled ones, and to copy it off-site to"
+        " Google Drive.</p>"
+    ) in text
+    assert 'name="key" value="k-9" data-review-preview' in text
+    assert "The last backup finished" not in text and "1.0" not in text
+    assert "Family email send is in progress" not in text
+    held = backup_answer(
+        preview=BackupPreview(
+            key="k-9", backup_at=None, backup_bytes=None, offsite=False, held=True
+        )
+    )
+    assert "off-site copies are not set up, so it stays on the server only" in held
+    assert "A Family email send is in progress, so the backup will wait" in held
+    assert f'<a href="{reverse("admin:family_email_progress")}">' in held
+
+
+def test_the_backup_request_and_refusals_answer_the_dialog():
+    """Apply's answer draws the region again; each refusal is marked for the
+    dialog to show as drawn, the step-up's Confirm with Google included."""
+    done = backup_answer(requested=SimpleNamespace(created_at=NOW), created=True)
+    assert 'id="backup-now"' in done and "data-review-answer" not in done
+    for refused, words in (
+        ("reauthenticate", "For security, taking a backup now needs a Google"),
+        ("busy", "A backup is already requested"),
+        ("denied", "The server refused this backup request"),
+        ("invalid", "That request could not be read."),
+    ):
+        text = backup_answer(refused=refused)
+        assert text.strip().startswith("<div data-review-refusal>"), refused
+        assert f'data-backup-refused="{refused}"' in text and words in text
+        assert 'id="backup-now"' not in text
+    assert "Confirm with Google" in backup_answer(refused="reauthenticate")
 
 
 def debug_page(
@@ -2406,7 +2486,9 @@ def test_the_debug_panel_repeats_no_sentence():
 def test_a_live_request_is_stated_once_in_the_band():
     """The request's progress is one line, under Take a backup now's button
     (#1317): when it was made and its state (and when it started); the
-    panel does not repeat it, and the confirmation points to the line."""
+    panel does not repeat it, nor does Apply's answer, the region drawn
+    again for the review dialog (#1356), whose status line says only that
+    the backup was requested."""
     made = NOW - timedelta(minutes=12)
     started = NOW - timedelta(minutes=2)
     for status in ("waiting", "held", "running"):
@@ -2432,10 +2514,6 @@ def test_a_live_request_is_stated_once_in_the_band():
             )
         )
         assert confirmed.count(f'datetime="{made.isoformat()}"') == 1, status
-        assert (
-            "Backup requested. The line under the button follows its progress"
-            in confirmed
-        )
         assert details.count("data-backup-request=") == 1, status
         line = confirmed[confirmed.index('id="backup-now-reason"') :]
         assert f'data-backup-request="{status}"' in line[: line.index(">")]

@@ -719,6 +719,9 @@
   // until its answer is swapped in.
   let answering = null;
   document.addEventListener("submit", (event) => {
+    // A review dialog's Apply (#1356) answers the action whose button opened
+    // it, inside the region, so it keeps that region as the one answering.
+    if (event.target instanceof Element && event.target.closest("dialog")) return;
     const owner = event.target instanceof Element && event.target.closest("[data-live-recheck][id]");
     answering = owner ? owner.id : null;
   }, true);

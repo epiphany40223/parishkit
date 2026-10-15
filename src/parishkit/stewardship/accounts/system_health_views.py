@@ -231,7 +231,6 @@ _ACTION_FIELDS = {
     "accept_cancel": {"action"},
     "preview": {"action"},
     "confirm": {"action", "key"},
-    "cancel": {"action"},
     "debug_off_preview": {"action"},
     "debug_off_confirm": {"action", "key"},
     "debug_off_cancel": {"action"},
@@ -254,6 +253,14 @@ _REGIONS = (
     ("debug_off_", "debug_off"),
     ("debug_allow_", "debug_off"),
 )
+# The actions confirmed in the shared review dialog (UX conventions, "A
+# confirmation when Review would only repeat the page", #1356), by their
+# result's context name (and whether it is Allow debug logging again's):
+# each step answers with this fragment, which holds the confirmation, the
+# refusal (data-review-refusal) or the result, never the whole page.
+_DIALOG_ANSWERS = {
+    ("backup_now", False): "stewardship/system-health-backup-review.html",
+}
 
 
 def _step(action, request, service):
@@ -300,7 +307,9 @@ def _step(action, request, service):
             request, service.store, key=UUID(request.POST.get("key", ""))
         )
         return {"requested": row, "created": created}
-    # Cancel only closes the preview; nothing was recorded.
+    # Cancel only closes the preview; nothing was recorded. Only Accept
+    # this change once has a Cancel step: the review dialog's Cancel sends
+    # nothing.
     _principal(request, service.store, activity=True)
     return None
 
@@ -308,11 +317,14 @@ def _step(action, request, service):
 def _act(request):
     """An action's step, posted to the System health page itself.
 
-    The answer is the whole page at its own address, so ui-v1.js swaps the
-    action's region (``#backup-now``, ``#accept-change`` or ``#debug-off``)
-    in place; the step's result goes to the template as ``backup_now``,
-    ``accept`` or ``debug_off`` (where an Allow debug logging again step's
-    result is marked ``allow``). A step
+    Accept this change once's answer is the whole page at its own address,
+    so ui-v1.js swaps its region (``#accept-change``) in place. Take a backup
+    now confirms in the shared review dialog (#1356): each of its steps is
+    answered with its fragment (``_DIALOG_ANSWERS``), the preview's
+    confirmation, the request made, or a refusal the dialog shows as drawn.
+    The step's result goes to the template as ``backup_now``, ``accept`` or
+    ``debug_off`` (where an Allow debug logging again step's result is
+    marked ``allow``). A step
     the server refuses for a reason the reader can act on (a stale sign-in,
     a request already live or a switch already set or already cleared, Allow
     debug logging again in Production, a malformed form) is
@@ -375,11 +387,13 @@ def _act(request):
         if found is None:
             return _error(ErrorCode.UNAVAILABLE, 503)
         health, extra = found
-        # Only the action's region is swapped in, so the answer skips the
+        # Only the action's region is used, so the answer skips the
         # page-load tiles' reads; they show as Working in the discarded rest.
+        # A review dialog's action answers with its fragment instead, whose
+        # result draws the region again.
         response = render(
             request,
-            "stewardship/system-health.html",
+            _DIALOG_ANSWERS.get((region, allow), "stewardship/system-health.html"),
             _context(health, extra, loaded={})
             | {"status_url": _status_url({}), region: result},
             status=status,

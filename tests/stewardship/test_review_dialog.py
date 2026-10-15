@@ -97,13 +97,26 @@ def test_the_row_action_dialog_is_unchanged():
     assert "data-review-dialog" not in text and "data-review-body" not in text
 
 
+# A button partial whose dialog its page includes instead: System health's
+# action buttons (#1356), drawn in the region and in the polled copy alike,
+# while the dialogs sit outside every region on the page.
+DIALOG_PAGES = {
+    "system-health-backup-button.html": "system-health.html",
+}
+
+
 def test_every_review_form_names_a_review_dialog_on_its_page():
     """A form marked data-review-open names a review dialog its template
-    includes, so the script never falls back to a native submission."""
+    (or, for a button partial, its page) includes, so the script never falls
+    back to a native submission."""
     found = 0
     for path in sorted(TEMPLATES.rglob("*.html")):
         source = path.read_text(encoding="utf-8")
-        for name in re.findall(r'<form [^>]*data-review-open="([\w-]+)"', source):
+        if path.name in DIALOG_PAGES:
+            source = (TEMPLATES / DIALOG_PAGES[path.name]).read_text(encoding="utf-8")
+        for name in re.findall(
+            r'<form [^>]*data-review-open="([\w-]+)"', path.read_text(encoding="utf-8")
+        ):
             found += 1
             assert re.search(
                 r'confirm-dialog\.html" with review=True dialog_id="'

@@ -17,6 +17,7 @@ from .system_health_components import (
     ALLOW_PAGE,
     ALLOW_PREVIEW,
     BACKUP_BUSY,
+    BACKUP_HELD,
     BACKUP_LIVE,
     BACKUP_PAGE,
     BACKUP_PREVIEW,
@@ -872,13 +873,25 @@ def _not_reloaded(page):
     return lambda: page.evaluate("document.body.dataset.notReloaded === 'yes'")
 
 
-def test_take_a_backup_now_previews_and_confirms_in_place(
+def _dialog(page, name):
+    """The review dialog named ``name``, once it is open."""
+    dialog = page.get_by_role("dialog", name=name)
+    expect(dialog).to_be_visible()
+    return dialog
+
+
+def test_take_a_backup_now_confirms_in_the_review_dialog(
     page, component_origin, axe_source
 ):
-    """Preview, then confirm, each swapped into the region; focus follows.
+    """The button opens the review dialog as a confirmation (#1356): focus on
+    its question, its one sentence as its description, and only the server's
+    held-send warning beside it. Apply records the request; the dialog
+    closes, the region is redrawn from Apply's answer (its button greyed)
+    and the status line after it says the backup was requested. Nothing
+    reloads, and the page is not read again.
 
     The page and its POST answers share the page's own address, as in the
-    app, so ui-v1.js swaps #backup-now in place.
+    app.
     """
     _routed(
         page,
@@ -887,34 +900,46 @@ def test_take_a_backup_now_previews_and_confirms_in_place(
     )
     page.goto(component_origin + BACKUP_PAGE + "#health-backups")
     kept = _not_reloaded(page)
+    reads = []
+    page.on(
+        "request",
+        lambda request: (
+            reads.append(request.url)
+            if request.method == "GET" and request.url.endswith(BACKUP_PAGE)
+            else None
+        ),
+    )
     page.locator("#backup-now").get_by_role(
         "button", name="Take a backup now", exact=True
     ).click()
-    confirm = page.get_by_role("button", name="Confirm: take a backup now")
-    expect(confirm).to_be_visible()
-    expect(confirm).to_be_focused()
-    visible(page.get_by_text("the backup will wait until the send finishes"))
-    page.evaluate(axe_source)
-    assert (
-        page.evaluate("""async () => (await axe.run(document, {
-        runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']}
-    })).violations.map(({id,impact}) => ({id,impact}))""")
-        == []
-    )
-    confirm.click()
-    # The tile's summary says so too once a poll brings the request.
-    expect(page.locator("#backup-now [data-backup-requested]")).to_be_visible()
+    dialog = _dialog(page, "Take a backup now?")
+    expect(dialog.locator("[data-review-title]")).to_be_focused()
+    assert dialog.get_attribute("aria-describedby") == "backup-review-summary"
+    summary = dialog.locator("#backup-review-summary")
+    expect(summary).to_contain_text("off-site copies are not set up")
+    visible(dialog.get_by_text("the backup will wait until the send finishes"))
+    # Nothing the Backups details already show, and no fixed bullets.
+    assert "The last backup finished" not in dialog.inner_text()
+    assert "retention" not in dialog.inner_text()
+    assert _axe(page, axe_source) == []
+    dialog.get_by_role("button", name="Apply").click()
+    expect(dialog).to_be_hidden()
+    line = page.locator("#backup-now-outcome")
+    expect(line).to_have_text(re.compile(r"^Backup requested\. Applied at "))
+    expect(line).to_be_focused()
+    region = page.locator("#backup-now")
+    expect(
+        region.get_by_role("button", name="Take a backup now", exact=True)
+    ).to_be_disabled()
     assert kept()
-    assert page.evaluate(
-        "document.getElementById('backup-now').contains(document.activeElement)"
-    )
+    assert reads == []
 
 
 def test_a_requested_backups_progress_follows_under_its_button(page, component_origin):
-    """Confirming shows the request waiting under the greyed button, where
-    the confirmation points; the status then shows it running, then
-    finished with the button offered again, in place, while the pointer
-    stays on the tile grid (#1317)."""
+    """Applying the review dialog shows the request waiting under the greyed
+    button; the status then shows it running, then finished with the button
+    offered again, in place, while the pointer stays on the tile grid
+    (#1317, now confirmed in the review dialog, #1356)."""
     from urllib.request import urlopen
 
     def body(path):
@@ -962,14 +987,13 @@ def test_a_requested_backups_progress_follows_under_its_button(page, component_o
     region = page.locator("#backup-now")
     # The progress line keeps its room (reserve-lines-wrap), so the region
     # keeps its height as the line changes (measured below).
-    button = region.get_by_role("button", name="Take a backup now", exact=True)
-    button.click()
-    confirm = region.get_by_role("button", name="Confirm: take a backup now")
-    expect(confirm).to_be_focused()
-    confirm.click()
-    expect(region.locator("[data-backup-requested]")).to_contain_text(
-        "The line under the button follows its progress"
-    )
+    region.get_by_role("button", name="Take a backup now", exact=True).click()
+    dialog = _dialog(page, "Take a backup now?")
+    dialog.get_by_role("button", name="Apply").click()
+    expect(dialog).to_be_hidden()
+    # The status line after the region says so; the line under the button
+    # follows the request.
+    expect(page.locator("#backup-now-outcome")).to_contain_text("Backup requested.")
     line = region.locator("[data-backup-request]")
     # The polled line waits while the pointer is over the grid
     # (data-live-mirror-hold); once the pointer is away it follows.
@@ -992,7 +1016,7 @@ def test_a_requested_backups_progress_follows_under_its_button(page, component_o
     assert kept()
 
 
-def test_refusals_answer_inside_the_region(page, component_origin):
+def test_refusals_show_in_the_dialog(page, component_origin):
     """A stale sign-in offers the step-up, a race says so; never raw JSON."""
     _routed(page, component_origin, {"preview": (403, BACKUP_STEP_UP)})
     page.goto(component_origin + BACKUP_PAGE + "#health-backups")
@@ -1000,10 +1024,21 @@ def test_refusals_answer_inside_the_region(page, component_origin):
     page.locator("#backup-now").get_by_role(
         "button", name="Take a backup now", exact=True
     ).click()
-    region = page.locator("#backup-now")
-    expect(region.get_by_role("button", name="Confirm with Google")).to_be_visible()
+    dialog = _dialog(page, "Take a backup now?")
+    error = dialog.locator("[data-confirm-error]")
+    expect(error.get_by_role("button", name="Confirm with Google")).to_be_visible()
+    expect(error).to_contain_text("For security, taking a backup now")
+    # Only the sentence is the alert, never the Confirm control with it.
+    expect(error.locator('p[role="alert"]')).to_contain_text("For security")
+    assert error.get_attribute("role") is None
+    assert error.locator('[role="alert"] button').count() == 0
+    expect(dialog.get_by_role("button", name="Apply")).to_be_hidden()
+    # The title first, as for any review, so the reader hears what it is.
+    expect(dialog.locator("[data-review-title]")).to_be_focused()
     assert kept()
     assert '"errors"' not in page.content()
+    dialog.get_by_role("button", name="Cancel").click()
+    expect(dialog).to_be_hidden()
     page.unroute(f"{component_origin}{BACKUP_PAGE}")
     _routed(page, component_origin, {"preview": (409, BACKUP_BUSY)})
     page.goto(component_origin + BACKUP_PAGE + "#health-backups")
@@ -1011,7 +1046,8 @@ def test_refusals_answer_inside_the_region(page, component_origin):
     page.locator("#backup-now").get_by_role(
         "button", name="Take a backup now", exact=True
     ).click()
-    expect(region.get_by_text("A backup is already requested")).to_be_visible()
+    dialog = _dialog(page, "Take a backup now?")
+    expect(dialog.get_by_text("A backup is already requested")).to_be_visible()
     assert kept()
 
 
@@ -1821,7 +1857,7 @@ def test_the_held_request_toggletip_survives_an_unchanged_poll(page, component_o
     floats over the band, so no summary row moves, and polls that bring the
     same state leave it open."""
     page.set_viewport_size({"width": 1280, "height": 900})
-    page.goto(component_origin + BACKUP_REQUESTED)
+    page.goto(component_origin + BACKUP_HELD)
     kept = _not_reloaded(page)
     _toggle(page, "backups").click()
     band = _band(page, "backups")

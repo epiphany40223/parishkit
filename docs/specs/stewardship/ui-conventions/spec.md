@@ -1156,6 +1156,9 @@ cancelling go-live, pausing and resuming mail, fixing many emails at once,
 test email sends, a manual ParishSoft refresh, Family portal maintenance) keep
 the flows their own sections describe; whether any of them moves to the
 dialog is decided on [#750](https://github.com/epiphany40223/parishkit/issues/750).
+System health's Take a backup now confirms in the dialog
+([#1356](https://github.com/epiphany40223/parishkit/issues/1356)), since its
+preview would only repeat the page.
 
 Current state, to be converted: Users' New user, Edit user and Import
 Ministry leaders, New and Edit scheduled email,
