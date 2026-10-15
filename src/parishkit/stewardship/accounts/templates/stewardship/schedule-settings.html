@@ -25,7 +25,7 @@ redraw keeps it) then says what was applied and when, and takes focus.
 {% translate "Scheduled emails" as caption %}
 <section id="{{ table.anchor }}" class="panel" data-table-region data-refresh-url="{{ refresh_url }}" aria-labelledby="schedule-table-title">
 <h2 id="schedule-table-title" tabindex="-1">{{ caption }}</h2>
-{% if table.rows %}<form method="post" action="{{ delete_url }}" id="schedule-actions" data-select-table data-row-actions data-missing-hint="{% translate 'Select at least one scheduled email to delete.' %}">{% csrf_token %}<input type="hidden" name="base_digest" value="{{ base_digest }}">
+{% if table.rows %}<form method="post" action="{{ delete_url }}" id="schedule-actions" data-select-table data-row-actions data-missing-hint="{% translate 'Select at least one scheduled email to delete.' %}" data-none-hint="{% translate 'Every scheduled email on this page has already started or run, so none can be deleted.' %}">{% csrf_token %}<input type="hidden" name="base_digest" value="{{ base_digest }}">
 <div class="bulk-bar">{% button type="button" variant="secondary" data-bulk-action data-confirm-open="schedule-delete" %}{% translate "Delete selected" %}{% endbutton %}{% include "stewardship/table-selection.html" %}</div>
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="schedule-table-caption">
 <table class="data-table schedule-table">

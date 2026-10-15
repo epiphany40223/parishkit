@@ -13,8 +13,9 @@ by a request whose save redirects to the next request (``ADVANCE_ITEM`` to
 ``NEXT_ITEM``) and one whose save, the last in the list, redirects to the
 remembered queue view (``LAST_ITEM`` to ``QUEUE_VIEW``). The bulk
 outcome queue (#1131, ``BULK_QUEUE``) has open join and leave requests and a
-closed one; its dialog redraws the table from the remembered view
-``BULK_VIEW``, which shows the join request resolved. The tests answer the
+closed one (``BULK_CLOSED_QUEUE`` lists the closed one alone, #1332); its
+dialog redraws the table from the remembered view ``BULK_VIEW``, which
+shows the join request resolved. The tests answer the
 dialog's POST (``BULK_POST``) themselves, with a route. ``GONE_QUEUE`` is
 Staff's Status choice for Members no longer in ParishSoft (#1217), and
 ``GONE_ITEM`` one of its request pages.
@@ -90,6 +91,8 @@ TICKED = TICK_ITEM + "?ticked=1"
 # The bulk outcome queue (#1131): its address, the remembered view the dialog
 # redraws it from, and where the dialog posts.
 BULK_QUEUE = "/followup-bulk"
+# A queue page whose only request is closed: rows, none selectable (#1332).
+BULK_CLOSED_QUEUE = "/followup-bulk-closed"
 BULK_TOKEN = "cd" * 16
 BULK_VIEW = reverse("admin:ministry_report") + f"?queue={BULK_TOKEN}"
 BULK_POST = reverse("admin:ministry_followup_bulk")
@@ -109,6 +112,8 @@ LEADER, SORTED, SEARCHED, NOTHING = (
     "/ministry-requests-nothing",
 )
 GATED_REQUESTS = "/ministry-requests-gated"
+# A packet limit of one Ministry, so ticking both choices passes it (#1332).
+PACKET_LIMIT = "/ministry-requests-packet-limit"
 # The fixture server's answers to a Save (status, Location, body).
 POSTS = {
     UPDATE: (303, SAVED, ""),
@@ -462,8 +467,13 @@ def components(context, admin):
             not_in_source=None,
         ),
         GATED_REQUESTS: requests_page | dict(mutable=False),
+        PACKET_LIMIT: requests_page | dict(packet_limit=1),
         BULK_QUEUE: bulk_page
         | dict(rows=bulk_rows, table=_table(bulk_rows, unfiltered, 3, campaign)),
+        BULK_CLOSED_QUEUE: bulk_page
+        | dict(
+            rows=bulk_rows[2:], table=_table(bulk_rows[2:], unfiltered, 1, campaign)
+        ),
         BULK_VIEW: bulk_page
         | dict(
             rows=bulk_after,

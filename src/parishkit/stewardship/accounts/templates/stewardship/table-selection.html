@@ -18,6 +18,10 @@
   Administrator decision B2, 2026-10-10; #879). It re-checks all of this on
   pageshow (#563). The server validates the selection.
 
+  Rows can be shown with none selectable (every file in use): their
+  selection cells are empty, and the line then shows the data-select-table
+  element's data-none-hint; without one it stays blank (#1332).
+
   Optional: empty_hint is a reason the line shows instead while the table
   has no rows at all (for example "Nothing to import: ..."); without it the
   line stays blank then, since the table itself says it is empty. hint_id

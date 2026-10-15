@@ -12,6 +12,7 @@ from .followup_components import (
     GATED_REQUESTS,
     LEADER,
     NOTHING,
+    PACKET_LIMIT,
     REQUESTS,
     SEARCHED,
 )
@@ -266,3 +267,44 @@ def test_packet_request_posts_its_selection(page, component_origin):
     visible(page.get_by_text("Queued", exact=True))
     page.goto(component_origin + GATED_REQUESTS)
     assert page.get_by_role("button", name="Queue follow-up packet").is_disabled()
+
+
+def test_packet_waits_while_too_many_ministries_are_ticked(page, component_origin):
+    """Past the packet limit (#1332), Queue waits with the count as its
+    reason, in a reserved line that moves nothing; unticking one, or every
+    one, brings Queue back."""
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.goto(component_origin + PACKET_LIMIT)
+    queue = page.get_by_role("button", name="Queue follow-up packet")
+    hint = page.locator("#ministry-packet-hint")
+    boxes = page.locator("#ministry-packet-choices input[name=ministries]")
+    assert boxes.count() == 2 and queue.is_enabled()
+    assert "ministry-packet-hint" in queue.get_attribute("aria-describedby").split()
+    # Page coordinates: ticking a box scrolls it into view.
+    where = (
+        "e => { const r = e.getBoundingClientRect();"
+        " return [r.left + scrollX, r.top + scrollY]; }"
+    )
+    place = queue.evaluate(where)
+    height = hint.bounding_box()["height"]
+    boxes.nth(0).check()
+    assert queue.is_enabled() and hint.inner_text() == ""
+    boxes.nth(1).check()
+    assert queue.is_disabled()
+    assert hint.inner_text() == (
+        "2 Ministries are ticked, more than 1. Untick some, or untick them all "
+        "to include every Ministry."
+    )
+    assert queue.evaluate(where) == place
+    boxes.nth(0).uncheck()
+    assert queue.is_enabled() and hint.inner_text() == ""
+    assert hint.bounding_box()["height"] == height
+    # Over the limit again, then every box unticked: all Ministries, allowed.
+    boxes.nth(0).check()
+    assert queue.is_disabled()
+    boxes.nth(0).uncheck()
+    boxes.nth(1).uncheck()
+    assert page.locator("#ministry-packet-choices input:checked").count() == 0
+    assert queue.is_enabled() and hint.inner_text() == ""
+    assert not failures
