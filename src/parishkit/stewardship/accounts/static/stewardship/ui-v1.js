@@ -2404,12 +2404,18 @@
     }
     // A page kept in the back/forward cache (persisted) renews again when
     // it is shown; one that goes away for good stops.
-    window.addEventListener("pagehide", (event) => {
+    // Either way the page is marked closed while it is away, so a renewal
+    // aborted by leaving shows no "could not be reached" warning; showing
+    // the page again reopens it.
+    window.addEventListener("pagehide", () => {
       window.clearTimeout(timer);
       if (controller) controller.abort();
-      if (!event.persisted) closed = true;
+      closed = true;
     });
-    window.addEventListener("pageshow", (event) => { if (event.persisted) renew(); });
+    window.addEventListener("pageshow", (event) => {
+      closed = false;
+      if (event.persisted) renew();
+    });
     document.addEventListener("visibilitychange", () => {
       if (document.hidden && controller) controller.abort();
       if (!document.hidden) renew();
