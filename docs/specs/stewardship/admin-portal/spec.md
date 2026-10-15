@@ -2073,10 +2073,9 @@ naming convention, not ParishSoft's, so it is kept and means nothing to the
 application (Administrator decision, 2026-10-10,
 [#971](https://github.com/epiphany40223/parishkit/issues/971)). ParishSoft
 names are stored as loaded and repaired only where they are shown: on the
-Family form, this screen, Campaign settings, Create the campaign and
-(before #142) first-campaign setup. A name the form can already show is used exactly
-as before, only trimmed, so valid labels and Family form
-digests never change because of this rule. An unusable name is repaired:
+Family form, this screen, Campaign settings and Create the campaign. A name
+the form can already show is used exactly as before, only trimmed, so valid
+labels and Family form digests never change because of this rule. An unusable name is repaired:
 whitespace (including tabs, newlines and non-breaking spaces) becomes single
 spaces, and control and other invisible characters are removed. That includes
 zero-width joiners and non-joiners and bidirectional marks, because they can
@@ -2090,8 +2089,7 @@ the process log, once per process for each Ministry and name. The warning
 carries only the Ministry DUID. It does not appear on the System logs page.
 Catalog changes themselves are reported on the Admin home page (see
 [ParishSoft Ministry catalog changes](#parishsoft-ministry-catalog-changes)). Fund names on
-Campaign settings, Create the campaign and (before #142) first-campaign setup
-follow the same cleaning, with
+Campaign settings and Create the campaign follow the same cleaning, with
 "Fund" and its DUID as the fallback, and are not logged.
 
 Historical administrative views retain their recorded inputs; current

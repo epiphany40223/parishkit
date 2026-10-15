@@ -6,14 +6,12 @@ result before freezing an intent. Credential metadata is explicitly typed and
 compared with the settings that were sealed, never treated as a delivery check.
 """
 
-from copy import deepcopy
 from dataclasses import dataclass, field
 from uuid import UUID, uuid5
 
 from parishkit.config import ConfigError
 
 from . import users_schema as users
-from .content_forms import LEGACY_PAGE_REFERENCES, page_slots
 from .policy_schema import validate_manual_operation
 from .provider_context import validated_context, workspace_scope
 from .setup_configuration import (
@@ -22,7 +20,6 @@ from .setup_configuration import (
     build_users_setup_candidate,
     request_schema_for,
 )
-from .setup_content_values import CONTENT_STEPS, without_retired
 from .setup_forms import FORMS, validate_values
 
 
@@ -96,15 +93,13 @@ def compile_candidate(
 ):
     """Produce exact reproducible v7 intent without manufacturing readiness.
 
-    UUIDs for new public records are scoped to the original attempt. System
-    setup (#142) has no campaign section, so the candidate has no campaign,
-    content or schedules: the setup preview passes only the system sections
-    (``setup_preview.SYSTEM_SECTIONS``). The one-campaign branch below is
-    what attempts confirmed before #142 compiled; nothing reaches it any
-    more, and it is removed with the rest of the first-campaign setup code
-    (#142 cleanup). There, selected content/schedule/option IDs retain their
-    draft identities, and the first Campaign uses the attempt UUID already
-    embedded in its temporary children.
+    UUIDs for new public records are scoped to the original attempt. Setup
+    (#142) has no campaign, so the candidate holds the Parish profile,
+    integrations and login rules only, and no campaign, content or
+    schedules. Only the wizard's steps (``FORMS``) are read; the setup
+    preview passes no others (``setup_preview.SYSTEM_SECTIONS``). An attempt
+    confirmed before #142 with a campaign finishes from its frozen
+    candidate and is never compiled again.
     """
     if any(
         not isinstance(value, UUID)
@@ -113,59 +108,6 @@ def compile_candidate(
         raise TypeError("Explicit setup compilation identities are required.")
     if type(sections) is not dict or not set(FORMS) <= sections.keys():
         raise ConfigError("Complete every required setup section before final preview.")
-    # A draft saved before a slot retired may still hold it; leave it behind
-    # instead of refusing to finish.
-    sections = without_retired(sections)
-    if "campaign" not in sections:
-        return _system_candidate(
-            base,
-            attempt_id=attempt_id,
-            candidate_id=candidate_id,
-            operation_id=operation_id,
-            sections=sections,
-            branding=branding,
-            credentials=credentials,
-        )
-    if "schedules" not in sections:
-        raise ConfigError("Complete every required setup section before final preview.")
-    values = {step: validate_values(step, value) for step, value in sections.items()}
-    campaign = deepcopy(values["campaign"]["campaign"])
-    active_pages = page_slots(campaign)
-    content = [
-        values[step]
-        for step in CONTENT_STEPS
-        if values.get(step, {}).get("values")
-        and (step.startswith("email_") or step[5:] in active_pages)
-    ]
-    campaign["content_versions"] = {
-        row["values"]["slot"]: row["id"]
-        for row in content
-        if row["values"]["kind"] == "page"
-        and row["values"]["slot"] in LEGACY_PAGE_REFERENCES
-    }
-    if any(row["values"]["campaign_id"] != str(attempt_id) for row in content):
-        raise ConfigError("Setup content belongs to a different campaign.")
-    public = _system_records(
-        base, attempt_id, operation_id, values, branding, credentials
-    )
-    public |= {
-        "campaigns": [{"id": str(attempt_id), "values": campaign}],
-        "content": content,
-        "schedules": values["schedules"]["records"],
-    }
-    selected = {row["id"] for row in content}
-    if any(
-        row["values"].get("template_version") not in selected
-        for row in public["schedules"]
-    ):
-        raise ConfigError("Every setup schedule requires a saved email template.")
-    return _compile(base, public, candidate_id=candidate_id, operation_id=operation_id)
-
-
-def _system_candidate(
-    base, *, attempt_id, candidate_id, operation_id, sections, branding, credentials
-):
-    """The candidate of system-only setup (#142): no campaign, content or schedules."""
     values = {step: validate_values(step, sections[step]) for step in FORMS}
     public = _system_records(
         base, attempt_id, operation_id, values, branding, credentials
