@@ -194,3 +194,36 @@ def test_staff_is_denied_before_the_prompt(admin, monkeypatch):
         assert "Type yes" not in errors and "Family portal" not in errors, errors
     assert events() == [] and trail() == (0, 0, 0)
     assert not maintenance(family("get", "/"))
+
+
+def test_the_early_role_check_renews_nothing(admin, monkeypatch):
+    """The role check before the prompt (#1341) is read-only: around it, no
+    portal session's last activity and no automation session's last use
+    moves, so a refused or abandoned prompt does not extend idle expiry."""
+    from parishkit.stewardship import admin_cli
+    from parishkit.stewardship.accounts.automation_models import AutomationSession
+    from parishkit.stewardship.accounts.models import PortalSession
+
+    _, secret, _ = paired(admin.service)
+    real = admin_cli._role_first
+    seen = []
+
+    def times():
+        """Every session's activity times, as stored."""
+        return (
+            sorted(PortalSession.objects.values_list("pk", "last_activity_at")),
+            sorted(AutomationSession.objects.values_list("pk", "last_used_at")),
+        )
+
+    def watched(*arguments, **options):
+        """The real check, with the stored times read either side of it."""
+        before = times()
+        real(*arguments, **options)
+        seen.append((before, times()))
+
+    monkeypatch.setattr(admin_cli, "_role_first", watched)
+    code, document, errors = switch(admin, secret, "--state", "open")
+    assert code == 4 and document["error"]["code"] == "confirmation_required"
+    assert "Type yes" in errors
+    [(before, after)] = seen
+    assert before == after and before[0], before

@@ -145,7 +145,7 @@ def test_the_role_is_checked_before_any_lookup_or_prompt(monkeypatch):
 
     calls = []
 
-    def denied(caller, service, *, read_only=False):
+    def denied(caller, service, *, read_only=False, capability=None):
         """Refuse as the page does for a user who is now Staff."""
         calls.append(read_only)
         raise PermissionError("This page requires the configure capability.")

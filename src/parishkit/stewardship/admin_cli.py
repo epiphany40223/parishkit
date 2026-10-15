@@ -1276,7 +1276,7 @@ def integration_confirm(args, preamble, runtime, context):
     values), after checking the Administrator role and then the token's
     signature, and before any transaction.
     """
-    from .admin_changes import TOKEN_LIMIT, _admit_change
+    from .admin_changes import TOKEN_LIMIT
     from .admin_integration_changes import (
         applied_settings,
         confirm_integration,
@@ -1285,7 +1285,7 @@ def integration_confirm(args, preamble, runtime, context):
 
     # The role first (#1339): Staff is denied before any read or prompt
     # could say whether the integration has a reviewed change.
-    _admit_change(context["caller"], runtime, read_only=True)
+    _role_first(context, runtime)
     token = _input(args.token, context, TOKEN_LIMIT)
     applied = applied_settings(runtime, args.target)
     confirm(context, prompt_lines(args.target, token, applied))
@@ -1348,12 +1348,12 @@ def integration_key_finish_switching(args, preamble, runtime, context):
     values), after checking the Administrator role and then the token's
     signature, and before any transaction.
     """
-    from .admin_changes import TOKEN_LIMIT, _admit_change
+    from .admin_changes import TOKEN_LIMIT
     from .admin_integration_keys import confirm_finish, finish_prompt_lines
 
     # The role first (#1339): Staff is denied before any read or prompt
     # could say whether the integration has a key change.
-    _admit_change(context["caller"], runtime, read_only=True)
+    _role_first(context, runtime)
     token = _input(args.token, context, TOKEN_LIMIT)
     confirm(context, finish_prompt_lines(runtime, args.target, token))
     return confirm_finish(
