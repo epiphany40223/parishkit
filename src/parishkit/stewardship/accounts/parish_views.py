@@ -10,7 +10,7 @@ from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
-from parishkit.stewardship.schema_primitives import timezone_names, typed
+from parishkit.stewardship.schema_primitives import canonical_timezone, typed
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.presentation import parse_us_phone, phone
@@ -34,6 +34,7 @@ from .limiting import LimiterUnavailable
 from .policy import Capability, allows
 from .request_patch import build_candidate
 from .sessions import authenticated_admin
+from .timezone_field import TimezoneField
 
 SALT = "stewardship-parish-profile-preview-v1"
 # The review's note when the change includes the timezone.
@@ -91,7 +92,7 @@ class ParishForm(forms.Form):
     website = forms.URLField(
         label=_("Parish website"), max_length=2048, assume_scheme="https"
     )
-    timezone = forms.ChoiceField(label=_("Parish timezone"))
+    timezone = TimezoneField(label=_("Parish timezone"))
     phone = PhoneField(
         label=_("Parish telephone"),
         help_text=_("The ten-digit US number, such as (212) 555-1234."),
@@ -131,13 +132,6 @@ class ParishForm(forms.Form):
     base_digest = forms.RegexField(
         regex=r"^[0-9a-f]{64}$", max_length=64, widget=forms.HiddenInput
     )
-
-    def __init__(self, *args, **kwargs):
-        """Use the same frozen timezone vocabulary as authoritative YAML validation."""
-        super().__init__(*args, **kwargs)
-        self.fields["timezone"].choices = [
-            (name, name) for name in sorted(timezone_names())
-        ]
 
     def clean_date_format(self):
         """A blank choice (an older form post) keeps the default style."""
@@ -241,10 +235,15 @@ def review_change(service, actor, configuration, form):
         # Shown in place (#532) with the standard explanation.
         raise stale_page()
     record = _profile(configuration)
+    posted = dict(form.cleaned_data)
+    if posted["timezone"] != record["values"]["timezone"]:
+        # A new zone is stored by its canonical name (#1286); an unchanged
+        # stored alias is left as it is, so saving the page changes nothing.
+        posted["timezone"] = canonical_timezone(posted["timezone"])
     values = {
-        name: form.cleaned_data[name]
+        name: posted[name]
         for name in PROFILE_FIELDS
-        if form.cleaned_data[name] != record["values"].get(name, DEFAULTS.get(name, ""))
+        if posted[name] != record["values"].get(name, DEFAULTS.get(name, ""))
     }
     if "online_giving_url" in values:
         # None removes the optional key; see request_patch's parish update.

@@ -1408,6 +1408,16 @@ timezone, resolved boundaries, schedules, or historical report buckets. The UI
 shows this scope explicitly and links to the separately editable draft campaign
 timezone when one exists.
 
+Time zone choices (Parish settings, the setup Parish step, campaign settings
+and schedule dates) list canonical IANA names only. An older alias from the
+IANA backward links, such as `US/Eastern`, that is already stored stays valid.
+It is shown as the current choice with the zone it names ("US/Eastern (older
+name for America/New_York)"), and saving without changing it keeps it. A
+changed Parish zone, or a new setup's zone, is stored by its canonical name.
+Stored history is never rewritten. Instead, every database conversion first
+maps a stored alias to its zone, because the production PostgreSQL image
+lacks the aliases (#1286).
+
 Logo management previews every generated size. Uploads remain staged until the
 YAML version referencing their immutable branding version is applied;
 historical email/page previews retain their campaign version. The upload's

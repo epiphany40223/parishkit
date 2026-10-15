@@ -20,10 +20,10 @@ from parishkit.stewardship.campaigns.configuration import (
 )
 from parishkit.stewardship.campaigns.intervals import financial_period_end
 from parishkit.stewardship.campaigns.leader_roles import canonical_roles
-from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.web.presentation import parish_date
 
 from .share_forms import default_share_options
+from .timezone_field import TimezoneField
 
 # How to use a plain multi-select list, shown with every one of them.
 MULTI_SELECT_HELP = _(
@@ -136,7 +136,7 @@ class CampaignForm(forms.Form):
     year_label = forms.CharField(
         label=_("Stewardship year label"), max_length=64, required=False
     )
-    timezone = forms.ChoiceField(label=_("Campaign timezone"))
+    timezone = TimezoneField(label=_("Campaign timezone"))
     start_date = forms.DateField(
         label=_("Campaign start date"), widget=forms.DateInput(attrs={"type": "date"})
     )
@@ -209,9 +209,6 @@ class CampaignForm(forms.Form):
         self.share_options = deepcopy(self.previous.get("share_options", []))
         if "financial" not in self.previous.get("modules", []):
             self.share_options = default_share_options()
-        self.fields["timezone"].choices = [
-            (zone, zone) for zone in sorted(timezone_names())
-        ]
         self.fields["ministry_duids"].choices = ministries
         for name in ("fund_duids", "comparison_fund_duids"):
             self.fields[name].choices = funds

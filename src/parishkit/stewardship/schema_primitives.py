@@ -40,6 +40,41 @@ def timezone_names():
         ) from None
 
 
+@cache
+def timezone_links():
+    """Map each catalog alias to the catalog zone it links to (#1286).
+
+    The catalog admits every IANA "backward" link name (US/Eastern,
+    Canada/Pacific, Japan, ...). The mapping is read from the installed
+    tzdata package's own link lines (``L target alias`` in ``tzdata.zi``),
+    not kept by hand, and only links whose two names are both in the frozen
+    catalog count. The database's ``stewardship_timezone_name_v1`` holds the
+    same table; a PostgreSQL test keeps the two equal.
+    """
+    try:
+        payload = files("tzdata").joinpath("zoneinfo", "tzdata.zi").read_text("utf-8")
+    except (OSError, UnicodeError, ModuleNotFoundError):
+        raise SchemaEnvironmentError(
+            "The installed time zone data is unavailable or invalid."
+        ) from None
+    names = timezone_names()
+    links = {}
+    for line in payload.splitlines():
+        fields = line.split()
+        if len(fields) == 3 and fields[0] == "L" and {*fields[1:]} <= names:
+            links[fields[2]] = fields[1]
+    return links
+
+
+def canonical_timezone(zone):
+    """The zone a catalog alias links to (US/Eastern -> America/New_York).
+
+    Any other name, canonical or not in the catalog, is returned unchanged,
+    so callers still validate it against ``timezone_names``.
+    """
+    return timezone_links().get(zone, zone)
+
+
 def invalid():
     """Reject without echoing private submitted values or arbitrary field names."""
     raise ConfigError("Invalid or unsupported non-secret configuration fields.")

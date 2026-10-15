@@ -402,3 +402,34 @@ def test_an_applied_change_draws_the_form_at_its_applied_version(auth_service, g
     applied = store.active().digest
     assert applied != values["base_digest"]
     assert digest(browser.get(response["Location"], **IN_PLACE)) == applied
+
+
+def test_a_stored_alias_is_kept_and_a_new_zone_is_stored_canonically(
+    monkeypatch, request
+):
+    """A Parish set up with US/Eastern keeps it unless the zone is changed.
+
+    Saving another setting leaves the alias (no timezone change, so no
+    prospective-zone note); choosing a zone by an alias stores the zone it
+    links to (#1286).
+    """
+    from .. import configuration_factory
+
+    monkeypatch.setattr(configuration_factory, "PARISH_TIMEZONE", "US/Eastern")
+    store = request.getfixturevalue("auth_service").store
+    request.getfixturevalue("google")
+    browser, _ = signed_in()
+    page = browser.get(URL).content.decode()
+    assert "US/Eastern (older name for America/New_York)" in page
+    renamed = post(browser, fields(store, name="Renamed Parish"))
+    assert renamed.status_code == 200, renamed.content
+    assert b"This timezone change is prospective" not in renamed.content
+    moved = post(browser, fields(store, timezone="Canada/Pacific"))
+    proposal = token(moved)
+    assert b"America/Vancouver" in moved.content
+    response = post(browser, {"action": "confirm", "preview": proposal})
+    install_request(store, request_id=requested(response), correlation_id=uuid4())
+    assert (
+        store.active().document()["sections"]["parish"][0]["values"]["timezone"]
+        == "America/Vancouver"
+    )
