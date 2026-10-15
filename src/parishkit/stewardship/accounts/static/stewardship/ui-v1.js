@@ -2759,7 +2759,7 @@
       const over = !group.closest("[hidden]")
         && ticked.length > Number(group.dataset.maxTicked);
       const hint = (group.dataset.maxTickedHint || "").replace("{count}",
-        ticked.length.toLocaleString());
+        ticked.length.toLocaleString("en-US"));
       boxes.forEach((box) => {
         const mark = over && ticked.includes(box);
         if (mark || box.hasAttribute("data-max-ticked-over")) box.setCustomValidity(mark ? hint : "");
