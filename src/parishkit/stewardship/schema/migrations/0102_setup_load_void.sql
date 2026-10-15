@@ -41,8 +41,11 @@
 --                                             since a failed one is now bound
 --                                             while setup collects
 -- None is SECURITY DEFINER; each keeps its identity, attributes, triggers and
--- grants. No table, function or grant is created, so no runtime grant
--- changes. Reversing needs its own forward migration.
+-- grants. No table or function is created. One runtime grant changes, outside
+-- this file: the Slack installer target's column grant on
+-- stewardship_task_run gains state, for the Slack live check's join
+-- (accounts/setup_notification_grants.py, applied by the grants command).
+-- Reversing needs its own forward migration.
 SET LOCAL check_function_bodies = false;
 SET LOCAL search_path = public;
 
