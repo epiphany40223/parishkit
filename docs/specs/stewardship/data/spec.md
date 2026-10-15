@@ -206,7 +206,7 @@ Production had none.
 A `Campaign` includes:
 
 - UUID, unique human name, optional stewardship year label, and lifecycle state;
-- an IANA campaign-timezone snapshot, initialized from the Parish timezone;
+- an IANA campaign-timezone snapshot, chosen at creation (any catalog zone);
 - local start/end dates and their resolved UTC boundary instants;
 - enabled census, Ministry, and financial modules;
 - references to the global mode transitions under which it was exercised;

@@ -219,7 +219,9 @@ closing instant is rejected. Testing activity does not lock them.
 Administrators may continue editing content, future unsent schedules, and the
 end date. An `active` campaign never unlocks structural settings.
 
-A new draft copies the current Parish IANA timezone as its campaign timezone.
+A new draft's campaign timezone is any IANA zone the Administrator chooses
+when creating it, starting on the browser's zone (see the admin portal's
+[Create the campaign](admin-portal/spec.md#create-the-campaign), #1330).
 Admins may edit that campaign value while it remains `draft`. Production
 readiness resolves boundaries and future schedule instants from it and locks it
 for the remainder of the campaign's life, including closed, archived, and

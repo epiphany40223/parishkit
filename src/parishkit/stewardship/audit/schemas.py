@@ -499,6 +499,9 @@ FIELDS = {
         # load had ended, both closed words.
         "void_reason",
         "task_state",
+        # How old the Google sign-in was when a setup credential was sealed
+        # (#1402), in whole seconds: an integer, as every unlisted key.
+        "sign_in_age_seconds",
     },
 }
 

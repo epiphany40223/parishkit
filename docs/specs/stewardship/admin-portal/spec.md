@@ -134,13 +134,16 @@ Admin idle timeout, instead of five minutes
 ([#1402](https://github.com/epiphany40223/parishkit/issues/1402)), so the
 Admin is not asked to confirm again on each credential page. The web check
 (`SETUP_FRESH_SECONDS`) and the SQL guard on staged setup credentials
-enforce the same hour, and the guard admits it only for the setup attempt's
-original owner and session while the attempt is collecting, in Testing mode
-with no campaign. Every action after setup, Integrations' secret replacement
-included, keeps the five-minute rule, and the setup finishing page's
-step-up, the idle and absolute session limits, the two-hour load watchdog
-and the credential audit are unchanged. An older sign-in is offered "Confirm
-with Google", which keeps the setup. The pages mention that rule only when
+enforce the same hour, both counting a sign-in exactly 60 minutes old as
+within it, and the guard admits it only for the setup attempt's original
+owner and session while the attempt is collecting, in Testing mode with no
+campaign. Each staged credential's audit entry records how old the sign-in
+was, in seconds, when it was sealed. Every action after setup,
+Integrations' secret replacement included, keeps the five-minute rule;
+the idle and absolute session limits and the two-hour load watchdog are
+unchanged. Finish setup asks for no fresh sign-in, before or after this
+change. An older sign-in is offered "Confirm with Google", which keeps the
+setup. The pages mention that rule only when
 the sign-in is already older
 ([page help](../ui-conventions/spec.md#page-help)). Review, the email and
 Slack tests and the final confirmation follow the load. Every page shows a
@@ -295,9 +298,14 @@ The staged ParishSoft load is a complete load of Families, Members, Ministries
 and the fund catalog, with no giving window, as any load is before a campaign
 exists; the campaign's giving arrives with the refresh that
 [Create the campaign](#create-the-campaign) queues. Starting that load fixes
-the Parish timezone for this setup attempt, so the source catalog and the
-campaign created later keep the same civil-date interpretation.
+the Parish timezone for this setup attempt, so the source catalog keeps one
+civil-date interpretation (the campaign created later has its own zone, see
+[Create the campaign](#create-the-campaign)).
 The Parish step explains this restriction and keeps other Parish fields editable.
+Until a zone is saved, the Parish step's time zone menu starts on the browser's
+zone when the list offers it, and otherwise on a blank required "Choose a time
+zone" entry, never on the list's first zone
+([#1330](https://github.com/epiphany40223/parishkit/issues/1330)).
 Changing the timezone then requires cancelling and starting a new setup attempt;
 it never silently reinterprets an existing source result.
 Wizard progress may be kept in the authenticated session and temporary staging
@@ -1470,8 +1478,9 @@ used. It is presentation only: routing, test scope and outbox checks keep
 comparing the bare address, and changing it never voids a staged credential
 test.
 
-The Parish IANA timezone is the default for non-campaign presentation and newly
-created campaign drafts. Editing it does not mutate an existing Campaign's
+The Parish IANA timezone is the default for non-campaign presentation and the
+fallback for a new campaign draft when the browser reports no listed zone
+([Create the campaign](#create-the-campaign)). Editing it does not mutate an existing Campaign's
 timezone, resolved boundaries, schedules, or historical report buckets. The UI
 shows this scope explicitly and links to the separately editable draft campaign
 timezone when one exists.
@@ -2395,8 +2404,8 @@ They unlock only through the guarded pre-start withdrawal below; an `active`
 campaign never unlocks them. The exceptions are the Ministry selections
 (see
 [Changing a live campaign's Ministries](#changing-a-live-campaigns-ministries))
-and the [Ministry leader roles](#ministry-leader-roles). The campaign timezone is initialized from the
-current Parish timezone, is editable in `draft`, and is one of these structural
+and the [Ministry leader roles](#ministry-leader-roles). The campaign timezone is chosen when the campaign is created
+([Create the campaign](#create-the-campaign)), is editable in `draft`, and is one of these structural
 settings. Scheduled, active, closed, and archived pages display it read-only.
 Content and future schedules remain versioned/editable under the
 [atomic schedule-replacement policy](../background-processing/spec.md#schedule-replacement-and-removal).
@@ -2943,8 +2952,15 @@ no-campaign text instead.
 **First page.** It collects the campaign's basics in the ordinary campaign
 form: name, modules, start and end dates, Ministries (from the loaded catalog,
 initially all active ones) and, for Financial stewardship, the financial
-period and current and comparison funds. The time zone comes from the Parish
-profile, as it does for every new draft. The form's **Create the campaign**
+period and current and comparison funds. The campaign time zone may be any
+catalog zone, not only the Parish zone (Administrator, 2026-10-15,
+[#1330](https://github.com/epiphany40223/parishkit/issues/1330)): the menu
+starts on the zone the browser reports when the list offers it (matched
+through the browser's own zone names, so Chromium's `America/Louisville`
+selects `America/Kentucky/Louisville`), and otherwise on the Parish zone. A
+form drawn again after a refusal keeps the zone that was posted. The start and
+end dates are days in the chosen zone, and its boundaries are resolved in it.
+The form's **Create the campaign**
 button is unavailable until every required field is filled in ([prerequisite
 gates](../ui-conventions/spec.md#prerequisite-gates)). Its Review is a
 [confirmation](../ui-conventions/spec.md#review-dialog), not a full review

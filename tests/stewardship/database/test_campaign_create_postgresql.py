@@ -147,6 +147,63 @@ def test_first_campaign_is_created_with_default_content(auth_service, google):
     assert f'href="{CREATE}"'.encode() not in browser.get("/admin/").content
 
 
+def test_a_zone_other_than_the_parish_zone_is_the_campaign_zone(auth_service, google):
+    """Any catalog zone may start the campaign, not only the parish's (#1330).
+
+    The Administrator chose America/Kentucky/Louisville with a parish zone of
+    America/New_York and was refused. A zone hours away from the parish's
+    shows the dates are days in the chosen zone: the campaign opens at local
+    midnight there, which is not the parish's midnight. The page offers the
+    browser's zone through ``data-browser-default``, on the fresh form only.
+    """
+    from datetime import date, datetime, time
+    from zoneinfo import ZoneInfo
+
+    from ..configuration_factory import PARISH_TIMEZONE
+
+    publish(source())
+    browser, _ = signed_in()
+    store = auth_service.store
+    page = browser.get(CREATE).content.decode()
+    menu = re.search(r'<select name="timezone"[^>]*>', page)[0]
+    assert "data-browser-default" in menu
+    zone = "America/Los_Angeles"
+    assert zone != PARISH_TIMEZONE
+    preview = post(browser, CREATE, new_fields(store) | {"timezone": zone})
+    assert preview.status_code == 200, preview.content
+    accepted = post(browser, CREATE, {"action": "confirm", "preview": token(preview)})
+    apply(store, accepted)
+    projection = Campaign.objects.get().active_configuration
+    assert projection.timezone == projection.values["timezone"] == zone
+    start = date.fromisoformat(projection.values["start_date"])
+    assert projection.starts_at == datetime.combine(start, time(), ZoneInfo(zone))
+    assert projection.starts_at != datetime.combine(
+        start, time(), ZoneInfo(PARISH_TIMEZONE)
+    )
+    parish = store.active().document()["sections"]["parish"][0]["values"]
+    assert parish["timezone"] == PARISH_TIMEZONE
+
+
+def test_a_refused_form_keeps_the_posted_zone(auth_service, google):
+    """A form drawn again keeps the posted zone; the browser does not reset it."""
+    publish(source())
+    browser, _ = signed_in()
+    refused = post(
+        browser,
+        CREATE,
+        new_fields(auth_service.store) | {"timezone": "America/Chicago", "name": ""},
+    )
+    assert refused.status_code == 400
+    menu = re.search(r'<select name="timezone"[^>]*>', refused.content.decode())[0]
+    assert "data-browser-default" not in menu
+    assert b'<option value="America/Chicago" selected>' in refused.content
+    # A name that is not a catalog zone is still refused at the field.
+    bogus = post(
+        browser, CREATE, new_fields(auth_service.store) | {"timezone": "Mars/Base"}
+    )
+    assert bogus.status_code == 400 and not Campaign.objects.exists()
+
+
 def test_creation_is_refused_once_any_campaign_exists(auth_service, google):
     """A preview signed with no campaign cannot add a second one later."""
     publish(source())
