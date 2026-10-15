@@ -973,6 +973,28 @@ slot or revision, no current campaign, a held campaign `stale_version`, a
 Staff reader denied, an ended session) and the unchanged content page
 suites.
 
+Another part adds `content preview` and `content confirm`, the email
+tables' Delete and the editors' plain-text preview, in
+`parishkit.stewardship.admin_content`, through the page's own removal
+build (moved into `content_delete_views.review_deletion` and `chosen_ids`,
+which the Delete now calls), its conversion (moved into
+`content_views.plain_text`, which the plain-text preview now calls) and
+`admin_editing.confirm_intent`, with no schema change; proven by
+`tests/stewardship/test_admin_content_changes.py` (catalog flags, the
+described event, usage errors, the choice check, the conversion),
+`tests/stewardship/test_admin_content.py` (the ledger),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_content_changes_cli_postgresql.py`
+(a preview and confirm of two unused emails recording the request and
+event with the sent email kept once installed, a repeat, a sent email,
+the confirmation email, an unknown or repeated id, a stale version, a
+held campaign, an altered or another page's token, another
+Administrator's token denied, a token built before the settings changed,
+no current campaign, the plain-text preview equal to the page's answer
+with no event and no renewed session, a read-only session and Staff
+denied, an ended session) and the unchanged content page suites.
+
 Another part adds `integration list`, `integration show` and `integration
 status`, the Integrations pages' reads, in
 `parishkit.stewardship.admin_integrations`, through the pages' own helpers

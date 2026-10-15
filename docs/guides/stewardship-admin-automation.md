@@ -974,8 +974,48 @@ its `id`, `kind` (`page` or `email`), `slot`, `name` and `subject`. With
 `kind`, `slot`, `name` and `sample`: the page's fictional sample, its
 `subject`, `html` and `text`; without it, `revision` is null. An ID the
 campaign did not retain, a purged campaign, or a campaign whose retained
-configuration is gone is exit 1 (`not_available`). Editing and deleting
-content stay on the page for now.
+configuration is gone is exit 1 (`not_available`). Editing a page's or
+email's text stays on the page for now.
+
+`content preview --delete` and `content confirm` are the email tables'
+**Delete**, split in two as `schedule preview` and `schedule confirm` are
+for a schedule's Delete: the preview builds the deletion of one or more
+unused emails and prints a token; nothing changes until `content
+confirm`. They need a full-scope session and an Administrator. Name each
+email by its `content list` `revisions[].id`, with one `--delete` per
+email; only emails whose `deletable` is true can go.
+
+```sh
+VERSION=$(pk-admin content list | jq -r .result.version)
+pk-admin content preview --delete ID [--delete ID ...] \
+  --expected-version "$VERSION" |
+  jq -r .result.preview.token | pk-admin content confirm --token -
+```
+
+| Field | What it holds |
+| --- | --- |
+| `action` | `delete` |
+| `version`, `campaign_id` | The configuration version the deletion was built against, and the current campaign |
+| `deleting` | Each email being deleted: `id`, `slot` (its mail type) and `subject` |
+| `preview.token` | What `content confirm --token` takes, valid for fifteen minutes |
+| `created`, `request` (`content confirm`) | As `parish confirm` prints them; follow the change with `config request show --watch` |
+
+An email a schedule still sends, the confirmation email, an id the
+campaign does not hold, or the same id twice is exit 1 (`invalid`), with
+the page's explanation at `delete`; nothing is deleted. A version that is
+no longer current, background work holding the campaign, or an expired
+token is exit 1 (`stale_version`): read `content list` again. An altered
+token is exit 1 (`invalid`). `content confirm` records
+`admin_cmd_content_confirm` in System logs with the request; repeating it
+with the same token returns the same request.
+
+`content preview --html HTML` (or `--html -` to read it, untrimmed, from standard
+input) is the editors' live preview: what the server makes of the HTML
+you would save. It reads nothing from the campaign, changes nothing and
+records nothing. It prints `action` (`plain_text`) and `plain_text`:
+`html` (the cleaned HTML), `text` (the plain text "Generate plain text
+from HTML" would save) and `removed` (the markup cleaning drops, in plain
+words). HTML longer than the editor accepts is exit 1 (`invalid`).
 
 ## Campaign images
 
@@ -3202,3 +3242,9 @@ campaign's, or is outside your Ministries, is exit 1 (`not_available`).
   prompting; `census_change_updated` and `admin_cmd_census_edit` or
   `admin_cmd_census_resolve_conflict`). `export census --format jsonl`
   records gain `editable` and `resolvable`.
+- `pk-admin/1` (#463): additive. `content preview --delete ID [--delete
+  ID ...] --expected-version VERSION` and `content confirm --token
+  TOKEN|-`, the Pages and emails email tables' Delete (full scope,
+  Administrators only, neither fresh-gated nor prompting; `content
+  confirm` records `admin_cmd_content_confirm`), and `content preview
+  --html HTML|-`, the content editors' live plain-text preview (no event).

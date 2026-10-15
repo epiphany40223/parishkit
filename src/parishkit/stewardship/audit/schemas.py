@@ -241,6 +241,8 @@ class Action(StrEnum):
     ADMIN_CMD_PARISH_CONFIRM = "admin_cmd_parish_confirm"
     # artwork remove: Campaign images' Apply of a removal (ADM-11 PR 10).
     ADMIN_CMD_ARTWORK_REMOVE = "admin_cmd_artwork_remove"
+    # content confirm: Pages and emails' Delete of unused emails (ADM-11 PR 10).
+    ADMIN_CMD_CONTENT_CONFIRM = "admin_cmd_content_confirm"
     # integration confirm: an integration settings page's Apply (ADM-11 PR 10).
     ADMIN_CMD_INTEGRATION_CONFIRM = "admin_cmd_integration_confirm"
     # integration backup-probe: the Off-site backups page's Test access.
