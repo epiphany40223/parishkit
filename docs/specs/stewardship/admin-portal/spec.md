@@ -134,13 +134,16 @@ Admin idle timeout, instead of five minutes
 ([#1402](https://github.com/epiphany40223/parishkit/issues/1402)), so the
 Admin is not asked to confirm again on each credential page. The web check
 (`SETUP_FRESH_SECONDS`) and the SQL guard on staged setup credentials
-enforce the same hour, and the guard admits it only for the setup attempt's
-original owner and session while the attempt is collecting, in Testing mode
-with no campaign. Every action after setup, Integrations' secret replacement
-included, keeps the five-minute rule; the idle and absolute session limits,
-the two-hour load watchdog and the credential audit are unchanged. Finish
-setup asks for no fresh sign-in, before or after this change. An older
-sign-in is offered "Confirm with Google", which keeps the setup. The pages mention that rule only when
+enforce the same hour, both counting a sign-in exactly 60 minutes old as
+within it, and the guard admits it only for the setup attempt's original
+owner and session while the attempt is collecting, in Testing mode with no
+campaign. Each staged credential's audit entry records how old the sign-in
+was, in seconds, when it was sealed. Every action after setup,
+Integrations' secret replacement included, keeps the five-minute rule;
+the idle and absolute session limits and the two-hour load watchdog are
+unchanged. Finish setup asks for no fresh sign-in, before or after this
+change. An older sign-in is offered "Confirm with Google", which keeps the
+setup. The pages mention that rule only when
 the sign-in is already older
 ([page help](../ui-conventions/spec.md#page-help)). Review, the email and
 Slack tests and the final confirmation follow the load. Every page shows a

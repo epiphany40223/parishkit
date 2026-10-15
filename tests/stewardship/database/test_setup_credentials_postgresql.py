@@ -2,6 +2,7 @@
 
 # ruff: noqa: F811 -- imported pytest fixtures are injected by name.
 
+import json
 from datetime import timedelta
 from uuid import uuid4
 
@@ -268,10 +269,20 @@ def test_original_attempt_terminal_transition_atomically_scrubs(
         "setup_credential_staged",
         "setup_credential_scrubbed",
     }
-    contexts = AuditContext.objects.filter(event_id__in=events).values_list(
-        "context", flat=True
-    )
-    assert all(set(context) == {"version", "outcome"} for context in contexts)
+    contexts = {
+        event: context
+        for event, context in AuditContext.objects.filter(
+            event_id__in=events
+        ).values_list("event__event_type", "context")
+    }
+    # Only the staging records the sign-in's age (#1402); the scrub cannot
+    # read the session and records none.
+    assert set(contexts["setup_credential_staged"]) == {
+        "version",
+        "outcome",
+        "sign_in_age_seconds",
+    }
+    assert set(contexts["setup_credential_scrubbed"]) == {"version", "outcome"}
     assert SetupAttempt.objects.get().state == "expired"
     with pytest.raises(DatabaseError), work_transaction():
         SetupSealedCredential.objects.update(
@@ -336,12 +347,28 @@ def test_step_up_lets_the_original_login_save_after_freshness_lapses(setup_servi
 
 @pytest.mark.parametrize("target", ["parishsoft", "google_workspace", "slack"])
 def test_a_sign_in_from_the_last_hour_saves_a_setup_credential(setup_service, target):
-    """A 50-minute-old sign-in passes both the web and the SQL guard (#1402)."""
+    """A 50-minute-old sign-in passes both the web and the SQL guard (#1402).
+
+    The staged credential's audit context records how old the sign-in was
+    when it was sealed, in whole seconds.
+    """
     request, attempt, receipt, _ = staged(setup_service, target, age_minutes=50)
     assert receipt.target == target
     row = SetupSealedCredential.objects.get()
     assert row.attempt_id == attempt.attempt_id
     assert row.actor_id == request.portal_session.principal_id
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT c.context FROM stewardship_audit_context c "
+            "JOIN stewardship_audit_event e ON e.id=c.event_id "
+            "WHERE e.event_type='setup_credential_staged' AND e.subject_id=%s",
+            [row.pk],
+        )
+        (context,) = cursor.fetchone()
+    if isinstance(context, str):
+        context = json.loads(context)
+    assert context["outcome"] == "changed"
+    assert 50 * 60 <= context["sign_in_age_seconds"] < 52 * 60
 
 
 @pytest.mark.parametrize(("minutes", "refused"), [(59, False), (61, True)])

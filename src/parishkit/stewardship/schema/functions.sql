@@ -5604,7 +5604,10 @@ BEGIN
             'decision','review_reason','file_slug','previous_file_slug','file_kind','file_size','file_fingerprint',
             'report_mode','report_filter','talent_option_id','snapshot_id',
             'report_sort','directory_data_check','directory_response_columns',
-            'archive_year','archive_days','archive_family_rows','void_reason','task_state']
+            'archive_year','archive_days','archive_family_rows','void_reason','task_state',
+            -- How old the Google sign-in was when a setup credential was
+            -- sealed, in whole seconds (#1402; audit.schemas).
+            'sign_in_age_seconds']
         WHEN 'boundary' THEN ARRAY['occurrence_id','kind','intended_unix_microseconds','actual_unix_microseconds','lag_microseconds','before_state','after_state']
         WHEN 'schedule' THEN ARRAY['definition_id','previous_revision_id','selected_revision_id','cancelled_messages','skipped_occurrences','failed_occurrences','delivered_slots']
         WHEN 'timeout' THEN ARRAY['task_id','task_type','attempt','limit_seconds','elapsed_seconds','what','helper','count','outcome']
@@ -8418,19 +8421,35 @@ CREATE FUNCTION public.stewardship_setup_secret_audit_v1() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
-DECLARE event_id uuid:=gen_random_uuid();
+DECLARE event_id uuid:=gen_random_uuid(); context jsonb; age bigint;
 BEGIN
     INSERT INTO public.stewardship_audit_event(
         id,created_at,actor_id,correlation_id,event_type,subject_id,ownership_scope)
     VALUES(event_id,clock_timestamp(),NEW.actor_id,NEW.correlation_id,
         CASE WHEN NEW.scrubbed_at IS NULL THEN 'setup_credential_staged'
             ELSE 'setup_credential_scrubbed' END,NEW.id,'deployment');
+    context:=jsonb_build_object('version',NEW.version,'outcome',
+        CASE WHEN NEW.scrubbed_at IS NULL THEN 'changed' ELSE 'cancelled' END);
+    IF NEW.scrubbed_at IS NULL THEN
+        -- How old the setup session's Google sign-in was when the credential
+        -- was sealed (#1402): a later step-up in the same session overwrites
+        -- authenticated_at, so the age is recorded now. A separate statement,
+        -- run only for a staged credential: the scrubbing scheduler cannot
+        -- read the session.
+        SELECT greatest(0,floor(extract(epoch FROM clock_timestamp()-login.authenticated_at)))::bigint
+            INTO age
+            FROM public.stewardship_setup_attempt attempt
+            JOIN public.stewardship_portal_session login ON login.id=attempt.session_id
+            WHERE attempt.id=NEW.attempt_id;
+        IF age IS NOT NULL THEN
+            context:=context||jsonb_build_object('sign_in_age_seconds',age);
+        END IF;
+    END IF;
     INSERT INTO public.stewardship_audit_context(
         id,created_at,actor_id,correlation_id,event_id,actor_kind,schema,context)
     VALUES(gen_random_uuid(),clock_timestamp(),NEW.actor_id,NEW.correlation_id,event_id,
         CASE WHEN NEW.actor_id IS NULL THEN 'system' ELSE 'portal_user' END,'action',
-        jsonb_build_object('version',NEW.version,'outcome',
-            CASE WHEN NEW.scrubbed_at IS NULL THEN 'changed' ELSE 'cancelled' END));
+        context);
     RETURN NULL;
 END $$;
 
@@ -8481,8 +8500,9 @@ BEGIN
             AND login.principal_id=attempt.owner_id AND login.revoked_at IS NULL
             AND login.expires_at>stamp
             AND login.last_activity_at>stamp-interval '60 minutes'
-            -- Setup's credential steps accept a sign-in up to an hour old (#1402).
-            AND login.authenticated_at>stamp-interval '60 minutes'
+            -- Setup's credential steps accept a sign-in up to an hour old
+            -- (#1402), the hour inclusive, as the web's check is.
+            AND login.authenticated_at>=stamp-interval '60 minutes'
         JOIN public.stewardship_portal_user owner ON owner.id=attempt.owner_id
             AND NOT owner.disabled
         JOIN public.stewardship_address_rule rule ON rule.email=owner.email

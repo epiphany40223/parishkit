@@ -266,6 +266,8 @@ def test_require_fresh_takes_a_web_caller(monkeypatch):
         (timedelta(minutes=4), True, True),
         (timedelta(minutes=6), False, True),
         (timedelta(minutes=59), False, True),
+        # Exactly an hour is inside, as the SQL guard's ``>=`` is (#1402).
+        (timedelta(minutes=60), False, True),
         (timedelta(minutes=61), False, False),
     ],
 )
