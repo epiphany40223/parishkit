@@ -14,11 +14,17 @@ pytestmark = pytest.mark.parametrize(
 
 
 def page_box(locator):
-    """``locator``'s box in page, not window, coordinates."""
-    return locator.evaluate(
+    """``locator``'s box in page, not window, coordinates.
+
+    Values are rounded to a hundredth of a pixel: Firefox reports a box
+    scrolled into view a few hundred-thousandths of a pixel off (its
+    fractional ``scrollY``), which is not a layout shift.
+    """
+    box = locator.evaluate(
         "node => { const r = node.getBoundingClientRect();"
         " return {x: r.x, y: r.y + scrollY, width: r.width, height: r.height}; }"
     )
+    return {key: round(value, 2) for key, value in box.items()}
 
 
 @pytest.mark.parametrize("width", [320, 1280])
