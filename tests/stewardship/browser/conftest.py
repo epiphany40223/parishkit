@@ -568,6 +568,7 @@ def component_origin():
                 }
             },
             source_task_id=None,
+            source_loaded=False,
         ),
         "testing",
     )
