@@ -3,7 +3,7 @@
 The long filter and export forms of the report pages start collapsed, so a
 report's first data is on a laptop's first screen (#227); an applied filter
 is never hidden, because the panel then renders open and its summary counts
-the filters in use.
+the filters in use. The Family directory's panel is open by default (#227).
 """
 
 import pytest
@@ -21,7 +21,6 @@ MARKED = "document.querySelector('h1').dataset.mark"
 # answering an applied filter (the fixtures' searches and choices), with the
 # number of filters each fixture applies.
 UNFILTERED = [
-    "/directory-unfiltered",
     "/information-unfiltered",
     "/financial-unfiltered",
 ]
@@ -53,6 +52,20 @@ def test_unfiltered_report_starts_with_filters_and_export_closed(
     assert summary.evaluate(place) == pytest.approx(before, abs=0.5)
 
 
+def test_family_directory_starts_with_filters_open_and_export_closed(
+    page, component_origin
+):
+    """The Family directory opens Filters by default (#227); export stays closed."""
+    from playwright.sync_api import expect
+
+    page.goto(component_origin + "/directory-unfiltered")
+    panel = page.locator("details[data-filter-panel]")
+    expect(panel).to_have_attribute("open", "")
+    has_text(panel.locator("summary"), "Filters: none applied")
+    visible(page.get_by_role("button", name="Apply filters"))
+    expect(page.locator("details.export-panel")).not_to_have_attribute("open", "")
+
+
 @pytest.mark.parametrize("path", sorted(FILTERED))
 def test_applied_filters_keep_the_panel_open_with_their_count(
     page, component_origin, path
@@ -74,7 +87,7 @@ def test_in_place_apply_updates_the_count_and_keeps_the_panel(page, component_or
     page.goto(component_origin + "/directory-unfiltered")
     page.evaluate(MARK)
     panel = page.locator("details[data-filter-panel]")
-    panel.locator("summary").click()
+    # The Family directory's panel is already open; no click is needed.
     page.get_by_label("Search by Family name", exact=False).fill("Example")
     # The answer is the fixture for a search, which applies one filter.
     page.route(
@@ -91,11 +104,11 @@ def test_in_place_apply_updates_the_count_and_keeps_the_panel(page, component_or
     assert page.evaluate(MARKED) == "kept"
 
 
-# The first data each report page shows: the directory's and Additional
-# information's matching count, and the summary of Financial stewardship and
-# Limitations, which sits above their filters.
+# The first data each report page shows (the Family directory opens Filters by
+# default, so it is not here): Additional information's matching count, and
+# the summary of Financial stewardship and Limitations, which sits above their
+# filters.
 FIRST_DATA = {
-    "/directory-unfiltered": "#directory-summary",
     "/information-unfiltered": "#information-matching",
     "/financial-unfiltered": ".stat-tiles",
     "/limitations-report": "#limitations-summary dl",

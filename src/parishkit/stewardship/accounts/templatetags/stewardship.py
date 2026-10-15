@@ -258,7 +258,9 @@ def filterpanel(parser, token):
     where, while that choice is on, the named query field is not counted
     because the choice overrides it (mailing columns always use "By postal
     mail only", so the reader's own Campaign mail can reach is not applied,
-    #951). The panel starts closed so the report's data
+    #951). A final bare ``open`` word opens the panel by default; only
+    the Family directory passes it (Administrator decision, #227). Otherwise
+    the panel starts closed so the report's data
     comes first, and renders open whenever any filter is applied, so an
     applied filter is never hidden behind it. Its summary names how many are
     applied; that count is a data-table-sync node with a stable id, so it
@@ -266,22 +268,29 @@ def filterpanel(parser, token):
     elements (ui-v1.js ``syncControls``).
     """
     bits = token.split_contents()
+    # A trailing bare ``open`` makes the panel open by default.
+    default_open = bits[-1] == "open"
+    if default_open:
+        bits.pop()
     if len(bits) not in (2, 3, 4):
         raise template.TemplateSyntaxError(
-            "filterpanel takes a query, an optional extra choice and the "
-            "query field that choice overrides."
+            "filterpanel takes a query, an optional extra choice, the "
+            "query field that choice overrides and an optional final open."
         )
     nodelist = parser.parse(("endfilterpanel",))
     parser.delete_first_token()
-    return FilterPanelNode([parser.compile_filter(bit) for bit in bits[1:]], nodelist)
+    return FilterPanelNode(
+        [parser.compile_filter(bit) for bit in bits[1:]], nodelist, default_open
+    )
 
 
 class FilterPanelNode(template.Node):
     """Render the panel, open with its count when any filter is applied."""
 
-    def __init__(self, arguments, nodelist):
+    def __init__(self, arguments, nodelist, default_open=False):
         self.arguments = arguments
         self.nodelist = nodelist
+        self.default_open = default_open
 
     def render(self, context):
         query, extra, overridden = (
@@ -299,7 +308,7 @@ class FilterPanelNode(template.Node):
             '<details class="filter-panel" data-filter-panel{}>'
             '<summary>{}: <span id="table-filters-applied" data-table-sync>{}</span>'
             "</summary>{}</details>",
-            mark_safe(" open") if count else "",
+            mark_safe(" open") if count or self.default_open else "",
             _("Filters"),
             label,
             # Template output is already escaped and marked safe.

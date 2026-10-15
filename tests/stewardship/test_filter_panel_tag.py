@@ -96,3 +96,18 @@ def test_panel_takes_a_query_and_at_most_one_extra():
         Template("{% load stewardship %}{% filterpanel %}x{% endfilterpanel %}")
     with pytest.raises(TemplateSyntaxError):
         Template("{% load stewardship %}{% filterpanel a b c d %}x{% endfilterpanel %}")
+
+
+def test_open_word_opens_the_panel_by_default_only_when_given():
+    """The Family directory passes ``open``; other panels stay closed."""
+    opened = render(
+        '{% filterpanel query mailing "reach" open %}x{% endfilterpanel %}',
+        query=DirectoryQuery(),
+        mailing=False,
+    )
+    assert opened.startswith('<details class="filter-panel" data-filter-panel open>')
+    assert "none applied" in opened
+    closed = render(
+        "{% filterpanel query %}x{% endfilterpanel %}", query=DirectoryQuery()
+    )
+    assert closed.startswith('<details class="filter-panel" data-filter-panel><')
