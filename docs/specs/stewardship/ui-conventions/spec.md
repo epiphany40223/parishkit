@@ -437,7 +437,16 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   and Production activation ("Progress refreshed.") re-read their page's
   own address this way rather than reloading it; Prepare Family links keeps
   the history page shown, and a disclosure such as Technical details stays
-  open because only the list inside it is a region.
+  open because only the list inside it is a region. Their command buttons
+  post in place too: Check readiness and public web address (focus returns
+  to Check, and the overall result is read out: why cleanup can't start yet
+  when any check failed, else that every check passed), Testing cleanup's Retry and
+  Cancel, Prepare inactive Family links and each preparation's Cancel, Retry
+  and Retry disposal, and Retry failed mail preparation. A button that is
+  gone once its request is taken hands focus to the page's Refresh link just
+  below (cleanup, Production), or, on Prepare Family links, to the newest
+  preparation's heading; Start Testing cleanup stays a navigation to the
+  cleanup page.
 - **Errors and fallback.** A POST that got an answer is never sent again; a
   saving POST is never re-sent at all; a read-only table POST with no answer
   falls back to the ordinary submission. A refused POST (an error answer, or
