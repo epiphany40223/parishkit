@@ -277,7 +277,12 @@ Admin steppers' bar (`stepper-steps.html`, shared by the
 [setup wizard](../admin-portal/spec.md#bootstrap-and-first-admin-wizard)
 and the [Campaign setup stepper](../admin-portal/spec.md#create-the-campaign),
 whose segments are links to separate pages); `ui-v1.js` focuses an
-unavailable Admin segment on click. Which steps can open is each flow's
+unavailable Admin segment on click. **Step list.** Beside the bar, an Admin
+stepper's full ordered step list is shown open on screens 64rem wide or
+wider and is a collapsed disclosure on narrower ones
+([#1404](https://github.com/epiphany40223/parishkit/issues/1404)). The page
+draws both and CSS shows exactly one, so nothing moves after the page loads
+and the hidden copy is met by neither Tab nor assistive technology. Which steps can open is each flow's
 own rule, in its spec ([Family steps](../parishioner-portal/spec.md#form-state-and-navigation),
 the setup wizard's and Campaign setup's).
 

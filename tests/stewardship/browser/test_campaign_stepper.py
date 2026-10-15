@@ -3,9 +3,8 @@
 import pytest
 from django.urls import reverse
 
-from .keyboard import tab_to_next
 from .stepper_components import PATH, REVIEW
-from .test_components import axe_violations
+from .test_components import axe_violations, shown_step_list
 from .test_in_place import MARK, MARKED
 from .test_settings_in_place import answer_reviews
 from .waits import has_text, hidden, visible
@@ -19,7 +18,8 @@ pytestmark = pytest.mark.parametrize(
 def test_campaign_stepper_is_compact_with_plain_back_and_next_links(
     page, component_origin, axe_source, width
 ):
-    """A short summary with Back and Next links; the full list opens on demand."""
+    """A short summary with Back and Next links; the full list is open on a
+    wide screen and opens on demand on a narrow one (#1404)."""
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + PATH)
     stepper = page.locator("#campaign-stepper")
@@ -27,7 +27,7 @@ def test_campaign_stepper_is_compact_with_plain_back_and_next_links(
     assert "Step 2 of 7: Share options" in text
     assert "1 of 7 steps completed" in text
     # It sits above the page, under the breadcrumbs, and stays compact.
-    assert stepper.bounding_box()["height"] < (300 if width == 320 else 170)
+    assert stepper.bounding_box()["height"] < (300 if width == 320 else 400)
     back = stepper.locator("[data-campaign-step-back]")
     forward = stepper.locator("[data-campaign-step-next]")
     assert back.inner_text() == "Back: Campaign settings"
@@ -36,17 +36,10 @@ def test_campaign_stepper_is_compact_with_plain_back_and_next_links(
     assert forward.get_attribute("href") == reverse("admin:content_catalog")
     # Back and Next are links, never a form that could save anything.
     assert stepper.locator("form, button").count() == 0
-    assert page.locator("#campaign-stepper .setup-steps").is_hidden()
-    stepper.locator("summary").focus()
-    page.keyboard.press("Enter")
-    visible(stepper.locator(".setup-steps"))
-    current = stepper.locator('.setup-steps [aria-current="step"]')
+    steps = shown_step_list(page, stepper, width)
+    current = steps.locator('[aria-current="step"]')
     assert "Share options" in current.inner_text()
-    assert "Completed" in stepper.locator(".setup-step-done").inner_text()
-    tab_to_next(page)
-    assert page.evaluate(
-        "document.activeElement.closest('#campaign-stepper .setup-steps') !== null"
-    )
+    assert "Completed" in steps.locator(".setup-step-done").inner_text()
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
 

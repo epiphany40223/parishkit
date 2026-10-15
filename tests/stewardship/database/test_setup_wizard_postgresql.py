@@ -97,8 +97,9 @@ def test_stepper_marks_current_done_and_unavailable_steps(setup_http, google):
         page = browser.get("/admin/setup/testing")
         assert page.status_code == 200
         body = page.content
-        # Once in the step bar and once in the list (#1402).
-        assert body.count(b'aria-current="step"') == 2
+        # Once in the step bar and once in each copy of the list (#1402): the
+        # disclosure for narrow screens and the open copy for wide ones (#1404).
+        assert body.count(b'aria-current="step"') == 3
         assert b'<ol class="setup-steps">' in body
         assert b"Completed" in body and b"Not available yet" in body
         assert b'href="/admin/setup/source"' not in body

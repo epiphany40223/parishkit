@@ -48,6 +48,14 @@
 }
 .setup-stepper-list { margin: 0; padding: 0; border: 0; background: transparent; }
 .setup-stepper-list[open] { padding-bottom: .5rem; }
+/* The full list is open on a wide screen (#1404) and a collapsed disclosure
+   on a narrow one: stepper-steps.html draws both copies and exactly one is
+   shown, so the switch needs no script and moves nothing after load. */
+.setup-stepper-wide { display: none; padding-bottom: .5rem; }
+@media (min-width: 64rem) {
+  .setup-stepper-list { display: none; }
+  .setup-stepper-wide { display: block; }
+}
 .setup-steps { list-style: none; margin: 0; padding: 0; columns: 2 19rem; column-gap: 1.5rem; }
 .setup-steps li { margin: 0 0 2px; break-inside: avoid; }
 .setup-steps a, .setup-step-box {

@@ -152,7 +152,7 @@ segment whose tooltip gives the reason
 ([#1402](https://github.com/epiphany40223/parishkit/issues/1402)), with the
 full ordered list (each
 applicable step named as completed, current, not done, optional or not yet
-available with the reason) in a collapsed disclosure. Navigation is
+available with the reason), open on a wide screen and a collapsed disclosure on a narrow one ([step bars](../ui-conventions/spec.md#step-bars)). Navigation is
 conventional: completed steps and the first unfinished required step are
 links; later unfinished steps wait for every earlier required step, and
 optional steps never hold later ones back. A step counts as completed only
