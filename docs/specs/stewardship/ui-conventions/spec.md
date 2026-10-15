@@ -1610,9 +1610,23 @@ or dark on screen. By default it follows the operating system's setting
 dark, every colour token takes its dark value, and the browser's own form
 controls and scrollbars turn dark too.
 
-The Admin sidebar's **Appearance** select, just above Sign out, lets a
-person override that default in this browser:
+The **Appearance** switch at the top right of every Admin page's header,
+sign-in and setup included, lets a person override that default in this
+browser. It is a small segmented control of three icons: a sun for "Light",
+a moon for "Dark" and a monitor for "Match this device".
 
+- It is a radio group named "Appearance": one Tab stop, the arrow keys move
+  the choice, and the chosen icon is drawn selected (and checked for screen
+  readers). Each icon has its name as its accessible name and as a matching
+  tooltip, like the [row action](#row-actions-and-confirmation) icons, and
+  is drawn inline in the current text colour.
+- Each segment is a 36-pixel square with the shared focus ring, in both
+  schemes. Choosing one changes only colours, so nothing moves.
+- Wider than a phone, it is pinned to the header's top right corner, and
+  the header's other items (Find a Family, the status pills) wrap before
+  reaching it. On a phone it shares the first row with the parish name, at
+  the right, and everything else in the header moves below it; the page
+  never scrolls sideways. The Menu button stays below the header.
 - "Match this device" is the default, and choosing it saves nothing.
 - "Light" or "Dark" is saved in the browser's `localStorage`, so every
   Admin page in that browser uses it, sign-in included.
@@ -1620,7 +1634,8 @@ person override that default in this browser:
 
 A change applies in place: the page does not reload, nothing moves, and
 other open Admin tabs follow. A saved choice applies before the page's body
-is drawn, so a page never shows the other scheme first. When the browser
+is drawn, and the switch shows it selected from the first paint, so a page
+never shows the other scheme or the wrong choice first. When the browser
 refuses storage (a private window, blocked site data), the choice lasts
 only for the page it was made on.
 
@@ -1659,14 +1674,18 @@ for dark, so the Family portal is left as it is. **Shared code.**
 `DARK_COLORS` in `web/design_tokens.py` is declared by `ui-v1.css` for
 an `admin-document` root (set by `admin-base.html`) with
 `data-theme="dark"`. `admin-gate-v1.js` sets `data-theme` in the head from
-the saved choice or the operating system, and runs the Appearance select in
-`admin-navigation.html`; `admin-menu-state-v1.js` shows the choice in the
-select as soon as the sidebar is parsed. `test_design_tokens.py` checks both token sets and
+the saved choice or the operating system, keeps the choice as
+`data-theme-choice` (from which `ui-v1.css` draws the selected icon), and
+runs the switch in `admin-appearance.html`, which `admin-base.html` puts at
+the end of the header. `test_design_tokens.py` checks both token sets and
 their contrast. The browser test `test_dark_scheme.py` checks that key Admin
 pages leave no light surface or light ink in dark. It also checks the
 choice: it overrides the device in place, holds across a reload from the
-first paint, reaches other tabs, and leaves Family pages and print light.
-**Precedent.** #732 (tokens), #1264.
+first paint, reaches other tabs, and leaves Family pages and print light;
+and the switch: keyboard use, focus ring, axe in both schemes, and its
+place at phone and laptop widths.
+**Precedent.** #732 (tokens), #1264 (the switch's place: Administrator,
+pk-local batch 24a).
 
 ### Status indicators
 

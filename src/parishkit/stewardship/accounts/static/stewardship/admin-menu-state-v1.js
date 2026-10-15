@@ -14,12 +14,6 @@
   const sidebar = document.querySelector(".admin-sidebar");
   if (!sidebar) return;
 
-  // The Appearance choice (#1264), which admin-gate-v1.js read in the head,
-  // shows in its select now rather than once the whole page is parsed.
-  const appearance = sidebar.querySelector("select[data-appearance]");
-  const chosen = document.documentElement.dataset.themeChoice;
-  if (appearance && chosen) appearance.value = chosen;
-
   // Collapsible groups. Groups render open. Each browser remembers which
   // groups an Admin collapsed: only a "closed" marker under the group's key,
   // removed when the group is opened again, so with nothing stored every

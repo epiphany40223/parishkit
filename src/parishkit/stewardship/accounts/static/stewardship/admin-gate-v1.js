@@ -13,7 +13,7 @@ document.documentElement.classList.remove("js-required");
 // scheme"). It runs here, before the body is parsed, so a page never shows
 // in the wrong scheme first. data-theme on <html> always holds the scheme in
 // use, "light" or "dark", and ui-v1.css draws the dark tokens from it. The
-// sidebar's Appearance select saves an explicit choice per browser; with no
+// header's Appearance switch saves an explicit choice per browser; with no
 // saved choice ("Match this device"), the operating system decides and a
 // change there applies at once. Family pages never load this file and stay
 // light. Storage can be unavailable (a private window, blocked site data),
@@ -21,6 +21,7 @@ document.documentElement.classList.remove("js-required");
 (() => {
   const KEY = "pk-admin-appearance";
   const CHOICES = ["light", "dark"];
+  const RADIOS = 'input[name="pk-appearance"]';
   const device = window.matchMedia("(prefers-color-scheme: dark)");
   let unsaved = null; // This page's choice when storage refused it.
 
@@ -35,20 +36,18 @@ document.documentElement.classList.remove("js-required");
     }
   }
 
-  // Set data-theme from the choice and show the choice in the select. The
-  // choice is also kept as data-theme-choice, from which
-  // admin-menu-state-v1.js, running right after the sidebar is parsed,
-  // shows it in the select before the rest of the page is drawn.
+  // Set data-theme from the choice and check the switch's matching radio.
+  // The choice is also kept as data-theme-choice, from which ui-v1.css shows
+  // the selected icon from the first paint, before the radios are checked.
   function apply() {
     const root = document.documentElement;
     const chosen = choice();
     root.dataset.themeChoice = chosen;
     root.dataset.theme = chosen === "auto" ? (device.matches ? "dark" : "light") : chosen;
-    const select = document.querySelector("select[data-appearance]");
-    if (select) select.value = chosen;
+    for (const radio of document.querySelectorAll(RADIOS)) radio.checked = radio.value === chosen;
   }
 
-  // Save the select's new choice ("auto" saves nothing), then apply it in place.
+  // Save the switch's new choice ("auto" saves nothing), then apply it in place.
   function save(chosen) {
     try {
       if (chosen === "auto") window.localStorage.removeItem(KEY);
@@ -72,8 +71,8 @@ document.documentElement.classList.remove("js-required");
   });
   window.addEventListener("pageshow", apply);
   document.addEventListener("DOMContentLoaded", apply);
-  // The select does not exist yet, so listen on the document.
+  // The switch does not exist yet, so listen on the document.
   document.addEventListener("change", (event) => {
-    if (event.target.matches("select[data-appearance]")) save(event.target.value);
+    if (event.target.matches(RADIOS)) save(event.target.value);
   });
 })();

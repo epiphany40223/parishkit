@@ -581,10 +581,12 @@ Notes on the groups:
 The menu always ends with **Sign out**, set apart from the groups, on every
 signed-in Admin page (including during initial setup). It is a POST form with
 the Admin CSRF token to the logout route, styled like a menu entry, because
-logout is CSRF-protected. Just above it, behind the same divider, the
-**Appearance** select chooses the portal's light or dark scheme for this
-browser ([colour scheme](../ui-conventions/spec.md#colour-scheme)). Pages
-carry no product footer.
+logout is CSRF-protected. Pages carry no product footer.
+
+Every Admin page's header, sign-in and setup included, ends with the
+**Appearance** switch at its top right, which chooses the portal's light or
+dark scheme for this browser
+([colour scheme](../ui-conventions/spec.md#colour-scheme)).
 
 The shared header holds a **Find a Family** search box (#561) for
 Administrators and Staff only; Ministry leaders get none, since they cannot
