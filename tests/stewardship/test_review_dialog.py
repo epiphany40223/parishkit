@@ -415,3 +415,43 @@ def test_create_the_campaign_confirms_without_repeating_the_form():
     assert "It starts with 1 page or email in the default text." in fragment
     assert 'name="preview" value="signed" data-review-preview' in fragment
     assert "Current" not in fragment and "Proposed" not in fragment
+
+
+def artwork_fragment(removing):
+    """Campaign images' review fragment: a removal, or a staged upload."""
+    from types import SimpleNamespace
+    from uuid import UUID
+
+    asset = SimpleNamespace(pk=UUID(int=1), label="section", width=256, height=256)
+    return render_to_string(
+        "stewardship/artwork-review.html",
+        {
+            "review": {
+                "removing": removing,
+                "slot": "welcome",
+                "bundle": UUID(int=2),
+                "asset": None if removing else asset,
+                "label": "Welcome page icon",
+                "preview": "signed",
+            }
+        },
+    )
+
+
+def test_removing_a_campaign_image_is_a_confirmation():
+    """Remove this image is a confirmation (#1356): the answer names its own
+    question and its one sentence, which describes the dialog, and drops the
+    fixed "nothing changes" line. An upload keeps the dialog's own title,
+    since the staged image is new (class C)."""
+    removal = artwork_fragment(True)
+    assert 'data-review-title="Remove this image?"' in removal
+    assert 'data-review-describedby="artwork-review-summary"' in removal
+    assert (
+        '<p id="artwork-review-summary">Welcome page icon: Families will see no'
+        " image there until you upload a new one.</p>"
+    ) in removal
+    assert "Nothing changes until" not in removal
+    assert 'name="preview" value="signed" data-review-preview' in removal
+    upload = artwork_fragment(False)
+    assert "data-review-title" not in upload and "artwork-review-summary" not in upload
+    assert "not yet in use" in upload

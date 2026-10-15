@@ -662,7 +662,8 @@ never scrolls to show it (Administrator, pk-local review of
   [preparing the review](#review-dialog) says) and its
   Remove this image (a text-styled button in a form of its own, drawn only
   when the slot has an image) open the dialog with the image as it will
-  appear, or the removal. The slots are one in-place region, redrawn after
+  appear, or with a [confirmation](#review-dialog) of the removal ("Remove
+  this image?", #1356). The slots are one in-place region, redrawn after
   Apply with the new current image. Each slot is the same height with or
   without an image (its image box keeps the slot's image size, its caption
   is one line, and the removal line keeps the button's space), so that
@@ -1155,7 +1156,8 @@ Ministry leaders, New and Edit scheduled email,
 Share options, Campaign images, Parish logos, Create the campaign and
 No-reminders WorkGroup use the dialog; Create the campaign, New user and
 No-reminders WorkGroup are confirmations under #1356, and so are a one-time
-New scheduled email and Import selected with nobody skipped. Parish
+New scheduled email, Import selected with nobody skipped and Campaign
+images' Remove this image. Parish
 settings shows the in-place
 review panel of #532 and #750
 ([in-place controls](#in-place-controls)); the other editors use separate
