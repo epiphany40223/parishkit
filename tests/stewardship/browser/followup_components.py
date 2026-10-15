@@ -112,6 +112,8 @@ LEADER, SORTED, SEARCHED, NOTHING = (
     "/ministry-requests-nothing",
 )
 GATED_REQUESTS = "/ministry-requests-gated"
+# A packet limit of one Ministry, so ticking both choices passes it (#1332).
+PACKET_LIMIT = "/ministry-requests-packet-limit"
 # The fixture server's answers to a Save (status, Location, body).
 POSTS = {
     UPDATE: (303, SAVED, ""),
@@ -465,6 +467,7 @@ def components(context, admin):
             not_in_source=None,
         ),
         GATED_REQUESTS: requests_page | dict(mutable=False),
+        PACKET_LIMIT: requests_page | dict(packet_limit=1),
         BULK_QUEUE: bulk_page
         | dict(rows=bulk_rows, table=_table(bulk_rows, unfiltered, 3, campaign)),
         BULK_CLOSED_QUEUE: bulk_page
