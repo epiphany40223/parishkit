@@ -56,8 +56,12 @@ def fresh_sign_in(context, setup=False):
     which explains itself.
     """
     request = getattr(context, "request", None)
-    within = SETUP_FRESH_SECONDS if setup else None
-    return request is not None and freshness(request, within)[0]
+    # The window is written inline so test_admin_caller's AST check can
+    # see that only the setup window is ever passed.
+    return (
+        request is not None
+        and freshness(request, SETUP_FRESH_SECONDS if setup else None)[0]
+    )
 
 
 @register.simple_tag
