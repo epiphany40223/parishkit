@@ -24,6 +24,7 @@ from parishkit.stewardship.accounts.branding_views import LogoUploadForm
 from parishkit.stewardship.accounts.campaign_create_views import (
     CREATES_TESTING_DRAFT,
     DEFAULT_TEXT,
+    any_zone,
 )
 from parishkit.stewardship.accounts.campaign_family_test_views import FamilyTestForm
 from parishkit.stewardship.accounts.campaign_forms import CampaignForm
@@ -1508,23 +1509,28 @@ def component_origin():
             "/campaign-create-long",
             "campaign-create",
             {
-                "form": CampaignForm(
-                    initial={"timezone": "America/New_York", "base_digest": "a" * 64},
-                    previous={},
-                    # A real parish has hundreds of Ministries, some long-named.
-                    ministries=[
-                        ("1", "Music ministry"),
-                        (
-                            "2",
-                            "Parish Pastoral Council and Finance Council Joint "
-                            "Subcommittee on Buildings, Grounds and Parking",
-                        ),
-                        *(
-                            (str(number), f"Ministry {number}")
-                            for number in range(3, 214)
-                        ),
-                    ],
-                    funds=[("9", "Offertory")],
+                "form": any_zone(
+                    CampaignForm(
+                        initial={
+                            "timezone": "America/New_York",
+                            "base_digest": "a" * 64,
+                        },
+                        previous={},
+                        # A real parish has hundreds of Ministries, some long-named.
+                        ministries=[
+                            ("1", "Music ministry"),
+                            (
+                                "2",
+                                "Parish Pastoral Council and Finance Council Joint "
+                                "Subcommittee on Buildings, Grounds and Parking",
+                            ),
+                            *(
+                                (str(number), f"Ministry {number}")
+                                for number in range(3, 214)
+                            ),
+                        ],
+                        funds=[("9", "Offertory")],
+                    )
                 ),
             },
         ),
@@ -1875,20 +1881,22 @@ def component_origin():
             "/campaign-create",
             "campaign-create",
             {
-                "form": setup_help.apply(
-                    CampaignForm(
-                        initial={
-                            "timezone": "America/New_York",
-                            "census": True,
-                            "additional_information": True,
-                            "base_digest": "a" * 64,
-                        },
-                        previous={},
-                        ministries=[("4", "Community outreach"), ("5", "Choir")],
-                        funds=[("9", "Offertory")],
-                    ),
-                    setup_help.ADMIN_CAMPAIGN,
-                    replace=True,
+                "form": any_zone(
+                    setup_help.apply(
+                        CampaignForm(
+                            initial={
+                                "timezone": "America/New_York",
+                                "census": True,
+                                "additional_information": True,
+                                "base_digest": "a" * 64,
+                            },
+                            previous={},
+                            ministries=[("4", "Community outreach"), ("5", "Choir")],
+                            funds=[("9", "Offertory")],
+                        ),
+                        setup_help.ADMIN_CAMPAIGN,
+                        replace=True,
+                    )
                 ),
             },
         ),
@@ -1919,6 +1927,27 @@ def component_origin():
                     "notes": [CREATES_TESTING_DRAFT, DEFAULT_TEXT],
                     "apply_label": "Create the campaign",
                 },
+            },
+        ),
+        # Create the campaign drawn again after a refused Review (#1330): the
+        # bound form keeps its posted zone, unmarked for the browser's.
+        (
+            "/campaign-create-refused",
+            "campaign-create",
+            {
+                "form": any_zone(
+                    CampaignForm(
+                        {
+                            "timezone": "America/New_York",
+                            "name": "",
+                            "census": "on",
+                            "base_digest": "a" * 64,
+                        },
+                        previous={},
+                        ministries=[("4", "Community outreach"), ("5", "Choir")],
+                        funds=[("9", "Offertory")],
+                    )
+                ),
             },
         ),
         (

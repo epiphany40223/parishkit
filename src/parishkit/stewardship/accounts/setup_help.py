@@ -181,8 +181,8 @@ ADMIN_CAMPAIGN = {
     ),
     "timezone": _(
         "The time zone for this campaign's dates and scheduled email times, for "
-        "example America/New_York. A new draft starts with the parish time "
-        "zone; change it only if this campaign runs on a different local time."
+        "example America/New_York. It can be changed while the campaign is a "
+        "draft."
     ),
     "start_date": _(
         "The first day Families can respond. Invitations and reminders must be "
@@ -261,6 +261,15 @@ CONTENT = {
 
 # One visible line for fields whose full help moves into a tip. Keep each to
 # the format, example or rule an Admin needs every time they fill it in.
+# Create the campaign's time zone help (#1330): its menu starts on the
+# browser's zone, unlike Campaign settings, which shows the saved one.
+CREATION_TIMEZONE = _(
+    "The time zone for this campaign's dates and scheduled email times, for "
+    "example America/New_York. Your browser's time zone is selected when it "
+    "is on the list, otherwise the parish time zone; choose any time zone. "
+    "It can be changed while the campaign is a draft."
+)
+
 HINTS = {
     "website": _("For example https://www.yourparish.org/"),
     "timezone": _("For example America/New_York."),

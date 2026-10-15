@@ -375,6 +375,11 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # setup disposal check and the safe context in place. Only the safe context
 # comes back older (0089's, through ``CLOSURE_REPLACED``), so
 # ``CLOSURE_REPLACED_AGAIN`` runs 0102's file after it.
+# 0103 (#1330) creates nothing: it replaces 0091's campaign pointer function
+# in place. No closure file installs that function again, and 0091's
+# ``CLOSURE_OLD_BODIES`` rerun touches only bodies still reading Ministry
+# activity, which 0103's does not, so its body survives the swap and nothing
+# is registered (``schema_restored`` checks this).
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
