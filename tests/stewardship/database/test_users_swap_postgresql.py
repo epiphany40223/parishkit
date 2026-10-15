@@ -310,6 +310,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # checks and the worker's audit answer definer, and alters no table.
 # 0088 (#1207) creates nothing: it replaces 0078's switch guard in place, which
 # ``CLOSURE_REPLACED`` puts back after 0078's file has made the guard again.
+# 0089 (#1201) creates nothing:
+# it widens the operational event check and replaces the safe context and
+# log writer functions in place, so a rerun of its file is harmless and
+# nothing is registered for it.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",

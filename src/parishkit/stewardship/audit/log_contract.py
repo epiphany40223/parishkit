@@ -68,6 +68,11 @@ REQUIRED = {
     # An Admin command-line command that failed unexpectedly (#617): what
     # failed, its category and which command.
     Event.ADMIN_COMMAND_FAILED: frozenset({"failure", "failure_kind", "command"}),
+    # An address follow-up's refusal that could not be set aside (#1201):
+    # what failed, its category, the email and how many addresses.
+    Event.RETRY_REFUSAL_UNRECORDED: frozenset(
+        {"failure", "failure_kind", "message_id", "count"}
+    ),
     # A backup sealed to a different key (backup_health); its outcome
     # ``changed`` selects the sentence that says what to check.
     Event.CONFIG_MISMATCH: frozenset({"outcome"}),

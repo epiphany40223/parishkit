@@ -115,6 +115,14 @@ FAILURE_TEXT = {
         "made its change; read the status before retrying, and report it "
         "with its correlation id."
     ),
+    "retry_refusal": gettext_lazy(
+        "A follow-up to an email's addresses refused for now recorded an "
+        "address as refused permanently but could not set it aside, so it "
+        "is still one of the Family's recipients until a later email is "
+        "refused there too. The email's Mail message page labels the "
+        "address refused permanently; check it, and report this entry with "
+        "its correlation id."
+    ),
     "digest_funnel_chart": gettext_lazy(
         "The daily report's Response funnel chart could not be drawn after "
         "every retry, so the report was sent without its charts; its tables "

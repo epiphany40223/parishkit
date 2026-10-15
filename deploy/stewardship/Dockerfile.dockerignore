@@ -113,6 +113,7 @@
 !src/parishkit/stewardship/schema/migrations/0086_snapshot_statistics.sql
 !src/parishkit/stewardship/schema/migrations/0087_publication_plans.sql
 !src/parishkit/stewardship/schema/migrations/0088_debug_allow.sql
+!src/parishkit/stewardship/schema/migrations/0089_retry_refusal_log.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

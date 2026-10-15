@@ -628,6 +628,9 @@ FAILURES = frozenset(
         "digest_funnel_chart",
         "digest_activity_chart",
         "digest_comparison_chart",
+        # An address follow-up could not set aside an address it recorded
+        # as refused permanently (#1201; jobs.address_retry.record_refusals).
+        "retry_refusal",
     }
 )
 # Closed provider results a ``reason`` may hold; mirrored in

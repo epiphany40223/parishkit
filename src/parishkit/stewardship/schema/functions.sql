@@ -3972,7 +3972,13 @@ BEGIN
                 ('schedule','source_refresh_held','INFO'),
                 ('due_work','campaign_boundary_lag','WARNING'),
                 ('due_work','due_work_lag','CRITICAL'),
-                ('failure','web_unhealthy','CRITICAL'))))) THEN
+                ('failure','web_unhealthy','CRITICAL'))))
+        -- Mail dispatch: an address follow-up's permanent refusal that
+        -- could not be set aside (#1201), CRITICAL so an Administrator sees
+        -- it.
+        OR (current_user='pk_stewardship_mail_dispatch' AND
+            (NEW.schema,NEW.event,NEW.level) IN (
+                ('failure','retry_refusal_unrecorded','CRITICAL')))) THEN
         RAISE EXCEPTION 'This login may not record this operational entry'
             USING ERRCODE = '42501';
     END IF;
@@ -5742,7 +5748,8 @@ BEGIN
                 'source_retention','family_engagement','alert_mail','security_mail','slack_alert',
                 'smtp_systemic','smtp_unavailable','web_health_check','web_unresponsive',
                 'admin_command','admin_command_outcome_unknown','digest_funnel_chart',
-                'digest_activity_chart','digest_comparison_chart') THEN RETURN false; END IF;
+                'digest_activity_chart','digest_comparison_chart',
+                'retry_refusal') THEN RETURN false; END IF;
         -- An Admin command-line command (#617): its catalog name, lower-case
         -- words such as 'export create' (Python checks the catalog itself).
         ELSIF key='command' THEN

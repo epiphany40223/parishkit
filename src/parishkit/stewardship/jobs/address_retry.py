@@ -567,7 +567,8 @@ def record_refusals(row, claim):
     outcome under the same worker and run. Like ``open_follow_up``, it runs
     in a savepoint: a failure is logged at ERROR and never loses the recorded
     outcome; the address is then left to the next email's own refusal, as
-    before #806.
+    before #806. So that an Administrator sees the failure, it also leaves
+    one durable CRITICAL entry (``record_unrecorded``, #1201).
     """
     from .recipient_suppressions import record_retry_refusal
 
@@ -584,10 +585,70 @@ def record_refusals(row, claim):
                     correlation_id=claim.run_id,
                     fence=claim.fence,
                 )
-    except Exception:
+    except Exception as error:
         LOG.error(
             "An address follow-up could not record an address refused "
             "permanently as a recipient refusal (#806).",
+            exc_info=True,
+        )
+        record_unrecorded(row, len(permanent), error)
+
+
+def record_unrecorded(row, count, error):
+    """Leave the durable trace of refusals ``record_refusals`` could not record.
+
+    One CRITICAL ``retry_refusal_unrecorded`` entry naming only the parent
+    email and how many addresses were not set aside (never an address or
+    exception text), so the critical-problems banner, System health and the
+    alert email show it until an Administrator acknowledges it (#1201). It
+    runs in its own savepoint, still in the settle's transaction, so it
+    commits with the recorded outcome. Writing it never raises: if it fails
+    too, the outcome stands and the ERROR line above is the only trace.
+
+    It is a plain INSERT, as ``audit.timeouts.insert_timeout`` writes: the
+    mail dispatch login may append to the log but not read it back, which a
+    Django ``create`` (INSERT ... RETURNING) would need. The writer trigger
+    admits this one entry from that login and stamps the database's time.
+    """
+    import json
+
+    from parishkit.stewardship.audit.log_contract import enforce
+    from parishkit.stewardship.audit.schemas import ContextKind, Outcome, sanitize
+    from parishkit.stewardship.observability import (
+        Event,
+        current_correlation,
+        failure_kind_of,
+    )
+
+    event = Event.RETRY_REFUSAL_UNRECORDED
+    values = {
+        "failure": "retry_refusal",
+        "failure_kind": failure_kind_of(error),
+        "message_id": row.message_id,
+        "count": count,
+        "outcome": Outcome.FAILED,
+    }
+    try:
+        enforce(event, "CRITICAL", values)
+        context = sanitize(ContextKind.FAILURE, values)
+        with transaction.atomic(), connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO stewardship_operational_log "
+                "(id,correlation_id,event,level,schema,context) "
+                "VALUES (%s,%s,%s,%s,%s,%s::jsonb)",
+                [
+                    uuid4(),
+                    current_correlation(),
+                    event.value,
+                    "CRITICAL",
+                    ContextKind.FAILURE.value,
+                    json.dumps(context),
+                ],
+            )
+    except Exception:
+        LOG.error(
+            "An address follow-up could not record that its refusal was not "
+            "set aside (#1201).",
             exc_info=True,
         )
 

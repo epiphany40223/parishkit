@@ -528,6 +528,14 @@ DESCRIPTIONS = {
         "detail names the command and says whether its change may have been "
         "made; give the entry's correlation id when you report it."
     ),
+    "retry_refusal_unrecorded": _(
+        "A follow-up to an email's addresses refused for now could not set "
+        "aside an address the mail provider refused permanently, so that "
+        "address stays one of the Family's recipients. The follow-up itself "
+        "ended correctly and nothing was sent twice. The detail names the "
+        "email; its Mail message page labels the address refused "
+        "permanently. Report this entry with its correlation id."
+    ),
     "incident_recovered": _(
         "A problem the system had detected has ended. The detail names it "
         "and how long it lasted, and says what to check when its end still "

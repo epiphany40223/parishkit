@@ -1661,8 +1661,19 @@ records the outcome, an address refused permanently also becomes a
 recipient refusal of the accepted attempt, exactly as that attempt's own
 permanent refusal would: later email to the Family leaves it out until it
 is cleared or ParishSoft's address changes, and Outgoing mail and Refused
-addresses show it against that email. A refusal that cannot be recorded is
-logged and never loses the outcome. An uncertain outcome, or a worker lost
+addresses show it against that email. A refusal that cannot be recorded
+never loses the outcome: the recording runs in a savepoint, and its failure
+is logged at ERROR and leaves one durable CRITICAL
+`retry_refusal_unrecorded` operational entry (#1201) that names only the
+email (`message_id`), the failure category and how many addresses were not
+set aside. Mail dispatch writes it with a plain INSERT, the one CRITICAL
+entry its login may write, and if that write fails too the outcome still
+stands. The entry follows the
+[critical error and notification](#critical-errors-and-notification) path
+and is listed on System health until acknowledged (see
+[System health page](../admin-portal/spec.md#system-health-page)). Such an
+address stays one of the Family's recipients until a later email is refused
+there or an Administrator reports it as bounced. An uncertain outcome, or a worker lost
 after "submitting" whose provider deadline has passed, ends it `unknown`
 and it is never retried.
 

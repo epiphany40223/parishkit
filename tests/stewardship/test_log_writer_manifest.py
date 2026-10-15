@@ -109,6 +109,12 @@ RAW_WRITERS = {
     "campaigns/boundary_health.py": [
         ({"scheduler"}, "due_work", {"campaign_boundary_lag"}, {"WARNING"})
     ],
+    # record_unrecorded: an address follow-up's refusal that could not be
+    # set aside (#1201), settled by mail dispatch, which holds no read on
+    # the log for an INSERT ... RETURNING.
+    "jobs/address_retry.py": [
+        ({"mail_dispatch"}, "failure", {"retry_refusal_unrecorded"}, {"CRITICAL"})
+    ],
     # The due-work health trigger (an invoker, fired by the scheduler).
     "schema:stewardship_due_work_health_v1": [
         ({"scheduler"}, "due_work", {"due_work_lag"}, {"CRITICAL"})
