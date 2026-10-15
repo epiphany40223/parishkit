@@ -494,7 +494,6 @@ Home, then these groups, each listing the entries the viewer's role may open:
 | Responses and reports | Census changes | `/admin/reports/census/` | Administrator, Staff | The campaign does not include the census |
 | Responses and reports | Additional information | `/admin/reports/information/` | Administrator, Staff | No current campaign, or ParishSoft data has not been downloaded yet |
 | Responses and reports | Ministry requests | `/admin/reports/ministries/` | Administrator, Staff, Ministry leader | The campaign has no Ministry module |
-| Responses and reports | Ministry follow-up | `/admin/reports/ministries/follow-up/` | Administrator, Staff, Ministry leader | The campaign has no Ministry module |
 | Responses and reports | Active parishioner family directory | `/admin/reports/families/` | Administrator, Staff | No current campaign, or ParishSoft data has not been downloaded yet |
 | Responses and reports | Emailed reports | `/admin/reports/emailed/` | Administrator, Staff | Never |
 | Parish data | Parish settings | `/admin/parish/settings/` | Administrator | Never |
@@ -520,16 +519,19 @@ Notes on the groups:
   [Financial stewardship](../reports/spec.md#financial-stewardship-detail),
   [Limitations](../reports/spec.md#limitations),
   [Census changes](../reports/spec.md#pending-census-changes),
-  [Additional information](../reports/spec.md#additional-information), the
-  Ministry report and its [follow-up](#follow-up-workflows) queue, and the
+  [Additional information](../reports/spec.md#additional-information),
+  [Ministry requests](../reports/spec.md#ministry-change-summary) (one page
+  with the Ministry [follow-up](#follow-up-workflows) queue since
+  [#1133](https://github.com/epiphany40223/parishkit/issues/1133); the
+  separate Ministry follow-up entry is gone), and the
   [active parishioner family directory](../reports/spec.md#active-parishioner-family-directory) (with Family
   campaign codes and its mailing columns). Reports always show the current
   campaign. Ministry leaders see only their own Ministries in the Ministry
-  entries. Additional information and Ministry follow-up show their open
+  entry. Additional information and Ministry requests show their open
   counts ([#585](https://github.com/epiphany40223/parishkit/issues/585)): for
   Additional information, the current requests not yet marked "Follow-up
   completed" (its default view also lists completed ones); for Ministry
-  follow-up, the total of its default Unresolved view, read through that
+  requests, the total of its queue's default Unresolved view, read through that
   page's own selection with every filter it applies (only the leader's own
   Ministries for a Ministry leader); where that page would say the follow-up
   is unavailable, no number shows. Each is a plain number after the entry's
@@ -690,7 +692,7 @@ ParishSoft data has been downloaded yet (#1242): one small query, run once
 per request and only when an entry's condition needs it, for a viewer whose
 menu has Ministries, Additional information or the directory. The other
 exception is the open counts on Additional information and
-Ministry follow-up ([Menu groups](#menu-groups)): one query reads both, only
+Ministry requests ([Menu groups](#menu-groups)): one query reads both, only
 when the viewer's menu offers either entry as a link, once per request.
 
 #### Home page
@@ -711,7 +713,7 @@ links chosen by the campaign's state and the viewer's role:
 | --- | --- | --- | --- |
 | Draft in Testing | Campaign settings, Pages and emails, Dates and mail schedules, Preview and test email (for the initial invitation's current revision), Go-live readiness, Response dashboard | Response dashboard, Participation | Ministry requests |
 | Production being activated | Production activation, Outgoing mail (while the campaign is still a draft, Go-live readiness leads) | Response dashboard | Ministry requests |
-| Active | Response dashboard, Additional information and Ministry follow-up (with open counts), Family email progress, Outgoing mail problems (with count) | Response dashboard, Additional information, Ministry follow-up (with open counts) | Ministry requests, Ministry follow-up (with open count) |
+| Active | Response dashboard, Additional information and Ministry requests (with open counts), Family email progress, Outgoing mail problems (with count) | Response dashboard, Additional information, Ministry requests (with open counts) | Ministry requests (with open count) |
 | Mail paused | Pause and resume mail first, then the Active list | As Active | As Active |
 | Closed or archived | Participation, Emailed reports | Participation | Ministry requests |
 | No current campaign | Create the campaign when the deployment has never had one; otherwise says so, with no next steps | Says so; no next steps | Says so; no next steps |
@@ -734,10 +736,13 @@ of the leader's Ministries in the campaign, and any Ministry since removed
 from the campaign that still has open requests, marked "no longer in this
 campaign" as the queue marks it. Each line gives the Ministry's open
 requests to join and to leave, or "No open requests", and, when there are
-some, an "Open requests" link to the Ministry follow-up queue
-([follow-up workflows](#follow-up-workflows)) filtered to that Ministry.
-The panel also links the unfiltered queue and the Ministry report's
-[follow-up packet](../reports/spec.md#multi-ministry-follow-up-packet). On
+some, an "Open requests" link to
+[Ministry requests](../reports/spec.md#ministry-change-summary)
+(`/admin/reports/ministries/?ministry=<DUID>`) with its queue filtered to
+that Ministry. The panel's last line, "Ministry requests · Follow-up packet
+for my Ministries", links the unfiltered page and the
+[follow-up packet](../reports/spec.md#multi-ministry-follow-up-packet) form
+at its foot ([#1133](https://github.com/epiphany40223/parishkit/issues/1133)). On
 a phone each Ministry is one short block (name, counts, link), never a
 squeezed table.
 
@@ -750,7 +755,7 @@ queue accepts that closed value by GET
 carry), checked against the person's current scope (a number outside it is
 refused), so Back and reload work.
 The queue then remembers that view like any other, so its request links,
-Save and next, and each request page's "Return to Ministry follow-up" link
+Save and next, and each request page's "Return to Ministry requests" link
 keep that Ministry. Search and every filter other than those
 [follow-up workflows](#follow-up-workflows) lists stay private POST state.
 The command line's status read does not
@@ -864,12 +869,12 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `information_queue` | Additional information | Menu: Additional information | Administrator, Staff | Additional information and follow-up | `/admin/reports/information/` | (same) |  |
 | `information_item` | Information request | Additional information | Administrator, Staff | Additional information and follow-up (one request); Information item | `/admin/reports/information/<item>/` | (same) | Return to the queue keeps its filters and page. |
 | `ministry_reports` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry reports | `/admin/ministry-reports/` | (retired; 404) | Replaced by Ministry requests, which shows the "no campaign" page when there is nothing for the viewer to report. |
-| `ministry_report` | Ministry requests | Menu: Ministry requests | Administrator, Staff, Ministry leader | Ministry report | `/admin/reports/ministries/` | (same) |  |
-| `ministry_joiners` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry requests — Prospective joiners; Joining; Members joining | `/admin/reports/ministries/joining/` | (retired; 404) | Retired with no redirect ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)): each request's contact details are on its Follow-up request page, and its export is Ministry follow-up's Export these requests. |
+| `ministry_report` | Ministry requests | Menu: Ministry requests | Administrator, Staff, Ministry leader | Ministry report; Ministry follow-up | `/admin/reports/ministries/` | (same) | One page with the follow-up queue since [#1133](https://github.com/epiphany40223/parishkit/issues/1133): totals, By Ministry, the queue, Export these requests and the follow-up packet ([Ministry change summary](../reports/spec.md#ministry-change-summary)). No assignee column, filter or bulk assignment (#552). Its Export these requests download (`follow-up/exports/`, #1157) and bulk outcome (`follow-up/bulk/`, #1131) are non-page actions. |
+| `ministry_joiners` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry requests — Prospective joiners; Joining; Members joining | `/admin/reports/ministries/joining/` | (retired; 404) | Retired with no redirect ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)): each request's contact details are on its Follow-up request page, and its export is Ministry requests' Export these requests. |
 | `ministry_leavers` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry requests — Requested leavers; Leaving; Members leaving | `/admin/reports/ministries/leaving/` | (retired; 404) | Retired with no redirect (#1157), as Members joining. |
-| `ministry_followup` | Ministry follow-up | Menu: Ministry follow-up | Administrator, Staff, Ministry leader | Follow-up | `/admin/reports/ministries/follow-up/` | (same) | No assignee column, filter or bulk assignment (#552). Its Export these requests download (`follow-up/exports/`, #1157) is a non-page action. |
-| `ministry_followup_item` | Follow-up request | Ministry follow-up | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/ministries/follow-up/<request>/` | (same) | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). Shows the Member's contact details (#1157). A resolved join or leave's Entered in ParishSoft tick posts to `follow-up/<request>/roster/` (#528). |
-| `ministry_roster` | Roster changes to enter | Ministry follow-up | Administrator, Staff | (new, #528) | (none) | `/admin/reports/ministries/follow-up/roster/` | [Roster changes to enter](#roster-changes-to-enter); its CSV/XLSX/PDF download (`roster/exports/`) is a non-page action. |
+| `ministry_followup` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry follow-up; Follow-up | `/admin/reports/ministries/follow-up/` | (retired; 404) | Retired with no redirect ([#1133](https://github.com/epiphany40223/parishkit/issues/1133)): the queue is now Ministry requests, at `/admin/reports/ministries/`. |
+| `ministry_followup_item` | Follow-up request | Ministry requests | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/ministries/follow-up/<request>/` | (same) | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). Shows the Member's contact details (#1157). A resolved join or leave's Entered in ParishSoft tick posts to `follow-up/<request>/roster/` (#528). |
+| `ministry_roster` | Roster changes to enter | Ministry requests | Administrator, Staff | (new, #528) | (none) | `/admin/reports/ministries/follow-up/roster/` | [Roster changes to enter](#roster-changes-to-enter); its CSV/XLSX/PDF download (`roster/exports/`) is a non-page action. |
 | `family_directory` | Active parishioner family directory | Menu: Active parishioner family directory | Administrator, Staff | (same) | `/admin/reports/families/` | (same) |  |
 | `family_timeline` | Family timeline | Active parishioner family directory | Administrator, Staff | (new, #477) | `/admin/reports/families/<family>/` | (same) | Opened from each directory row (and Find a Family, NAV-19); `<family>` is the opaque campaign record id. Staff see the summary only. |
 | `emailed_reports` | Emailed reports | Menu: Emailed reports | Administrator, Staff | (new) | `/admin/reports/emailed/` | (same) | New page (decision 7, ADM-12.17): the current campaign's daily reports (and weekly reports for Administrators), newest first, each linking its page; Send a weekly report now is on it and returns to it, linking the report it produced. |
@@ -2179,8 +2184,9 @@ campaign's selections never change.
 
 - **Remove** takes a DUID out of the selections. Answers already given are
   never deleted or rewritten: submissions keep their recorded inputs, join and
-  stop requests stay in Ministry follow-up until staff close them, and the
-  Ministry report, follow-up queue and follow-up packets keep showing them,
+  stop requests stay in the follow-up queue until staff close them, and
+  Ministry requests (its By Ministry counts and queue) and follow-up packets
+  keep showing them,
   marked "No longer in this campaign" (in the follow-up queue, a "Removed"
   badge; see [follow-up workflows](#follow-up-workflows)), while it has a
   request that was not later withdrawn or replaced. A request for a
@@ -4783,7 +4789,7 @@ role may not see left out:
 | 1 | Families the form cannot open | Families that cannot open the Family form because a Member's ParishSoft data has a value the form cannot accept | [Families the form cannot open](#system-health-page) | Administrator | `reports.source_form.blocked_families`, the System health sentence's own read, with its per-campaign and per-snapshot cache |
 | 2 | Refused email addresses | Unresolved refused addresses, and how many Families they belong to | [Refused addresses](#refused-addresses) | Administrator | `jobs.delivery_reads.unresolved_refusals()`, the set behind Outgoing mail's link-line count, counted in one query |
 | 3 | Families no mail can reach | Active parishioner Families with no deliverable email and no usable mailing address | The [active parishioner family directory](../reports/spec.md#active-parishioner-family-directory) with its "Can't be reached by email or mail" preset | Administrator, Staff | `accounts.admin_dashboard.unreachable_families`, Home's count, which is the directory's own "neither" selection |
-| 4 | Census and roster changes to enter | Census changes in the [Census changes](../reports/spec.md#pending-census-changes) default view for the viewer (To do and Conflict, plus To review for an Administrator); later, roster changes to enter | Census changes; later, Ministry follow-up's *Roster changes to enter* view | Administrator, Staff | `reports.census_changes.census_changes` with the page's default query; later, the roster filter's own read |
+| 4 | Census and roster changes to enter | Census changes in the [Census changes](../reports/spec.md#pending-census-changes) default view for the viewer (To do and Conflict, plus To review for an Administrator); later, roster changes to enter | Census changes; later, *Roster changes to enter* (under Ministry requests) | Administrator, Staff | `reports.census_changes.census_changes` with the page's default query; later, the roster filter's own read |
 
 Notes on the sections:
 
@@ -4800,7 +4806,7 @@ Notes on the sections:
   number is not a list of errors.
 - **Roster changes** join section 4 with the #528 roster tick: until that
   step lands the section counts census changes only and says nothing about
-  rosters. That step also lets Ministry follow-up accept its *Roster
+  rosters. That step also lets the follow-up queue accept its *Roster
   changes to enter* view as a closed GET value (as it accepts `?ministry=`),
   so the link opens the filtered queue.
 - **No new SQL.** Every count calls the function its detail page or Home
@@ -4879,17 +4885,19 @@ Both follow-up queues remember the view the reader is working through
 remembers its applied filters, sort, page and page size in the signed-in
 session (never in the URL), as a change's origin is remembered (navigation
 rule 5). Links carry only an opaque token, and the session keeps the last 20
-views. The one exception is a link that opens the Ministry follow-up queue
-for one Ministry by GET: the "Open requests" link of Home's
-[My Ministries panel](#home-page) carries only the Ministry number
-(`?ministry=<DUID>`), and the counts on
-[Ministry requests](../reports/spec.md#ministry-change-summary) add the
-queue's own closed Request and Status values
+views. The one exception is a link that opens the queue on
+[Ministry requests](../reports/spec.md#ministry-change-summary)
+(`/admin/reports/ministries/`) for one Ministry by GET: the "Open requests"
+link of Home's [My Ministries panel](#home-page) carries only the Ministry
+number (`?ministry=<DUID>`), and the By Ministry counts on the same page add
+the queue's own closed Request and Status values
 (`?ministry=<DUID>&action=join&state=any`,
 `?ministry=<DUID>&action=leave&state=any`, or the Ministry alone for
 Unresolved,
 [#1133](https://github.com/epiphany40223/parishkit/issues/1133)), so the
-queue shows exactly the requests counted. Such a link may carry only
+queue shows exactly the requests counted. On the page itself a By Ministry
+count applies those filters in place rather than loading the address. Such a
+link may carry only
 `ministry`, `action` and `state`, each a single value the queue's filter
 form accepts, never a search; a token and a Ministry never travel
 together. The Ministry is checked against the person's current follow-up
@@ -5026,8 +5034,8 @@ and the portal does not track coordination between people. The queue and
 request pages therefore offer no assignee field, filter or column; the status
 choices are New, In progress, Resolved and Closed: no response. A request recorded as Assigned before this decision reads as New
 (that state only ever meant "has an assignee") until its next save stores the
-chosen status with no assignee; until then an explicit New filter (queue or
-Ministry report) does not match it, while Unresolved and Any status do. Past
+chosen status with no assignee; until then an explicit New filter on the
+queue does not match it, while Unresolved and Any status do. Past
 history entries keep the assignment they recorded. The data model keeps the unused column and state, as described in
 the [data specification](../data/spec.md#follow-up-records).
 
@@ -5069,9 +5077,9 @@ form is never one. One SQL function decides this
 [#1216](https://github.com/epiphany40223/parishkit/issues/1216) shares:
 
 - A Ministry leader never sees, counts or acts on such a request: the queue,
-  Members joining and leaving, Home's My Ministries panel, the menu count,
-  the [Ministry requests](../reports/spec.md#ministry-change-summary) lists
-  and counts and the
+  its totals and the By Ministry counts on
+  [Ministry requests](../reports/spec.md#ministry-change-summary), Home's My
+  Ministries panel, the menu count and the
   [packets](../reports/spec.md#multi-ministry-follow-up-packet) leave it
   out. Its request page reads as an unknown request.
 - Staff and Administrators see the same by default, so their counts match.
@@ -5249,7 +5257,7 @@ ParishSoft, and this tick only records that a person did.
 ### Roster changes to enter
 
 **Roster changes to enter** (`/admin/reports/ministries/follow-up/roster/`,
-Administrators and Staff, linked from Ministry follow-up, which is its
+Administrators and Staff, linked from Ministry requests, which is its
 breadcrumb parent) is the list staff work from. It lists the resolved joins
 and leaves with no resolution source that are not yet ticked, or, with
 **Show** set to all, every one of them, to find and clear a mistaken mark,

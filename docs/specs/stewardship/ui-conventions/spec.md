@@ -1752,7 +1752,7 @@ without the mark ([#1117](https://github.com/epiphany40223/parishkit/issues/1117
 | First-campaign Mail schedules | Send time | One time, browser time |
 | First-campaign Mail schedules, Repeat a reminder | Send time | One time, browser time |
 | The date-change review | Send time | One time, campaign time |
-| Ministry follow-up | Contact attempt time | One time, browser time zone |
+| Ministry requests' follow-up request | Contact attempt time | One time, browser time zone |
 | Logs, reports | Date filters | Dates only, no time of day |
 
 The Ministry follow-up contact attempt moved to this entry after its in-place
@@ -1900,7 +1900,7 @@ reader may not open, is plain text, not a link; and the link's accessible
 name names its row ("3 join requests for Choir"), since the visible number
 alone is ambiguous out of context. So far only
 [Ministry requests](../reports/spec.md#ministry-change-summary) has them
-(#1133). A report whose rows an installed SQL selection
+(#1133): its By Ministry counts filter the queue on the same page in place. A report whose rows an installed SQL selection
 orders offers that selection's sort orders on the columns they order and its
 page sizes; its other columns do not sort, since the schema owns those
 orders. In v1 that covers:
@@ -1912,10 +1912,8 @@ orders. In v1 that covers:
 - Financial stewardship detail (Family, Family DUID, Annual pledge and
   latest response);
 - the Additional information queue (Family, Family DUID and Submitted);
-- the Ministry report (Ministry; Member, Member DUID and Submitted in one
-  Ministry's view);
-- the Ministry follow-up queue (Member and Ministry; newest first by default,
-  with no Submitted column to show it, #1064).
+- the follow-up queue on Ministry requests (Member and Ministry; newest
+  first by default, with no Submitted column to show it, #1064).
 
 Extending those vocabularies is a schema change; the DUID sorts of the
 financial, Additional information and Ministry tables came with one
@@ -2110,9 +2108,9 @@ of ParishSoft DUID:
 - **Family DUID:** wherever a Family is named, in its own column; staff
   search and match Families by it.
 - **Member DUID:** only where staff act on a specific Member in ParishSoft:
-  Census changes, Roster changes to enter, the Ministry follow-up queue, the
-  Ministry report's request details (and its join and leave downloads and
-  packets), the Limitations report, Families the form cannot open, and the
+  Census changes, Roster changes to enter, the follow-up queue on Ministry
+  requests and its Export these requests, the host's join and leave lists
+  and the packets, the Limitations report, Families the form cannot open, and the
   Users page's ParishSoft Ministry leaders table and its import review
   (Administrator, 2026-10-12, so staff can find each leader in ParishSoft).
   Elsewhere a Member is named without it.
@@ -2170,7 +2168,7 @@ names a DUID is one of the two above and comes right after its name's
 heading (Family or Member; Census changes heads its Member column Who). The
 one DUID column apart from its name is the recorded exception below.
 
-The Ministry follow-up queue also has no Submitted column (Administrator
+The follow-up queue on Ministry requests also has no Submitted column (Administrator
 decision, 2026-10-11,
 [#1064](https://github.com/epiphany40223/parishkit/issues/1064)), so its
 one-line rows take less width; the request page shows the submission time
@@ -2292,7 +2290,7 @@ second. The Family timeline, Outgoing mail, Refused addresses, Testing
 submissions, the chosen-Family send page and "Families on the form now"
 word a blank surname "Name not recorded in ParishSoft" since that second
 change. Since its third (frozen migration 0094), the installed selections
-do too: the Ministry follow-up queue, its request page and Roster changes
+do too: the follow-up queue on Ministry requests, its request page and Roster changes
 to enter mark a Member with the shared badge (no longer "Unavailable
 Member"); the Financial, Limitations and Additional information reports
 mark a Family the data no longer has (no longer "Unavailable Family"), and
@@ -2321,7 +2319,7 @@ Administrator asked for one-line rows on #952). A long email or Name is cut
 off with "…"; the full value stays the cell's text, appears in a `title`
 tooltip, and is shown whole on the user's Edit page
 ([Users table](../admin-portal/spec.md#users-table), #952, #963).
-The Ministry follow-up queue does the same for a long Member name, with the
+The follow-up queue on Ministry requests does the same for a long Member name, with the
 shared `cell-ellipsis` class
 ([Follow-up workflows](../admin-portal/spec.md#follow-up-workflows), #932).
 Its Ministry name, which a leader scans to tell similar Ministries apart,
@@ -2405,7 +2403,7 @@ beside that part). The Ministry report's lists were the first case: the page's
 demographics" was Gender, Age, Email, Phones and Known primary Family address
 (Administrator decision, 2026-10-11, on
 [#932](https://github.com/epiphany40223/parishkit/issues/932)). Those lists
-were retired (#1157); Ministry follow-up's Export these requests splits its
+were retired (#1157); Ministry requests' Export these requests splits its
 Status cell ("Resolved: Joined the Ministry") into Status and Outcome the
 same way, and a Family cell with its
 [ParishSoft status](#members-and-families-no-longer-in-parishsoft) badge is
@@ -2423,7 +2421,7 @@ Recorded exceptions to the rule above:
   [#966](https://github.com/epiphany40223/parishkit/issues/966)). Its CSV
   and XLSX headings are still plain names; JSON Lines
   keeps program keys.
-- **Ministry follow-up, Export these requests:** the queue's columns, then
+- **Ministry requests, Export these requests:** the queue's columns, then
   each request's contact details from its request page (Email, Phones, Known
   primary Family address, Gender, Age, Current Ministry role) and Submitted.
   The contact details are what the export is for: they replaced the retired
@@ -2469,7 +2467,7 @@ which forms ask. **Precedent.**
 [#1127](https://github.com/epiphany40223/parishkit/issues/1127).
 
 Asking: System logs, Response lists, Financial stewardship, Limitations,
-Census changes, Additional information, Ministry follow-up's Export these
+Census changes, Additional information, Ministry requests' Export these
 requests (which replaced one Ministry's joining or leaving lists, #1157),
 Roster changes to enter, the Family timeline, and the Active parishioner
 family directory code list only while its response columns are included
