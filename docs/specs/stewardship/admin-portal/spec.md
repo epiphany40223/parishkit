@@ -1449,7 +1449,9 @@ reviewed and applied. Choosing a Basic image empties any size chosen in
 Advanced, since a Basic upload replaces all four; the server turns the one
 image into the four sizes. Upload and review is unavailable, with the reason
 under it, until a Basic image or at least one Advanced size is chosen. The
-upload sends the mode as `editor_mode`; an upload without one is Basic.
+upload sends the mode as `editor_mode`; an upload without one is Basic, and
+one with any other field (such as the `mode` of the page before the toggle,
+accepted for one release) is refused.
 Each size states its
 formats and limits beside its field and is refused, naming the size, the
 rule and what the file was, when it breaks them:

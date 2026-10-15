@@ -122,10 +122,6 @@ class LogoForm(forms.Form):
 # uploaded separately. The shared toggle (components/editor-mode.html) sends
 # the mode as editor_mode.
 BASIC, ADVANCED = "basic", "advanced"
-# The mode field of the page before the toggle (#1062 slices 1-2), which a
-# page left open across the deploy still posts: read for one release, when
-# editor_mode is absent, then removed by #1178.
-LEGACY_MODES = {"one": BASIC, "each": ADVANCED}
 # A file field with the page's size check and a reserved error line.
 SIZE_FIELD_TEMPLATE = "stewardship/file-size-field.html"
 # One image over its limit, in the server's and the page's words (ui-v1.js
@@ -144,9 +140,7 @@ class LogoUploadForm(LogoForm):
     hidden Advanced panel is still sent (the convention's recorded
     exception), but a Basic upload ignores it, and the page empties it as a
     Basic image is chosen. A post without a mode is Basic, as every upload
-    was before; one with only the earlier ``mode`` (one or each, from a page
-    opened before the toggle) is read as Basic or Advanced until #1178. The
-    setup wizard keeps ``LogoForm``.
+    was before. The setup wizard keeps ``LogoForm``.
 
     ``stored_mode`` is the mode that saved the current logos
     (``opening_mode``): an unbound form opens in it, and Advanced → Basic
@@ -175,10 +169,6 @@ class LogoUploadForm(LogoForm):
         upload still shows its field and error."""
         super().__init__(*args, **kwargs)
         self.stored_mode = stored_mode
-        if self.is_bound and not self.data.get("editor_mode"):
-            # A page from before the toggle posts mode=one|each (#1178).
-            self.data = self.data.copy()
-            self.data["editor_mode"] = LEGACY_MODES.get(self.data.get("mode"), BASIC)
         logo = self.fields["logo"]
         logo.required = False
         logo.template_name = SIZE_FIELD_TEMPLATE
@@ -235,7 +225,9 @@ class LogoUploadForm(LogoForm):
     def clean_logo(self):
         """The single image is checked only in Basic. A file over the limit
         is refused in the words the page uses for it."""
-        if self.data["editor_mode"] != BASIC:
+        # editor_mode is cleaned after logo, so read the raw value; none
+        # is Basic, as in clean_editor_mode.
+        if (self.data.get("editor_mode") or BASIC) != BASIC:
             return None
         value = self.cleaned_data.get("logo")
         if value is None:
@@ -314,17 +306,8 @@ def _upload(request, service):
     ``(None, form)``, the bound form with its errors.
     """
     if (
-        set(request.POST)
-        - {"base_digest", "csrfmiddlewaretoken", "editor_mode", "mode"}
+        set(request.POST) - {"base_digest", "csrfmiddlewaretoken", "editor_mode"}
         or request.POST.get("editor_mode", BASIC) not in {BASIC, ADVANCED}
-        # The legacy mode field (until #1178), only alone and only its values.
-        or (
-            "mode" in request.POST
-            and (
-                "editor_mode" in request.POST
-                or request.POST["mode"] not in LEGACY_MODES
-            )
-        )
         or set(request.FILES) - {"logo", *SLOTS}
         or any(len(values) != 1 for _, values in request.POST.lists())
         or any(len(values) != 1 for _, values in request.FILES.lists())
