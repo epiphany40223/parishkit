@@ -2054,17 +2054,31 @@ one-at-a-time path, which prepares at the due time.
   decryption error drops the build, and the item is built inside the lock as
   today. The rendering, source-loading, sealing and content functions that
   assert the work-order lock today get variants for builds.
-- **A small lookahead, carried forward.** A batch's lock hold fits only a
-  few items, so a process builds only about as many items as its last batch
-  committed, plus a small margin. Builds a batch does not use carry over to
-  the next batch and are rechecked there. A carried send build holds a
-  Family's plaintext code and link in memory: it is never logged, and it is
-  dropped on a fingerprint mismatch, a stop request or the end of the drain.
+- **A small lookahead, carried forward.** A preparation batch's lock hold
+  fits only a few items, so the worker builds only about as many items as
+  its last batch committed, plus a small margin. A send batch's messages are
+  then sent one after another, which takes far longer than building them,
+  so a mail consumer builds every message its next batch could commit (at
+  most its batch size), and the batch tries the same messages in the same
+  order as without builds. Builds a batch does not use carry over to the
+  next batch and are rechecked there. A carried send build holds a Family's
+  plaintext code in memory, never its link: the link token is read only
+  with the message's live delivery claim, so it is still resolved under the
+  lock. A build is never logged. It is dropped on a fingerprint mismatch,
+  and every build is dropped at the end of its drain; a stop request ends
+  building at once and the drain right after. Both mail consumers read the
+  same head of the queue, so they can build the same messages: a message
+  the other consumer commits first is skipped, and the batch may then reach
+  messages it has no build for. That costs time, never correctness, and the
+  timing lines count it per consumer.
 - **Recheck under the lock.** Each item compares its fingerprint in one
   query inside the batch's lock transaction. If it matches, the prebuilt
   result is written through the existing code and guards. If not, the item
   is rebuilt inside the lock exactly as today, so a change costs time, not
-  correctness. A guard refusal still leaves the item to the one-at-a-time
+  correctness. A send compares just before releasing the message's pause
+  hold, if it has one: the release moves only the message's version, which
+  no content depends on, so a message held during a pause still uses its
+  build. A guard refusal still leaves the item to the one-at-a-time
   path, as today.
 
 #### Preparing ahead of the due time
