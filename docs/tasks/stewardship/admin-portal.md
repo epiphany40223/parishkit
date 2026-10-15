@@ -890,6 +890,24 @@ each row, the review) and
 (a schedule reviewed and applied, the same patch as the page's review of
 the same rows, an unchanged schedule kept exactly, the refusals).
 
+Another part adds `integration backup-probe` (the Off-site backups page's
+Test access) and `integration dismiss` (a key change line's Dismiss) in
+`parishkit.stewardship.admin_integration_actions`, through the page's own
+check (moved into `integration_views.queue_probe`, which the page's Test
+access now calls) and `integration_credentials.dismiss` (which now returns
+whether it dismissed and takes a callback for the command's event), with
+no schema change; proven by
+`tests/stewardship/test_admin_integration_actions.py` (catalog flags, the
+described events, the ledger, usage errors),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/database/test_admin_integration_actions_cli_postgresql.py`
+(a check of the saved folder and of a given link queued with the command
+event and no Google contact, no folder, a bad link, Workspace not set up,
+the local environment, a changed Workspace mailbox; a finished line
+dismissed with both events, a pending or other request dismissing nothing,
+a required integration not set up, a read-only session and Staff denied,
+an ended session) and the unchanged integration and backup page suites.
+
 ## ADM-12: Admin navigation overhaul
 
 Scope and dependencies: [ADM-12 work package](../../plans/stewardship/admin-portal.md#adm-12-admin-navigation-overhaul).

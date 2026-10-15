@@ -203,20 +203,22 @@ def _dismissed(row):
     ).exists()
 
 
-def dismiss(target, record, request_id, *, actor_id, parish_id):
+def dismiss(target, record, request_id, *, actor_id, parish_id, record_more=None):
     """Hide a finished key change's status line for every Administrator.
 
     The dismissal is an audit event about the request, so nothing else needs
     to store it. Only the line the page currently shows can be dismissed, and
     only when it is a finished outcome: a stale page, a change that has since
-    been superseded or one that still needs action records nothing.
+    been superseded or one that still needs action records nothing. Returns
+    whether the line was dismissed. ``record_more`` (``pk-admin integration
+    dismiss``'s own event) runs in the same transaction, only on a dismissal.
     """
     with transaction.atomic():
         latest = summary(target, record)
         if latest is None or latest.request_id != request_id:
-            return
+            return False
         if latest.kind not in DISMISSIBLE:
-            return
+            return False
         record_action(
             Action.CREDENTIAL_RESULT_DISMISSED,
             actor_kind=ActorKind.PORTAL_USER,
@@ -224,6 +226,9 @@ def dismiss(target, record, request_id, *, actor_id, parish_id):
             subject_id=request_id,
             parish_id=parish_id,
         )
+        if record_more is not None:
+            record_more()
+    return True
 
 
 def summary(target, record):

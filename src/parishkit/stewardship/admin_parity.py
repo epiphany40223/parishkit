@@ -388,18 +388,19 @@ LEDGER = {
     "ministry_roster_export": pending("PR 8g", "export roster"),
     # Integrations and credentials.
     "integrations": command("integration list"),
-    # The settings page as it opens, its Save and its Remove (#463); the
-    # backup folder check and the key replacement are still owed.
+    # The settings page as it opens, its Save, its Remove and the backup
+    # folder check (#463); the key replacement is still owed.
     "integration_settings": command(
         "integration show",
         "integration preview",
         "integration confirm",
+        "integration backup-probe",
         owed="PR 10",
     ),
     "integration_status": command("integration status"),
     "refresh_schedule_check": pending("PR 10", "integration schedule-preview"),
     "credential_status": pending("PR 10", "integration key status"),
-    "dismiss_credential_result": pending("PR 10", "integration dismiss"),
+    "dismiss_credential_result": command("integration dismiss"),
     "select_credential": pending("PR 10", "integration key finish-switching"),
     # The first-Admin setup wizard.
     **{

@@ -1312,8 +1312,9 @@ built yet.
   `integration key status --watch` follows staged, testing, installing and
   acknowledged progress. `integration key finish-switching` is the page's
   **Finish switching to the new key** (`select_credential`) and prompts.
-  `integration dismiss` dismisses a finished change. A failed or expired
-  change leaves the old key installed, as on the page.
+  A failed or expired change leaves the old key installed, as on the
+  page. Dismissing a finished change's line is `integration dismiss` (see
+  [Integrations and credentials](#integrations-and-credentials)).
 - **Backup key.** Three steps, as on the page: `integration backup-key
   challenge --public-key-file <path>` returns the proof-of-possession
   challenge; `integration backup-key preview --intent <token>
@@ -1662,7 +1663,12 @@ signatures:
   which the pages now call. `integration preview` moved the settings page's
   Save review (after its local and key checks) and its Remove review into
   `integration_views.review_settings` and `review_removal`, which the
-  page's Save and Remove now call.
+  page's Save and Remove now call. `integration backup-probe` moved Test
+  access's checks and queueing (after its field check) into
+  `integration_views.queue_probe`, which the page now calls; `integration
+  dismiss` needed none: `integration_credentials.dismiss` now returns
+  whether it dismissed and takes a callback, so the command's event shares
+  its transaction.
 - **PR 11:** user, event and follow-up actions from their views (the users
   model of #952 replaces the rule actions; #922 retired the assignment and
   Chairperson actions). The event acknowledgements moved each view's
@@ -2915,9 +2921,9 @@ lists the fields.
 
 | URL names | Command or exemption |
 | --- | --- |
-| `integrations`, `integration_settings`, `integration_status`, `credential_status` | `integration list`, `integration show TARGET` and `integration status TARGET [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the pages' reads (any session; no event, as the pages' reads record none; see below); `integration preview TARGET` and `integration confirm TARGET` for the settings page's non-secret Save and its Remove ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below); `integration backup-probe` for the backup Drive folder check (PR 10); `integration preview parishsoft` takes the [refresh schedule](../background-processing/spec.md#refresh-schedule) with the page's validation, and `integration schedule-preview` prints the page's [seven-day preview](../admin-portal/spec.md#seven-day-preview) and [cost and freshness summary](../admin-portal/spec.md#cost-and-freshness-summary), for a saved or a proposed schedule ([#632](https://github.com/epiphany40223/parishkit/issues/632)) |
+| `integrations`, `integration_settings`, `integration_status`, `credential_status` | `integration list`, `integration show TARGET` and `integration status TARGET [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the pages' reads (any session; no event, as the pages' reads record none; see below); `integration preview TARGET` and `integration confirm TARGET` for the settings page's non-secret Save and its Remove ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below); `integration backup-probe [--folder LINK]` for the Off-site backups page's Test access ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below); `integration preview parishsoft` takes the [refresh schedule](../background-processing/spec.md#refresh-schedule) with the page's validation, and `integration schedule-preview` prints the page's [seven-day preview](../admin-portal/spec.md#seven-day-preview) and [cost and freshness summary](../admin-portal/spec.md#cost-and-freshness-summary), for a saved or a proposed schedule ([#632](https://github.com/epiphany40223/parishkit/issues/632)) |
 | `refresh_schedule_check` | `integration schedule-preview` (PR 10): the ParishSoft page's no-save live check of the refresh schedule editor's rows answers the same validation, preview and cost summary ([#632](https://github.com/epiphany40223/parishkit/issues/632)) |
-| `dismiss_credential_result` | `integration dismiss` (PR 10) |
+| `dismiss_credential_result` | `integration dismiss TARGET --request-id ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
 | Key replacement through `integration_settings` | `integration key replace --target …`, `integration key status --watch` (PR 10; see [secret replacement](#secret-replacement)) |
 | `select_credential` | `integration key finish-switching` (PR 10) |
 | Backup encryption key change, through `integration_settings` with proof of possession | `integration backup-key challenge`, `integration backup-key preview`, `integration backup-key confirm` (PR 10) |
@@ -3008,6 +3014,31 @@ fresh gate's event and `fresh_gated` notice, and, for Slack, a
 `policy_change` notice and the `automation_policy_change` incident (see
 [notifications](#notifications)). A repeat returns the original request and
 records nothing new, the fresh gate's trail included.
+
+`integration backup-probe [--folder LINK]` is the Off-site backups page's
+**Test access** and `integration dismiss TARGET --request-id ID` a key
+change line's **Dismiss** (`parishsoft`, `google_workspace` or `slack`;
+`ID` is `integration show`'s `key.request_id`). Both need a full-scope
+session, as the pages' posts record activity, and an Administrator; neither
+page asks for a recent sign-in or a confirmation, so neither command is
+fresh-gated or prompts. `integration backup-probe` queues the page's own
+check (`integration_views.queue_probe`) of the given link, or of the saved
+folder without `--folder`, as the Google Workspace mailbox user; the command
+never contacts Google, as the Workspace installer answers the check. In the
+check's transaction it records `admin_cmd_integration_backup_probe` and
+prints `pending` and `probe`, as `integration show backup` prints it; a
+watch of `integration status backup` follows it. The local environment is
+`invalid`; Google Workspace mail not set up is `invalid` at
+`google_workspace`, and no folder (none given and none saved) or a link
+that is not a Drive folder at `folder`, with the page's words; another
+Administrator's Workspace change in between is `stale_version`.
+`integration dismiss` calls the page's own `dismiss`: only the line the
+page shows now, and only a finished one (`updated` or `failed`), is
+dismissed, recording the page's `credential_result_dismissed` with
+`admin_cmd_integration_dismiss` in one transaction. Any other request is
+the page's silent no-op: `dismissed` false, exit 0, nothing recorded. A
+required integration not set up is `not_available`. It prints `target`,
+`request_id` and `dismissed`.
 
 Secret values never pass through command output. The backup destination is an
 `integration` target; backups themselves already run as `pk-stewardship

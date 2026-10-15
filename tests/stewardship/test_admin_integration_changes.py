@@ -202,6 +202,7 @@ def test_the_ledger_covers_the_settings_pages_save_and_remove():
         "integration show",
         "integration preview",
         "integration confirm",
+        "integration backup-probe",
     )
 
 
