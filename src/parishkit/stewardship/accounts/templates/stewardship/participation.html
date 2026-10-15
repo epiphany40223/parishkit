@@ -2,8 +2,6 @@
 {% block title %}{% translate "Participation" %}{% endblock %}
 {% block head %}
 {% include 'stewardship/components/chart-scripts.html' %}
-<link rel="stylesheet" href="{% static 'stewardship/digest-v1.css' %}">
-<script src="{% static 'stewardship/digest-v1.js' %}" defer></script>
 <script src="{% static 'stewardship/report-v1.js' %}" defer></script>
 {% endblock %}
 {% block content %}
@@ -40,14 +38,13 @@
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "ParishSoft data load" %}</dt><dd>{% if statistics.source_generation %}{{ statistics.source_generation|number }}{% else %}{% translate "Unavailable" %}{% endif %}</dd>
 <dt>{% translate "Responses included up to number" %}</dt><dd>{{ statistics.submission_watermark|number }}</dd></dl></details>
 </section>
-<section class="panel" id="participation-chart" data-in-place-region data-digest-chart>
+<section class="panel" id="participation-chart" data-in-place-region>
 <h2>{% translate "Daily participation" %} — {% if query.scope == 'historical' %}{% translate "Historical as of day" %}{% else %}{% translate "Current population" %}{% endif %}</h2>
 {% if selection.updating %}<p class="notice" role="status">{% translate "Updating — the latest complete chart is shown below when available. It may not yet include the newest ParishSoft data or responses counted above. Refresh this page to check progress." %}</p>{% endif %}
 {% if chart %}
 {% if chart.days %}
-<div class="digest-figure"><img class="digest-chart" src="{{ chart_url }}" alt="{% translate 'Daily first submissions, cumulative participating Families, and annual pledges when enabled. Exact values are in the following table.' %}" width="1440" height="840"><div class="digest-tip" data-digest-tip aria-hidden="true" hidden></div></div>
-{{ chart_interaction|json_script:'digest-chart-data' }}
-<div data-digest-controls hidden><label for="digest-day">{% translate "Inspect campaign date" %}</label><input id="digest-day" type="range" min="0" max="{{ chart_last_index }}" value="{{ chart_last_index }}" step="1"><p class="visually-hidden" data-digest-values role="status" aria-live="polite"></p></div>
+{# The daily chart drawn in the browser (#720): stacked panels on one date axis, each date's figures in its tooltip. The daily table below is its exact values, so the chart adds no Exact values table of its own and does not show its summary, which would repeat the table (it stays the view's description). The exports and the daily email keep the static drawing. #}
+{% with chart=daily_chart %}{% include 'stewardship/components/chart.html' with no_table=True %}{% endwith %}
 <div id="{{ table.anchor }}" data-table-region>
 {% translate "Daily table pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="daily-table-caption"><table class="data-table"><caption id="daily-table-caption">{{ chart.scope_label }} — {% translate "exact daily values" %}</caption><thead><tr>{% for key, heading in columns %}{% sort_heading table key heading %}{% endfor %}</tr></thead><tbody>{% for day, row in table.rows %}<tr>{% for value in row %}<td>{{ value }}</td>{% endfor %}</tr>{% empty %}<tr><td colspan="4">{% translate "No campaign dates to show." %}</td></tr>{% endfor %}</tbody></table></div>
