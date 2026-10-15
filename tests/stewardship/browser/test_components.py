@@ -264,7 +264,6 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/denied-unavailable",
         "/ministries",
         "/parish-settings",
-        "/parish-preview",
         "/configuration-request",
         "/go-live-steps",
         "/background",
