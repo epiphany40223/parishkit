@@ -1,6 +1,6 @@
-"""Migration 0103's DO block refuses every earlier or weakened body (#1402).
+"""Migration 0104's DO block refuses every earlier or weakened body (#1402).
 
-0103 (``schema/migrations/0103_setup_sign_in_hour.sql``) widens the setup
+0104 (``schema/migrations/0104_setup_sign_in_hour.sql``) widens the setup
 credential guard's sign-in window to an hour, inclusive, makes the staged
 credential's audit record the sign-in age, and lets the safe context admit
 that key. Following the in-place SQL rule, its check is run here against
@@ -19,7 +19,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 MIGRATIONS = (
     Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema/migrations"
 )
-FROZEN = MIGRATIONS / "0103_setup_sign_in_hour.sql"
+FROZEN = MIGRATIONS / "0104_setup_sign_in_hour.sql"
 GUARD = "stewardship_setup_secret_guard_v1"
 AUDIT = "stewardship_setup_secret_audit_v1"
 CONTEXT = "stewardship_safe_context_v1"
@@ -38,14 +38,14 @@ def statement(path, name):
 
 
 def test_migration_check_refuses_each_earlier_or_weakened_body():
-    """0103's check passes as installed and refuses each regression."""
+    """0104's check passes as installed and refuses each regression."""
     text = FROZEN.read_text(encoding="utf-8")
     capture = text[text.index("SELECT set_config(") : text.index("true);") + 6]
     check = text[text.index("DO $check$") : text.index("$check$;") + len("$check$;")]
     guard = statement(FROZEN, GUARD)
     audit = statement(FROZEN, AUDIT)
     changes = (
-        # The bodies 0103 replaced.
+        # The bodies 0104 replaced.
         (statement(MIGRATIONS / "0055_setup_users.sql", GUARD), "guard is not"),
         (statement(MIGRATIONS / "0102_setup_load_void.sql", CONTEXT), "safe context"),
         # A strict hour (the web's check is inclusive) and the old five minutes.
@@ -88,7 +88,7 @@ def test_migration_check_refuses_each_earlier_or_weakened_body():
         cursor.execute(check)
         for change, message in changes:
             with (
-                pytest.raises(DatabaseError, match=f"Migration 0103.*{message}"),
+                pytest.raises(DatabaseError, match=f"Migration 0104.*{message}"),
                 transaction.atomic(),
             ):
                 cursor.execute(change)

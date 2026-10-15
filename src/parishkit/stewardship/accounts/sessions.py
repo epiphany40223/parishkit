@@ -531,7 +531,7 @@ FRESH_SECONDS = 300
 # again on each credential page. Only setup_credential_views and
 # setup_credentials pass it, for the original setup attempt while it is
 # collecting; the SQL guard stewardship_setup_secret_guard_v1 enforces the
-# same 60 minutes on the sealed credential row (migration 0103); both count a
+# same 60 minutes on the sealed credential row (migration 0104); both count a
 # sign-in exactly 60 minutes old as within the window. Every other
 # action, and every action after setup, keeps FRESH_SECONDS.
 SETUP_FRESH_SECONDS = 3600

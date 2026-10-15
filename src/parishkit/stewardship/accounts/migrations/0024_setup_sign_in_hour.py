@@ -1,7 +1,7 @@
 """Forward migration: setup credential steps accept a sign-in an hour old.
 
-Its SQL is the frozen file ``schema/migrations/0103_setup_sign_in_hour.sql``
-(prefix 0103, assigned in the repository-wide file sequence), read whole and
+Its SQL is the frozen file ``schema/migrations/0104_setup_sign_in_hour.sql``
+(prefix 0104, assigned in the repository-wide file sequence), read whole and
 never parsed (#1402). It replaces ``stewardship_setup_secret_guard_v1`` so a
 staged setup credential admits the original setup session's Google sign-in
 up to 60 minutes old (inclusive) instead of five, matching
@@ -22,7 +22,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0103_setup_sign_in_hour.sql"
+    / "0104_setup_sign_in_hour.sql"
 )
 
 

@@ -669,7 +669,7 @@ CLOSURE_REPLACED = {
 # still later closure file replaces again, with that file and its phrase;
 # run after ``CLOSURE_REPLACED`` the same way. 0102 (#1353) widens 0089's
 # safe context, which 0089's rerun (for its event check) puts back, and
-# 0103 (#1402) widens 0102's again with the setup sign-in age, so 0103's
+# 0104 (#1402) widens 0102's again with the setup sign-in age, so 0104's
 # file, whose body holds both, is the one that runs.
 CLOSURE_REPLACED_AGAIN = {
     "public.stewardship_safe_context_v1(text,jsonb)": (

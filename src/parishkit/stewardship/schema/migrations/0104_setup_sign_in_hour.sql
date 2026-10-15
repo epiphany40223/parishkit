@@ -1,4 +1,4 @@
--- Frozen forward migration file 0103 (the repository-wide file sequence):
+-- Frozen forward migration file 0104 (the repository-wide file sequence):
 -- the setup wizard's credential steps accept a sign-in up to an hour old,
 -- and the sealing records how old it was (#1402). This file is installed
 -- by the Django migration that names it in FROZEN_SQL and must never
@@ -42,7 +42,7 @@ SET LOCAL search_path = public;
 -- The functions' grants before the replacement, compared in the DO block.
 -- A transaction-local setting holds them, not a temporary table: the
 -- migration login has no TEMP privilege.
-SELECT set_config('stewardship.migration_0103_acl', (
+SELECT set_config('stewardship.migration_0104_acl', (
     SELECT string_agg(p.proname||'='||coalesce(p.proacl::text,'default'), ';' ORDER BY p.proname)
     FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
     WHERE n.nspname='public' AND p.proname IN (
@@ -391,7 +391,7 @@ BEGIN
                'stewardship_setup_secret_audit_v1')
              AND NOT p.prosecdef
              AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp'])<>3 THEN
-        RAISE EXCEPTION 'Migration 0103: a replaced function is not installed as declared';
+        RAISE EXCEPTION 'Migration 0104: a replaced function is not installed as declared';
     END IF;
     -- The guard accepts a sign-in up to 60 minutes old, inclusive, keeps the
     -- 60-minute idle rule and the original-owner, Testing and bootstrap
@@ -406,7 +406,7 @@ BEGIN
           AND p.prosrc LIKE '%WHERE runtime.mode=''testing'' AND NOT runtime.restore_review_required%'
           AND p.prosrc LIKE '%base.validation_schema IN (''bootstrap-policy-v1'', ''bootstrap-users-v10'')%'
           AND p.prosrc NOT LIKE '%authenticated_at>stamp-interval ''5 minutes''%')<>1 THEN
-        RAISE EXCEPTION 'Migration 0103: the setup credential guard is not installed as declared';
+        RAISE EXCEPTION 'Migration 0104: the setup credential guard is not installed as declared';
     END IF;
     -- The audit records a staged credential's sign-in age.
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
@@ -414,7 +414,7 @@ BEGIN
           AND p.prorettype='trigger'::regtype
           AND p.prosrc LIKE '%jsonb_build_object(''sign_in_age_seconds'',age)%'
           AND p.prosrc LIKE '%''setup_credential_staged''%')<>1 THEN
-        RAISE EXCEPTION 'Migration 0103: the setup credential audit is not installed as declared';
+        RAISE EXCEPTION 'Migration 0104: the setup credential audit is not installed as declared';
     END IF;
     -- The safe context admits the age as an action key, still refuses an
     -- unknown key, and keeps 0102's discarded-load keys.
@@ -426,15 +426,15 @@ BEGIN
            'action', '{"sign_in_instant": 1}'::jsonb)
        OR NOT public.stewardship_safe_context_v1(
            'action', '{"void_reason": "reload", "task_state": "failed"}'::jsonb) THEN
-        RAISE EXCEPTION 'Migration 0103: the safe context does not admit the sign-in age as declared';
+        RAISE EXCEPTION 'Migration 0104: the safe context does not admit the sign-in age as declared';
     END IF;
-    IF current_setting('stewardship.migration_0103_acl', true) IS DISTINCT FROM (
+    IF current_setting('stewardship.migration_0104_acl', true) IS DISTINCT FROM (
            SELECT string_agg(p.proname||'='||coalesce(p.proacl::text,'default'), ';' ORDER BY p.proname)
            FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
            WHERE n.nspname='public' AND p.proname IN (
                'stewardship_safe_context_v1','stewardship_setup_secret_guard_v1',
                'stewardship_setup_secret_audit_v1')) THEN
-        RAISE EXCEPTION 'Migration 0103: a replaced function lost or changed its grants';
+        RAISE EXCEPTION 'Migration 0104: a replaced function lost or changed its grants';
     END IF;
     -- Both still guard and audit the sealed setup credential table.
     IF (SELECT count(*) FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid
@@ -444,7 +444,7 @@ BEGIN
                 AND p.proname='stewardship_setup_secret_guard_v1')
             OR (t.tgname='stewardship_setup_secret_audit'
                 AND p.proname='stewardship_setup_secret_audit_v1')))<>2 THEN
-        RAISE EXCEPTION 'Migration 0103: a setup credential trigger is missing';
+        RAISE EXCEPTION 'Migration 0104: a setup credential trigger is missing';
     END IF;
 END
 $check$;
