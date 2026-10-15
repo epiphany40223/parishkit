@@ -3946,8 +3946,8 @@
   // #750): components/confirm-dialog.html with review=True, opened by a form
   // marked data-review-open="<dialog id>" (New and Edit user, Import
   // Ministry leaders, New and Edit scheduled email, Campaign settings, its
-  // date change on Dates and mail schedules, Share options, Campaign images
-  // and Parish logos).
+  // date change on Dates and mail schedules, Share options, Campaign images,
+  // Parish logos and Create the campaign's confirmation).
   //
   // Review posts the form, submitter included, without a page load. Until
   // the answer arrives the form is inert and aria-busy, and its Review
@@ -3973,7 +3973,9 @@
   // change is recorded Apply is hidden (its space kept) and focus moves to
   // the title; once applied the dialog closes, and either the page goes
   // to the dialog's data-review-return (a New or Edit page's table) or, with
-  // none, every region is redrawn from the form's region's data-refresh-url.
+  // none, every region is redrawn from the form's region's data-refresh-url
+  // (or, for a dialog marked data-review-redraw="answer", from the address
+  // Apply's answer ended on).
   // Either way the page's reserved status line named by
   // data-review-outcome then says what was applied and when, and takes
   // focus. Across a page change that line's text waits in sessionStorage,
@@ -4187,7 +4189,8 @@
       dialog.querySelector("[data-review-title]").focus();
     };
     const body = new URLSearchParams(new FormData(review.apply));
-    if (!await followChange(state, formUrl(review.apply), body, recorded)) return;
+    const answer = await followChange(state, formUrl(review.apply), body, recorded);
+    if (!answer) return;
     dialog.querySelector("[data-confirm-status]").textContent = dialog.dataset.applied || "Applied.";
     const text = [review.done, fillIn(dialog.dataset.appliedAt || "Applied at {time}.",
       {time: clockTime()})].filter(Boolean).join(" ");
@@ -4204,11 +4207,19 @@
       window.location.assign(target.href);
       return;
     }
+    // A page whose own address can only be refused once the change is
+    // applied (Create the campaign, data-review-redraw="answer") is redrawn
+    // from the address Apply's answer ended on, the page naming its change,
+    // which then becomes the page's address so a reload shows the same.
     const region = state.form.closest(REGIONS);
-    const fresh = await freshPage(region?.dataset.refreshUrl || window.location.href);
+    const fromAnswer = dialog.dataset.reviewRedraw === "answer"
+      && sameOrigin(answer.response.url) ? answer.response.url : "";
+    const fresh = await freshPage(fromAnswer || region?.dataset.refreshUrl
+      || window.location.href);
     if (!fresh) return;
     state.done = true;
     dialog.close();
+    if (fromAnswer) window.history.replaceState(window.history.state, "", fromAnswer);
     redrawFrom(fresh);
     if (!showOutcome(outcome, text)) announce(text);
   };

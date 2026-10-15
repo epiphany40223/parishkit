@@ -21,10 +21,6 @@ from parishkit.stewardship.accounts import setup_help
 from parishkit.stewardship.accounts import setup_progress_views as progress_views
 from parishkit.stewardship.accounts.backup_key import KeyStatus
 from parishkit.stewardship.accounts.branding_views import LogoUploadForm
-from parishkit.stewardship.accounts.campaign_create_views import (
-    CREATES_TESTING_DRAFT,
-    DEFAULT_TEXT,
-)
 from parishkit.stewardship.accounts.campaign_family_test_views import FamilyTestForm
 from parishkit.stewardship.accounts.campaign_forms import CampaignForm
 from parishkit.stewardship.accounts.campaign_mail_views import CampaignMailForm
@@ -87,6 +83,8 @@ from .automation_components import canonical
 from .automation_components import components as automation_components
 from .branding_components import POSTS as BRANDING_POSTS
 from .branding_components import components as branding_components
+from .campaign_create_components import POSTS as CAMPAIGN_CREATE_POSTS
+from .campaign_create_components import components as campaign_create_components
 from .campaign_settings_components import POSTS as CAMPAIGN_SETTINGS_POSTS
 from .campaign_settings_components import components as campaign_settings_components
 from .census_components import components as census_components
@@ -1840,7 +1838,7 @@ def component_origin():
                 ),
             },
         ),
-        # Create the campaign (#142): the first campaign's form and its review in place.
+        # Create the campaign (#142): the first campaign's form.
         (
             "/campaign-create",
             "campaign-create",
@@ -1860,35 +1858,6 @@ def component_origin():
                     setup_help.ADMIN_CAMPAIGN,
                     replace=True,
                 ),
-            },
-        ),
-        (
-            "/campaign-create-preview",
-            "campaign-create",
-            {
-                "form": setup_help.apply(
-                    CampaignForm(
-                        initial={
-                            "timezone": "America/New_York",
-                            "census": True,
-                            "additional_information": True,
-                            "base_digest": "a" * 64,
-                        },
-                        previous={},
-                        ministries=[("4", "Community outreach"), ("5", "Choir")],
-                        funds=[("9", "Offertory")],
-                    ),
-                    setup_help.ADMIN_CAMPAIGN,
-                    replace=True,
-                ),
-                "review": {
-                    "preview": "synthetic-signed-intent",
-                    "changes": [
-                        {"label": "Campaign name", "before": None, "after": "Annual"}
-                    ],
-                    "notes": [CREATES_TESTING_DRAFT, DEFAULT_TEXT],
-                    "apply_label": "Create the campaign",
-                },
             },
         ),
         (
@@ -2150,6 +2119,7 @@ def component_origin():
     responses.update(upload_defaults_components(context, admin))
     responses.update(settings_components(context, admin))
     responses.update(campaign_settings_components(context, admin))
+    responses.update(campaign_create_components(context, admin))
     responses.update(menu_components(context, admin))
     responses.update(my_ministries_components(context, admin))
     responses.update(home_steps_components(context, admin))
@@ -2178,6 +2148,7 @@ def component_origin():
         | SETTINGS_POSTS
         | STEPPER_POSTS
         | CAMPAIGN_SETTINGS_POSTS
+        | CAMPAIGN_CREATE_POSTS
         | SCHEDULE_LIST_POSTS
         | HOSTED_FILE_POSTS
         | USER_POSTS

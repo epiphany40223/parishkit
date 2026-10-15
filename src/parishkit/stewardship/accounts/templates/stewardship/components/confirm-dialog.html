@@ -64,7 +64,14 @@
     (components/review-outcome.html), which then says what was applied and
     when.
   - fallback is as above.
-{% endcomment %}{% if review %}<dialog id="{{ dialog_id }}" class="confirm-dialog review-dialog" aria-labelledby="{{ dialog_id }}-title" data-review-dialog data-confirm-fallback="{{ fallback }}" data-review-return="{{ return_url|default:'' }}" data-review-outcome="{{ outcome_id }}" data-working="{% translate 'Applying…' %}" data-applied="{% translate 'Applied.' %}" data-applied-at="{% translate 'Applied at {time}.' %}">
+  - describedby, for a confirmation (UX conventions, "A confirmation when
+    Review would only repeat the page"), is the id of the review
+    fragment's one-sentence summary, which then describes the dialog.
+  - redraw_answer=True redraws the page's regions from the address Apply's
+    answer ended on (the page naming its change, ?request=), not from the
+    page's own address, and makes it the page's address: Create the
+    campaign's own address can only be refused once the campaign exists.
+{% endcomment %}{% if review %}<dialog id="{{ dialog_id }}" class="confirm-dialog review-dialog" aria-labelledby="{{ dialog_id }}-title"{% if describedby %} aria-describedby="{{ describedby }}"{% endif %} data-review-dialog data-confirm-fallback="{{ fallback }}" data-review-return="{{ return_url|default:'' }}"{% if redraw_answer %} data-review-redraw="answer"{% endif %} data-review-outcome="{{ outcome_id }}" data-working="{% translate 'Applying…' %}" data-applied="{% translate 'Applied.' %}" data-applied-at="{% translate 'Applied at {time}.' %}">
 <h2 id="{{ dialog_id }}-title" tabindex="-1" data-review-title>{{ title }}</h2>
 <div class="dialog-body" tabindex="0" role="region" aria-labelledby="{{ dialog_id }}-title" data-review-body></div>
 <form method="post" action="{{ apply_url }}" data-review-apply>{% csrf_token %}<input type="hidden" name="action" value="confirm"></form>

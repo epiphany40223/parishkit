@@ -2862,34 +2862,40 @@ no-campaign text instead.
 form: name, modules, start and end dates, Ministries (from the loaded catalog,
 initially all active ones) and, for Financial stewardship, the financial
 period and current and comparison funds. The time zone comes from the Parish
-profile, as it does for every new draft. Review changes is unavailable until
-every required field is filled in ([prerequisite
-gates](../ui-conventions/spec.md#prerequisite-gates)); it then shows the whole
-new campaign [in place](../ui-conventions/spec.md#in-place-controls) under the
-form, noting that it creates a Testing-mode draft whose pages and emails start
-with the default text, and its **Create the campaign** button records one
-versioned configuration request, in the same format as every other campaign
-save, that adds the draft campaign with its [default content](#default-content)
-and the default share options. A refused review or confirmation, including one
-refused because a campaign now exists, is explained in the same region. A
-plain load of the page while creation is not admitted is refused whole, on an
-error page headed "Create the campaign is unavailable" (not the
-out-of-date-form heading its 409 status would otherwise give), with the same
-explanation and a link to Campaign settings.
+profile, as it does for every new draft. The form's **Create the campaign**
+button is unavailable until every required field is filled in ([prerequisite
+gates](../ui-conventions/spec.md#prerequisite-gates)). Its Review is a
+[confirmation](../ui-conventions/spec.md#review-dialog), not a full review
+([#1356](https://github.com/epiphany40223/parishkit/issues/1356)): every value
+of the new campaign is in the filled-in form, so the review dialog, titled
+"Create the campaign?", lists none of them again. It says what Apply does
+("This creates the campaign as a draft in Testing mode; no email is sent.")
+and how many pages and emails the campaign starts with in the default text,
+and its Apply records one versioned configuration request, in the same
+format as every other campaign save, that adds the draft campaign with its
+[default content](#default-content) and the default share options. A Review
+refused for the form's values stays on the form; any other refused Review or
+Apply, including one refused because a campaign now exists, is explained in
+the dialog. A plain load of the page while creation is not admitted is
+refused whole, on an error page headed "Create the campaign is unavailable"
+(not the out-of-date-form heading its 409 status would otherwise give), with
+the same explanation and a link to Campaign settings.
 
-**After confirming.** The request's live status replaces the review in
-place, polled from its Change status page. Unlike the settings pages, the
-page does not refresh itself once the change is applied: by then the
-campaign exists, so the form has nothing left to create, and a reload of
-that address still shows the change's status; once the campaign exists, that
-reload draws no form, which could only be refused, and links to Campaign
-settings instead, saying the campaign was created only when this change was
-applied (a change that failed says a campaign already exists). The configuration installer applies the request, and the
+**After confirming.** Apply is answered with the page naming the request,
+whose region holds the request's live status, polled from its Change status
+page; the dialog follows it. The page's own address can't be redrawn once
+the change is applied (by then the campaign exists, so the form has nothing
+left to create), so the dialog redraws the page's region from the address
+naming the request instead, which becomes the page's address, and the status
+line under the region says the campaign was created and when. That address
+draws the change's status, not the form, and once the campaign exists it
+links to Campaign settings, saying the campaign was created only when this
+change was applied (a change that failed says a campaign already exists). The configuration installer applies the request, and the
 database checks admission again at activation: a new campaign record becomes
 the current campaign only when the current-campaign pointer is empty in
 Testing mode and every earlier campaign is archived or purged, the rule every
 new draft follows, so of two creation requests confirmed at once one applies
-and the other fails. Once the request is applied, the status (in place and
+and the other fails. Once the request is applied, the status (on the page and
 on Change status alike) offers
 **Load the campaign's ParishSoft data**, which requests a full ParishSoft
 refresh and opens that refresh's progress page. The refresh can only be
