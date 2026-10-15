@@ -1,0 +1,10 @@
+{% load i18n stewardship %}{% comment %}
+  Why the refusal shown cannot be accepted once (``health.accept_state``
+  ``lapsed`` or ``empty``), said in the ParishSoft refresh tile's problem
+  line, or in the counts' own notice while that problem is not open. Then
+  System health draws no Accept this change once section at all
+  (Administrator, 2026-10-15; the conditional-fields rule), so this line is
+  where the reason lives. It replaces the refusal's "accepted once with
+  Accept this change once" advice, which would point at a missing control.
+  Shared by system-health-problem.html and system-health-tile-problems.html.
+{% endcomment %}<span data-accept-unavailable="{{ health.accept_state }}">{% if health.accept_state == "lapsed" %}{% translate "It was accepted once at" %} <time datetime="{{ health.drop_acceptance.created_at|instant }}" data-local-instant>{{ health.drop_acceptance.created_at|instant }}</time>, {% translate "but the acceptance ended before a full refresh used it, and a refusal can be accepted only once. Every later refresh is refused too, until the drop is fixed in ParishSoft or Refresh now gets a new refusal to review and accept." %}{% else %}{% translate "A refresh that found no Families or no Members can never be accepted: it is refused by design, because it almost always means ParishSoft could not be read properly. Check the ParishSoft connection and settings, then use Refresh now." %}{% endif %}</span> <a href="{% url 'admin:source_refresh' %}">{% translate "Refresh from ParishSoft" %}</a>

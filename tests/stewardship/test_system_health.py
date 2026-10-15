@@ -1481,22 +1481,98 @@ def test_an_acceptance_greys_the_button_with_who_when_and_until_when():
     assert "The next full refresh will use it" in body
 
 
-def test_a_lapsed_acceptance_offers_refresh_now():
-    """A refusal is accepted once; a lapsed one points to Refresh now."""
-    body = accept_page(acceptance=accepted(live=False), actor=None)
-    assert 'data-accept-state="lapsed"' in body
-    assert "the acceptance ended before a full refresh used it" in body
-    reason = body[body.index('id="accept-change-reason"') :]
-    assert 'href="/admin/parish/parishsoft-refresh/"' in reason
-    assert "Accepted by" not in body
+def unacceptable_page(*, acceptance=None, counts=FAILED, problems=(DROP_PROBLEM,)):
+    """``(region, tiles)`` for a refusal that cannot be accepted, rendered
+    as the page draws it, with the refusal's problem open by default."""
+    return page(
+        {
+            "health": health(
+                refused_at=NOW,
+                refused_counts=counts,
+                drop_acceptance=acceptance,
+                problems=problems,
+            ),
+            "refused_attempt": REFUSED_ATTEMPT,
+        }
+    )
 
 
-def test_an_empty_load_says_it_can_never_be_accepted():
-    """Refused at any setting, by design, so the button stays greyed."""
-    body = accept_page(counts=(DropCount("family", 1084, 0, 25, True),))
-    assert 'data-accept-state="empty"' in body
-    assert "can never be accepted" in body
-    assert 'value="accept_preview"' not in body
+def assert_no_accept_section(region, tiles):
+    """Neither the page's tile nor the polled copy draws Accept this change
+    once: the region and its mirror target stay empty (2026-10-15)."""
+    assert (
+        '<div id="accept-change" data-in-place-region>'
+        '<div data-live-mirror-target="accept-offer" data-live-mirror-hold></div>'
+    ) in tiles
+    assert '<template data-live-mirror="accept-offer"></template>' in region
+    assert "accept-change-heading" not in tiles
+    assert "data-accept-state" not in tiles
+    assert 'value="accept_preview"' not in tiles
+    assert "accepted once with Accept this change once" not in tiles
+
+
+def test_a_lapsed_acceptance_draws_no_section_and_says_why():
+    """A refusal is accepted once: once its acceptance lapsed unused there is
+    nothing to accept, so no section is drawn, and the problem line says
+    when it was accepted, why it cannot be again, and links Refresh now's
+    page for a new refusal (Administrator, 2026-10-15)."""
+    region, tiles = unacceptable_page(acceptance=accepted(live=False))
+    assert_no_accept_section(region, tiles)
+    line = tiles[tiles.index('data-problem="source_destructive_change"') :]
+    line = line[: line.index("data-refused-change")]
+    assert 'data-accept-unavailable="lapsed"' in line
+    assert "It was accepted once at" in line
+    assert f'<time datetime="{NOW.isoformat()}" data-local-instant>' in line
+    assert "the acceptance ended before a full refresh used it" in line
+    assert 'href="/admin/parish/parishsoft-refresh/"' in line
+    # The polled copy of the problems says the same, so a poll keeps it.
+    assert 'data-accept-unavailable="lapsed"' in region
+    # With the problem no longer open, the counts' own notice says why.
+    region, tiles = unacceptable_page(acceptance=accepted(live=False), problems=())
+    assert_no_accept_section(region, tiles)
+    assert 'data-accept-unavailable="lapsed"' in tiles
+    assert "Accept this change once just below" not in tiles
+
+
+def test_an_empty_load_draws_no_section_and_says_why():
+    """Refused at any setting, by design: no section, and the problem line
+    says it can never be accepted (Administrator, 2026-10-15)."""
+    for counts in (
+        (DropCount("family", 1084, 0, 25, True),),
+        (DropCount("member", 3000, 0, 25, True),),
+    ):
+        region, tiles = unacceptable_page(counts=counts)
+        assert_no_accept_section(region, tiles)
+        line = tiles[tiles.index('data-problem="source_destructive_change"') :]
+        line = line[: line.index("data-refused-change")]
+        assert 'data-accept-unavailable="empty"' in line
+        assert "can never be accepted" in line
+        assert 'href="/admin/parish/parishsoft-refresh/"' in line
+
+
+def test_home_keeps_the_refusal_sentence_for_an_unacceptable_refusal():
+    """Home has no ``health``, so it keeps the refusal's own sentence; the
+    reason is the System health page's (slice 7 reworks Home)."""
+    body = render_to_string(
+        "stewardship/system-health-problem.html", {"problem": DROP_PROBLEM}
+    )
+    assert "data-accept-unavailable" not in body
+    assert "refused because some counts fell too far" in body
+
+
+def test_a_step_result_stays_when_the_refusal_cannot_be_accepted():
+    """A step's result is the Administrator's own answer, so it stays; in
+    place of the button one line points at the problem line's reason."""
+    body = accept_page(
+        acceptance=accepted(live=False),
+        problems=(DROP_PROBLEM,),
+        accept={"refused": "busy"},
+    )
+    region = section(body, 'id="accept-change"')
+    assert 'data-accept-refused="changed"' in region
+    assert 'data-accept-state="lapsed"' in region
+    assert "This refusal cannot be accepted" in region
+    assert "<button" not in region
 
 
 def test_the_preview_lists_the_counts_and_waits_for_the_tick_box():

@@ -5581,8 +5581,8 @@ requests 1206 and 1210 draw their regions only while their problem is
 current; slice 2b draws them always. The exception is
 [Accept this change once](#accept-a-large-parishsoft-change-once), which
 answers the refused change and is not a standing control: it is drawn
-only while a refusal is shown, or while a step's result is (Administrator,
-pk-local batch 24a). The page has no plain "Refresh System health" link at
+only while the refusal shown can be accepted or was accepted, or while a
+step's result is (Administrator, pk-local batch 24a and 2026-10-15). The page has no plain "Refresh System health" link at
 its end (Administrator, pk-local batch 24a): it refreshes itself, and the
 line's [Not current](#overall-status-line) button checks again when it
 stops.
@@ -5896,8 +5896,8 @@ requests 1206, 1210 and 1213 have merged.
      the mirror targets and the pointer hold,
      [tiles while not current](#tiles-while-not-current), and the controls
      of pull requests 1206, 1210 and 1213 moved into their fixed places
-     and always drawn (Accept this change once only while a refusal is
-     shown, since slice 4). pk-local: opening and closing tiles in one row of
+     and always drawn (Accept this change once only while a refusal can be
+     or was accepted, since slice 4). pk-local: opening and closing tiles in one row of
      the grid, a poll that changes state while a tile is open, an open
      preview across a poll, a poll left to give up with tiles open, and
      phone width.
@@ -6353,7 +6353,8 @@ checks.
   [stable menu shape](#stable-menu-shape)). Each action lists its reasons.
   Greying only helps the reader: every check also runs on the server, in
   the service function and inside the action's transaction. Accept this
-  change once's whole section is drawn only while a refusal is shown
+  change once's whole section is drawn only while the refusal shown can
+  be accepted or was accepted
   ([where it appears](#accept-a-large-parishsoft-change-once)); while it
   is drawn, its button follows this rule.
 - **Audit:** each action records one audit event, with the Administrator as
@@ -6717,15 +6718,22 @@ requires.
 **Where it appears.** In the [ParishSoft refresh tile](#health-tiles)'s
 details, directly after the refused change's counts table that ends its
 problems (Administrator, pk-local check of #1210: not at the foot of the
-page), and before the panel content. The section is drawn only while a
-refusal is shown: one that can be accepted offers the button, and an
-accepted, lapsed or never-acceptable one shows it greyed with its reason.
-With no refusal shown, and no step's result to show, it is left out
-entirely (Administrator, pk-local batch 24a: with nothing to accept, the
+page), and before the panel content. The section is drawn only while the
+refusal shown can be accepted, offering the button, or was accepted, with
+the button greyed and saying so (below). With no refusal shown, and no
+step's result to show, it is left out entirely (Administrator, pk-local
+batch 24a: with nothing to accept, the
 [conditional fields](../ui-conventions/spec.md#conditional-fields) rule leaves the control
-out). The 10-second status brings the section and takes it away in place,
-in the same update as the refusal's problem item and its counts, so it
-comes and goes with the problem it answers and moves nothing else. While
+out). It is left out as well for a refusal that cannot be accepted: one
+whose acceptance lapsed unused, or a load with no Families or no Members
+(Administrator, 2026-10-15). Then the refusal's problem line says why
+instead, and links [Refresh from ParishSoft](#manual-parishsoft-refresh):
+a lapsed acceptance cannot be given again, so **Refresh now** gets a new
+refusal to review, and an empty load is refused at any limit, because it
+almost always means ParishSoft could not be read properly. The 10-second
+status brings the section and takes it away in place, in the same update
+as the refusal's problem item and its counts, so it comes and goes with
+the problem it answers and moves nothing else. While
 a step's result shows (a preview, the acceptance just recorded, or a
 refusal of the step), the section stays, and only its button follows the
 status. The section is outside the part the status updates replace, so
@@ -6758,12 +6766,13 @@ stands and the section says the next full refresh, scheduled or from
 
 **Unavailable when** (greyed, with the reason): the tick box "I checked
 this in ParishSoft, and the change is real" is not ticked; the refusal is
-no longer the newest full refresh's outcome; an acceptance is already
-active ("Accepted by … at …; expires at …"); the refusal's acceptance
-lapsed unused (a refusal is accepted only once, so the reason links
-[Refresh from ParishSoft](#manual-parishsoft-refresh) for a new refusal to
-review); or the load had no Families or no Members, which is refused at any
-limit and so can never be accepted.
+no longer the newest full refresh's outcome; or an acceptance is already
+active ("Accepted by … at …; expires at …"). A refusal whose acceptance
+lapsed unused, or a load with no Families or no Members, draws no section
+at all, as **Where it appears** says. If a step's result is showing when
+the refusal becomes one of these, the result stays and, in place of the
+button, one line says the refusal cannot be accepted and that its problem
+line says why.
 
 **Checks (server):** the [shared rules](#shared-rules-for-health-actions);
 the newest full refresh was refused for a drop and no full refresh has been
