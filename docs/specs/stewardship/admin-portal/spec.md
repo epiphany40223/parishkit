@@ -2179,8 +2179,13 @@ campaign's selections never change.
   Ministry report, follow-up queue and follow-up packets keep showing them,
   marked "No longer in this campaign" (in the follow-up queue, a "Removed"
   badge; see [follow-up workflows](#follow-up-workflows)), while it has a
-  request that was not
-  later withdrawn or replaced. A Family who opens the form again no
+  request that was not later withdrawn or replaced. A request for a
+  [Member no longer in ParishSoft](#follow-up-workflows) does not count
+  (#1219): it is left out of those lists anyway, so the Ministry would only
+  appear empty. It is back as soon as one such Member is current again.
+  Staff still see it where they list those requests (the follow-up queue's
+  "Members no longer in ParishSoft" choice, Roster changes to enter and the
+  request page). A Family who opens the form again no
   longer sees that Ministry, and resubmitting does not withdraw its requests.
   Adding the DUID back shows those answers unmarked again, including on the
   Family form.

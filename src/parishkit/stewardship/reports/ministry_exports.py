@@ -2,6 +2,8 @@
 
 from uuid import UUID, uuid4
 
+from django.db.models import F, Func, Q, TextField
+
 from parishkit.stewardship.accounts.policy import Capability, allows, current_principal
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.schemas import Action, Outcome
@@ -67,19 +69,33 @@ def offered_ministries(campaign_id):
 
     The campaign's configured Ministries, and a Ministry removed from a live
     campaign that keeps current (not withdrawn) requests, which the report
-    offers like any other, as the packet SQL does (#342). The packet form
-    and the command line's ``export ministry`` check a selection against it.
+    offers like any other, as the packet SQL does (#342). A request for a
+    Member no longer in ParishSoft (#1217) does not keep one offered
+    (#1219): the packet and report SQL leave it out, so this asks the same
+    installed standing function, and only for the removed Ministries'
+    requests. The packet form and the command line's ``export ministry``
+    check a selection against it.
     """
     offered = Campaign.objects.select_related("active_configuration").get(
         pk=campaign_id
     )
-    return set(offered.active_configuration.values.get("ministry_duids", ())) | set(
+    configured = set(offered.active_configuration.values.get("ministry_duids", ()))
+    kept = (
         MinistryRequest.objects.filter(
             submission__campaign_id=campaign_id, submission__mode="live"
         )
         .exclude(state__in=("cancelled", "superseded"))
-        .values_list("ministry_duid", flat=True)
+        .exclude(ministry_duid__in=configured)
+        .annotate(
+            standing=Func(
+                F("pk"),
+                function="stewardship_ministry_request_member_status_v1",
+                output_field=TextField(),
+            )
+        )
+        .filter(~Q(entity_kind="member") | Q(standing="current"))
     )
+    return configured | set(kept.values_list("ministry_duid", flat=True))
 
 
 def create_ministry_export(

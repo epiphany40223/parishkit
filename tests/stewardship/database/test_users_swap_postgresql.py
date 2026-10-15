@@ -327,6 +327,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # ParishSoft and replaces the Ministry selections in place to call them;
 # nothing reads the selections while the swap is pending, and its file
 # installs them again.
+# 0093 (#1219) creates nothing: it replaces those Ministry selections again,
+# so once 0092's file installs again with its older bodies, 0093's file runs
+# again too (``CLOSURE_RERUN``).
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -519,6 +522,10 @@ CLOSURE_RERUN = {
     ("stewardship_responses", "0005_publication_worker"): (
         "stewardship_responses",
         "0004_publication_plans",
+    ),
+    ("stewardship_reports", "0025_removed_ministry_gone_members"): (
+        "stewardship_reports",
+        "0024_hide_gone_members",
     ),
 }
 
