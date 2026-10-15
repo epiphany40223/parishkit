@@ -2,6 +2,7 @@
 The Campaign setup stepper (#142, campaign_wizard.py): the setup wizard's
 compact stepper (setup-wizard.html) over the existing campaign pages, drawn
 by base.html above the page while the current campaign is a Testing draft.
+Its step bar and list are the setup wizard's (stepper-steps.html, #1402).
 Back and Next are plain links to the neighbouring steps, so leaving a page
 never saves or discards anything. Once the current step is completed, Next
 reads "Continue to the next step". It is an in-place region, so the redraw
@@ -16,14 +17,6 @@ a reload; a reload shows the same.
 <p class="setup-stepper-count">{% blocktranslate trimmed with done=wizard.completed total=wizard.total %}{{ done }} of {{ total }} steps completed{% endblocktranslate %}</p>
 <p class="setup-stepper-moves">{% if wizard.previous.url %}<a href="{{ wizard.previous.url }}" data-campaign-step-back>{% blocktranslate trimmed with label=wizard.previous.label %}Back: {{ label }}{% endblocktranslate %}</a>{% endif %}{% if wizard.next.url %}{% if wizard.current.state == 'done' %}<a href="{{ wizard.next.url }}" data-campaign-step-next data-campaign-continue>{% blocktranslate trimmed with label=wizard.next.label %}Continue to the next step: {{ label }}{% endblocktranslate %}</a>{% else %}<a href="{{ wizard.next.url }}" data-campaign-step-next>{% blocktranslate trimmed with label=wizard.next.label %}Next: {{ label }}{% endblocktranslate %}</a>{% endif %}{% endif %}</p>
 </div>
-<div class="setup-track" aria-hidden="true">{% for step in wizard.steps %}<span class="setup-track-{{ step.state }}{% if step.current %} setup-track-current{% endif %}" title="{% blocktranslate trimmed with number=step.number total=wizard.total label=step.label %}Step {{ number }} of {{ total }}: {{ label }}{% endblocktranslate %} — {% if step.current %}{% translate "Current step" %} — {% endif %}{{ step.status }}"></span>{% endfor %}</div>
-<details class="setup-stepper-list" id="campaign-stepper-list" data-keep-open>
-<summary>{% translate "All campaign setup steps" %}</summary>
-<ol class="setup-steps">{% for step in wizard.steps %}
-<li class="setup-step setup-step-{{ step.state }}{% if step.current %} setup-step-current{% endif %}">{% if step.url %}<a href="{{ step.url }}"{% if step.current %} aria-current="step"{% endif %}>{% else %}<span class="setup-step-box"{% if step.current %} aria-current="step"{% endif %}>{% endif %}<span class="setup-step-number" aria-hidden="true">{% if step.state == 'done' %}&#10003;{% else %}{{ step.number }}{% endif %}</span>
-<span class="setup-step-label"><span class="setup-sr-only">{% blocktranslate trimmed with number=step.number %}Step {{ number }}:{% endblocktranslate %} </span>{{ step.label }}</span>
-<span class="setup-step-status">{% if step.current %}{% translate "Current step" %} — {% endif %}{{ step.status }}</span>{% if step.url %}</a>{% else %}</span>{% endif %}</li>{% endfor %}
-</ol>
-</details>
+{% translate "Campaign setup steps" as track_label %}{% translate "All campaign setup steps" as list_summary %}{% include 'stewardship/stepper-steps.html' with track_label=track_label list_id='campaign-stepper-list' list_summary=list_summary %}
 </nav>
 {% endif %}{% endwith %}

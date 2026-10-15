@@ -1,5 +1,5 @@
 /* The progress stepper shared by the initial-setup wizard and the Campaign
-   setup pages (#142): one summary line, a slim decorative track and the full
+   setup pages (#142): one summary line, a slim step bar and the full
    ordered list in a collapsed disclosure. Text carries every state. Loaded
    after ui-v1.css only by pages that draw a stepper, so it reads the shared
    design tokens (#732) directly: no hex colours and no var() fallbacks. */
@@ -22,12 +22,30 @@
   display: inline-block; min-height: 0; padding: .6rem 0; border: 0; background: none;
   color: var(--link); font-weight: 500; text-decoration: underline;
 }
-.setup-track { display: flex; gap: 3px; margin-block: .6rem .15rem; }
-.setup-track span { position: relative; flex: 1 1 0; min-width: 0; height: .45rem; border-radius: 999px; background: var(--track); }
-/* A taller invisible hover target for each segment's title, without changing layout. */
-.setup-track span::before { content: ""; position: absolute; inset: -.4rem -1.5px; }
-.setup-track .setup-track-done { background: var(--accent); }
-.setup-track .setup-track-current { background: var(--gold); }
+/* The step bar: each segment links to its step (#1402). Its bar, 44px tap
+   target and tooltip are the Family step bar's shared rules in ui-v1.css;
+   only the list's own layout and the theme's nav-link look are set here. */
+.setup-track { display: flex; gap: 3px; list-style: none; margin: .1rem 0 0; padding: 0; }
+.setup-stepper .setup-track a, .setup-stepper .setup-track a:hover {
+  min-height: 44px; padding: 0; border: 0; border-radius: 0; background: none; color: inherit;
+}
+/* On a narrow screen a bar of more than eight steps (the setup wizard has
+   12 to 15) would draw segments under the 24px minimum target (WCAG 2.2
+   2.5.8), so it wraps into rows of eight, each at least 26px wide down to a
+   320px screen. Each tooltip is then anchored by its column's third, so it
+   never runs off the screen. */
+@media (max-width: 40rem) {
+  .setup-track:has(> li:nth-child(9)) { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); row-gap: 3px; }
+  .setup-track:has(> li:nth-child(9)) > li:is(:nth-child(8n+1), :nth-child(8n+2), :nth-child(8n+3)) > a::after {
+    inset-inline: 0 auto; left: 0; right: auto; transform: none;
+  }
+  .setup-track:has(> li:nth-child(9)) > li:is(:nth-child(8n+4), :nth-child(8n+5)) > a::after {
+    inset-inline: auto; left: 50%; right: auto; transform: translateX(-50%);
+  }
+  .setup-track:has(> li:nth-child(9)) > li:is(:nth-child(8n+6), :nth-child(8n+7), :nth-child(8n)) > a::after {
+    left: auto; right: 0; transform: none;
+  }
+}
 .setup-stepper-list { margin: 0; padding: 0; border: 0; background: transparent; }
 .setup-stepper-list[open] { padding-bottom: .5rem; }
 .setup-steps { list-style: none; margin: 0; padding: 0; columns: 2 19rem; column-gap: 1.5rem; }

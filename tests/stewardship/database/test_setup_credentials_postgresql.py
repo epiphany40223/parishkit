@@ -9,6 +9,7 @@ import pytest
 from django.db import DatabaseError, connection, transaction
 from django.db.models import F
 
+from parishkit.stewardship.accounts import setup_credentials
 from parishkit.stewardship.accounts.handoff_discovery import publish_handoff
 from parishkit.stewardship.accounts.secret_models import SecretReplacementRequest
 from parishkit.stewardship.accounts.sessions import (
@@ -77,11 +78,16 @@ def publish(target, *, material=b"s" * 32):
     return private
 
 
-def staged(service, target="parishsoft"):
-    """Use real owner services and exact grants for the entire collecting path."""
+def staged(service, target="parishsoft", *, age_minutes=0):
+    """Use real owner services and exact grants for the entire collecting path.
+
+    ``age_minutes`` models a Google sign-in that long ago.
+    """
     private = publish(target)
     with web_login():
-        request = login(service)
+        request = login(
+            service, authenticated_at=database_now() - timedelta(minutes=age_minutes)
+        )
         attempt = begin_setup(request, service)
         for step in (
             ["mail", "testing"]
@@ -295,11 +301,15 @@ def test_new_login_cannot_adopt_or_retrieve_a_staged_credential(setup_service):
 
 
 def test_step_up_lets_the_original_login_save_after_freshness_lapses(setup_service):
-    """Confirming with Google again renews the same login instead of replacing it."""
+    """Confirming with Google again renews the same login instead of replacing it.
+
+    Setup's credential steps accept a sign-in up to an hour old (#1402), so
+    the lapsed sign-in here is 61 minutes old.
+    """
     publish("parishsoft")
     with web_login():
         request = login(
-            setup_service, authenticated_at=database_now() - timedelta(minutes=10)
+            setup_service, authenticated_at=database_now() - timedelta(minutes=61)
         )
         attempt = begin_setup(request, setup_service)
         intake = dict(
@@ -322,6 +332,31 @@ def test_step_up_lets_the_original_login_save_after_freshness_lapses(setup_servi
     row = SetupSealedCredential.objects.get()
     assert row.attempt_id == attempt.attempt_id
     assert SetupAttempt.objects.get().session_id == request.portal_session.pk
+
+
+@pytest.mark.parametrize("target", ["parishsoft", "google_workspace", "slack"])
+def test_a_sign_in_from_the_last_hour_saves_a_setup_credential(setup_service, target):
+    """A 50-minute-old sign-in passes both the web and the SQL guard (#1402)."""
+    request, attempt, receipt, _ = staged(setup_service, target, age_minutes=50)
+    assert receipt.target == target
+    row = SetupSealedCredential.objects.get()
+    assert row.attempt_id == attempt.attempt_id
+    assert row.actor_id == request.portal_session.principal_id
+
+
+@pytest.mark.parametrize(("minutes", "refused"), [(59, False), (61, True)])
+def test_sql_admits_a_setup_credential_only_within_the_hour(
+    setup_service, monkeypatch, minutes, refused
+):
+    """With Python's window widened, SQL alone keeps the one hour (#1402)."""
+    monkeypatch.setattr(setup_credentials, "SETUP_FRESH_SECONDS", 7200)
+    if refused:
+        with pytest.raises(DatabaseError, match="freshly signed-in Admin"):
+            staged(setup_service, age_minutes=minutes)
+        assert not SetupSealedCredential.objects.exists()
+    else:
+        staged(setup_service, age_minutes=minutes)
+        assert SetupSealedCredential.objects.count() == 1
 
 
 @pytest.mark.parametrize(

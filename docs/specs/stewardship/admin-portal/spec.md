@@ -128,16 +128,29 @@ can take a few minutes, so the rest of setup is done before the wait, and a
 load that fails on a wrong key or organization is one step after the page
 that fixes it. No page before review needs the loaded data. Like
 [secret replacement](#parish-and-integration-configuration), the credential
-pages require fresh Google authentication (a sign-in less than five minutes
-old); an older sign-in is offered "Confirm with Google", which keeps the
-setup, so the order does not need to race that window. The pages mention that
-rule only when the sign-in is already older
+pages require fresh Google authentication, but while setup is unfinished a
+credential page accepts a sign-in up to **60 minutes** old, the length of the
+Admin idle timeout, instead of five minutes
+([#1402](https://github.com/epiphany40223/parishkit/issues/1402)), so the
+Admin is not asked to confirm again on each credential page. The web check
+(`SETUP_FRESH_SECONDS`) and the SQL guard on staged setup credentials
+enforce the same hour, and the guard admits it only for the setup attempt's
+original owner and session while the attempt is collecting, in Testing mode
+with no campaign. Every action after setup, Integrations' secret replacement
+included, keeps the five-minute rule, and the setup finishing page's
+step-up, the idle and absolute session limits, the two-hour load watchdog
+and the credential audit are unchanged. An older sign-in is offered "Confirm
+with Google", which keeps the setup. The pages mention that rule only when
+the sign-in is already older
 ([page help](../ui-conventions/spec.md#page-help)). Review, the email and
 Slack tests and the final confirmation follow the load. Every page shows a
 compact progress stepper: the current step by number and name, the count of
-completed steps and a slim track (each segment names its step and status on
-hover; the track is hidden from assistive technology because the list says
-the same), with the full ordered list (each
+completed steps and a slim [step bar](../ui-conventions/spec.md#step-bars)
+whose segments are links to the steps that can open, named by step and
+status with a tooltip, while a step that cannot open yet is a disabled
+segment whose tooltip gives the reason
+([#1402](https://github.com/epiphany40223/parishkit/issues/1402)), with the
+full ordered list (each
 applicable step named as completed, current, not done, optional or not yet
 available with the reason) in a collapsed disclosure. Navigation is
 conventional: completed steps and the first unfinished required step are
@@ -2980,7 +2993,10 @@ full refresh has finished.
 
 **Guided steps.** While the current campaign is a draft in Testing mode, the
 Campaign setup pages show Administrators a stepper with the setup wizard's
-look: Campaign settings (its basics, Ministries and funds, one form since
+look, drawn by the same template for its
+[step bar](../ui-conventions/spec.md#step-bars) and list
+([#1402](https://github.com/epiphany40223/parishkit/issues/1402)): Campaign
+settings (its basics, Ministries and funds, one form since
 [#1119](https://github.com/epiphany40223/parishkit/issues/1119)), Share
 options (shown only when the campaign's modules use it), Pages and emails,
 Dates and mail schedules, Campaign images, Preview and test email (for the

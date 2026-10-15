@@ -196,7 +196,10 @@ def test_loading_keeps_completed_steps_but_links_only_the_load():
 
 def test_a_failed_load_leaves_the_load_to_do_and_every_page_open():
     """A failed load returns setup to collecting (#1353) but is not done."""
-    sections = {key: VALUES[key] for key in ("parish", "mail", "testing", "slack")}
+    # Parish logos and Administrative access come before the load (#1389).
+    sections = {
+        key: VALUES[key] for key in ("parish", "mail", "testing", "slack", "access")
+    } | {"branding": {"bundle_id": str(uuid4())}}
     wizard = build(
         draft(sections, source=uuid4(), task_state="failed"),
         "source",
@@ -225,7 +228,8 @@ def test_stepper_marks_current_step_with_text_not_color_alone():
 
     wizard = build(draft({"mail": VALUES["mail"]}), "testing")
     html = render_to_string("stewardship/setup-wizard.html", {"wizard": wizard})
-    assert html.count('aria-current="step"') == 1
+    # Once in the step bar and once in the list (#1402).
+    assert html.count('aria-current="step"') == 2
     assert '<ol class="setup-steps">' in html
     assert "Current step" in html and "Completed" in html
     assert "Not available yet" in html
@@ -234,13 +238,16 @@ def test_stepper_marks_current_step_with_text_not_color_alone():
     assert "Step 3 of 12:" in html and "<strong>Testing recipient</strong>" in html
     assert "1 of 12 steps completed" in html
     # The full list is collapsed by default (and stays as the reader left it
-    # across an in-place swap, #519); the decorative track is hidden.
+    # across an in-place swap, #519); the step bar is a list of links.
     details = (
         '<details class="setup-stepper-list" id="setup-stepper-list" data-keep-open'
     )
     assert details + ">" in html
-    assert html.count('<span class="setup-track-') == len(wizard.steps)
-    assert 'class="setup-track" aria-hidden="true"' in html
+    assert '<ol class="setup-track" aria-label="Setup steps">' in html
+    assert html.count('class="setup-track-') == len(wizard.steps)
+    assert (
+        "aria-hidden" not in html.split('<ol class="setup-track"')[1].split("</ol>")[0]
+    )
     opened = render_to_string(
         "stewardship/setup-wizard.html", {"wizard": wizard, "stepper_open": True}
     )
@@ -251,6 +258,74 @@ def test_stepper_marks_current_step_with_text_not_color_alone():
     )
     assert 'href="/admin/setup/mail"' in buttons and "Back" in buttons
     assert '<button type="submit">Save and continue</button>' in buttons
+
+
+def track_segments(html):
+    """The step bar's ``<a ...>`` opening tags, in order."""
+    import re
+
+    track = html.split('<ol class="setup-track"')[1].split("</ol>")[0]
+    return re.findall(r"<a [^>]*>", track)
+
+
+def test_step_bar_links_each_open_step_and_explains_the_others():
+    """Open steps are links; a blocked one is focusable, disabled and says why."""
+    from django.template.loader import render_to_string
+
+    wizard = build(draft({"mail": VALUES["mail"]}), "testing")
+    html = render_to_string("stewardship/setup-wizard.html", {"wizard": wizard})
+    segments = track_segments(html)
+    assert len(segments) == len(wizard.steps) == 12
+    for step, segment in zip(wizard.steps, segments, strict=True):
+        if step.url:
+            assert f'href="{step.url}"' in segment, step.key
+            assert "aria-disabled" not in segment and "tabindex" not in segment
+        else:
+            assert "href=" not in segment, step.key
+            assert 'role="link" aria-disabled="true" tabindex="0"' in segment
+            assert "data-step-unavailable" in segment
+            assert "Not available yet: " in segment
+        assert ('aria-current="step"' in segment) is step.current
+    # Parish profile is the first unfinished required step, so this page,
+    # reached out of order, is listed but not linked, as in the list.
+    assert [step.key for step in wizard.steps if step.url] == ["parish", "mail"]
+    # The tooltip and the accessible name say the same; the current step
+    # says so, and Back/Next are untouched (the bar saves nothing).
+    current = segments[2]
+    assert 'data-tip="Step 3 of 12: Testing recipient — Current step — ' in current
+    assert (
+        '<span class="setup-sr-only">Step 3 of 12: Testing recipient — Current step'
+        in html
+    )
+    assert 'data-tip="Step 2 of 12: Outgoing email settings — Completed"' in html
+    assert " title=" not in html.split('<ol class="setup-track"')[1].split("</ol>")[0]
+
+
+def test_step_bar_tooltips_anchor_by_third_as_the_family_bar_does():
+    """First third starts, middle third centres, last third ends (#1402)."""
+    from parishkit.stewardship.accounts.templatetags.stewardship import (
+        step_tip_side,
+    )
+
+    assert [step_tip_side(number, 12) for number in range(1, 13)] == (
+        ["start"] * 4 + ["middle"] * 4 + ["end"] * 4
+    )
+    assert [step_tip_side(number, 7) for number in range(1, 8)] == (
+        ["start"] * 3 + ["middle"] * 2 + ["end"] * 2
+    )
+
+
+def test_both_admin_steppers_draw_the_shared_bar_and_list():
+    """The setup wizard and Campaign setup share stepper-steps.html (#1402)."""
+    from pathlib import Path
+
+    import parishkit.stewardship.accounts as accounts
+
+    folder = Path(accounts.__file__).parent / "templates" / "stewardship"
+    for name in ("setup-wizard.html", "campaign-stepper.html"):
+        text = (folder / name).read_text(encoding="utf-8")
+        assert "{% include 'stewardship/stepper-steps.html'" in text, name
+        assert "setup-track" not in text and "setup-steps" not in text, name
 
 
 def test_every_setup_template_compiles():
