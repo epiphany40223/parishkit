@@ -622,6 +622,8 @@ def test_participation_chart_is_panels_on_one_date_axis():
     assert xs[0]["scale"]["domain"] == [row["tick"] for row in spec["data"]["values"]]
     assert [x["axis"].get("labels", True) for x in xs] == [False, False, True]
     assert xs[-1]["title"] == ["Campaign date", "(America/New_York)"]
+    # Room between the end date labels and the two-line title.
+    assert xs[-1]["axis"]["titlePadding"] == 8
     assert xs[-1]["axis"]["labelOverlap"] and "labelExpr" not in xs[-1]["axis"]
     # Vega's own accessible names would read raw fields (ISO dates,
     # unrounded dollars), so the marks and axes are hidden; the view's name,

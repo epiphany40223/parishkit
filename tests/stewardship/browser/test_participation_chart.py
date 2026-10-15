@@ -12,7 +12,7 @@ from .report_components import REAL
 from .test_campaign_comparison import COLLISIONS
 from .test_charts import assert_clean, watch
 from .test_response_dashboard import AXE, FITTED
-from .waits import eventually
+from .waits import eventually, painted
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -137,21 +137,81 @@ def tip_rows(tooltip):
     ]
 
 
+def _wheel_into_view(page, chart, *, attempts=5):
+    """Wheel the page until the chart's top is near the window's top, and
+    holds there.
+
+    A scripted scroll (scroll_into_view_if_needed) can be undone later by
+    Firefox, which re-applies the page's last scroll into view, so the box
+    the test measured would no longer be under the pointer. A real wheel
+    turn is never undone, but it can stop short, so the page is wheeled
+    again until it holds across two settled checks. The page scrolls
+    nothing itself here, so this changes no behaviour under test.
+    """
+    where = (
+        "Math.min(document.documentElement.scrollHeight - innerHeight,"
+        " Math.max(0, document.querySelector('#participation-chart figure.chart')"
+        ".getBoundingClientRect().top + scrollY - 40))"
+    )
+    there = f"Math.abs(({where}) - scrollY) <= 1"
+    # Over the main content, so the wheel scrolls the page, not the menu.
+    page.mouse.move(900, 450)
+    for _ in range(attempts):
+        page.mouse.wheel(0, page.evaluate(f"({where}) - scrollY"))
+        painted(page)
+        if page.evaluate(there):
+            painted(page)
+            if page.evaluate(there):
+                return
+    raise AssertionError(f"the chart did not stay in view after {attempts} turns")
+
+
+def _point_until_shown(page, plot, tooltip, *, attempts=10):
+    """Point at the last date a quarter of the way down ``plot`` until the
+    tooltip shows.
+
+    Firefox can miss a single jump of the pointer onto the chart, so the
+    pointer moves there in steps, from a fresh measure of the panel's box
+    each try (the page could still settle between tries). Only a tooltip
+    that never shows fails the test.
+    """
+    for _ in range(attempts):
+        box = plot.bounding_box()
+        page.mouse.move(
+            box["x"] + box["width"] * 5 / 6, box["y"] + box["height"] / 4, steps=5
+        )
+        if page.locator("#vg-tooltip-element:visible").count():
+            return
+        page.wait_for_timeout(200)
+        if page.locator("#vg-tooltip-element:visible").count():
+            return
+    expect(tooltip).to_be_visible()
+
+
 def test_a_date_column_shows_that_dates_figures(page, chart):
     """Pointing anywhere in a date's column, in any panel, shows one
     tooltip with that date's figures; leaving the chart hides it."""
-    chart.scroll_into_view_if_needed()
     tooltip = page.locator("#vg-tooltip-element")
+    _wheel_into_view(page, chart)
     plots = chart.locator("svg g.mark-group.role-scope > g > path.background").all()
     for plot in plots:
-        box = plot.bounding_box()
-        # The last of the three dates, a quarter of the way down the panel.
-        page.mouse.move(box["x"] + box["width"] * 5 / 6, box["y"] + box["height"] / 4)
-        expect(tooltip).to_be_visible()
+        _point_until_shown(page, plot, tooltip)
         expect(tooltip.locator("h2")).to_have_text("November 2, 2026")
         assert tip_rows(tooltip) == list(TIP)
     page.mouse.move(0, 0)
     expect(tooltip).to_be_hidden()
+
+
+# Sets window.tipOpened once vega-tooltip shows its tooltip element.
+TIP_OPENED = """() => {
+    window.tipOpened = false;
+    const tip = () => document.querySelector('#vg-tooltip-element');
+    new MutationObserver(() => {
+        if (tip()?.classList.contains('visible')) window.tipOpened = true;
+    }).observe(document.body, {
+        attributes: true, attributeFilter: ['class'], childList: true, subtree: true,
+    });
+}"""
 
 
 def test_tapping_a_date_shows_its_figures(browser_engine, component_origin):
@@ -167,13 +227,20 @@ def test_tapping_a_date_shows_its_figures(browser_engine, component_origin):
         chart.scroll_into_view_if_needed()
         plot = chart.locator("svg g.mark-group.role-scope > g > path.background")
         box = plot.nth(1).bounding_box()
+        # Record the tooltip as it opens. Headless Chromium keeps an idle
+        # mouse cursor beside the touch screen and, a few milliseconds after
+        # the tap, moves its hover back there; that mouseout closes the
+        # tooltip before a poll for it can be sure to see it (seen in Linux
+        # CI). A phone has no such cursor, so what the tap opened is checked
+        # from the moment it opened, and its text from the tooltip itself,
+        # which keeps its content when it hides.
+        page.evaluate(TIP_OPENED)
         page.touchscreen.tap(box["x"] + box["width"] / 6, box["y"] + box["height"] / 2)
         tooltip = page.locator("#vg-tooltip-element")
-        expect(tooltip).to_be_visible()
+        eventually(page, "() => window.tipOpened === true")
         expect(tooltip.locator("h2")).to_have_text("October 31, 2026")
-        assert tip_rows(tooltip)[1] == (
-            "Families that have responded",
-            "1 out of 1,234 (0.1%)",
+        expect(tooltip.locator("tr").nth(1).locator("td")).to_have_text(
+            ["Families that have responded", "1 out of 1,234 (0.1%)"]
         )
     finally:
         context.close()
