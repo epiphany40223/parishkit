@@ -914,9 +914,11 @@ email progress counts the skipped Reminders separately.
    Quick updates wait while a Family email send is in progress, so make
    ParishSoft changes before a Reminder's preparation starts (two hours
    before it is due) when you can; a Family added later is still skipped at
-   send time once a refresh has read it. Any edit to the name, even of its
-   capitals, stops the exclusion until the next refresh, so run **Refresh
-   from ParishSoft** after every edit.
+   send time once a refresh has read it. After an edit to the name, even of
+   its capitals, the Families the newest refresh found in the previous
+   WorkGroup are still skipped until the next refresh reads the new name, so
+   run **Refresh from ParishSoft** after every edit. Clearing the name stops
+   skipping at once.
 4. Check it against live ParishSoft right after the deploy, and well before
    the night a Reminder is prepared (preparation starts two hours before it
    is due): set the name, run **Refresh from ParishSoft**, and confirm that
@@ -928,8 +930,9 @@ email progress counts the skipped Reminders separately.
 **How you know it worked.** The No-reminders WorkGroup page says how many
 Families the newest refresh found in the WorkGroup, and each one's Family
 timeline names it. If the name matches no Family WorkGroup in ParishSoft,
-the page and System health say so, the refresh logs a warning, and nobody's
-Reminders are skipped: fix the name in either place.
+the page and System health say so and the refresh logs a warning; the
+Families skipped before stay skipped, and no others are, until a refresh
+finds the name: fix it in either place.
 
 **What not to do.** Do not make the Family inactive or move it out of the
 parish in ParishSoft to stop Reminders: that removes it from the campaign,
