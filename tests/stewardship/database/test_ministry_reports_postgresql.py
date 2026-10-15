@@ -483,7 +483,7 @@ def test_testing_hidden_proposed_and_resolved_intent(response_service):
     promote(snapshot, claim, harness.campaign, harness.rings)
     [summary] = [row for row in page(harness)["summaries"] if row["duid"] == 9]
     assert summary["completed"] == summary["unresolved"] == 1
-    assert summary["joining"] == 2 and "50" in summary["progress"]
+    assert summary["joining"] == 2
     resolved = page(harness, ministry=9, state="resolved")["rows"]
     assert len(resolved) == 1 and resolved[0]["outcome_label"] == "Joined the Ministry"
 

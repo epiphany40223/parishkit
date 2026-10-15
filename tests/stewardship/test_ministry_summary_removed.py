@@ -30,7 +30,6 @@ SUMMARY = {
     "joining": 2,
     "leaving": 1,
     "unresolved": 1,
-    "progress": "2 out of 3 (67%)",
 }
 
 

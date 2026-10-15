@@ -9,13 +9,11 @@ from django.utils.datastructures import MultiValueDict
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.accounts.policy import Capability, allows
-from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.dates import UnknownZone
-from parishkit.stewardship.web.presentation import out_of
 from parishkit.stewardship.web.refusals import UserFacingDenied
 from parishkit.stewardship.web.tables import PAGE_SIZES, Sorting
 
@@ -390,10 +388,6 @@ def ministry_page(
         # A filter can legitimately hide a selected Ministry; never turn an
         # empty result into a broader fallback scope.
         result["rows"] = []
-    for summary in result["summaries"]:
-        summary["progress"] = out_of(
-            Percentage(summary["completed"], summary["requests"])
-        )
     for row in result["rows"]:
         row["submitted_at"] = datetime.fromisoformat(row["submitted_at"])
         row["state_label"] = STATE_LABELS[row["state"]]
