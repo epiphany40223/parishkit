@@ -81,7 +81,7 @@ def count(event):
 def test_the_control_is_offered_only_while_a_service_has_debug_logging(
     auth_service, google
 ):
-    """Always drawn in its tile (#1214): greyed with why without debug
+    """Always drawn in its tile (#1214): a status line without debug
     logging, the button once a service has it."""
     browser, _ = signed_in()
     quiet = page(browser)
@@ -116,11 +116,11 @@ def test_preview_then_confirm_sets_one_switch_and_its_audit(auth_service, google
     key = key_of(preview)
     confirmed = post(browser, action="debug_off_confirm", key=key)
     assert confirmed.status_code == 200
-    # Apply's answer is the region drawn again, its button greyed with who
+    # Apply's answer is the region drawn again, its status line naming who
     # set the switch; the page is not read again.
     done = confirmed.content.decode()
     assert "<h1" not in done and 'id="debug-off"' in done
-    assert 'disabled aria-describedby="debug-off-reason"' in done
+    assert 'data-debug-status="set"' in done
     assert "Debug logging was turned off by admin@example.org at" in done
     assert "data-live-status" not in done
     assert count("system_health_viewed") == views
@@ -133,14 +133,15 @@ def test_preview_then_confirm_sets_one_switch_and_its_audit(auth_service, google
     assert DebugOffSwitch.objects.count() == 1
     assert count("debug_logging_turned_off") == 1
     # While it is set, another preview is refused in the dialog, and the
-    # button is greyed with who set it.
+    # region shows only the status line naming who set it.
     refused = post(browser, action="debug_off_preview")
     assert refused.status_code == 409
     assert '<div data-review-refusal><p data-debug-off-refused="busy">' in (
         refused.content.decode()
     )
     body = page(browser)
-    assert 'disabled aria-describedby="debug-off-reason"' in body
+    assert 'value="debug_off_preview"' not in body
+    assert 'data-debug-status="set"' in body
     assert "Debug logging was turned off by admin@example.org at" in body
     assert 'data-debug-switch="set"' in body
 

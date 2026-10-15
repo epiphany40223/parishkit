@@ -30,6 +30,7 @@ from .system_health_components import (
     DEBUG_PAGE,
     DEBUG_PREVIEW,
     DEBUG_SET,
+    DEBUG_STATUS,
     DEBUG_STEP_UP,
     DEBUG_TILE,
     HEALTHY,
@@ -1116,9 +1117,10 @@ def test_turn_off_debug_logging_confirms_in_the_review_dialog(
 ):
     """The button opens the review dialog as a confirmation (#1356), naming
     the services with debug logging on; Apply closes it, the region is
-    redrawn from Apply's answer, its button greyed with who set the switch
-    (browser-local time), and the status line after it says so; nothing
-    above the region moves, and nothing reloads (ADM-13 PR 6b)."""
+    redrawn from Apply's answer, its button replaced by the status line
+    naming who set the switch (browser-local time), and the line after the
+    region says so; nothing above the region moves, and nothing reloads
+    (ADM-13 PR 6b)."""
     _routed(
         page,
         component_origin,
@@ -1138,9 +1140,10 @@ def test_turn_off_debug_logging_confirms_in_the_review_dialog(
         return heading.evaluate("e => e.getBoundingClientRect().top + window.scrollY")
 
     top = place()
-    # The help is one click away, in a toggletip, before and after.
+    # The help is one click away, in a toggletip, before and after: before,
+    # what the switch does; once it is set, how it is cleared.
     region.get_by_role("button", name="More information").click()
-    visible(region.get_by_text("using pk-stewardship debug-off-clear"))
+    visible(region.get_by_text("Lines already written stay in the logs."))
     region.get_by_role("button", name="Turn off debug logging", exact=True).click()
     dialog = _dialog(page, "Turn off debug logging?")
     expect(dialog.locator("[data-review-title]")).to_be_focused()
@@ -1155,12 +1158,14 @@ def test_turn_off_debug_logging_confirms_in_the_review_dialog(
     line = page.locator("#debug-off-outcome")
     expect(line).to_have_text(re.compile(r"^Debug logging turned off\. Applied at "))
     expect(line).to_be_focused()
-    reason = region.locator("#debug-off-reason")
+    reason = region.locator("#debug-off-status")
     expect(reason).to_contain_text("Debug logging was turned off by other@example.org")
     # Shown in the browser's own time zone, never as the ISO instant.
     stamp = reason.locator("time").get_attribute("datetime")
     expect(reason.locator("time")).not_to_have_text(stamp)
     assert "UTC" not in region.inner_text()
+    region.get_by_role("button", name="More information").click()
+    visible(region.get_by_text("using pk-stewardship debug-off-clear"))
     assert kept()
     # Firefox may report the same place a few millionths of a pixel apart.
     assert abs(place() - top) < 0.5
@@ -1210,8 +1215,9 @@ def test_turning_off_debug_logging_updates_the_tile_and_both_buttons_at_once(
     """Applying the review dialog (#1356) updates the Debug logging tile's
     word and summary, the overall line and both buttons without a reload,
     and without waiting for the next poll (a minute away here): the answer
-    checks the status at once (#1317). Allow debug logging again becomes
-    available in Testing only; in Production it stays greyed, saying why."""
+    checks the status at once (#1317). Turn off debug logging gives way to
+    the status line, and Allow debug logging again is drawn in Testing
+    only, never in Production (Administrator, 2026-10-15)."""
     base = DEBUG_LIVE + mode
     _answered_then_set(
         page,
@@ -1243,18 +1249,16 @@ def test_turning_off_debug_logging_updates_the_tile_and_both_buttons_at_once(
     )
     expect(page.locator(LINE)).to_contain_text("All working")
     turn_off = region.get_by_role("button", name="Turn off debug logging", exact=True)
-    expect(turn_off).to_be_disabled()
-    expect(region.locator("#debug-off-reason")).to_contain_text(
+    expect(turn_off).to_have_count(0)
+    expect(region.locator('[data-debug-status="set"]')).to_contain_text(
         "Debug logging was turned off by other@example.org at"
     )
     allow = region.get_by_role("button", name="Allow debug logging again")
     if mode == "testing":
         expect(allow).to_be_enabled()
     else:
-        expect(allow).to_be_disabled()
-        expect(region.locator("#debug-allow-reason")).to_have_text(
-            "In Production only the server operator can clear the debug-off switch."
-        )
+        expect(allow).to_have_count(0)
+    expect(region.locator("button[disabled]")).to_have_count(0)
     assert kept()
 
 
@@ -1281,16 +1285,27 @@ def test_a_stale_sign_in_offers_the_step_up_in_the_debug_dialog(page, component_
 
 
 def test_the_debug_button_follows_a_switch_set_elsewhere(page, component_origin):
-    """The poll greys the button, naming who set the switch and when."""
+    """A poll that finds the switch set replaces the button with the status
+    line naming who set it and when, but not while the pointer is over the
+    tile grid (data-live-mirror-hold), so nothing moves under it."""
     page.goto(component_origin + DEBUG_PAGE)
     region = page.locator("#debug-off")
     button = region.get_by_role("button", name="Turn off debug logging", exact=True)
     expect(button).to_be_enabled()
-    expect(button).to_be_disabled(timeout=30000)
-    reason = region.locator("#debug-off-reason")
-    expect(reason).to_contain_text("Debug logging was turned off by other@example.org")
-    stamp = reason.locator("time").get_attribute("datetime")
-    expect(reason.locator("time")).not_to_have_text(stamp)
+    # Held: a poll that arrives while the pointer rests on the button
+    # leaves the button where it is.
+    button.hover()
+    with page.expect_response(lambda r: DEBUG_STATUS in r.url, timeout=30000):
+        pass
+    page.wait_for_timeout(250)
+    expect(button).to_be_enabled()
+    _away(page)
+    expect(button).to_have_count(0, timeout=30000)
+    line = region.locator('[data-debug-status="set"]')
+    expect(line).to_contain_text("Debug logging was turned off by other@example.org")
+    stamp = line.locator("time").get_attribute("datetime")
+    expect(line.locator("time")).not_to_have_text(stamp)
+    expect(region.locator("button[disabled]")).to_have_count(0)
     # The tile's details add that the server's setting is still on.
     panel = page.locator('[data-debug-switch="set"]')
     expect(panel).to_contain_text("still says “on”")
@@ -1678,9 +1693,12 @@ def test_allow_debug_logging_again_confirms_in_the_review_dialog(
         return heading.evaluate("e => e.getBoundingClientRect().top + window.scrollY")
 
     top = place()
+    # The switch is set: only its status line, then Allow debug logging
+    # again; no Turn off button, greyed or not (Administrator, 2026-10-15).
     expect(
         region.get_by_role("button", name="Turn off debug logging", exact=True)
-    ).to_be_disabled()
+    ).to_have_count(0)
+    expect(region.locator('[data-debug-status="set"]')).to_be_visible()
     region.get_by_role("button", name="Allow debug logging again", exact=True).click()
     dialog = _dialog(page, "Allow debug logging again?")
     expect(dialog.locator("[data-review-title]")).to_be_focused()
@@ -1701,9 +1719,12 @@ def test_allow_debug_logging_again_confirms_in_the_review_dialog(
     line = page.locator("#debug-off-outcome")
     expect(line).to_have_text(re.compile(r"^Debug logging allowed again\. Applied at "))
     expect(line).to_be_focused()
-    expect(region.locator("#debug-allow-reason")).to_have_text(
-        "The debug-off switch is not set."
-    )
+    # With the switch clear and no service in debug form, the region shows
+    # only its plain status line; Allow is no longer drawn (#1295 rule).
+    expect(region.locator('[data-debug-status="off"]')).to_be_visible()
+    expect(
+        region.get_by_role("button", name="Allow debug logging again", exact=True)
+    ).to_have_count(0)
     assert "UTC" not in region.inner_text()
     assert kept()
     assert abs(place() - top) < 0.5
@@ -1713,8 +1734,9 @@ def test_allow_debug_logging_again_confirms_in_the_review_dialog(
 def test_the_allow_region_is_accessible_at_phone_and_desktop_widths(
     page, component_origin, axe_source, width
 ):
-    """The Testing region with both buttons, and its confirmation in the
-    review dialog, pass axe and fit a phone without scrolling."""
+    """The Testing region with its status line and Allow debug logging
+    again, and its confirmation in the review dialog, pass axe and fit a
+    phone without scrolling."""
     page.set_viewport_size({"width": width, "height": 900})
     _routed(
         page,

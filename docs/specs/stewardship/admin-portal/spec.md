@@ -5715,7 +5715,7 @@ Working with a summary that says so ("No current campaign").
 | **Mail** | a mail consumer is halted (`sender_halted`); a mail consumer is not running, or mail dispatch has not reported (the `mail-dispatch` part of `not_running` and `not_reported`); the email provider is unavailable (`mail_provider_unavailable`); an address follow-up's permanent refusal could not be set aside (`refusal_unrecorded`, #1201) | a mail consumer is paused after an outage (`sender_outage`) | the first that holds, in the order [why sends are waiting](#why-sends-are-waiting) lists | the [why sends are waiting](#why-sends-are-waiting) panel (every reason, the 24-hour count, the resume time, the Family email progress link) and the [mail sender panel](#mail-sender-panel) (each consumer's line and any open incident) | **Clear the halt** ([ADM-13 PR 4](#clear-a-halted-mail-sender), not built). The panel content keeps its links: the deployment runbook under a not-running line, the mail-provider outage runbook beside an outage pause, Pause and resume mail beside the pause line, and Outgoing mail: waiting to retry beside the retry line. |
 | **ParishSoft refresh** | a refused large change (`source_destructive_change`, whose problem block holds the refused counts table); a different organization (`source_tenant_mismatch`); while the campaign has Reminders still scheduled, an unknown No-reminders WorkGroup (`workgroup_missing`, new in the shared list, the #861 concern) | the last full refresh failed (`source_failed`); ParishSoft could not be reached (`source_failing`); the data is out of date (`source_late`); old copies are not being removed (`source_retention_failing`); an unknown No-reminders WorkGroup while no Reminder is scheduled | the first that holds, in the order the [ParishSoft refresh panel](#parishsoft-refresh-panel) lists | the [ParishSoft refresh panel](#parishsoft-refresh-panel): refresh times, and held and skipped refreshes | **Accept this change once** (its tick box, preview and the example Families of #1213), directly after the refusal's counts table, as the Administrator asked on #1210. The problem sentences keep their links (the ParishSoft outage runbook, Check the No-reminders WorkGroup setting), and Refresh from ParishSoft ends the panel content. |
 | **Backups** | a backup is overdue (`backup_rpo_breach`) | an off-site copy failed (`backup_offsite_failed`); the backup key changed (`backup_key_changed`); the newest backup, finished after the configured key was activated, was sealed to another key (`backup_key_mismatch`, new); a requested backup failed, did not finish or was not picked up (`backup_request_failed`, new, until a newer request or a newer finished backup); in Production, off-site copies are not set up (`offsite_missing`, new) | "Last backup 3 hours ago; off-site copy 3 hours ago"; "Backup requested at 10:42 AM is running" | the [backups panel](#backups-panel) | **Take a backup now**. Off-site backup settings stays in the panel content beside the off-site line. |
-| **Debug logging** | none | in Production, debug logging is in effect in any service (`debug_logging`; a warning because nothing stops working, [decision 11](#administrator-decisions-2026-10-13)) | "Off"; "Turned off from this page by … at …"; "On in 4 services, as expected in Testing" | the [debug logging panel](#debug-logging-panel) | **Turn off debug logging**, then **Allow debug logging again**, which only Testing offers; in Production it stays greyed with its reason ([clearing the switch](#turn-off-debug-logging)). |
+| **Debug logging** | none | in Production, debug logging is in effect in any service (`debug_logging`; a warning because nothing stops working, [decision 11](#administrator-decisions-2026-10-13)) | "Off"; "Turned off from this page by … at …"; "On in 4 services, as expected in Testing" | the [debug logging panel](#debug-logging-panel) | **Turn off debug logging**, drawn only while some service has debug logging in effect; once the switch is set, its status line and, only in Testing, **Allow debug logging again** ([clearing the switch](#turn-off-debug-logging)). |
 | **Families the form cannot open** | none | at least one Family cannot open the form; the check could not run | "Every Family can open the form"; "No current campaign" | the sentence and the link of [Families the form cannot open](#system-health-page) | none; the list's link is in the sentence |
 | **Pages and emails to re-save** | an invitation or reminder cannot be sent until it is fixed (the list's `blocked` items) | other items are marked "Re-save recommended"; the check could not run | "Nothing to re-save"; "No current campaign" | the sentence and the linked list of [pages and emails to re-save](#system-health-page) | none; each item links its editor |
 | **Version and services** | a core service other than mail dispatch is not running or has not reported (the rest of `not_running` and `not_reported`); the services run different versions (`versions_differ`); the database does not match (`schema_mismatch`) | an installer that reports is not running (the installers' part of `not_running`) | "Version 1.12.0, Production, all services running" | the [version panel](#version-panel), then the closed Technical details disclosure (its values as of page load) and the links to System logs and Background work | none; the deployment runbook's upgrade link is in the versions sentence |
@@ -6429,14 +6429,14 @@ a set switch keeps the line out.
   pre-launch deployment tool turns it on deliberately
   ([deployment runbook](../../../guides/stewardship-deployment-runbook.md#pre-launch-fast-deploys)).
   The button is offered in Testing too; the note that says so is left out
-  while the switch is set and the button is greyed.
+  while the switch is set and the button is not drawn.
 - While the switch is set, the panel says that the setting on the server
-  still says "on"; who set it and when is the greyed button's reason.
+  still says "on"; who set it and when is the region's status line.
 
 The panel repeats nothing the tile already says. In Production the
 `debug_logging` problem names every service with debug logging in effect
 and what to do, so only Testing lists the services in the panel. That
-debug logging is off in every service is the greyed button's reason, and
+debug logging is off in every service is the region's status line, and
 how the switch is cleared is the toggletip beside the region's
 explanation.
 
@@ -6517,7 +6517,10 @@ checks.
   change once's whole section is drawn only while the refusal shown can
   be accepted or was accepted
   ([where it appears](#accept-a-large-parishsoft-change-once)); while it
-  is drawn, its button follows this rule.
+  is drawn, its button follows this rule. Turn off debug logging's region
+  draws each of its two buttons only while it can act, and a status line
+  otherwise ([where it appears](#turn-off-debug-logging); Administrator,
+  2026-10-15).
 - **Audit:** each action records one audit event, with the Administrator as
   actor and its request, signal, acceptance or switch row as subject, in the
   same transaction as the change. Its context holds only `outcome`, and each
@@ -7019,17 +7022,33 @@ region's toggletip and the panel, so the dialog does not repeat them.
 
 **Where it appears.** In the [Debug logging tile](#health-tiles)'s
 details, after its problems and before the panel content. The page always
-draws the region, in Testing and in Production, whatever the tile's state;
-its buttons, Turn off debug logging and then Allow debug logging again,
-follow the 10-second status in place, each greyed with its reason when it
-does not apply, so nothing appears, disappears or moves under the pointer.
-Its help (who clears the switch, and
-that services started again afterwards log in debug form again where the
-server's setting is still on) is in an "i" toggletip.
+draws the region, in Testing and in Production, whatever the tile's state.
+Each of its buttons is drawn only while it can act, never greyed
+(Administrator decision, 2026-10-15, on
+[#1214](https://github.com/epiphany40223/parishkit/issues/1214), following
+the rule #1295 set), and the region shows the first of these that holds:
 
-**Unavailable when** (greyed, with the reason): the switch is already set
-("Debug logging was turned off by … at …"), or no service has debug logging
-in effect any more.
+1. While the switch is set, only the status line "Debug logging was turned
+   off by … at …" (without the address when it cannot be read), followed
+   in Testing by **Allow debug logging again**. Production never draws that
+   button: only the server operator clears the switch there.
+2. While some service has debug logging in effect, the region's one-line
+   explanation and **Turn off debug logging**.
+3. Otherwise the status line "Debug logging is off in every service that
+   reports."
+
+These follow the 10-second status in place. The states differ in height,
+so the polled copy waits while the pointer is over the tile grid
+(`data-live-mirror-hold`, as in the [tile grid](#tile-grid)) and nothing
+moves under it. Help is in an "i" toggletip. Beside the explanation, it
+says what the switch does (each service reads it within about a minute,
+and lines already written stay in the logs). Beside the status line that
+names who set the switch, it says who clears the switch, and that services
+started again afterwards log in debug form again where the server's
+setting is still on.
+
+**Not drawn when:** the switch is already set, or no service has debug
+logging in effect any more (the status lines above say which).
 
 **Checks (server):** the [shared rules](#shared-rules-for-health-actions)
 and the switch is not already set.
@@ -7056,10 +7075,10 @@ table, so its clear returns the id of the switch it cleared (#1229). While
 debug logging is back in effect, the
 panel says when the server operator cleared the switch.
 In Testing mode the region also offers **Allow debug logging again**
-(ADM-13 PR 6c), below Turn off debug logging, while the switch is set. Its
+(ADM-13 PR 6c), below the switch's status line, while the switch is set. Its
 preview is a confirmation in the review dialog (#1356), "Allow debug logging
-again?": when the switch was set is on the page behind it (the button's
-reason and the panel), so one sentence says that clearing it lets services
+again?": when the switch was set is on the page behind it (the status line
+and the panel), so one sentence says that clearing it lets services
 started with debug logging on (never one started without it) log in debug
 form again within about a minute, which can record Families' personal
 information; confirming clears
@@ -7069,10 +7088,10 @@ the [shared rules](#shared-rules-for-health-actions), and records
 `admin_cmd_system_debug_allow`, `pk-admin system debug-allow`). Each step is
 answered in the dialog, with the same fresh sign-in step-up. A repeated
 confirmation returns the switch already cleared; one another Administrator
-or the server operator cleared first is refused as stale. It is greyed,
-with the reason, while no switch is set, and in Production ("In Production
-only the server operator can clear the debug-off switch"). In Production the
-page never offers it, and the server refuses it
+or the server operator cleared first is refused as stale. It is not drawn
+while no switch is set, nor ever in Production. In Production the
+page never offers it, and the server refuses it ("In Production only the
+server operator can clear the debug-off switch")
 ([decision 3](#system-health-decisions)): the switch's guard (migration
 0088) admits the web login's clear only while the global mode is Testing,
 for an enabled Administrator with a live session signed in within five
