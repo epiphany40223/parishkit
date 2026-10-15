@@ -21,9 +21,10 @@ FORBIDDEN = re.compile(
     r"|expires in (?:fifteen|15) minutes",
     re.IGNORECASE,
 )
-# The setup-finishing page still carries instructions for whoever runs the
-# server itself, where these words name real things they operate on.
-OPERATOR_PAGES = {"setup-cancel.html"}
+# The setup-finishing page (and its live status region, which draws the
+# operator's step) still carries instructions for whoever runs the server
+# itself, where these words name real things they operate on.
+OPERATOR_PAGES = {"setup-cancel.html", "setup-finishing-status.html"}
 # The backup encryption key page (#198) shows the key's fingerprint because it
 # is the one thing the Administrator compares with the fingerprint recorded
 # beside the private key off the server; there it is the outcome, not

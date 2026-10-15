@@ -112,13 +112,9 @@ def test_phases_are_named_in_order_and_complete_when_done():
 def test_progress_page_shows_the_right_parts_for_each_phase(phase):
     """Downloads list collections; saving shows a determinate bar; done continues."""
     from django.template.loader import render_to_string
+    from django.utils.html import escape
 
-    from parishkit.stewardship.accounts.setup_progress_views import (
-        COLLECTION_TEXT,
-        PHASE_STATUS,
-        collections,
-        phases,
-    )
+    from parishkit.stewardship.accounts.setup_progress_views import _status_context
 
     progress = observation("staging" if phase == "staging" else "validating")
     if phase == "fetching":
@@ -128,18 +124,13 @@ def test_progress_page_shows_the_right_parts_for_each_phase(phase):
     if phase == "done":
         progress |= {"task_state": "succeeded", "setup_state": "collecting"}
         progress |= {"active": False, "current": 9000, "total": 9000}
-    status_key = summary(progress)
+    progress |= {
+        "started_at": "2026-09-10T11:58:30+00:00",
+        "heartbeat_at": "2026-09-10T11:59:57+00:00",
+    }
     html = render_to_string(
         "stewardship/setup-source-progress.html",
-        {
-            "progress": progress,
-            "status_key": status_key,
-            "summaries": SUMMARIES,
-            "phases": phases(progress, status_key),
-            "phase_status": PHASE_STATUS,
-            "collections": collections(progress),
-            "collection_text": COLLECTION_TEXT,
-        },
+        _status_context(progress) | {"status_url": "/status?format=status"},
     )
     # The page lists no time limits; hidden instants only bound its polling.
     assert "Inactivity limit" not in html and "12 hours" not in html
@@ -148,8 +139,16 @@ def test_progress_page_shows_the_right_parts_for_each_phase(phase):
     assert "Families" in html and "Ministry rosters" in html
     records_hidden = "data-load-records hidden" in html
     assert records_hidden is (phase == "fetching")
-    done_hidden = "data-progress-done hidden" in html
-    assert done_hidden is (phase != "done")
+    assert ("data-progress-done" in html) is (phase == "done")
+    # The live status region polls the passive fragment while the load runs
+    # and stops once it is done; the two times tick forward meanwhile.
+    assert 'data-live-status="setup-load" data-live-url="/status?format=status"' in html
+    assert ("data-live-pending" in html) is (phase != "done")
+    assert "1 minute ago" in html and "3 seconds ago" in html
+    assert ("data-live-since" in html) is (phase != "done")
+    assert f'data-live-announce="{escape(SUMMARIES[summary(progress)])}"' in html
+    # No manual check or reload fallback remains.
+    assert "Check progress now" not in html and "Reload" not in html
     if phase == "staging":
         assert 'max="9000" value="1200"' in html and "1,200 of 9,000 (13%)" in html
     if phase == "fetching":
