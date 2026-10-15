@@ -436,7 +436,13 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   whose heading takes focus, and lists the state and recipient lines,
   history, forms and bounce panel to replace too. An export's Retry and
   Cancel swap its status panel and hand focus to Refresh status below.
-  Regenerate, whose answer is a new export's page, stays a navigation. One
+  Regenerate, whose answer is a new export's page, stays a navigation.
+  Preview and test email's Send this test email posts in place too: its
+  notices and form are one region and Recent test results another, whose
+  heading takes focus. The list updates by itself while a test is on its
+  way, and once the test settles a quiet follow-up re-reads only the
+  form's region, so Send, the acknowledgement and a fresh preview come
+  back without moving focus; the page has no manual refresh link. One
   request is in flight at a time: a newer choice cancels an older
   read, but a POST that saves a change is never cancelled, and other
   in-place controls and repeats are ignored (the live region says "Still

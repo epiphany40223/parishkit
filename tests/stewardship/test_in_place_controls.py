@@ -304,6 +304,37 @@ def test_family_test_check_and_send_are_in_place():
     assert "data-in-place-only" in refresh.group(0)
 
 
+def test_campaign_test_send_is_in_place_and_live():
+    """Send this test email posts in place (#519): its form sits in the
+    notices' region and lands on Recent test results, whose heading takes
+    focus. The list is a live status region, pending while a test is on its
+    way, whose settled copy carries a quiet follow-up that re-reads only the
+    form's region. The manual Refresh test results link is gone."""
+    text = (TEMPLATES / "campaign-mail.html").read_text()
+    form = re.search(r'<form [^>]*data-in-place="campaign-test-send"[^>]*>', text)
+    assert 'action="#campaign-tests"' in form.group(0)
+    assert "data-in-place-message=\"{% translate 'Test email requested.' %}\"" in (
+        form.group(0)
+    )
+    assert form.group(0) in region_body(text, "campaign-test-send")
+    assert 'id="campaign-test-pending"' in region_body(text, "campaign-test-send")
+    results = region_body(text, "campaign-tests")
+    assert (
+        'tabindex="-1" data-in-place-focus>{% translate "Recent test results" %}'
+        in (results)
+    )
+    status = re.search(r'<div [^>]*data-live-status="campaign-tests"[^>]*>', results)
+    assert "{% if pending %} data-live-pending{% endif %}" in status.group(0)
+    assert '{% if page_url %} data-live-url="{{ page_url }}"{% endif %}' in (
+        status.group(0)
+    )
+    follow = re.search(r"<a hidden data-live-follow[^>]*>", results).group(0)
+    assert "data-in-place data-in-place-quiet data-in-place-only" in follow
+    assert 'href="{{ page_url }}#campaign-test-send"' in follow
+    assert "Refresh test results" not in text
+    assert "live-status-v1.js" in text
+
+
 def test_information_reopen_confirmation_shows_only_when_unticking():
     """The confirmation to reopen completed follow-up is shown, and required
     before Save, only once "Follow-up completed" is unticked."""
