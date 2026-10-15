@@ -761,11 +761,14 @@ DESCRIPTIONS = {
     "weekly_digest_viewed": _("Someone opened a weekly report."),
     "information_viewed": _("Someone opened the information changes report."),
     "information_updated": _("Someone updated follow-up on an information change."),
-    "ministry_followup_viewed": _("Someone opened the Ministry follow-up report."),
+    "ministry_followup_viewed": _(
+        "Someone opened Ministry requests (formerly Ministry follow-up) or one "
+        "of its follow-up requests."
+    ),
     "ministry_request_updated": _("Someone updated follow-up on a Ministry request."),
     "ministry_followup_bulk_applied": _(
         "Someone recorded one outcome for several Ministry requests at once on "
-        "Ministry follow-up. Each request also has its own entry."
+        "Ministry requests. Each request also has its own entry."
     ),
     "financial_report_viewed": _("Someone opened the Financial stewardship page."),
     # The Limitations report keeps the actions it recorded as "Talents and
@@ -784,7 +787,7 @@ DESCRIPTIONS = {
     ),
     "roster_changes_viewed": _("Someone opened the Roster changes to enter list."),
     "ministry_followup_exported": _(
-        "Someone downloaded Ministry follow-up requests with their contact "
+        "Someone downloaded Ministry requests with their contact "
         "details (Export these requests)."
     ),
     "roster_changes_exported": _(

@@ -258,10 +258,12 @@ LEDGER = {
     # only the item's state and history; its content is Family-level and
     # comes through ``export information``.
     "information_item": pending("PR 11", "followup"),
+    # Ministry requests (#1133) is the follow-up queue with the summary's
+    # By Ministry counts. ``report ministry`` prints those counts, and
     # ``export ministry`` writes one Ministry's join or leave list, the file
-    # the retired Members joining and leaving pages offered (#1157); its
-    # counts are this summary's, so the summary is the page it covers.
-    "ministry_report": command("report ministry", "export ministry"),
+    # the retired Members joining and leaving pages offered (#1157); the
+    # queue itself is the follow-up commands' (PR 11).
+    "ministry_report": command("report ministry", "export ministry", owed="PR 11"),
     # A packet of the chosen Ministries' Members and contacts: an export.
     "ministry_packet": command("export ministry-packet"),
     "response_dashboard": command("report responses"),
@@ -376,7 +378,6 @@ LEDGER = {
     "security_event_acknowledge": command("events list", "events acknowledge"),
     "critical_events_acknowledge": command("events list", "events acknowledge"),
     "information_update": pending("PR 11", "followup"),
-    "ministry_followup": pending("PR 11", "followup"),
     "ministry_followup_item": pending("PR 11", "followup"),
     "ministry_followup_update": pending("PR 11", "followup"),
     # Bulk outcomes on the queue (#1131).

@@ -393,7 +393,7 @@ def test_a_ministry_leader_reaches_their_ministry_pages(auth_service, google, me
     add_draft(store, store.active(), uuid4())
     browser = _sign_in(store, google, "ministry_leader")
     reached = _check(browser, "leader")
-    assert reached == {"index", "ministry_report", "ministry_followup"}
+    assert reached == {"index", "ministry_report"}
 
 
 def _go_live_in_production(auth_service, settings):

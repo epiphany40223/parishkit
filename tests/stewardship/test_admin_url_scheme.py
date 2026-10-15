@@ -279,7 +279,6 @@ SLASHLESS_EXPECTED = {
     "/admin/reports/information": "/admin/reports/information/",
     f"/admin/reports/information/{T}": f"/admin/reports/information/{T}/",
     "/admin/reports/ministries": "/admin/reports/ministries/",
-    "/admin/reports/ministries/follow-up": "/admin/reports/ministries/follow-up/",
     f"/admin/reports/ministries/follow-up/{T}": (
         f"/admin/reports/ministries/follow-up/{T}/"
     ),
@@ -354,6 +353,10 @@ OLD_ADDRESSES = (
     "/admin/reports/ministries/leaving/",
     "/admin/reports/ministries/leaving",
     "/admin/reports/ministries/exports/",
+    # The follow-up queue's own address, retired with no redirect when the
+    # queue became Ministry requests at /admin/reports/ministries/ (#1133).
+    "/admin/reports/ministries/follow-up/",
+    "/admin/reports/ministries/follow-up",
     # Portal users' sign-in rule review and autosave (#952).
     "/admin/users/rules",
     "/admin/users/rules/apply",
@@ -517,7 +520,7 @@ def test_report_actions_and_records_resolve_to_their_own_routes():
         ("/admin/reports/information/exports/", "information_export"),
         (f"/admin/reports/information/{T}/", "information_item"),
         (f"/admin/reports/information/{T}/record/", "information_update"),
-        ("/admin/reports/ministries/follow-up/", "ministry_followup"),
+        ("/admin/reports/ministries/", "ministry_report"),
         (f"/admin/reports/ministries/follow-up/{T}/", "ministry_followup_item"),
         (f"/admin/reports/exports/{T}/", "report_export"),
         (f"/admin/reports/exports/{T}/download/", "report_export_download"),

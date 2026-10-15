@@ -25,6 +25,7 @@ from .followup_components import (
     GONE_QUEUE,
 )
 from .test_components import axe_violations
+from .test_family_response import expect
 from .waits import available, eventually, greyed, has_text, hidden, same_place, visible
 
 # The instant every follow-up fixture shows (followup_components.py).
@@ -280,7 +281,7 @@ def test_followup_filters_post_privately(page, component_origin):
     page.goto(component_origin + "/followup-queue")
     page.get_by_label("Search Member or Ministry name").fill("Private name")
     page.get_by_label("Status").select_option("in_progress")
-    page.route("**/follow-up/", lambda route: route.fulfill(body="Filtered"))
+    page.route("**/reports/ministries/", lambda route: route.fulfill(body="Filtered"))
     with page.expect_request(lambda request: request.method == "POST") as sent:
         page.get_by_role("button", name="Apply filters").click()
     assert "search=Private+name" in sent.value.post_data
@@ -407,8 +408,8 @@ def test_followup_sort_heading_posts_privately(page, component_origin):
     default order (newest first) has no column to show it (#1064), so no
     heading is marked sorted."""
     page.goto(component_origin + "/followup-queue")
-    assert page.locator("thead th[aria-sort]").count() == 0
-    page.route("**/follow-up/", lambda route: route.fulfill(body="Sorted"))
+    assert page.locator("#followup-table thead th[aria-sort]").count() == 0
+    page.route("**/reports/ministries/", lambda route: route.fulfill(body="Sorted"))
     # "Member" alone would also match the Member DUID heading.
     member = page.locator("th[data-sort-column='member']")
     with page.expect_request(lambda request: request.method == "POST") as sent:
@@ -430,7 +431,7 @@ def test_clipped_name_tip_never_swallows_the_next_tap(browser_engine, component_
     try:
         page = context.new_page()
         page.goto(component_origin + "/followup-all")
-        name = page.locator("tbody tr").nth(1).locator(".cell-clamp")
+        name = page.locator("#followup-table tbody tr").nth(1).locator(".cell-clamp")
         name.tap()
         tip = page.locator(".admin-tip.is-shown")
         expect(tip).to_have_text(name.text_content())
@@ -471,7 +472,7 @@ def test_followup_columns_follow_the_shared_order(page, component_origin):
 
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + "/followup-all")
-    headings = page.locator("thead th").all_inner_texts()
+    headings = page.locator("#followup-table thead th").all_inner_texts()
     # A sort heading's text also holds its button's arrow and hint lines. The
     # selection box for bulk outcomes leads (#1131), as the shared order puts
     # it.
@@ -484,7 +485,7 @@ def test_followup_columns_follow_the_shared_order(page, component_origin):
         "Status",
         "Last contact",
     ]
-    rows = page.locator("tbody tr")
+    rows = page.locator("#followup-table tbody tr")
     first, second = (rows.nth(n).locator("th, td") for n in (0, 1))
     assert first.nth(1).inner_text() == "Example <Member>"
     assert first.nth(2).inner_text() == "12345"
@@ -517,6 +518,8 @@ def bulk_page(page, component_origin):
     """Open the bulk outcome queue; fail on script errors; mark against reloads."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + BULK_QUEUE)
+    # The totals' chart (#1133) is drawn after load; measure once it is.
+    expect(page.locator("[data-chart][data-chart-state=pending]")).to_have_count(0)
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
     page.evaluate("window.notReloaded = true")
@@ -564,7 +567,12 @@ def test_bulk_outcome_buttons_follow_the_kind_of_the_ticked_requests(
     assert page.locator(f"input[value^='{BULK_CLOSED}:']").count() == 0
     buttons = page.locator(".bulk-bar [data-bulk-action]")
     assert buttons.all_inner_texts() == BULK_NAMES
-    place = "node => JSON.stringify(node.getBoundingClientRect())"
+    # Page positions, not window ones: ticking a box below the fold (the
+    # totals and By Ministry sit above the table, #1133) scrolls it in.
+    place = """node => {
+      const box = node.getBoundingClientRect();
+      return JSON.stringify([box.x + scrollX, box.y + scrollY, box.width, box.height]);
+    }"""
     before = [buttons.nth(i).evaluate(place) for i in range(buttons.count())]
     table_top = page.locator("#followup-table").evaluate(place)
     states, line = bulk_gate(page)
@@ -644,9 +652,9 @@ def test_bulk_outcome_records_the_ticked_requests_in_place(
     )
     # The table is redrawn from the remembered view: the join is resolved.
     visible(
-        page.locator("tbody tr", has_text="Joining <Member>").get_by_text(
-            "Resolved: Joined the Ministry"
-        )
+        page.locator(
+            "#followup-table tbody tr", has_text="Joining <Member>"
+        ).get_by_text("Resolved: Joined the Ministry")
     )
     assert page.locator(f"input[value^='{BULK_JOIN}:']").count() == 0
     assert page.evaluate("window.notReloaded === true")
