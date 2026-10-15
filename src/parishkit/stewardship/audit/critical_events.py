@@ -34,11 +34,13 @@ _HEX_ID = re.compile(r"[0-9a-f]{32}")
 
 # Plain-language names for events that are recorded at CRITICAL level. Any
 # other event falls back to its identifier with underscores spelled as words.
+# An event that a System health problem accounts for shares that problem's
+# tile summary words where it can (system_health.BANNER_PROBLEMS, #1214).
 LABELS = {
-    Event.SOURCE_INVALID.value: "ParishSoft data refresh failed",
+    Event.SOURCE_INVALID.value: "ParishSoft refresh failed",
     Event.SOURCE_TENANT_MISMATCH.value: "ParishSoft organization does not match",
     Event.SOURCE_DESTRUCTIVE_CHANGE.value: (
-        "ParishSoft refresh would remove too much data"
+        "ParishSoft refresh refused: too large a change"
     ),
     Event.SOURCE_HELD.value: "ParishSoft refresh is on hold",
     Event.SOURCE_CREDENTIAL_FAILED.value: "ParishSoft API key was refused",
@@ -65,19 +67,29 @@ def summary(counts, ended=None):
 
     ``ended`` maps an event to when its problem ended (``alert_counts``), so
     the banner can say a problem is over rather than still going on (#633).
+    ``tile`` is the System health tile the group links while its problem is
+    current (``system_health.banner_tile``), or None, and ``tile_name`` that
+    tile's area name for the link's words.
     """
+    from parishkit.stewardship.system_health import banner_tile, tile_name
+
     ended = ended or {}
-    return [
-        {
-            "event": event,
-            "label": label(event),
-            "count": total,
-            "ended_at": ended.get(event),
-        }
-        for event, total in sorted(
-            counts.items(), key=lambda item: (-item[1], label(item[0]))
+    groups = []
+    for event, total in sorted(
+        counts.items(), key=lambda item: (-item[1], label(item[0]))
+    ):
+        tile = banner_tile(event, ended.get(event))
+        groups.append(
+            {
+                "event": event,
+                "label": label(event),
+                "count": total,
+                "ended_at": ended.get(event),
+                "tile": tile,
+                "tile_name": tile_name(tile) if tile else None,
+            }
         )
-    ]
+    return groups
 
 
 def sign(ids):

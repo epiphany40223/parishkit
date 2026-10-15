@@ -125,6 +125,32 @@ REGISTRY = {
 }
 PROCESS_KINDS = frozenset({"not_running", "not_reported"})
 INSTALLERS = frozenset({"config-installer", "credential-installer"})
+# The CRITICAL banner event each problem kind accounts for (the spec's
+# "Health problems on Home and in the banner"). The other CRITICAL events
+# have no problem kind, so their banner groups keep only the System logs
+# link; ``web_unhealthy`` is left out on purpose (while it is current the
+# page cannot be shown at all).
+BANNER_PROBLEMS = {
+    "source_destructive_change": "source_destructive_change",
+    "source_tenant_mismatch": "source_tenant_mismatch",
+    # Event.SOURCE_INVALID; the spec calls it `source_invalid`.
+    "source_refresh_invalid": "source_failed",
+    "source_provider_failed": "source_failing",
+    "source_credential_failed": "source_failing",
+    "mail_provider_failed": "sender_halted",
+    "retry_refusal_unrecorded": "refusal_unrecorded",
+}
+# Mapped events whose banner group links no tile yet. "Email sending failed"
+# is also recorded for failures that halt nothing, so it should link the
+# Mail tile only while a halt is current; the banner's one query cannot tell
+# that until ADM-13 PR 4 adds halt identities.
+UNLINKED_EVENTS = frozenset({"mail_provider_failed"})
+# Kinds whose sentence on Home already links its own tile ("See Mail
+# sender", "See the counts", "See Version"), so Home's line adds no second
+# link to it (system-health-home-line.html).
+SENTENCE_LINKS_TILE = frozenset(
+    {"mail_provider_unavailable", "source_destructive_change", "versions_differ"}
+)
 # How bad each tile state is, for "worst of".
 RANK = {"working": 0, "warning": 1, "error": 2}
 
@@ -338,6 +364,28 @@ class Problem:
         return tuple(tile for tile, _, _ in tile_parts(self))
 
     @property
+    def tile(self):
+        """The tile Home's line links: the first that shows the problem."""
+        return self.tiles[0]
+
+    @property
+    def tile_name(self):
+        """That tile's area name."""
+        return tile_name(self.tile)
+
+    @property
+    def word(self):
+        """The state word Home's line shows beside its icon."""
+        from django.utils.translation import gettext as _
+
+        return {"warning": _("Warning"), "error": _("Error")}[self.severity]
+
+    @property
+    def links_tile(self):
+        """Whether Home's sentence already links the problem's tile."""
+        return self.kind in SENTENCE_LINKS_TILE
+
+    @property
     def summary(self):
         """A few plain words naming the problem, for a tile and the announcement."""
         from django.utils.translation import gettext as _
@@ -348,11 +396,13 @@ class Problem:
             "mail_provider_unavailable": _("email provider unavailable"),
             "not_running": _("%(name)s not running"),
             "not_reported": _("%(name)s not reporting"),
-            "source_failing": _("ParishSoft not answering"),
+            "source_failing": _("ParishSoft could not be reached"),
             "source_failed": _("ParishSoft refresh failed"),
             "source_late": _("ParishSoft refresh late"),
-            "source_destructive_change": _("ParishSoft refresh refused"),
-            "source_tenant_mismatch": _("ParishSoft organization changed"),
+            "source_destructive_change": _(
+                "ParishSoft refresh refused: too large a change"
+            ),
+            "source_tenant_mismatch": _("ParishSoft organization does not match"),
             "source_retention_failing": _("old ParishSoft copies kept"),
             "backup_rpo_breach": _("backup overdue"),
             "backup_offsite_failed": _("off-site copy failed"),
@@ -1230,6 +1280,33 @@ def tile_name(key):
         "resave": _("Pages and emails to re-save"),
         "version": _("Version and services"),
     }[key]
+
+
+def banner_tile(event, ended):
+    """The tile a critical-problems banner group links, or None.
+
+    A group links its mapped problem's tile while that problem is current.
+    "Current" is read as the banner already reads it (#633): the group has
+    not ended. That keeps the banner at its one query, and once the group
+    has ended it reads "ended" instead. Unmapped events, and the mapped ones
+    in ``UNLINKED_EVENTS``, keep only the System logs link.
+
+    The tile is the registry's (``REGISTRY[kind][0]``), not a
+    ``Problem.tiles[0]`` as Home's line uses: the banner has only the
+    event, no problem with subjects to split. The two agree for every
+    mapped kind, because none is a process kind (``PROCESS_KINDS``), the
+    only kinds ``tile_parts`` splits across tiles; a test holds that.
+    """
+    kind = BANNER_PROBLEMS.get(event)
+    if kind is None or ended or event in UNLINKED_EVENTS:
+        return None
+    return REGISTRY[kind][0]
+
+
+def banner_events(kind):
+    """The banner events problem ``kind`` accounts for, so an action that
+    resolves the problem acknowledges those events' entries."""
+    return tuple(event for event, mapped in BANNER_PROBLEMS.items() if mapped == kind)
 
 
 @dataclass(frozen=True)
@@ -2800,13 +2877,15 @@ def _request_refresh(caller, service, key):
 
 
 def _refusal_events(attempt_id):
-    """The CRITICAL ``source_destructive_change`` log entries the refusal of
-    ``attempt_id`` recorded: the worker writes one, naming the refused
-    task, in the refusal's own transaction (``source.failures``). Ids only;
-    whether each is still inside the banner's window and unacknowledged is
-    ``critical_events.acknowledge``'s to check."""
+    """The CRITICAL log entries the refusal of ``attempt_id`` recorded for
+    its problem: the events the registry maps to
+    ``source_destructive_change`` (``banner_events``). The worker writes one,
+    naming the refused task, in the refusal's own transaction
+    (``source.failures``), so they are exactly the entries any preview of
+    that refusal could show. Ids only; whether each is still inside the
+    banner's window and unacknowledged is ``critical_events.acknowledge``'s
+    to check."""
     from .audit.models import OperationalLog
-    from .observability import Event
     from .source.refresh_models import SourceRefreshAttempt
 
     task = (
@@ -2819,7 +2898,7 @@ def _refusal_events(attempt_id):
     return list(
         OperationalLog.objects.filter(
             level="CRITICAL",
-            event=Event.SOURCE_DESTRUCTIVE_CHANGE.value,
+            event__in=banner_events("source_destructive_change"),
             context__task_id=str(task),
         ).values_list("id", flat=True)
     )

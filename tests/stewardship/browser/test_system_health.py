@@ -842,7 +842,9 @@ def test_a_refused_change_holds_its_counts_and_follows_an_acceptance(
     band = _band(page, "source")
     expect(band).to_be_visible()
     expect(_word(page, "source")).to_have_text("Error")
-    expect(_said(page, "source")).to_have_text("ParishSoft refresh refused")
+    expect(_said(page, "source")).to_have_text(
+        "ParishSoft refresh refused: too large a change"
+    )
     item = band.locator('[data-problem="source_destructive_change"]')
     expect(item.locator("[data-refused-change] table")).to_be_visible()
     _beside_the_refusal(page)

@@ -6,6 +6,7 @@ projection, without a database.
 """
 
 import re
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import UUID, uuid4
@@ -2782,3 +2783,186 @@ def test_a_sentence_links_its_tile_only_off_the_page(kind, tile, link, following
         "stewardship/system-health-problem.html", {"problem": problem}
     )
     assert f'#health-{tile}">{link}</a>' in home
+
+
+# One problem of every registry kind, as Home lists them (#1214).
+MAILER = Subject("mail-dispatch", "mail")
+HOME_SUBJECTS = {
+    "sender_halted": (MAILER,),
+    "sender_outage": (MAILER,),
+    "not_running": (Subject("worker", "source"),),
+    "not_reported": (Subject("scheduler"),),
+    "debug_logging": (Subject("web", "main"),),
+}
+
+
+def home_line(kind):
+    """Home's line for one problem of ``kind``, as Home draws it."""
+    problem = Problem(
+        kind,
+        subjects=HOME_SUBJECTS.get(kind, ()),
+        at=NOW,
+        count=1 if kind == "refusal_unrecorded" else 0,
+    )
+    return problem, render_to_string(
+        "stewardship/system-health-home-line.html", {"problem": problem}
+    )
+
+
+@pytest.mark.parametrize("kind", sorted(REGISTRY))
+def test_a_home_line_shows_its_state_and_links_its_tile_once(kind):
+    """Each Home line shows the registry's icon and state word beside the
+    page's sentence, and links its problem's tile exactly once: by the
+    sentence's own link when it has one, else by "See … in System health"."""
+    problem, line = home_line(kind)
+    severity = REGISTRY[kind][1]
+    assert problem.severity == severity
+    assert f'data-severity="{severity}"' in line
+    assert f"level-icon-{severity}" in line
+    word = {"warning": "Warning", "error": "Error"}[severity]
+    assert f'<span class="status-word">{word}</span>' in line
+    assert ("notice-error" in line) is (severity == "error")
+    anchor = f'href="/admin/system/health/#health-{REGISTRY[kind][0]}"'
+    assert line.count(anchor) == 1, line
+    assert line.count('href="/admin/system/health/"') == 0
+    own = f"See {problem.tile_name} in System health" in line
+    assert own is not problem.links_tile
+
+
+def test_home_words_and_tiles_for_a_split_process_problem():
+    """A stopped installer alone is a warning; with a mail sender the line
+    links the Mail tile, its first, and is an error."""
+    installer = Problem("not_running", (Subject("config-installer"),), NOW)
+    assert (installer.severity, installer.word, installer.tile) == (
+        "warning",
+        "Warning",
+        "version",
+    )
+    both = replace(installer, subjects=(MAILER, Subject("config-installer")))
+    assert (both.severity, both.tile, both.tile_name) == ("error", "mail", "Mail")
+
+
+def refresh_block(**context):
+    """Home's ParishSoft refresh block with a failed and a late full refresh."""
+    status = FullRefreshStatus(
+        NOW - timedelta(hours=8),
+        NOW - timedelta(hours=1),
+        False,
+        failed_task_id=uuid4(),
+        overdue_at=NOW - timedelta(minutes=30),
+        out_of_date=True,
+        late_minutes=30,
+    )
+    return render_to_string(
+        "stewardship/full-refresh-status.html",
+        {
+            "status": status,
+            "can_view_task": True,
+            "can_refresh": True,
+            "refresh_key": "key",
+        }
+        | context,
+    )
+
+
+def test_home_shows_a_listed_refresh_problem_once_and_keeps_its_links():
+    """#1214: with ``source_failed`` and ``source_late`` listed, Home's
+    refresh block leaves both notices out but keeps "See what went wrong"
+    and one Run a full refresh now. Without them both notices stay."""
+    listed = refresh_block(failed_listed=True, problems_listed=True, keep_action=True)
+    assert "notice-error" not in listed
+    assert "did not finish" not in listed and "minutes late" not in listed
+    assert "See what went wrong" in listed
+    assert listed.count("Run a full refresh now") == 1
+    # Only the failure listed (the late refresh is not): the late notice
+    # keeps the button, and the failure's plain line adds none.
+    failed = refresh_block(failed_listed=True, keep_action=True)
+    assert failed.count("notice-error") == 1 and "minutes late" in failed
+    assert failed.count("Run a full refresh now") == 1
+    plain = refresh_block()
+    assert plain.count("notice-error") == 2 and "did not finish" in plain
+    assert plain.count("Run a full refresh now") == 1
+
+
+def test_only_a_listed_failure_gives_the_off_site_line_way():
+    """``health_listed``: each notice gives way only to its own listed
+    problem, and the off-site line only while it reports the failure."""
+    from parishkit.stewardship.accounts.admin_dashboard import health_listed
+    from parishkit.stewardship.accounts.backup_destination import OffsiteStatus
+
+    def offsite(kind):
+        """An off-site line of ``kind``."""
+        return OffsiteStatus(kind, "Words.", NOW, NOW, None)
+
+    listed = (
+        Problem("source_failed", at=NOW),
+        Problem("source_late", at=NOW),
+        Problem("backup_offsite_failed", at=NOW),
+    )
+    assert health_listed(listed, offsite("failed")) == {
+        "failed": True,
+        "late": True,
+        "offsite": True,
+    }
+    # The incident is open, but the newest copy went through: the line no
+    # longer reports a failure, so it stays.
+    for kind in ("uploaded", "disabled", "none"):
+        assert health_listed(listed, offsite(kind))["offsite"] is False, kind
+    assert health_listed(listed, None)["offsite"] is False
+    # A failing off-site line with no listed problem stays too.
+    assert health_listed((), offsite("failed")) == {
+        "failed": False,
+        "late": False,
+        "offsite": False,
+    }
+
+
+def home_page(dashboard):
+    """Home's page body as the index view draws it for ``dashboard``."""
+    from parishkit.stewardship.accounts.backup_destination import OffsiteStatus
+
+    status = FullRefreshStatus(
+        NOW - timedelta(days=1), NOW - timedelta(hours=1), False, failed_task_id=uuid4()
+    )
+    return render_to_string(
+        "stewardship/home.html",
+        {
+            "admin_chrome": {"admin": True},
+            "suppress_admin_session_chrome": True,
+            "dashboard": {
+                "full_refresh": status,
+                "can_view_task": True,
+                "can_refresh": True,
+                "refresh_key": "key",
+                "offsite": OffsiteStatus(
+                    "failed", "Copying the newest backup failed.", NOW, NOW, None
+                ),
+            }
+            | dashboard,
+        },
+    )
+
+
+def test_home_keeps_both_notices_for_a_viewer_without_system_health():
+    """A viewer who may not open System health gets no lines and no
+    ``health_listed``, so the failed refresh and the failed off-site copy
+    keep their own notices; a viewer with the lines sees each once."""
+    other = home_page({})
+    assert "data-home-health" not in other
+    assert "did not finish." in other
+    assert "Copying the newest backup failed." in other
+    assert other.count("Run a full refresh now") == 1
+    problems = (
+        Problem("source_failed", at=NOW - timedelta(hours=1)),
+        Problem("backup_offsite_failed", at=NOW),
+    )
+    admin = home_page(
+        {
+            "health_problems": problems,
+            "health_listed": {"failed": True, "late": False, "offsite": True},
+        }
+    )
+    assert admin.count("did not finish.") == 1
+    assert "Copying the newest backup failed." not in admin
+    assert admin.count("Run a full refresh now") == 1
+    assert admin.count("Off-site backup settings") == 1
