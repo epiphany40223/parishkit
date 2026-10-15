@@ -566,6 +566,15 @@ CLOSURE_CREATED = {
         "stewardship_jobs",
         "0032_debug_off_clear_subject",
     ),
+    # 0105 (#1404) creates the Campaign setup review table (in
+    # CLOSURE_TABLES) with its guard and deferred audit check.
+    **dict.fromkeys(
+        (
+            "public.stewardship_campaign_setup_review_guard_v1()",
+            "public.stewardship_campaign_setup_review_effect_v1()",
+        ),
+        ("stewardship_accounts", "0025_campaign_setup_review"),
+    ),
 }
 
 

@@ -548,6 +548,12 @@ CLOSURE_TABLES = {
     # An Administrator's review of an Automatic census change (0096, #528),
     # which web records and reads.
     "stewardship_proposal_review": ("stewardship_responses", "0006_proposal_review"),
+    # A Campaign setup step an Administrator kept as is (0105, #1404), which
+    # web records and reads.
+    "stewardship_campaign_setup_review": (
+        "stewardship_accounts",
+        "0025_campaign_setup_review",
+    ),
 }
 
 
@@ -1010,6 +1016,9 @@ def runtime_grants(role, *, target=None):
         tables["stewardship_setup_slack_delivery"].add("INSERT")
         tables["stewardship_setup_config_intent"].add("INSERT")
         tables["stewardship_setup_readiness_binding"] = {"SELECT", "INSERT"}
+        # A Campaign setup step kept as is (#1404): insert-only, so a
+        # reviewed step can never be withdrawn or rewritten.
+        tables["stewardship_campaign_setup_review"] = {"SELECT", "INSERT"}
         tables["stewardship_setup_credential_install"] = {"SELECT"}
         from .responses.grants import add_response_web_grants
 
