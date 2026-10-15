@@ -5582,10 +5582,10 @@ current; slice 2b draws them always. The exception is
 [Accept this change once](#accept-a-large-parishsoft-change-once), which
 answers the refused change and is not a standing control: it is drawn
 only while the refusal shown can be accepted or was accepted, or while a
-step's result is (Administrator, pk-local batch 24a and 2026-10-15). The page has no plain "Refresh System health" link at
-its end (Administrator, pk-local batch 24a): it refreshes itself, and the
-line's [Not current](#overall-status-line) button checks again when it
-stops.
+step's result is (Administrator, pk-local batch 24a and 2026-10-15).
+The page has no plain "Refresh System health" link at its end
+(Administrator, pk-local batch 24a): it refreshes itself, and the line's
+[Not current](#overall-status-line) button checks again when it stops.
 
 #### Health problem registry
 
@@ -5897,10 +5897,10 @@ requests 1206, 1210 and 1213 have merged.
      [tiles while not current](#tiles-while-not-current), and the controls
      of pull requests 1206, 1210 and 1213 moved into their fixed places
      and always drawn (Accept this change once only while a refusal can be
-     or was accepted, since slice 4). pk-local: opening and closing tiles in one row of
-     the grid, a poll that changes state while a tile is open, an open
-     preview across a poll, a poll left to give up with tiles open, and
-     phone width.
+     or was accepted, since slice 4). pk-local: opening and closing tiles
+     in one row of the grid, a poll that changes state while a tile is
+     open, an open preview across a poll, a poll left to give up with tiles
+     open, and phone width.
 3. **Mail tile.** Its summaries, and its explanations moved to "About this
    page" and toggletips. pk-local: a send, a pause, the daily limit and a
    stopped consumer in Testing.

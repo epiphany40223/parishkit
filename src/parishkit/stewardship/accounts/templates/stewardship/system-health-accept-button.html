@@ -4,8 +4,9 @@
   when, and when it expires, in browser-local time). Otherwise (only after
   a step's result, since the section is left out then) there is no button:
   a refusal that cannot be accepted (lapsed, or a load with no Families or
-  no Members) gets one line pointing at its problem line, which says why
-  (Administrator, 2026-10-15), and no refusal shown says so. Shared by
+  no Members) gets one line pointing at the refused change above, whose
+  problem line (or counts' notice) says why (Administrator, 2026-10-15),
+  and no refusal shown says so. Shared by
   the section's offer (system-health-accept-offer.html), the region's
   button after a step's result, and their copies in the polled status
   region (template[data-live-mirror]), which live-status-v1.js puts in
@@ -18,5 +19,5 @@
 {% endcomment %}{% with state=health.accept_state acceptance=health.drop_acceptance %}{% if state == "open" %}<form method="post" action="{% url 'admin:system_health' %}#accept-change" data-in-place="accept-preview" data-in-place-fallback="accept-confirm" data-in-place-message="{% translate 'Review accepting this change once.' %}"><input type="hidden" name="csrfmiddlewaretoken" value="{% if not mirrored %}{{ csrf_token }}{% endif %}"><input type="hidden" name="action" value="accept_preview">{% button type="submit" %}{% translate "Accept this change once" %}{% endbutton %}</form>
 {% elif state == "accepted" %}<p>{% button type="button" disabled aria-describedby="accept-change-reason" %}{% translate "Accept this change once" %}{% endbutton %}</p>
 <p class="help" id="accept-change-reason" data-accept-state="{{ state }}">{% if accept_actor %}{% blocktranslate with actor=accept_actor trimmed %}Accepted by {{ actor }} at{% endblocktranslate %}{% else %}{% translate "Accepted at" %}{% endif %} <time datetime="{{ acceptance.created_at|instant }}" data-local-instant>{{ acceptance.created_at|instant }}</time>; {% translate "expires at" %} <time datetime="{{ acceptance.expires_at|instant }}" data-local-instant>{{ acceptance.expires_at|instant }}</time>. {% translate "The next full refresh will use it, if no count falls further than the numbers reviewed." %}</p>
-{% else %}<p class="help" data-accept-state="{{ state }}">{% if state == "none" %}{% translate "No refused ParishSoft refresh is waiting to be accepted." %}{% else %}{% translate "This refusal cannot be accepted; the ParishSoft refresh problem above says why." %}{% endif %}</p>
+{% else %}<p class="help" data-accept-state="{{ state }}">{% if state == "none" %}{% translate "No refused ParishSoft refresh is waiting to be accepted." %}{% else %}{% translate "This refusal cannot be accepted; the refused change above says why." %}{% endif %}</p>
 {% endif %}{% endwith %}

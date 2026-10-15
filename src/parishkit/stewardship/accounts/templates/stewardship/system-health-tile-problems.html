@@ -10,10 +10,11 @@
   comes last (``tile.refusal``): its item holds the refused counts, so
   Accept this change once, which follows the problems in the tile, sits
   right under them. A refusal that cannot be accepted has no such section;
-  its sentence says why (system-health-accept-unavailable.html). In the Backups tile its page findings (``tile.findings``,
-  in FINDINGS's order) follow the problems the same way, each a Warning
-  item with its sentence and link (system-health-finding.html), so the
-  panel content below repeats none of them. Shared by the page's tile and
+  its sentence says why (system-health-accept-unavailable.html). In the
+  Backups tile its page findings (``tile.findings``, in FINDINGS's order)
+  follow the problems the same way, each a Warning item with its sentence
+  and link (system-health-finding.html), so the panel content below
+  repeats none of them. Shared by the page's tile and
   the polled region's copy.
 {% endcomment %}{% if tile.problems or tile.findings %}<ul class="health-problems">{% for part in tile.listed %}{% include "stewardship/system-health-tile-problem.html" %}{% endfor %}
 {% if tile.key == "backups" %}{% for finding in tile.findings %}{% include "stewardship/system-health-finding.html" %}{% endfor %}{% endif %}

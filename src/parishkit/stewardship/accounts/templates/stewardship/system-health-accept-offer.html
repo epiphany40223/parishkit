@@ -5,10 +5,11 @@
   (``accepted``, the button greyed with who and until when). With nothing
   to accept there is nothing here (batch 24a), and neither is there for a
   refusal that cannot be accepted (``lapsed`` or ``empty``): its problem
-  line says why instead (Administrator, 2026-10-15). Shared by the #accept-change region and the copy the polled
-  status region carries (template[data-live-mirror="accept-offer"]), which
-  live-status-v1.js puts in place on each update, together with the
-  refusal's problem item. ``mirrored`` (the polled copy) leaves the
+  line says why instead (Administrator, 2026-10-15). Shared by the
+  #accept-change region and the copy the polled status region carries
+  (template[data-live-mirror="accept-offer"]), which live-status-v1.js
+  puts in place on each update, together with the refusal's problem
+  item. ``mirrored`` (the polled copy) leaves the
   button's CSRF token empty.
 {% endcomment %}{% if health.accept_state == "open" or health.accept_state == "accepted" %}<section class="panel" aria-labelledby="accept-change-heading">
 <h3 id="accept-change-heading">{% translate "Accept this change once" %}</h3>

@@ -1524,6 +1524,10 @@ def test_a_lapsed_acceptance_draws_no_section_and_says_why():
     assert "It was accepted once at" in line
     assert f'<time datetime="{NOW.isoformat()}" data-local-instant>' in line
     assert "the acceptance ended before a full refresh used it" in line
+    assert (
+        "refused too until the drop is fixed in ParishSoft; Refresh now gets a "
+        "new refusal to review and accept." in line
+    )
     assert 'href="/admin/parish/parishsoft-refresh/"' in line
     # The polled copy of the problems says the same, so a poll keeps it.
     assert 'data-accept-unavailable="lapsed"' in region
@@ -1571,8 +1575,15 @@ def test_a_step_result_stays_when_the_refusal_cannot_be_accepted():
     region = section(body, 'id="accept-change"')
     assert 'data-accept-refused="changed"' in region
     assert 'data-accept-state="lapsed"' in region
-    assert "This refusal cannot be accepted" in region
+    assert "This refusal cannot be accepted; the refused change above says why." in (
+        region
+    )
     assert "<button" not in region
+    # Its height changes with the state, so it waits while the pointer is
+    # over the grid, as the problems do.
+    assert (
+        '<div data-live-mirror-target="accept-button" data-live-mirror-hold>' in region
+    )
 
 
 def test_the_preview_lists_the_counts_and_waits_for_the_tick_box():
