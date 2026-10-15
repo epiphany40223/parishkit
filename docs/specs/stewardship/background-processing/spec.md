@@ -2560,7 +2560,10 @@ plan version, and only the web login creates either:
   plan is unfinished at a time.
 
 Both tasks, and the web calls that queue them, refuse while the deployment's
-`parishsoft_publication` setting is off. A run that ends with an error is
+`parishsoft_publication` setting is off. The audit records who asked for each
+preflight and rerun, and when, and why a task was refused: the setting off,
+the contact read not confirmed yet, or another refusal, each its own event
+type. A run that ends with an error is
 abandoned and retried on the same plan, at most three runs; after that, or
 after a refusal, an Administrator may rerun that plan while it still has an
 unfinished entity. A rerun reads before each PUT and never repeats a write

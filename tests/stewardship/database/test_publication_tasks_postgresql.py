@@ -17,6 +17,7 @@ from uuid import uuid4
 import pytest
 from django.db import DatabaseError, IntegrityError, connection, transaction
 
+from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.dispatch import execute_hint, recover_hint
@@ -173,6 +174,20 @@ def due(task):
     )
 
 
+def audited(event_type):
+    """Each audit event of one type, oldest first: actor, subject, outcome."""
+    return [
+        (
+            event.actor_id,
+            event.subject_id,
+            AuditContext.objects.get(event=event).context["outcome"],
+        )
+        for event in AuditEvent.objects.filter(event_type=event_type).order_by(
+            "created_at"
+        )
+    ]
+
+
 def proposal(row):
     """The proposal's current execution."""
     return ProposedChange.objects.get(pk=row.pk).execution
@@ -185,6 +200,10 @@ def test_preflight_plans_and_a_confirmed_run_publishes(world):
     key = uuid4()
     task = world.preflight(key=key)
     assert world.preflight(key=key).run_id == task.run_id
+    # Safety review L3: the request is audited once, a replay not again.
+    assert audited("census_publication_preflight_requested") == [
+        (world.admin, task.run_id, "started")
+    ]
     assert world.execute(task.run_id) and state(task) == "succeeded"
     assert world.gateway.reads == [world.first.entity_key]
     assert world.gateway.writes == [] and world.gateway.closed
@@ -231,6 +250,13 @@ def test_tasks_refuse_while_switched_off(world):
     assert world.execute(run.run_id, enabled=False)
     assert state(run) == "failed" and len(world.built) == built
     assert world.gateway.writes == []
+    # Safety review L3: each failure records the switch as its reason.
+    assert audited("census_publication_switched_off") == [
+        (None, task.run_id, "failed"),
+        (None, run.run_id, "failed"),
+    ]
+    assert audited("census_publication_read_unconfirmed") == []
+    assert audited("census_publication_refused") == []
 
 
 def test_an_unconfirmed_read_fails_the_preflight_without_a_plan(world):
@@ -239,6 +265,11 @@ def test_an_unconfirmed_read_fails_the_preflight_without_a_plan(world):
     task = world.preflight()
     assert world.execute(task.run_id)
     assert state(task) == "failed" and not PublicationPlan.objects.exists()
+    # Safety review L3: the reason tells this apart from the switch off.
+    assert audited("census_publication_read_unconfirmed") == [
+        (None, task.run_id, "failed")
+    ]
+    assert audited("census_publication_switched_off") == []
 
 
 def test_an_unreadable_member_is_blocked(world):
@@ -260,6 +291,7 @@ def test_a_change_since_the_read_fails_the_preflight(world):
     task = world.preflight()
     assert world.execute(task.run_id)
     assert state(task) == "failed" and not PublicationPlan.objects.exists()
+    assert audited("census_publication_refused") == [(None, task.run_id, "failed")]
 
 
 def test_one_run_per_plan(world):
@@ -331,10 +363,15 @@ def test_a_failed_run_is_rerun_explicitly(world):
     _, run = world.confirm(plan)
     owner("UPDATE stewardship_system_configuration SET mode='testing'")
     assert world.execute(run.run_id) and state(run) == "failed"
+    assert audited("census_publication_refused") == [(None, run.run_id, "failed")]
     owner("UPDATE stewardship_system_configuration SET mode='production'")
     command = uuid4()
     retry = world.rerun(plan, command=command)
     assert world.rerun(plan, command=command).run_id == retry.run_id
+    # Safety review L3: the rerun is audited once, a replay not again.
+    assert audited("census_publication_rerun_requested") == [
+        (world.admin, retry.run_id, "retry")
+    ]
     assert retry.root_id == run.root_id and retry.run_id != run.run_id
     assert world.execute(retry.run_id) and state(retry) == "succeeded"
     assert proposal(world.first) == "published"

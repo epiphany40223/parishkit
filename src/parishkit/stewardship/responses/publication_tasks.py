@@ -40,6 +40,8 @@ from django.db import DatabaseError
 
 from parishkit.stewardship.accounts.policy import Capability, allows, current_principal
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
+from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.dispatch import Handler, RecoveryPlan
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
@@ -237,17 +239,44 @@ def _read_members(execution, gateway, keys):
     return payloads
 
 
+def _refuse(execution, action):
+    """Record why the run is refused, then fail it for good.
+
+    ``action`` is the refusal's own audit event (safety review L3), so the
+    System log tells the switch being off apart from an unconfirmed contact
+    read, and both from any other refusal. A crash between the two leaves
+    the run abandoned; its recovery refuses again, recording it again.
+    """
+    with execution.effect():
+        record_action(
+            action,
+            actor_kind=ActorKind.SYSTEM,
+            subject_id=execution.claim.run_id,
+            current_parish=True,
+            context={"outcome": Outcome.FAILED},
+        )
+    execution.transition("permanent_failure")
+
+
+def _refusal(error):
+    """The audit event for a worker refusal: the switch off, or another."""
+    if isinstance(error, PublicationDisabled):
+        return Action.CENSUS_PUBLICATION_SWITCHED_OFF
+    return Action.CENSUS_PUBLICATION_REFUSED
+
+
 def _execute_preflight(execution, *, enabled, gateway):
     """Read, plan and record one preflight; see the module docstring.
 
     Every refusal is a permanent failure with no plan recorded, and the
     Administrator asks again: the switch off, no current campaign or
     promoted data, an unconfirmed contact read, or a change that moved
-    since the read (the plan guard refuses a stale version).
+    since the read (the plan guard refuses a stale version). Each is
+    audited with its reason (``_refuse``).
     """
     with correlation(execution.correlation_id):
         if enabled is not True:
-            execution.transition("permanent_failure")
+            _refuse(execution, Action.CENSUS_PUBLICATION_SWITCHED_OFF)
             return
         actor_id, request_key = _request_binding(execution)
         with execution.effect():
@@ -259,7 +288,7 @@ def _execute_preflight(execution, *, enabled, gateway):
             execution.transition("complete")
             return
         if scope is None:
-            execution.transition("permanent_failure")
+            _refuse(execution, Action.CENSUS_PUBLICATION_REFUSED)
             return
         campaign_id, snapshot_id, organization_id, rows, members = scope
         source = gateway(execution)
@@ -268,7 +297,7 @@ def _execute_preflight(execution, *, enabled, gateway):
         finally:
             source.close()
         if payloads is None:
-            execution.transition("permanent_failure")
+            _refuse(execution, Action.CENSUS_PUBLICATION_READ_UNCONFIRMED)
             return
         plans = [
             plan_entity("member", key, group, payloads[key])
@@ -286,7 +315,7 @@ def _execute_preflight(execution, *, enabled, gateway):
                     rows=rows,
                 )
         except DatabaseError:
-            execution.transition("permanent_failure")
+            _refuse(execution, Action.CENSUS_PUBLICATION_REFUSED)
             return
         execution.transition("complete")
 
@@ -303,7 +332,9 @@ def _execute_publication(execution, *, enabled, gateway):
     """Run ``publish_plan`` for the task's plan and record how the run ended.
 
     A refusal before any lease (the switch off, Testing mode, no Production
-    confirmation) is a permanent failure. Otherwise every entity ends
+    confirmation) is a permanent failure, audited with its reason
+    (``_refuse``), as is the same refusal inside the run. Otherwise every
+    entity ends
     published or invalidated, so the run completes. An unexpected error
     propagates: the claim expires and recovery retries the same plan.
     """
@@ -311,17 +342,21 @@ def _execute_publication(execution, *, enabled, gateway):
         _, plan_id = _request_binding(execution)
         try:
             check_publishable(plan_id, enabled=enabled)
-        except (PublicationDisabled, PublicationRefused):
-            execution.transition("permanent_failure")
+        except (PublicationDisabled, PublicationRefused) as error:
+            _refuse(execution, _refusal(error))
             return
         source = gateway(execution)
         try:
             publish_plan(execution, plan_id, source, enabled=enabled)
-        except (PublicationDisabled, PublicationRefused):
-            execution.transition("permanent_failure")
-            return
+        except (PublicationDisabled, PublicationRefused) as error:
+            refusal = _refusal(error)
+        else:
+            refusal = None
         finally:
             source.close()
+        if refusal is not None:
+            _refuse(execution, refusal)
+            return
         execution.transition("complete")
 
 
@@ -415,7 +450,7 @@ def request_preflight(store, actor_id, *, request_key, correlation_id, enabled):
 
     ``enabled`` is the web deployment's ``parishsoft_publication`` setting.
     The same ``request_key`` returns the task (and later the plan) already
-    made for it.
+    made for it. A new request is audited: who asked, and when.
     """
     if enabled is not True:
         raise PublicationDisabled("ParishSoft publication is switched off.")
@@ -423,8 +458,14 @@ def request_preflight(store, actor_id, *, request_key, correlation_id, enabled):
         raise ValueError("Invalid publication preflight.")
     with work_transaction():
         _administrator(store, actor_id)
-        admit_campaign(_current_campaign(), mutating=True)
-        return enqueue(
+        campaign_id = _current_campaign()
+        admit_campaign(campaign_id, mutating=True)
+        # The work order serializes this check with the enqueue, so a replay
+        # of the same key is never audited as a second request.
+        replay = TaskRun.objects.filter(
+            task_type=PREFLIGHT_TASK_TYPE, idempotency_key=str(request_key)
+        ).exists()
+        task = enqueue(
             task_type=PREFLIGHT_TASK_TYPE,
             domain_request_id=request_key,
             actor_id=actor_id,
@@ -432,6 +473,28 @@ def request_preflight(store, actor_id, *, request_key, correlation_id, enabled):
             idempotency_key=request_key,
             admit=admit_preflight,
         )
+        if not replay:
+            _requested(
+                Action.CENSUS_PUBLICATION_PREFLIGHT_REQUESTED,
+                actor_id,
+                task,
+                campaign_id,
+                Outcome.STARTED,
+            )
+        return task
+
+
+def _requested(action, actor_id, task, campaign_id, outcome):
+    """Audit an Administrator's request: who, when, and the task it made."""
+    record_action(
+        action,
+        actor_kind=ActorKind.PORTAL_USER,
+        actor_id=actor_id,
+        subject_id=task.run_id,
+        campaign_id=campaign_id,
+        current_parish=True,
+        context={"outcome": outcome},
+    )
 
 
 def confirm_and_publish(
@@ -465,7 +528,8 @@ def rerun_publication(store, actor_id, plan_id, *, command_id, correlation_id, e
 
     The retry is the plan's own run again (``retry_failed``), never a new
     plan, so the overlap check that blocks a new plan for the same changes
-    does not stop it. The same ``command_id`` returns the same retry.
+    does not stop it. The same ``command_id`` returns the same retry; a new
+    one is audited: who asked, and when.
     """
     if enabled is not True:
         raise PublicationDisabled("ParishSoft publication is switched off.")
@@ -488,10 +552,21 @@ def rerun_publication(store, actor_id, plan_id, *, command_id, correlation_id, e
         ).first()
         if previous is None and not unfinished([plan_id]):
             raise PermissionError("Every change in this plan is finished.")
-        return retry_failed(
+        task = retry_failed(
             run_id=latest.pk if previous is None else previous.parent_id,
             command_id=command_id,
             actor_id=actor_id,
             correlation_id=correlation_id,
             admit=admit_publication,
         )
+        if previous is None:
+            _requested(
+                Action.CENSUS_PUBLICATION_RERUN_REQUESTED,
+                actor_id,
+                task,
+                PublicationPlan.objects.values_list("campaign_id", flat=True).get(
+                    pk=plan_id
+                ),
+                Outcome.RETRY,
+            )
+        return task
