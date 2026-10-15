@@ -404,13 +404,14 @@ def debug_off_clear_command(configuration):
     cleared; clearing lets processes started with the setting log in debug
     form again. Run with every online service stopped (the offline lease),
     then start them again. The clear runs only through
-    ``stewardship_debug_off_clear_v1()``, which only this login may execute,
+    ``stewardship_debug_off_clear_v2()``, which only this login may execute,
     and records ``cleared_by`` "operator" on the switch. In the same
     transaction it records ``debug_logging_allowed`` with actor kind
-    ``operator``, as ``revoke-automation-sessions`` records its endings; the
-    event names no subject, because this login cannot read the switch it
-    cleared. Prints whether a set switch was cleared; clearing when none is
-    set changes nothing and records nothing.
+    ``operator``, as ``revoke-automation-sessions`` records its endings,
+    naming the cleared switch as its subject (the definer returns its id,
+    since this login cannot read the switch table; #1229). Prints whether a
+    set switch was cleared; clearing when none is set changes nothing and
+    records nothing.
     """
     if admit_offline_service(configuration) is not ServiceRole.ADMIN_RECOVERY:
         raise ConfigError(
@@ -441,16 +442,18 @@ def debug_off_clear_command(configuration):
                         "function grant; run database-grants after migrating."
                     )
                 cursor.execute(f"SELECT public.{DEBUG_OFF_CLEAR_FUNCTION}")
+                # The cleared switch's id, or None when none was set.
                 cleared = cursor.fetchone()[0]
-                if cleared:
+                if cleared is not None:
                     record_operator_action(
                         Action.DEBUG_LOGGING_ALLOWED,
                         correlation_id=uuid4(),
+                        subject_id=cleared,
                         context={"outcome": Outcome.SUCCEEDED},
                     )
         finally:
             connection.close()
-    return {"debug_off_cleared": cleared > 0}
+    return {"debug_off_cleared": cleared is not None}
 
 
 def parse_backup_time(value):

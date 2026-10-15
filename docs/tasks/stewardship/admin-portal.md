@@ -1528,3 +1528,9 @@ changed to match. It is checked by
 `tests/stewardship/database/test_debug_off_switch_postgresql.py`,
 `tests/stewardship/test_system_health.py`, the runtime-grant and users swap
 tests and the regenerated schema baseline. ADM-13.06 is complete.
+Follow-up #1229 adds the frozen forward migration
+`0098_debug_off_clear_subject.sql` (`stewardship_jobs.0032`), which replaces
+the operator's count-only clear with `stewardship_debug_off_clear_v2()`,
+returning the cleared switch's id, so the operator's `debug_logging_allowed`
+names the switch too, checked by
+`tests/stewardship/database/test_debug_off_switch_postgresql.py`.
