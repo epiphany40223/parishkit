@@ -30,7 +30,7 @@ ADMIN_PAGES = (
     "/home",
     "/campaign-settings",
     "/login",
-    "/setup-shares",
+    "/setup-mail",
     SYSTEM_HEALTH,
     "/logs",
     "/charts",
