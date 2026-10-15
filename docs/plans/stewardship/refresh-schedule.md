@@ -545,8 +545,8 @@ below, after a short spec update, into
    entry when it has landed, canonical `HH:MM` until then. Browser tests in
    three engines with `--require-no-skips`; local human verification before
    merge.
-5. **Command line.** `integration set` takes the same schedule with the same
-   validator, and `integration schedule-preview` prints the preview.
+5. **Command line.** `integration preview parishsoft` takes the same
+   schedule with the same validator, and `integration schedule-preview` prints the preview.
 
 After merge and deploy, the Administrator chooses the Production schedule;
 the worked example's second row is the suggested starting point.
@@ -582,7 +582,7 @@ a changed schedule; until then every stored schedule is an existing one.
 4. **Seven-day grid.** The read-only quarter-hour grid beside the list, its
    shading, labels, current-time mark and narrow-screen scrolling.
    Administrator check on pk-local before merge.
-5. **Command line.** `integration set --target parishsoft
+5. **Command line.** `integration preview parishsoft
    --refresh-schedule` and `integration schedule-preview`, through the
    functions of slices 2 and 3. It follows ADM-11 PR 10, which adds the
    `integration` commands.

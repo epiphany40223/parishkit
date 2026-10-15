@@ -102,6 +102,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "integration list",
         "integration show",
         "integration status",
+        "integration preview",
+        "integration confirm",
     }
     tests = {
         "test sample-preview",
@@ -225,8 +227,9 @@ def test_the_catalog_lists_every_command_with_its_flags():
             if name in users
             else 3
         )
-        # Only the chosen-Family send, the code and financial exports and
-        # some regenerations need a recent sign-in on their pages.
+        # Only the chosen-Family send, the code and financial exports, some
+        # regenerations and an integration settings change need a recent
+        # sign-in on their pages.
         assert entry["fresh_gated"] == (
             name
             in {
@@ -242,6 +245,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "export postal",
                 "export family-timeline",
                 "export archive",
+                "integration confirm",
             }
         ), name
         # A prompting command, and only one, takes --yes. Other branches add
@@ -757,6 +761,7 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_history_confirm",
         "admin_cmd_history_remove",
         "admin_cmd_artwork_remove",
+        "admin_cmd_integration_confirm",
     ]
     for event in events:
         assert Action(event) and event in DESCRIPTIONS, event

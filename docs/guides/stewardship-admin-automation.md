@@ -1057,9 +1057,10 @@ the same request.
 reads of **Integrations** and each integration's settings page. Like the
 pages, they need an Administrator; a session of any scope may run them, and
 they record nothing in System logs, as opening the pages records nothing.
-No key, key file or fingerprint is ever printed. Saving settings, removing
-an integration, the backup folder check and every key step stay on the
-pages for now.
+No key, key file or fingerprint is ever printed. `integration preview` and
+`integration confirm` save settings and remove an integration (see
+[Changing integration settings](#changing-integration-settings)); the backup
+folder check and every key step stay on the pages for now.
 
 ```sh
 pk-admin integration list
@@ -1093,6 +1094,50 @@ change or a backup folder check runs, for `parishsoft`, `google_workspace`,
 `slack` and `backup`: `target`, `pending`, and `key` (or `offsite_backup` and
 `probe` for the backup), as `show` prints them. With `--watch SECONDS` it
 repeats until nothing is pending.
+
+### Changing integration settings
+
+`integration preview` and `integration confirm` are a settings page's
+**Save** (its review, then **Apply**) and its **Remove**. They need an
+Administrator and a full-scope session. The page asks for a recent Google
+sign-in; the live session stands in for it, so `integration confirm` asks
+you to type `yes` (or takes `--yes`) and leaves a notice on the Admin home
+page.
+
+```sh
+pk-admin integration show email
+pk-admin integration preview email --expected-version VERSION \
+    --changes '{"settings": {"reply_to": "office@example.org"}}'
+pk-admin integration confirm email --token TOKEN
+pk-admin integration preview slack --expected-version VERSION --remove
+```
+
+`--changes` is a JSON document (or `-` for standard input) with a
+`settings` object shaped like `integration show`'s: any of the page's
+fields for that integration (`organization_id`; `delegated_email`;
+`sender`, `sender_name`, `reply_to`; `channel_id`; `target`, the Drive
+folder link). A field you leave out keeps its saved value; only
+`sender_name` may be null or empty, which drops the From name so mail uses
+the parish name. Keys are never accepted (they have their own steps), and
+the ParishSoft refresh schedule is kept exactly as saved. Slack, which its
+first key sets up, can't be set up here: the preview is exit 1 (`invalid`
+at `key`). `--remove` reviews removing Slack or Off-site backups; anything
+else, or one not set up, is `not_available`.
+
+The preview prints `version`, `target`, `name`, `removing`, `changes`
+(each `field` with its saved `before` and `after`) and `preview.token`; it
+changes nothing. The page's refusals are exit 1 (`invalid`) at
+`settings.<name>`, or at `settings` when nothing changed; a configuration
+changed since `integration show` is `stale_version`. `integration confirm`
+takes the token (or one the page made: tokens belong to you, not to the
+browser or the command line), prompts with the integration and the names
+of the settings it changes (never their values), and records a configuration request, exactly
+as the page's Apply does. Follow it with `config request show`; the change
+applies when the request installs. System logs records
+`admin_cmd_integration_confirm` with the request. A Slack change or removal
+also alerts every Administrator by email and Slack, as other notification
+setting changes do. Repeating the confirmation with the same token returns
+the same request and records nothing new.
 
 ## Past campaigns
 
@@ -2475,3 +2520,9 @@ print is exit 1 (`invalid`).
 - `pk-admin/1` (#463): additive. `integration list`, `integration show
   TARGET` and `integration status TARGET [--watch SECONDS]`, the
   Integrations pages' reads (any session, Administrators only, no event).
+- `pk-admin/1` (#463): additive. `integration preview TARGET
+  --expected-version VERSION (--changes JSON|- | --remove)` and
+  `integration confirm TARGET --token TOKEN|- [--yes]`, an integration
+  settings page's Save and Remove (full scope, Administrators only;
+  `integration confirm` fresh-gated and prompting, recording
+  `admin_cmd_integration_confirm`).

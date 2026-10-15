@@ -541,37 +541,30 @@ def _save(request, service, configuration, actor, target):
     return HttpResponseRedirect(request.path)
 
 
-def _preview(request, service, actor, target):
-    """Prepare public settings while preserving the applied credential receipt."""
-    configuration = editable_configuration(service)
-    if target == "backup":
-        _refuse_drive_in_local()
-    record = _optional(configuration, target) or _unset(target)
-    form = _form(target, request.POST, stored=_optional(configuration, target))
-    if record["id"] is None and target != "backup":
-        # An optional integration is set up by its key (#563): the page
-        # requires it, and a request without one is redrawn with the
-        # refusal at the key field and the other entries kept.
-        form.is_valid()
-        return _page(
-            request,
-            configuration,
-            target,
-            form=form,
-            credential=_refused_key(configuration, request, target),
-            status=400,
-        )
+def review_settings(service, actor, configuration, target, form):
+    """The settings page's review of a bound ``form``, or None with its refusal.
+
+    Request-free, so the page's Save and ``pk-admin integration preview``
+    share it. A form that does not validate, or whose settings are the
+    applied ones ("No settings have changed."), carries its refusal and
+    returns None; a form whose version is not the applied one raises
+    ``StaleRecordError``; a resulting document the configuration refuses
+    raises ``ConfigError`` (from ``build_candidate``). Otherwise it returns
+    the stored settings ``before`` and ``after``, the ``patch`` and the
+    signed ``preview`` the page's Apply (and ``integration confirm``) takes.
+    """
     if not form.is_valid():
-        return _page(request, configuration, target, form=form, status=400)
+        return None
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
         raise StaleRecordError("Reload integration settings.")
+    record = _optional(configuration, target) or _unset(target)
     before = record["values"]["settings"]
     # An unchanged refresh schedule keeps its stored keys exactly (#632), so
     # a page saved as shown is no change at all.
     settings = form.public_settings()
     if settings == before:
         form.add_error(None, _("No settings have changed."))
-        return _page(request, configuration, target, form=form, status=400)
+        return None
     patch = [
         {
             "operation": "update",
@@ -594,10 +587,52 @@ def _preview(request, service, actor, target):
             },
         }
     ]
+    _check_candidate(service, configuration, patch)
+    return {
+        "before": before,
+        "after": settings,
+        "patch": patch,
+        "preview": sign_preview(
+            actor=actor,
+            configuration=configuration,
+            patch=patch,
+            salt=SALT + target,
+        ),
+    }
+
+
+def _check_candidate(service, configuration, patch):
+    """Refuse now, not at confirmation, a patch the schema would reject."""
     base = service.store.active()
     if base is None or base.digest != configuration.active_configuration.digest:
         raise StaleRecordError("The applied configuration changed.")
     build_candidate(base, patch, candidate_id=uuid4())
+
+
+def _preview(request, service, actor, target):
+    """Prepare public settings while preserving the applied credential receipt."""
+    configuration = editable_configuration(service)
+    if target == "backup":
+        _refuse_drive_in_local()
+    record = _optional(configuration, target) or _unset(target)
+    form = _form(target, request.POST, stored=_optional(configuration, target))
+    if record["id"] is None and target != "backup":
+        # An optional integration is set up by its key (#563): the page
+        # requires it, and a request without one is redrawn with the
+        # refusal at the key field and the other entries kept.
+        form.is_valid()
+        return _page(
+            request,
+            configuration,
+            target,
+            form=form,
+            credential=_refused_key(configuration, request, target),
+            status=400,
+        )
+    review = review_settings(service, actor, configuration, target, form)
+    if review is None:
+        return _page(request, configuration, target, form=form, status=400)
+    before, settings = review["before"], review["after"]
     admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
@@ -627,12 +662,7 @@ def _preview(request, service, actor, target):
                 if form.schedule is not None and form.schedule.changed
                 else []
             ),
-            "preview": sign_preview(
-                actor=actor,
-                configuration=configuration,
-                patch=patch,
-                salt=SALT + target,
-            ),
+            "preview": review["preview"],
         },
     )
 
@@ -649,6 +679,27 @@ def _shown(field, value):
     return dict(getattr(field, "choices", ())).get(value, value)
 
 
+def review_removal(service, actor, configuration, target):
+    """The settings page's review of removing ``target``: its signed preview.
+
+    Request-free, so the page's Remove and ``pk-admin integration preview
+    --remove`` share it. An integration that cannot be removed, or is not
+    set up, raises ``LookupError`` (the page's 404); a removal the schema
+    would refuse raises ``ConfigError``, now rather than at confirmation.
+    """
+    if target not in REMOVABLE:
+        raise LookupError("Integration is unavailable.")
+    record = _selected(configuration, target)
+    patch = [{"operation": "remove", "section": "integrations", "id": record["id"]}]
+    _check_candidate(service, configuration, patch)
+    return sign_preview(
+        actor=actor,
+        configuration=configuration,
+        patch=patch,
+        salt=SALT + target,
+    )
+
+
 def _remove(request, service, configuration, actor, target):
     """Preview removing an optional integration; confirmation uses the usual path.
 
@@ -659,15 +710,7 @@ def _remove(request, service, configuration, actor, target):
         len(values) != 1 for _, values in request.POST.lists()
     ):
         raise ValueError("Invalid configuration action or fields.")
-    if target not in REMOVABLE:
-        raise LookupError("Integration is unavailable.")
-    record = _selected(configuration, target)
-    patch = [{"operation": "remove", "section": "integrations", "id": record["id"]}]
-    base = service.store.active()
-    if base is None or base.digest != configuration.active_configuration.digest:
-        raise StaleRecordError("The applied configuration changed.")
-    # Refuse now, not at confirmation, if the schema would reject the removal.
-    build_candidate(base, patch, candidate_id=uuid4())
+    preview = review_removal(service, actor, configuration, target)
     admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
@@ -681,12 +724,7 @@ def _remove(request, service, configuration, actor, target):
             "changes": [
                 {"label": LABELS[target], "before": _("On"), "after": _("Removed")}
             ],
-            "preview": sign_preview(
-                actor=actor,
-                configuration=configuration,
-                patch=patch,
-                salt=SALT + target,
-            ),
+            "preview": preview,
         },
     )
 
