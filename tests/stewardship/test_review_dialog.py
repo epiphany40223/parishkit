@@ -16,6 +16,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 
 from parishkit.stewardship.accounts.user_changes import plan_changes
+from parishkit.stewardship.accounts.user_views import review_lines
 
 from .policy_factory import user
 
@@ -160,7 +161,7 @@ def review_fragment():
     )
     return render_to_string(
         "stewardship/user-review.html",
-        {"change": change, "after_role": "Staff", "preview": "signed"},
+        {"change": change, "lines": [], "preview": "signed"},
     )
 
 
@@ -194,20 +195,40 @@ def test_new_user_confirms_without_repeating_the_form():
     source = (TEMPLATES / "user-entry.html").read_text(encoding="utf-8")
     assert 'translate "Add the user" %}{% endbutton %}' in source
     assert 'translate "Add this user?" as review_title' in source
-    assert 'describedby=new|yesno:"user-review-summary,"' in source
+    assert 'describedby="user-review-summary" %}' in source
 
 
-def test_edit_user_still_reviews_each_changed_value():
-    """Edit user (class A2, a later part of #1356) keeps Now and After."""
-    records = [user(), user("ann@example.org", "staff", "Smith, Ann")]
+def test_edit_user_is_a_compact_review_of_each_changed_field():
+    """Edit user (class A2, #1356): one "Field: old → new" line per changed
+    field, the lines describing the dialog; no table and no email heading.
+    The Administrator removal warning stays, and an unchanged field has no
+    line."""
+    records = [user(), user("ann@example.org", "administrator", "Smith, Ann")]
     (change,), _patch = plan_changes(
         records, [{"id": records[1]["id"], "name": "Jones, Ann", "role": "staff"}]
     )
+    assert review_lines(change) == [
+        {"label": "Name", "before": "Smith, Ann", "after": "Jones, Ann"},
+        {"label": "Role", "before": "Administrator", "after": "Staff"},
+    ]
     text = render_to_string(
-        "stewardship/user-review.html", {"change": change, "preview": "signed"}
+        "stewardship/user-review.html",
+        {"change": change, "lines": review_lines(change), "preview": "signed"},
     )
+    assert '<ul class="compact-review" id="user-review-summary">' in text
     assert "Smith, Ann" in text and "Jones, Ann" in text
-    assert "user-review-summary" not in text
+    assert "<table" not in text and "<h3" not in text and "ann@example.org" not in text
+    assert "no longer an Administrator" in text
+    assert "Nothing changes until" not in text
+    (renamed,), _patch = plan_changes(
+        records,
+        [{"id": records[1]["id"], "name": "Jones, Ann", "role": "administrator"}],
+    )
+    assert [line["label"] for line in review_lines(renamed)] == ["Name"]
+    source = (TEMPLATES / "user-entry.html").read_text(encoding="utf-8")
+    assert 'translate "Save" %}{% endbutton %}' in source
+    assert 'translate "Save this user change?" as review_title' in source
+    assert 'describedby="user-review-summary" %}' in source
 
 
 def test_the_leader_review_offers_apply_only_with_someone_to_import():

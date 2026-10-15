@@ -1189,7 +1189,7 @@ Share options, Campaign images, Parish logos, Create the campaign and
 No-reminders WorkGroup use the dialog; Create the campaign, New user and
 No-reminders WorkGroup are confirmations under #1356, and so are a one-time
 New scheduled email, Import selected with nobody skipped and Campaign
-images' Remove this image. Parish
+images' Remove this image. Edit user is a compact review under #1356. Parish
 settings shows the in-place
 review panel of #532 and #750
 ([in-place controls](#in-place-controls)); the other editors use separate
