@@ -646,15 +646,16 @@ never scrolls to show it (Administrator, pk-local review of
   quiet refresh once a change is applied) drops a ticked row because it is
   no longer listed; a re-sort, page or filter they chose says nothing.
   Select all / Clear selection withdraws a review on any page that has one.
-- **In-place review: No-reminders WorkGroup (#750).** The No-reminders WorkGroup
-  editor works as Parish settings does: its one name field is a
-  `data-table-sync` form whose Review changes waits for a change (hint
-  "Change the WorkGroup name to review it."), and its review (the WorkGroup
-  now and the one proposed), refusals and the change's status fill the
-  review region under it. What the newest ParishSoft refresh found is an
-  in-place region of its own, so the quiet refresh once a change is applied
-  brings it up to date; it sits below the review region, so a status whose
-  length changes never moves the form or the review.
+- **Review dialog: No-reminders WorkGroup (#750, #1356).** The No-reminders
+  WorkGroup editor confirms in the [review dialog](#review-dialog): its one
+  name field is in a form, a region of its own, whose **Save** waits for a
+  change (hint "Change the WorkGroup name to save it.") and opens a
+  confirmation, since the new name is the form's and the current one is on
+  the page under "Now": one sentence says what Apply does, from the next
+  ParishSoft refresh. What the newest ParishSoft refresh found is an
+  in-place region of its own, so the redraw once a change is applied brings
+  it up to date; it sits below the form and its status line, so a status
+  whose length changes never moves the form.
 - **Review dialog: Campaign images (#750).** Campaign images reviews in the
   [review dialog](#review-dialog). It has no settings form: each slot's
   upload form (multipart, sent as
@@ -1151,11 +1152,11 @@ dialog is decided on [#750](https://github.com/epiphany40223/parishkit/issues/75
 Current state, to be converted: Users' New user, Edit user and Import
 Ministry leaders, New and Edit scheduled email,
 [Campaign settings](../admin-portal/spec.md#campaign-settings-page) (#1119),
-Share options, Campaign images, Parish logos and Create the campaign use the
-dialog; Create the campaign and New user are confirmations under #1356, and
-so are a one-time New scheduled email and Import selected with nobody
-skipped. Parish settings and No-reminders
-WorkGroup show the in-place
+Share options, Campaign images, Parish logos, Create the campaign and
+No-reminders WorkGroup use the dialog; Create the campaign, New user and
+No-reminders WorkGroup are confirmations under #1356, and so are a one-time
+New scheduled email and Import selected with nobody skipped. Parish
+settings shows the in-place
 review panel of #532 and #750
 ([in-place controls](#in-place-controls)); the other editors use separate
 Review and Change status pages.

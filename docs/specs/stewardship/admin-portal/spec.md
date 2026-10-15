@@ -856,7 +856,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `schedule_calendar` | Campaign calendar | Dates and mail schedules | Administrator | (new, #469) | `/admin/campaign/schedules/calendar/` | (same) | Read-only; every send by date. |
 | `schedule_delete` | Delete scheduled emails | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/deletion/` (POST only) | (same) | The table's confirmation dialog posts here. |
 | `share_settings` | Share options | Menu: Share options | Administrator | How Families will share | `/admin/campaign/share-options/` | (same) | Gains a Return link and About panel. |
-| `reminder_workgroup` | No-reminders WorkGroup | Menu: No-reminders WorkGroup | Administrator | (new, #861) | `/admin/campaign/no-reminders-workgroup/` | (same) | Edit, review, apply; stays editable while live. |
+| `reminder_workgroup` | No-reminders WorkGroup | Menu: No-reminders WorkGroup | Administrator | (new, #861) | `/admin/campaign/no-reminders-workgroup/` | (same) | Edit, confirm, apply; stays editable while live. |
 | `go_live` | Go-live readiness | Menu: Go-live readiness | Administrator | (same) | `/admin/campaign/go-live/` | (same) |  |
 | `go_live_families` | Testing submissions | Go-live readiness | Administrator | Families with Testing submissions; Testing Families | `/admin/campaign/go-live/families/` | (same) |  |
 | `go_live_cleanup` | Testing cleanup | Go-live readiness | Administrator | Testing cleanup progress | `/admin/campaign/go-live/cleanup/<request>/` | (same) |  |
@@ -1482,9 +1482,12 @@ title, menu entry, URL, counts and notices are drawn. It is the
 campaign's optional `reminder_workgroup` setting (the stored key and the
 `reminder_workgroup_missing` log event keep their names): one plain-language text
 field (the WorkGroup's name as ParishSoft shows it; empty turns it off),
-reviewed, applied and followed
-[in place](../ui-conventions/spec.md#in-place-controls) under its form
-(#750), and editable while the campaign is live because staff mark Families
+saved through the [review dialog](../ui-conventions/spec.md#review-dialog)
+(#750) as a confirmation (#1356): **Save** opens "Save the No-reminders
+WorkGroup?", which repeats neither the typed name nor the current one shown
+under "Now" and says only that, from the next ParishSoft refresh, Families
+in this WorkGroup get no Reminder emails (or, when it is cleared, that every
+eligible Family that has not responded gets them again). It is editable while the campaign is live because staff mark Families
 in ParishSoft during the campaign. Below that, the page says what the
 newest refresh found: no WorkGroup set, the name not read yet (it takes
 effect at the next refresh; meanwhile the page says how many Families of
