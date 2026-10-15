@@ -141,6 +141,9 @@ ACCEPT_FRESH = "/system-health-accept-fresh"
 ACCEPT_FRESH_STATUS = "/system-health-accept-fresh/status"
 ACCEPT_STEP_UP_LATE = "/system-health-accept-step-up-late"
 ACCEPT_STEP_UP_LATE_STATUS = "/system-health-accept-step-up-late/status"
+# Accept this change once in LOCAL, drawn with a recent and a stale sign-in.
+ACCEPT_LOCAL_FRESH = "/system-health-accept-local-fresh"
+ACCEPT_LOCAL_STALE = "/system-health-accept-local-stale"
 TROUBLED_STATUS = canonical(f"{STATUS}?{urlencode({'loaded': loaded_query(LOADED)})}")
 
 
@@ -570,6 +573,13 @@ def components(context, admin):
         }
     )
     extra[ACCEPT_STEP_UP_LATE_STATUS] = status(values(False, refused=True))
+    # In LOCAL, an open refusal's offer drawn with a recent sign-in and with
+    # a stale one (#1385): only the shown copy's step-up records a return
+    # path. Their polls bring the same refusal.
+    for url, fresh in ((ACCEPT_LOCAL_FRESH, True), (ACCEPT_LOCAL_STALE, False)):
+        local = values(False, refused=True) | {"local_environment": True}
+        extra[url] = page(local | {"fresh": fresh, "status_url": f"{url}/status"})
+        extra[f"{url}/status"] = status(local)
     return extra | {
         PAGE: (
             "text/html",

@@ -2761,3 +2761,24 @@ def test_only_the_page_judges_the_sign_in(monkeypatch):
         / "templates/stewardship/system-health.html"
     ).read_text()
     assert "{% if fresh %} data-health-fresh{% endif %}" in template
+
+
+@pytest.mark.parametrize(
+    ("kind", "tile", "link", "following"),
+    [
+        ("versions_differ", "version", "See Version", None),
+        ("mail_provider_unavailable", "mail", "See Mail sender", "source"),
+    ],
+)
+def test_a_sentence_links_its_tile_only_off_the_page(kind, tile, link, following):
+    """#1385: inside its own tile the sentence draws no link to that tile;
+    Home, which has no ``health``, keeps it."""
+    problem = Problem(kind, at=NOW)
+    model = health(problems=(problem,), incidents={kind: NOW})
+    details = band(whole({"health": model}), tile, following)
+    assert f'data-problem="{kind}"' in details
+    assert link not in details
+    home = render_to_string(
+        "stewardship/system-health-problem.html", {"problem": problem}
+    )
+    assert f'#health-{tile}">{link}</a>' in home

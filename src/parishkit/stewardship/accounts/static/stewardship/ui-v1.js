@@ -47,11 +47,21 @@
   // ten-minute limit pair with STEP_UP_KEY and STEP_UP_SECONDS in
   // local-sign-in-v1.js; change them together. A step-up an in-place answer
   // brings in (a Family test review shown with a stale sign-in, #519) is
-  // recorded too, as it would be had the page loaded with it.
+  // recorded too, as it would be had the page loaded with it. A copy that
+  // CSS hides (System health draws Accept this change once's offer with and
+  // without its step-up and shows one, #1385) is not on show and records
+  // nothing. A step-up inside a closed tile or section, hidden only by a
+  // hidden attribute on the way up, still counts: opening it shows it.
+  const cssHidden = (node) => {
+    for (let at = node; at instanceof Element; at = at.parentElement) {
+      if (!at.hasAttribute("hidden") && window.getComputedStyle(at).display === "none") return true;
+    }
+    return false;
+  };
   const recordStepUp = (root) => {
     const nodes = [...root.querySelectorAll("[data-local-step-up]")];
     if (root instanceof Element && root.matches("[data-local-step-up]")) nodes.unshift(root);
-    nodes.forEach((node) => {
+    nodes.filter((node) => !cssHidden(node)).forEach((node) => {
       try {
         window.localStorage.setItem("pk-local-step-up", JSON.stringify({
           next: node.dataset.localStepUp, at: Date.now(),

@@ -6425,7 +6425,11 @@ The panel repeats none of the tile's problems. Different versions
 are the tile's problems, in their own sentences, so the panel keeps only
 the facts: "All services run version 1.4.2" while every service runs one
 version, each service's line, "The database matches the version that is
-running" while it does, and the mode.
+running" while it does, and the mode. Inside the tile, the versions
+sentence draws no "See Version" link, which would point at the tile it is
+in; Home keeps it. The `mail_provider_unavailable` sentence likewise drops
+its "See Mail sender" link inside the Mail tile
+([#1385](https://github.com/epiphany40223/parishkit/issues/1385)).
 
 While the Version and services tile is Working, its summary names the
 first of these that holds:

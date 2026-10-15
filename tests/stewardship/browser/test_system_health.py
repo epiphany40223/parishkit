@@ -10,6 +10,8 @@ from .system_health_components import (
     ACCEPT_FRESH,
     ACCEPT_LAPSED,
     ACCEPT_LATE,
+    ACCEPT_LOCAL_FRESH,
+    ACCEPT_LOCAL_STALE,
     ACCEPT_PAGE,
     ACCEPT_PREVIEW,
     ACCEPT_SETTLED,
@@ -2020,6 +2022,27 @@ def _polls(page, count=2):
     for _ in range(count):
         first = checked.get_attribute("datetime")
         expect(checked).not_to_have_attribute("datetime", first, timeout=30000)
+
+
+STEP_UP_KEY = "localStorage.getItem('pk-local-step-up')"
+
+
+def test_only_the_shown_step_up_records_a_return_path(page, component_origin):
+    """#1385: in LOCAL, Accept this change once's offer is drawn with and
+    without its step-up, and CSS shows one. With a recent sign-in the
+    hidden step-up copy writes no return path, on load or after a poll;
+    with a stale one the shown step-up records System health's address."""
+    page.goto(component_origin + ACCEPT_LOCAL_FRESH)
+    page.evaluate("localStorage.removeItem('pk-local-step-up')")
+    page.reload()
+    expect(page.get_by_role("button", name="Accept this change once")).to_be_enabled()
+    expect(page.locator("[data-local-step-up]")).to_be_hidden()
+    _polls(page, 1)
+    assert page.evaluate(STEP_UP_KEY) is None
+    page.goto(component_origin + ACCEPT_LOCAL_STALE)
+    visible(page.locator("#accept-change [data-local-step-up]"))
+    saved = page.evaluate(STEP_UP_KEY)
+    assert saved is not None and '"next":"/admin/system/health/"' in saved
 
 
 def test_a_page_drawn_fresh_never_turns_stale_on_a_poll(page, component_origin):
