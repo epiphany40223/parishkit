@@ -11,7 +11,8 @@
 -- Until now a setup attempt was bound to one ParishSoft load forever. A
 -- failed load (a wrong key or organization) left the attempt loading until
 -- the two-hour watchdog or a cancel ended it, and setup had to start over.
--- Now a load that fails for good returns the attempt to collecting with the
+-- Now a load that fails for good (also one a crashed worker left, which
+-- recovery fails) returns the attempt to collecting with the
 -- failed load still bound, and the owning live Admin can discard a finished
 -- (succeeded or failed) load: the binding and renewal time are cleared, so a
 -- new load can bind. The application discards one when the ParishSoft key or
@@ -19,9 +20,9 @@
 -- audited as setup_source_voided with closed words for why and how the load
 -- had ended, never the key. A discarded load's staging stays inert (every
 -- later step binds to the current load) and the setup source cleanup now
--- disposes of every load root of the attempt when setup ends. Five functions
--- change, each copied whole from its latest definition with only this
--- change:
+-- disposes of every load root of the attempt when setup ends. Seven
+-- functions change, each copied whole from its latest definition with only
+-- this change:
 --   stewardship_setup_attempt_guard_v1        the worker may also return a
 --                                             failed load to collecting; the
 --                                             owner may discard a finished one
@@ -35,6 +36,10 @@
 --                                             attempt, not only the bound one
 --   stewardship_safe_context_v1               0089's body plus the action
 --                                             keys void_reason and task_state
+--   stewardship_setup_mail_live_v1 and        0055's bodies, requiring the
+--   stewardship_setup_slack_live_v1           bound load to have succeeded,
+--                                             since a failed one is now bound
+--                                             while setup collects
 -- None is SECURITY DEFINER; each keeps its identity, attributes, triggers and
 -- grants. No table, function or grant is created, so no runtime grant
 -- changes. Reversing needs its own forward migration.
@@ -551,6 +556,91 @@ BEGIN
     RETURN true;
 END $_$;
 
+CREATE OR REPLACE FUNCTION public.stewardship_setup_mail_live_v1(attempt_id uuid, attempt_version bigint, credential_id uuid, credential_version bigint, fingerprint text) RETURNS boolean
+    LANGUAGE sql
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $_$
+    SELECT EXISTS (
+        SELECT 1 FROM public.stewardship_setup_attempt attempt
+        JOIN public.stewardship_system_configuration runtime
+            ON runtime.active_configuration_id=attempt.base_id
+            AND runtime.mode='testing' AND NOT runtime.restore_review_required
+            AND runtime.current_campaign_id IS NULL
+        JOIN public.stewardship_configuration_version base
+            ON base.id=runtime.active_configuration_id
+            AND base.validation_schema IN ('bootstrap-policy-v1', 'bootstrap-users-v10')
+        JOIN public.stewardship_portal_session login
+            ON login.id=attempt.session_id AND login.principal_id=attempt.owner_id
+            AND login.revoked_at IS NULL AND login.expires_at>clock_timestamp()
+            AND login.last_activity_at>clock_timestamp()-interval '60 minutes'
+        JOIN public.stewardship_portal_user owner
+            ON owner.id=attempt.owner_id AND NOT owner.disabled
+        JOIN public.stewardship_address_rule rule
+            ON rule.configuration_id=base.id AND rule.email=owner.email
+            AND rule.roles @> '["administrator"]'::jsonb
+        -- Only a load that succeeded (#1353): a failed one is bound while
+        -- setup collects again.
+        JOIN public.stewardship_task_run original ON original.id=attempt.source_task_id
+            AND original.state='succeeded'
+        JOIN public.stewardship_setup_sealed_credential candidate
+            ON candidate.id=$3 AND candidate.attempt_id=attempt.id
+            AND candidate.version=$4 AND candidate.fingerprint=$5
+            AND candidate.target='google_workspace' AND candidate.scrubbed_at IS NULL
+        JOIN public.stewardship_setup_draft_section mail
+            ON mail.attempt_id=attempt.id AND mail.step='mail'
+            AND mail.scrubbed_at IS NULL
+        JOIN public.stewardship_setup_draft_section testing
+            ON testing.attempt_id=attempt.id AND testing.step='testing'
+            AND testing.scrubbed_at IS NULL
+        WHERE attempt.id=$1 AND attempt.version=$2 AND attempt.state='collecting'
+            AND mail.scope_digest=encode(sha256(jsonb_send(jsonb_build_object(
+                'sender',candidate.settings->>'sender',
+                'reply_to',candidate.settings->>'reply_to',
+                'delegated_email',candidate.settings->>'delegated_email'))),'hex')
+            AND testing.scope_digest=encode(sha256(jsonb_send(jsonb_build_object(
+                'testing_recipient',candidate.settings->>'recipient'))),'hex')
+    );
+$_$;
+
+CREATE OR REPLACE FUNCTION public.stewardship_setup_slack_live_v1(attempt_id uuid, attempt_version bigint, credential_id uuid, credential_version bigint, fingerprint text) RETURNS boolean
+    LANGUAGE sql
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $_$
+    SELECT EXISTS (
+        SELECT 1 FROM public.stewardship_setup_attempt attempt
+        JOIN public.stewardship_system_configuration runtime
+            ON runtime.active_configuration_id=attempt.base_id
+            AND runtime.mode='testing' AND NOT runtime.restore_review_required
+            AND runtime.current_campaign_id IS NULL
+        JOIN public.stewardship_configuration_version base
+            ON base.id=runtime.active_configuration_id
+            AND base.validation_schema IN ('bootstrap-policy-v1', 'bootstrap-users-v10')
+        JOIN public.stewardship_portal_session login
+            ON login.id=attempt.session_id AND login.principal_id=attempt.owner_id
+            AND login.revoked_at IS NULL AND login.expires_at>clock_timestamp()
+            AND login.last_activity_at>clock_timestamp()-interval '60 minutes'
+        JOIN public.stewardship_portal_user owner
+            ON owner.id=attempt.owner_id AND NOT owner.disabled
+        JOIN public.stewardship_address_rule rule
+            ON rule.configuration_id=base.id AND rule.email=owner.email
+            AND rule.roles @> '["administrator"]'::jsonb
+        -- Only a load that succeeded (#1353): a failed one is bound while
+        -- setup collects again.
+        JOIN public.stewardship_task_run original ON original.id=attempt.source_task_id
+            AND original.state='succeeded'
+        JOIN public.stewardship_setup_sealed_credential candidate
+            ON candidate.id=$3 AND candidate.attempt_id=attempt.id
+            AND candidate.version=$4 AND candidate.fingerprint=$5
+            AND candidate.target='slack' AND candidate.scrubbed_at IS NULL
+        JOIN public.stewardship_setup_draft_section slack
+            ON slack.attempt_id=attempt.id AND slack.step='slack'
+            AND slack.scrubbed_at IS NULL
+        WHERE attempt.id=$1 AND attempt.version=$2 AND attempt.state='collecting'
+            AND slack.scope_digest=encode(sha256(jsonb_send(jsonb_build_object(
+                'enabled',true,'channel_id',candidate.settings->>'channel_id'))),'hex')
+    );
+$_$;
+
 -- Refuse to commit unless every change above is installed, so an upgrade
 -- cannot report success with one lost. No temporary objects: the migration
 -- login has no TEMP grant.
@@ -570,14 +660,20 @@ BEGIN
             ('stewardship_setup_disposable_snapshot_v1', 'identifier uuid',
              'root.root_id=root.id', true),
             ('stewardship_safe_context_v1', 'schema_name text, payload jsonb',
-             'ELSIF key=''void_reason'' THEN', true)
+             'ELSIF key=''void_reason'' THEN', true),
+            ('stewardship_setup_mail_live_v1',
+             'attempt_id uuid, attempt_version bigint, credential_id uuid, credential_version bigint, fingerprint text',
+             'AND original.state=''succeeded''', true),
+            ('stewardship_setup_slack_live_v1',
+             'attempt_id uuid, attempt_version bigint, credential_id uuid, credential_version bigint, fingerprint text',
+             'AND original.state=''succeeded''', true)
         ) expected(name, arguments, marker, pinned)
           ON p.proname=expected.name
          AND pg_get_function_identity_arguments(p.oid)=expected.arguments
          AND strpos(p.prosrc, expected.marker)>0
          AND NOT p.prosecdef
          AND (NOT expected.pinned
-              OR p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']))<>5 THEN
+              OR p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']))<>7 THEN
         RAISE EXCEPTION 'Migration 0102: a replaced function is not installed as declared';
     END IF;
     -- The binding is no longer write-once, and the guard still lets only a

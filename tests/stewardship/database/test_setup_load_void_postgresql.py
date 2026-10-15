@@ -11,6 +11,7 @@ definitions.
 
 # ruff: noqa: F811 -- imported pytest fixtures are injected by name.
 
+import re
 from pathlib import Path
 from threading import Event
 from uuid import uuid4
@@ -31,11 +32,13 @@ from parishkit.stewardship.accounts.setup_staging import begin_setup, cancel_set
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
-from parishkit.stewardship.jobs.dispatch import execute_hint
+from parishkit.stewardship.jobs.dispatch import execute_hint, recover_hint
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.ownership import database_now
 from parishkit.stewardship.jobs.queues import WorkQueue
+from parishkit.stewardship.jobs.storage import _status
 from parishkit.stewardship.source.leases import release_source
+from parishkit.stewardship.source.setup_admission import bound_attempt
 from parishkit.stewardship.source.setup_cleanup import _unscheduled
 from parishkit.stewardship.source.setup_disposal import dispose_batch
 from parishkit.stewardship.source.setup_execution import setup_source_handler
@@ -57,7 +60,7 @@ from .test_setup_loading_postgresql import (
 )
 from .test_setup_staging_postgresql import login, setup_service  # noqa: F401
 from .test_source_refreshing_postgresql import fake_provider
-from .test_taskrun_postgresql import act, new
+from .test_taskrun_postgresql import act, expire, new
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -151,6 +154,18 @@ def test_a_failed_load_returns_to_collecting_and_loads_again(
         )
     )
     assert len(keys) == 2
+    # The discarded Task no longer resolves the attempt, and the worker
+    # cannot return setup to collecting for the new, unfinished load.
+    with work_transaction(), pytest.raises(PermissionError):
+        bound_attempt(_status(TaskRun.objects.get(pk=task.run_id)))
+    with (
+        pytest.raises(IntegrityError, match="validated setup staging"),
+        task_login(ServiceRole.WORKER, exact=True),
+        work_transaction(),
+    ):
+        SetupAttempt.objects.filter(pk=row.pk).update(
+            state="collecting", actor_id=row.owner_id, version=F("version") + 1
+        )
 
     drained()
     assert dispatch(monkeypatch, private, again.run_id) == "succeeded"
@@ -299,6 +314,72 @@ def test_sql_refuses_to_discard_a_running_load(setup_service):
         )
 
 
+@pytest.mark.parametrize("ending", ["retry_wait", "abandoned"])
+def test_a_load_waiting_to_retry_or_abandoned_cannot_be_discarded(
+    setup_service, ending
+):
+    """A load that may still run again keeps setup loading and stays bound."""
+    request = login(setup_service)
+    with web_login():
+        attempt = begin_setup(request, setup_service)
+    row = SetupAttempt.objects.get(pk=attempt.attempt_id)
+    task = new(
+        task_type="setup_source_load", actor_id=row.owner_id, domain_request_id=row.pk
+    )
+    with work_transaction():
+        SetupAttempt.objects.filter(pk=row.pk).update(
+            source_task_id=task.run_id, state="loading", version=F("version") + 1
+        )
+    if ending == "retry_wait":
+        act(act(task, "claim"), "retryable_failure")
+    else:
+        # A real one-second lease runs out: the worker is gone.
+        expire(act(task, "claim", lease_seconds=1))
+    assert TaskRun.objects.get(pk=task.run_id).state == ending
+    row = SetupAttempt.objects.get()
+    for state in ("collecting", "loading"):
+        with pytest.raises(IntegrityError), work_transaction():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT set_config(%s, %s, true)", [VOID_SETTING, "key_changed"]
+                )
+            SetupAttempt.objects.filter(pk=row.pk).update(
+                state=state, source_task_id=None, version=F("version") + 1
+            )
+    with pytest.raises(PermissionError):
+        stage(request, setup_service, organization=2)
+    assert SetupAttempt.objects.get().source_task_id == task.run_id
+
+
+def test_a_crashed_load_that_recovery_fails_returns_to_collecting(
+    setup_service, monkeypatch
+):
+    """recovery_fail on an abandoned last attempt returns setup like _failed."""
+    from parishkit.stewardship.source import setup_admission
+
+    request, attempt, task, _ = queued(setup_service)
+    expire(act(task, "claim", lease_seconds=1))
+    # The worker died on its last allowed attempt, so recovery fails the load.
+    monkeypatch.setattr(setup_admission, "MAX_AUTOMATIC_ATTEMPTS", 1)
+    with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
+        assert recover_hint(
+            task.run_id,
+            queue=WorkQueue.SOURCE,
+            worker_id=uuid4(),
+            handlers={"setup_source_load": setup_source_handler()},
+        )
+    assert TaskRun.objects.get(pk=task.run_id).state == "failed"
+    row = SetupAttempt.objects.get()
+    assert (row.state, row.source_task_id) == ("collecting", task.run_id)
+    assert context("setup_source_completed")["outcome"] == "failed"
+    with web_login():
+        again = start_source_load(
+            request, setup_service, row.pk, expected_version=row.version
+        )
+    assert again.run_id != task.run_id
+    assert context("setup_source_voided")["void_reason"] == "reload"
+
+
 def test_a_failed_load_is_discarded_never_rebound_in_place(setup_service):
     """A new load binds only after the failed one's binding is cleared."""
     failed, _ = finished(setup_service, "permanent_failure")
@@ -349,29 +430,50 @@ def test_cleanup_disposes_of_a_discarded_load(setup_service, monkeypatch):
     release_source(source)
 
 
-def test_do_block_refuses_the_earlier_definitions():
-    """The file's closing check passes as installed and raises once the
-    attempt guard or the safe context is put back to its earlier body."""
+# Where each function 0102 replaces had its earlier body: a frozen file, or
+# the fixture copied from the baseline for those no frozen file holds.
+EARLIER = {
+    "stewardship_setup_attempt_guard_v1": "migrations/0055_setup_users.sql",
+    "stewardship_setup_mail_live_v1": "migrations/0055_setup_users.sql",
+    "stewardship_setup_slack_live_v1": "migrations/0055_setup_users.sql",
+    "stewardship_safe_context_v1": "migrations/0089_retry_refusal_log.sql",
+    "stewardship_setup_attempt_audit_v1": None,
+    "stewardship_setup_attempt_mutable_v1": None,
+    "stewardship_setup_disposable_snapshot_v1": None,
+}
+FIXTURE = Path(__file__).with_name("pre_setup_load_void_functions.sql")
+
+
+def earlier_definition(name):
+    """The function's body before 0102, as one CREATE OR REPLACE statement."""
+    source = EARLIER[name]
+    text = (SCHEMA / source if source else FIXTURE).read_text(encoding="utf-8")
+    start = re.search(
+        rf"^CREATE OR REPLACE FUNCTION public\.{name}\(", text, re.M
+    ).start()
+    quote = re.compile(r"\bAS\s+(\$\w*\$)").search(text, start)
+    return text[start : text.index(quote[1] + ";", quote.end()) + len(quote[1]) + 1]
+
+
+def test_do_block_refuses_each_earlier_definition():
+    """The file's closing check passes as installed and raises once any of
+    the seven replaced functions is put back to its earlier body; the whole
+    file then runs again on an upgraded database (users-swap reruns)."""
     text = FROZEN.read_text(encoding="utf-8")
     check = text[text.index("DO $check$") :]
+    assert set(EARLIER) == set(
+        re.findall(r"^CREATE OR REPLACE FUNCTION public\.(\w+)\(", text, re.M)
+    )
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(check)
-    earlier = {
-        "stewardship_setup_attempt_guard_v1": "0055_setup_users.sql",
-        "stewardship_safe_context_v1": "0089_retry_refusal_log.sql",
-    }
-    for name, source in earlier.items():
-        body = (SCHEMA / "migrations" / source).read_text(encoding="utf-8")
-        start = body.index(f"CREATE OR REPLACE FUNCTION public.{name}(")
-        quote = "$_$;" if name == "stewardship_safe_context_v1" else "$$;"
-        statement = body[start : body.index(quote, start) + len(quote)]
+    for name in EARLIER:
         with (
-            pytest.raises(DatabaseError, match="Migration 0102"),
+            pytest.raises(DatabaseError, match="0102"),
             transaction.atomic(),
             connection.cursor() as cursor,
         ):
-            cursor.execute(statement)
+            cursor.execute(earlier_definition(name))
             cursor.execute(check)
-    # The whole file runs again on an upgraded database (users-swap reruns).
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(text)
+        cursor.execute(check)

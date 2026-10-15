@@ -8048,7 +8048,10 @@ CREATE FUNCTION public.stewardship_setup_mail_live_v1(attempt_id uuid, attempt_v
         JOIN public.stewardship_address_rule rule
             ON rule.configuration_id=base.id AND rule.email=owner.email
             AND rule.roles @> '["administrator"]'::jsonb
+        -- Only a load that succeeded (#1353): a failed one is bound while
+        -- setup collects again.
         JOIN public.stewardship_task_run original ON original.id=attempt.source_task_id
+            AND original.state='succeeded'
         JOIN public.stewardship_setup_sealed_credential candidate
             ON candidate.id=$3 AND candidate.attempt_id=attempt.id
             AND candidate.version=$4 AND candidate.fingerprint=$5
@@ -8652,7 +8655,10 @@ CREATE FUNCTION public.stewardship_setup_slack_live_v1(attempt_id uuid, attempt_
         JOIN public.stewardship_address_rule rule
             ON rule.configuration_id=base.id AND rule.email=owner.email
             AND rule.roles @> '["administrator"]'::jsonb
+        -- Only a load that succeeded (#1353): a failed one is bound while
+        -- setup collects again.
         JOIN public.stewardship_task_run original ON original.id=attempt.source_task_id
+            AND original.state='succeeded'
         JOIN public.stewardship_setup_sealed_credential candidate
             ON candidate.id=$3 AND candidate.attempt_id=attempt.id
             AND candidate.version=$4 AND candidate.fingerprint=$5
