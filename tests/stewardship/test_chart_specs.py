@@ -15,7 +15,9 @@ from zoneinfo import ZoneInfo
 import pytest
 import vl_convert
 
+from parishkit.stewardship.archive.workbook import BAND_EDGES
 from parishkit.stewardship.jobs.send_history import SendKey
+from parishkit.stewardship.reports import comparison_charts as charts
 from parishkit.stewardship.reports.chart_assets import VEGA_LITE_SCHEMA
 from parishkit.stewardship.reports.chart_specs import (
     WIDTH,
@@ -48,6 +50,7 @@ from parishkit.stewardship.reports.statistics import PopulationStatistics
 from parishkit.stewardship.web.dates import using
 from parishkit.stewardship.web.report_markup import TRACK
 
+from .test_comparison_charts import comparison
 from .test_participation_rendering import document as participation
 from .test_response_metrics import ROWS, START
 
@@ -736,15 +739,71 @@ def page_warnings(spec, capfd):
     return [line for line in (captured.out + captured.err).splitlines() if line]
 
 
-def test_participation_page_charts_compile_without_warnings(capfd):
-    """Both Participation page charts compile, as the page draws them,
-    without a warning (a step height beside a container width drew one on
-    every draw); a step height still warns, so the check can fail."""
-    assert page_warnings(participation_chart(participation()).spec, capfd) == []
-    progress = population_progress(PopulationStatistics(4, 2, 1, 1, 0, MoneyAmount(0)))
-    assert page_warnings(progress.spec, capfd) == []
-    stepped = progress.spec | {"height": {"step": 36}}
-    assert any("fit-y" in line for line in page_warnings(stepped, capfd))
+def page_charts():
+    """Every chart the app builds, as its page draws it.
+
+    The response dashboard's funnel and activity (by hour and by day), the
+    Financial stewardship summary's count bars,
+    the Participation page's progress bars and daily chart, and the
+    Campaign comparison's day-by-day, final-figures and pledge-band charts.
+    """
+    built = comparison()
+    bands = (
+        charts.distribution_chart(found, BAND_EDGES)
+        for found in (built.current, *built.imported)
+    )
+    return [
+        funnel_chart(metrics()),
+        activity_chart(metrics()),
+        activity_chart(metrics(grain="day")),
+        *financial_charts(financial_summary(), CHOICES),
+        population_progress(PopulationStatistics(4, 2, 1, 1, 0, MoneyAmount(0))),
+        participation_chart(participation()),
+        *charts.day_charts(built),
+        *charts.final_charts(built),
+        *(chart for chart in bands if chart is not None),
+    ]
+
+
+def test_every_page_chart_compiles_without_warnings(capfd):
+    """Every chart compiles, as the page draws it, without a Vega-Lite
+    warning: the browser logs each one on every draw (a step height beside
+    the container width warned that fit-y was dropped, #1325). A step
+    height still warns, so the check can fail."""
+    documents = page_charts()
+    # Every kind of chart is here: 2 + 1 + 2 + 1 + 1 + 3 + 2 + 3.
+    assert len(documents) == 15
+    for document in documents:
+        assert page_warnings(document.spec, capfd) == [], document.key
+    # A bar chart (here the funnel and the final figures) given back a step
+    # height warns again. The loop above covers the other three fixes: the
+    # name sorts, the line width's sort and the merged series legend.
+    finals = next(d for d in documents if d.key == "comparison-final-families")
+    for document in (documents[0], finals):
+        stepped = document.spec | {"height": {"step": 36}}
+        assert any("fit-y" in line for line in page_warnings(stepped, capfd))
+
+
+def test_bar_chart_heights_match_their_old_step_heights():
+    """Each bar chart's fixed height is its bar count times the step height
+    it had (#1325), so every bar and label keeps its room."""
+    steps = {"response-funnel": 36, "comparison-final-": 26, "comparison-bands": 40}
+    checked = []
+    for document in page_charts():
+        step = next(
+            (step for key, step in steps.items() if document.key.startswith(key)),
+            None,
+        )
+        if step is None:
+            continue
+        bars = {
+            row.get("stage", row.get("name")) for row in document.spec["data"]["values"]
+        }
+        assert document.spec["height"] == step * len(bars), document.key
+        checked.append(document.key)
+    # The dashboard's funnel, two final-figure charts and
+    # three years' pledge bands.
+    assert len(checked) == 6
 
 
 @pytest.mark.parametrize(

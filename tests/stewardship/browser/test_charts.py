@@ -22,8 +22,28 @@ document.addEventListener("securitypolicyviolation", event => {
 """
 
 
-def watch(page):
-    """Observe CSP violations and collect page errors and console errors."""
+# An empty activity chart's Vega warning, known and tracked by #1327.
+EMPTY_ACTIVITY = "WARN Infinite extent"
+
+
+def reported(message, *, empty_activity=False):
+    """Whether a console message is a fault: an error, or a Vega warning.
+
+    Vega logs a spec it has to correct ("WARN Dropping "fit-y" ...") as a
+    console warning on every draw (#1325); other browser warnings are not
+    the page's. ``empty_activity`` lets through the "Infinite extent"
+    warning an activity chart with no activity logs (#1327).
+    """
+    return message.type == "error" or (
+        message.type == "warning"
+        and message.text.startswith("WARN")
+        and not (empty_activity and message.text.startswith(EMPTY_ACTIVITY))
+    )
+
+
+def watch(page, *, empty_activity=False):
+    """Observe CSP violations and collect page errors, console errors and
+    Vega's warnings (``empty_activity``: see ``reported``)."""
     page.add_init_script(CSP_OBSERVER)
     errors = []
     page.on("pageerror", lambda error: errors.append(str(error)))
@@ -31,7 +51,7 @@ def watch(page):
         "console",
         lambda message: (
             errors.append(f"{message.text} ({message.location.get('url', '')})")
-            if message.type == "error"
+            if reported(message, empty_activity=empty_activity)
             else None
         ),
     )
