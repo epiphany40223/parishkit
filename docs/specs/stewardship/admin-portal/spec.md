@@ -5627,11 +5627,15 @@ Working with a summary that says so ("No current campaign").
 
 Each action region is drawn when the page loads, whatever the tile's
 state, and never removed: when its action does not apply it stays greyed
-with its reason ("No refused refresh to accept", "Debug logging is off in
-every service"), as [unavailable buttons](#shared-rules-for-health-actions)
-already do. Pull requests 1206 and 1210 draw their regions only while
-their problem is current; slice 2b draws them always. "Refresh System
-health" stays at the end of the page, after the tiles.
+with its reason ("Debug logging is off in every service"), as
+[unavailable buttons](#shared-rules-for-health-actions) already do. Pull
+requests 1206 and 1210 draw their regions only while their problem is
+current; slice 2b draws them always. The exception is
+[Accept this change once](#accept-a-large-parishsoft-change-once), which
+answers the refused change and is not a standing control: it is drawn
+only while a refusal is shown, or while a step's result is (Administrator,
+pk-local batch 24a). "Refresh System health" stays at the end of the page,
+after the tiles.
 
 #### Health problem registry
 
@@ -5938,7 +5942,8 @@ requests 1206, 1210 and 1213 have merged.
      the mirror targets and the pointer hold,
      [tiles while not current](#tiles-while-not-current), and the controls
      of pull requests 1206, 1210 and 1213 moved into their fixed places
-     and always drawn. pk-local: opening and closing tiles in one row of
+     and always drawn (Accept this change once only while a refusal is
+     shown, since slice 4). pk-local: opening and closing tiles in one row of
      the grid, a poll that changes state while a tile is open, an open
      preview across a poll, a poll left to give up with tiles open, and
      phone width.
@@ -6332,7 +6337,10 @@ checks.
   announced the same way as an unavailable menu entry's (see
   [stable menu shape](#stable-menu-shape)). Each action lists its reasons.
   Greying only helps the reader: every check also runs on the server, in
-  the service function and inside the action's transaction.
+  the service function and inside the action's transaction. Accept this
+  change once's whole section is drawn only while a refusal is shown
+  ([where it appears](#accept-a-large-parishsoft-change-once)); while it
+  is drawn, its button follows this rule.
 - **Audit:** each action records one audit event, with the Administrator as
   actor and its request, signal, acceptance or switch row as subject, in the
   same transaction as the change. Its context holds only `outcome`, and each
@@ -6684,12 +6692,19 @@ requires.
 **Where it appears.** In the [ParishSoft refresh tile](#health-tiles)'s
 details, directly after the refused change's counts table that ends its
 problems (Administrator, pk-local check of #1210: not at the foot of the
-page), and before the panel content. The page always draws the region,
-whatever the tile's state; while no refusal can be accepted, its button is
-greyed with its reason ("No refused ParishSoft refresh is waiting to be
-accepted"), and the 10-second status brings the button, in place, once a
-refusal shows. The region is outside the part the status updates replace,
-so an open preview, its tick box and the headings above it never move or
+page), and before the panel content. The section is drawn only while a
+refusal is shown: one that can be accepted offers the button, and an
+accepted, lapsed or never-acceptable one shows it greyed with its reason.
+With no refusal shown, and no step's result to show, it is left out
+entirely (Administrator, pk-local batch 24a: with nothing to accept, the
+[conditional fields](../ui-conventions/spec.md#conditional-fields) rule leaves the control
+out). The 10-second status brings the section and takes it away in place,
+in the same update as the refusal's problem item and its counts, so it
+comes and goes with the problem it answers and moves nothing else. While
+a step's result shows (a preview, the acceptance just recorded, or a
+refusal of the step), the section stays, and only its button follows the
+status. The section is outside the part the status updates replace, so
+an open preview, its tick box and the headings above it never move or
 disappear when the status changes. If a status update shows another
 refusal than the one an open preview reviews, or none (the status names
 its refusal for the region, see

@@ -1257,19 +1257,26 @@ def test_an_open_preview_of_an_older_refusal_is_marked_changed(page, component_o
 
 
 def test_a_refusal_shown_by_a_poll_brings_its_accept_button(page, component_origin):
-    """A page drawn before the refusal shows the region greyed with why; the
-    poll that shows the refusal brings its counts and the button, right
-    under them; no reload needed, and the tile is not opened for the reader."""
+    """A page drawn before the refusal shows no Accept this change once
+    (batch 24a); the poll that shows the refusal brings its counts and the
+    section together, the button right under them; no reload needed, and
+    the tile is not opened for the reader."""
     page.goto(component_origin + ACCEPT_LATE + "#health-source")
     region = page.locator("#accept-change")
+    expect(region).to_be_attached()
+    assert region.evaluate("e => e.innerText.trim()") == ""
     button = region.get_by_role("button", name="Accept this change once", exact=True)
-    expect(button).to_be_disabled()
-    expect(region.locator("#accept-change-reason")).to_have_text(
-        "No refused ParishSoft refresh is waiting to be accepted."
-    )
+    expect(button).to_have_count(0)
     _away(page)
-    expect(button).to_be_enabled(timeout=30000)
-    expect(page.locator("[data-refused-change]")).to_be_visible(timeout=30000)
+    # The same poll brings both: never the counts without the section.
+    eventually(
+        page,
+        """() => !!document.querySelector('[data-refused-change]')""",
+    )
+    assert page.evaluate("""() => !!document.querySelector(
+        '#accept-change [data-in-place="accept-preview"]')""")
+    expect(button).to_be_enabled()
+    expect(page.locator("[data-refused-change]")).to_be_visible()
     _beside_the_refusal(page)
 
 

@@ -1314,8 +1314,8 @@ def test_accept_this_change_once_is_offered_for_an_open_refusal():
     assert 'value="accept_preview"' in body
     assert 'data-in-place="accept-preview"' in body
     assert 'action="/admin/system/health/#accept-change"' in body
-    assert '<template data-live-mirror="accept-button">' in body
-    assert 'data-live-mirror-target="accept-button"' in body
+    assert '<template data-live-mirror="accept-offer">' in body
+    assert 'data-live-mirror-target="accept-offer"' in body
     assert 'aria-controls="accept-change-intro-tip"' in body
     assert "accepted once with Accept this change once just below" in body
     assert "reload System health" not in body
@@ -1327,8 +1327,9 @@ def test_the_accept_region_sits_right_under_the_refusal():
     """In the ParishSoft refresh tile's details, directly after its problems,
     which end with the refused change's counts (#1214), outside the polled
     region; its heading is a subheading of the tile's. The polled copy of
-    its button carries no CSRF token, so polls compare equal; the page's
-    own copy does. It is drawn even with no refusal, greyed with why."""
+    its section carries no CSRF token, so polls compare equal; the page's
+    own copy does. With no refusal only the empty region and its mirror
+    target are drawn, for a poll to fill (batch 24a)."""
     import re
 
     from django.test import RequestFactory
@@ -1347,22 +1348,45 @@ def test_the_accept_region_sits_right_under_the_refusal():
     # The refusal's counts end the problems, then at once the region.
     assert before.rstrip().endswith("</tbody></table></div>\n</div>\n</div>\n</div>")
     assert "data-refused-change" in before
-    assert after.startswith('<section class="panel" id="accept-change"')
+    assert after.startswith(
+        '<div id="accept-change" data-in-place-region>'
+        '<div data-live-mirror-target="accept-offer" data-live-mirror-hold>'
+        '<section class="panel" aria-labelledby="accept-change-heading">'
+    )
     assert '<h3 id="accept-change-heading">Accept this change once</h3>' in after
     assert tiles.count('id="accept-change"') == 1
     assert 'id="accept-change"' not in region
     token = r'name="csrfmiddlewaretoken" value="([^"]*)"'
     assert re.search(token, section(tiles, 'id="accept-change"')).group(1)
-    polled = region[region.index('<template data-live-mirror="accept-button">') :]
+    polled = region[region.index('<template data-live-mirror="accept-offer">') :]
     assert re.search(token, polled).group(1) == ""
     # The region names the refusal shown, for an open preview's check.
     assert f'data-live-key-value="{REFUSED_ATTEMPT}"' in region
-    # With no refusal the region is still drawn, its button greyed with why.
+    # With no refusal nothing is drawn: the region and its target are empty,
+    # and so is the polled copy, until a poll shows a refusal.
     empty = accept_page(counts=())
-    assert 'id="accept-change"' in empty
-    assert 'data-accept-state="none"' in empty
+    assert (
+        '<div id="accept-change" data-in-place-region>'
+        '<div data-live-mirror-target="accept-offer" data-live-mirror-hold></div>'
+    ) in empty
+    assert '<template data-live-mirror="accept-offer"></template>' in empty
+    shown = empty[: empty.index('<template data-live-mirror="accept-button">')]
+    shown += empty[empty.index('<template data-live-mirror="backup-now-button">') :]
+    assert "accept-change-heading" not in shown
+    assert "data-accept-state" not in shown
     assert 'data-live-key="accept-change" data-live-key-value=""' in empty
     assert "data-refused-change" not in empty
+
+
+def test_no_accept_section_while_parishsoft_is_healthy():
+    """A healthy ParishSoft refresh has nothing to accept, so neither the
+    page nor the polled copy draws Accept this change once (batch 24a)."""
+    region, tiles = page({"health": health()})
+    assert '<template data-live-mirror="accept-offer"></template>' in region
+    assert "Accept this change once" not in tiles
+    assert "accept-change-heading" not in tiles
+    assert "data-accept-state" not in tiles
+    assert 'value="accept_preview"' not in tiles
 
 
 def test_an_accepted_refusal_is_listed_but_not_counted():

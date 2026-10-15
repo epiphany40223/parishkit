@@ -15,9 +15,11 @@
   rest of the region is copies for the tiles, which sit outside it so a
   poll never closes one: each polled tile's summary row, problems and panel
   content, and the action buttons, as template[data-live-mirror] elements
-  that live-status-v1.js puts into their data-live-mirror-targets. The
-  data-live-key element names the refusal shown, so an open Accept this
-  change once preview of another one is marked changed.
+  that live-status-v1.js puts into their data-live-mirror-targets,
+  including Accept this change once's section, which is empty while no
+  refusal is shown. The data-live-key element names the refusal shown, so
+  an open Accept this change once preview of another one is marked
+  changed.
 
   It is not itself a live region: screen readers hear data-live-announce,
   copied into the page's announcer only when the line's text or the set of
@@ -32,6 +34,7 @@
 <template data-live-mirror="{{ tile.anchor }}-problems">{% include "stewardship/system-health-tile-problems.html" %}</template>
 <template data-live-mirror="{{ tile.anchor }}-panel">{% include tile.panel %}</template>
 {% endif %}{% endfor %}{# The action buttons as of this update (data-live-mirror); the polled copies leave their CSRF tokens empty for the script to fill. #}
+<template data-live-mirror="accept-offer">{% include 'stewardship/system-health-accept-offer.html' with mirrored=True %}</template>
 <template data-live-mirror="accept-button">{% include 'stewardship/system-health-accept-button.html' with mirrored=True %}</template>
 <template data-live-mirror="backup-now-button">{% include 'stewardship/system-health-backup-button.html' with mirrored=True %}</template>
 <template data-live-mirror="debug-off-button">{% include 'stewardship/system-health-debug-button.html' with mirrored=True %}</template>
