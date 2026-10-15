@@ -11,19 +11,11 @@
   backup, a failed off-site copy and a changed key are problems, and a
   backup sealed to another key, a requested backup that ended without one
   and, in Production, off-site copies not set up are its page findings.
-  This keeps the facts and their links; while a request waits, is held or
-  runs, when it was requested is Take a backup now's greyed reason, so the
-  line here names only its state; a failed off-site copy not yet an
-  incident is a plain notice. Why a held request can outlast the
-  send is in a toggletip (ui-conventions "Page help").
+  This keeps the facts and their links; a requested backup's progress is
+  the line under Take a backup now's button (#1317), which follows every
+  poll, so it is not repeated here; a failed off-site copy not yet an
+  incident is a plain notice.
 {% endcomment %}<p>{% if health.backup_at %}{% translate "Last backup finished at" %} <time datetime="{{ health.backup_at|instant }}" data-local-instant>{{ health.backup_at|instant }}</time> (<time datetime="{{ health.backup_at|instant }}" data-live-since>{{ health.backup_at|instant }}</time>).{% if health.backup_key_matches is True %} {% translate "It was sealed to the backup encryption key now configured." %}{% endif %}{% else %}{% translate "No backup has been recorded yet." %}{% endif %}</p>
 {% if health.backup_bytes is not None %}<p>{% blocktranslate with size=health.backup_bytes|filesizeformat version=health.backup_version trimmed %}Its size is {{ size }} (database and files together), taken by version {{ version }}.{% endblocktranslate %}</p>{% endif %}
-{% with request=health.backup_request %}{% if request and request.status != "not_picked_up" and request.status != "failed" and request.status != "did_not_finish" %}<p data-backup-request="{{ request.status }}">
-{% if request.status == "waiting" %}{% translate "The requested backup is waiting for the server, which checks for requests every five minutes." %}
-{% elif request.status == "held" %}{% translate "The server checks every five minutes and starts the backup once the send has finished, so this can still show for a few minutes after the send ends." as held_tip %}<span id="backup-held">{% translate "The requested backup is held while a Family email send is in progress." %}</span> {% include "stewardship/components/toggletip.html" with tip_id="backup-held-tip" tip_label_id="backup-held" tip_text=held_tip %} <a href="{% url 'admin:family_email_progress' %}">{% translate "Family email progress" %}</a>
-{% elif request.status == "running" %}{% translate "The requested backup is running; it started at" %} <time datetime="{{ request.claimed_at|instant }}" data-local-instant>{{ request.claimed_at|instant }}</time>.
-{% elif request.status == "finished" %}{% translate "The backup requested at" %} <time datetime="{{ request.created_at|instant }}" data-local-instant>{{ request.created_at|instant }}</time> {% translate "finished at" %} <time datetime="{{ request.finished_at|instant }}" data-local-instant>{{ request.finished_at|instant }}</time>.
-{% elif request.status == "restored" %}{% translate "The backup requested at" %} <time datetime="{{ request.created_at|instant }}" data-local-instant>{{ request.created_at|instant }}</time> {% translate "was never run: the system was restored from a backup, which cancels earlier requests." %}
-{% endif %}</p>{% endif %}{% endwith %}
 {% if health.offsite %}<p{% if health.offsite.kind == 'failed' and not health.incidents.backup_offsite_failed %} class="notice"{% endif %}>{% translate "Off-site copy:" %} {{ health.offsite.message }}{% if health.offsite.last_copy_at %} {% translate "Last copied:" %} <time datetime="{{ health.offsite.last_copy_at|instant }}" data-local-instant>{{ health.offsite.last_copy_at|instant }}</time>.{% endif %} <a href="{% url 'admin:integration_settings' 'backup' %}">{% translate "Off-site backups (Google Drive)" %}</a></p>
 {% elif health.mode != "production" %}<p>{% translate "Off-site copies are not set up." %} <a href="{% url 'admin:integration_settings' 'backup' %}">{% translate "Set up off-site backups" %}</a></p>{% endif %}

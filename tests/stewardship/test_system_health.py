@@ -1070,10 +1070,10 @@ def test_a_requested_backup_reads_as_the_page_words_it():
         ("waiting", "is waiting for the server"),
         ("held", "is held while a Family email send is in progress"),
         ("not_picked_up", "The server did not pick up the backup requested at"),
-        ("running", "The requested backup is running; it started at"),
+        ("running", "and is running; it started at"),
         ("did_not_finish", "did not finish."),
         ("failed", "failed. Ask the server operator"),
-        ("finished", "finished at"),
+        ("finished", "The backup requested at"),
         ("restored", "was never run: the system was restored"),
     ):
         request = BackupRequestStatus(
@@ -2287,9 +2287,9 @@ def test_the_debug_panel_repeats_no_sentence():
 
 
 def test_a_live_request_is_stated_once_in_the_band():
-    """When a request was made is Take a backup now's greyed reason; the
-    panel line names only the request's state (and when it started), and
-    the confirmation says only that it was requested."""
+    """The request's progress is one line, under Take a backup now's button
+    (#1317): when it was made and its state (and when it started); the
+    panel does not repeat it, and the confirmation points to the line."""
     made = NOW - timedelta(minutes=12)
     started = NOW - timedelta(minutes=2)
     for status in ("waiting", "held", "running"):
@@ -2315,8 +2315,45 @@ def test_a_live_request_is_stated_once_in_the_band():
             )
         )
         assert confirmed.count(f'datetime="{made.isoformat()}"') == 1, status
-        assert "Backup requested. The Backups details below" in confirmed
+        assert (
+            "Backup requested. The line under the button follows its progress"
+            in confirmed
+        )
+        assert details.count("data-backup-request=") == 1, status
+        line = confirmed[confirmed.index('id="backup-now-reason"') :]
+        assert f'data-backup-request="{status}"' in line[: line.index(">")]
     assert details.count(f'datetime="{started.isoformat()}"') == 1
+
+
+def test_an_ended_request_is_said_under_the_offered_button():
+    """Once the request has ended, the button is offered again and the line
+    under it says how it ended; a failure points to the tile's problems,
+    which explain it (#1317)."""
+    for status, words in (
+        ("finished", "The backup requested at"),
+        ("restored", "was never run: the system was restored"),
+        ("failed", "did not complete; the Backups problems above say what to do"),
+        ("not_picked_up", "did not complete; the Backups problems above"),
+    ):
+        details = backups_details(
+            tiles({"health": health(backup_request=backup_request(status))})
+        )
+        region = details[details.index('id="backup-now"') :]
+        region = region[: region.index("</section>")]
+        assert 'value="preview"' in region and words in region, status
+        panel = details[details.index("</section>") :]
+        assert words not in panel, status
+
+
+def test_the_backup_region_checks_the_status_again_once_answered():
+    """Its answer replaces only the region, so the page checks the status at
+    once (data-live-recheck) and the progress line follows (#1317)."""
+    details = backups_details(tiles({"health": health()}))
+    region = details[details.index('id="backup-now"') :]
+    assert (
+        'data-in-place-region data-live-recheck="system-health"'
+        in (region[: region.index(">")])
+    )
 
 
 def test_the_debug_regions_answers_point_where_things_are_said():

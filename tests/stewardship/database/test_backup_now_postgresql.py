@@ -56,6 +56,14 @@ def test_preview_then_confirm_records_one_request_and_its_audit(auth_service, go
     confirmed = post(browser, action="confirm", key=key)
     assert confirmed.status_code == 200
     assert "Backup requested at" in confirmed.content.decode()
+    # The answer's region shows the request's progress, under the greyed
+    # button, where its confirmation points (#1317).
+    region = confirmed.content.decode()
+    region = region[region.index('id="backup-now"') :]
+    region = region[: region.index("</section>")]
+    assert "The line under the button follows its progress" in region
+    assert 'data-backup-request="waiting"' in region
+    assert "and is waiting for the server" in region
     request = BackupRequest.objects.get()
     assert str(request.pk) == key and request.state == "waiting"
     event = AuditEvent.objects.get(event_type="backup_requested")
@@ -72,7 +80,7 @@ def test_preview_then_confirm_records_one_request_and_its_audit(auth_service, go
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         page = browser.get(PAGE).content.decode()
     assert 'disabled aria-describedby="backup-now-reason"' in page
-    assert "and is waiting." in page
+    assert "and is waiting for the server" in page
 
 
 def test_a_stale_sign_in_gets_the_google_step_up(auth_service, google, monkeypatch):

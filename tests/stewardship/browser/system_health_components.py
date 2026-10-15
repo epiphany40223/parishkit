@@ -68,6 +68,11 @@ DEBUG_TILE_STATUS = "/system-health-debug-tile/status"
 # status before the switch is set (``/status``) and after (``/status-set``),
 # with no service named any more; and the confirmation's answer (``/set``).
 DEBUG_LIVE = "/system-health-debug-live-"
+# Take a backup now, followed in place (#1317): a page with no request that
+# polls every 2 seconds; its status with no request (``/status``), with the
+# request running (``/status-running``) and finished (``/status-finished``);
+# and the confirmation's answer, the request waiting (``/requested``).
+BACKUP_LIVE = "/system-health-backup-live"
 # Accept this change once (ADM-13 PR 5b): a page showing only a refused
 # large change, the answers its steps get, and its next poll, in which
 # another Administrator has accepted it. The browser test serves the page at
@@ -148,13 +153,15 @@ def health(
     refused=False,
     accepted=False,
     mode="production",
+    request=None,
 ):
     """A deployment with several problems, or a healthy one.
 
     ``debug``: the web portal reports debug logging in effect; ``switch``:
     the debug-off switch is set (ADM-13 PR 6b). ``refused``: a large change
     was refused, and ``accepted``: it was accepted once (ADM-13 PR 5b).
-    ``mode``: the global mode.
+    ``mode``: the global mode. ``request``: the newest Take a backup now
+    request's page status; without it, ``waiting`` gives a held request.
     """
     refused = refused or troubled
     # A refusal is always an open incident too, so its tile is an Error tile.
@@ -226,14 +233,14 @@ def health(
         backup_version="1.4.2",
         backup_request=BackupRequestStatus(
             state="waiting",
-            status="held",
+            status=request or "held",
             created_at=now - timedelta(minutes=12),
             held_at=now - timedelta(minutes=2),
-            claimed_at=None,
-            finished_at=None,
+            claimed_at=now - timedelta(minutes=1) if request else None,
+            finished_at=now if request == "finished" else None,
             failure_kind=None,
         )
-        if troubled or waiting
+        if troubled or waiting or request
         else None,
         # Off-site copies are set up, except on the troubled page, where
         # their absence in Production is a warning (decision 5).
@@ -328,6 +335,7 @@ def components(context, admin):
         attempt=REFUSED_ATTEMPT,
         mode="production",
         mail=None,
+        request=None,
         **extra,
     ):
         """Template context the view would build.
@@ -346,6 +354,7 @@ def components(context, admin):
             refused=refused,
             accepted=accepted,
             mode=mode,
+            request=request,
         )
         if mail:
             model = mail_state(model, now, mail)
@@ -423,6 +432,20 @@ def components(context, admin):
                 debug_off_shown=True,
             )
         )
+    extra[BACKUP_LIVE] = page(
+        values(False, status_url=f"{BACKUP_LIVE}/status", poll_interval=2000)
+    )
+    extra[f"{BACKUP_LIVE}/status"] = status(values(False))
+    for state in ("running", "finished"):
+        extra[f"{BACKUP_LIVE}/status-{state}"] = status(values(False, request=state))
+    extra[f"{BACKUP_LIVE}/requested"] = page(
+        values(
+            False,
+            request="waiting",
+            status_url=f"{BACKUP_LIVE}/status",
+            backup_now={"requested": SimpleNamespace(created_at=now), "created": True},
+        )
+    )
     return extra | {
         PAGE: (
             "text/html",

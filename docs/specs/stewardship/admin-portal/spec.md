@@ -6274,9 +6274,10 @@ them as Warning items, in this order, each with its sentence and link:
   page.
 
 The panel then keeps the facts: the last backup's time, size and version,
-"sealed to the backup encryption key now configured" when it is, a live,
-finished or cancelled request, and the off-site line with **Off-site
-backup settings**. A failed newest copy without an open incident is a
+"sealed to the backup encryption key now configured" when it is, and the
+off-site line with **Off-site backup settings**. A requested backup's
+progress is not repeated there: it is the line under
+[Take a backup now](#take-a-backup-now)'s button. A failed newest copy without an open incident is a
 plain notice there. In Testing, off-site copies that are not set up are a
 panel line with the setup link, not a finding
 ([decision 5](#administrator-decisions-2026-10-13)).
@@ -6519,8 +6520,18 @@ rules and adds to disk use until they remove it; and, during a bulk send,
 that the backup will wait until the send finishes.
 
 **Unavailable when** (greyed, with the reason): a request is already waiting
-or running ("A backup was requested at 10:42 AM and is running"), or the
-system is in restore review. There is no daily limit: one request at a time
+or running ("A backup was requested at 10:42 AM and is running; it started
+at 10:45 AM"), or the system is in restore review.
+
+**Progress.** The line under the button follows the newest request through
+the 10-second status, whatever the pointer is doing: while it waits, is held
+during a Family email send (with why in a toggletip, and the send's progress
+link) or runs, it is the greyed button's reason; once it ends, the button is
+offered again and the line says it finished (and when), was cancelled by a
+restore, or did not complete, which the tile's problems explain. The
+confirmation says "Backup requested. The line under the button follows its
+progress until it finishes.", and the page checks its status at once after
+each step's answer, so the line shows the request from the start. There is no daily limit: one request at a time
 is the only bound ([decision 6](#system-health-decisions)).
 
 **Checks (server):** the [shared rules](#shared-rules-for-health-actions)

@@ -15,6 +15,7 @@ from .system_health_components import (
     ALLOW_PAGE,
     ALLOW_PREVIEW,
     BACKUP_BUSY,
+    BACKUP_LIVE,
     BACKUP_PAGE,
     BACKUP_PREVIEW,
     BACKUP_REQUESTED,
@@ -875,6 +876,74 @@ def test_take_a_backup_now_previews_and_confirms_in_place(
     )
 
 
+def test_a_requested_backups_progress_follows_under_its_button(page, component_origin):
+    """Confirming shows the request waiting under the greyed button, where
+    the confirmation points; the status then shows it running, then
+    finished with the button offered again, in place, while the pointer
+    stays on the tile grid (#1317)."""
+    from urllib.request import urlopen
+
+    def body(path):
+        """The component at ``path``, as text."""
+        with urlopen(component_origin + path) as response:
+            return response.read().decode()
+
+    answers = {
+        "preview": body(BACKUP_PREVIEW),
+        "confirm": body(BACKUP_LIVE + "/requested"),
+    }
+    shown = body(BACKUP_LIVE)
+    states = [
+        body(f"{BACKUP_LIVE}/status-{state}") for state in ("running", "finished")
+    ]
+    before = body(BACKUP_LIVE + "/status")
+    confirmed = {"done": False, "checks": 0}
+
+    def respond(route):
+        """The page for a GET; for a POST, the answer to its action."""
+        if route.request.method != "POST":
+            route.fulfill(status=200, content_type="text/html", body=shown)
+            return
+        action = re.search(r"(^|&)action=([a-z]+)", route.request.post_data).group(2)
+        confirmed["done"] = confirmed["done"] or action == "confirm"
+        route.fulfill(status=200, content_type="text/html", body=answers[action])
+
+    def status(route):
+        """No request until it is confirmed; then running, then finished."""
+        if not confirmed["done"]:
+            text = before
+        else:
+            text = states[min(confirmed["checks"], 1)]
+            confirmed["checks"] += 1
+        route.fulfill(status=200, content_type="text/html", body=text)
+
+    page.route(f"{component_origin}{BACKUP_PAGE}", respond)
+    page.route(f"{component_origin}{BACKUP_LIVE}/status", status)
+    page.goto(component_origin + BACKUP_PAGE + "#health-backups")
+    kept = _not_reloaded(page)
+    region = page.locator("#backup-now")
+    region.get_by_role("button", name="Take a backup now", exact=True).click()
+    confirm = region.get_by_role("button", name="Confirm: take a backup now")
+    expect(confirm).to_be_focused()
+    confirm.click()
+    expect(region.locator("[data-backup-requested]")).to_contain_text(
+        "The line under the button follows its progress"
+    )
+    line = region.locator("[data-backup-request]")
+    expect(line).to_have_attribute("data-backup-request", "running")
+    expect(line).to_contain_text("and is running; it started at")
+    expect(
+        region.get_by_role("button", name="Take a backup now", exact=True)
+    ).to_be_disabled()
+    expect(line).to_have_attribute("data-backup-request", "finished", timeout=15000)
+    expect(line).to_contain_text("finished at")
+    expect(
+        region.get_by_role("button", name="Take a backup now", exact=True)
+    ).to_be_enabled()
+    assert "UTC" not in region.inner_text()
+    assert kept()
+
+
 def test_refusals_answer_inside_the_region(page, component_origin):
     """A stale sign-in offers the step-up, a race says so; never raw JSON."""
     _routed(page, component_origin, {"preview": (403, BACKUP_STEP_UP)})
@@ -908,7 +977,7 @@ def test_the_button_follows_a_request_made_elsewhere(page, component_origin):
     expect(
         region.get_by_role("button", name="Take a backup now", exact=True)
     ).to_be_disabled(timeout=30000)
-    visible(region.get_by_text("and is waiting."))
+    visible(region.get_by_text("and is held while a Family email send is in progress."))
 
 
 def test_an_unchanged_poll_leaves_the_button_in_place(page, component_origin):
@@ -953,7 +1022,7 @@ def test_the_button_catches_up_once_the_reader_leaves_it(page, component_origin)
     expect(button).to_be_focused()
     page.evaluate("document.activeElement.blur()")
     expect(button).to_be_disabled(timeout=30000)
-    visible(region.get_by_text("and is waiting."))
+    visible(region.get_by_text("and is held while a Family email send is in progress."))
 
 
 def test_turn_off_debug_logging_previews_and_confirms_in_place(
