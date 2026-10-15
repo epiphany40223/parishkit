@@ -539,6 +539,20 @@ def test_docker_and_checkout_share_build_lock():
     assert dockerfile.index(backend) < dockerfile.index(editable)
 
 
+def test_postgresql_repository_fetches_retry_and_stay_verified():
+    """Transient DNS/network errors retry; the signing key is still digest-checked."""
+    dockerfile = (ROOT / "deploy/stewardship/Dockerfile").read_text()
+    fetch = dockerfile.index("https://www.postgresql.org/media/keys/ACCC4CF8.asc")
+    curl = dockerfile.rindex("curl ", 0, fetch)
+    retries = "--retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20"
+    assert retries in dockerfile[curl:fetch]
+    assert fetch < dockerfile.index("sha256sum -c -")
+    # The apt calls that reach the pgdg repository retry their downloads too.
+    pgdg = dockerfile[dockerfile.index("/etc/apt/sources.list.d/pgdg.list") :]
+    assert "apt-get -o Acquire::Retries=5 update" in pgdg
+    assert "apt-get -o Acquire::Retries=5 install" in pgdg
+
+
 def test_root_and_stewardship_build_exclusions_stay_synchronized():
     """Specialized ignore support cannot change the default-deny context policy."""
     fallback = (ROOT / ".dockerignore").read_text()

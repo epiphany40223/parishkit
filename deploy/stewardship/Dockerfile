@@ -10,13 +10,17 @@ WORKDIR /app
 # repository keeps only the newest build per major version, so this pin and
 # the postgres:18.6 server digest in runtime_topology.py move together when a
 # new build is published; until then the build fails with "version not found".
+# CI runners occasionally fail to resolve www.postgresql.org or reach the pgdg
+# mirror, so the key download and the pgdg apt calls retry transient errors;
+# the digest check still verifies whatever download finally succeeds.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
-    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/keyrings/pgdg.asc \
+    && curl --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 \
+        -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/keyrings/pgdg.asc \
     && echo "0144068502a1eddd2a0280ede10ef607d1ec592ce819940991203941564e8e76  /usr/share/keyrings/pgdg.asc" | sha256sum -c - \
     && echo "deb [signed-by=/usr/share/keyrings/pgdg.asc] https://apt.postgresql.org/pub/repos/apt trixie-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends postgresql-client-18=18.6-1.pgdg13+2 \
+    && apt-get -o Acquire::Retries=5 update \
+    && apt-get -o Acquire::Retries=5 install -y --no-install-recommends postgresql-client-18=18.6-1.pgdg13+2 \
     && apt-get purge -y --auto-remove curl \
     && rm -rf /var/lib/apt/lists/*
 COPY requirements/stewardship.txt requirements/stewardship-build.txt requirements/
