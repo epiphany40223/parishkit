@@ -5737,4 +5737,16 @@
       return tip;
     }
   };
+
+  // A step bar segment whose step cannot open yet (stepper-steps.html,
+  // #1402) is focusable but has no address. Clicking or tapping it only
+  // focuses it, so its floating tooltip shows why it is unavailable: Safari
+  // does not focus on click, and a phone tap neither hovers nor focuses.
+  // Delegated, so the Campaign setup stepper's in-place redraws keep it.
+  document.addEventListener("click", (event) => {
+    const segment = event.target.closest?.("[data-step-unavailable]");
+    if (!segment) return;
+    event.preventDefault();
+    segment.focus();
+  });
 })();

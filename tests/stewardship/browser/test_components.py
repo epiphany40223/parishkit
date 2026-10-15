@@ -935,32 +935,84 @@ def test_setup_stepper_is_compact_and_its_full_list_stays_accessible(
     assert axe_violations(page, axe_source) == []
 
 
+def tip_shown(locator):
+    """Whether a step bar segment's floating tooltip is drawn."""
+    return locator.evaluate("node => getComputedStyle(node, '::after').display") == (
+        "block"
+    )
+
+
 @pytest.mark.parametrize("width", [320, 1280])
-def test_setup_track_segments_name_their_step_on_hover(page, component_origin, width):
-    """Each decorative segment's title names its step and status, as the list does."""
+def test_setup_step_bar_links_open_steps_and_explains_the_rest(
+    page, component_origin, width
+):
+    """Each open step's segment is a link; a blocked one only shows why (#1402)."""
     page.set_viewport_size({"width": width, "height": 900})
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    opened = []
+    # The component server has no wizard pages: answer any setup step page.
+    page.route(
+        "**/admin/setup/**",
+        lambda route: (
+            opened.append(route.request.url),
+            route.fulfill(content_type="text/html", body="<title>Step</title>"),
+        ),
+    )
     page.goto(component_origin + "/setup-testing")
-    track = page.locator(".setup-track")
-    before = track.bounding_box()
-    titles = track.locator("span").evaluate_all("nodes => nodes.map(n => n.title)")
+    track = page.get_by_role("list", name="Setup steps")
+    segments = track.locator("a")
     steps = page.locator(".setup-steps li").evaluate_all(
         "items => items.map(item => ["
         "item.querySelector('.setup-step-label').lastChild.textContent.trim(),"
         "item.querySelector('.setup-step-status').textContent.trim()])"
     )
-    assert len(titles) == len(steps) == 12
-    for number, (title, (label, status)) in enumerate(
-        zip(titles, steps, strict=True), 1
-    ):
-        assert title == f"Step {number} of 12: {label} — {status}", title
-    assert any(title.endswith(" — Completed") for title in titles)
-    assert "— Current step — " in titles[2]
-    # The larger hover target is invisible: the track keeps its size.
-    segment = track.locator("span").nth(2)
-    segment.hover()
-    assert page.evaluate("document.querySelector('.setup-track span:hover') !== null")
-    assert track.bounding_box() == before
+    assert segments.count() == len(steps) == 12
+    names = segments.evaluate_all("nodes => nodes.map(n => n.textContent.trim())")
+    tips = segments.evaluate_all("nodes => nodes.map(n => n.dataset.tip)")
+    assert names == tips
+    for number, (name, (label, status)) in enumerate(zip(names, steps, strict=True), 1):
+        assert name.startswith(f"Step {number} of 12: {label} — "), name
+        assert name.endswith(status), name
+    assert "— Current step — " in names[2]
+    assert segments.nth(2).get_attribute("aria-current") == "step"
+    # A 44px target each, as on the Family bar, with no horizontal scroll.
+    assert all(
+        box["height"] >= 44
+        for box in segments.evaluate_all(
+            "nodes => nodes.map(node => node.getBoundingClientRect().toJSON())"
+        )
+    )
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    # A step that cannot open yet is not a link: focusable, disabled, and a
+    # click only shows its tooltip, moving nothing and opening nothing.
+    blocked = segments.nth(5)
+    assert blocked.get_attribute("href") is None
+    assert blocked.get_attribute("aria-disabled") == "true"
+    assert "Not available yet: " in blocked.get_attribute("data-tip")
+    before = page.locator(".setup-stepper").bounding_box()
+    address = page.url
+    # Playwright waits for an aria-disabled control to enable; force sends
+    # the real mouse click a reader would.
+    blocked.click(force=True)
+    assert page.evaluate("document.activeElement.dataset.stepUnavailable === ''")
+    assert tip_shown(blocked)
+    assert page.locator(".setup-stepper").bounding_box() == before
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.wait_for_timeout(200)
+    assert page.url == address and opened == []
+    # Keyboard focus shows a link's tooltip too; following it only opens its
+    # page (a GET, with nothing submitted).
+    done = segments.nth(1)
+    done.focus()
+    assert tip_shown(done)
+    address = done.get_attribute("href")
+    assert address == "/admin/setup/mail"
+    with page.expect_request("**/admin/setup/**") as request:
+        done.click()
+    assert request.value.method == "GET" and request.value.post_data is None
+    assert request.value.url == component_origin + address
+    assert not failures
 
 
 def test_admin_sidebar_and_breadcrumbs_mark_the_current_page(page, component_origin):

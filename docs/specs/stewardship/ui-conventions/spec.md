@@ -43,7 +43,7 @@ when it lands.
   [numbers and money](#numbers-and-money),
   [dates and times](#dates-and-times), [date format](#date-format),
   [accessibility and client behavior](#accessibility-and-client-behavior),
-  [charts](#charts).
+  [step bars](#step-bars), [charts](#charts).
 - Admin interaction: [JavaScript requirement](#javascript-requirement),
   [in-place controls](#in-place-controls),
   [no layout shift](#no-layout-shift),
@@ -250,6 +250,36 @@ show a clear supported-browser message rather than silently fail. A browser
 too old for the Family flow's JavaScript likewise gets a plain notice asking
 the Family to update the device's software or use another device or browser; a
 small ES5 feature check reveals it and never alters the form.
+
+### Step bars
+
+**Rule.** A multi-step flow's segmented step bar is its quickest
+navigation, in both portals. Each segment is one step: a 44px-tall
+control drawing a slim bar, named "Step N of M: name" plus its status,
+with `aria-current="step"` on the current step and a floating tooltip
+that repeats the name on hover and keyboard focus and moves nothing
+([no layout shift](#no-layout-shift)). A segment whose step can be
+opened opens it, and doing so only opens that step: it saves, discards
+and submits nothing, like Back and Next. A segment whose step cannot open
+yet stays focusable but is `aria-disabled`, and its name and tooltip say
+why; clicking or tapping it only shows that tooltip. Color is never the
+only signal: the "Step N of M" line and `aria-current` name the current
+step, and each status is text. **Why.** Readers expect to click a step
+to reach it (Administrator, 2026-10-15, on
+[#1402](https://github.com/epiphany40223/parishkit/issues/1402): the
+setup wizard's bars were not clickable, unlike the Family portal's); a
+step that silently refuses a click, or a hover-only explanation, leaves
+touch and keyboard users guessing. **Shared code.** The segment's bar,
+tap target, tooltip and anchoring (first, middle or last third) are one
+set of rules in `ui-v1.css`, shared by the Family form's bar (drawn by
+`family-v1.js`, whose segments switch pages inside the one form) and the
+Admin steppers' bar (`stepper-steps.html`, shared by the
+[setup wizard](../admin-portal/spec.md#bootstrap-and-first-admin-wizard)
+and the [Campaign setup stepper](../admin-portal/spec.md#create-the-campaign),
+whose segments are links to separate pages); `ui-v1.js` focuses an
+unavailable Admin segment on click. Which steps can open is each flow's
+own rule, in its spec ([Family steps](../parishioner-portal/spec.md#form-state-and-navigation),
+the setup wizard's and Campaign setup's).
 
 ### Charts
 

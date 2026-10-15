@@ -61,6 +61,21 @@ def fresh_sign_in(context, setup=False):
 
 
 @register.simple_tag
+def step_tip_side(number, total):
+    """Which edge a step bar segment's tooltip is anchored to (#1402).
+
+    "start", "middle" or "end" for the first, middle or last third of the
+    bar, the Family step bar's rule (family-v1.js ``paintTrack``), so a
+    tooltip at most 60% of the viewport wide never runs off a phone.
+    ``number`` counts from 1.
+    """
+    index = number - 1
+    return (
+        "start" if index < total / 3 else "middle" if index < 2 * total / 3 else "end"
+    )
+
+
+@register.simple_tag
 def export_format_options(*formats, disabled=""):
     """The ``<option>`` list of an export form's format menu (#1190).
 

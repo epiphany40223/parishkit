@@ -1,0 +1,31 @@
+{% load i18n stewardship %}{% comment %}
+The step bar and the full step list that the setup wizard's stepper
+(setup-wizard.html) and the Campaign setup stepper (campaign-stepper.html)
+share, so the two cannot drift (#1402; ui-conventions "Step bars").
+
+Each bar segment of a step that can be opened is a link to its page, named
+"Step N of M: label — status" and marked aria-current="step" when it is the
+current step; the same text shows as a floating tooltip on hover and
+keyboard focus, which moves nothing. A step that cannot open yet (a missing
+prerequisite, the ordering rule or the running data load) is not a link: its
+segment stays focusable but aria-disabled, and its name and tooltip say why
+("Not available yet: ..."). Clicking or tapping it only focuses it, which
+shows that tooltip (ui-v1.js), as the Family bar does. Following a segment
+saves nothing. The list below repeats the same steps inside a collapsed
+disclosure. The segment's bar, tap target and tooltip share their CSS with
+the Family step bar (ui-v1.css).
+
+Include with:
+  wizard: a setup_wizard.Wizard.
+  track_label: the bar's accessible name.
+  list_id, list_summary: the disclosure's id and its summary text.
+  list_open: open the list (the setup overview page).
+{% endcomment %}<ol class="setup-track" aria-label="{{ track_label }}">{% for step in wizard.steps %}{% if step.current %}{% blocktranslate trimmed asvar tip with number=step.number total=wizard.total label=step.label status=step.status %}Step {{ number }} of {{ total }}: {{ label }} — Current step — {{ status }}{% endblocktranslate %}{% else %}{% blocktranslate trimmed asvar tip with number=step.number total=wizard.total label=step.label status=step.status %}Step {{ number }} of {{ total }}: {{ label }} — {{ status }}{% endblocktranslate %}{% endif %}<li><a {% if step.url %}href="{{ step.url }}"{% else %}role="link" aria-disabled="true" tabindex="0" data-step-unavailable{% endif %} class="setup-track-{{ step.state }}{% if step.current %} setup-track-current{% endif %} setup-tip-{% step_tip_side step.number wizard.total %}"{% if step.current %} aria-current="step"{% endif %} data-tip="{{ tip }}"><span class="setup-sr-only">{{ tip }}</span></a></li>{% endfor %}</ol>
+<details class="setup-stepper-list" id="{{ list_id }}" data-keep-open{% if list_open %} open{% endif %}>
+<summary>{{ list_summary }}</summary>
+<ol class="setup-steps">{% for step in wizard.steps %}
+<li class="setup-step setup-step-{{ step.state }}{% if step.current %} setup-step-current{% endif %}">{% if step.url %}<a href="{{ step.url }}"{% if step.current %} aria-current="step"{% endif %}>{% else %}<span class="setup-step-box"{% if step.current %} aria-current="step"{% endif %}>{% endif %}<span class="setup-step-number" aria-hidden="true">{% if step.state == 'done' %}&#10003;{% else %}{{ step.number }}{% endif %}</span>
+<span class="setup-step-label"><span class="setup-sr-only">{% blocktranslate trimmed with number=step.number %}Step {{ number }}:{% endblocktranslate %} </span>{{ step.label }}</span>
+<span class="setup-step-status">{% if step.current %}{% translate "Current step" %} — {% endif %}{{ step.status }}</span>{% if step.url %}</a>{% else %}</span>{% endif %}</li>{% endfor %}
+</ol>
+</details>

@@ -145,9 +145,12 @@ the sign-in is already older
 ([page help](../ui-conventions/spec.md#page-help)). Review, the email and
 Slack tests and the final confirmation follow the load. Every page shows a
 compact progress stepper: the current step by number and name, the count of
-completed steps and a slim track (each segment names its step and status on
-hover; the track is hidden from assistive technology because the list says
-the same), with the full ordered list (each
+completed steps and a slim [step bar](../ui-conventions/spec.md#step-bars)
+whose segments are links to the steps that can open, named by step and
+status with a tooltip, while a step that cannot open yet is a disabled
+segment whose tooltip gives the reason
+([#1402](https://github.com/epiphany40223/parishkit/issues/1402)), with the
+full ordered list (each
 applicable step named as completed, current, not done, optional or not yet
 available with the reason) in a collapsed disclosure. Navigation is
 conventional: completed steps and the first unfinished required step are
@@ -2963,7 +2966,10 @@ full refresh has finished.
 
 **Guided steps.** While the current campaign is a draft in Testing mode, the
 Campaign setup pages show Administrators a stepper with the setup wizard's
-look: Campaign settings (its basics, Ministries and funds, one form since
+look, drawn by the same template for its
+[step bar](../ui-conventions/spec.md#step-bars) and list
+([#1402](https://github.com/epiphany40223/parishkit/issues/1402)): Campaign
+settings (its basics, Ministries and funds, one form since
 [#1119](https://github.com/epiphany40223/parishkit/issues/1119)), Share
 options (shown only when the campaign's modules use it), Pages and emails,
 Dates and mail schedules, Campaign images, Preview and test email (for the
