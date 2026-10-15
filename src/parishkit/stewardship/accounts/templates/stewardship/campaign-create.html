@@ -28,7 +28,7 @@ change's live status, not the form, which could only be refused once the
 change applies; once a campaign exists it says whether this change created
 it (a change that failed because another one created the campaign first
 says a campaign exists) and links Campaign settings (#563).
-{% endcomment %}<div id="campaign-create-region" data-in-place-region>{% if receipt %}{% if created %}<p role="status">{% if receipt.state == 'applied' %}{% translate "The campaign has been created." %}{% else %}{% translate "A campaign already exists." %}{% endif %} <a href="{% url 'admin:campaign_settings' %}">{% translate "Change it on Campaign settings" %}</a></p>{% endif %}
+{% endcomment %}<div id="campaign-create-region" data-in-place-region>{% if receipt %}{% if created %}<p role="status">{% if receipt.state == 'applied' %}{% translate "The campaign has been created." %}{% else %}{% translate "A campaign already exists." %}{% endif %} <a href="{% url 'admin:campaign_settings' %}">{% translate "Change it on Campaign settings" %}</a></p>{% elif receipt.state == 'failed' %}<p><a href="{% url 'admin:campaign_create' %}">{% translate "Create the campaign" %}</a></p>{% endif %}
 {% include 'stewardship/configuration-request-status.html' %}
 {% else %}<form id="settings-form" method="post" action="{{ page_url }}" class="panel" data-review-open="campaign-create-review" data-campaign-form data-new-campaign data-require-complete data-missing-hint="{% translate 'Fill in the required fields to create the campaign.' %}">
 {% csrf_token %}<input type="hidden" name="action" value="preview">
