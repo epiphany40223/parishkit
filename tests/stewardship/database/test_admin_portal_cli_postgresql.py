@@ -15,7 +15,7 @@ from parishkit.stewardship.accounts.automation_models import AutomationNotice
 from parishkit.stewardship.accounts.policy import current_principal
 from parishkit.stewardship.audit.models import AuditEvent
 
-from .automation_builders import paired
+from .automation_builders import as_staff, paired
 from .test_admin_test_sample_cli_postgresql import runner
 from .test_family_maintenance_postgresql import change, events, family, maintenance
 
@@ -175,5 +175,22 @@ def test_refusals_change_nothing(admin):
     assert code == 5 and document["error"]["code"] == "session_ended"
     code, document, _ = show(admin, secret)
     assert code == 5 and document["error"]["code"] == "session_ended"
+    assert events() == [] and trail() == (0, 0, 0)
+    assert not maintenance(family("get", "/"))
+
+
+def test_staff_is_denied_before_the_prompt(admin, monkeypatch):
+    """The role comes first (#1341): a full-scope session whose user is now
+    Staff is denied before the note is read or the prompt shown."""
+    _, secret, _ = paired(admin.service)
+    as_staff(monkeypatch)
+    for options, answer in (
+        (("--state", "closed", "--message", "Back soon"), b"yes\n"),
+        (("--state", "closed", "--message", "Write to office@example.org"), b""),
+        (("--state", "open"), b"yes\n"),
+    ):
+        code, document, errors = switch(admin, secret, *options, answer=answer)
+        assert code == 1 and document["error"]["code"] == "denied", document
+        assert "Type yes" not in errors and "Family portal" not in errors, errors
     assert events() == [] and trail() == (0, 0, 0)
     assert not maintenance(family("get", "/"))

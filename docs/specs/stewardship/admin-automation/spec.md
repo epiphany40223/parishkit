@@ -1430,6 +1430,18 @@ command that accepts only `--yes` is left out of it by name. PR 6b's
 `delivery refusal-clear`, PR 7a's `portal maintenance set` and #463's `files
 delete` are prompting commands.
 
+A prompting or confirming command checks its page's capability first,
+renewing nothing, before it reads an input, looks anything up or prompts
+([#1339](https://github.com/epiphany40223/parishkit/issues/1339),
+[#1341](https://github.com/epiphany40223/parishkit/issues/1341)): a
+full-scope session whose user no longer holds the capability (an
+Administrator who is now Staff) is `denied` with no prompt, never
+`invalid`, `stale_version` or `not_available`, and learns nothing of the
+state the prompt would describe. The capability is the action's own, so a
+command Staff may run (`export financial`, `export directory`, `export
+postal`, `export family-timeline`, `census resolve`) still prompts Staff;
+the action then admits again as its page's post does.
+
 ### Audit attribution
 
 The SQL context check (`stewardship_safe_context_v1`, mirrored by
