@@ -2535,10 +2535,9 @@ changed version, or the page's racing second write (a unique violation),
 is `stale_version`; an action the row's state does not allow, or a Reopen
 without a note, is `invalid`, as the page's 400. It prints the resolution's
 ids, versions and times and the change's state (`version`, `decision`,
-`execution`), never the note, Family, Member or value. No document or
-download prints a change's id and version yet (they are only in the page's
-row form); `export census` (PR 8h) must print them. Taking them from the
-page until then is a default pending Administrator confirmation.
+`execution`), never the note, Family, Member or value. A change's id and
+version come from `export census --format jsonl` (`proposal_id`,
+`version`), as described below.
 
 `census review PROPOSAL_ID --decision approved|ignored|unreviewed
 --expected-version VERSION [--note TEXT|-] [--request-key KEY]`

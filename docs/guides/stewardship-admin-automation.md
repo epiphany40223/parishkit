@@ -1848,13 +1848,13 @@ pk-admin census resolve PROPOSAL_ID --action reopened --expected-version 4 \
     --note - --yes < note.txt
 ```
 
-`PROPOSAL_ID` and the `--expected-version` are the change's id and version.
-No command or download prints them yet: they are only in the hidden fields
-of the change's row form on the Census changes page (the page's downloads
-leave them out). `export census` will print them. `--note` is optional,
-except to reopen; `-` reads it from standard input, which keeps a note that
-names people out of shell history and the process list, and then needs
-`--yes`, because standard input cannot carry both the note and an answer. `--request-key` is made for you and
+`PROPOSAL_ID` and the `--expected-version` are the change's id and version,
+which `export census --format jsonl` prints (`proposal_id` and `version`,
+with the `actions` the change takes now; the page's own downloads leave
+them out). `--note` is optional, except to reopen; `-` reads it from
+standard input, which keeps a note that names people out of shell history
+and the process list, and then needs `--yes`, because standard input cannot
+carry both the note and an answer. `--request-key` is made for you and
 written to standard error when left out. Repeating the command with the
 same key returns the same resolution (`created` false) and records nothing
 new; the key used for another outcome or note is exit 1 (`invalid`). A
