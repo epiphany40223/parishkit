@@ -9,6 +9,10 @@ operator names. Output is a fixed JSON line naming the target, whether the
 credential was accepted, and whether anything was sent; a failure is one
 generic line. Nothing here reaches normal CI: the tests use fakes and the
 real network path is the human's.
+
+One target writes provider data: ``parishsoft_contact`` with ``--send``
+writes a marker to one chosen test Member's contact record, reads it back
+and restores the original (#528, ``responses.contact_smoke``).
 """
 
 import json
@@ -33,7 +37,14 @@ from .deployment import DeploymentProfile, ServiceRole, load_deployment
 from .observability import Event, configure_logging, emit_failure
 from .runtime_paths import RuntimeLayout
 
-TARGETS = {"parishsoft", "google_workspace", "slack", "google_oauth", "backup_drive"}
+TARGETS = {
+    "parishsoft",
+    "parishsoft_contact",
+    "google_workspace",
+    "slack",
+    "google_oauth",
+    "backup_drive",
+}
 SUBJECT = "ParishKit Stewardship smoke test"
 SLACK_POST = "https://slack.com/api/chat.postMessage"
 
@@ -59,6 +70,87 @@ def check_parishsoft(configuration, *, organization_id):
     settings = validated_context("parishsoft", {"organization_id": organization_id})
     value = _credential(configuration, "parishsoft")
     return {"credential": _outcome("parishsoft", value, settings, configuration)}
+
+
+def check_parishsoft_contact(
+    configuration,
+    *,
+    organization_id,
+    member_id,
+    confirm_member_id,
+    field=None,
+    send=False,
+):
+    """Probe one test Member's contact read; with ``send``, round-trip one field.
+
+    The census publication read's confirmation (#528, ``contact_smoke``).
+    It refuses before reading anything unless the Member id is given twice,
+    identically, and runs only in the worker, which holds the ParishSoft
+    credential. The tenant check runs before the Member is read, so a key
+    that sees another organization never reaches it. Before ``--send``
+    restores the original, the value-free marker result goes to standard
+    error, so it survives a process that dies during the restore.
+    """
+    if configuration.service_role is not ServiceRole.WORKER:
+        raise ConfigError("Run the Member contact check in the worker.")
+    if member_id is None or member_id != confirm_member_id:
+        raise ConfigError("The Member id must be given and confirmed.")
+    # Django first: the gateway module (through storage) defines models, so
+    # it cannot even be imported before settings exist. The gateway also
+    # refuses calls inside a transaction and records a helper killed at its
+    # deadline durably, which both need the database configured.
+    from .operator_commands import configure_operator_database
+
+    configure_operator_database(configuration)
+    from .responses import contact_smoke
+    from .responses.publication_gateway import ParishSoftContactGateway, _member_id
+    from .source.credentials import SourceCredential
+
+    member = _member_id(member_id)
+    result = check_parishsoft(configuration, organization_id=organization_id)
+    if result["credential"] != "valid":
+        return result
+    gateway = ParishSoftContactGateway.open_operator(
+        SourceCredential(_credential(configuration, "parishsoft")),
+        profile=configuration.profile.value,
+        on_timeout=_contact_timeout,
+    )
+    try:
+        return result | contact_smoke.run(
+            gateway,
+            member,
+            send=bool(send),
+            field=field or contact_smoke.DEFAULT_FIELD,
+            report=_contact_progress,
+        )
+    except contact_smoke.RoundTripAborted as error:
+        error.result = result | error.result
+        raise
+    finally:
+        gateway.close()
+
+
+def _contact_progress(result):
+    """Print the marker step's value-free result before the restore runs."""
+    print(
+        json.dumps({"target": "parishsoft_contact", "step": "marker", **result}),
+        file=sys.stderr,
+        flush=True,
+    )
+
+
+def _contact_timeout(limit, elapsed):
+    """Log a contact smoke request killed at its deadline (what, limit, elapsed)."""
+    from .audit.timeouts import record_timeout
+
+    record_timeout(
+        Event.HELPER_TIMED_OUT,
+        what="source_helper",
+        helper="parishsoft_http_worker",
+        limit_seconds=limit,
+        elapsed_seconds=elapsed,
+        bind_task=False,
+    )
 
 
 def check_workspace(configuration, *, delegated_email, send_to=None):
@@ -288,6 +380,15 @@ def execute_smoke(args):
             result = check_parishsoft(
                 configuration, organization_id=int(args.organization_id)
             )
+        elif args.target == "parishsoft_contact":
+            result = check_parishsoft_contact(
+                configuration,
+                organization_id=int(args.organization_id),
+                member_id=args.member_id,
+                confirm_member_id=args.confirm_member_id,
+                field=args.field,
+                send=bool(args.send),
+            )
         elif args.target == "google_workspace":
             result = check_workspace(
                 configuration,
@@ -302,6 +403,11 @@ def execute_smoke(args):
             result = check_google_oauth(configuration)
     except Exception as error:
         emit_failure(error, event=Event.STARTUP_REJECTED)
+        partial = getattr(error, "result", None)
+        if args.target == "parishsoft_contact" and isinstance(partial, dict):
+            # A contact round trip interrupted after a write: its value-free
+            # partial result says whether the original was put back.
+            print(json.dumps({"target": args.target, **partial}, sort_keys=True))
         print(
             "ERROR: smoke check refused or failed; check the target, the "
             "consumer's credential mount and the operator options",
