@@ -10,7 +10,7 @@ grant or operational-event change (the event list is a SQL constraint, frozen
 for launch). The Admin home page reads those records back for a notice.
 
 The record is display-only. It never changes a campaign's Ministry
-selections, Ministry activity or anything a Family sees.
+selections or anything a Family sees.
 """
 
 import json

@@ -123,7 +123,6 @@ class MinistryQuery:
     """Private search/date state travels only in bounded CSRF POST forms."""
 
     search: str = ""
-    activity: str = "any"
     history: str = "current"
     state: str = "any"
     start: str = ""
@@ -152,8 +151,7 @@ class MinistryQuery:
         query = cls(**(values | {"page": parse_page(values.get("page", "1"))}))
         bounded_text(query.search)
         if (
-            query.activity not in {"any", "active", "inactive", "unavailable"}
-            or query.history not in {"current", "all"}
+            query.history not in {"current", "all"}
             or query.state not in STATES
             or query.sort not in SUMMARY_TOKENS | {"newest", "oldest"}
             or query.size not in {str(size) for size in PAGE_SIZES}
@@ -186,14 +184,25 @@ class MinistryQuery:
     def form_values(self):
         """Keep applied selection through native pagination without query strings.
 
-        Page and size choose only the screen's window, so they are left out:
-        the SQL filters and an export capture accept exactly these keys.
+        Page and size choose only the screen's window, so they are left out.
+        The SQL selection and an export capture take ``selection_filters``.
         """
         return {
             key: getattr(self, key)
             for key in self.__dataclass_fields__
             if key not in {"page", "size"}
         }
+
+    def selection_filters(self):
+        """The ``filters`` the SQL selection and an export capture accept.
+
+        The frozen selection (``stewardship_ministry_report_v3``) and the
+        export capture guard still take an ``activity`` filter, whose
+        neutral "any" selects every Ministry. The filter itself is gone
+        (#1267), so always send "any", as Ministry follow-up sends its
+        retired assignee filter (``ministry_followup.selection_filters``).
+        """
+        return self.form_values() | {"activity": "any"}
 
     @property
     def page_size(self):
@@ -213,7 +222,7 @@ def packet_choices(result, query, read_every):
     unfiltered summary once, through the same scoped selection.
     """
     summaries = result["summaries"]
-    if query.search or query.activity != "any" or result["total"] > len(summaries):
+    if query.search or result["total"] > len(summaries):
         summaries = read_every()["summaries"]
     return sorted(
         ({"duid": row["duid"], "name": row["name"]} for row in summaries),
@@ -224,23 +233,12 @@ def packet_choices(result, query, read_every):
 def reads_every_ministry(principal):
     """Whether ``principal`` reads every Ministry: Staff or an Administrator.
 
-    Only they see Ministry activity (Active, Inactive, Not in ParishSoft
-    data) and whether a Ministry is still in the campaign. Those are the
-    Administrator's campaign settings and change nothing a Ministry leader
-    does with a request, so a leader's pages leave them out (#1135).
+    Only they see whether a Ministry is still in ParishSoft's data and in
+    the campaign. Those are the Administrator's concerns and change nothing
+    a Ministry leader does with a request, so a leader's pages leave them
+    out (#1135).
     """
     return allows(principal, Capability.MINISTRY_REPORT)
-
-
-def refuse_leader_activity(principal, query):
-    """Return ``query``, refusing an activity filter from a Ministry leader.
-
-    A leader's page offers no Ministry activity filter and its forms send
-    only "any" (#1135), so any other value is a hand-made request.
-    """
-    if query.activity != "any" and not reads_every_ministry(principal):
-        raise ValueError("Invalid Ministry filters.")
-    return query
 
 
 def can_report(principal):
@@ -378,7 +376,7 @@ def ministry_page(
             "page_limit => %s, page_offset => %s)::text",
             [
                 campaign_id,
-                json.dumps(query.form_values()),
+                json.dumps(query.selection_filters()),
                 principal.identity,
                 ministry_id,
                 action,
@@ -409,8 +407,8 @@ def ministry_page(
     ):
         raise PermissionError("Ministry report access is unavailable.")
     if ministry_id is not None and not result["summaries"]:
-        # A changed activity filter can legitimately hide a selected Ministry;
-        # never turn an empty result into a broader fallback scope.
+        # A filter can legitimately hide a selected Ministry; never turn an
+        # empty result into a broader fallback scope.
         result["rows"] = []
     for summary in result["summaries"]:
         summary["progress"] = out_of(

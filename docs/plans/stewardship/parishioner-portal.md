@@ -74,7 +74,7 @@ The flow is a single guided response, not a general Family dashboard.
 1. Show deterministic current Ministries per Member, leave choices, and an
    on-demand searchable/sorted join list excluding current participation.
 2. Apply the campaign Ministry set and the
-   [Admin-managed activity policy](../../specs/stewardship/admin-portal/spec.md#ministry-activity-management)
+   [Admin-managed activity policy](../../specs/stewardship/admin-portal/spec.md#ministries-page)
    to both current memberships and choices, and create no source roster mutation.
    Preserve hidden prior requests and recheck policy at final submission.
 3. Display prior pledge/current contribution with mapped period/source-as-of,

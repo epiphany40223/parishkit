@@ -43,13 +43,11 @@ pytestmark = pytest.mark.django_db(transaction=True)
                 "proposed_without_census",
             ),
         ),
-        ("inactive_ministry", ("inactive_ministry",)),
         ("unselected_ministry", ("unselected_ministry",)),
         ("proposed_leave", ("proposed_leave",)),
     ],
     ids=[
         "common-fixture",
-        "inactive-ministry",
         "unselected-ministry",
         "proposed-member",
     ],
@@ -64,26 +62,6 @@ def test_sql_revalidates_complete_ministry_aggregate(
     form = start(harness, census=setup_fault == "proposed_leave")
     if setup_fault == "unselected_ministry":
         configure(harness, census=False, selected=(4,))
-        from .test_response_http_postgresql import load_form
-
-        form = load_form(harness)
-    elif setup_fault == "inactive_ministry":
-        configure(
-            harness,
-            census=False,
-            patches=[
-                {
-                    "operation": "add",
-                    "section": "ministries",
-                    "id": str(uuid4()),
-                    "values": {
-                        "organization_id": 12345,
-                        "ministry_duid": 9,
-                        "active": False,
-                    },
-                }
-            ],
-        )
         from .test_response_http_postgresql import load_form
 
         form = load_form(harness)
@@ -104,7 +82,7 @@ def test_sql_revalidates_complete_ministry_aggregate(
             choices["leave"] = [9]
         elif fault == "unknown_ministry":
             choices["join"] = [999]
-        elif fault in {"inactive_ministry", "unselected_ministry"}:
+        elif fault == "unselected_ministry":
             choices["join"] = [9]
         elif fault == "proposed_leave":
             result["ministries"]["proposed_members"][proposed_id]["leave"] = [4]

@@ -560,8 +560,8 @@ Notes on the groups:
   notice, grey out with the menu's reason while the menu greys Dates and mail
   schedules, as for an archived campaign (#1261;
   [unavailable menu pages](../ui-conventions/spec.md#unavailable-menu-pages)).
-- **Ministries** is the one home for Ministries: parish-wide
-  [Ministry activity](#ministry-activity-management), with
+- **Ministries** is the one home for Ministries: the parish's
+  [ParishSoft Ministries](#ministries-page), with
   [this campaign's Ministries](#changing-a-live-campaigns-ministries) reached
   from it. Campaign settings links to the campaign's Ministries page; it is
   not a second home.
@@ -887,7 +887,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `daily_digest_snapshot` | Daily report | Emailed reports | Administrator, Staff | (report document title) daily report | `/admin/reports/emailed/daily/<snapshot>/` | (same) | Its old address, which daily report emails sent before NAV-12 link, is gone, with no redirect (#864). |
 | `parish_settings` | Parish settings | Menu: Parish settings | Administrator | (same) | `/admin/parish/settings/` | (same) | Hand-written Administration link removed. |
 | `branding_settings` | Parish logos | Menu: Parish logos | Administrator | (same) | `/admin/parish/logos/` | (same) | Uploads, the review of staged logos (`?review=<bundle>`) and Apply all happen here (#750); the old Review parish logos address is gone. |
-| `ministries` | Ministries | Menu: Ministries | Administrator | Ministry activity | `/admin/parish/ministries/` | (same) |  |
+| `ministries` | Ministries | Menu: Ministries | Administrator | Ministry activity | `/admin/parish/ministries/` | (same) | A read-only catalog: no Activity column, sort, filter or Review activation / inactivation, and every POST is refused (Administrator, 2026-10-13, #1267). |
 | `hosted_files` | Hosted files | Menu: Hosted files | Administrator | (same) | `/admin/parish/files/` | (same) |  |
 | `hosted_file_delete` | Delete hosted files | Hosted files | Administrator | (same) | `/admin/parish/files/deletion/` (POST only) | (same) | The table's confirmation dialog posts here (#879); it answers with a redirect or a refusal, never a page. |
 | `hosted_file_rename` | Change placeholder name | Hosted files | Administrator | (same) | `/admin/parish/files/<file>/name/` | (same) |  |
@@ -2019,53 +2019,41 @@ same preview functions, so the two pages never disagree.
 The command line offers the same schedule, validation and preview (see the
 [automation action inventory](../admin-automation/spec.md#integrations-and-credentials)).
 
-### Ministry activity management
+### Ministries page
 
-Admins can mark a Ministry inactive or reactivate it through an Admin web
-screen. The screen lists the current Ministry catalog with name, local
-active/inactive state and campaign inclusion, and supports searching by name
-and filtering by status, in a shared
+The Ministries page lists the current ParishSoft Ministry catalog with each
+Ministry's name and whether it is in the current campaign, and supports
+searching by name, in a shared
 [Admin table](../ui-conventions/spec.md#admin-tables); it shows no Ministry
 DUID ([table column order](../ui-conventions/spec.md#table-column-order)).
-Admins select one or more Ministries and activate or inactivate them together.
-Saves use the ordinary versioned YAML configuration-request workflow, with
-optimistic concurrency, an impact preview (shown in the
-[review dialog](../ui-conventions/spec.md#review-dialog)) and audit; one bulk change is one
-request of at most 100 Ministries, applied atomically, and selected Ministries
-already in the requested state are listed and left alone. A pending save is
-not presented as applied. Until #750 converts it, the review, Apply and the
-change's status appear
-[in place](../ui-conventions/spec.md#in-place-controls) under the table.
+The page changes nothing. One visible sentence above the table, and the "In
+current campaign" column, link to where a campaign's Ministries are chosen:
+Campaign settings → Ministry selections, for a draft and a live campaign
+alike (see
+[Changing a live campaign's Ministries](#changing-a-live-campaigns-ministries));
+the longer explanation is in the page's About panel.
 
-Activity and campaign inclusion are separate settings, and this screen changes
-only activity. One visible sentence above the table says so and names where
-inclusion changes (the longer explanation is in the page's About panel), and
-the "In current campaign" column links there too: Campaign settings →
-Ministry selections, for a draft and a live campaign alike (see
-[Changing a live campaign's Ministries](#changing-a-live-campaigns-ministries)).
-When a bulk preview
-includes Ministries that are not in the current campaign, the preview names
-them, says that activation does not add them to the campaign and links to the
-same place.
+There is no local active/inactive state for a Ministry (Administrator
+decision, 2026-10-13,
+[#1267](https://github.com/epiphany40223/parishkit/issues/1267)). That
+removed the earlier Ministry activity management: the Activity column, sort
+and filter, the Review activation and Review inactivation buttons and their
+review, and the parish-wide override they set (the configuration's retired
+`ministries` section; see the
+[data specification](../data/spec.md#retired-ministry-activity)).
+ParishSoft's own catalog flag is not used either: it is not reliable. The
+page answers every POST with 405, and its retired view parameters
+(`state`, `sort=active` and a change's `request`) are refused like any other
+unknown parameter, with no redirect.
 
-ParishSoft's Ministry catalog does not supply a reliable active/inactive flag.
-Catalog entries default to locally active unless an Admin has marked them
-inactive. The parish-wide override is keyed by ParishSoft organization and
-Ministry DUID, not its name or a campaign. Refreshes, renames, new campaigns and
-temporary disappearance/reappearance in the catalog never erase an override.
-A Ministry absent from the current catalog is unavailable regardless of its
-local setting. Reactivation never creates a source Ministry or changes its
-upstream roster.
-
-Inactive Ministries are not shown to parishioners: they are omitted from both
-current-membership displays and join/leave controls. Visibility requires current
-catalog presence, local active status and inclusion in the campaign's selected
-Ministry set. Staff/Admin records, source rosters, past submissions and existing
-follow-up requests remain intact; hiding a Ministry is not a request to leave
-it or to withdraw earlier interest. The server enforces the same eligibility
-as the UI and rechecks it at submission. A stale form cannot create new actions
-for an inactive Ministry, and omission of hidden fields never cancels retained
-requests. Use the ordinary changed-baseline reconfirmation flow for stale forms.
+A Ministry is shown to parishioners when it is present in the current
+catalog and in the campaign's selected Ministry set; to hide one, remove it
+from the campaign's selections. Staff/Admin records, source rosters, past
+submissions and existing follow-up requests remain intact. The server
+enforces the same eligibility as the UI and rechecks it at submission. A
+stale form cannot create new actions for a Ministry no longer offered, and
+omission of hidden fields never cancels retained requests. Use the ordinary
+changed-baseline reconfirmation flow for stale forms.
 
 A Ministry's name never affects its visibility. A Ministry name is an opaque
 string: every page, report, export, email and the Family form shows the full
@@ -2097,17 +2085,15 @@ Campaign settings, Create the campaign and (before #142) first-campaign setup
 follow the same cleaning, with
 "Fund" and its DUID as the fallback, and are not logged.
 
-Local activity may be changed during a campaign without editing its
-Ministry-selection set. Reactivating an excluded Ministry does not add it to
-that set; see
-[Changing a live campaign's Ministries](#changing-a-live-campaigns-ministries). Historical administrative views retain their recorded inputs;
-current parishioner pages and previews use the applied visibility policy.
+Historical administrative views retain their recorded inputs; current
+parishioner pages and previews use the applied campaign selections.
 
 For Ministry leaders, whose Ministries come from ParishSoft roles
-([#922](https://github.com/epiphany40223/parishkit/issues/922)), an active
-Ministry means one present in the current catalog and locally active, so
-marking a Ministry inactive removes it from its leaders' Ministries on their
-next request. It does not change any [user's](#portal-user-management) role.
+([#922](https://github.com/epiphany40223/parishkit/issues/922)), a leader's
+Ministries are those present in the current catalog and chosen for the
+campaign, so removing a Ministry from the selections removes it from its
+leaders' Ministries on their next request. It does not change any
+[user's](#portal-user-management) role.
 
 ### ParishSoft Ministry catalog changes
 
@@ -2150,8 +2136,8 @@ snapshots from the last seven days (at most five refreshes, newest first). A
 rename shows the old and the new full names and reads nothing into either
 (#971). Every entry names its Ministry and never shows its DUID
 ([table column order](../ui-conventions/spec.md#table-column-order)). The
-panel links to Ministry activity, where an Administrator can mark
-a retired Ministry inactive.
+panel links to Ministries and, with a current campaign, to its Ministry
+selections, where an Administrator can remove a retired Ministry.
 
 While the current campaign is in draft, scheduled or open, entries for
 Ministries in its selections are marked "in the current campaign", the panel
@@ -2187,8 +2173,6 @@ While background work holds campaign changes, the list stays locked, its
 tip saying it can change once that work finishes. A closed or archived
 campaign's selections never change.
 
-- **Hide** a Ministry without removing it: mark it inactive on Ministry
-  activity. It disappears from every Family form; nothing else changes.
 - **Remove** takes a DUID out of the selections. Answers already given are
   never deleted or rewritten: submissions keep their recorded inputs, join and
   stop requests stay in Ministry follow-up until staff close them, and the
@@ -2200,8 +2184,8 @@ campaign's selections never change.
   longer sees that Ministry, and resubmitting does not withdraw its requests.
   Adding the DUID back shows those answers unmarked again, including on the
   Family form.
-- **Add** accepts only a DUID that is in the current ParishSoft catalog and
-  locally active. Families see it on their next visit. Families who already
+- **Add** accepts only a DUID that is in the current ParishSoft catalog.
+  Families see it on their next visit. Families who already
   submitted are not asked again and get no mail.
 
 The review lists each added and removed Ministry, with each one's submitted
@@ -2227,13 +2211,13 @@ structural settings are locked". When the selections of a structurally locked
 campaign change, it requires the campaign to be scheduled or active, the
 selections to stay a sorted list of distinct whole numbers, and every added
 DUID to be visible under the candidate configuration: present in the promoted
-catalog, locally active and in a campaign with the Ministry module. The
+catalog and in a campaign with the Ministry module. The
 configuration installer holds no source grants, so it reads catalog presence
 only through the definer function `stewardship_ministry_catalog_v1()`, which
 returns DUIDs and nothing else and which only that login may execute. A
 removal reads no catalog. Activation repeats the addition check under the lock
-source promotion takes; if a refresh dropped or an Administrator inactivated
-the Ministry after the request was checked, the request fails and the previous
+source promotion takes; if a refresh dropped the Ministry after the request
+was checked, the request fails and the previous
 settings stay in effect, so the Administrator reviews the change again.
 
 ## Campaign configuration
@@ -6983,7 +6967,7 @@ Only Admins access the combined log screen. It supports:
 - CSV, XLSX or JSON Lines export of the filtered result (below).
 
 Ministry filtering offers each Ministry of the current ParishSoft catalog by
-name (an inactive one marked "(inactive)") and never shows its DUID; the chosen Ministry's DUID (the filter's value,
+name and never shows its DUID; the chosen Ministry's DUID (the filter's value,
 also in a link) matches an entry whose detail names it as `ministry_duid` or
 in any sorted Ministry list, so it includes both
 interactive event identifiers and the

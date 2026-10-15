@@ -44,7 +44,6 @@ ALLOWED = {
         "ministries",
         "duid",
         "name",
-        "active",
         "included",
     },
     "branding show": {
@@ -123,13 +122,13 @@ def test_parish_show_is_its_golden_projection():
 
 
 def test_ministries_list_is_its_golden_projection():
-    """Every catalog row in the page's order, without the activity records."""
+    """Every catalog row in the page's order; no ``active`` (#1267)."""
     catalog = [
-        {"duid": 7, "name": "Choir", "active": True, "included": True},
-        {"duid": 3, "name": "Ushers", "active": False, "included": False},
+        {"duid": 7, "name": "Choir", "included": True},
+        {"duid": 3, "name": "Ushers", "included": False},
     ]
     state = (configuration(current=CAMPAIGN), SimpleNamespace(snapshot_id=SNAPSHOT))
-    result = admin_settings.ministry_model((*state, {}, catalog)).to_document()
+    result = admin_settings.ministry_model((*state, catalog)).to_document()
     assert result == {
         "version": VERSION,
         "campaign_id": str(CAMPAIGN),
@@ -234,16 +233,17 @@ def test_the_catalog_entries(name, model, options):
 def test_the_ledger_covers_the_pages():
     """Each page is covered by its read; its changes are still owed.
 
-    Parish settings' changes are covered too (``test_admin_parish``).
+    Parish settings' changes are covered too (``test_admin_parish``), and
+    Ministries changes nothing since #1267, so nothing is owed for it.
     """
-    for route, name in (
-        ("ministries", "ministries list"),
-        ("branding_settings", "branding show"),
-        ("share_settings", "campaign shares"),
+    for route, name, owed in (
+        ("ministries", "ministries list", None),
+        ("branding_settings", "branding show", "PR 10"),
+        ("share_settings", "campaign shares", "PR 10"),
     ):
         assert LEDGER[route].kind == "command"
         assert LEDGER[route].detail == (name,)
-        assert LEDGER[route].owed == "PR 10"
+        assert LEDGER[route].owed == owed
 
 
 @pytest.mark.parametrize(

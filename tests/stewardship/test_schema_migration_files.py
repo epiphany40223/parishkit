@@ -303,7 +303,14 @@ FROZEN = {
     "0090_publication_worker.sql": (
         "67a990b0fee1f8c98619ad6ba9d5a7eaab7c8bade7a2ca874ad4206170c0a956"
     ),
+    "0091_drop_ministry_activity.sql": (
+        "68403af02afe572c5e81765439d08f387668fe85d33b24fdcd63d7bc245a76bc"
+    ),
 }
+
+
+# A frozen file's ``DROP FUNCTION IF EXISTS public.name(``.
+DROPPED_FUNCTION = re.compile(r"^DROP FUNCTION IF EXISTS public\.(\w+)\(", re.M)
 
 
 def function_bodies(text, *, replace):
@@ -426,15 +433,23 @@ def test_latest_migration_copy_of_each_replaced_function_equals_the_baseline():
         )
     latest = {}
     migration_owned = set()
+    dropped = set()
     for path in sorted(MIGRATIONS.glob("*.sql")):
         text = path.read_text(encoding="utf-8")
         migration_owned |= function_bodies(text, replace=False).keys()
-        latest.update(function_bodies(text, replace=True))
+        replaced = function_bodies(text, replace=True)
+        latest.update(replaced)
+        # A later file that drops a function (#1267's 0091 drops the Ministry
+        # activity projection) leaves no baseline copy to match.
+        dropped -= replaced.keys()
+        dropped |= set(DROPPED_FUNCTION.findall(text))
     assert latest, "no replaced functions found"
     for name, body in latest.items():
         if name in migration_owned:
             # Created by a frozen file, so every install path runs the
             # migration that replaces it; there is no baseline copy to match.
+            continue
+        if name in dropped and name not in baseline:
             continue
         assert name in baseline, (
             f"{name} is replaced but never created: a new function uses plain "

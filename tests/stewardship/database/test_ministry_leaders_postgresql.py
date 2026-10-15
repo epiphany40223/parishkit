@@ -44,7 +44,6 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.deployment import ServiceRole
 
 from ..policy_factory import address, assignment
-from ..test_ministry_activity import activity
 from .auth_builders import OMIT, signed_in
 from .campaign_builders import change
 from .leader_builders import FAMILIES, leader, promote_leaders, with_leaders
@@ -191,25 +190,14 @@ def test_leaders_come_from_current_roster_roles(response_service):
     assert effective_roles(
         Campaign.objects.get(pk=harness.campaign.pk).active_configuration.values
     ) == ["Team 1 Leader"]
-    # A Ministry taken out of the campaign, or marked inactive here, drops
-    # out; a campaign without Ministry stewardship has no leaders.
+    # A Ministry taken out of the campaign drops out (there is no inactive
+    # Ministry any more, #1267); a campaign without Ministry stewardship has
+    # no leaders.
     set_roles(harness, ["Chairperson", "Staff"])
     configure(harness, selected=(4,))
     assert scope(users["both@example.org"])[0] == [4]
     configure(harness, selected=(4, 9))
     assert scope(users["both@example.org"])[0] == [4, 9]
-    configure(
-        harness,
-        selected=(4, 9),
-        patches=[
-            {
-                "operation": "add",
-                "section": "ministries",
-                **activity(ministry_duid=9, active=False),
-            }
-        ],
-    )
-    assert scope(users["both@example.org"])[0] == [4]
     # The roster labels Campaign settings offers: whitespace collapsed,
     # case-folded once, and only ones that can be saved.
     offered = roster_role_names()

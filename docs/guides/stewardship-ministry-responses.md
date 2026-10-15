@@ -3,7 +3,7 @@
 [Coordinating tasks](../tasks/stewardship/overall.md#phase-3b-complete-family-flow) ·
 [FAM-05 plan](../plans/stewardship/parishioner-portal.md#fam-05-ministry-and-financial-stewardship-steps) ·
 [Family specification](../specs/stewardship/parishioner-portal/spec.md#ministry-stewardship) ·
-[Activity policy](../specs/stewardship/admin-portal/spec.md#ministry-activity-management) ·
+[Ministries page](../specs/stewardship/admin-portal/spec.md#ministries-page) ·
 [Source reconciliation](../specs/stewardship/data/spec.md#parishsoft-refresh-reconciliation)
 
 [Review rounds and corrections](stewardship-ministry-responses-reviews.md)

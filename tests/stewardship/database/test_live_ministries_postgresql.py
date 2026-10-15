@@ -163,7 +163,7 @@ def admission_error(harness, duids, **values):
     return error.value
 
 
-SQL_REFUSAL = "Live Ministry selections can only add current active Ministries"
+SQL_REFUSAL = "Live Ministry selections can only add current Ministries"
 
 
 def refused(harness, result, refusals, expected=(4,), *, message):
@@ -204,30 +204,23 @@ def checking(monkeypatch, *, bypass):
 
 
 @pytest.mark.parametrize("bypass", [False, True])
-@pytest.mark.parametrize("case", ["missing", "inactive"])
-def test_added_ministry_must_be_current_and_active(
-    response_service, monkeypatch, bypass, case
-):
-    """Python refuses first; with Python bypassed, the SQL guard still refuses."""
+def test_added_ministry_must_be_current(response_service, monkeypatch, bypass):
+    """Python refuses first; with Python bypassed, the SQL guard still refuses.
+
+    There is no inactive Ministry any more (#1267): a Ministry in the
+    ParishSoft catalog can always be added."""
     harness = setup(response_service)
     assert applied(select(harness, [4]))
     refusals = checking(monkeypatch, bypass=bypass)
-    message = "Only current, active Ministries can be added."
-    if case == "missing":
-        # DUID 123 is not in the ParishSoft catalog.
-        refused(harness, select(harness, [4, 123]), refusals, message=message)
-    else:
-        # In the catalog, but marked inactive in the same change.
-        inactive = {
-            "operation": "add",
-            "section": "ministries",
-            "id": str(uuid4()),
-            "values": {"organization_id": 12345, "ministry_duid": 9, "active": False},
-        }
-        result = select(harness, [4, 9], patches=[inactive])
-        refused(harness, result, refusals, message=message)
+    # DUID 123 is not in the ParishSoft catalog.
+    refused(
+        harness,
+        select(harness, [4, 123]),
+        refusals,
+        message="Only current Ministries can be added.",
+    )
     if not bypass:
-        # The current, active Ministry can be added.
+        # The current Ministry can be added.
         assert applied(select(harness, [4, 9]))
 
 

@@ -86,17 +86,13 @@ def _render(query=None, rows=None, *, linked=False):
     )
 
 
-def test_an_inactive_ministry_is_told_apart_from_its_namesake():
-    """Two Ministries named alike: the inactive one says so, and neither
-    label shows a DUID (#1123)."""
+def test_ministry_labels_are_names_without_an_activity_mark():
+    """Two Ministries named alike keep their names, in name order, with no
+    "(inactive)" mark and no DUID (#1123, #1267)."""
     from parishkit.stewardship.audit.log_views import choice_labels
 
-    labels = choice_labels({4: "Choir", 9: "Choir", 2: "Ushers"}, {4, 2})
-    assert [(duid, str(label)) for duid, label in labels] == [
-        (4, "Choir"),
-        (9, "Choir (inactive)"),
-        (2, "Ushers"),
-    ]
+    labels = choice_labels({4: "Choir", 9: "Choir", 2: "Ushers"})
+    assert labels == [(4, "Choir"), (9, "Choir"), (2, "Ushers")]
 
 
 def _ministry_select(query, ministries):

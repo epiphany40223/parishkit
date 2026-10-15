@@ -29,7 +29,6 @@ from .chair_models import (  # noqa: F401
 from .configuration_models import (  # noqa: F401
     AppliedConfigurationVersion,
     AppliedIntegration,
-    MinistryActivity,
     Parish,
 )
 from .content_models import ContentVersion  # noqa: F401

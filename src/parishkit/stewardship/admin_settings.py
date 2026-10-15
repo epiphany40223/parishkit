@@ -49,8 +49,8 @@ class MinistryList(ReadModel):
     ``campaign_id`` is the current campaign (None without one);
     ``snapshot_id`` the promoted ParishSoft snapshot the catalog comes from;
     ``ministries`` each Ministry's ``duid`` (a Ministry's, never a
-    Family's), ``name``, ``active`` (offered to parishioners) and
-    ``included`` (in the current campaign).
+    Family's), ``name`` and ``included`` (in the current campaign). There
+    is no ``active``: the local Ministry activity is gone (#1267).
     """
 
     version: str
@@ -103,14 +103,13 @@ def parish_model(configuration):
 
 def ministry_model(state):
     """``ministries list``'s document from ``ministry_views._state``."""
-    configuration, current, _, catalog = state
+    configuration, current, catalog = state
     return MinistryList(
         version=configuration.active_configuration.digest,
         campaign_id=configuration.current_campaign_id,
         snapshot_id=current.snapshot_id,
         ministries=[
-            {key: row[key] for key in ("duid", "name", "active", "included")}
-            for row in catalog
+            {key: row[key] for key in ("duid", "name", "included")} for row in catalog
         ],
     )
 

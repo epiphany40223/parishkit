@@ -491,7 +491,6 @@ GOLDEN = {
             "ministry": None,
             "requests": None,
             "filters": {
-                "activity": "any",
                 "history": "current",
                 "state": "any",
                 "start": "",
@@ -584,7 +583,6 @@ GOLDEN = {
             "ministry": 9,
             "requests": "join",
             "filters": {
-                "activity": "any",
                 "history": "all",
                 "state": "unresolved",
                 "start": "",

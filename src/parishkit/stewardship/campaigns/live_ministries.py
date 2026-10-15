@@ -4,8 +4,8 @@ A live campaign's structural settings are locked, in Python (admission) and in
 SQL (``stewardship_campaign_pointer_v1``). Its ``ministry_duids`` alone may still
 change while it is scheduled or active. Removing a Ministry is always allowed
 and never touches answers already given; adding one is allowed only for a
-Ministry Families could see now: present in the promoted ParishSoft catalog and
-locally active. SQL repeats both rules when the change activates.
+Ministry Families could see now: present in the promoted ParishSoft catalog.
+SQL repeats both rules when the change activates.
 
 The configuration installer holds no source grants, so catalog presence is
 read through the SECURITY DEFINER ``stewardship_ministry_catalog_v1()``, which
@@ -50,16 +50,15 @@ def live_ministries_editable(campaign, current_campaign_id):
 
 
 def addable_ministries(document):
-    """DUIDs that may be added now: in the promoted catalog and locally active.
+    """DUIDs that may be added now: those in the promoted catalog.
 
-    ``document`` is the configuration whose Ministry activity applies (the
-    candidate during installation). Without a promoted source for the
-    configured ParishSoft organization, nothing can be added. Only logins
-    granted ``stewardship_ministry_catalog_v1()`` may call this.
+    ``document`` is the configuration whose ParishSoft integration names the
+    organization (the candidate during installation). Without a promoted
+    source for that organization, nothing can be added. Only logins granted
+    ``stewardship_ministry_catalog_v1()`` may call this.
     """
     from django.db import connection
 
-    from parishkit.stewardship.accounts.ministry_activity import active_ministries
     from parishkit.stewardship.accounts.ministry_views import current_catalog
     from parishkit.stewardship.source.snapshot_models import SourceCurrent
 
@@ -72,10 +71,7 @@ def addable_ministries(document):
             "WHERE organization_id=%s",
             [current.organization_id],
         )
-        present = frozenset(row[0] for row in cursor.fetchall())
-    return active_ministries(
-        document, organization_id=current.organization_id, catalog_duids=present
-    )
+        return frozenset(row[0] for row in cursor.fetchall())
 
 
 def check_live_selection(campaign, before, after, document):
@@ -89,7 +85,7 @@ def check_live_selection(campaign, before, after, document):
         raise ConfigError("Campaign structural settings are locked.")
     added = set(after) - set(before)
     if added and added - addable_ministries(document):
-        raise ConfigError("Only current, active Ministries can be added.")
+        raise ConfigError("Only current Ministries can be added.")
 
 
 def live_selection_admitted(document, campaign_id):

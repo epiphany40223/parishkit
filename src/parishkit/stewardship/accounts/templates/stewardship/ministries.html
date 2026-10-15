@@ -1,53 +1,33 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
-{% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block title %}{% translate "Ministries" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Ministries" %}</h1>
-{% aboutpage "ministries" %}<p>{% translate "This page turns Ministries on or off for parishioners." %}</p><p>{% translate "Inactive Ministries are hidden from parishioners. Existing participation and earlier requests are preserved. A Ministry leader sees the Ministries of their ParishSoft Ministry roles listed in Campaign settings; an inactive Ministry leaves its leaders' scope until it is active again." %}</p>{% endaboutpage %}
-<p>{% if campaign_link %}{% translate "Only activity changes here; choose this campaign's Ministries in" %} <a href="{{ campaign_link.url }}">{{ campaign_link.label }}</a>.{% else %}{% translate "Only activity changes here; choose a campaign's Ministries in Campaign settings → Ministry selections." %}{% endif %}</p>
+{% aboutpage "ministries" %}<p>{% translate "This page lists the Ministries in the latest ParishSoft data and whether each is in the current campaign. It changes nothing." %}</p><p>{% translate "Families see the Ministries chosen for the campaign that ParishSoft still lists. A Ministry leader sees the Ministries of their ParishSoft Ministry roles listed in Campaign settings." %}</p>{% endaboutpage %}
+<p>{% if campaign_link %}{% translate "Choose this campaign's Ministries in" %} <a href="{{ campaign_link.url }}">{{ campaign_link.label }}</a>.{% else %}{% translate "Choose a campaign's Ministries in Campaign settings → Ministry selections." %}{% endif %}</p>
 <form id="table-filters" data-table-sync method="get" class="filter-bar">
   <div><label for="ministry-query">{% translate "Search by name" %}</label>
   <input id="ministry-query" name="q" value="{{ query }}" maxlength="200"></div>
-  <div class="short"><label for="ministry-state">{% translate "Activity" %}</label>
-  <select id="ministry-state" name="state">
-    <option value="all" {% if state == 'all' %}selected{% endif %}>{% translate "All" %}</option>
-    <option value="active" {% if state == 'active' %}selected{% endif %}>{% translate "Active" %}</option>
-    <option value="inactive" {% if state == 'inactive' %}selected{% endif %}>{% translate "Inactive" %}</option>
-  </select></div>
   {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
   {% button type="submit" %}{% translate "Filter" %}{% endbutton %}
 </form>
 {% translate "Ministry pages" as navigator_label %}
 <div id="{{ table.anchor }}" data-table-region>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
-{% comment %}Review, apply and the change's status happen in place, in the review region under the table (#750). The selection's answer replaces only that region and the step indicator (data-in-place-only), so the ticks, page and sort stay; ticking or choosing Select all again withdraws a shown review (ui-v1.js, data-review-of).{% endcomment %}<form id="ministry-selection" method="post" action="#settings-review" data-in-place data-in-place-only="flow-steps" data-in-place-message="{% translate 'Review ready.' %}" data-select-table data-missing-hint="{% translate 'Select at least one Ministry to review.' %}">
-  {% csrf_token %}<input type="hidden" name="action" value="preview">
-  <div class="bulk-bar">
-    {% button type="submit" name="active" value="yes" data-bulk-action %}{% translate "Review activation" %}{% endbutton %}
-    {% button type="submit" name="active" value="no" variant="secondary" data-bulk-action %}{% translate "Review inactivation" %}{% endbutton %}
-    {% include "stewardship/table-selection.html" %}
-  </div>
   <div class="table-scroll" tabindex="0" role="region" aria-labelledby="ministry-table-caption">
   <table class="data-table">
     <caption id="ministry-table-caption">{% translate "Ministries from the parish source" %}</caption>
     <thead><tr>
-      <th scope="col" class="select-col"><input type="checkbox" data-select-all aria-label="{% translate 'Select every Ministry on this page' %}"></th>
       {% translate "Ministry" as heading %}{% sort_heading table "name" heading %}
-      {% translate "Activity" as heading %}{% sort_heading table "active" heading %}
       {% translate "In current campaign" as heading %}{% sort_heading table "included" heading %}
     </tr></thead>
     <tbody>
     {% for ministry in table.rows %}<tr>
-      <td class="select-col"><input type="checkbox" name="ministry_duid" value="{{ ministry.duid }}" data-select-row aria-label="{% blocktranslate with name=ministry.name %}Select {{ name }}{% endblocktranslate %}"></td>
       <th scope="row">{{ ministry.name }}</th>
-      <td>{% if ministry.active %}<span class="status-badge status-badge-on">{% translate "Active" %}</span>{% else %}<span class="status-badge">{% translate "Inactive" %}</span>{% endif %}</td>
       <td>{% if campaign_link %}<a href="{{ campaign_link.url }}">{% if ministry.included %}{% translate "Included" %}{% else %}{% translate "Not included" %}{% endif %}</a>{% elif ministry.included %}{% translate "Included" %}{% else %}{% translate "Not included" %}{% endif %}</td>
-    </tr>{% empty %}<tr><td colspan="4">{% if query or state != "all" %}{% translate "No Ministries match these filters. Clear Search by name, or choose All under Activity." %}{% else %}{% translate "No Ministries yet. They come from ParishSoft with each data load; to load them now, use Refresh from ParishSoft." %}{% endif %}</td></tr>{% endfor %}
+    </tr>{% empty %}<tr><td colspan="2">{% if query %}{% translate "No Ministries match these filters. Clear Search by name." %}{% else %}{% translate "No Ministries yet. They come from ParishSoft with each data load; to load them now, use Refresh from ParishSoft." %}{% endif %}</td></tr>{% endfor %}
     </tbody>
   </table>
   </div>
-</form>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
-{% comment %}Under the table, so a review appearing never moves the table or its buttons (#736).{% endcomment %}<div id="settings-review" data-in-place-region data-keep-height>{% translate "You changed the selection after reviewing it. Choose Review activation or Review inactivation again to see what will change." as stale_note %}{% include 'stewardship/settings-review.html' with form_id="ministry-selection" stale_note=stale_note %}</div>
 {% endblock %}

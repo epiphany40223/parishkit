@@ -317,6 +317,12 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0090 (#528) creates nothing: it replaces the derived guard (a base function)
 # and two of 0087's guards in place, so once 0087's file installs again with its
 # older guard bodies, 0090's file runs again too (``CLOSURE_RERUN``).
+# 0091 (#1267) creates nothing:
+# it drops the Ministry activity table and replaces, in place, functions
+# that read it, two of which (0064's report and 0070's leader definition)
+# are CLOSURE_CREATED and one (0057's leaders list) is in
+# runtime_grants.CLOSURE_FUNCTIONS; their files bring back the older bodies,
+# so ``CLOSURE_OLD_BODIES`` puts 0091's bodies back afterwards.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -546,6 +552,50 @@ CLOSURE_REPLACED = {
         "clears the debug-off switch in Production",
     ),
 }
+
+
+# Closure migrations whose frozen files replace, in place, functions that a
+# reinstalled earlier file (``CLOSURE_CREATED``, ``CLOSURE_ALTERED`` or
+# runtime_grants.CLOSURE_FUNCTIONS) brings back with an older body, with
+# the text that marks such an older body.
+CLOSURE_OLD_BODIES = {
+    ("stewardship_accounts", "0022_drop_ministry_activity"): (
+        "stewardship_ministry_activity"
+    ),
+}
+
+
+def rerun_old_bodies(cursor, migrations):
+    """Replace again each older body a ``CLOSURE_OLD_BODIES`` file replaced.
+
+    ``migrations`` is the loader's ``disk_migrations``. Only a function that
+    exists and still holds the older body's marker is replaced, from its
+    statement in the file (with the file's ``SECURITY DEFINER`` alter for
+    it), so this also works while ``swap_pending`` has dropped some of them
+    and ``closure_functions_absent`` puts its own back first.
+    """
+    for key, marker in CLOSURE_OLD_BODIES.items():
+        module = sys.modules[migrations[key].__module__]
+        text = Path(module.FROZEN_SQL).read_text(encoding="utf-8")
+        names = re.findall(r"^CREATE OR REPLACE FUNCTION public\.(\w+)\(", text, re.M)
+        for name in names:
+            cursor.execute(
+                "SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace "
+                "WHERE n.nspname='public' AND p.proname=%s AND strpos(p.prosrc, %s)>0",
+                [name, marker],
+            )
+            if cursor.fetchone() is None:
+                continue
+            start = text.index(f"CREATE OR REPLACE FUNCTION public.{name}(")
+            quote = re.compile(r"\bAS\s+(\$\w*\$)").search(text, start)
+            end = text.index(quote[1] + ";", quote.end()) + len(quote[1]) + 1
+            cursor.execute(text[start:end])
+            for alter in re.findall(
+                rf"^ALTER FUNCTION public\.{name}\([^)]*\) SECURITY DEFINER;$",
+                text,
+                re.M,
+            ):
+                cursor.execute(alter)
 
 
 def _replaced(text, name):
@@ -792,6 +842,7 @@ def swap_pending():
     assert set(CLOSURE_ALTERED.values()) <= set(closure)
     assert {key for key, _ in CLOSURE_REPLACED.values()} <= set(closure)
     assert set(CLOSURE_RERUN) | set(CLOSURE_RERUN.values()) <= set(closure)
+    assert set(CLOSURE_OLD_BODIES) <= set(closure)
     removed = []
     with transaction.atomic(), connection.cursor() as cursor:
         for app, name in closure:
@@ -861,6 +912,7 @@ def swap_pending():
                 if not cursor.fetchone()[0]:
                     module = sys.modules[loader.disk_migrations[key].__module__]
                     cursor.execute(Path(module.FROZEN_SQL).read_text(encoding="utf-8"))
+            rerun_old_bodies(cursor, loader.disk_migrations)
             for app, name, applied in removed:
                 # A test that ran the full migration recorded the row again.
                 cursor.execute(
@@ -908,6 +960,7 @@ def closure_functions_absent():
                 if cursor.fetchone()[0] is None:
                     module = sys.modules[migrations[key].__module__]
                     cursor.execute(Path(module.FROZEN_SQL).read_text(encoding="utf-8"))
+            rerun_old_bodies(cursor, migrations)
 
 
 @contextmanager

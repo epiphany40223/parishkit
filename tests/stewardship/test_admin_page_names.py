@@ -423,9 +423,6 @@ ALLOWED = {
     # "Mail schedules keep sending the same kind of email": the schedules
     # themselves, not the page.
     ("accounts/templates/stewardship/setup-content.html", "Mail schedules"),
-    # "Ministry activity" filters Ministry requests by whether a Ministry is
-    # active; it names the Ministry's state, not the Ministries page.
-    ("accounts/templates/stewardship/ministry-report.html", "Ministry activity"),
     # "Back to edit" steps back inside the Family form, outside the Admin
     # portal and its page names.
     ("accounts/static/stewardship/family-v1.js", "Back to "),

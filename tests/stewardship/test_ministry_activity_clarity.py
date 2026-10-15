@@ -1,4 +1,4 @@
-"""Ministry activity tells "active" apart from "in the current campaign"."""
+"""The read-only Ministries page, with no local activity (#1267)."""
 
 from types import SimpleNamespace
 from uuid import uuid4
@@ -12,7 +12,6 @@ from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.reports.ministries import (
     MinistryQuery,
     reads_every_ministry,
-    refuse_leader_activity,
 )
 from parishkit.stewardship.web.tables import paginate
 
@@ -22,8 +21,8 @@ LINK = {"url": URL, "label": "Campaign settings → Ministry selections"}
 
 
 def ministry(name, duid, *, included):
-    """One catalog row as the Ministry activity view builds it."""
-    return {"duid": duid, "name": name, "active": True, "included": included}
+    """One catalog row as the Ministries view builds it."""
+    return {"duid": duid, "name": name, "included": included}
 
 
 def test_campaign_link_opens_where_the_selections_change():
@@ -42,54 +41,14 @@ def test_listing_links_campaign_settings_ministry_selections():
             "table": paginate(
                 [ministry("Choir", 1, included=True)],
                 {},
-                carry=(("state", "all"),),
+                carry=(),
                 sorting=ministry_views.CATALOG_SORTING,
             ),
             "query": "",
-            "state": "all",
             "campaign_link": LINK,
         },
     )
     assert f'<a href="{URL}">' in html
-
-
-def test_preview_explains_that_activation_does_not_include():
-    """Selected Ministries outside the campaign are named, with the way to add them."""
-    rows = [ministry("Choir", 1, included=True), ministry("Ushers", 2, included=False)]
-    html = render_to_string(
-        "stewardship/ministry-review.html",
-        {
-            "review": {
-                "changing": [],
-                "unchanged": rows,
-                "not_included": [rows[1]],
-                "campaign_link": LINK,
-                "new_active": True,
-            }
-        },
-    )
-    assert "Already active, left as they are: Choir, Ushers" in html
-    assert "Activation doesn’t add Ministries to the campaign" in html
-    note = html.split("These are not in the current campaign:")[1].split("</p>")[0]
-    assert "Ushers" in note and "Choir" not in note
-    assert f'href="{URL}"' in html
-
-
-def test_preview_without_excluded_selection_has_no_note():
-    """When every selected Ministry is already included, no note is shown."""
-    html = render_to_string(
-        "stewardship/ministry-review.html",
-        {
-            "review": {
-                "changing": [],
-                "unchanged": [ministry("Choir", 1, included=True)],
-                "not_included": [],
-                "campaign_link": LINK,
-                "new_active": True,
-            }
-        },
-    )
-    assert "Activation doesn’t add" not in html
 
 
 def test_listing_links_campaign_column_and_intro():
@@ -106,29 +65,47 @@ def test_listing_links_campaign_column_and_intro():
             "table": paginate(
                 rows,
                 {},
-                carry=(("state", "all"),),
+                carry=(),
                 sorting=ministry_views.CATALOG_SORTING,
             ),
             "query": "",
-            "state": "all",
             "campaign_link": LINK,
         },
     )
     assert "In current campaign" in html
     start = html.index('data-about-page="ministries"')
     about, visible = html[start:].split("</details>", 1)
-    assert "This page turns Ministries on or off for parishioners." in about
-    assert "This page turns Ministries on or off for parishioners." not in visible
-    assert "Only activity changes here; choose this campaign's Ministries in" in visible
+    assert "It changes nothing." in about and "It changes nothing." not in visible
+    assert "Choose this campaign's Ministries in" in visible
     assert html.count(f'href="{URL}"') == 3
 
 
-def test_only_activation_of_excluded_ministries_needs_the_note():
-    """Inactivation, or no current campaign, never shows the inclusion note."""
-    rows = [{"duid": 1, "included": True}, {"duid": 2, "included": False}]
-    assert ministry_views.not_included(rows, True, LINK) == [rows[1]]
-    assert ministry_views.not_included(rows, False, LINK) == []
-    assert ministry_views.not_included(rows, True, None) == []
+def test_listing_has_no_activity_column_filter_or_actions():
+    """There is no local activity (Administrator, 2026-10-13; #1267): no
+    Activity column, sort, filter or badge, no row selection and no Review
+    activation or Review inactivation buttons; the page changes nothing."""
+    html = render_to_string(
+        "stewardship/ministries.html",
+        {
+            "table": paginate(
+                [
+                    ministry("Choir", 1, included=True),
+                    ministry("Ushers", 2, included=False),
+                ],
+                {},
+                carry=(),
+                sorting=ministry_views.CATALOG_SORTING,
+            ),
+            "query": "",
+        },
+    )
+    assert ">Activity<" not in html and 'name="state"' not in html
+    assert "status-badge" not in html and "sort=active" not in html
+    assert "Review activation" not in html and "Review inactivation" not in html
+    assert 'method="post"' not in html and "data-select-row" not in html
+    assert "settings-review" not in html and "nactive" not in html
+    assert set(ministry_views.CATALOG_SORTING.orders) == {"name", "included"}
+    assert {"q", "page", "size", "sort"} == ministry_views.VIEW_FIELDS
 
 
 def test_listing_sorts_every_column_on_the_server():
@@ -162,33 +139,32 @@ def test_listing_sorts_every_column_on_the_server():
     assert '<input type="hidden" name="sort" value="-name">' in html
 
 
-@pytest.mark.parametrize("activity", ["active", "inactive", "unavailable"])
-def test_only_staff_and_administrators_filter_by_ministry_activity(activity):
-    """Ministry activity is shown to, and filtered by, Staff and
-    Administrators only; a Ministry leader's activity filter is refused,
-    while "any", what a leader's page sends, passes (#1135)."""
-    query = MinistryQuery(activity=activity)
+def test_the_ministry_report_has_no_activity_filter():
+    """The report's Ministry activity filter is gone for everyone (#1267):
+    the field is refused as unknown, and the SQL selection still gets the
+    neutral "any" its frozen contract reads. Only Staff and Administrators
+    read every Ministry (#1135)."""
+    for value in ("any", "active", "inactive", "unavailable"):
+        with pytest.raises(ValueError):
+            MinistryQuery.parse({"activity": value})
+    query = MinistryQuery.parse({})
+    assert "activity" not in query.form_values()
+    assert query.selection_filters() == query.form_values() | {"activity": "any"}
     leader = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({9}))
     for role in ("staff", "administrator"):
-        reader = Principal(uuid4(), frozenset({role}))
-        assert reads_every_ministry(reader)
-        assert refuse_leader_activity(reader, query) is query
+        assert reads_every_ministry(Principal(uuid4(), frozenset({role})))
     assert not reads_every_ministry(leader)
-    with pytest.raises(ValueError):
-        refuse_leader_activity(leader, query)
-    assert refuse_leader_activity(leader, MinistryQuery()).activity == "any"
 
 
 @pytest.mark.parametrize(
-    ("query", "state", "message"),
+    ("query", "message"),
     [
-        ("", "all", "No Ministries yet. They come from ParishSoft"),
-        ("absent", "all", "No Ministries match these filters. Clear Search by name"),
-        ("", "inactive", "No Ministries match these filters. Clear Search by name"),
+        ("", "No Ministries yet. They come from ParishSoft"),
+        ("absent", "No Ministries match these filters. Clear Search by name"),
     ],
 )
-def test_an_empty_listing_says_why_and_what_to_do(query, state, message):
-    """An empty listing tells a filter that matches nothing apart from a
+def test_an_empty_listing_says_why_and_what_to_do(query, message):
+    """An empty listing tells a search that matches nothing apart from a
     catalog with no Ministries yet, and names the next step for each (#227)."""
     html = render_to_string(
         "stewardship/ministries.html",
@@ -196,11 +172,10 @@ def test_an_empty_listing_says_why_and_what_to_do(query, state, message):
             "table": paginate(
                 [],
                 {},
-                carry=(("q", query), ("state", state)),
+                carry=(("q", query),),
                 sorting=ministry_views.CATALOG_SORTING,
             ),
             "query": query,
-            "state": state,
             "campaign_link": LINK,
         },
     )

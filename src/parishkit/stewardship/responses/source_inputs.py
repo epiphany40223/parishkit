@@ -93,8 +93,6 @@ def load_census_inputs(
                 roster,
                 member_duids=tuple(sorted(int(value) for value in active_ids)),
                 selected_duids=configuration["ministry_duids"],
-                document=document,
-                organization_id=family.payload.organization_id,
             )
         except InvalidMinistrySource:
             raise FormInputsUnavailable(

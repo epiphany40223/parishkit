@@ -127,12 +127,11 @@ SETTINGS_PAGES = (
     "share-settings.html",
     "reminder-workgroup.html",
 )
-# Ministries reviews its row selection, and Campaign images and Parish logos
-# their uploads (and removals), in the same region (#750); none has a settings
-# form, so they are not SETTINGS_PAGES.
+# Campaign images and Parish logos review their uploads (and removals) in the
+# same region (#750); neither has a settings form, so they are not
+# SETTINGS_PAGES. Ministries changes nothing any more (#1267).
 REVIEW_PAGES = (
     *SETTINGS_PAGES,
-    "ministries.html",
     "artwork-settings.html",
     "branding-settings.html",
 )
@@ -637,35 +636,18 @@ def test_campaign_settings_reviews_in_the_dialog_once():
     assert "(read-only)" not in text
 
 
-def test_a_table_page_keeps_its_view_through_a_change():
-    """Ministries (#750) keeps its table's filters, sort and page in Change
-    status's read and in the quiet follow-up once the change is applied;
-    only the view parameters it names are carried, and only for it."""
-    view = {"q": "choir", "state": "active", "page": "2", "sort": "-duid"}
+def test_the_follow_up_carries_only_the_change():
+    """Change status's read and its quiet follow-up name only the in-place
+    page and the change. Ministries is no in-place page any more (#1267):
+    it changes nothing, so a follow-up never leads there."""
     receipt = SimpleNamespace(request_id="53200000-0000-4000-8000-000000000532")
-    status = review_region("ministries", receipt=receipt, view=view)["status_url"]
+    status = review_region("parish_settings", receipt=receipt)["status_url"]
     read = {key: values[0] for key, values in parse_qs(urlsplit(status).query).items()}
-    assert read == {"in_place": "ministries", **view}
-    follow = in_place_follow(read | {"next": "/elsewhere"}, receipt.request_id)
-    assert urlsplit(follow).path == "/admin/parish/ministries/"
-    assert parse_qs(urlsplit(follow).query) == {
-        **{key: [value] for key, value in view.items()},
-        "request": [receipt.request_id],
-    }
-    # Another in-place page carries nothing but the change.
-    plain = in_place_follow(read | {"in_place": "parish_settings"}, "x")
-    assert urlsplit(plain).query == "request=x"
-
-
-def test_ministries_view_fields_are_the_carried_view():
-    """The view Ministries validates is exactly the view a change carries,
-    including every shared table parameter, from one list."""
-    from parishkit.stewardship.accounts.admin_editing import IN_PLACE_VIEWS
-    from parishkit.stewardship.accounts.ministry_views import VIEW_FIELDS
-    from parishkit.stewardship.web.tables import table_parameters
-
-    assert set(IN_PLACE_VIEWS["ministries"]) == VIEW_FIELDS
-    assert {"q", "state", *table_parameters()} == VIEW_FIELDS
+    assert read == {"in_place": "parish_settings"}
+    follow = in_place_follow(read | {"q": "choir", "next": "/x"}, receipt.request_id)
+    assert urlsplit(follow).path == "/admin/parish/settings/"
+    assert parse_qs(urlsplit(follow).query) == {"request": [receipt.request_id]}
+    assert in_place_follow({"in_place": "ministries"}, receipt.request_id) is None
 
 
 def test_go_live_and_production_refreshes_are_in_place():

@@ -183,7 +183,7 @@ def summary(actor, configuration, now, *, home=False):
 
         # Ministries ParishSoft added, removed or renamed recently, and the
         # current campaign's Ministries that are gone or look retired (#342).
-        # Those who may change Ministry activity see it. One query.
+        # Those who may change campaign settings see it. One query.
         result["ministry_catalog"] = catalog_notice(
             configuration, campaign, now, promoted=refreshed_at is not None
         )

@@ -64,7 +64,6 @@ def assert_accessible(page, axe_source):
     "path,button,reason",
     [
         ("/hosted-files", "Delete selected", "Select at least one file to delete."),
-        ("/ministries", "Review activation", "Select at least one Ministry to review."),
         (
             "/schedule-list",
             "Delete selected",

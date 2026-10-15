@@ -4,11 +4,7 @@ from django.db import connection
 
 from parishkit.config import ConfigError
 
-from .configuration_models import (
-    AppliedConfigurationVersion,
-    AppliedIntegration,
-    MinistryActivity,
-)
+from .configuration_models import AppliedConfigurationVersion, AppliedIntegration
 from .configuration_snapshots import verified_snapshot_version
 from .content_models import ContentVersion
 
@@ -46,7 +42,6 @@ def check_historical_additions(base_id, patch):
     the installer prepares the candidate; this is not a readiness certificate.
     """
     _check_policy_additions(base_id, patch)
-    _check_ministry_additions(base_id, patch)
     _check_content_additions(base_id, patch)
     additions = [
         item
@@ -194,40 +189,6 @@ def _check_content_additions(base_id, patch):
         )
         if cursor.fetchone() is not None:
             raise ConfigError("Content revision identities must remain immutable.")
-
-
-def _check_ministry_additions(base_id, patch):
-    """Check retired activity identities without loading historical documents."""
-    additions = [
-        item
-        for item in patch
-        if item["section"] == "ministries" and item["operation"] == "add"
-    ]
-    if not additions:
-        return
-    columns = _columns(
-        MinistryActivity, "record_id", "organization_id", "ministry_duid"
-    )
-    record, organization, ministry = (
-        columns[name] for name in ("record_id", "organization_id", "ministry_duid")
-    )
-    predicates, parameters = [], [base_id]
-    for item in additions:
-        values = item["values"]
-        predicates.append(
-            f"(({record}=%s AND ({organization}, {ministry}) "
-            "IS DISTINCT FROM (%s::bigint, %s::bigint)) OR "
-            f"({record}<>%s AND {organization}=%s AND {ministry}=%s))"
-        )
-        identity = [values["organization_id"], values["ministry_duid"]]
-        parameters.extend([item["id"], *identity, item["id"], *identity])
-    with connection.cursor() as cursor:
-        cursor.execute(
-            _history_join(MinistryActivity) + " OR ".join(predicates) + " LIMIT 1",
-            parameters,
-        )
-        if cursor.fetchone() is not None:
-            raise ConfigError("Ministry activity identities must remain stable.")
 
 
 def _check_policy_additions(base_id, patch):

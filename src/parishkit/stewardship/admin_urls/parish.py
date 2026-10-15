@@ -32,7 +32,7 @@ patterns = [
         {"private": True},
         name="branding_asset",
     ),
-    path("parish/ministries/", ministry_views.ministry_activity, name="ministries"),
+    path("parish/ministries/", ministry_views.ministries, name="ministries"),
     path("parish/files/", hosted_file_views.library, name="hosted_files"),
     path("parish/files/uploads/", hosted_file_views.upload, name="hosted_file_upload"),
     path("parish/files/deletion/", hosted_file_views.delete, name="hosted_file_delete"),

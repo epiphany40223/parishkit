@@ -982,7 +982,7 @@ def ministry_model(campaign_id, query, result, *, ministry, requests):
 def read_ministry(caller, service, filters, *, ministry, requests):
     """``report ministry``: the Ministry summary, or one list's request count.
 
-    ``filters`` are the page's (``activity``, ``history``, ``state``,
+    ``filters`` are the page's (``history``, ``state``,
     ``start``, ``end``, ``zone`` (required with dates, #558), ``sort``,
     ``page``, ``size``; None when not given),
     parsed by the page's ``MinistryQuery``, which refuses detail filters on

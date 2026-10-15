@@ -40,7 +40,8 @@ def components(context, admin):
         dict(
             duid=9,
             name="Example <Ministry>",
-            active=False,
+            # Not in the latest ParishSoft data, so Staff see that mark.
+            active=None,
             joining=51,
             leaving=0,
             unresolved=51,
@@ -56,8 +57,8 @@ def components(context, admin):
     for summary in summaries:
         summary["queue_links"] = queue_links(staff, summary)
     summary = dict(
-        # Staff or an Administrator: Ministry activity is shown (#1135).
-        show_activity=True,
+        # Staff or an Administrator: the ParishSoft and campaign marks (#1135).
+        show_marks=True,
         campaign_id=campaign,
         query=query,
         mutable=True,
@@ -84,8 +85,8 @@ def components(context, admin):
     descending = MinistryQuery(search="Example", sort="name_desc")
     pages = {
         "/ministry-summary": summary,
-        # What a Ministry leader sees: no Ministry activity (#1135).
-        "/ministry-summary-leader": summary | dict(show_activity=False),
+        # What a Ministry leader sees: no marks (#1135).
+        "/ministry-summary-leader": summary | dict(show_marks=False),
         "/ministry-summary-desc": summary
         | dict(
             query=descending,

@@ -13,6 +13,9 @@ The same trust covers the refresh schedule's row cap (#936): a ParishSoft
 ``refresh_rules`` document already stored, or carried unchanged from the
 base or applied predecessor, keeps the older row bound; a new or changed
 one meets the current cap (``is_carried_schedule``).
+
+Only applied history may still hold records of the retired ``ministries``
+section (``trusts_all``, #1267).
 """
 
 import json
@@ -69,6 +72,15 @@ def is_trusted(record):
     if isinstance(trust, dict):
         return trust.get(record["id"]) == fingerprint(record["values"])
     return False
+
+
+def trusts_all():
+    """Whether every record is trusted: stored versions or applied history.
+
+    A retired section (the local Ministry activity of #1267) may still hold
+    records only there, never in a new or changed configuration.
+    """
+    return _TRUSTED.get() is ALL
 
 
 def is_carried_schedule(rules):

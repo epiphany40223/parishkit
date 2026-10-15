@@ -29,9 +29,9 @@ OPEN_REQUEST_STATES = ("new", "assigned", "in_progress")
 def addable(choices, source, selected):
     """Keep current selections plus Ministries ParishSoft still lists.
 
-    The settings catalog offers every locally active snapshot Ministry, even
-    one marked "Not in ParishSoft data". The installer and SQL refuse to add
-    such a Ministry to a live campaign, so the live list never offers it.
+    The settings catalog offers every snapshot Ministry, even one marked
+    "Not in ParishSoft data". The installer and SQL refuse to add such a
+    Ministry to a live campaign, so the live list never offers it.
     """
     present = (
         set()

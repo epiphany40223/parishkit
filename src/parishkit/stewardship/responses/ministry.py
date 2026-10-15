@@ -2,8 +2,6 @@
 
 from dataclasses import dataclass
 
-from parishkit.config import ConfigError
-from parishkit.stewardship.accounts.ministry_activity import active_ministries
 from parishkit.stewardship.source.catalog_names import ministry_display_name
 
 
@@ -61,14 +59,13 @@ class MinistryInputs:
         )
 
 
-def ministry_inputs(
-    catalog, roster, *, member_duids, selected_duids, document, organization_id
-):
-    """Intersect current catalog, parish activity and campaign selection.
+def ministry_inputs(catalog, roster, *, member_duids, selected_duids):
+    """Intersect the current catalog with the campaign's Ministry selection.
 
-    The caller supplies a single retained snapshot and its corresponding applied
-    policy document. Upstream's incidental active flag is not the local activity
-    policy. Hidden labels and memberships never enter the returned projection.
+    The caller supplies a single retained snapshot. Every selected Ministry
+    in the catalog is offered: there is no local active/inactive override
+    (#1267), and upstream's incidental active flag is ignored. Hidden labels
+    and memberships never enter the returned projection.
     Multiple current roster roles reduce to one Member/Ministry membership.
     Option labels are display-safe names from ``ministry_display_name``.
     """
@@ -93,14 +90,7 @@ def ministry_inputs(
         ):
             _unavailable()
         indexed[row["id"]] = row
-    try:
-        visible = active_ministries(
-            document,
-            organization_id=organization_id,
-            catalog_duids=frozenset(indexed),
-        ) & frozenset(selected_duids)
-    except (ConfigError, KeyError, TypeError, ValueError):
-        _unavailable()
+    visible = frozenset(indexed) & frozenset(selected_duids)
     options = []
     for identifier in visible:
         # A name ParishSoft staff made blank, overlong or odd is repaired for

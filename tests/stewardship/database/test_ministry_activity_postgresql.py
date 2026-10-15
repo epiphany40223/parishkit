@@ -1,43 +1,54 @@
-"""Real configuration requests, retained overrides and PostgreSQL forgery checks."""
+"""The retired local Ministry activity in PostgreSQL (#1267, migration 0091).
 
-from datetime import timedelta
+The table and its projection are gone; a new configuration version holding a
+``ministries`` record is refused by Python and again by SQL, applied history
+that recorded one still verifies, and 0091's guard and closing check refuse
+what they should, including each older function body the frozen files hold.
+"""
+
+import re
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from django.db import IntegrityError, connection, transaction
+from django.db import DatabaseError, IntegrityError, connection, transaction
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.configuration_models import (
     AppliedConfigurationVersion,
-    MinistryActivity,
 )
 from parishkit.stewardship.accounts.configuration_requests import record_request
 from parishkit.stewardship.accounts.configuration_snapshots import (
     is_prepared,
     prepare_snapshot,
 )
-from parishkit.stewardship.accounts.ministry_activity import (
-    MinistryReconciliationUnavailable,
-)
-from parishkit.stewardship.accounts.operator_recovery import recover_admin
-from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
-from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.campaigns.lifecycle import Action
 
-from ..configuration_factory import configuration_version, successor_document
-from ..policy_factory import address, assignment
+from ..configuration_factory import configuration_version
 from ..test_ministry_activity import activity, policy_document
-from .campaign_builders import (
-    add_draft,
-    campaign_clock,
-    change,
-    command,
-    draft_campaign,
-    initialized,
-)
-from .test_recovery_postgresql import arguments
+from .campaign_builders import initialized
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+MIGRATIONS = Path(__file__).resolve().parents[3] / (
+    "src/parishkit/stewardship/schema/migrations"
+)
+FROZEN = (MIGRATIONS / "0091_drop_ministry_activity.sql").read_text(encoding="utf-8")
+GUARD = FROZEN[FROZEN.index("DO $guard$") : FROZEN.index("$guard$;") + len("$guard$;")]
+CHECK = FROZEN[FROZEN.index("DO $check$") :]
+# The grants the check compares with, recorded before anything changes.
+_ACL = FROZEN.index("SELECT set_config('stewardship.migration_0091_acl'")
+ACL = FROZEN[_ACL : FROZEN.index(", true);", _ACL) + len(", true);")]
+# The newest older body of each replaced function that a frozen file holds:
+# each still reads the dropped table.
+OLDER = {
+    "stewardship_campaign_pointer_v1": "0042_ministry_leaders_from_roles.sql",
+    "stewardship_chair_decisions_v1": "0026_chair_decisions_plan.sql",
+    "stewardship_ministry_report_v1": "0045_report_duid_sorts.sql",
+    "stewardship_leaders_without_user_v1": "0057_admin_session_key_digests.sql",
+    "stewardship_ministry_report_v3": "0064_report_local_days.sql",
+    "stewardship_ministry_leaders_at_v1": "0070_ministry_leader_changes.sql",
+    "stewardship_ministry_complete_v1": "0075_campaign_series.sql",
+}
 
 
 def prepare(version):
@@ -45,274 +56,162 @@ def prepare(version):
     return prepare_snapshot(version, actor_id=uuid4(), correlation_id=uuid4())
 
 
-def test_ordinary_request_applies_activity_and_preserves_campaign(tmp_path):
-    """New schema retains policy, campaign and schedule projections at activation."""
-    store, root, actor = initialized(tmp_path)
-    result, campaign, schedule = add_draft(store, root, actor)
-    assert result.state == "applied"
-    row = activity()
-    result = change(
-        store,
-        store.active(),
-        actor,
-        [{"operation": "add", "section": "ministries", **row}],
-    )
-    assert result.state == "applied"
-    runtime = SystemConfiguration.objects.get()
-    snapshot = runtime.active_configuration
-    assert snapshot.validation_schema == "ministry-activity-v4"
-    assert is_prepared(snapshot.digest)
-    assert snapshot.ministry_activity.get().active is False
-    assert str(snapshot.campaign_configurations.get().record_id) == campaign["id"]
-    assert str(snapshot.schedule_revisions.get().record_id) == schedule["id"]
-    result = change(
-        store,
-        store.active(),
-        actor,
-        [
-            {
-                "operation": "update",
-                "section": "ministries",
-                "id": row["id"],
-                "values": {"active": True},
-            }
-        ],
-    )
-    assert result.state == "applied"
-    assert snapshot.ministry_activity.get().active is False
-    assert (
-        SystemConfiguration.objects.get()
-        .active_configuration.ministry_activity.get()
-        .active
-        is True
-    )
+def older_body(name):
+    """``name``'s older ``CREATE OR REPLACE`` statement from its frozen file."""
+    text = (MIGRATIONS / OLDER[name]).read_text(encoding="utf-8")
+    match = re.search(rf"^CREATE (?:OR REPLACE )?FUNCTION public\.{name}\(", text, re.M)
+    quote = re.compile(r"\bAS\s+(\$\w*\$)").search(text, match.start())
+    end = text.index(quote[1] + ";", quote.end()) + len(quote[1]) + 1
+    statement = text[match.start() : end]
+    assert "stewardship_ministry_activity" in statement, name
+    return statement.replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1)
 
 
-def test_removal_retains_historical_binding_and_exact_readdition(tmp_path):
-    """Removing an override restores the default, not permission to reuse its ID."""
-    store, root, actor = initialized(tmp_path)
-    row = activity()
-    assert (
-        change(
-            store, root, actor, [{"operation": "add", "section": "ministries", **row}]
-        ).state
-        == "applied"
-    )
-    historical = store.active()
-    assert (
-        change(
-            store,
-            historical,
-            actor,
-            [{"operation": "remove", "section": "ministries", "id": row["id"]}],
-        ).state
-        == "applied"
-    )
-    assert is_prepared(store.active().digest)
-    assert MinistryActivity.objects.count() == 1
-    for replacement in (
-        activity(),
-        {"id": row["id"], "values": activity(ministry_duid=2)["values"]},
-    ):
-        with pytest.raises(ConfigError, match="stable"):
-            record_request(
-                base_digest=store.active().digest,
-                patch=[{"operation": "add", "section": "ministries", **replacement}],
-                actor_id=actor,
-                request_key=uuid4(),
-                correlation_id=uuid4(),
-            )
-    assert (
-        change(
-            store,
-            store.active(),
-            actor,
-            [{"operation": "add", "section": "ministries", **row}],
-        ).state
-        == "applied"
-    )
-    assert is_prepared(store.active().digest)
-
-
-def test_same_duid_in_another_tenant_is_a_separate_override():
-    """Tenant switches and retained old mappings cannot collide by Ministry number."""
-    version = configuration_version(
-        policy_document(activity(), activity(organization_id=2))
-    )
-    snapshot = prepare(version)
-    assert snapshot.ministry_activity.count() == 2
-    assert is_prepared(version.digest)
-
-
-@pytest.mark.parametrize("action", ["update", "delete"])
-def test_sql_cannot_mutate_history(action):
-    """Bypassing model save still cannot alter or delete retained local decisions."""
-    snapshot = prepare(configuration_version(policy_document(activity())))
+def refused(*statements):
+    """Run ``statements`` between 0091's grant record and its check, rolled
+    back; return the check's error."""
     with (
-        pytest.raises(IntegrityError),
+        pytest.raises(DatabaseError) as error,
         transaction.atomic(),
         connection.cursor() as cursor,
     ):
+        cursor.execute("SET LOCAL check_function_bodies = false")
+        cursor.execute(ACL)
+        for statement in statements:
+            cursor.execute(statement)
+        cursor.execute(CHECK)
+    return str(error.value)
+
+
+def test_the_installed_schema_passes_the_check():
+    """A fresh install (baseline, then every frozen file) is what 0091 declares."""
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(ACL)
+        cursor.execute(CHECK)
+        cursor.execute("SELECT to_regclass('public.stewardship_ministry_activity')")
+        assert cursor.fetchone() == (None,)
+        transaction.set_rollback(True)
+
+
+@pytest.mark.parametrize("name", sorted(OLDER))
+def test_the_check_refuses_each_older_body(name):
+    """An older body that still reads the dropped table fails the migration."""
+    assert "still reads Ministry activity" in refused(older_body(name))
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "CREATE TABLE public.stewardship_ministry_activity (id uuid)",
+        "CREATE FUNCTION public.stewardship_ministry_projection_v1() RETURNS trigger "
+        "LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$",
+        "CREATE FUNCTION public.stewardship_ministry_activity_immutable_v1() "
+        "RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$",
+    ],
+)
+def test_the_check_refuses_what_it_dropped(statement):
+    """The table or either trigger function, back again, fails the migration."""
+    assert "table or its functions remain" in refused(statement)
+
+
+def test_the_check_refuses_a_definer_that_lost_its_rights():
+    """The Users page's leaders list must stay SECURITY DEFINER."""
+    message = refused(
+        "ALTER FUNCTION public.stewardship_leaders_without_user_v1(text, uuid) "
+        "SECURITY INVOKER"
+    )
+    assert "not installed as declared" in message
+
+
+@pytest.mark.parametrize("active", [False, True])
+def test_the_guard_refuses_an_inactive_ministry_in_the_active_configuration(
+    tmp_path, active
+):
+    """Upgrading over an inactive Ministry would silently show it again."""
+    store, root, actor = initialized(tmp_path)
+    with transaction.atomic(), connection.cursor() as cursor:
+        # The table as the release before 0091 had it, reduced to what the
+        # guard reads, with one row for the active configuration.
         cursor.execute(
-            "UPDATE stewardship_ministry_activity SET active=true "
-            "WHERE configuration_id=%s"
-            if action == "update"
-            else "DELETE FROM stewardship_ministry_activity WHERE configuration_id=%s",
-            [snapshot.pk],
+            "CREATE TABLE public.stewardship_ministry_activity "
+            "(configuration_id uuid, active boolean)"
+        )
+        cursor.execute(
+            "INSERT INTO public.stewardship_ministry_activity "
+            "SELECT active_configuration_id, %s "
+            "FROM public.stewardship_system_configuration",
+            [active],
+        )
+        if active:
+            cursor.execute(GUARD)
+        else:
+            with (
+                pytest.raises(DatabaseError, match="marks a Ministry inactive"),
+                transaction.atomic(),
+            ):
+                cursor.execute(GUARD)
+        transaction.set_rollback(True)
+
+
+def test_a_request_adding_a_ministries_record_is_refused(tmp_path):
+    """No request records a change to the retired section."""
+    store, root, actor = initialized(tmp_path)
+    with pytest.raises(ConfigError, match="ministries section"):
+        record_request(
+            base_digest=root.digest,
+            patch=[{"operation": "add", "section": "ministries", **activity()}],
+            actor_id=actor,
+            request_key=uuid4(),
+            correlation_id=uuid4(),
         )
 
 
-def test_missing_projection_rolls_back_entire_preparation(monkeypatch):
-    """Deferred completeness refuses a candidate even if Python omitted its rows."""
-    version = configuration_version(policy_document(activity()))
-    monkeypatch.setattr(MinistryActivity.objects, "create", lambda **kwargs: None)
-    with pytest.raises(IntegrityError, match="incomplete"):
-        prepare(version)
-    assert not AppliedConfigurationVersion.objects.exists()
+def no_python_refusal(monkeypatch):
+    """Let a ``ministries`` record past Python, as a bypassed check would."""
+    monkeypatch.setattr(
+        "parishkit.stewardship.accounts.ministry_activity.trusts_all", lambda: True
+    )
 
 
-def test_projection_must_exactly_match_yaml(monkeypatch):
-    """Direct insertion cannot invert an Admin's activity choice."""
-    create = MinistryActivity.objects.create
-
-    def forged(**kwargs):
-        """Corrupt only the database projection, leaving valid canonical input."""
-        return create(**(kwargs | {"active": not kwargs["active"]}))
-
-    monkeypatch.setattr(MinistryActivity.objects, "create", forged)
-    with pytest.raises(IntegrityError, match="differs"):
+def test_sql_refuses_a_new_version_with_ministries_records(monkeypatch):
+    """Without Python's refusal, the completeness trigger still refuses."""
+    no_python_refusal(monkeypatch)
+    with pytest.raises(IntegrityError, match="ministries section must be empty"):
         prepare(configuration_version(policy_document(activity())))
     assert not AppliedConfigurationVersion.objects.exists()
 
 
-def test_preparation_rejects_retired_identity_without_intake():
-    """Offline candidates also verify identity across a removed-record ancestor."""
-    row = activity()
-    root = configuration_version(policy_document(row))
-    prepare(root)
-    document = successor_document(root)
-    document["sections"]["ministries"] = []
-    removed = configuration_version(document)
-    prepare(removed)
-    document = successor_document(removed)
-    document["sections"]["ministries"] = [activity()]
-    with pytest.raises(ConfigError, match="predecessor"):
-        prepare(configuration_version(document))
+def test_applied_history_with_ministries_records_still_verifies(monkeypatch):
+    """A version applied before 0091 kept its section, and still verifies.
+
+    The completeness trigger is held off only to store such a version, as
+    the release before 0091 could; verification then reads the section
+    from the document, as there is no projection left.
+    """
+    with monkeypatch.context() as patched:
+        no_python_refusal(patched)
+        version = configuration_version(policy_document(activity()))
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "ALTER TABLE stewardship_configuration_version "
+                "DISABLE TRIGGER stewardship_ministry_complete_v1"
+            )
+            try:
+                prepare(version)
+            finally:
+                cursor.execute(
+                    "ALTER TABLE stewardship_configuration_version "
+                    "ENABLE TRIGGER stewardship_ministry_complete_v1"
+                )
+    assert is_prepared(version.digest)
+    stored = AppliedConfigurationVersion.objects.get(pk=version.version_id)
+    assert stored.validation_schema == "ministry-activity-v4"
 
 
-@pytest.mark.parametrize("reused_binding", ["record", "pair"])
-def test_sql_preserves_binding_even_if_ancestry_preflight_is_bypassed(
-    monkeypatch, reused_binding
-):
-    """The SQL trigger rejects rebinding even without Python ancestry validation."""
-    row = activity()
-    root = configuration_version(policy_document(row))
-    prepare(root)
-    document = successor_document(root)
-    document["sections"]["ministries"] = [
-        {"id": row["id"], "values": activity(ministry_duid=2)["values"]}
-        if reused_binding == "record"
-        else activity()
-    ]
-    monkeypatch.setattr(
-        "parishkit.stewardship.accounts.configuration_snapshots._verify_history",
-        lambda *args, **kwargs: True,
+def test_the_check_refuses_changed_grants():
+    """A replaced function must keep the grants it had before."""
+    message = refused(
+        "GRANT EXECUTE ON FUNCTION public.stewardship_chair_decisions_v1(uuid) "
+        "TO PUBLIC"
     )
-    with pytest.raises(IntegrityError, match="stable"):
-        prepare(configuration_version(document))
-    assert AppliedConfigurationVersion.objects.count() == 1
-
-
-def test_operator_recovery_preserves_applied_activity_and_replays(tmp_path):
-    """Actual offline recovery uses the new discriminator and unchanged authority."""
-    store, root, actor = initialized(tmp_path)
-    row = activity()
-    assert (
-        change(
-            store, root, actor, [{"operation": "add", "section": "ministries", **row}]
-        ).state
-        == "applied"
-    )
-    options = arguments()
-    result = recover_admin(store, **options)
-    assert result.state == "applied"
-    request = ConfigurationChangeRequest.objects.get(pk=result.request_id)
-    assert request.request_schema == "operator-recovery-ministry-v4"
-    assert store.active().document()["sections"]["ministries"] == [row]
-    assert is_prepared(store.active().digest)
-    assert recover_admin(store, **options) == result
-
-
-@pytest.mark.parametrize("bypass_preflight", [False, True])
-def test_activity_cannot_apply_without_seeded_assignment_effects(
-    tmp_path, monkeypatch, bypass_preflight
-):
-    """Storage alone never activates an activity change with stale seeded scope."""
-    store, root, actor = initialized(tmp_path, [address(), assignment(seeded=True)])
-    if bypass_preflight:
-        monkeypatch.setattr(
-            "parishkit.stewardship.accounts.ministry_activity.validate_installation",
-            lambda document: None,
-        )
-    error = IntegrityError if bypass_preflight else MinistryReconciliationUnavailable
-    with pytest.raises(error, match="reconciliation"):
-        change(
-            store,
-            root,
-            actor,
-            [
-                {
-                    "operation": "add",
-                    "section": "ministries",
-                    **activity(ministry_duid=123),
-                }
-            ],
-        )
-    assert SystemConfiguration.objects.get().active_configuration_id == root.version_id
-    if not bypass_preflight:
-        assert store.active() == root
-        assert (
-            ConfigurationChangeRequest.objects.get()
-            .checkpoints.latest("sequence")
-            .state
-            == "staged"
-        )
-
-
-def test_manual_assignments_do_not_block_local_activity(tmp_path):
-    """Local hiding does not remove manual Ministry-leader administrative scope."""
-    manual = assignment(ministry=1)
-    store, root, actor = initialized(tmp_path, [address(), manual])
-    assert (
-        change(
-            store,
-            root,
-            actor,
-            [{"operation": "add", "section": "ministries", **activity()}],
-        ).state
-        == "applied"
-    )
-    snapshot = SystemConfiguration.objects.get().active_configuration
-    assert str(snapshot.ministryassignment_set.get().record_id) == manual["id"]
-
-
-def test_activity_change_preserves_locked_campaign_selection(tmp_path):
-    """A local visibility edit is not an edit to the campaign's structural selection."""
-    store, campaign, actor = draft_campaign(tmp_path)
-    with campaign_clock(campaign.active_configuration.starts_at - timedelta(days=1)):
-        command(campaign, actor, Action.ACTIVATE)
-        campaign.refresh_from_db()
-        assert campaign.structural_locked and campaign.state == "scheduled"
-        before = campaign.active_configuration.values
-        assert (
-            change(
-                store,
-                store.active(),
-                actor,
-                [{"operation": "add", "section": "ministries", **activity()}],
-            ).state
-            == "applied"
-        )
-    campaign.refresh_from_db()
-    assert campaign.active_configuration.values == before
-    assert campaign.structural_locked and campaign.state == "scheduled"
+    assert "grants changed" in message

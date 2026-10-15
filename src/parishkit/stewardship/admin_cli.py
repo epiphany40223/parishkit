@@ -1995,7 +1995,6 @@ def report_ministry(args, preamble, runtime, context):
     from .admin_report_reads import read_ministry
 
     filters = {
-        "activity": args.activity,
         "history": args.history,
         "state": args.state,
         "start": args.start,
@@ -3151,9 +3150,6 @@ def _ministry_duid(value):
 def _report_ministry_options(parser):
     """Options of ``report ministry``: the summary, or one Ministry's list."""
     parser.add_argument(
-        "--activity", help="any (default), active, inactive or unavailable"
-    )
-    parser.add_argument(
         "--sort",
         help="the summary's order: name (default), name_desc, duid or duid_desc "
         "(by Ministry DUID)",
@@ -4217,7 +4213,7 @@ def _settings_specs():
         ),
         read(
             "ministries list",
-            "List the Ministry catalog and each Ministry's activity.",
+            "List the Ministry catalog and whether each is in the campaign.",
             ministries_list,
             MinistryList,
         ),
