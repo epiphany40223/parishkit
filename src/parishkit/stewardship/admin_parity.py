@@ -399,9 +399,12 @@ LEDGER = {
     ),
     "integration_status": command("integration status"),
     "refresh_schedule_check": pending("PR 10", "integration schedule-preview"),
-    "credential_status": pending("PR 10", "integration key status"),
+    "credential_status": command("integration key status"),
     "dismiss_credential_result": command("integration dismiss"),
-    "select_credential": pending("PR 10", "integration key finish-switching"),
+    "select_credential": command(
+        "integration key finish-switching-preview",
+        "integration key finish-switching",
+    ),
     # The first-Admin setup wizard.
     **{
         name: permanent(SETUP)

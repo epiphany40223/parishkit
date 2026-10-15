@@ -229,6 +229,10 @@ class Action(StrEnum):
     ADMIN_CMD_INTEGRATION_BACKUP_PROBE = "admin_cmd_integration_backup_probe"
     # integration dismiss: a key change line's Dismiss (ADM-11 PR 10).
     ADMIN_CMD_INTEGRATION_DISMISS = "admin_cmd_integration_dismiss"
+    # integration key finish-switching: Finish switching to the new key.
+    ADMIN_CMD_INTEGRATION_KEY_FINISH_SWITCHING = (
+        "admin_cmd_integration_key_finish_switching"
+    )
     ADMIN_CMD_USERS_IMPORT_LEADERS = "admin_cmd_users_import_leaders"
     # The operator's cancellation of a stuck live end-date change (#944).
     ADMIN_CMD_CONFIG_REQUEST_CANCEL = "admin_cmd_config_request_cancel"
