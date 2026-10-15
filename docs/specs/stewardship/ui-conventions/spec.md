@@ -1465,7 +1465,7 @@ it closes when that box scrolls its button out of view. The export forms'
 shared format help (how CSV, XLSX and PDF write dates and money) follows the
 same rule where its menu sits in a filter-bar cell: it opens from the "i"
 beside the format label, so the narrow cell never wraps it into a tall column
-(the Family directory, #1158).
+(the Active parishioner family directory, #1158).
 
 Internal identifiers and bookkeeping fields that matter only for
 troubleshooting (delivery, refusal and test references, a retained
@@ -2365,8 +2365,9 @@ which forms ask. **Precedent.**
 Asking: System logs, Response lists, Financial stewardship, Limitations,
 Census changes, Additional information, Ministry follow-up's Export these
 requests (which replaced one Ministry's joining or leaving lists, #1157),
-Roster changes to enter, the Family timeline, and the Family directory
-code list only while its response columns are included (the field comes and
+Roster changes to enter, the Family timeline, and the Active parishioner
+family directory code list only while its response columns are included
+(the field comes and
 goes with that applied choice, as the last field of its row, so nothing
 moves). Not asking: the Ministry follow-up packet, the participation exports,
 the Campaign comparison downloads

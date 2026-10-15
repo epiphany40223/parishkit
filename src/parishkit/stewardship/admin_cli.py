@@ -1758,8 +1758,8 @@ def export_directory(args, preamble, runtime, context):
     confirm(
         context,
         (
-            "Create a Family directory export: a file of every matching "
-            "Family's code for the current campaign.",
+            "Create an Active parishioner family directory export: a file of "
+            "every matching Family's code for the current campaign.",
         ),
     )
     return request(

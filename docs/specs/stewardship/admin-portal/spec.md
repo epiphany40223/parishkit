@@ -911,7 +911,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `system_health` | System health | Menu: System health | Administrator | (new) | (none) | `/admin/system/health/` | New page ([System health](#system-health), #530, ADM-13). |
 | `source_form` | Families the form cannot open | System health | Administrator | (new, #774) | (none) | `/admin/system/source-form/` | New page ([System health page](#system-health-page)); no menu entry. Also linked from Data to fix in ParishSoft (#1011). |
 | `integrations` | Integrations | Menu: Integrations | Administrator | (same) | `/admin/system/integrations/` | (same) |  |
-| `integration_settings` | _integration name_ | Integrations | Administrator | _integration name_ (e.g. ParishSoft, Google Workspace mail, Slack notifications, Off-site backups, Backup encryption key); Integration | `/admin/system/integrations/<target>/` | (same) | Object-named (exception); hand-written Integrations link removed. |
+| `integration_settings` | _integration name_ | Integrations | Administrator | _integration name_ (e.g. ParishSoft, Google Workspace mail, Slack notifications, Off-site backups, Backup encryption key); Integration; ParishSoft settings; Off-site backup settings (link text) | `/admin/system/integrations/<target>/` | (same) | Object-named (exception); hand-written Integrations link removed. A link that names the page uses its heading ("ParishSoft", "Off-site backups (Google Drive)"); an action link ("Set up off-site backups") stays an action (#520). |
 | `credential_status` | Key replacement status | _integration name_ | Administrator | (same) | `/admin/system/key-changes/<request>/` | (same) |  |
 | `select_credential` | Finish switching to the new key | _integration name_ | Administrator | (same) | `/admin/system/key-changes/<request>/selection/` | (same) |  |
 | `background` | Background work | Menu: Background work | Administrator | (same) | `/admin/system/background/` | (same) |  |
@@ -1739,7 +1739,7 @@ browser-side key-pair generator is not offered.
 
 ### ParishSoft refresh schedule settings
 
-The ParishSoft settings page edits the one
+The ParishSoft page edits the one
 [refresh schedule](../background-processing/spec.md#refresh-schedule) of
 full refreshes, replacing the separate frequency, "At these times" and
 quick-update fields
@@ -3802,13 +3802,15 @@ email's current state (when it last changed, such as when it was
 delivered). When sorts by that time (sort token `changed`), newest first by
 default; the email's own page keeps its whole timeline. Each row names the
 Family and, in a column of its own, its Family DUID; an Administrator
-report has no Family. The name is the Family directory's surname-and-heads
+report has no Family. The name is the Active parishioner family
+directory's surname-and-heads
 name from the latest ParishSoft data, read for the shown page only (at
 most two small queries, however many rows), or a muted "Not in current
 ParishSoft data" when that data no longer has the Family. The name opens
 the email's own page. Family sorts on the server over the whole list (sort
 token `name`): by surname, then the whole shown name, then Family DUID
-for Families that show the same name, as the Family directory orders them,
+for Families that show the same name, as the Active parishioner family
+directory orders them,
 each email's name read inside the page's query from the same ParishSoft
 snapshot the shown names come from; Family DUID sorts too (token `duid`). Either
 keeps each Family's emails together, newest change first (then newest
@@ -4657,7 +4659,7 @@ operator's offline recovery still signs everyone out.
 
 Admins may request an immediate full refresh from a confirmation page (the
 Refresh from ParishSoft menu entry), or with the "Run a full refresh now"
-button on the ParishSoft settings page and in the Admin home page's refresh
+button on the ParishSoft page and in the Admin home page's refresh
 notice (same capability and CSRF rules). The action inserts a durable task and
 returns immediately to the Refresh from ParishSoft page, which shows the task's
 status ([navigation rule 5](#navigation-rules)). If a poll is running, no

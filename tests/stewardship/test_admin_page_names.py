@@ -310,8 +310,12 @@ def _former_names():
 
 
 # Links still using a former name because an open PR edits the same line
-# (#520 tracks the rename). Renamed once that PR lands; none are pending.
-FORMER_NAME_LINKS = set()
+# (#520 tracks the rename). Renamed once that PR lands: Home's off-site
+# backups line waits for #1296 and System health's problem line for #1295.
+FORMER_NAME_LINKS = {
+    ("home.html", "Off-site backup settings"),
+    ("system-health-problem.html", "Off-site backup settings"),
+}
 
 
 def test_page_links_do_not_use_a_former_name():
@@ -342,6 +346,9 @@ def test_former_names_are_read_from_the_spec():
     assert {"ParishSoft refresh", "Ministry reports", "Delivery controls"} <= former
     # Each of a cell's " / " alternatives is a name of its own.
     assert {"Participation export", "Financial stewardship export"} <= former
+    # An object-named row's former link names count; its placeholder does not.
+    assert {"ParishSoft settings", "Off-site backup settings"} <= former
+    assert not any(name.startswith("_") for name in former)
     # Current names, a non-page row, quoted wording and single words are not.
     assert not former & {"Ministry follow-up", "Every Admin page", "Message"}
     assert not any('"' in name or "'" in name for name in former)
@@ -415,6 +422,10 @@ RETIRED = (
     "Setup credential",
     # Retired by #1061: it read as if those Families get Reminders.
     "Reminder WorkGroup",
+    # Retired by #520: the page is the Active parishioner family directory,
+    # and an integration's page is named after the integration.
+    "Family directory",
+    "ParishSoft settings page",
 )
 
 # Legitimate uses, as (path relative to the package, retired name), each
@@ -503,9 +514,11 @@ def _user_facing_texts():
 
 # Retired names matched exactly as written, because their lowercase form is
 # ordinary prose or part of a current name: "Dates and mail schedules",
-# "delivery controls" in general wording, "ministry activity" as a state,
+# "Active parishioner family directory", "delivery controls" in general
+# wording, "ministry activity" as a state,
 # and "back to " in sentences.
 CASE_SENSITIVE = {
+    "Family directory",
     "Mail schedules",
     "Delivery controls",
     "Ministry activity",
