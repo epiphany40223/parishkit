@@ -337,7 +337,7 @@ FROZEN = {
         "6d1e92b1571c696103b9e72bf302ce67f4f161bb8ab86d44d95618a9bd9f4b2f"
     ),
     "0102_setup_load_void.sql": (
-        "5dcfeb9a0cf08bbd2ffce1d54235d901490e8971106d205578ed364ef544817e"
+        "0c8a53a2f7129b0293b36601eb519d1bbbd23001dd17690157764929ac6a3d4d"
     ),
 }
 
@@ -647,3 +647,21 @@ def test_the_pre_setup_users_fixture_is_unchanged():
     """The setup-users tests prove 0055's check on exactly the earlier bodies."""
     digest = hashlib.sha256(PRE_SETUP_USERS_FIXTURE.read_bytes()).hexdigest()
     assert digest == PRE_SETUP_USERS_DIGEST
+
+
+# The pre-0102 bodies the setup load void tests reinstall
+# (tests/stewardship/database/pre_setup_load_void_functions.sql), copied byte
+# for byte from the fresh-install baseline at 1a585debf, the head migration
+# 0102 (#1353) was written on. Pinned so an edit to the fixture fails here.
+PRE_SETUP_LOAD_VOID_FIXTURE = (
+    ROOT / "tests/stewardship/database/pre_setup_load_void_functions.sql"
+)
+PRE_SETUP_LOAD_VOID_DIGEST = (
+    "2ee01d4987ea6dd0a8343704090c27c18e574e616773806f737683adb5457a45"
+)
+
+
+def test_the_pre_setup_load_void_fixture_is_unchanged():
+    """The setup load void tests prove 0102's check on exactly the earlier bodies."""
+    digest = hashlib.sha256(PRE_SETUP_LOAD_VOID_FIXTURE.read_bytes()).hexdigest()
+    assert digest == PRE_SETUP_LOAD_VOID_DIGEST

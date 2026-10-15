@@ -273,10 +273,13 @@ result with Continue to the next wizard page; on failure it says what to do
 next.
 
 A load that fails for good (for example, a wrong ParishSoft key or
-organization ID, which never retries) returns setup to collecting with the
-failed load still bound, so every page is editable again and the watchdog,
-which runs only while loading, stops (#1353). A load that has finished,
-succeeded or failed, can be discarded, and only then: saving a different
+organization ID, which never retries, or a load whose worker stopped on its
+last allowed attempt, which recovery then fails) returns setup to collecting
+with the failed load still bound, so every page is editable again and the
+watchdog, which runs only while loading, stops (#1353). The test email and
+test Slack message still require a load that succeeded. A load that has finished,
+succeeded or failed, can be discarded, and only then (never one running,
+waiting to retry or abandoned): saving a different
 ParishSoft key or organization ID discards it, saving the same key and
 organization keeps it, and Load again after a failure discards the failed
 load and queues a new one. Each discard is audited as
