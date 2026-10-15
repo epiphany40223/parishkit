@@ -39,44 +39,44 @@ def test_schedule_preview_distinguishes_parish_intent_from_browser_time(
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
 
+def renewal(route, **values):
+    """Answer one source-load renewal POST with a synthetic progress reading."""
+    route.fulfill(
+        json={
+            "server_now": NOW.isoformat(),
+            "task_id": urlsplit(route.request.url).path.split("/")[-1],
+            "task_state": "running",
+            "setup_state": "loading",
+            "phase": "staging",
+            "active": True,
+            "current": 1234,
+            "total": 5000,
+            "collections": load_collections(7),
+            "idle_at": (NOW + timedelta(minutes=30)).isoformat(),
+            "watchdog_at": (NOW + timedelta(hours=2)).isoformat(),
+            "absolute_at": (NOW + timedelta(hours=12)).isoformat(),
+        }
+        | values
+    )
+
+
 @pytest.mark.parametrize("clock_skew_hours", [-48, 0, 48])
-def test_setup_progress_only_polls_visible_correlated_work_and_stops_at_deadline(
+def test_setup_progress_only_renews_visible_correlated_work_and_stops_at_deadline(
     page, component_origin, clock_skew_hours
 ):
-    """Visible-page polling carries only CSRF and stops at local deadlines."""
-    from playwright.sync_api import expect
-
+    """Visible-page renewal carries only CSRF and stops at local deadlines."""
     page.clock.install(time=NOW + timedelta(hours=clock_skew_hours))
     requests = []
 
     def observe(route):
         """The synthetic server response has no Family values or renewal promises."""
         requests.append(route.request)
-        route.fulfill(
-            json={
-                "server_now": NOW.isoformat(),
-                "task_id": urlsplit(route.request.url).path.split("/")[-1],
-                "task_state": "running",
-                "setup_state": "loading",
-                "phase": "staging",
-                "active": True,
-                "current": 1234,
-                "total": 5000,
-                "collections": load_collections(7),
-                "idle_at": (NOW + timedelta(minutes=30)).isoformat(),
-                "watchdog_at": (NOW + timedelta(hours=2)).isoformat(),
-                "absolute_at": (NOW + timedelta(hours=12)).isoformat(),
-            }
-        )
+        renewal(route)
 
     page.route("**/admin/setup/source/*?format=json", observe)
     page.goto(component_origin + "/setup-source-progress")
-    expect(page.locator("[data-task-counts]")).to_contain_text("1,234")
-    assert page.locator("[data-task-counts]").inner_text() == "1,234 of 5,000 (25%)"
-    visible(page.locator("[data-load-records]"))
-    assert "Done" in page.locator('[data-load-phase="fetching"]').inner_text()
-    assert "In progress" in page.locator('[data-load-phase="staging"]').inner_text()
-    assert len(requests) == 1 and requests[0].method == "POST"
+    recorded(page, requests, 1)
+    assert requests[0].method == "POST"
     assert requests[0].post_data.startswith("csrfmiddlewaretoken=")
     assert "&" not in requests[0].post_data
     page.clock.set_system_time(NOW + timedelta(days=7))
@@ -95,107 +95,23 @@ def test_setup_progress_only_polls_visible_correlated_work_and_stops_at_deadline
     assert len(requests) == 2
 
 
-def test_setup_progress_terminal_response_stops_automatic_posts(page, component_origin):
-    """Expired setup does not look successful or keep sending renewal requests."""
-    from playwright.sync_api import expect
-
+def test_setup_progress_terminal_renewal_stops_automatic_posts(page, component_origin):
+    """A renewal that says the load ended stops renewing, and nothing else posts."""
     page.clock.install(time=NOW)
     requests = []
 
     def expired(route):
         """A terminal server verdict is final even before the local timer expires."""
         requests.append(route.request)
-        route.fulfill(
-            json={
-                "server_now": NOW.isoformat(),
-                "task_id": urlsplit(route.request.url).path.split("/")[-1],
-                "task_state": "cancelled",
-                "setup_state": "expired",
-                "phase": "fetching",
-                "active": False,
-                "current": 0,
-                "total": 0,
-                "collections": load_collections(2),
-                "idle_at": (NOW + timedelta(minutes=30)).isoformat(),
-                "watchdog_at": (NOW + timedelta(hours=2)).isoformat(),
-                "absolute_at": (NOW + timedelta(hours=12)).isoformat(),
-            }
-        )
+        renewal(route, task_state="cancelled", setup_state="expired", active=False)
 
     page.route("**/admin/setup/source/*?format=json", expired)
     page.goto(component_origin + "/setup-source-progress")
-    expect(page.locator("[data-task-state]")).to_have_js_property(
-        "textContent", "cancelled"
-    )
+    recorded(page, requests, 1)
     page.clock.fast_forward(60000)
+    page.wait_for_timeout(200)
     assert len(requests) == 1
-    page.route(
-        "**/setup-source-progress",
-        lambda route: route.fulfill(content_type="text/html", body="Manual progress"),
-    )
-    with page.expect_request("**/setup-source-progress") as submitted:
-        page.get_by_role("button", name="Check progress now").click()
-    assert submitted.value.method == "POST"
-
-
-def test_setup_progress_shows_each_collection_then_offers_continue(
-    page, component_origin
-):
-    """The download lists finished collections; completion reveals Continue."""
-    from playwright.sync_api import expect
-
-    page.clock.install(time=NOW)
-    state = {"done": False}
-
-    def respond(route):
-        """First a download midway through the rosters, then a finished load."""
-        done = state["done"]
-        route.fulfill(
-            json={
-                "server_now": NOW.isoformat(),
-                "task_id": urlsplit(route.request.url).path.split("/")[-1],
-                "task_state": "succeeded" if done else "running",
-                "setup_state": "collecting" if done else "loading",
-                "phase": "validating" if done else "fetching",
-                "active": not done,
-                "current": 9000 if done else 0,
-                "total": 9000 if done else 0,
-                "collections": load_collections(7)
-                if done
-                else load_collections(5, finished=57, expected=213),
-                "started_at": (NOW - timedelta(seconds=75)).isoformat(),
-                "heartbeat_at": (NOW - timedelta(seconds=3)).isoformat(),
-                "idle_at": (NOW + timedelta(minutes=30)).isoformat(),
-                "watchdog_at": (NOW + timedelta(hours=2)).isoformat(),
-                "absolute_at": (NOW + timedelta(hours=12)).isoformat(),
-            }
-        )
-
-    page.route("**/admin/setup/source/*?format=json", respond)
-    page.goto(component_origin + "/setup-source-progress")
-    expect(page.locator("[data-progress-elapsed]")).to_contain_text("1 min")
-    assert "downloading" in page.locator("[data-progress-summary]").inner_text()
-    assert "3 seconds ago" in page.locator("[data-progress-quiet]").inner_text()
-    families = page.locator('[data-collection="families"]')
-    assert "1,234 loaded" in families.inner_text()
-    assert "setup-load-done" in families.get_attribute("class")
-    rosters = page.locator('[data-collection="ministry_roster"]')
-    assert "57 of 213 loaded" in rosters.inner_text()
-    assert "setup-load-active" in rosters.get_attribute("class")
-    assert "Waiting" in page.locator('[data-collection="funds"]').inner_text()
-    # No meaningless "0 of 0" count while downloading.
-    assert page.locator("[data-load-records]").is_hidden()
-    assert page.locator("[data-progress-done]").is_hidden()
-    state["done"] = True
-    with page.expect_response("**/admin/setup/source/*?format=json"):
-        page.clock.fast_forward(15000)
-    expect(page.locator("[data-progress-done]")).to_have_js_property("hidden", False)
-    assert (
-        "Parish data is loaded" in page.locator("[data-progress-summary]").inner_text()
-    )
-    visible(page.get_by_role("link", name="Continue to the next step"))
-    assert page.locator("[data-task-counts]").inner_text() == "9,000 of 9,000 (100%)"
-    assert "Done" in page.locator('[data-load-phase="validating"]').inner_text()
+    assert page.get_by_role("button", name="Check progress now").count() == 0
 
 
 def test_csp_permits_the_fixed_google_form_destination(page, component_origin):

@@ -1,0 +1,8 @@
+{% load i18n %}{% comment %}
+  Load parish data's Technical details, drawn by the page inside its
+  disclosure and carried by each status update (setup-source-progress-status.html)
+  for live-status-v1.js to put there, so an open disclosure stays open.
+{% endcomment %}<p>{% translate "Task:" %} <span>{{ progress.task_id }}</span></p>
+<p>{% translate "State:" %} <span data-task-state>{{ progress.task_state }}</span></p>
+<p>{% translate "Setup state:" %} <span data-setup-state>{{ progress.setup_state }}</span></p>
+<p>{% translate "Phase:" %} <span data-task-phase>{{ progress.phase }}</span></p>

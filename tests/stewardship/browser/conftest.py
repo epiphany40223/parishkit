@@ -18,6 +18,10 @@ from django.urls import reverse
 from PIL import Image
 
 from parishkit.stewardship.accounts import setup_help
+from parishkit.stewardship.accounts import setup_mail_views as mail_views
+from parishkit.stewardship.accounts import (
+    setup_notification_views as notification_views,
+)
 from parishkit.stewardship.accounts import setup_progress_views as progress_views
 from parishkit.stewardship.accounts.backup_key import KeyStatus
 from parishkit.stewardship.accounts.branding_views import LogoUploadForm
@@ -154,6 +158,8 @@ from .send_history_components import components as send_history_components
 from .send_progress_components import components as send_progress_components
 from .settings_components import POSTS as SETTINGS_POSTS
 from .settings_components import components as settings_components
+from .setup_live_components import POSTS as SETUP_LIVE_POSTS
+from .setup_live_components import components as setup_live_components
 from .signed_in_components import POSTS as SIGNED_IN_POSTS
 from .signed_in_components import components as signed_in_components
 from .source_form_components import components as source_form_components
@@ -222,9 +228,18 @@ def _history(events):
     )
 
 
+# The passive status fragments the setup status pages poll (#1354); a test
+# answers them with a route.
+SETUP_MAIL_STATUS = "/admin/setup/mail-test/status?format=status"
+SETUP_SLACK_STATUS = "/admin/setup/slack-test/status?format=status"
+SETUP_FINISHING_STATUS = "/admin/setup/cancel?format=status"
+SETUP_LOAD_STATUS = "/admin/setup/source/progress-status?format=status"
+
+
 def finishing_context(**status):
     """The "Finishing setup" page context, built by the real step mapping."""
     from parishkit.stewardship.accounts.setup_finishing import finishing
+    from parishkit.stewardship.jobs.queue_wait import waited_words
 
     now = datetime.now(UTC)
     status = {
@@ -239,7 +254,13 @@ def finishing_context(**status):
     return (
         status
         | finishing(status)
-        | {"next": "/admin/setup/cancel", "status_url": "/setup-status.json"}
+        | {
+            "next": "/admin/setup/cancel",
+            "status_url": SETUP_FINISHING_STATUS,
+            "confirmed_ago": waited_words(
+                status["server_now"] - status["confirmed_at"]
+            ),
+        }
     )
 
 
@@ -299,16 +320,9 @@ def load_collections(done=0, *, finished=None, expected=None):
 
 def progress_page(progress, wizard):
     """The source-load progress page context, built by the view's own helpers."""
-    status_key = progress_views.summary(progress)
-    return {
-        "progress": progress,
+    return progress_views._status_context(progress) | {
         "wizard": wizard,
-        "summaries": progress_views.SUMMARIES,
-        "status_key": status_key,
-        "phases": progress_views.phases(progress, status_key),
-        "phase_status": progress_views.PHASE_STATUS,
-        "collections": progress_views.collections(progress),
-        "collection_text": progress_views.COLLECTION_TEXT,
+        "status_url": SETUP_LOAD_STATUS,
     }
 
 
@@ -941,6 +955,8 @@ def component_origin():
             "setup-notification",
             {
                 "draft": setup_draft,
+                "status_url": SETUP_SLACK_STATUS,
+                "empty": notification_views.EMPTY,
                 "channel_id": "CFIXTURE",
                 "pending": True,
                 "unknown": False,
@@ -966,6 +982,8 @@ def component_origin():
             "setup-mail",
             {
                 "draft": setup_draft,
+                "status_url": SETUP_MAIL_STATUS,
+                "empty": mail_views.EMPTY,
                 "testing_recipient": "testing@example.org",
                 "pending": True,
                 "unknown": False,
@@ -992,6 +1010,8 @@ def component_origin():
             "setup-mail",
             {
                 "draft": setup_draft,
+                "status_url": SETUP_MAIL_STATUS,
+                "empty": mail_views.EMPTY,
                 "wizard": final_wizard("mail_test"),
                 "tested": False,
                 "testing_recipient": "testing@example.org",
@@ -1020,6 +1040,8 @@ def component_origin():
             "setup-mail",
             {
                 "draft": setup_draft,
+                "status_url": SETUP_MAIL_STATUS,
+                "empty": mail_views.EMPTY,
                 "wizard": final_wizard("mail_test", tests=frozenset({"mail_test"})),
                 "tested": True,
                 "testing_recipient": "testing@example.org",
@@ -1035,8 +1057,8 @@ def component_origin():
                 "items": [
                     {
                         "id": "synthetic-delivery",
-                        "state": "queued",
-                        "label": "Still sending (queued)",
+                        "state": "accepted",
+                        "label": "Delivered",
                         "created_at": NOW.isoformat(),
                         "current": True,
                     }
@@ -1529,6 +1551,8 @@ def component_origin():
                     "total": 0,
                     "active": True,
                     "collections": load_collections(),
+                    "started_at": (NOW - timedelta(seconds=75)).isoformat(),
+                    "heartbeat_at": (NOW - timedelta(seconds=3)).isoformat(),
                     "idle_at": (NOW + timedelta(minutes=30)).isoformat(),
                     "watchdog_at": (NOW + timedelta(hours=2)).isoformat(),
                     "absolute_at": (NOW + timedelta(hours=12)).isoformat(),
@@ -2114,6 +2138,9 @@ def component_origin():
     responses.update(content_catalog_components(context, admin))
     responses.update(in_place_components(context, admin))
     responses.update(live_status_components(context, admin))
+    responses.update(
+        setup_live_components(context, admin, NOW, SETUP_MAIL_STATUS, setup_draft)
+    )
     responses.update(in_place_commands_components(context, admin))
     responses.update(family_test_components(context, admin))
     responses.update(upload_defaults_components(context, admin))
@@ -2145,6 +2172,7 @@ def component_origin():
         | FIND_FAMILY_POSTS
         | SECURITY_POSTS
         | LIVE_STATUS_POSTS
+        | SETUP_LIVE_POSTS
         | SETTINGS_POSTS
         | STEPPER_POSTS
         | CAMPAIGN_SETTINGS_POSTS

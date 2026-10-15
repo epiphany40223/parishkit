@@ -2341,311 +2341,60 @@
     document.querySelectorAll("form").forEach(gateAcknowledgments);
   });
 
-  // Readiness status is a passive GET, never the source-load idle-renewal
-  // exception. No message content, key or answer is retained by this poller.
-  document.querySelectorAll("[data-setup-mail]").forEach((panel) => {
-    const button = panel.querySelector("[data-mail-send]");
-    const warning = panel.querySelector("[data-mail-status-error]");
-    const uncertain = panel.querySelector("[data-mail-uncertain]");
-    const acknowledgement = uncertain?.querySelector("input");
-    // Until this revision's test is accepted the send button is the page's
-    // primary action and Continue waits hidden (setup-test-actions.html).
-    const onward = panel.querySelector("[data-mail-continue]");
-    const states = new Set([
-      "queued", "submitting", "accepted", "not_sent", "delivery_unknown", "cancelled"
-    ]);
-    if (!button || !warning || !uncertain || !acknowledgement) return;
-    acknowledgement.required = !uncertain.hidden;
-    let pending = panel.dataset.mailPending === "true";
-    let inFlight = false;
-    let stopped = false;
-    let activeRequest = null;
-    async function refresh() {
-      if (!pending || inFlight || stopped || document.hidden) return;
-      inFlight = true;
-      const controller = new AbortController();
-      activeRequest = controller;
-      const timeout = window.setTimeout(() => controller.abort(), 10000);
-      try {
-        const response = await fetch(panel.dataset.mailStatusUrl, {
-          method: "GET", credentials: "same-origin", cache: "no-store",
-          headers: {"Accept": "application/json"}, signal: controller.signal
-        });
-        if (!response.ok) throw new Error("status unavailable");
-        const data = await response.json();
-        if (!Number.isSafeInteger(data.revision) ||
-            String(data.revision) !== panel.dataset.mailRevision ||
-            typeof data.pending !== "boolean" || typeof data.unknown !== "boolean" ||
-            !Array.isArray(data.items) || data.items.length > 25) {
-          throw new Error("status changed");
-        }
-        const nodes = new Map([...panel.querySelectorAll("[data-mail-id]")]
-          .map((node) => [node.dataset.mailId, node.querySelector("[data-mail-state]")]));
-        for (const item of data.items) {
-          if (!states.has(item.state) || typeof item.label !== "string" ||
-              item.label.length > 512 || !nodes.get(item.id)) {
-            throw new Error("status changed");
-          }
-        }
-        for (const item of data.items) nodes.get(item.id).textContent = item.label;
-        if (onward?.hidden && data.items.some((item) =>
-          item.current === true && item.state === "accepted")) {
-          onward.hidden = false;
-          button.hidden = true;
-        }
-        pending = data.pending;
-        // This poller owns the send button's pending state; take it back from
-        // the acknowledgment gate, then let the gate apply the new prompt.
-        button.removeAttribute("data-acknowledgment-gated");
-        button.disabled = pending;
-        uncertain.hidden = !data.unknown;
-        acknowledgement.required = data.unknown;
-        gateAcknowledgments(acknowledgement.form);
-      } catch {
-        stopped = true;
-        button.removeAttribute("data-acknowledgment-gated");
-        button.disabled = true;
-        warning.hidden = false;
-        // The button is held by the failure now, not by the box: drop the hint.
-        gateAcknowledgments(acknowledgement.form);
-      } finally {
-        window.clearTimeout(timeout);
-        activeRequest = null;
-        inFlight = false;
-      }
-    }
-    const timer = window.setInterval(refresh, 5000);
-    document.addEventListener("visibilitychange", refresh);
-    window.addEventListener("pagehide", () => {
-      stopped = true;
-      window.clearInterval(timer);
-      activeRequest?.abort();
-    });
-    refresh();
-  });
-
-  // "Finishing setup" polls a passive GET status (it never renews the setup
-  // login) every 15 seconds while visible. The server returns only a short
-  // signature of what the page shows: a change reloads the page, and
-  // completion reveals the Continue link instead of leaving the page.
-  document.querySelectorAll("[data-finishing]").forEach((panel) => {
-    const done = document.querySelector("[data-finishing-done]");
-    const warning = panel.querySelector("[data-finishing-unavailable]");
-    let stopped = false;
-    let inFlight = false;
-    let timer = null;
-    let controller = null; // the status request in flight, aborted on pagehide
-    async function refresh() {
-      if (stopped || inFlight || document.hidden) return;
-      inFlight = true;
-      controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 10000);
-      try {
-        const response = await fetch(panel.dataset.finishingUrl, {
-          method: "GET", credentials: "same-origin", cache: "no-store",
-          headers: {"Accept": "application/json"}, signal: controller.signal
-        });
-        if (!response.ok) throw new Error("status unavailable");
-        const data = await response.json();
-        // A reply that arrives after pagehide must not reload or reveal.
-        if (stopped) return;
-        if (typeof data.signature !== "string" || typeof data.overall !== "string") {
-          throw new Error("status changed");
-        }
-        warning.hidden = true;
-        if (data.overall === "completed") {
-          stopped = true;
-          if (done) done.hidden = false;
-          panel.hidden = true;
-        } else if (data.signature !== panel.dataset.finishingSignature) {
-          stopped = true;
-          window.location.reload();
-        }
-      } catch {
-        if (!stopped) warning.hidden = false;
-      } finally {
-        window.clearTimeout(timeout);
-        inFlight = false;
-        controller = null;
-        if (!stopped) timer = window.setTimeout(refresh, 15000);
-      }
-    }
-    document.addEventListener("visibilitychange", () => {
-      if (!document.hidden && !inFlight) {
-        window.clearTimeout(timer);
-        refresh();
-      }
-    });
-    window.addEventListener("pagehide", () => {
-      stopped = true;
-      window.clearTimeout(timer);
-      controller?.abort();
-    });
-    timer = window.setTimeout(refresh, 15000);
-  });
-
-  // Only the exact source-progress page posts this renewal exception. The
-  // server checks the original login, task/source leases and five-minute limit;
-  // visibility and local deadlines merely stop unnecessary browser requests.
-  document.querySelectorAll("[data-setup-progress]").forEach((panel) => {
-    const form = panel.querySelector("form");
-    const warning = panel.querySelector("[data-progress-unavailable]");
-    const deadlines = [...panel.querySelectorAll("[data-progress-deadline]")];
-    const number = new Intl.NumberFormat("en-US");
-    const localTime = {format: (date) => window.ParishDates ?
-      window.ParishDates.instant(date) : date.toISOString()};
-    let active = panel.dataset.progressActive === "true";
+  // The setup wizard's status pages (Test email, Test Slack, Load parish
+  // data, Finishing setup) follow their work through live-status-v1.js
+  // regions (#1354). Only the source-load idle renewal stays here: while the
+  // exact source-progress page is visible and its load is active, a
+  // CSRF-only POST renews the setup's idle deadline every 15 seconds. The
+  // server checks the original login, task/source leases and five-minute
+  // limit; visibility and local deadlines merely stop unnecessary requests.
+  // The renewal draws no status (the live region does); it only keeps the
+  // deadlines it stops at current and says when it could not renew.
+  document.querySelectorAll("form[data-setup-renew]").forEach((form) => {
+    const warning = document.querySelector("[data-progress-unavailable]");
+    const deadlines = [...form.querySelectorAll("[data-progress-deadline]")];
+    let active = form.dataset.progressActive === "true";
     let closed = false, pending = false, timer = null, controller = null;
     // Anchor server instants to monotonic elapsed time, not the browser's wall
     // clock. Clock skew or a later system-clock correction must not stop renewal.
-    let serverAt = Date.parse(panel.dataset.progressNow), observedAt = performance.now();
-    // Liveness display: elapsed time and the worker's last report tick locally
-    // between checks, so a download whose totals are not yet known (0 of 0)
-    // still visibly progresses. These are display-only; nothing is posted.
-    const texts = Object.fromEntries([...panel.querySelectorAll("[data-progress-text]")]
-      .map(node => [node.dataset.progressText, node.textContent]));
-    const summary = panel.querySelector("[data-progress-summary]");
-    const bar = panel.querySelector("[data-progress-bar]");
-    const elapsed = panel.querySelector("[data-progress-elapsed]");
-    const quiet = panel.querySelector("[data-progress-quiet]");
-    const checked = panel.querySelector("[data-progress-checked]");
-    const done = document.querySelector("[data-progress-done]");
-    const failed = document.querySelector("[data-progress-failed]");
-    const records = panel.querySelector("[data-load-records]");
-    const phaseList = panel.querySelector(".setup-load-phases");
-    const collectionList = panel.querySelector("[data-load-collections]");
-    const phaseOrder = ["fetching", "staging", "validating"];
-    // Fill a server-rendered wording template such as "{count} loaded".
-    const fill = (template, values) => template.replace(/\{(\w+)\}/g,
-      (match, name) => (name in values ? number.format(values[name]) : match));
-    const mark = (node, state, text) => {
-      node.classList.remove("setup-load-done", "setup-load-active", "setup-load-waiting");
-      node.classList.add(`setup-load-${state}`);
-      const status = node.querySelector("[data-load-status]");
-      if (status && status.textContent !== text) status.textContent = text;
-    };
-    // Mirrors setup_progress_views.phases() and collections().
-    const showLoad = (data, key) => {
-      const index = phaseOrder.indexOf(data.phase);
-      phaseList?.querySelectorAll("[data-load-phase]").forEach((node) => {
-        const position = phaseOrder.indexOf(node.dataset.loadPhase);
-        const state = key === "done" || position < index ? "done"
-          : position === index && data.active ? "active" : "waiting";
-        mark(node, state, phaseList.dataset[`status${state[0].toUpperCase()}${state.slice(1)}`]);
-      });
-      if (collectionList) {
-        const text = collectionList.dataset;
-        const fetching = data.phase === "fetching" && data.active;
-        let waiting = false;
-        data.collections.forEach((item) => {
-          const node = collectionList.querySelector(`[data-collection="${item.key}"]`);
-          let state = "waiting";
-          if (item.done) state = "done";
-          else if (fetching && !waiting) { state = "active"; waiting = true; }
-          const rosters = item.key === "ministry_roster" && item.expected !== null;
-          mark(node, state, rosters && state !== "waiting" ? fill(text.textRosters, item)
-            : state === "done" ? fill(text.textDone, item)
-            : state === "active" ? text.textActive : text.textWaiting);
-        });
-      }
-      if (records) records.hidden = !["staging", "validating"].includes(data.phase);
-    };
-    const validCollections = (items) => Array.isArray(items) && items.length <= 20
-      && items.every((item) => item && typeof item.key === "string" && /^[a-z_]{1,40}$/.test(item.key)
-        && collectionList?.querySelector(`[data-collection="${item.key}"]`)
-        && Number.isSafeInteger(item.count) && item.count >= 0 && typeof item.done === "boolean"
-        && [item.finished, item.expected].every((value) => value === null
-          || (Number.isSafeInteger(value) && value >= 0)));
-    let startedAt = Date.parse(panel.dataset.progressStarted || "");
-    let heartbeatAt = Date.parse(panel.dataset.progressHeartbeat || "");
-    const duration = (milliseconds) => {
-      const seconds = Math.max(0, Math.floor(milliseconds / 1000));
-      return seconds < 60 ? `${seconds} seconds`
-        : `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
-    };
-    // Mirrors the server's summary() choice of plain-language status text.
-    const statusKey = (data) => {
-      if (data.setup_state === "expired"
-          || ["failed", "cancelled", "abandoned"].includes(data.task_state)) return "failed";
-      if (data.task_state === "succeeded" || data.setup_state === "collecting") return "done";
-      if (["queued", "retry_wait"].includes(data.task_state)) return data.task_state;
-      return data.phase in texts ? data.phase : "working";
-    };
-    const tick = () => {
-      const now = serverAt + performance.now() - observedAt;
-      if (elapsed && Number.isFinite(startedAt) && active) elapsed.textContent = duration(now - startedAt);
-      if (quiet && Number.isFinite(heartbeatAt) && active) quiet.textContent = `${duration(now - heartbeatAt)} ago`;
-    };
-    const ticker = window.setInterval(tick, 1000);
+    let serverAt = Date.parse(form.dataset.progressNow), observedAt = performance.now();
     const live = () => {
-      const until = Math.min(...deadlines.map(node => Date.parse(node.dateTime)));
+      const until = Math.min(...deadlines.map((node) => Date.parse(node.dateTime)));
       const now = serverAt + performance.now() - observedAt;
       return !closed && active && Number.isFinite(until) && Number.isFinite(now) && now < until;
     };
     const schedule = () => {
       window.clearTimeout(timer);
-      if (live()) timer = window.setTimeout(refresh, 15000);
+      if (live()) timer = window.setTimeout(renew, 15000);
     };
-    async function refresh() {
+    async function renew() {
       if (!live() || pending) return;
       if (document.hidden) { schedule(); return; }
       pending = true;
       controller = new AbortController();
       const timeout = window.setTimeout(() => controller.abort(), 5000);
       try {
-        const response = await fetch(panel.dataset.progressUrl, {
+        const response = await fetch(form.dataset.progressUrl, {
           method: "POST", credentials: "same-origin", cache: "no-store",
           headers: {"Content-Type": "application/x-www-form-urlencoded"},
           body: new URLSearchParams(new FormData(form)), signal: controller.signal
         });
         if (!response.ok) throw new Error("unavailable");
         const data = await response.json();
-        if (data.task_id !== panel.dataset.progressTask || typeof data.active !== "boolean"
+        if (data.task_id !== form.dataset.progressTask || typeof data.active !== "boolean"
             || !Number.isFinite(Date.parse(data.server_now))
-            || !Number.isSafeInteger(data.current) || !Number.isSafeInteger(data.total)
-            || data.current < 0 || data.total < data.current
-            || !["queued", "running", "retry_wait", "abandoned", "succeeded", "failed", "cancelled"].includes(data.task_state)
-            || !["collecting", "loading", "frozen", "completed", "expired"].includes(data.setup_state)
-            || typeof data.phase !== "string" || !validCollections(data.collections)
-            || deadlines.some(node => !Number.isFinite(Date.parse(data[node.dataset.progressDeadline])))) {
+            || deadlines.some((node) => !Number.isFinite(Date.parse(data[node.dataset.progressDeadline])))) {
           throw new Error("unavailable");
         }
-        if (closed || document.hidden) return;
+        if (closed) return;
         serverAt = Date.parse(data.server_now);
         observedAt = performance.now();
         active = data.active;
-        panel.querySelector("[data-task-state]").textContent = data.task_state;
-        panel.querySelector("[data-setup-state]").textContent = data.setup_state;
-        panel.querySelector("[data-task-phase]").textContent = data.phase;
-        const percentage = data.total ? Math.round(data.current * 100 / data.total) : 0;
-        panel.querySelector("[data-task-counts]").textContent =
-          `${number.format(data.current)} of ${number.format(data.total)} (${percentage}%)`;
-        // Unknown totals show an indeterminate bar rather than a stuck 0%.
-        if (bar && data.total) { bar.max = data.total; bar.value = data.current; }
-        else if (bar) bar.removeAttribute("value");
-        if (typeof data.started_at === "string" && Number.isFinite(Date.parse(data.started_at))) {
-          startedAt = Date.parse(data.started_at);
-        }
-        if (typeof data.heartbeat_at === "string" && Number.isFinite(Date.parse(data.heartbeat_at))) {
-          heartbeatAt = Date.parse(data.heartbeat_at);
-        }
-        const key = statusKey(data);
-        if (summary && texts[key] && summary.textContent !== texts[key]) summary.textContent = texts[key];
-        showLoad(data, key);
-        if (done) done.hidden = key !== "done";
-        if (failed) failed.hidden = key !== "failed";
-        if (checked) {
-          checked.dateTime = data.server_now;
-          checked.textContent = localTime.format(new Date(serverAt));
-        }
-        tick();
-        deadlines.forEach(node => {
-          node.dateTime = data[node.dataset.progressDeadline];
-          node.textContent = localTime.format(new Date(node.dateTime));
-        });
-        warning.hidden = true;
+        deadlines.forEach((node) => { node.dateTime = data[node.dataset.progressDeadline]; });
+        if (warning) warning.hidden = true;
       } catch (_) {
-        if (!closed && !document.hidden) warning.hidden = false;
+        // Tried again on the next turn while the load is still live.
+        if (!closed && !document.hidden && warning) warning.hidden = false;
       } finally {
         window.clearTimeout(timeout);
         pending = false;
@@ -2653,33 +2402,20 @@
         schedule();
       }
     }
-    form.addEventListener("submit", event => {
-      // A stopped automatic poller must not disable the normal manual form.
-      if (live()) { event.preventDefault(); refresh(); }
-    });
-    window.addEventListener("pagehide", () => {
-      closed = true;
+    // A page kept in the back/forward cache (persisted) renews again when
+    // it is shown; one that goes away for good stops.
+    window.addEventListener("pagehide", (event) => {
       window.clearTimeout(timer);
-      window.clearInterval(ticker);
       if (controller) controller.abort();
+      if (!event.persisted) closed = true;
     });
+    window.addEventListener("pageshow", (event) => { if (event.persisted) renew(); });
     document.addEventListener("visibilitychange", () => {
       if (document.hidden && controller) controller.abort();
-      if (!document.hidden) refresh();
+      if (!document.hidden) renew();
     });
-    tick();
-    refresh();
+    renew();
   });
-
-  // The setup pollers above (test mail and Slack, Finishing setup, source
-  // progress) stop for good on pagehide. A page the browser brings back from
-  // its history (Back or Forward) would show their last reading with nothing
-  // polling, so it is loaded again instead and shows the current state (#563).
-  if (document.querySelector("[data-setup-mail], [data-finishing], [data-setup-progress]")) {
-    window.addEventListener("pageshow", (event) => {
-      if (event.persisted) window.location.reload();
-    });
-  }
 
   // A control's value for the rules below (data-show-when and
   // data-required-when). A checkbox counts as its value only while it is

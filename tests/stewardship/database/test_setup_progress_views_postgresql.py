@@ -45,7 +45,18 @@ def test_progress_get_is_passive_and_csrf_post_renews_only_the_bound_load(
         passive = browser.get(path + "?format=json")
         assert passive.status_code == 200 and not passive.json()["renewed"]
         assert {"started_at", "heartbeat_at"} <= passive.json().keys()
+        # The page polls its live status region, the same passive read
+        # (#1354); it carries no form, token or deadline, and never renews.
+        assert f'data-live-url="{path}?format=status"'.encode() in page.content
+        region = browser.get(path + "?format=status")
+        assert region.status_code == 200 and region["Cache-Control"] == "no-store"
+        assert b'data-live-status="setup-load"' in region.content
+        assert b'data-collection="ministry_roster"' in region.content
+        assert b"csrfmiddlewaretoken" not in region.content
+        assert b"data-progress-deadline" not in region.content
+        assert post(browser, path + "?format=status", {}).status_code == 400
         assert PortalSession.objects.get().last_activity_at == before
+        assert SetupAttempt.objects.get().renewed_at is None
         assert browser.post(path + "?format=json").status_code == 403
         renewed = post(browser, path + "?format=json", {})
         assert renewed.status_code == 200, renewed.content
@@ -68,6 +79,8 @@ def test_progress_cannot_accept_browser_deadlines_or_unbound_tasks(progress_brow
             assert post(browser, path + "?format=json", values).status_code == 400
         assert browser.get(path + "?format=private").status_code == 400
         assert browser.get(f"/admin/setup/source/{uuid4()}").status_code == 404
+        unbound = f"/admin/setup/source/{uuid4()}?format=status"
+        assert browser.get(unbound).status_code == 404
         assert SetupAttempt.objects.get().renewed_at is None
 
 

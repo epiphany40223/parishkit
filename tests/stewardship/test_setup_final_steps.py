@@ -106,9 +106,11 @@ def test_email_test_sends_until_accepted_then_continues(slack):
     row = actions(waiting)
     assert '<button data-mail-send type="submit" form="setup-test">' in row
     assert "Send test email" in row
-    # Continue waits, hidden, for the page script to reveal after acceptance.
-    assert f'data-mail-continue href="{after}" hidden' in row
-    assert 'id="setup-test"' in waiting and "Send another test" not in waiting
+    # No hidden Continue: once a test settles, the live status region
+    # re-reads this panel in place, which brings the row back with Continue.
+    assert "setup-continue" not in row
+    assert 'action="#setup-test-panel" id="setup-test" data-in-place' in waiting
+    assert "Send another test" not in waiting
     done = page(
         "setup-mail.html",
         "mail_test",
@@ -140,7 +142,8 @@ def test_slack_test_follows_the_same_pattern():
     )
     row = actions(html)
     assert "Send Slack test" in row and " disabled" in row
-    assert f'href="{reverse("admin:setup_confirmation")}" hidden' in row
+    # Continue comes with the panel's in-place re-read once a test settles.
+    assert "setup-continue" not in row
     assert f'href="{reverse("admin:setup_mail")}"' in row  # Back
 
 

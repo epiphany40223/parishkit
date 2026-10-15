@@ -64,6 +64,15 @@ def test_final_confirmation_freezes_once_then_shows_passive_original_progress(
             "overall": "working",
             "signature": response.context["signature"],
         }
+        # The page's live status region is the same passive read (#1354).
+        region = browser.get("/admin/setup/cancel?format=status")
+        assert region.status_code == 200, region.content
+        assert region["Cache-Control"] == "no-store"
+        assert b'data-live-status="setup-finishing"' in region.content
+        assert b"data-live-pending" in region.content
+        assert b"Install the ParishSoft credential" in region.content
+        assert b'name="csrfmiddlewaretoken" value=""' in region.content
+        assert b'data-live-url="/admin/setup/cancel?format=status"' in response.content
         assert browser.get("/admin/setup/cancel?format=xml").status_code == 400
         assert browser.get("/admin/setup/cancel?other=1").status_code == 400
         # The setup overview sends a confirmed setup's owner to this page.
@@ -103,6 +112,12 @@ def test_finishing_page_asks_for_a_fresh_sign_in_when_install_cannot_start(
         assert "Your setup is kept." in body
         assert 'name="next" value="/admin/setup/cancel"' in body
         assert response.context["reauthenticate"]
+        # The polled region carries the same notice for the page to show in
+        # place, with an empty CSRF token the page fills from its own.
+        region = browser.get("/admin/setup/cancel?format=status").content.decode()
+        assert "For security, installing credentials needs a Google sign-in" in region
+        assert '<template data-live-mirror="setup-step-up">' in region
+        assert 'name="csrfmiddlewaretoken" value=""' in region
 
 
 def test_missing_readiness_disables_ui_and_server_refuses_forced_confirmation(
