@@ -408,9 +408,17 @@ def delivery_detail(request, message_id):
             retry_label=ACTION_LABELS[RETRY_ACTIONS[delivery["state"]]]
             if data["retry_unavailable"]
             else None,
-            # An unavailable retry is a decision too: it is shown, greyed,
-            # in the "Resolve this email" section where it would sit (#563).
-            decisions=data["retry_unavailable"]
+            # Decisions other campaign work holds now, shown unavailable,
+            # named by the notice that says why (#1331).
+            held=[
+                dict(action=action, label=ACTION_LABELS[action])
+                for action in data["held"]
+            ],
+            # An unavailable retry, or a held decision, is a decision too: it
+            # is shown, greyed, in the "Resolve this email" section where it
+            # would sit (#563).
+            decisions=(data["retry_unavailable"] and bool(data["actions"]))
+            or bool(data["held"])
             or any(action != "note" for action in data["actions"]),
             commands=[
                 dict(action=action, label=ACTION_LABELS[action], id=uuid4())

@@ -273,6 +273,27 @@ def components(now):
         ],
     )
     yield "/delivery", "delivery", delivery
+    # Other campaign work holds the email: its decisions stay in view,
+    # unavailable, named by the notice that says why (#1331).
+    yield (
+        "/delivery-held",
+        "delivery",
+        delivery
+        | dict(
+            commands=[],
+            held=[
+                dict(action=action, label=label)
+                for action, label in (
+                    ("accept", "Confirm delivery using external evidence"),
+                    (
+                        "confirm_unsent",
+                        "Record that the provider did not send it (no resend)",
+                    ),
+                    ("resend", "Authorize potentially duplicate resend"),
+                )
+            ],
+        ),
+    )
     # A delivered email offers only the evidence note: no decision, so the
     # note form waits closed in a disclosure (#1015).
     yield (
@@ -446,6 +467,13 @@ def components(now):
         command_id=uuid4(),
     )
     yield "/delivery-refusal", "delivery-refusal", detail
+    # Other campaign work holds the clearance: Clear is unavailable, named by
+    # that reason (#1331).
+    yield (
+        "/delivery-refusal-busy",
+        "delivery-refusal",
+        detail | dict(can_clear=False, clear_blocked="busy"),
+    )
     # A reported bounce (#806 slice 4): marked in the list, and its page
     # names the report, its time and the Administrator's note.
     reported = refusal | dict(

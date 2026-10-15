@@ -15,6 +15,7 @@ from .held_emails_components import (
     PAGE,
     PREVIEW,
     SETTLED,
+    STALE,
     STEP_UP,
 )
 from .test_restore_review import AXE, _not_reloaded, _routed, _top, expect
@@ -137,3 +138,24 @@ def test_without_holds_the_page_says_so(page, component_origin):
     page.goto(component_origin + NONE)
     expect(page.get_by_text("No held emails.")).to_be_visible()
     expect(page.locator(f"{REGION} table")).to_have_count(0)
+
+
+def test_a_sign_in_that_ages_during_a_preview_moves_nothing(page, component_origin):
+    """Cancel answered after the sign-in has aged draws the step-up notice
+    after the table, so no row's button moves (#1331)."""
+    _route(
+        page,
+        component_origin,
+        {"group-preview": (200, PREVIEW), "cancel": (200, STALE)},
+    )
+    page.goto(component_origin + PAGE)
+    kept = _not_reloaded(page)
+    region = page.locator(REGION)
+    assume = region.get_by_role("button", name="Assume these were sent", exact=True)
+    before = (_top(assume.first), _top(assume.nth(1)))
+    assume.first.click()
+    region.get_by_role("button", name="Cancel").click()
+    expect(region.locator("#restore-fresh-reason")).to_be_visible()
+    expect(assume.first).to_be_disabled()
+    assert (_top(assume.first), _top(assume.nth(1))) == pytest.approx(before, abs=1)
+    assert kept()

@@ -31,6 +31,10 @@ OLDEST = ADMIN + "?size=all&sort=when"
 NEWEST = ADMIN + "?size=all&sort=-when"
 STAFF = "/family-timeline-staff"
 UNAVAILABLE = "/family-timeline-unavailable"
+# A Family ParishSoft no longer lists as active and registered, while other
+# campaign work holds exports: Open form and Queue timeline export are
+# unavailable, each named by its reason (#1331).
+LOCKED = "/family-timeline-locked"
 # A second Family whose campaign has a Testing rehearsal, so the export form
 # is drawn in both modes and its mode follows the in-place switch.
 REHEARSED = UUID(int=7)
@@ -83,12 +87,17 @@ def components(context, admin):
             "production",
             {"full": True, "testing_codes": True, "family_test_url": ADMIN},
         ),
+        LOCKED: (
+            TIMELINE,
+            "production",
+            {"full": True, "eligible": False, "export": EXPORT | {"mutable": False}},
+        ),
         REHEARSED_ADMIN: (TIMELINE, "production", {"full": True, "family": REHEARSED}),
         REHEARSED_TESTING: (TIMELINE, "testing", {"full": True, "family": REHEARSED}),
     }
     # Administrators and Staff both may see Family codes.
     pages = {
-        path: (timeline, mode, options | {"show_codes": True, "export": EXPORT})
+        path: (timeline, mode, {"show_codes": True, "export": EXPORT} | options)
         for path, (timeline, mode, options) in pages.items()
     }
     responses = {}

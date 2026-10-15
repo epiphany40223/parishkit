@@ -874,6 +874,16 @@ the server draws disabled because other campaign work holds the page (report
 exports, follow-up saves, Participation) or because the sign-in is not
 recent (automation approval) names that notice too.
 
+The same applies wherever the page already knows the refusal, whatever the
+reason: other campaign work holding the action, a missing prerequisite the
+server checks first, or a sign-in that is not recent (named by the shared
+step-up notice). When that notice can appear on an in-place answer, it is
+drawn after the controls it disables, so nothing moves
+([#1331](https://github.com/epiphany40223/parishkit/issues/1331)). Each
+feature spec lists its own cases, such as
+[Restore review](../admin-portal/spec.md#restore-release) and the
+[Family timeline](../reports/spec.md#family-timeline).
+
 ### Field errors and live checks
 
 **Rule.** An error is shown at its field: the message beside it, the field

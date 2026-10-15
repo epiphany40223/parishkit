@@ -116,4 +116,13 @@ def components(context, admin):
             },
         ),
     )
+    # No Weekly Admin digest schedule: Queue is unavailable, named by the
+    # notice that says why (#1331).
+    pages["/weekly-manual-no-schedule"] = (
+        "text/html",
+        render_to_string(
+            "stewardship/weekly-manual.html",
+            context | {"admin_chrome": admin, "form": None, "blocker": "no_schedule"},
+        ),
+    )
     return pages
