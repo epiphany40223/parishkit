@@ -2190,7 +2190,8 @@ def test_the_backups_panel_repeats_no_problem_sentence():
     ):
         assert gone not in details
     assert "Off-site copy: The newest copy finished." in details
-    assert details.count("Off-site backup settings") == 2  # problem and panel
+    # The problem's link and the panel's, each to the off-site settings.
+    assert details.count("/admin/system/integrations/backup/") == 2
     # Without the incident, a failed copy is still a notice in the panel.
     quiet = backups_details(tiles({"health": health(offsite=offsite(kind="failed"))}))
     assert '<p class="notice">Off-site copy:' in quiet
