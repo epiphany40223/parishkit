@@ -14,7 +14,7 @@
 <dt>{% translate "Not needed" %}</dt><dd>{% translate "The Family already responded, a later email replaced this one, the schedule changed, or the campaign closed." %}</dd>
 <dt>{% translate "Couldn't be emailed" %}</dt><dd>{% translate "The Family has no deliverable email address, or is no longer eligible." %}</dd>
 <dt>{% translate "Held" %}</dt><dd>{% translate "A reminder waiting because the Family's invitation failed or may not have arrived." %}</dd></dl>
-<p>{% url 'admin:schedule_settings' as schedules_url %}{% blocktranslate %}Reminders are numbered by their current scheduled time, in every mode, so Reminder 1 is the earliest reminder on <a href="{{ schedules_url }}">Dates and mail schedules</a>. A reminder that was removed has no number.{% endblocktranslate %}</p>
+<p>{# Greyed out, as the menu greys it, on an archived campaign (#521). #}{% translate "Reminders are numbered by their current scheduled time, in every mode, so Reminder 1 is the earliest reminder on" %} {% menu_link "schedule_settings" _("Dates and mail schedules") %}. {% translate "A reminder that was removed has no number." %}</p>
 <p>{% translate "A send still in progress says so. The one the Family email progress page is showing links to it, and that page follows it live. This page does not update by itself, does not slow any send down, and does not extend your sign-in." %}</p>{% endaboutpage %}
 <p><a href="{% url 'admin:family_email_progress' %}">{% translate "Watch Family email progress" %}</a> · <a href="{% url 'admin:deliveries' %}">{% translate "Outgoing mail" %}</a></p>
 {% if not campaign %}<p>{% translate "There is no current campaign." %}</p>
