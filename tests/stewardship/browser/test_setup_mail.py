@@ -222,3 +222,26 @@ def test_accepted_email_test_offers_continue_and_another_send(page, component_or
     visible(row.get_by_role("link", name="Continue"))
     assert row.locator("button").count() == 0
     visible(page.get_by_role("button", name="Send another test"))
+
+
+def test_restored_settled_page_is_read_again(page, component_origin):
+    """A settled page restored from the back/forward cache (pageshow,
+    persisted) re-reads its panel, so Continue gives way to what the server
+    now says. A pageshow that is not a restore reads nothing."""
+    address = "/setup-mail-test-done"
+    reads = answer_reads(
+        page, component_origin, address, SETTLED[("mail", "delivery_unknown")]
+    )
+    page.goto(component_origin + address)
+    page.evaluate(MARK)
+    visible(page.locator(".setup-actions").get_by_role("link", name="Continue"))
+    page.evaluate("window.dispatchEvent(new PageTransitionEvent('pageshow'))")
+    page.wait_for_timeout(200)
+    assert not reads
+    page.evaluate(
+        "window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))"
+    )
+    visible(page.locator("[data-mail-uncertain] input"))
+    hidden(page.locator(".setup-actions").get_by_role("link", name="Continue"))
+    assert len(reads) == 1
+    assert page.evaluate(MARKED) == "kept"
