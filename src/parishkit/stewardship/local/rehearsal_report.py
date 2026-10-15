@@ -40,6 +40,11 @@ RENEWAL_PREFIX = "lease renewal timing: "
 PHASES = ("wait_ms", "request_ms", "submit_ms", "helper_ms", "smtp_ms", "total_ms")
 # The bulk timing line kinds, in the order a send goes through them.
 KINDS = ("prepare", "commit", "outcome")
+# The seed's ordering invariant that a message is not created before its
+# occurrence is due no longer holds for a Production Reminder prepared ahead
+# of its due time (BG-12 PR 2, up to two hours early). The report leaves it
+# out and checks instead that no message was submitted before its due time.
+PREPARED_AHEAD_INVARIANTS = frozenset({"messages before their occurrence"})
 # Occurrence and message states that end a send's work.
 FINAL_OCCURRENCE_STATES = frozenset(
     {"succeeded", "skipped", "coalesced", "failed", "delivery_unknown"}
@@ -197,6 +202,8 @@ def hold_summary(bulk):
                 sum(row.get("items", 0) for row in rows) / len(rows), 2
             ),
             "hold_ms": percentiles([row.get("hold_ms", 0) for row in rows]),
+            # Every batch's hold added up: the lock time per message (PR 4).
+            "hold_total_ms": sum(row.get("hold_ms", 0) for row in rows),
             "item_ms": percentiles(
                 [value for row in rows for value in row.get("item_ms", [])]
             ),
@@ -332,13 +339,21 @@ def send_summary(meta, measure):
         "unfinished": unfinished,
         "deadlocks": _deadlocks(meta),
         "timed_out": bool(meta.get("timed_out")),
-        "invariant_violations": measure.get("invariant_violations", {}),
+        "invariant_violations": {
+            label: count
+            for label, count in measure.get("invariant_violations", {}).items()
+            if label not in PREPARED_AHEAD_INVARIANTS
+        },
+        # What the creation-order invariant stood for: nothing is SENT
+        # before its due time, prepared ahead or not.
+        "submitted_before_due": sum(1 for at in submitted if due and at < due),
     }
     correct["passed"] = (
         candidates > 0
         and len(accepted) == candidates
         and not correct["accepted_twice"]
         and not correct["invariant_violations"]
+        and not correct["submitted_before_due"]
         and not correct["two_messages"]
         and not correct["two_fulfillments"]
         and not unknown
@@ -383,16 +398,29 @@ def _deadlocks(meta):
     return after - before
 
 
-def summarize(meta, measure, timing_lines, sample_lines):
-    """Every measurement of the run, as one JSON-serializable document."""
+def summarize(meta, measure, timing_lines, sample_lines, extras=None):
+    """Every measurement of the run, as one JSON-serializable document.
+
+    ``extras`` holds the full-size rehearsal's optional inputs (BG-12 PR 4,
+    ``read_extras``): the probe lines, the pause and resume answers, the
+    credential fingerprints and the Mailpit audit. A run without them (the
+    PR 1 rehearsal) reports exactly what it did before.
+    """
+    extras = extras or {}
     bulk, renewals = parse_timings(timing_lines)
     samples = parse_samples(sample_lines)
+    send = send_summary(meta, measure)
+    holds = hold_summary(bulk)
+    full = full_summary(meta, measure, send, holds, extras)
+    if full:
+        send["correctness"] = full.pop("correctness")
     return {
         "run": {
             key: meta.get(key)
             for key in (
                 "label",
                 "image",
+                "harness_image",
                 "families",
                 "bulk",
                 "smtp_latency_ms",
@@ -413,11 +441,370 @@ def summarize(meta, measure, timing_lines, sample_lines):
                 else None
             )
         },
-        "send": send_summary(meta, measure),
-        "holds": hold_summary(bulk),
+        "send": send,
+        "holds": holds,
         "renewal_wait_ms": percentiles(renewals),
         "locks": lock_summary(samples),
+    } | ({"full": full} if full else {})
+
+
+# ---------------------------------------------------------------------------
+# The full-size rehearsal's additions (BG-12 PR 4, #447).
+
+# The probe's steps, in the order a Family takes them (spike.STEPS).
+PROBE_STEPS = ("access", "portal", "form", "presence", "submit")
+
+
+def read_extras(root):
+    """The full-size rehearsal's optional files in a run directory.
+
+    ``probe.jsonl`` (one line per probe), ``pause.json`` and ``resume.json``
+    (the control steps' answers), ``credentials-before.tsv`` and
+    ``credentials-after.tsv`` (the fingerprint rows) and ``audit.json`` (the
+    Mailpit audit). A missing or unreadable file is simply absent.
+    """
+    extras = {"probes": []}
+    for line in _lines(root / "probe.jsonl"):
+        with suppress(ValueError):
+            row = json.loads(line)
+            if isinstance(row, dict) and isinstance(row.get("steps"), dict):
+                extras["probes"].append(row)
+    for name in ("pause", "resume", "audit"):
+        with suppress(OSError, ValueError):
+            value = json.loads((root / f"{name}.json").read_text(encoding="utf-8"))
+            if isinstance(value, dict):
+                extras[name] = value
+    for name in ("before", "after"):
+        rows = [line.split("\t") for line in _lines(root / f"credentials-{name}.tsv")]
+        rows = [row for row in rows if len(row) == 3]
+        if rows:
+            extras[f"credentials_{name}"] = {
+                table: {"rows": count, "digest": digest}
+                for table, count, digest in rows
+            }
+    return extras
+
+
+def probe_summary(probes):
+    """Per step: the seconds of the probes it answered, and every outcome."""
+    steps = {}
+    for name in PROBE_STEPS:
+        seconds, outcomes = [], {}
+        for probe in probes:
+            step = probe["steps"].get(name)
+            if not isinstance(step, dict):
+                continue
+            outcome = step.get("outcome")
+            outcomes[outcome] = outcomes.get(outcome, 0) + 1
+            if outcome == "ok" and isinstance(step.get("seconds"), (int, float)):
+                seconds.append(step["seconds"])
+        steps[name] = {
+            "seconds": percentiles(seconds),
+            "outcomes": dict(sorted(outcomes.items(), key=str)),
+        }
+    failed = sum(
+        1
+        for probe in probes
+        if any(
+            isinstance(step, dict) and step.get("outcome") != "ok"
+            for step in probe["steps"].values()
+        )
+    )
+    return {"probes": len(probes), "failed_probes": failed, "steps": steps}
+
+
+def pause_summary(measure, pause, resume):
+    """How the pause and resume went, from the control answers and outcomes.
+
+    ``settled_while_paused`` counts outcomes recorded after the pause was
+    confirmed and before the resume was: the messages already submitting
+    when the pause took hold, which finish rather than being abandoned.
+    ``pause_to_quiet_seconds`` is the pause to the last of those, and
+    ``resume_to_first_outcome_seconds`` the resume to the next outcome.
+    """
+    if not pause:
+        return None
+    paused = _instant(pause.get("confirmed_at"))
+    resumed = _instant((resume or {}).get("confirmed_at"))
+    settled = sorted(
+        _instant(row["settled_at"])
+        for row in measure.get("outcomes", [])
+        if row.get("settled_at")
+    )
+    before = [at for at in settled if paused and at <= paused]
+    during = [
+        at for at in settled if paused and at > paused and (not resumed or at < resumed)
+    ]
+    after = [at for at in settled if resumed and at >= resumed]
+    return {
+        "paused": bool(pause.get("paused")),
+        "resumed": resume is not None and resume.get("paused") is False,
+        "outcomes_before_pause": len(before),
+        "settled_while_paused": len(during),
+        "outcomes_after_resume": len(after),
+        "paused_seconds": _seconds(paused, resumed),
+        "pause_to_quiet_seconds": _seconds(paused, max(during, default=None)),
+        "resume_quiet_wait_seconds": (resume or {}).get("quiet_seconds"),
+        "resume_sender_test_seconds": (resume or {}).get("test_seconds"),
+        "resume_to_first_outcome_seconds": _seconds(resumed, min(after, default=None)),
     }
+
+
+def _seconds(start, end):
+    """Seconds from ``start`` to ``end``, or None when either is missing."""
+    if start is None or end is None:
+        return None
+    return round((end - start).total_seconds(), 1)
+
+
+def lock_per_message(holds, accepted):
+    """The work-order lock time the bulk path's batches held per message.
+
+    The sum of every prepare, commit and outcome batch's hold, divided by
+    the messages accepted, plus each kind's own share; None without timing
+    lines (the one-at-a-time path, or debug logging off) or acceptances.
+    """
+    if not holds or not accepted:
+        return None
+    totals = {kind: values["hold_total_ms"] for kind, values in holds.items()}
+    return {
+        "total_ms_per_message": round(sum(totals.values()) / accepted, 1),
+        "by_kind_ms_per_message": {
+            kind: round(total / accepted, 1) for kind, total in totals.items()
+        },
+    }
+
+
+def full_summary(meta, measure, send, holds, extras):
+    """The full-size rehearsal's measurements and its stricter correctness.
+
+    Empty for a run without any of the full-size inputs. Otherwise the
+    correctness check also requires identical credential fingerprints
+    before and after (no code, MAC, link token or generation changed), a
+    Mailpit audit with no Family link in two messages and none that had not
+    been emailed before the run, and, when a pause was asked for, a pause
+    that took hold and a resume that was confirmed.
+    """
+    present = any(
+        extras.get(name)
+        for name in (
+            "probes",
+            "pause",
+            "audit",
+            "credentials_before",
+            "credentials_after",
+        )
+    )
+    if not present and not meta.get("pause_after") and not meta.get("probe_every"):
+        return {}
+    correct = dict(send["correctness"])
+    before, after = extras.get("credentials_before"), extras.get("credentials_after")
+    correct["credentials_unchanged"] = (
+        before is not None and after is not None and before == after
+    )
+    audit = extras.get("audit")
+    correct["mail_audit"] = audit is not None
+    correct["links_in_two_messages"] = (audit or {}).get("links_in_two_messages")
+    correct["links_not_emailed_before"] = (audit or {}).get("links_not_emailed_before")
+    pause = pause_summary(measure, extras.get("pause"), extras.get("resume"))
+    wanted_pause = bool(meta.get("pause_after"))
+    correct["pause_resumed"] = (
+        None
+        if not wanted_pause
+        else bool(pause and pause["paused"] and pause["resumed"])
+    )
+    correct["passed"] = (
+        send["correctness"]["passed"]
+        and correct["credentials_unchanged"]
+        and audit is not None
+        and audit.get("links_in_two_messages") == 0
+        and audit.get("links_not_emailed_before") == 0
+        and (not wanted_pause or correct["pause_resumed"])
+    )
+    accepted = send["correctness"]["accepted"]
+    paused_seconds = (pause or {}).get("paused_seconds") or 0
+    due_minutes = send.get("due_to_last_outcome_minutes")
+    active_minutes = (
+        None if due_minutes is None else round(due_minutes - paused_seconds / 60, 2)
+    )
+    return {
+        "lock_per_message": lock_per_message(holds, accepted),
+        "send_minutes_without_pause": active_minutes,
+        "accepted_per_minute_without_pause": _rate(accepted, active_minutes),
+        "probes": probe_summary(extras.get("probes", [])),
+        "pause": pause,
+        "credentials": {
+            "before": before,
+            "after": after,
+            "unchanged": correct["credentials_unchanged"],
+        },
+        "audit": audit,
+        "correctness": correct,
+    }
+
+
+def render_full(full):
+    """The full-size rehearsal's part of the text report."""
+    lines = ["", "Full-size rehearsal (BG-12 PR 4)"]
+    per = full.get("lock_per_message")
+    if per:
+        kinds = ", ".join(f"{k} {v}" for k, v in per["by_kind_ms_per_message"].items())
+        lines.append(
+            f"  Lock held per accepted message: {per['total_ms_per_message']} ms "
+            f"({kinds})"
+        )
+    else:
+        lines.append("  Lock held per accepted message: no bulk timing lines")
+    lines.append(
+        f"  Send without the pause: {full['send_minutes_without_pause']} min, "
+        f"{full['accepted_per_minute_without_pause']} accepted/min"
+    )
+    probes = full["probes"]
+    lines.append(
+        f"  Family probes: {probes['probes']} ({probes['failed_probes']} with a step "
+        "that did not answer ok); seconds per step:"
+    )
+    for name, values in probes["steps"].items():
+        lines.append(
+            f"    {name:<9} {_p(values['seconds'])} outcomes {values['outcomes']}"
+        )
+    pause = full.get("pause")
+    if pause:
+        lines += [
+            f"  Pause: paused {pause['paused']}, resumed {pause['resumed']}, "
+            f"{pause['outcomes_before_pause']} outcomes before it, "
+            f"{pause['settled_while_paused']} settled while paused, "
+            f"{pause['outcomes_after_resume']} after the resume",
+            f"    paused {pause['paused_seconds']} s; pause to quiet "
+            f"{pause['pause_to_quiet_seconds']} s; resume waited "
+            f"{pause['resume_quiet_wait_seconds']} s for quiet and "
+            f"{pause['resume_sender_test_seconds']} s for its sender test; "
+            f"resume to first outcome {pause['resume_to_first_outcome_seconds']} s",
+        ]
+    credentials = full["credentials"]
+    verdict = "unchanged" if credentials["unchanged"] else "CHANGED OR UNREAD"
+    lines.append(
+        "  Credentials (codes, code MACs, link tokens, generations, rehearsal "
+        f"credentials): {verdict}"
+    )
+    for table, value in (credentials.get("after") or {}).items():
+        lines.append(f"    {table}: {value['rows']} rows")
+    audit = full.get("audit")
+    if audit:
+        lines.append(
+            f"  Mailpit audit: {audit['run_messages']} messages since the run "
+            f"began, {audit['run_links']} Family links, "
+            f"{audit['links_in_two_messages']} in two messages, "
+            f"{audit['links_not_emailed_before']} not emailed before, "
+            f"{audit['run_messages_without_link']} without a link"
+        )
+    else:
+        lines.append("  Mailpit audit: none")
+    return lines
+
+
+# The rows ``compare`` prints: a label and the path into summary.json.
+COMPARE_ROWS = (
+    ("Image", ("run", "image")),
+    ("Families", ("run", "families")),
+    ("Candidates", ("send", "correctness", "candidates")),
+    ("Accepted", ("send", "correctness", "accepted")),
+    ("Due to last outcome (min)", ("send", "due_to_last_outcome_minutes")),
+    ("Accepted per minute", ("send", "accepted_per_minute")),
+    ("Send without the pause (min)", ("full", "send_minutes_without_pause")),
+    ("Accepted/min without the pause", ("full", "accepted_per_minute_without_pause")),
+    ("Preparation (min)", ("send", "preparation_minutes")),
+    (
+        "Lock held per message (ms)",
+        ("full", "lock_per_message", "total_ms_per_message"),
+    ),
+    ("Commit hold p50 (ms)", ("holds", "commit", "hold_ms", "p50")),
+    ("Commit hold p90 (ms)", ("holds", "commit", "hold_ms", "p90")),
+    ("Commit item p50 (ms)", ("holds", "commit", "item_ms", "p50")),
+    ("Prepare hold p50 (ms)", ("holds", "prepare", "hold_ms", "p50")),
+    ("Outcome hold p50 (ms)", ("holds", "outcome", "hold_ms", "p50")),
+    ("Commit prebuilt", ("holds", "commit", "prebuilt")),
+    ("Commit rebuilt", ("holds", "commit", "rebuilt")),
+    ("Commit unbuilt", ("holds", "commit", "unbuilt")),
+    ("Lock held (share of samples)", ("locks", "held_share")),
+    ("Lock waited on (share)", ("locks", "waited_share")),
+    ("Submit p50 (ms)", ("send", "phases", "submit_ms", "p50")),
+    ("Request p50 (ms)", ("send", "phases", "request_ms", "p50")),
+    ("Probe form p50 (s)", ("full", "probes", "steps", "form", "seconds", "p50")),
+    ("Probe form p90 (s)", ("full", "probes", "steps", "form", "seconds", "p90")),
+    ("Probe form max (s)", ("full", "probes", "steps", "form", "seconds", "max")),
+    ("Probe submit p50 (s)", ("full", "probes", "steps", "submit", "seconds", "p50")),
+    ("Probe submit p90 (s)", ("full", "probes", "steps", "submit", "seconds", "p90")),
+    ("Probe submit max (s)", ("full", "probes", "steps", "submit", "seconds", "max")),
+    ("Probes failed", ("full", "probes", "failed_probes")),
+    ("Settled while paused", ("full", "pause", "settled_while_paused")),
+    ("Pause to quiet (s)", ("full", "pause", "pause_to_quiet_seconds")),
+    (
+        "Resume to first outcome (s)",
+        ("full", "pause", "resume_to_first_outcome_seconds"),
+    ),
+    ("Credentials unchanged", ("full", "credentials", "unchanged")),
+    ("Links in two messages", ("full", "audit", "links_in_two_messages")),
+    ("Links not emailed before", ("full", "audit", "links_not_emailed_before")),
+    ("delivery_unknown", ("send", "correctness", "delivery_unknown")),
+    ("Deadlocks (40P01)", ("send", "correctness", "deadlocks")),
+    ("Correctness passed", ("send", "correctness", "passed")),
+)
+
+
+def _dig(document, path):
+    """The value at ``path`` in nested dicts, or None."""
+    for key in path:
+        if not isinstance(document, dict):
+            return None
+        document = document.get(key)
+    return document
+
+
+def compare(baseline, candidate):
+    """Two runs' summaries side by side, as text (one row per COMPARE_ROWS)."""
+    labels = (
+        _dig(baseline, ("run", "label")) or "baseline",
+        _dig(candidate, ("run", "label")) or "candidate",
+    )
+    width = max(len(label) for label, _ in COMPARE_ROWS)
+    lines = [f"{'':<{width}}  {labels[0]:>24}  {labels[1]:>24}"]
+    for label, path in COMPARE_ROWS:
+        values = [_dig(baseline, path), _dig(candidate, path)]
+        shown = ["-" if value is None else str(value) for value in values]
+        if label == "Image":
+            # Image tags are long; the commit part is what tells them apart.
+            shown = [value.split(":")[-1][:20] for value in shown]
+        lines.append(f"{label:<{width}}  {shown[0]:>24}  {shown[1]:>24}")
+    return "\n".join(lines) + "\n"
+
+
+def execute_rehearsal_compare(baseline, candidate):
+    """Console entry (``local-rehearsal-compare``): print two runs side by side.
+
+    Each directory must hold the ``summary.json`` its report wrote. Exits 0
+    when both runs passed their correctness checks, 1 when either did not,
+    and 2 when a summary cannot be read.
+    """
+    documents = []
+    for directory in (baseline, candidate):
+        try:
+            documents.append(
+                json.loads(
+                    (Path(directory) / "summary.json").read_text(encoding="utf-8")
+                )
+            )
+        except (OSError, ValueError):
+            print(
+                "ERROR: each run directory needs a readable summary.json",
+                file=sys.stderr,
+            )
+            return 2
+    sys.stdout.write(compare(*documents))
+    passed = all(
+        _dig(document, ("send", "correctness", "passed")) for document in documents
+    )
+    return 0 if passed else 1
 
 
 def _p(values):
@@ -442,8 +829,9 @@ def render(summary):
         "Time and throughput",
         f"  Due to last outcome: {send['due_to_last_outcome_minutes']} min, "
         f"{send['accepted_per_minute']} accepted/min",
-        f"  Preparation (due to last message created): {send['preparation_minutes']}"
-        f" min, {send['prepared_per_minute']} prepared/min",
+        f"  Preparation (due to last message created; negative when prepared "
+        f"ahead): {send['preparation_minutes']} min, "
+        f"{send['prepared_per_minute']} prepared/min",
         f"  Send only (mail-dispatch restart to last outcome): "
         f"{send['send_only_minutes']} min, {send['send_only_per_minute']}/min",
         "",
@@ -490,6 +878,8 @@ def render(summary):
         ]
     else:
         lines.append("  none")
+    if summary.get("full"):
+        lines += render_full(summary["full"])
     lines += [
         "",
         "Correctness " + ("PASSED" if correct["passed"] else "FAILED"),
@@ -501,10 +891,18 @@ def render(summary):
         f"{correct['delivery_unknown']}, failures {correct['failures']}, "
         f"unfinished {correct['unfinished']}",
         f"  deadlocks (40P01) {correct['deadlocks']}, timed out {correct['timed_out']}",
-        f"  ordering invariant violations {correct['invariant_violations'] or 'none'}",
+        f"  ordering invariant violations {correct['invariant_violations'] or 'none'}, "
+        f"submitted before the due time {correct['submitted_before_due']}",
         f"  occurrence states {send['occurrence_states']}",
         f"  message states {send['message_states']}",
     ]
+    if "credentials_unchanged" in correct:
+        lines.append(
+            f"  credentials unchanged {correct['credentials_unchanged']}, Mailpit "
+            f"links in two messages {correct['links_in_two_messages']}, not emailed "
+            f"before {correct['links_not_emailed_before']}, pause and resume "
+            f"{correct['pause_resumed']}"
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -535,7 +933,11 @@ def execute_rehearsal_report(directory):
         )
         return 2
     summary = summarize(
-        meta, measure, _lines(root / "timings.jsonl"), _lines(root / "locks.tsv")
+        meta,
+        measure,
+        _lines(root / "timings.jsonl"),
+        _lines(root / "locks.tsv"),
+        read_extras(root),
     )
     sys.stdout.write(render(summary))
     # A convenience beside the printed report, which the operator script

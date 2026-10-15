@@ -190,6 +190,15 @@ case "$*" in
     "rev-parse --abbrev-ref HEAD") echo pr/topic ;;
     "diff --quiet HEAD --") exit "${FAKE_DIRTY:-0}" ;;
     "ls-files -z") printf 'README.md\0deploy/stewardship/Dockerfile\0gone.txt\0' ;;
+    # --ref (BG-12 PR 4): a known ref resolves to a commit, `archive` sends
+    # one marker file, so a test can tell which source was packed.
+    "rev-parse --verify --quiet "*)
+        [ -z "$FAKE_NO_REF" ] || exit 1
+        echo fedcba9876543210fedcba9876543210fedcba98 ;;
+    "rev-parse --short fedcba9876543210fedcba9876543210fedcba98") echo fedcba9 ;;
+    "archive --format=tar "*)
+        d=$(mktemp -d) && echo ref >"$d/FROM_REF" && tar -cf - -C "$d" FROM_REF
+        rm -rf "$d" ;;
 esac
 exit 0
 """
@@ -486,6 +495,155 @@ def test_rehearse_checks_its_options_then_runs_the_vm_half(tmp_path):
         result, calls, _ = run_local(tmp_path / f"bad{n}", "rehearse", *args)
         assert result.returncode == 1, args
         assert ssh_calls(calls) == [], args
+
+
+REF_IMAGE = (
+    r"parishkit-stewardship-local:fedcba9876543210fedcba9876543210fedcba98-[0-9]{10}"
+)
+
+
+def test_full_size_rehearsal_options_reach_the_vm_half(tmp_path):
+    """--full and its options give the VM half the eight-argument form (#447)."""
+    result, calls, _ = run_local(tmp_path, "rehearse", "--full")
+    assert result.returncode == 0, result.stderr
+    assert vm_commands(calls) == ["rehearse 5 0 60 run 300 60 15 -"]
+    _, calls, _ = run_local(
+        tmp_path / "options",
+        "rehearse",
+        "--pause-after",
+        "0400",
+        "--pause-seconds",
+        "90",
+        "--probe-every",
+        "0",
+        "--label",
+        "big",
+    )
+    assert vm_commands(calls) == ["rehearse 5 0 60 big 400 90 0 -"]
+    # --harness builds this checkout first and names that image.
+    _, calls, _ = run_local(tmp_path / "harness", "rehearse", "--harness")
+    commands = vm_commands(calls)
+    assert commands[0].startswith("build parishkit-stewardship-local:")
+    tag = commands[0].split()[1]
+    assert commands[1] == f"rehearse 5 0 60 run 300 60 15 {tag}"
+    for n, args in enumerate(
+        (
+            ("--full", "--send-only"),
+            ("--pause-seconds", "5"),
+            ("--pause-seconds", "1801"),
+            ("--probe-every", "1"),
+            ("--probe-every", "601"),
+            ("--pause-after", "x"),
+        )
+    ):
+        result, calls, _ = run_local(tmp_path / f"bad{n}", "rehearse", *args)
+        assert result.returncode == 1, args
+        assert ssh_calls(calls) == [], args
+
+
+def test_compare_builds_each_ref_over_the_seeded_snapshot(tmp_path):
+    """One harness build, then reset, build, deploy and rehearse per ref."""
+    result, calls, stdins = run_local(
+        tmp_path,
+        "compare",
+        "--ref",
+        "v1.0.0",
+        "--ref",
+        "pr/topic",
+        env={"FAKE_HAS_SNAPSHOT": "1"},
+    )
+    assert result.returncode == 0, result.stderr
+    commands = vm_commands(calls)
+    assert commands[0] == "has-snapshot seeded"
+    harness = commands[1].split()[1]
+    assert re.fullmatch(LOCAL_IMAGE_PATTERN, harness)
+    assert commands[-1] == f"compare {harness} compare-a compare-b"
+    sides = commands[2:-1]
+    assert len(sides) == 8
+    for offset, side in ((0, "a"), (4, "b")):
+        reset, build, deploy, rehearse = sides[offset : offset + 4]
+        assert reset == "reset seeded"
+        tag = build.split()[1]
+        assert re.fullmatch(REF_IMAGE, tag), tag
+        assert deploy == f"deploy {tag} 0 {HOST_REMOTE} on 600"
+        assert rehearse == f"rehearse 5 0 90 compare-{side} 300 60 15 {harness}"
+    # Each side's build is the ref's archive, not the work tree.
+    archives = [
+        subprocess.run(["tar", "-tzf", "-"], input=data, capture_output=True)
+        .stdout.decode()
+        .split()
+        for data in stdins
+        if data[:2] == b"\x1f\x8b"
+    ]
+    assert archives.count(["FROM_REF"]) == 2
+    for n, (args, env) in enumerate(
+        (
+            (("--ref", "a"), {"FAKE_HAS_SNAPSHOT": "1"}),
+            (("--ref", "a", "--ref", "b"), {}),
+            (("--ref", "a", "--ref", "b", "--smtp-latency-ms", "9000"), {}),
+            (("--ref", "a", "--ref", "b", "--label", "x" * 31), {}),
+        )
+    ):
+        result, calls, _ = run_local(tmp_path / f"bad{n}", "compare", *args, env=env)
+        assert result.returncode == 1, args
+        assert "build" not in " ".join(vm_commands(calls)), args
+
+
+def test_ref_builds_a_commit_and_refuses_an_unknown_one(tmp_path):
+    """up/deploy/reset --reinstall --ref pack `git archive REF` (#447)."""
+    result, calls, stdins = run_local(tmp_path, "up", "--ref", "v1.0.0")
+    assert result.returncode == 0, result.stderr
+    assert re.fullmatch(
+        rf"up {REF_IMAGE} 100 admin@example\.test 1", vm_commands(calls)[0]
+    )
+    names = subprocess.run(["tar", "-tzf", "-"], input=stdins[0], capture_output=True)
+    assert names.stdout.decode().split() == ["FROM_REF"]
+    _, calls, _ = run_local(tmp_path / "deploy", "deploy", "--ref", "v1.0.0")
+    assert re.fullmatch(rf"build {REF_IMAGE}", vm_commands(calls)[0])
+    result, calls, _ = run_local(
+        tmp_path / "unknown", "deploy", "--ref", "nope", env={"FAKE_NO_REF": "1"}
+    )
+    assert result.returncode == 1 and "names no commit" in result.stderr
+    assert vm_commands(calls) == []
+    result, _, _ = run_local(
+        tmp_path / "rollback", "deploy", "--rollback", "--ref", "x"
+    )
+    assert result.returncode == 2
+
+
+def test_the_rehearsal_vm_forwards_nothing_and_needs_its_own_name(tmp_path):
+    """vm create --rehearsal uses lima-rehearsal.yaml under another name."""
+    text = (LIMA_YAML.parent / "lima-rehearsal.yaml").read_text()
+    assert "hostPort" not in text
+    assert "guestPortRange: [1, 65535]" in text and "proto: any" in text
+    result, calls, _ = run_local(tmp_path, "vm", "create", "--rehearsal", status="")
+    assert result.returncode == 1 and "its own name" in result.stderr
+    result, calls, _ = run_local(
+        tmp_path / "named",
+        "vm",
+        "create",
+        "--rehearsal",
+        status="",
+        env={"PARISHKIT_LOCAL_VM": "pk-rehearsal"},
+    )
+    assert result.returncode == 0, result.stderr
+    assert any(
+        c.startswith("limactl start --name=pk-rehearsal --tty=false")
+        and c.endswith("deploy/stewardship/lima-rehearsal.yaml")
+        for c in calls
+    )
+
+
+def test_vm_delete_needs_the_typed_instance_name(tmp_path):
+    """vm delete removes the instance only after the operator types its name."""
+    env = {"PARISHKIT_LOCAL_VM": "pk-rehearsal"}
+    result, calls, _ = run_local(tmp_path, "vm", "delete", env=env, stdin="wrong\n")
+    assert result.returncode == 1 and not any("delete" in c for c in calls)
+    result, calls, _ = run_local(
+        tmp_path / "yes", "vm", "delete", env=env, stdin="pk-rehearsal\n"
+    )
+    assert result.returncode == 0, result.stderr
+    assert "limactl delete --force pk-rehearsal" in calls
 
 
 def test_spike_checks_its_options_then_runs_the_vm_half(tmp_path):

@@ -10,10 +10,13 @@
 #
 # Usage: tools/stewardship-local.sh COMMAND [OPTIONS]
 #
-#   vm create | vm start | vm stop   create (and start), start or stop the VM
-#   up [--families N]                first-time install from this checkout
+#   vm create [--rehearsal] | vm start | vm stop | vm delete
+#                                    create (and start), start, stop or delete the VM;
+#                                    --rehearsal creates a throwaway VM that forwards no
+#                                    port (BG-12's rehearsal; needs PARISHKIT_LOCAL_VM)
+#   up [--families N] [--ref REF]    first-time install from this checkout (or REF)
 #   start                            start a stopped deployment's services
-#   deploy [--schema-change] [--bulk on|off] [--smtp-latency-ms N]
+#   deploy [--schema-change] [--bulk on|off] [--smtp-latency-ms N] [--ref REF]
 #                                    build this checkout and upgrade the running
 #                                    deployment to it by the Production upgrade's steps;
 #                                    --bulk renders the bulk Family send on or off and
@@ -25,13 +28,23 @@
 #   snapshot [--seeded]              save the root as the post-setup or seeded snapshot
 #   reset [--seeded]                 restore that snapshot; with no post-setup
 #                                    snapshot, wipe the root and run `up` again
-#   reset --reinstall                build from this checkout, then wipe the root
+#   reset --reinstall [--ref REF]    build from this checkout (or REF), then wipe the root
 #                                    and run `up` again, keeping the snapshots
 #   seed [--response-scale M]        seed the campaign (the fake-clock seeder)
 #   reseed [--response-scale M]      reset to the post-setup snapshot, then seed
 #   rehearse [--due-in MIN] [--send-only] [--timeout MIN] [--label NAME]
+#            [--full] [--pause-after N] [--pause-seconds S] [--probe-every S] [--harness]
 #                                    add a Reminder due in MIN minutes (default 5),
-#                                    measure its send and print the BG-12 report
+#                                    measure its send and print the BG-12 report; the
+#                                    full-size options add a pause after N messages
+#                                    (default 300; 0 none) for S seconds (default 60),
+#                                    a Family probe every S seconds (default 15; 0 none),
+#                                    the credential fingerprint and the Mailpit audit
+#   compare --ref A --ref B [--label NAME] [--smtp-latency-ms N] [--due-in MIN]
+#           [--timeout MIN] [--pause-after N] [--pause-seconds S] [--probe-every S]
+#                                    for each build: restore the seeded snapshot, deploy
+#                                    it (bulk on, latency default 600 ms) and run the
+#                                    full-size rehearsal; then print both side by side
 #   spike [--families N] [--sources S] [--during-send] [--wait MIN] [--label NAME]
 #                                    the launch-day spike check (#392 M3): N Families
 #                                    (default 200) open their emailed links and submit
@@ -73,6 +86,9 @@ envfile=/etc/parishkit/stewardship-local.env
 build=/var/tmp/parishkit-local-build
 snapshots=/opt/parishkit-snapshots
 state=$HOME/.parishkit-local
+# A git ref that up, deploy and reset --reinstall build instead of the work
+# tree (--ref); empty builds the work tree.
+ref=""
 here=$(cd "$(dirname "$0")" && pwd)
 remote=$here/stewardship-local-vm.sh
 # The scripted upgrade's host half (shared with Production), which `deploy`
@@ -80,6 +96,7 @@ remote=$here/stewardship-local-vm.sh
 host_script=$here/stewardship-upgrade-host.sh
 host_remote=/var/tmp/parishkit-local-upgrade-host.sh
 vm_yaml=$here/../deploy/stewardship/lima-local.yaml
+rehearsal_yaml=$here/../deploy/stewardship/lima-rehearsal.yaml
 
 usage() {
     # usage [EXIT]: the command summary above; exit 2 unless asked for.
@@ -135,10 +152,23 @@ pack_checkout() {
     # directory, as they are on disk now (including uncommitted edits; a
     # deleted tracked file is simply absent, an untracked one is not sent),
     # to the VM's build directory, and set `tag` to the LOCAL image tag.
-    local top dirty branch
+    local top dirty branch commit
     top=$(git rev-parse --show-toplevel 2>/dev/null || true)
     [ -n "$top" ] || refuse "Not inside a git work tree; run this from the checkout to build."
     cd "$top"
+    if [ -n "$ref" ]; then
+        # --ref REF (BG-12's rehearsal, #447): build a commit, not the work
+        # tree, so one checkout can build the release and a pull request
+        # side by side. `git archive` sends exactly REF's tracked files.
+        commit=$(git rev-parse --verify --quiet "$ref^{commit}") ||
+            refuse "--ref $ref names no commit in $top (fetch it first)."
+        tag="parishkit-stewardship-local:${commit}-$(date -u +%s)"
+        echo "==> Building $ref (commit $(git rev-parse --short "$commit")) in $vm"
+        echo "    image $tag"
+        git archive --format=tar "$commit" | gzip -c |
+            ssh_vm "sudo rm -rf '$build' && sudo mkdir -p '$build' && sudo tar -xzf - -C '$build'"
+        return 0
+    fi
     dirty=$(git diff --quiet HEAD -- && echo "" || echo "-dirty")
     branch=$(git rev-parse --abbrev-ref HEAD)
     tag="parishkit-stewardship-local:$(git rev-parse HEAD)${dirty}-$(date -u +%s)"
@@ -176,6 +206,32 @@ check_families() {
     if ! [[ $families =~ ^[0-9]+$ ]] || [ "$families" -lt 1 ]; then refuse "--families must be a positive integer."; fi
 }
 
+# The full-size rehearsal's options (BG-12 PR 4): pause after N messages
+# (0: none) for S seconds, a Family probe every P seconds (0: none).
+full=0 pause_after=300 pause_seconds=60 probe_every=15
+check_rehearsal_options() {
+    # The rehearse and compare options shared with the VM half, checked here
+    # before anything reaches the VM, then normalized to base 10.
+    if ! [[ $due_in =~ ^[0-9]{1,3}$ ]] || [ "$((10#$due_in))" -lt 2 ] || [ "$((10#$due_in))" -gt 180 ]; then
+        refuse "--due-in must be a whole number of minutes from 2 to 180."
+    fi
+    if ! [[ $limit =~ ^[0-9]{1,3}$ ]] || [ "$((10#$limit))" -lt 1 ] || [ "$((10#$limit))" -gt 480 ]; then
+        refuse "--timeout must be a whole number of minutes from 1 to 480."
+    fi
+    [[ $label =~ ^[A-Za-z0-9._-]{1,40}$ ]] || refuse "--label must be 1-40 letters, digits, '.', '_' or '-'."
+    if ! [[ $pause_after =~ ^[0-9]{1,5}$ ]]; then
+        refuse "--pause-after must be a whole number of messages (0: no pause)."
+    fi
+    if ! [[ $pause_seconds =~ ^[0-9]{1,4}$ ]] || [ "$((10#$pause_seconds))" -lt 10 ] || [ "$((10#$pause_seconds))" -gt 1800 ]; then
+        refuse "--pause-seconds must be a whole number from 10 to 1800."
+    fi
+    if ! [[ $probe_every =~ ^[0-9]{1,3}$ ]] || { [ "$((10#$probe_every))" -ne 0 ] && [ "$((10#$probe_every))" -lt 2 ]; } || [ "$((10#$probe_every))" -gt 600 ]; then
+        refuse "--probe-every must be 0 (no probe) or a whole number of seconds from 2 to 600."
+    fi
+    due_in=$((10#$due_in)) limit=$((10#$limit)) pause_after=$((10#$pause_after))
+    pause_seconds=$((10#$pause_seconds)) probe_every=$((10#$probe_every))
+}
+
 do_up() {
     # Pack, then install (the VM half builds the image unless `reinstall`
     # already did).
@@ -210,20 +266,35 @@ command=${1-}
 [ $# -ge 1 ] && shift
 case "$command" in
     vm)
-        case "$#:${1-}" in
-            1:create)
+        case "$#:${1-}:${2-}" in
+            1:create:|2:create:--rehearsal)
                 [ -z "$(vm_status)" ] || refuse "Lima instance '$vm' already exists."
+                # The rehearsal VM (#447, BG-12 PR 4) forwards no port, so it
+                # runs beside the day-to-day instance; it needs its own name.
+                if [ "${2-}" = --rehearsal ]; then
+                    [ "$vm" != parishkit-local ] ||
+                        refuse "A rehearsal VM needs its own name: set PARISHKIT_LOCAL_VM (for example pk-rehearsal)."
+                    vm_yaml=$rehearsal_yaml
+                fi
                 [ -f "$vm_yaml" ] || refuse "Missing $vm_yaml"
                 echo "==> Creating and starting the Lima instance $vm (this installs Docker Engine)"
                 limactl start --name="$vm" --tty=false "$vm_yaml" ;;
-            1:start) limactl start "$vm" ;;
-            1:stop) limactl stop "$vm" ;;
+            1:start:) limactl start "$vm" ;;
+            1:stop:) limactl stop "$vm" ;;
+            1:delete:)
+                # Throwaway instances only: the instance, its disk, and every
+                # container, image and volume inside it go. The operator types
+                # the name, as for a wipe.
+                [ -n "$(vm_status)" ] || refuse "No Lima instance '$vm'."
+                confirm_instance_name
+                limactl delete --force "$vm" ;;
             *) usage ;;
         esac ;;
     up)
         while [ $# -gt 0 ]; do
             case "$1" in
                 --families) [ $# -ge 2 ] || usage; families=$2; shift 2 ;;
+                --ref) [ $# -ge 2 ] || usage; ref=$2; shift 2 ;;
                 *) usage ;;
             esac
         done
@@ -253,6 +324,10 @@ case "$command" in
             case "$1" in
                 --schema-change) schema_change=1 ;;
                 --rollback) rollback=1 ;;
+                --ref)
+                    [ $# -ge 2 ] || usage
+                    ref=$2
+                    shift ;;
                 --bulk)
                     [ $# -ge 2 ] || usage
                     case "$2" in on|off) bulk=$2 ;; *) usage ;; esac
@@ -270,8 +345,10 @@ case "$command" in
         [ "$schema_change$rollback" != 11 ] || usage
         # A rollback never converts.
         if [ "$rollback" = 1 ] && [ -n "$users_env" ]; then usage; fi
-        # A rollback renders nothing new: it takes neither rendering flag.
+        # A rollback renders nothing new: it takes neither rendering flag,
+        # and it builds nothing.
         if [ "$rollback" = 1 ] && [ "$bulk$latency" != keepkeep ]; then usage; fi
+        if [ "$rollback" = 1 ] && [ -n "$ref" ]; then usage; fi
         require_running
         if [ "$rollback" = 1 ]; then
             upload_host_script
@@ -293,27 +370,93 @@ case "$command" in
         # BG-12's rehearsal on a seeded deployment (developer guide,
         # "Rehearsing a bulk send"): the VM half adds the Reminder, samples
         # the work-order lock, waits for the send and prints the report.
-        due_in=5 send_only=0 limit=60 label=run
+        # Any full-size option (#447, BG-12 PR 4; guide, "Full-size
+        # rehearsal") adds the pause and resume, the Family probe, the
+        # credential fingerprint and the Mailpit audit; --harness first
+        # builds this checkout as the harness image those steps run from.
+        due_in=5 send_only=0 limit=60 label=run harness=-
         while [ $# -gt 0 ]; do
             case "$1" in
                 --due-in) [ $# -ge 2 ] || usage; due_in=$2; shift 2 ;;
                 --timeout) [ $# -ge 2 ] || usage; limit=$2; shift 2 ;;
                 --label) [ $# -ge 2 ] || usage; label=$2; shift 2 ;;
                 --send-only) send_only=1; shift ;;
+                --full) full=1; shift ;;
+                --harness) full=1 harness=build; shift ;;
+                --pause-after) [ $# -ge 2 ] || usage; full=1 pause_after=$2; shift 2 ;;
+                --pause-seconds) [ $# -ge 2 ] || usage; full=1 pause_seconds=$2; shift 2 ;;
+                --probe-every) [ $# -ge 2 ] || usage; full=1 probe_every=$2; shift 2 ;;
                 *) usage ;;
             esac
         done
-        if ! [[ $due_in =~ ^[0-9]{1,3}$ ]] || [ "$((10#$due_in))" -lt 2 ] || [ "$((10#$due_in))" -gt 180 ]; then
-            refuse "--due-in must be a whole number of minutes from 2 to 180."
+        check_rehearsal_options
+        if [ "$full" = 1 ] && [ "$send_only" = 1 ]; then
+            refuse "--send-only does not combine with the full-size options."
         fi
-        if ! [[ $limit =~ ^[0-9]{1,3}$ ]] || [ "$((10#$limit))" -lt 1 ] || [ "$((10#$limit))" -gt 480 ]; then
-            refuse "--timeout must be a whole number of minutes from 1 to 480."
-        fi
-        due_in=$((10#$due_in)) limit=$((10#$limit))
-        [[ $label =~ ^[A-Za-z0-9._-]{1,40}$ ]] || refuse "--label must be 1-40 letters, digits, '.', '_' or '-'."
         require_running
         mkdir -p "$state"
-        run_remote rehearse "$due_in" "$send_only" "$limit" "$label" 2>&1 | tee -a "$state/rehearse.log" ;;
+        if [ "$full" = 0 ]; then
+            run_remote rehearse "$due_in" "$send_only" "$limit" "$label" 2>&1 | tee -a "$state/rehearse.log"
+        else
+            if [ "$harness" = build ]; then
+                pack_checkout
+                run_remote build "$tag"
+                harness=$tag
+            fi
+            run_remote rehearse "$due_in" 0 "$limit" "$label" "$pause_after" "$pause_seconds" \
+                "$probe_every" "$harness" 2>&1 | tee -a "$state/rehearse.log"
+        fi ;;
+    compare)
+        # BG-12 PR 4's side-by-side rehearsal (#447; guide, "Full-size
+        # rehearsal"): build this checkout as the harness image, then for
+        # each --ref restore the seeded snapshot, deploy that build with the
+        # bulk send on and the modeled latency, and run the full-size
+        # rehearsal; finally print the two runs side by side.
+        refs=() label=compare due_in=5 limit=90 latency=600
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --ref) [ $# -ge 2 ] || usage; refs+=("$2"); shift 2 ;;
+                --label) [ $# -ge 2 ] || usage; label=$2; shift 2 ;;
+                --due-in) [ $# -ge 2 ] || usage; due_in=$2; shift 2 ;;
+                --timeout) [ $# -ge 2 ] || usage; limit=$2; shift 2 ;;
+                --smtp-latency-ms) [ $# -ge 2 ] || usage; latency=$2; shift 2 ;;
+                --pause-after) [ $# -ge 2 ] || usage; pause_after=$2; shift 2 ;;
+                --pause-seconds) [ $# -ge 2 ] || usage; pause_seconds=$2; shift 2 ;;
+                --probe-every) [ $# -ge 2 ] || usage; probe_every=$2; shift 2 ;;
+                *) usage ;;
+            esac
+        done
+        [ "${#refs[@]}" -eq 2 ] || refuse "compare needs exactly two --ref options (baseline first)."
+        [[ $label =~ ^[A-Za-z0-9._-]{1,30}$ ]] || refuse "--label must be 1-30 letters, digits, '.', '_' or '-'."
+        if ! [[ $latency =~ ^[0-9]{1,4}$ ]] || [ "$((10#$latency))" -gt 5000 ]; then
+            refuse "--smtp-latency-ms must be a whole number from 0 to 5000."
+        fi
+        latency=$((10#$latency))
+        check_rehearsal_options
+        require_running
+        run_remote has-snapshot seeded || refuse "No seeded snapshot; seed and run: $0 snapshot --seeded"
+        mkdir -p "$state"
+        {
+            pack_checkout
+            run_remote build "$tag"
+            harness=$tag
+            side=a
+            # pack_checkout builds $ref when it is set: the harness above is
+            # this work tree (ref still empty), each side its own commit.
+            for ref in "${refs[@]}"; do
+                echo "==> $label-$side: $ref"
+                run_remote reset seeded
+                pack_checkout
+                run_remote build "$tag"
+                upload_host_script
+                run_remote deploy "$tag" 0 "$host_remote" on "$latency"
+                # A failed run still leaves its files for the comparison.
+                run_remote rehearse "$due_in" 0 "$limit" "$label-$side" "$pause_after" \
+                    "$pause_seconds" "$probe_every" "$harness" || true
+                side=b
+            done
+            run_remote compare "$harness" "$label-a" "$label-b"
+        } 2>&1 | tee -a "$state/compare.log" ;;
     spike)
         # The launch-day spike check on a seeded deployment (developer guide,
         # "Checking the launch-day spike"): the VM half starts the shard
@@ -345,10 +488,11 @@ case "$command" in
         run_remote spike "$spike_families" "$sources" "$during_send" "$wait" "$label" 2>&1 | tee -a "$state/spike.log" ;;
     snapshot|reset)
         name=post-setup
-        case "$command:$#:${1-}" in
-            *:0:) ;;
-            *:1:--seeded) name=seeded ;;
-            reset:1:--reinstall) name=reinstall ;;
+        case "$command:$#:${1-}:${2-}" in
+            *:0::) ;;
+            *:1:--seeded:) name=seeded ;;
+            reset:1:--reinstall:) name=reinstall ;;
+            reset:3:--reinstall:--ref) name=reinstall ref=${3-} ;;
             *) usage ;;
         esac
         if [ "$name" = reinstall ]; then

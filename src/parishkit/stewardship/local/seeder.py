@@ -69,6 +69,9 @@ STEPS = (
     "finish",
     "reminder",
     "measure",
+    # The full-size rehearsal's pause and resume (BG-12 PR 4, rehearsal.py).
+    "pause",
+    "resume",
 )
 # The rehearsal steps that need --due-at.
 DUE_STEPS = frozenset({"reminder", "measure"})
@@ -998,9 +1001,11 @@ def timeline_summary(request):
 
 def run_step(request, configuration):
     """Run one database-backed step."""
-    from .rehearsal import measure_step, reminder_step
+    from .rehearsal import control_step, measure_step, reminder_step
 
     return {
+        "pause": control_step,
+        "resume": control_step,
         "wizard": wizard_step,
         "campaign": campaign_step,
         "prepare": prepare_step,

@@ -125,6 +125,19 @@ _COMMAND_OPTIONS = {
     },
     # The spike check's offline report over the shard documents.
     "local-spike-report": {"input"},
+    # The full-size rehearsal's Family probe and Mailpit audit (BG-12 PR 4);
+    # LOCAL only.
+    "local-send-probe": {
+        "profile",
+        "since",
+        "every",
+        "wait_seconds",
+        "ca_file",
+        "stop_file",
+    },
+    "local-mail-audit": {"profile", "since"},
+    # Two rehearsal runs side by side (BG-12 PR 4), offline.
+    "local-rehearsal-compare": {"input", "baseline"},
 }
 
 
@@ -239,6 +252,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "backup-at",
         "confirm-administrators",
         "name",
+        "every",
+        "stop-file",
+        "baseline",
     ):
         parser.add_argument("--" + option)
     parser.add_argument(
@@ -397,6 +413,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         from .local.spike import execute_spike
 
         return execute_spike(args)
+    if args.command in {"local-send-probe", "local-mail-audit"}:
+        from .local import send_probe
+
+        if args.command == "local-send-probe":
+            return send_probe.execute_send_probe(args)
+        return send_probe.execute_mail_audit(args)
+    if args.command == "local-rehearsal-compare":
+        from .local.rehearsal_report import execute_rehearsal_compare
+
+        if args.input is None or args.baseline is None:
+            parser.usage_error(
+                "local-rehearsal-compare requires --baseline and --input"
+            )
+        return execute_rehearsal_compare(args.baseline, args.input)
     if args.command == "local-spike-report":
         from .local.spike import execute_spike_report
 

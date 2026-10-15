@@ -28,9 +28,15 @@
 #   rollback HOST_SCRIPT                its image-only rollback to the image deploy replaced
 #   seed RESPONSE_SCALE                 seed the campaign through the local seeder's
 #                                       phases under the fake clock (OPS-10.07)
-#   rehearse DUE_IN SEND_ONLY TIMEOUT LABEL
+#   rehearse DUE_IN SEND_ONLY TIMEOUT LABEL [PAUSE_AFTER PAUSE_SECONDS PROBE_EVERY HARNESS]
 #                                       add a Reminder due in DUE_IN minutes, measure its
-#                                       send (BG-12 rehearsal) and print the report
+#                                       send (BG-12 rehearsal) and print the report; the
+#                                       eight-argument form is the full-size rehearsal
+#                                       (BG-12 PR 4): a pause and resume, a Family probe,
+#                                       the credential fingerprint and the Mailpit audit,
+#                                       with the harness image HARNESS ("-": the deployed one)
+#   compare HARNESS BASELINE_LABEL CANDIDATE_LABEL
+#                                       two labels' latest rehearsals side by side
 #   spike FAMILIES SOURCES DURING_SEND WAIT LABEL
 #                                       the launch-day spike check (#392 M3): SOURCES
 #                                       shard containers on the ingress network open and
@@ -753,6 +759,12 @@ web_oneoff_command() {
     local web_image file mode line
     local -a options=()
     web_image=$(jq -r '.services.web.image' "$services/compose.json")
+    # The full-size rehearsal's harness steps run web's identity from the
+    # harness image (oneoff_image); in normal clock mode only.
+    if [ -n "${oneoff_image-}" ]; then
+        [ "$(clock_mode)" = normal ] || refuse "Harness steps run only in normal clock mode."
+        web_image=$oneoff_image
+    fi
     # Web's own environment, mounts and tmpfs exactly as rendered; Compose
     # variable references (${NAME:-default}) are resolved from this shell as
     # Compose would resolve them from the operator's.
@@ -1029,6 +1041,7 @@ rehearse_stopped() {
         fi
     fi
     stop_sampler
+    probe_stopped >>"${log:-/dev/null}" 2>&1
     [ -z "$restarted" ] || trap_note "$restarted"
     [ "$rc" -eq 0 ] || trap_note "REHEARSAL FAILED (exit $rc); its files are in $rehearsal_out."
 }
@@ -1067,15 +1080,161 @@ mailpit_total() {
     echo "$total"
 }
 
+# The full-size rehearsal's parts (BG-12 PR 4, #447; developer guide,
+# "Full-size rehearsal"). They run only when `rehearse` is given its eight-
+# argument form. The harness image (HARNESS, or the deployed image) runs the
+# steps a released build may not have yet: the pause and resume, the Family
+# probe, the Mailpit audit, the credential fingerprint query and the report.
+# It must have the deployed build's schema (the guide says how to check).
+harness=""
+probe_label=""
+
+harness_step() {
+    # harness_step LIMIT STEP [EXTRA...]: one seeder step under the web
+    # identity, run from the harness image (seed_step with oneoff_image).
+    local limit=$1 name=$2
+    shift 2
+    # Callers run this where errexit does not apply (inside a function
+    # called with ||), so a failed step is reported by an empty answer.
+    oneoff_image=$harness
+    seed_result=""
+    seed_step "$limit" "$name" web web.yaml "$@"
+    oneoff_image=""
+    [ -n "$seed_result" ]
+}
+
+credentials_snapshot() {
+    # credentials_snapshot FILE: the credential fingerprint rows (rehearsal.py
+    # CREDENTIALS_SQL, read from the harness image) into FILE.
+    local sql
+    sql=$(IMAGE=$harness image_constant parishkit.stewardship.local.rehearsal CREDENTIALS_SQL)
+    [[ $sql == *stewardship_family_token* ]] ||
+        refuse "The harness image has no credential fingerprint; build it from a checkout with BG-12 PR 4."
+    psql_query "$sql" >"$1"
+}
+
+daily_headroom() {
+    # Refuse a full-size run the deployment's own daily sending limit would
+    # cut short. Production stops bulk mail at DAILY_SEND_LIMIT less
+    # RESERVED_SENDS recipients in a rolling 24 hours (jobs/
+    # family_mail_dispatch.py); the seed's own Reminders count, so a seed
+    # taken within a day of a seeded Reminder (Tuesdays and Thursdays at
+    # 09:00) leaves room for only part of an invitation-size send. The
+    # limit counts recipients, so the estimate is every deliverable Family
+    # that has not responded, times the recipients per message of the
+    # campaign's earlier Initial and Reminder messages (a Family emailed at
+    # two addresses counts twice).
+    local limit reserved sent candidates per recipients room
+    limit=$(image_constant parishkit.stewardship.jobs.family_mail_dispatch DAILY_SEND_LIMIT 1800)
+    reserved=$(image_constant parishkit.stewardship.jobs.family_mail_dispatch RESERVED_SENDS 200)
+    sent=$(psql_query "SELECT public.stewardship_family_daily_sends_v1()")
+    candidates=$(psql_query "SELECT count(*) FROM stewardship_family_campaign f
+        JOIN stewardship_system_configuration r ON r.current_campaign_id = f.campaign_id
+        WHERE f.email_deliverable AND f.effective_submission_id IS NULL")
+    # Hundredths of a recipient per message; 100 when nothing was sent yet.
+    per=$(psql_query "SELECT coalesce(round(100.0 * sum(jsonb_array_length(r.routed_recipients))
+            / nullif(count(*), 0)), 100)::int
+        FROM stewardship_outbox_message m JOIN stewardship_outbox_render r ON r.id = m.render_id
+        WHERE m.purpose IN ('initial', 'reminder')")
+    [[ $limit =~ ^[0-9]+$ && $reserved =~ ^[0-9]+$ && $sent =~ ^[0-9]+$ && $candidates =~ ^[0-9]+$ && $per =~ ^[0-9]+$ ]] ||
+        refuse "Could not read the daily sending limit's inputs; refusing."
+    room=$(( limit - reserved - sent ))
+    recipients=$(( (candidates * per + 99) / 100 ))
+    echo "    daily sending limit: $sent recipients in the last 24 hours, room for $room; about $candidates candidates, $recipients recipients"
+    [ "$recipients" -le "$room" ] ||
+        refuse "The daily sending limit leaves room for $room recipients but about $recipients ($candidates Families) would be sent to; seed when no seeded Reminder is within the last 24 hours (see the guide, \"Full-size rehearsal\")."
+}
+
+probe_stopped() {
+    # Remove this run's probe and audit containers that are still there;
+    # bounded and logged, never fatal (it also runs from the EXIT trap).
+    local -a ids=()
+    [ -n "$probe_label" ] || return 0
+    while IFS= read -r line; do [ -z "$line" ] || ids+=("$line"); done < <(
+        docker ps -aq --filter "label=$probe_label" 2>/dev/null)
+    [ "${#ids[@]}" -eq 0 ] ||
+        timed 60 "removing leftover rehearsal probe containers" docker rm -f "${ids[@]}" >/dev/null || true
+}
+
+ingress_run=()
+ingress_command() {
+    # Fill `ingress_run` with the docker command that runs the harness image
+    # once on the ingress network (it reaches Caddy and Mailpit by name), as
+    # the spike shards run, with the run directory mounted read-only.
+    ingress_run=(docker run --rm --init --label "$probe_label" --user 10001:10001
+        --read-only --cap-drop ALL --security-opt no-new-privileges:true
+        --network "${project}_ingress"
+        --mount "type=bind,source=$rehearsal_out,target=/rehearsal,readonly" "$harness")
+}
+
+accepted_since() {
+    # Messages Mailpit took since the run began, or -1 when it does not answer.
+    local now
+    now=$(mailpit_total)
+    if [[ $now =~ ^[0-9]+$ && $mail_before =~ ^[0-9]+$ ]]; then
+        echo $(( now - mail_before ))
+    else
+        echo -1
+    fi
+}
+
+wait_with_pause() {
+    # wait_with_pause DUE LIMIT_SECONDS: wait for the send to settle (as
+    # `settled`), pausing it once PAUSE_AFTER messages have arrived and
+    # resuming it PAUSE_SECONDS later. A pause that never comes (the send
+    # was smaller) is reported by the report, not here. On expiry, logs what
+    # was waited for, the limit and the elapsed time, and fails.
+    local due=$1 limit=$2 started elapsed paused_at=""
+    started=$(date -u +%s)
+    quiet_polls=0
+    while ! settled "$due"; do
+        elapsed=$(( $(date -u +%s) - started ))
+        if [ "$elapsed" -ge "$limit" ]; then
+            echo "TIMEOUT: gave up waiting for the Reminder due $due to settle after ${elapsed}s (limit ${limit}s)" >&2
+            return 1
+        fi
+        if [ "$pause_after" -gt 0 ] && [ -z "$paused_at" ] && [ "$(accepted_since)" -ge "$pause_after" ]; then
+            step "Pausing the campaign's mail after $pause_after messages (for ${pause_seconds}s)"
+            if ! harness_step 300 pause; then
+                echo "FAILED: the pause step; the run stops here (its report fails)" >&2
+                return 1
+            fi
+            printf '%s\n' "$seed_result" >"$rehearsal_out/pause.json"
+            paused_at=$(date -u +%s)
+        elif [ -n "$paused_at" ] && [ ! -e "$rehearsal_out/resume.json" ] &&
+            [ $(( $(date -u +%s) - paused_at )) -ge "$pause_seconds" ]; then
+            step "Resuming the campaign's mail (sender test first, as the page requires)"
+            if ! harness_step 1500 resume; then
+                # Left paused: a throwaway deployment's mail stays held until
+                # `reset --seeded`; the run stops rather than wait it out.
+                echo "FAILED: the resume step; the campaign's mail stays paused and the run stops here (its report fails)" >&2
+                return 1
+            fi
+            printf '%s\n' "$seed_result" >"$rehearsal_out/resume.json"
+        fi
+        sleep 5
+    done
+}
+
 cmd_rehearse() {
     local due_in=$1 send_only=$2 limit=$3 label=$4
+    # The full-size rehearsal's four (BG-12 PR 4): pause after N messages
+    # (0: no pause) for S seconds, a Family probe every P seconds (0: none),
+    # and the harness image ("-": the deployed image).
+    local full=0 pause_after=0 pause_seconds=0 probe_every=0
     local started due bulk latency consumers before after mail_before mail_after rc=0
-    local stopped_at="" resumed_at="" timed_out=false
+    local stopped_at="" resumed_at="" timed_out=false probe_pid="" crt
+    if [ $# -eq 8 ]; then
+        full=1 pause_after=$5 pause_seconds=$6 probe_every=$7 harness=$8
+    fi
     # The laptop half checks these too; this half is the one that uses them
     # in a path and in SQL.
     [[ $due_in =~ ^[0-9]+$ && $send_only =~ ^[01]$ && $limit =~ ^[0-9]+$ ]] ||
         refuse "rehearse needs whole-number DUE_IN, SEND_ONLY (0 or 1) and TIMEOUT."
     [[ $label =~ ^[A-Za-z0-9._-]{1,40}$ ]] || refuse "rehearse LABEL must be 1-40 letters, digits, '.', '_' or '-'."
+    [[ $pause_after =~ ^[0-9]+$ && $pause_seconds =~ ^[0-9]+$ && $probe_every =~ ^[0-9]+$ ]] ||
+        refuse "rehearse needs whole-number PAUSE_AFTER, PAUSE_SECONDS and PROBE_EVERY."
+    [ "$full" = 0 ] || [ "$send_only" = 0 ] || refuse "A full-size rehearsal does not take --send-only."
     require_marker
     load_env
     [ "$(clock_mode)" = normal ] ||
@@ -1084,6 +1243,12 @@ cmd_rehearse() {
     [ "$(setup_completed)" = t ] || refuse "The setup wizard has not completed; refusing."
     pg_container=$("${dc[@]}" ps -q postgres)
     [ -n "$pg_container" ] || refuse "postgres is not running; 'start' first."
+    if [ "$full" = 1 ]; then
+        [ "$harness" != - ] || harness=$IMAGE
+        docker image inspect "$harness" >/dev/null 2>&1 || refuse "The harness image $harness is not built."
+        crt="$root/run/persistent/caddy/data/caddy/pki/authorities/local/root.crt"
+        [ -f "$crt" ] || refuse "Caddy has not written its local root certificate yet ($crt)."
+    fi
     # The wait predicates come from the deployed image (rehearsal.py), so the
     # polls are the queries the PostgreSQL tests run; an image without them
     # answers image_constant's fallback text instead.
@@ -1091,8 +1256,10 @@ cmd_rehearse() {
     settled_sql=$(image_constant parishkit.stewardship.local.rehearsal SETTLED_SQL)
     [[ $prepared_sql == *stewardship_schedule_occurrence* && $settled_sql == *stewardship_schedule_occurrence* ]] ||
         refuse "The deployed image has no rehearsal support; deploy a build that has it."
-    rehearsal_out=/var/log/stewardship-rehearsal-$label-$(date -u +%Y%m%dT%H%M%SZ)
+    rehearsal_out=${STEWARDSHIP_LOG_DIR:-/var/log}/stewardship-rehearsal-$label-$(date -u +%Y%m%dT%H%M%SZ)
     install -d -m 0755 "$rehearsal_out"
+    # `compare` finds a label's latest run here.
+    printf '%s\n' "$rehearsal_out" >"${STEWARDSHIP_LOG_DIR:-/var/log}/stewardship-rehearsal-$label.latest"
     started=$(date -u +%FT%TZ)
     # Whole minutes: DUE_IN minutes after the next minute boundary, so the
     # schedule's wall-clock minute is the due instant exactly.
@@ -1102,14 +1269,34 @@ cmd_rehearse() {
     consumers=$(jq -r '.deployment.mail_consumers // 2' "$services/mail-dispatch.yaml")
     step "Rehearsal $label: Reminder due $due; bulk $bulk, SMTP latency ${latency} ms, $consumers mail consumers, $FAMILIES Families"
     echo "    files: $rehearsal_out"
+    [ "$full" = 0 ] || echo "    full size: pause after $pause_after messages for ${pause_seconds}s, probe every ${probe_every}s, harness $harness"
     before=$(psql_query "SELECT deadlocks FROM pg_stat_database WHERE datname = current_database()")
     mail_before=$(mailpit_total)
     trap 'rehearse_stopped $?' EXIT
+    if [ "$full" = 1 ]; then
+        daily_headroom
+        step "Credential fingerprint before the send"
+        credentials_snapshot "$rehearsal_out/credentials-before.tsv"
+        install -m 0644 "$crt" "$rehearsal_out/root.crt"
+        probe_label="parishkit.local.rehearsal=$label-$$"
+    fi
     sample_locks "$rehearsal_out" &
     rehearsal_sampler=$!
     seed_now=$(date -u +%FT%TZ)
     seed_scale=1
     seed_step 600 reminder web web.yaml --due-at "$due"
+    if [ "$full" = 1 ] && [ "$probe_every" -gt 0 ]; then
+        step "Starting the Family probe (one Family every ${probe_every}s, from the run's new mail)"
+        ingress_command
+        # It stops when the sampler's stop file appears; `timed` bounds it
+        # past the rehearsal's own limit and logs a kill.
+        timed $(( (due_in + 2 + limit) * 60 + 300 )) "the Family probe" \
+            "${ingress_run[@]}" local-send-probe --profile local --since "$started" \
+            --every "$probe_every" --wait-seconds $(( (due_in + 2 + limit) * 60 + 120 )) \
+            --ca-file /rehearsal/root.crt --stop-file /rehearsal/.stop \
+            >"$rehearsal_out/probe.jsonl" 2>>"$rehearsal_out/probe-errors.log" &
+        probe_pid=$!
+    fi
     if [ "$send_only" = 1 ]; then
         step "Stopping mail-dispatch until preparation has finished (send-only run)"
         timed 150 "stopping mail-dispatch" "${dc[@]}" stop --timeout 90 mail-dispatch 2>&1 | quiet
@@ -1123,11 +1310,29 @@ cmd_rehearse() {
     fi
     step "Waiting for the Reminder due $due to settle (limit $limit minutes after it)"
     quiet_polls=0
-    wait_until $(( (due_in + 2 + limit) * 60 )) "the Reminder due $due to settle" settled "$due" ||
-        timed_out=true
+    if [ "$full" = 1 ]; then
+        wait_with_pause "$due" $(( (due_in + 2 + limit) * 60 )) || timed_out=true
+    else
+        wait_until $(( (due_in + 2 + limit) * 60 )) "the Reminder due $due to settle" settled "$due" ||
+            timed_out=true
+    fi
     stop_sampler
+    if [ -n "$probe_pid" ]; then
+        # The stop file is there now; the probe ends after its current Family.
+        wait "$probe_pid" || echo "    the Family probe ended with an error; see $rehearsal_out/probe-errors.log" >&2
+        echo "    $(wc -l <"$rehearsal_out/probe.jsonl") probes"
+    fi
     after=$(psql_query "SELECT deadlocks FROM pg_stat_database WHERE datname = current_database()")
     mail_after=$(mailpit_total)
+    if [ "$full" = 1 ]; then
+        step "Credential fingerprint after the send, and the Mailpit audit"
+        credentials_snapshot "$rehearsal_out/credentials-after.tsv"
+        ingress_command
+        timed 900 "the Mailpit audit" "${ingress_run[@]}" local-mail-audit --profile local \
+            --since "$started" >"$rehearsal_out/audit.json" 2>>"$rehearsal_out/audit-errors.log" ||
+            echo "    the Mailpit audit failed; the report counts it as missing" >&2
+        probe_stopped
+    fi
     step "Collecting the timing lines, the measurements and the run record"
     # Compose's own stderr goes to a file in the run directory; timed's
     # TIMEOUT or FAILED line stays on stderr, in the log.
@@ -1141,26 +1346,33 @@ cmd_rehearse() {
     seed_step 600 measure migration migration.yaml --due-at "$due"
     printf '%s\n' "$seed_result" >"$rehearsal_out/measure.json"
     jq -n --arg label "$label" --arg image "$IMAGE" --argjson families "$FAMILIES" \
+        --arg harness "${harness:-}" \
         --argjson bulk "$bulk" --argjson latency "$latency" --argjson consumers "$consumers" \
         --argjson send_only "$( [ "$send_only" = 1 ] && echo true || echo false )" \
         --arg due "$due" --arg started "$started" --arg finished "$(date -u +%FT%TZ)" \
         --arg stopped "$stopped_at" --arg resumed "$resumed_at" --argjson timed_out "$timed_out" \
         --argjson before "${before:-null}" --argjson after "${after:-null}" \
         --argjson mail_before "$mail_before" --argjson mail_after "$mail_after" \
+        --argjson pause_after "$pause_after" --argjson pause_seconds "$pause_seconds" \
+        --argjson probe_every "$probe_every" \
         '{label: $label, image: $image, families: $families, bulk: $bulk,
+          harness_image: (if $harness == "" then null else $harness end),
           smtp_latency_ms: $latency, mail_consumers: $consumers, send_only: $send_only,
           due_at: $due, started_at: $started, finished_at: $finished,
           dispatch_stopped_at: (if $stopped == "" then null else $stopped end),
           dispatch_started_at: (if $resumed == "" then null else $resumed end),
           timed_out: $timed_out, deadlocks_before: $before, deadlocks_after: $after,
-          mailpit_before: $mail_before, mailpit_after: $mail_after}' >"$rehearsal_out/meta.json"
-    # The report runs offline in the image, as the application's uid; it
-    # writes summary.json beside the inputs and exits 1 when the run failed
-    # its correctness check (or timed out).
+          mailpit_before: $mail_before, mailpit_after: $mail_after,
+          pause_after: $pause_after, pause_seconds: $pause_seconds,
+          probe_every: $probe_every}' >"$rehearsal_out/meta.json"
+    # The report runs offline in the image (the harness image in a full-size
+    # run), as the application's uid; it writes summary.json beside the
+    # inputs and exits 1 when the run failed its correctness check (or timed
+    # out).
     chown -R 10001:10001 "$rehearsal_out"
     step "Report"
     "${isolated[@]}" --mount "type=bind,source=$rehearsal_out,target=/rehearsal" \
-        "$IMAGE" local-rehearsal-report --input /rehearsal | tee "$rehearsal_out/report.txt" || rc=$?
+        "${harness:-$IMAGE}" local-rehearsal-report --input /rehearsal | tee "$rehearsal_out/report.txt" || rc=$?
     trap - EXIT
     rehearse_stopped "$rc"
     if [ "$rc" -eq 0 ]; then
@@ -1168,6 +1380,28 @@ cmd_rehearse() {
     else
         echo "Rehearsal $label did NOT pass (report exit $rc); files in $rehearsal_out." >&2
     fi
+    return "$rc"
+}
+
+cmd_compare() {
+    # compare HARNESS BASELINE_LABEL CANDIDATE_LABEL: the two labels' latest
+    # rehearsal runs side by side (rehearsal_report.compare), offline in the
+    # harness image; the table is kept beside the runs.
+    local harness=$1 base=$2 cand=$3 a b out rc=0
+    for label in "$base" "$cand"; do
+        [[ $label =~ ^[A-Za-z0-9._-]{1,40}$ ]] || refuse "compare labels must be 1-40 letters, digits, '.', '_' or '-'."
+    done
+    a=$(cat "${STEWARDSHIP_LOG_DIR:-/var/log}/stewardship-rehearsal-$base.latest" 2>/dev/null) ||
+        refuse "No rehearsal run labelled $base."
+    b=$(cat "${STEWARDSHIP_LOG_DIR:-/var/log}/stewardship-rehearsal-$cand.latest" 2>/dev/null) ||
+        refuse "No rehearsal run labelled $cand."
+    docker image inspect "$harness" >/dev/null 2>&1 || refuse "The harness image $harness is not built."
+    out=${STEWARDSHIP_LOG_DIR:-/var/log}/stewardship-rehearsal-compare-$base-$cand-$(date -u +%Y%m%dT%H%M%SZ).txt
+    step "Comparing $base ($a) with $cand ($b)"
+    "${isolated[@]}" --mount "type=bind,source=$a,target=/baseline,readonly" \
+        --mount "type=bind,source=$b,target=/candidate,readonly" \
+        "$harness" local-rehearsal-compare --baseline /baseline --input /candidate | tee "$out" || rc=$?
+    echo "Comparison kept in $out"
     return "$rc"
 }
 
@@ -1360,7 +1594,7 @@ cmd_spike() {
 # Long-running commands keep their whole log on the VM under /var/log, as
 # the upgrade script does; the short ones print only their answer.
 case "$command" in
-    build|up|snapshot|reset|wipe|seed|wizard|start|down|deploy|rollback|rehearse|spike)
+    build|up|snapshot|reset|wipe|seed|wizard|start|down|deploy|rollback|rehearse|spike|compare)
         # STEWARDSHIP_LOG_DIR lets the tests run this half without /var/log.
         log=${STEWARDSHIP_LOG_DIR:-/var/log}/stewardship-local-$command-$(date -u +%Y%m%dT%H%M%SZ).log
         exec > >(tee -a "$log") 2>&1
@@ -1380,7 +1614,11 @@ case "$command" in
     deploy)
         [ $# -eq 3 ] || [ $# -eq 5 ] || refuse "deploy needs TAG SCHEMA_CHANGE HOST_SCRIPT [BULK LATENCY]"
         cmd_deploy "$@" ;;
-    rehearse) [ $# -eq 4 ] || refuse "rehearse needs DUE_IN SEND_ONLY TIMEOUT LABEL"; cmd_rehearse "$@" ;;
+    rehearse)
+        [ $# -eq 4 ] || [ $# -eq 8 ] ||
+            refuse "rehearse needs DUE_IN SEND_ONLY TIMEOUT LABEL [PAUSE_AFTER PAUSE_SECONDS PROBE_EVERY HARNESS]"
+        cmd_rehearse "$@" ;;
+    compare) [ $# -eq 3 ] || refuse "compare needs HARNESS BASELINE_LABEL CANDIDATE_LABEL"; cmd_compare "$@" ;;
     spike) [ $# -eq 5 ] || refuse "spike needs FAMILIES SOURCES DURING_SEND WAIT LABEL"; cmd_spike "$@" ;;
     rollback) cmd_rollback "${1:?rollback needs HOST_SCRIPT}" ;;
     seed) cmd_seed "${1:-1}" ;;
