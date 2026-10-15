@@ -54,7 +54,11 @@ def test_calendar_lists_each_send_and_changes_nothing(auth_service, google):
     # The trail is the way back (navigation rule 3), not a link of its own
     # (#521).
     assert f'<li><a href="{LIST}">Dates and mail schedules</a></li>' in page
-    assert "Return to Dates and mail schedules" not in page
+    # While the Campaign setup stepper applies, its action row is the one
+    # way back to its step (#1404), and the page adds no link of its own.
+    assert page.count("Return to Dates and mail schedules") == 1
+    actions = page.split("data-campaign-step-actions", 1)[1]
+    assert "Return to Dates and mail schedules" in actions.split("</div>", 1)[0]
     assert ConfigurationChangeRequest.objects.count() == before
     # The list links it; the calendar takes no parameters and no POST.
     assert f'href="{CALENDAR}"' in unescape(browser.get(LIST).content.decode())

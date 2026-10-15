@@ -2096,6 +2096,25 @@
     return [...now].every(([key, {value, blank, disabled}]) => disabled
       || (saved.has(key) ? saved.get(key).value === value : blank));
   };
+  // A Campaign setup step's Continue (#1404, campaign-step-actions.html)
+  // records the step kept as is, so it waits while a change-gated form on
+  // the page holds a change: the page's own Save stays the way on. Its hint
+  // after the row keeps its line (data-idle hides it with visibility), and
+  // names the button only while it is shown.
+  const gateStepContinue = () => {
+    const form = document.querySelector("form[data-campaign-continue]");
+    if (!form) return;
+    const held = [...document.querySelectorAll("form[data-require-change]")]
+      .some((node) => node.hasAttribute("data-holds-change"));
+    const hint = document.getElementById("campaign-continue-hint");
+    hint?.toggleAttribute("data-idle", !held);
+    form.querySelectorAll("button[type=submit]").forEach((node) => {
+      if (held) holdButton(node, "data-change-gated");
+      else releaseButton(node, "data-change-gated");
+      if (held && hint) node.setAttribute("aria-describedby", hint.id);
+      else node.removeAttribute("aria-describedby");
+    });
+  };
   const gateChange = (form) => {
     if (!(form instanceof HTMLFormElement) || !form.id || !form.hasAttribute("data-require-change")) {
       return;
@@ -2111,6 +2130,8 @@
       reviewApplied.delete(form.id);
     }
     const unchanged = matchesSaved(form, saved.state);
+    form.toggleAttribute("data-holds-change", !unchanged);
+    gateStepContinue();
     const hint = form.querySelector("[data-unchanged-hint]");
     // The hint's id comes from its form's, so two gated forms on one page
     // never describe their buttons with the same line.
@@ -3880,7 +3901,12 @@
     });
     dialog.querySelector("[data-confirm-accept]").hidden = !token;
     confirming = {dialog, opener, form, busy: false, done: false,
-      review: {apply, done: answer?.getAttribute("data-review-done") || ""}};
+      review: {apply, done: answer?.getAttribute("data-review-done") || "",
+        // An answer may name where Apply's applied change leads and that
+        // page's status line (Create the campaign opens the next Campaign
+        // setup step, #1404), in place of the dialog's own.
+        back: answer?.getAttribute("data-review-return") || "",
+        backOutcome: answer?.getAttribute("data-review-return-outcome") || ""}};
     dialog.showModal();
     if (refusal) refuseConfirm(confirming, refusal);
     // The title first, so the reader hears what is reviewed.
@@ -3981,8 +4007,9 @@
     dialog.querySelector("[data-confirm-status]").textContent = dialog.dataset.applied || "Applied.";
     const text = [review.done, fillIn(dialog.dataset.appliedAt || "Applied at {time}.",
       {time: clockTime()})].filter(Boolean).join(" ");
-    const outcome = dialog.dataset.reviewOutcome || "";
-    const back = dialog.dataset.reviewReturn;
+    const own = review.back && sameOrigin(review.back) ? review.back : "";
+    const back = own || dialog.dataset.reviewReturn;
+    const outcome = (own && review.backOutcome) || dialog.dataset.reviewOutcome || "";
     if (back) {
       const target = new URL(back, document.baseURI);
       try {

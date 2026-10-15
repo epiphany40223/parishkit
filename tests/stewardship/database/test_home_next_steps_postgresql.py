@@ -72,6 +72,9 @@ def sign_in(store, google, role):
         (
             "administrator",
             [
+                # The Campaign setup stepper's way back in (#1404): adding
+                # the invitation completed Pages and emails.
+                "Continue campaign setup: Dates and mail schedules",
                 "Campaign settings",
                 "Pages and emails",
                 "Dates and mail schedules",

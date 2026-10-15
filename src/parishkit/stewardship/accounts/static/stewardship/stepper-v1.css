@@ -87,8 +87,17 @@
   display: inline-block; min-height: 0; padding: .6rem 0; border: 0; background: none;
   color: var(--link); font-weight: 500; text-decoration: underline;
 }
+/* The Campaign setup action row at the bottom of each step page (#1404):
+   Back, secondary and first, and the one primary Continue, last and
+   right-aligned, as the setup wizard's row; they stack on a phone. */
+.campaign-step-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-block: 1.5rem .25rem; }
+.campaign-step-actions > * { margin: 0; }
+.campaign-step-actions > [data-campaign-continue] { margin-inline-start: auto; }
+@media (max-width: 26rem) {
+  .campaign-step-actions > [data-campaign-continue], .campaign-step-actions > form button { flex: 1 1 100%; width: 100%; }
+}
 @media (forced-colors: active) {
   .setup-steps [aria-current="step"] { outline: 3px solid CanvasText; }
   .setup-step-done .setup-step-number { forced-color-adjust: none; background: Highlight; color: HighlightText; }
 }
-@media print { .setup-stepper { display: none; } }
+@media print { .setup-stepper, .campaign-step-actions { display: none; } }

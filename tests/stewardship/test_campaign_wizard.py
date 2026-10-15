@@ -2,8 +2,9 @@
 
 The admin-portal spec's "Create the campaign" section, Guided steps: the
 stepper runs over the existing campaign pages while the current campaign is
-a Testing draft, completes a page step once a change made there is applied,
-and its Back and Next are plain links that never save anything.
+a Testing draft, completes a page step once a change made there is applied
+or its Continue was pressed with nothing changed (#1404), and its Back and
+Continue never save anything on the page.
 """
 
 from types import SimpleNamespace
@@ -213,44 +214,198 @@ def test_the_creation_request_completes_no_step():
     assert wizard.step_keys(patch, CAMPAIGN) == set()
 
 
-def test_template_draws_the_stepper_with_back_and_next_links():
-    """The region carries the summary, plain Back/Next links and the list."""
+def test_template_summary_names_the_next_open_step_and_leave():
+    """The summary says what's next as text and offers Leave campaign setup.
+
+    The moving controls are the action row at the bottom (#1404), so the
+    region itself has no Back or Continue link and no form.
+    """
     stepper = wizard.build(True, "content", done={"settings"}, mail_test_url=TEST_URL)
     html = render_to_string(
         "stewardship/campaign-stepper.html",
         {"admin_chrome": {"campaign_wizard": stepper}},
     )
-    assert 'id="campaign-stepper"' in html and "data-in-place-region" in html
-    assert "Step 3 of 7:" in html and "<strong>Pages and emails</strong>" in html
-    assert "1 of 7 steps completed" in html
-    assert f'href="{reverse("admin:share_settings")}" data-campaign-step-back' in html
-    assert "Back: Share options" in html
-    assert (
-        f'href="{reverse("admin:schedule_settings")}" data-campaign-step-next' in html
+    region = html[: html.index("</nav>")]
+    assert 'id="campaign-stepper"' in region and "data-in-place-region" in region
+    assert "Step 3 of 7:" in region and "<strong>Pages and emails</strong>" in region
+    assert "1 of 7 steps completed" in region
+    assert "<span data-campaign-step-next>Next: Dates and mail schedules</span>" in (
+        region
     )
-    assert "Next: Dates and mail schedules" in html
+    assert f'<a href="{reverse("admin:index")}" data-campaign-leave>' in region
+    assert "Leave campaign setup" in region
+    assert "data-campaign-step-back" not in region
     # Once in the step bar and once in each copy of the list (#1402): the
     # collapsed one for narrow screens and the open one for wide ones, of
     # which CSS shows one (#1404).
-    assert html.count('aria-current="step"') == 3
-    assert html.count('<ol class="setup-steps">') == 2
-    assert '<div class="setup-stepper-wide" role="group"' in html
-    assert f'<a href="{reverse("admin:share_settings")}" class="setup-track-' in html
-    assert "<form" not in html
+    assert region.count('aria-current="step"') == 3
+    assert region.count('<ol class="setup-steps">') == 2
+    assert '<div class="setup-stepper-wide" role="group"' in region
+    assert f'<a href="{reverse("admin:share_settings")}" class="setup-track-' in region
+    assert "<form" not in region
+    # The status line Create the campaign's Apply writes in is reserved.
+    assert 'id="campaign-step-outcome"' in html
+
+
+def test_upcoming_skips_completed_steps():
+    """Continue never lands on a completed step (#1404)."""
+    stepper = wizard.build(
+        True,
+        "settings",
+        done={"settings", "share_options", "content"},
+        mail_test_url=TEST_URL,
+    )
+    assert stepper.next.key == "share_options"
+    assert stepper.upcoming.key == "schedules"
+    # With every later step done, it is simply the next step.
+    every = {page.key for page in wizard.PAGES}
+    stepper = wizard.build(True, "images", done=every, mail_test_url=TEST_URL)
+    assert stepper.upcoming.key == "mail_test"
+    assert (
+        wizard.build(True, "go_live", done=set(), mail_test_url=None).upcoming is None
+    )
+
+
+def test_resume_is_the_first_open_step():
+    """Home's Continue campaign setup opens the first step not done yet."""
+    stepper = wizard.build(
+        False, None, done={"settings", "content"}, mail_test_url=None
+    )
+    assert wizard.resume(stepper).key == "schedules"
+    every = {page.key for page in wizard.PAGES}
+    stepper = wizard.build(True, None, done=every, mail_test_url=TEST_URL)
+    assert wizard.resume(stepper).key == "go_live"
+
+
+def actions(stepper):
+    """The action row the Admin layout draws under a page with ``stepper``."""
+    return render_to_string(
+        "stewardship/campaign-step-actions.html",
+        {"admin_chrome": {"campaign_wizard": stepper}},
+    )
+
+
+def test_action_row_continues_an_unchanged_step():
+    """Back and a Continue form that records the step, naming where it goes."""
+    html = actions(
+        wizard.build(True, "share_options", done={"settings"}, mail_test_url=None)
+    )
+    assert f'href="{reverse("admin:campaign_settings")}"' in html
+    assert "data-campaign-step-back" in html and ">Back<" in html
+    assert f'action="{reverse("admin:campaign_step_continue")}"' in html
+    assert '<input type="hidden" name="step" value="share_options">' in html
+    assert "Continue to Pages and emails" in html
+    # Its hint keeps its line, hidden until a change holds Continue.
+    assert 'id="campaign-continue-hint" data-continue-hint data-idle' in html
+
+
+def test_dates_with_no_schedules_continue_without_them():
+    """Dates and mail schedules can be continued with no schedules (#1404)."""
+    stepper = wizard.build(
+        True, "schedules", done={"settings"}, mail_test_url=None, no_schedules=True
+    )
+    html = actions(stepper)
+    assert "Continue without schedules for now" in html
+    assert '<input type="hidden" name="step" value="schedules">' in html
+    stepper = wizard.build(True, "schedules", done={"settings"}, mail_test_url=None)
+    assert "Continue to Campaign images" in actions(stepper)
+
+
+def test_test_email_continues_only_after_an_accepted_test():
+    """Preview and test email's purpose is the test, so Continue waits for it."""
+    before = actions(
+        wizard.build(True, "mail_test", done=set(), mail_test_url=TEST_URL)
+    )
+    assert "Continue to" not in before and "<form" not in before
+    after = actions(
+        wizard.build(True, "mail_test", done={"mail_test"}, mail_test_url=TEST_URL)
+    )
+    assert f'href="{reverse("admin:go_live")}"' in after
+    assert "Continue to Go-live readiness" in after and "<form" not in after
+
+
+def test_the_last_step_and_sub_pages_have_back_only():
+    """Go-live readiness has Back; a sub-page has Return to its step."""
+    last = actions(wizard.build(True, "go_live", done=set(), mail_test_url=TEST_URL))
+    assert "data-campaign-step-back" in last and "Continue" not in last
+    sub = actions(
+        wizard.build(True, "content", done={"settings"}, mail_test_url=None, sub=True)
+    )
+    assert f'href="{reverse("admin:content_catalog")}"' in sub
+    assert "Return to Pages and emails" in sub
+    assert "Continue" not in sub and "<form" not in sub
 
 
 def test_template_draws_nothing_without_a_stepper():
-    """Every other Admin page leaves the region out."""
-    html = render_to_string(
-        "stewardship/campaign-stepper.html", {"admin_chrome": {"campaign_wizard": None}}
+    """Every other Admin page leaves the region and the action row out."""
+    for name in ("campaign-stepper.html", "campaign-step-actions.html"):
+        html = render_to_string(
+            f"stewardship/{name}", {"admin_chrome": {"campaign_wizard": None}}
+        )
+        assert html.strip() == ""
+
+
+def test_load_notice_offers_the_load_until_families_exist():
+    """Each step offers Load the campaign's ParishSoft data, then says it loads."""
+    offer = wizard.build(
+        True, "content", done={"settings"}, mail_test_url=None, load="offer"
     )
-    assert html.strip() == ""
+    html = render_to_string(
+        "stewardship/campaign-stepper.html",
+        {"admin_chrome": {"campaign_wizard": offer}},
+    )
+    assert f'action="{reverse("admin:source_refresh")}"' in html
+    assert '<input type="hidden" name="return_step" value="content">' in html
+    assert f'name="request_key" value="{offer.refresh_key}"' in html
+    loading = wizard.build(
+        True, "content", done={"settings"}, mail_test_url=None, load="loading"
+    )
+    html = render_to_string(
+        "stewardship/campaign-stepper.html",
+        {"admin_chrome": {"campaign_wizard": loading}},
+    )
+    assert "ParishSoft data is loading; Go-live readiness waits for it." in html
+    assert "source_refresh" not in html and "<form" not in html
+
+
+@pytest.mark.parametrize(
+    ("name", "step", "sub"),
+    [
+        ("content_catalog", "content", False),
+        ("content_edit", "content", True),
+        ("content_revision", "content", True),
+        ("content_history", "content", True),
+        ("schedule_new", "schedules", True),
+        ("schedule_edit", "schedules", True),
+        ("schedule_calendar", "schedules", True),
+        ("artwork_upload", "images", False),
+        ("users", None, None),
+    ],
+)
+def test_sub_pages_draw_their_steps_stepper(monkeypatch, name, step, sub):
+    """Each sub-page draws the stepper with its step current (#1404)."""
+    monkeypatch.setattr(wizard, "invitation_revision", lambda *_: None)
+    monkeypatch.setattr(wizard, "completed", lambda *_: {"settings"})
+    monkeypatch.setattr(wizard, "_load_state", lambda _: None)
+    monkeypatch.setattr(
+        "parishkit.stewardship.accounts.schedule_reads.campaign_schedules",
+        lambda *_: [{}],
+    )
+    row = SimpleNamespace(
+        pk=CAMPAIGN, active_configuration=SimpleNamespace(values={"modules": []})
+    )
+    match = SimpleNamespace(url_name=name, namespace="admin", kwargs={})
+    stepper = wizard.for_request(match, row, SimpleNamespace())
+    if step is None:
+        assert stepper is None
+        return
+    assert stepper.current.key == step and stepper.sub is sub
 
 
 def test_status_offers_the_next_step_once_applied():
     """Change status names the next step only after the change is applied."""
-    step = SimpleNamespace(
-        url="/admin/campaign/schedules/", label="Dates and mail schedules"
+    step = wizard.StatusLink(
+        "/admin/campaign/schedules/", "Dates and mail schedules", back=False
     )
     for state, shown in (("applied", True), ("staged", False)):
         html = render_to_string(
@@ -263,14 +418,15 @@ def test_status_offers_the_next_step_once_applied():
         assert ("Continue to the next step: Dates and mail schedules" in html) is shown
 
 
-def test_a_completed_step_offers_continue_in_place_of_next():
-    """Once the current step is completed, Next reads Continue to the next step."""
-    stepper = wizard.build(
-        True, "share_options", done={"settings", "share_options"}, mail_test_url=None
-    )
+def test_status_leads_back_to_a_sub_pages_step():
+    """A sub-page's applied change offers Return to its step (#1404)."""
     html = render_to_string(
-        "stewardship/campaign-stepper.html",
-        {"admin_chrome": {"campaign_wizard": stepper}},
+        "stewardship/configuration-request-status.html",
+        {
+            "receipt": SimpleNamespace(state="applied", request_id=uuid4()),
+            "continue_step": wizard.StatusLink(
+                "/admin/campaign/content/", "Pages and emails", back=True
+            ),
+        },
     )
-    assert "data-campaign-continue>Continue to the next step: Pages and emails" in html
-    assert "Next: Pages and emails" not in html
+    assert '<a href="/admin/campaign/content/">Return to Pages and emails</a>' in html

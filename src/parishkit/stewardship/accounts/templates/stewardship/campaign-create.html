@@ -16,10 +16,11 @@ the Review without a page load (data-review-open, "Review dialog", #750): an
 accepted Review opens the shared review dialog below with
 campaign-create-review.html, a one-sentence confirmation that repeats none
 of the form's values, whose Apply posts the signed preview here and follows
-the change. Once it is applied the region is redrawn from the address Apply
-ended on (redraw_answer), the page naming its change, which shows that the
-campaign was created and offers loading its ParishSoft data; the status line
-under the region says what was applied. A Review refused for the form's
+the change. Once it is applied the dialog opens the next Campaign setup
+step, which the confirmation names (data-review-return, #1404), and that
+step's status line says the campaign was created; the step offers loading
+its ParishSoft data. A dialog without that address would redraw the region
+from the address Apply ended on (redraw_answer), the page naming its change. A Review refused for the form's
 values keeps the dialog shut: ui-v1.js marks each field and shows the
 summary from this page drawn again. Any other refusal (no longer admitted,
 a stale page, an out-of-date preview) shows inside the dialog.
