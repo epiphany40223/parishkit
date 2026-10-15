@@ -29,9 +29,10 @@ PARISH = {
         "user name, “?” or “#” part."
     ),
     "timezone": _(
-        "The parish's local time zone, for example America/New_York. Campaign "
-        "dates and scheduled email times use it. Starting the parish data load "
-        "fixes it for this setup attempt."
+        "The parish's local time zone, for example America/New_York. Your "
+        "browser's time zone is selected when it is on the list. Emails show "
+        "times in it. Starting the parish data load fixes it for this setup "
+        "attempt."
     ),
     "phone": _(
         "The parish office's main telephone number, shown to Families who need "

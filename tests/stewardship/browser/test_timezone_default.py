@@ -1,9 +1,12 @@
 """A new time zone choice starts on the browser's zone (#1330).
 
-Create the campaign marks its fresh time zone menu ``data-browser-default``;
-ui-v1.js selects the zone the browser reports when the menu offers it.
-Otherwise the parish zone stays selected. The server side is tested in
-``database/test_campaign_create_postgresql.py``.
+Create the campaign and the setup Parish step mark their fresh time zone
+menu ``data-browser-default``; ui-v1.js selects the zone the browser
+reports when the menu offers it. Otherwise Create the campaign keeps the
+parish zone and the setup Parish step a blank required choice, never the
+list's first zone (Africa/Abidjan was stored that way on pk-local). The
+server side is tested in ``database/test_campaign_create_postgresql.py``
+and ``test_canonical_timezone.py``.
 """
 
 import pytest
@@ -66,3 +69,22 @@ def test_a_redrawn_create_form_keeps_its_zone(page, component_origin):
     menu = page.locator(MENU)
     assert menu.get_attribute("data-browser-default") is None
     assert menu.input_value() == "America/New_York"
+
+
+def test_setup_parish_starts_on_the_browser_zone(page, component_origin):
+    """A first Parish step starts on the browser's zone, not Africa/Abidjan."""
+    page.goto(component_origin + "/setup-parish")
+    assert page.locator(MENU).input_value() == "America/Los_Angeles"
+
+
+def test_setup_parish_without_a_browser_zone_asks_for_one(page, component_origin):
+    """With no zone from the browser the menu starts blank and is required:
+    the browser refuses to submit it until a zone is chosen."""
+    page.add_init_script(NO_ZONE)
+    page.goto(component_origin + "/setup-parish")
+    menu = page.locator(MENU)
+    assert menu.input_value() == ""
+    assert menu.locator("option:checked").inner_text() == "Choose a time zone"
+    assert menu.evaluate("select => select.required && !select.checkValidity()")
+    menu.select_option("America/Chicago")
+    assert menu.evaluate("select => select.checkValidity()")

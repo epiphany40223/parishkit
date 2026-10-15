@@ -252,6 +252,10 @@ the Parish timezone for this setup attempt, so the source catalog keeps one
 civil-date interpretation (the campaign created later has its own zone, see
 [Create the campaign](#create-the-campaign)).
 The Parish step explains this restriction and keeps other Parish fields editable.
+Until a zone is saved, the Parish step's time zone menu starts on the browser's
+zone when the list offers it, and otherwise on a blank required "Choose a time
+zone" entry, never on the list's first zone
+([#1330](https://github.com/epiphany40223/parishkit/issues/1330)).
 Changing the timezone then requires cancelling and starting a new setup attempt;
 it never silently reinterprets an existing source result.
 Wizard progress may be kept in the authenticated session and temporary staging
