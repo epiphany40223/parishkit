@@ -90,6 +90,9 @@ ACCEPT_LATE = "/system-health-accept-late"
 ACCEPT_STALE = "/system-health-accept-stale"
 ACCEPT_STALE_STATUS = "/system-health-accept-stale/status"
 ACCEPT_LATE_STATUS = "/system-health-accept-late/status"
+# A page drawn with a refusal, whose next poll shows it settled (no refusal).
+ACCEPT_SETTLED = "/system-health-accept-settled"
+ACCEPT_SETTLED_STATUS = "/system-health-accept-settled/status"
 # Allow debug logging again (ADM-13 PR 6c): a Testing page with the switch
 # set, its poll (unchanged), and the answers its steps get.
 ALLOW_PAGE = "/system-health-allow"
@@ -723,6 +726,20 @@ def components(context, admin):
             render_to_string(
                 "stewardship/system-health-status.html",
                 values(False, refused=True),
+            ),
+        ),
+        ACCEPT_SETTLED: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(False, refused=True, status_url=ACCEPT_SETTLED_STATUS),
+            ),
+        ),
+        ACCEPT_SETTLED_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html",
+                values(False),
             ),
         ),
         ACCEPT_CHANGED: (

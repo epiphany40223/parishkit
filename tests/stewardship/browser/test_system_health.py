@@ -10,6 +10,7 @@ from .system_health_components import (
     ACCEPT_LATE,
     ACCEPT_PAGE,
     ACCEPT_PREVIEW,
+    ACCEPT_SETTLED,
     ACCEPT_STALE,
     ALLOW_CLEARED,
     ALLOW_PAGE,
@@ -1442,6 +1443,29 @@ def test_a_refusal_shown_by_a_poll_brings_its_accept_button(page, component_orig
     expect(button).to_be_enabled()
     expect(page.locator("[data-refused-change]")).to_be_visible()
     _beside_the_refusal(page)
+
+
+def test_a_refusal_settled_by_a_poll_takes_its_accept_button_with_it(
+    page, component_origin
+):
+    """The reverse of the test above: the poll in which the refusal goes away
+    removes the Accept this change once section and the refused counts in
+    the same update, never one without the other."""
+    page.goto(component_origin + ACCEPT_SETTLED + "#health-source")
+    region = page.locator("#accept-change")
+    button = region.get_by_role("button", name="Accept this change once", exact=True)
+    expect(button).to_be_enabled()
+    expect(page.locator("[data-refused-change]")).to_be_visible()
+    _away(page)
+    eventually(
+        page,
+        """() => !document.querySelector('[data-refused-change]')""",
+    )
+    # Both went in the one update: the section is gone when the counts are.
+    expect(button).to_have_count(0)
+    assert page.evaluate("""() => !document.querySelector(
+        '#accept-change [data-in-place="accept-preview"]')""")
+    assert region.evaluate("e => e.innerText.trim()") == ""
 
 
 def test_a_changed_refusal_is_said_in_the_region(page, component_origin):
