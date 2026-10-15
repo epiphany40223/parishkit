@@ -36,6 +36,7 @@ from .system_health_components import (
     STALE_STATUS,
     STATUS,
     STEADY,
+    TILE_PAGES,
 )
 from .waits import eventually, same_place, visible
 
@@ -1844,3 +1845,135 @@ def test_the_held_request_toggletip_survives_an_unchanged_poll(page, component_o
     expect(bubble).to_be_visible()
     assert same_place(page.evaluate(TOPS), tops)
     assert kept()
+
+
+# ------------------------------- the page-load and services tiles (slice 6)
+
+# Each slice 6 page's states and summaries: (tile, state word, summary).
+TILE_WORDS = {
+    "working": [
+        ("source-form", "Working", "Every Family can open the form"),
+        ("resave", "Working", "Nothing to re-save"),
+        ("version", "Working", "Version 1.4.2, Production, all services running"),
+    ],
+    "warning": [
+        ("source-form", "Warning", "3 Families cannot open the form"),
+        ("resave", "Warning", "1 to re-save"),
+        ("version", "Warning", "installer not running"),
+    ],
+    "error": [
+        ("source-form", "Working", "Every Family can open the form"),
+        ("resave", "Error", "1 email cannot be sent until it is fixed and 1 more"),
+        ("version", "Error", "not running"),
+    ],
+    "unchecked": [
+        ("source-form", "Warning", "Could not be checked"),
+        ("resave", "Warning", "Could not be checked"),
+        ("version", "Working", "Version 1.4.2, Production, all services running"),
+    ],
+}
+# The overall line each page reads, counting its tiles.
+TILE_LINES = {
+    "working": "All working",
+    "warning": "3 warnings",
+    "error": "2 errors",
+    "unchecked": "2 warnings",
+}
+
+
+@pytest.mark.parametrize("state", list(TILE_WORDS))
+def test_the_page_load_and_services_tiles_in_each_state(
+    page, component_origin, axe_source, state
+):
+    """The pk-local states of slice 6 at phone width. Each tile names its
+    state and summary; Working tiles start closed and the others open with
+    the finding as their problem item. The list links are drawn only while
+    they have something to show, the version panel repeats no problem, and
+    a poll that brings the same state leaves the page-load tiles' details
+    untouched. Every band passes axe and fits a phone."""
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.set_viewport_size({"width": 320, "height": 900})
+    page.goto(component_origin + TILE_PAGES + state)
+    kept = _not_reloaded(page)
+    expect(page.locator(LINE)).to_contain_text(TILE_LINES[state])
+    for tile, word, said in TILE_WORDS[state]:
+        expect(_word(page, tile)).to_have_text(word)
+        expect(_said(page, tile)).to_contain_text(said)
+        band = _band(page, tile)
+        if word == "Working":
+            expect(band).to_be_hidden()
+            _toggle(page, tile).click()
+        expect(band).to_be_visible()
+    form = _band(page, "source-form")
+    resave = _band(page, "resave")
+    version = _band(page, "version")
+    listed = form.get_by_role("link", name="Families the form cannot open")
+    catalog = resave.get_by_role("link", name="Pages and emails")
+    if state == "working":
+        expect(form.locator("[data-problem]")).to_have_count(0)
+        expect(listed).to_have_count(0)
+        expect(resave.locator("[data-problem]")).to_have_count(0)
+        expect(catalog).to_have_count(0)
+    if state in {"warning", "unchecked"}:
+        item = form.locator('[data-problem="source_form"]')
+        expect(item).to_have_attribute("data-severity", "warning")
+        expect(item.get_by_role("link")).to_have_text("Families the form cannot open")
+        expect(resave.locator('[data-problem="resave"]')).to_have_attribute(
+            "data-severity", "warning"
+        )
+        expect(catalog).to_be_visible()
+    if state == "error":
+        item = resave.locator('[data-problem="resave"]')
+        expect(item).to_have_attribute("data-severity", "error")
+        expect(item).to_have_class(re.compile(r"\bnotice-error\b"))
+        expect(resave.locator("ul.resave-list li")).to_have_count(2)
+        # Different versions and the database are said once, as problems.
+        for kind in ("versions_differ", "schema_mismatch", "not_running"):
+            expect(version.locator(f'[data-problem="{kind}"]')).to_have_count(1)
+        text = version.inner_text()
+        assert text.count("The services run different versions") == 1
+        assert "The database matches" not in text
+        assert "All services run version" not in text
+    else:
+        visible(
+            version.get_by_text("The database matches the version that is running.")
+        )
+    # Technical details stay closed, and the logs links end the band.
+    expect(version.locator("details.technical-details")).not_to_have_attribute(
+        "open", ""
+    )
+    expect(version.get_by_role("link").last).to_have_text("Background work")
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert _axe(page, axe_source) == []
+    # A poll brings the same state: the page-load details are not rebuilt.
+    page.evaluate(
+        "document.querySelector('#health-resave-details').dataset.kept = 'yes'"
+    )
+    _away(page)
+    checked = page.locator("time[data-live-checked]")
+    first = checked.get_attribute("datetime")
+    expect(checked).not_to_have_attribute("datetime", first, timeout=30000)
+    expect(page.locator(LINE)).to_contain_text(TILE_LINES[state])
+    assert resave.get_attribute("data-kept") == "yes"
+    assert kept()
+    # No script on the page failed (a broken ui-v1.js would end its gating).
+    assert errors == []
+
+
+def test_a_page_load_tiles_toggletip_moves_no_row(page, component_origin):
+    """Why a page-load tile does not follow the poll is one click away, in
+    a toggletip that floats over the band, so no summary row moves."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + TILE_PAGES + "warning")
+    band = _band(page, "source-form")
+    expect(band).to_be_visible()
+    tops = page.evaluate(TOPS)
+    height = band.bounding_box()["height"]
+    button = band.locator(".toggletip-button")
+    button.click()
+    bubble = band.locator(".toggletip-bubble")
+    expect(bubble).to_contain_text("checked when the page opens")
+    expect(button).to_have_attribute("aria-expanded", "true")
+    assert same_place(page.evaluate(TOPS), tops)
+    assert same_place(band.bounding_box()["height"], height)

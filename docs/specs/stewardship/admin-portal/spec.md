@@ -5393,7 +5393,15 @@ the way to do it. A halt's kind arrives with PR 4.
   configuration, so a refresh clears it. The sentence is read on page load
   only, never by the 10-second status poll; if the check cannot run, it
   says so instead. Opening the list records `source_form_viewed` with the
-  number of Families listed.
+  number of Families listed. One function (`source_form_tile`) picks the
+  tile's summary and its state from that read, the first that holds of:
+  "Could not be checked" (Warning), "3 Families cannot open the form"
+  (Warning), "No ParishSoft data yet", "No current campaign" and "Every
+  Family can open the form". While the tile is a Warning, the sentence is
+  its problem item; otherwise it is a plain line. The list's link is drawn
+  only while Families are listed or the check could not run, since with no
+  data, no campaign or no Family listed it would open an empty list
+  ([conditional fields](../ui-conventions/spec.md#conditional-fields)).
 - **Pages and emails to re-save (#838).** Its own tile's details hold one
   sentence that says how many of the current campaign's saved pages and
   emails should be re-saved, linking **Pages and emails**, followed by the same linked list as
@@ -5403,6 +5411,19 @@ the way to do it. A halt's kind arrives with PR 4.
   run, the sentence says so instead. The re-save findings stay outside the
   shared problem list, as a recorded exception: see
   [health problems on Home and in the banner](#health-problems-on-home-and-in-the-banner).
+  One function (`resave_tile`) picks the tile's summary and its state, the
+  first that holds of: "Could not be checked" (Warning), "1 email cannot
+  be sent until it is fixed", followed by "and 2 more" for the other
+  items (Error), "3 to re-save" (Warning), "No current campaign" and
+  "Nothing to re-save". While the tile is an Error or a Warning, the
+  sentence is its problem item (an error notice for a blocked email),
+  followed by the list; otherwise it is a plain line. **Pages and emails**
+  is linked only while items are listed or the read could not run.
+- **The page-load tiles' help.** Why these two tiles do not follow the
+  poll (each check reads every Family, or every saved page and email, so
+  a reload checks again) is in a toggletip beside each sentence. What
+  keeps a Family from the form, and how it gets the form back, is in
+  "About this page".
 - **Panels.** The [health panels](#health-panels) define what each tile's
   details show when opened. The tiles come in a fixed order: mail (why
   sends are waiting and the mail sender, together), ParishSoft refresh,
@@ -5477,8 +5498,7 @@ approaches: a metrics dashboard with time-series charts, a restyle of the
 current page, a colour-only status, hiding healthy areas, and a second page
 for details.
 
-Status: the frame and the Mail, ParishSoft refresh, Backups and Debug
-logging tiles are built. The first dashboard pull
+Status: the frame and all seven tiles are built. The first dashboard pull
 request delivered slices 2a and 2b of the
 [delivery slices](#dashboard-delivery-slices), together with the parts of
 slice 1 the frame needs: the registry's tile and severity for every
@@ -5499,7 +5519,13 @@ Working summaries in a fixed order (see the
 [backups panel](#backups-panel) and the
 [debug logging panel](#debug-logging-panel)), the Backups page findings
 as Warning items of the tile's problems, and panels that repeat none of
-their tiles' problems. The Administrator
+their tiles' problems. Slice 6 delivered the page-load and services
+tiles: the summaries and states of Families the form cannot open and of
+pages and emails to re-save chosen in one place (see the
+[System health page](#system-health-page)), each finding as its tile's
+problem item, the Version and services tile's Working summaries (see the
+[version panel](#version-panel)) and a version panel that repeats none of
+its problems. The Administrator
 answered the dashboard's questions on 2026-10-13; the
 [decisions](#administrator-decisions-2026-10-13) record the answers. Until
 the rest of slice 1 lands, the frame applies these defaults:
@@ -5532,10 +5558,10 @@ the rest of slice 1 lands, the frame applies these defaults:
   the line; the Admin session's own dialog offers to sign in again.
 - **Families the form cannot open, before any ParishSoft download**, is
   Working, with the summary "No ParishSoft data yet".
-- **Working summaries** come from a first closed set, which slice 6
-  refines for its tiles; the Mail tile's (slice 3), the ParishSoft refresh
-  tile's (slice 4), and the Backups and Debug logging tiles' (slice 5) are
-  final.
+- **Working summaries** are final for every tile: the Mail tile's
+  (slice 3), the ParishSoft refresh tile's (slice 4), the Backups and Debug
+  logging tiles' (slice 5), and the page-load and Version and services
+  tiles' (slice 6).
 
 #### Overall status line
 
@@ -6393,6 +6419,19 @@ This panel answers "what is running?" (ADM-40):
 - the deployment mode (Testing or Production).
 
 No host name, address, container identifier or image registry path is shown.
+
+The panel repeats none of the tile's problems. Different versions
+(`versions_differ`) and a database that does not match (`schema_mismatch`)
+are the tile's problems, in their own sentences, so the panel keeps only
+the facts: "All services run version 1.4.2" while every service runs one
+version, each service's line, "The database matches the version that is
+running" while it does, and the mode.
+
+While the Version and services tile is Working, its summary names the
+first of these that holds:
+
+1. "Version 1.12.0, Production, all services running";
+2. "No service has reported its version".
 
 ### Health actions
 

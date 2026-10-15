@@ -22,8 +22,11 @@ from parishkit.stewardship.system_health import (
     LOADED_TILES,
     MAIL_SUMMARIES,
     REGISTRY,
+    RESAVE_SUMMARIES,
+    SOURCE_FORM_SUMMARIES,
     SOURCE_SUMMARIES,
     TILES,
+    VERSION_SUMMARIES,
     AcceptPreview,
     BackupRequestStatus,
     DebugAllowPreview,
@@ -43,6 +46,8 @@ from parishkit.stewardship.system_health import (
     loaded_states,
     page_findings,
     parse_loaded,
+    resave_tile,
+    source_form_tile,
     tile_parts,
 )
 
@@ -2499,3 +2504,205 @@ def test_the_debug_region_checks_the_status_again_once_answered():
             'data-in-place-region data-live-recheck="system-health" '
             'aria-labelledby="debug-off-heading"'
         )
+
+
+# ------------------------------- the page-load and services tiles (slice 6)
+
+BLOCKED = {
+    "label": "Initial invitation",
+    "subject": "Hi",
+    "url": "/e/",
+    "blocked": True,
+}
+RECOMMENDED = {
+    "label": "Family welcome",
+    "subject": None,
+    "url": "/p/",
+    "blocked": False,
+}
+
+
+def loaded_page(source_form=0, resave=(), model=None, **context):
+    """The dashboard with the page-load tiles read as ``source_form`` and
+    ``resave`` (``source_form_summary``'s and ``resave_summary``'s answers),
+    as the view draws it."""
+    model = model or health()
+    resave = list(resave) if isinstance(resave, tuple) else resave
+    return whole(
+        {
+            "health": model,
+            "dashboard": dashboard(
+                model,
+                findings=page_findings(model),
+                loaded=loaded_states(source_form, resave),
+            ),
+            "source_form_count": source_form,
+            "resave": resave,
+            "source_form_tile": source_form_tile(source_form),
+            "resave_tile": resave_tile(resave),
+        }
+        | context
+    )
+
+
+def band(body, tile, following):
+    """The tile's details band, up to the next tile ``following`` (or the end)."""
+    start = body.index(f'id="health-{tile}-details"')
+    end = body.index(f'id="health-{following}"', start) if following else len(body)
+    return body[start:end]
+
+
+def counted_words(body, tile):
+    """A tile's counted summary row text, without markup."""
+    tile_body = section(body, f'id="health-{tile}"')
+    counted = tile_body.split('class="health-said">', 1)[1].split("</span>", 1)[0]
+    return re.sub(r"<[^>]+>", "", counted).strip()
+
+
+def test_the_source_form_summary_names_the_first_that_holds():
+    """Each summary in SOURCE_FORM_SUMMARIES's order, with its state, which
+    loaded_states takes from the same choice."""
+    cases = [
+        (None, "unchecked", "warning", "Could not be checked"),
+        (3, "families", "warning", "3 Families cannot open the form"),
+        (1, "families", "warning", "1 Family cannot open the form"),
+        ("no_data", "no_data", "working", "No ParishSoft data yet"),
+        ("no_campaign", "no_campaign", "working", "No current campaign"),
+        (0, "none", "working", "Every Family can open the form"),
+    ]
+    assert {kind for _, kind, _, _ in cases} == set(SOURCE_FORM_SUMMARIES)
+    for answer, kind, state, words in cases:
+        summary = source_form_tile(answer)
+        assert (summary.kind, summary.state) == (kind, state), answer
+        assert loaded_states(answer, []).get("source-form", "working") == state
+        assert counted_words(loaded_page(answer), "source-form") == words, answer
+
+
+def test_the_resave_summary_names_the_first_that_holds():
+    """Each summary in RESAVE_SUMMARIES's order: a blocked email is an Error
+    named with how many other items follow it."""
+    cases = [
+        (None, "unchecked", "warning", "Could not be checked"),
+        (
+            [RECOMMENDED, BLOCKED, RECOMMENDED],
+            "blocked",
+            "error",
+            "1 email cannot be sent until it is fixed and 2 more",
+        ),
+        (
+            [BLOCKED, BLOCKED],
+            "blocked",
+            "error",
+            "2 emails cannot be sent until they are fixed",
+        ),
+        ([RECOMMENDED, RECOMMENDED], "recommended", "warning", "2 to re-save"),
+        ("no_campaign", "no_campaign", "working", "No current campaign"),
+        ([], "none", "working", "Nothing to re-save"),
+    ]
+    assert {kind for _, kind, _, _ in cases} == set(RESAVE_SUMMARIES)
+    for answer, kind, state, words in cases:
+        summary = resave_tile(answer)
+        assert (summary.kind, summary.state) == (kind, state), answer
+        assert loaded_states(0, answer).get("resave", "working") == state
+        assert counted_words(loaded_page(resave=answer), "resave") == words, kind
+
+
+def test_a_source_form_finding_is_its_tiles_problem_item_with_the_link():
+    """Families listed, or a check that could not run, are the Warning
+    tile's problem item, linking the list; otherwise a plain line with no
+    link, since the list would be empty (conditional fields)."""
+    link = 'href="/admin/system/source-form/"'
+    for answer in (2, None):
+        details = band(loaded_page(answer), "source-form", "resave")
+        assert 'data-problem="source_form" data-severity="warning"' in details
+        assert link in details
+        assert 'aria-controls="source-form-tip"' in details
+    for answer in (0, "no_data", "no_campaign"):
+        details = band(loaded_page(answer), "source-form", "resave")
+        assert "data-problem" not in details and link not in details, answer
+        assert 'aria-controls="source-form-tip"' in details
+
+
+def test_a_resave_finding_is_its_tiles_problem_item_with_the_list():
+    """A blocked email is an error notice, other items a warning; each is
+    followed by the linked list and links Pages and emails, which a Working
+    tile leaves out."""
+    catalog = 'href="/admin/campaign/content/"'
+    error = band(loaded_page(resave=[BLOCKED, RECOMMENDED]), "resave", "version")
+    assert (
+        'class="notice notice-error" data-problem="resave" data-severity="error"'
+        in error
+    )
+    assert "1 email cannot be sent until it is fixed" in error
+    assert "1 other saved page or email should be re-saved." in error
+    assert error.count('href="/e/"') == 1 and error.count('href="/p/"') == 1
+    assert catalog in error
+    warning = band(loaded_page(resave=[RECOMMENDED]), "resave", "version")
+    assert 'class="notice" data-problem="resave" data-severity="warning"' in warning
+    assert catalog in warning
+    unchecked = band(loaded_page(resave=None), "resave", "version")
+    assert 'data-severity="warning"' in unchecked and catalog in unchecked
+    for answer in ([], "no_campaign"):
+        working = band(loaded_page(resave=answer), "resave", "version")
+        assert "data-problem" not in working and catalog not in working
+        assert "resave-list" not in working
+        assert 'aria-controls="resave-tip"' in working
+
+
+def test_the_page_load_tips_and_about_say_why_the_tiles_do_not_follow_the_poll():
+    """A toggletip beside each sentence, and "About this page" explains what
+    keeps a Family from the form."""
+    page_body = loaded_page(2, [RECOMMENDED])
+    assert page_body.count("checked when the page opens, not every 10 seconds") == 2
+    from pathlib import Path
+
+    template = (
+        Path(__file__).parents[2]
+        / "src/parishkit/stewardship/accounts/templates/stewardship/system-health.html"
+    ).read_text()
+    assert '<dt>{% translate "Families the form cannot open" %}</dt>' in template
+    assert "the next ParishSoft refresh" in template
+
+
+def test_the_version_summary_names_the_first_that_holds():
+    """Each Working summary in VERSION_SUMMARIES's order."""
+    cases = [
+        (health(), "version", "Version 1.4.2, Production, all services running"),
+        (
+            health(mode="testing"),
+            "version",
+            "Version 1.4.2, Testing, all services running",
+        ),
+        (health(versions=()), "none", "No service has reported its version"),
+    ]
+    assert {kind for _, kind, _ in cases} == set(VERSION_SUMMARIES)
+    for model, kind, words in cases:
+        assert model.version_summary.kind == kind
+        assert said("health-version", model) == words, words
+
+
+def test_the_version_panel_repeats_no_problem():
+    """Different versions and a database that does not match are the tile's
+    problems, said once; the panel keeps the facts."""
+    model = health(
+        versions=("1.4.1", "1.4.2"),
+        schema_current=False,
+        problems=(Problem("versions_differ"), Problem("schema_mismatch")),
+    )
+    body = whole({"health": model})
+    details = band(body, "version", None)
+    assert details.count("The services run different versions") == 1
+    assert details.count("The database does not match") == 1
+    assert 'data-problem="versions_differ"' in details
+    assert 'data-problem="schema_mismatch"' in details
+    assert "The database matches" not in details
+    assert "All services run version" not in details
+    assert "Mode:" in details and "<caption>Services</caption>" in details
+    healthy = band(whole({"health": health()}), "version", None)
+    assert "All services run version 1.4.2." in healthy
+    assert "The database matches the version that is running." in healthy
+    assert "data-problem" not in healthy
+    # The polled copy is the same panel.
+    region = page({"health": model})[0]
+    copy = region.split('data-live-mirror="health-version-panel">', 1)[1]
+    assert "The services run different versions" not in copy.split("</template>")[0]

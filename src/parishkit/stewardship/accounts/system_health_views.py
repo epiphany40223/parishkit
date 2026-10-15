@@ -39,6 +39,8 @@ from parishkit.stewardship.system_health import (
     page_findings,
     parse_loaded,
     read_health,
+    resave_tile,
+    source_form_tile,
 )
 from parishkit.stewardship.web.contracts import ErrorCode, filters
 
@@ -157,6 +159,9 @@ def _read(request, template, *, page):
             context = _context(health, extra, loaded=loaded)
             context["source_form_count"] = source_form
             context["resave"] = resave
+            # Their summaries and states, chosen in one place (#1214).
+            context["source_form_tile"] = source_form_tile(source_form)
+            context["resave_tile"] = resave_tile(resave)
             context["status_url"] = _status_url(loaded)
             # The Admin chrome reuses this instant instead of reading the clock.
             request._stewardship_display_now = health.checked_at
