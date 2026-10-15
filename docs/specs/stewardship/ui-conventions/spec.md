@@ -1708,10 +1708,42 @@ Portal notices, cards and headings follow in later slices of #732.
 
 ### Colour scheme
 
-**Rule.** The Admin portal, including sign-in and the setup wizard, follows
-the operating system's light or dark setting (`prefers-color-scheme`) on
-screen. In dark, every colour token takes its dark value, and the browser's
-own form controls and scrollbars turn dark too. Everything else stays light:
+**Rule.** The Admin portal, including sign-in and the setup wizard, is light
+or dark on screen. By default it follows the operating system's setting
+(`prefers-color-scheme`), and it changes as soon as that setting does. In
+dark, every colour token takes its dark value, and the browser's own form
+controls and scrollbars turn dark too.
+
+The **Appearance** switch at the top right of every Admin page's header,
+sign-in and setup included, lets a person override that default in this
+browser. It is a small segmented control of three icons: a sun for "Light",
+a moon for "Dark" and a monitor for "Match this device".
+
+- It is a radio group named "Appearance": one Tab stop, the arrow keys move
+  the choice, and the chosen icon is drawn selected (and checked for screen
+  readers). Each icon has its name as its accessible name and as a matching
+  tooltip, like the [row action](#row-actions-and-confirmation) icons, and
+  is drawn inline in the current text colour.
+- Each segment is a 36-pixel square with the shared focus ring, in both
+  schemes. Choosing one changes only colours, so nothing moves.
+- Wider than a phone, it is pinned to the header's top right corner, and
+  the header's other items (Find a Family, the status pills) wrap before
+  reaching it. On a phone it shares the first row with the parish name, at
+  the right, and everything else in the header moves below it; the page
+  never scrolls sideways. The Menu button stays below the header.
+- "Match this device" is the default, and choosing it saves nothing.
+- "Light" or "Dark" is saved in the browser's `localStorage`, so every
+  Admin page in that browser uses it, sign-in included.
+- The choice is not tied to the Admin user or stored on the server.
+
+A change applies in place: the page does not reload, nothing moves, and
+other open Admin tabs follow. A saved choice applies before the page's body
+is drawn, and the switch shows it selected from the first paint, so a page
+never shows the other scheme or the wrong choice first. When the browser
+refuses storage (a private window, blocked site data), the choice lasts
+only for the page it was made on.
+
+Everything else stays light:
 
 - the [Family portal](#family-portal);
 - a printed Admin page;
@@ -1736,20 +1768,28 @@ logo backing name a colour. An image that draws in the ink
 colour, such as the select arrow, has a dark twin. A parish logo gets a
 white backing in dark, because it was drawn for a light header.
 
-The scheme follows the operating system only. An explicit Light, Auto or
-Dark choice, dark charts and a guard against new literal colours are later
-slices of [#1264](https://github.com/epiphany40223/parishkit/issues/1264).
+Dark charts and a guard against new literal colours are later slices of
+[#1264](https://github.com/epiphany40223/parishkit/issues/1264).
 
 **Why.** Administrators who work in a dark desktop get a portal that
 matches it, without a second stylesheet that would drift from the first.
 Parishioners are the larger and less technical audience and have not asked
 for dark, so the Family portal is left as it is. **Shared code.**
-`DARK_COLORS` in `web/design_tokens.py`, declared by the
-`prefers-color-scheme: dark` block in `ui-v1.css` for the `admin-document`
-root that `admin-base.html` sets. `test_design_tokens.py` checks both
-token sets and their contrast. The browser test `test_dark_scheme.py`
-checks that key Admin pages leave no light surface or light ink in dark.
-**Precedent.** #732 (tokens), #1264.
+`DARK_COLORS` in `web/design_tokens.py` is declared by `ui-v1.css` for
+an `admin-document` root (set by `admin-base.html`) with
+`data-theme="dark"`. `admin-gate-v1.js` sets `data-theme` in the head from
+the saved choice or the operating system, keeps the choice as
+`data-theme-choice` (from which `ui-v1.css` draws the selected icon), and
+runs the switch in `admin-appearance.html`, which `admin-base.html` puts at
+the end of the header. `test_design_tokens.py` checks both token sets and
+their contrast. The browser test `test_dark_scheme.py` checks that key Admin
+pages leave no light surface or light ink in dark. It also checks the
+choice: it overrides the device in place, holds across a reload from the
+first paint, reaches other tabs, and leaves Family pages and print light;
+and the switch: keyboard use, focus ring, axe in both schemes, and its
+place at phone and laptop widths.
+**Precedent.** #732 (tokens), #1264 (the switch's place: Administrator,
+pk-local batch 24a).
 
 ### Status indicators
 

@@ -165,3 +165,13 @@ def test_gate_script_and_stylesheet_rules():
     # !important outranks the stylesheet's [hidden] rule while the class is on.
     assert "[hidden] { display: none !important; }" in css
     assert "html.js-required .js-required-panel { display: block !important;" in css
+
+
+def test_gate_script_stays_small():
+    """admin-gate-v1.js blocks rendering while it loads, so it has a budget.
+
+    It removes the gate class and applies the Appearance choice (#1264)
+    before the body is parsed; anything that can wait belongs in a deferred
+    script instead.
+    """
+    assert (STATIC / "admin-gate-v1.js").stat().st_size <= 4096
