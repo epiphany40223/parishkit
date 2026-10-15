@@ -1986,8 +1986,15 @@ new preflight can plan it and it never blocks a later confirmation. One whose
 changes the plan queued (its PUT may have landed) is read back first and
 recorded published when ParishSoft holds the planned payload; any other is
 invalidated. A crash after a PUT is recovered by the next run's read, without
-a second PUT. After
-releasing the lease, a final targeted/full refresh reconciles
+a second PUT. If the system switches to Testing mode or the
+`parishsoft_publication` setting goes off after such a crash, the next run
+refuses before any read or lease, so the crashed entity's proposals stay
+`queued`. They stay that way until a run in Production mode with the setting
+on (a recovery retry or an Administrator's rerun) reads them back and closes
+them. This is safe: a `queued` proposal refuses every review and resolution
+and no preflight plans it, so nothing can change it or plan a second write
+while its PUT may have landed. Turning publication off never needs them
+cleared first. After releasing the lease, a final targeted/full refresh reconciles
 the promoted snapshot under a new lease claim. Publication ships switched off;
 the [publication guide](../../../guides/stewardship-member-requests.md#parishsoft-publication)
 says what must happen before it is switched on.
