@@ -291,10 +291,13 @@ caption. A chart that draws its values in the chart itself leaves that table
 out ([#1266](https://github.com/epiphany40223/parishkit/issues/1266)) and does
 not show its summary, which stays its view's description and shows only if
 the chart cannot be drawn
-([caption rule](../ui-conventions/spec.md#charts)); its feature spec says so: each bar, or each band of a stacked bar, shows its
-figures (its count or dollars, and its share where the chart gives one) on
-or after the mark or in its axis label, a band too narrow for its label
-having them in the chart's legend instead, and its tooltip and accessible
+([caption rule](../ui-conventions/spec.md#charts)); its feature spec says so
+(Campaign comparison's
+[pledge bands](../campaign-history/spec.md#page-layout) are one): each bar, or
+each band of a stacked bar, shows its figures (its count or dollars, and its
+share where the chart gives one) on or after the mark or in its axis label, a
+band too narrow for its label having them in the chart's legend instead, and
+its tooltip and accessible
 name carry the same figures. A pointer shows exact values in tooltips; the
 view takes keyboard focus so a keyboard or screen-reader user hears its name
 and summary, and gets the exact values from the table, or without one from

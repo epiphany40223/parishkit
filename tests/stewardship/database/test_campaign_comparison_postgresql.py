@@ -385,7 +385,7 @@ def test_charts_and_compare_on_day(scenario):
         pledged = chart_spec(text, "pledged")
         assert {r["line"] for r in pledged["data"]["values"]} == lines
         # This campaign's pledge bands chart; each imported year's has its
-        # own in a closed disclosure (#1161).
+        # own pane behind the year selector (#1221).
         for key in ("final-families", "final-pledged", "bands"):
             chart_spec(text, key)
         # Compare on day 1: the tiles and the rule move to day 1.

@@ -488,45 +488,97 @@ def test_final_bars_mark_the_current_campaign_so_far_and_lighter():
     assert row["encoding"]["x"] == {"datum": 0}
     assert row["encoding"]["x2"] == {"datum": top}
     assert row["encoding"]["tooltip"] == bar["encoding"]["tooltip"]
+    # Each bar's drawn figure is hidden from assistive technology: the bar's
+    # name says it, and without an Exact values table it is heard once
+    # (#1266).
+    labels = [layer for layer in final.spec["layer"] if layer["mark"]["type"] == "text"]
+    assert labels and all(layer["mark"]["aria"] is False for layer in labels)
 
 
 # ---------------------------------------------------- pledge distribution
 
 
-def test_band_charts_stack_each_years_shares_from_the_smallest_band():
+def contrast(one, two):
+    """The WCAG contrast ratio of two ``#rrggbb`` colours."""
+
+    def luminance(color):
+        """Relative luminance, per WCAG 2."""
+        channels = [int(color[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+        r, g, b = (
+            c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+            for c in channels
+        )
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    light, dark = sorted((luminance(one), luminance(two)), reverse=True)
+    return (light + 0.05) / (dark + 0.05)
+
+
+def test_band_charts_stack_each_years_shares_and_label_every_band():
     """Per year, its shares of Families and of dollars by band, each 100%.
 
-    One chart per year (#1161): the page shows the current campaign's and
-    keeps each imported year's in a closed disclosure, so each key names
-    its year.
+    One chart per year, shown one at a time by the year selector (#1221), so
+    each key names its year. Each segment's label is its Families or
+    dollars over its share, drawn only where the segment is wide enough;
+    each band's legend entry has both bars' figures; and each segment's
+    accessible name has them too (#1266).
     """
     built = comparison()
     current = charts.distribution_chart(built.current, BAND_EDGES)
-    # The current campaign's bands too: this chart stays in the portal.
+    assert current is not None
     assert current.key == "comparison-bands"
     assert current.title == "Pledge bands, 2055 (so far)"
-    rows = current.spec["data"]["values"]
-    assert {row["name"] for row in rows} == {"Families", "Dollars pledged"}
+    spec = current.spec
+    rows = spec["data"]["values"]
+    assert len(rows) == 2 * (len(BAND_EDGES) + 1)
     for name in ("Families", "Dollars pledged"):
         shares = [row["share"] for row in rows if row["name"] == name]
         assert sum(shares) == pytest.approx(1)
         assert len(shares) == len(BAND_EDGES) + 1
     families = [row for row in rows if row["name"] == "Families"]
-    assert families[0]["shown"] == "42.9%" and families[0]["amount"] == "3 Families"
-    # The dollars bar's tooltip gives the band's dollars, not its Families.
     dollars = [row for row in rows if row["name"] == "Dollars pledged"]
+    # Band 1: 3 of 7 Families, $300.00 of $1,100.00.
+    assert families[0]["lines"] == ["3", "42.9%"]
+    assert dollars[0]["lines"] == ["$300.00", "27.3%"]
+    assert families[0]["amount"] == "3 Families"
     assert dollars[0]["amount"] == "$300.00 pledged"
-    assert current.spec["encoding"]["order"]["field"] == "band"
-    assert current.spec["encoding"]["color"]["scale"]["range"] == list(
-        charts.BAND_COLORS
+    assert dollars[0]["description"] == (
+        "Dollars pledged, Under $250: $300.00, 27.3% of the total pledged"
+    )
+    assert families[0]["key"] == "Under $250 — 3 Families (42.9%) — $300.00 (27.3%)"
+    # Segments stack from the smallest band; a label is drawn only where
+    # its segment has room for it at the drawn width.
+    stack = spec["transform"][0]
+    assert stack["stack"] == "share" and stack["sort"] == [{"field": "band"}]
+    bar, label = spec["layer"]
+    assert bar["encoding"]["description"] == {"field": "description"}
+    color = bar["encoding"]["color"]
+    assert color["scale"]["range"] == [band for band, _ in charts.BAND_COLORS]
+    assert color["legend"]["labelExpr"] == "split(datum.label, ' — ')"
+    assert label["mark"]["aria"] is False
+    assert label["encoding"]["text"] == {
+        "condition": {
+            "test": "(datum.x1 - datum.x0) * width >= datum.need",
+            "field": "lines",
+        },
+        "value": "",
+    }
+    assert families[0]["need"] == round(
+        charts.SEGMENT_PAD + charts.SEGMENT_CHAR * len("42.9%")
     )
     oldest = next(year for year in built.imported if year.year == 2052)
     found = charts.distribution_chart(oldest, BAND_EDGES)
     assert found.key == "comparison-bands-2052"
-    # Dollars: band 1 of 2052 holds $100 of $1,900.
-    assert found.table.headings[1] == "Under $250"
-    assert found.table.rows[1][:3] == ("Dollars pledged", "5.3%", "94.7%")
+    # Band 1 of 2052: one of ten Families, $100 of $1,900.
+    assert found.table.rows[0] == ("Under $250", "1", "$100.00")
+    assert found.spec["data"]["values"][0]["key"].split(" — ")[1] == ("1 Family (10%)")
     assert found.notes == (charts.NOMINAL_DOLLARS,)
+
+
+def test_band_labels_have_aa_contrast_on_their_band():
+    """Each band's label ink has at least 4.5:1 contrast on its colour."""
+    for band, ink in charts.BAND_COLORS:
+        assert contrast(band, ink) >= 4.5, band
 
 
 def test_band_charts_leave_out_a_year_with_older_bands():

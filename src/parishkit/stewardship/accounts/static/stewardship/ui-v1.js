@@ -1222,6 +1222,20 @@
     const need = Math.min(height, below);
     return need > 0 ? `${need}px` : "";
   };
+  // A pane selector (Campaign comparison's pledge distribution year, #1221)
+  // shows the pane of its group whose data-pane is its value and hides the
+  // others (data-shown, ui-v1.css), with no request: every year's pane is
+  // already on the page, in one grid cell, so nothing moves.
+  const showPane = (select) => {
+    select.closest("[data-pane-group]")?.querySelectorAll("[data-pane]").forEach((pane) => {
+      pane.toggleAttribute("data-shown", pane.dataset.pane === select.value);
+    });
+  };
+  document.addEventListener("change", (event) => {
+    if (event.target instanceof HTMLSelectElement && event.target.matches("select[data-pane-select]")) {
+      showPane(event.target);
+    }
+  });
   // Swap one region for its fresh copy. Selections are restored on the copy
   // before it enters the document, so wireSelection's first update already
   // counts them and no change event fires for a tick the reader did not make.
@@ -1231,13 +1245,22 @@
     fresh.querySelectorAll("input[data-select-row]").forEach((box) => {
       if (chosen.has(box.value)) box.checked = true;
     });
-    // A disclosure marked data-keep-open (Campaign comparison's prior years'
-    // pledge bands and data notes, #1161) stays open in the fresh copy when
+    // A disclosure marked data-keep-open (Campaign comparison's data notes,
+    // #1161) stays open in the fresh copy when
     // the reader had opened it, so changing the day does not fold away what
     // they were reading.
     region.querySelectorAll("details[data-keep-open][id][open]").forEach((node) => {
       const copy = fresh.querySelector(`details[data-keep-open]#${CSS.escape(node.id)}`);
       if (copy) copy.open = true;
+    });
+    // A pane selector keeps the reader's choice in the fresh copy, which
+    // shows that pane before it enters the document, so Compare on day
+    // does not switch the pledge distribution back to this campaign (#1221).
+    region.querySelectorAll("select[data-pane-select][id]").forEach((node) => {
+      const copy = fresh.querySelector(`select[data-pane-select]#${CSS.escape(node.id)}`);
+      if (!copy || ![...copy.options].some((option) => option.value === node.value)) return;
+      copy.value = node.value;
+      showPane(copy);
     });
     // Charts keep their space until the fresh ones are drawn (chart-v1.js).
     if (window.ParishCharts) window.ParishCharts.hold(region, fresh);

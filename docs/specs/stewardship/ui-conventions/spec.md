@@ -366,12 +366,18 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   disclosure marked `details[data-keep-open][id]` is the exception: one the
   reader opened stays open in the fresh copy of its region, so a refresh
   does not fold away what they were reading (the
-  [Campaign comparison](../campaign-history/spec.md#page-layout)'s prior
-  years' pledge bands and data notes,
+  [Campaign comparison](../campaign-history/spec.md#page-layout)'s data
+  notes,
   [#1161](https://github.com/epiphany40223/parishkit/issues/1161)). A chart
   inside a closed disclosure is drawn when the disclosure opens, since its
   panel has no width before then
-  ([chart engine](../reports/spec.md#chart-engine)). A checkbox marked
+  ([chart engine](../reports/spec.md#chart-engine)). A pane selector
+  (`select[data-pane-select][id]` in a `[data-pane-group]`) shows the
+  `[data-pane]` whose value it names, with no request; the panes share one
+  grid cell, so the group is as tall as its tallest pane and a choice
+  moves nothing, and the selector keeps its choice in the fresh copy of
+  its region (Campaign comparison's pledge distribution year,
+  [#1221](https://github.com/epiphany40223/parishkit/issues/1221)). A checkbox marked
   `data-submit-on-change` submits its own `form[data-in-place]` as soon as it
   changes, with no Apply button (the Admin portal requires script), and keeps
   focus. Each page records the state it shows on the box. The box submits

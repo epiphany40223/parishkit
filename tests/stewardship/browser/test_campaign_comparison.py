@@ -6,9 +6,9 @@ give each headline tile its full wording as its accessible text, and
 explain a "—" with a keyboard-reachable toggletip. Its charts (slice 5)
 draw under the real CSP with no text drawn over other text and nothing cut
 off at either width, and Compare on day changes the day in place without
-moving the control under the pointer. Each imported year's pledge bands
-and the data notes start closed and open on request, drawing their charts
-then (#1161).
+moving the control under the pointer. The pledge distribution shows one
+year at a time, chosen in place by its year selector (#1221), and the data
+notes start closed and open on request (#1161).
 """
 
 import pytest
@@ -16,7 +16,6 @@ import pytest
 from .comparison_components import DAY_5, PAGE
 from .test_charts import assert_clean, watch
 from .test_components import axe_violations
-from .waits import eventually
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "webkit"], indirect=True
@@ -27,20 +26,17 @@ PAGES = [
     "/campaign-comparison-crowded",
     "/campaign-comparison-empty",
 ]
-# The charts each page draws at first: three day by day, two final results
-# and this campaign's pledge bands with Financial stewardship; without it,
-# two and one. Each imported year's pledge bands chart waits in its closed
-# disclosure (#1161): three more on the first page, seven when crowded.
+# The charts each page draws: three day by day, two final results and every
+# year's pledge bands with Financial stewardship; without it, two and one.
+# Each year's bands pane is laid out, hidden unless chosen, so its chart is
+# drawn at once (#1221): four on the first page, and seven when crowded,
+# whose oldest year has an older band set and so no chart.
 CHARTS = {
-    "/campaign-comparison": 6,
-    "/campaign-comparison-crowded": 6,
+    "/campaign-comparison": 9,
+    "/campaign-comparison-crowded": 12,
     "/campaign-comparison-empty": 3,
 }
-PRIOR = {
-    "/campaign-comparison": 3,
-    "/campaign-comparison-crowded": 7,
-    "/campaign-comparison-empty": 0,
-}
+DRAWN = CHARTS["/campaign-comparison"]
 MARK = "document.querySelector('h1').dataset.mark = 'kept'"
 MARKED = "document.querySelector('h1').dataset.mark"
 # Every pair of text boxes in each drawn chart that overlap by more than a
@@ -83,6 +79,26 @@ COLLISIONS = """() => {
   return found;
 }"""
 
+# Each pledge bands chart's drawn segment labels (#1266): for each, its
+# lines and the pixels it has to spare inside its own segment on the left
+# and on the right (negative when it spills out). A label is drawn only
+# where its segment is wide enough, so none should spill.
+BAND_LABELS = """() => [...document.querySelectorAll(
+  "[data-chart^='comparison-bands'] [data-chart-view] svg")].flatMap((svg) => {
+    const segments = [...svg.querySelectorAll("g.mark-rect.role-mark path")]
+      .map((path) => path.getBoundingClientRect());
+    return [...svg.querySelectorAll("g.mark-text.role-mark text")]
+      .filter((text) => text.textContent.trim())
+      .map((text) => {
+        const box = text.getBoundingClientRect();
+        const middle = [(box.left + box.right) / 2, (box.top + box.bottom) / 2];
+        const own = segments.find((r) => r.left <= middle[0] && middle[0] <= r.right
+          && r.top <= middle[1] && middle[1] <= r.bottom);
+        return [text.textContent, own ? box.left - own.left : -1,
+                own ? own.right - box.right : -1];
+      });
+  })"""
+
 
 def expect(locator):
     """Load the optional browser assertion library only after explicit opt-in."""
@@ -96,8 +112,8 @@ def expect(locator):
 def test_page_is_accessible_and_fits(page, component_origin, axe_source, path, width):
     """No axe violation and no sideways page scroll; tables scroll in place.
 
-    The checks run again with every disclosure open, so the imported years'
-    pledge bands, drawn only when opened, fit their panels too.
+    The checks run again with the data notes open and the oldest year's
+    pledge bands chosen, so a hidden pane's content is checked shown too.
     """
     page.set_viewport_size({"width": width, "height": 900})
     errors = watch(page)
@@ -106,17 +122,20 @@ def test_page_is_accessible_and_fits(page, component_origin, axe_source, path, w
     expect(rendered).to_have_count(CHARTS[path])
     for opened in (False, True):
         if opened:
-            for summary in page.locator(
-                "details.comparison-year > summary, details.comparison-notes > summary"
-            ).all():
-                summary.click()
-            expect(rendered).to_have_count(CHARTS[path] + PRIOR[path])
+            page.locator("details.comparison-notes > summary").click()
+            select = page.locator("#band-year")
+            if select.count():
+                oldest = select.locator("option").last.get_attribute("value")
+                select.select_option(oldest)
+                expect(page.locator(f"#bands-{oldest}")).to_be_visible()
         assert page.evaluate(
             "document.documentElement.scrollWidth <= window.innerWidth"
         )
         # The published infographic's lessons: at phone width no label is
         # drawn over another, and no chart or label runs past its panel.
         assert page.evaluate(COLLISIONS) == []
+        labels = page.evaluate(BAND_LABELS)
+        assert all(left >= 0 and right >= 0 for _, left, right in labels), labels
         assert axe_violations(page, axe_source) == []
     assert_clean(page, errors)
 
@@ -131,7 +150,7 @@ def test_dark_mode_keeps_the_light_theme_and_its_contrast(
     """
     page.emulate_media(color_scheme="dark")
     page.goto(component_origin + "/campaign-comparison")
-    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(6)
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(DRAWN)
     assert page.evaluate("matchMedia('(prefers-color-scheme: dark)').matches")
     assert page.evaluate("getComputedStyle(document.body).colorScheme") in (
         "light",
@@ -147,11 +166,33 @@ def test_dark_mode_keeps_the_light_theme_and_its_contrast(
     assert axe_violations(page, axe_source) == []
 
 
+# For each chart matching a selector: whether its summary is its view's
+# description yet takes no room on the page (a chart that draws its values
+# shows no caption repeating them).
+HIDDEN_SUMMARIES = """(selector) =>
+  [...document.querySelectorAll(selector)].map((chart) => {
+  const view = chart.querySelector("[data-chart-view]");
+  const caption = document.getElementById(view.getAttribute("aria-describedby"));
+  return Boolean(caption && caption.closest("[data-chart]") === chart
+    && caption.textContent.trim() && caption.getBoundingClientRect().width <= 1);
+})"""
+
+
+def hidden_summaries(page, selector):
+    """True when every chart matching ``selector`` hides its own summary."""
+    found = page.evaluate(HIDDEN_SUMMARIES, selector)
+    return bool(found) and all(found)
+
+
 def test_charts_show_each_year_and_their_exact_values(page, component_origin):
-    """The lines, end labels, day rule, tooltips and tables of the charts."""
+    """The lines, end labels, day rule, tooltips and tables of the charts.
+
+    The day-by-day charts keep their Exact values tables; the final results
+    and pledge bands draw their figures in the chart instead (#1266).
+    """
     errors = watch(page)
     page.goto(component_origin + "/campaign-comparison")
-    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(6)
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(DRAWN)
     families = page.locator("[data-chart='comparison-families-spec']")
     view = families.locator("[data-chart-view]")
     assert view.get_attribute("aria-label") == "Families responded by campaign day"
@@ -211,9 +252,28 @@ def test_charts_show_each_year_and_their_exact_values(page, component_origin):
         "—",
         "880",
     ]
-    # The final results mark this campaign's bar as so far.
+    # The final results mark this campaign's bar as so far, and each bar
+    # carries its figure, so no Exact values table follows (#1266).
     finals = page.locator("[data-chart='comparison-final-families-spec']")
-    assert "2027 (so far)" in finals.locator("svg text").all_text_contents()
+    finals_text = finals.locator("svg text").all_text_contents()
+    assert "2027 (so far)" in finals_text and "880" in finals_text
+    # The figure is heard from its bar's name, not again from its label.
+    drawn = finals.locator("svg g.mark-rect.role-mark").nth(1).locator("path")
+    assert any(
+        "880" in (name or "")
+        for name in drawn.evaluate_all(
+            "(paths) => paths.map((p) => p.getAttribute('aria-label'))"
+        )
+    )
+    assert finals.locator("svg g.mark-text.role-mark").evaluate_all(
+        "(groups) => groups.map((g) => g.getAttribute('aria-hidden'))"
+    ) == ["true", "true"]
+    expect(
+        page.locator("[data-chart^='comparison-final-'] + .chart-table")
+    ).to_have_count(0)
+    # Those values are drawn, so no chart summary is shown to repeat them;
+    # each stays its view's description (ui-conventions: Charts).
+    assert hidden_summaries(page, "[data-chart^='comparison-final-']")
     # Pointing beside a short bar, on its year's row, still reads its value.
     finals.scroll_into_view_if_needed()
     row = finals.locator("svg g.mark-rect.role-mark").first.locator("path").last
@@ -222,10 +282,22 @@ def test_charts_show_each_year_and_their_exact_values(page, component_origin):
     expect(tooltip).to_be_visible()
     expect(tooltip).to_contain_text("2027 (so far)")
     page.mouse.move(0, 0)
-    # This campaign's pledge bands: one bar of Families, one of dollars.
-    bands = page.locator("[data-chart='comparison-bands-spec'] + .chart-table")
-    bands.locator("summary").click()
-    expect(bands.locator("tbody tr")).to_have_count(2)
+    # This campaign's pledge bands, two 100% stacked bars (#1221): a wide
+    # band's segment carries its Families or dollars over its share (band
+    # 1: 30 Families, 13%), every band's legend entry has both bars'
+    # figures (band 1's $9,000.00 is too narrow a segment to label at this
+    # width), and each segment's name says them; no exact-values table
+    # follows the chart, since the band table under it lists them (#1266).
+    bands = page.locator("[data-chart='comparison-bands-spec']")
+    lines = bands.locator("svg tspan").all_text_contents()
+    assert "30" in lines and "13%" in lines
+    assert "30 Families (13%)" in lines and "$9,000.00 (4.3%)" in lines
+    segment = bands.locator("svg g.mark-rect.role-mark path").first
+    assert segment.get_attribute("aria-label") == (
+        "Families, Under $250: 30, 13% of pledging Families"
+    )
+    expect(page.locator("#bands-current .chart-table")).to_have_count(0)
+    assert hidden_summaries(page, "[data-chart='comparison-bands-spec']")
     assert_clean(page, errors)
 
 
@@ -239,7 +311,7 @@ def test_compare_on_day_changes_the_day_in_place(page, component_origin):
     page.set_viewport_size({"width": 1280, "height": 900})
     errors = watch(page)
     page.goto(component_origin + PAGE)
-    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(6)
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(DRAWN)
     page.evaluate(MARK)
     field = page.get_by_label("Compare on day")
     button = page.get_by_role("button", name="Compare", exact=True)
@@ -258,7 +330,7 @@ def test_compare_on_day_changes_the_day_in_place(page, component_origin):
     page.wait_for_url(component_origin + DAY_5 + "#comparison-report")
     report = page.locator("#comparison-report")
     expect(report.locator("p").first).to_contain_text("Day 5 of Stewardship 2027")
-    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(6)
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(DRAWN)
     assert page.evaluate(MARKED) == "kept"
     assert page.evaluate("window.scrollY") == scrolled
     assert button.bounding_box() == before
@@ -270,85 +342,85 @@ def test_compare_on_day_changes_the_day_in_place(page, component_origin):
     assert_clean(page, errors)
 
 
-def test_prior_years_pledge_bands_open_on_request(page, component_origin):
-    """This campaign's bands show; each imported year's open on request.
+def test_year_selector_shows_one_years_pledge_bands_in_place(page, component_origin):
+    """One pledge distribution chart and table, for the year chosen (#1221).
 
-    Each imported year's chart and table sit in a closed disclosure after
-    this campaign's (#1161), newest first. Opening one draws its chart to
-    its panel's width and moves nothing above it, and an opened one stays
-    open, drawn, through Compare on day.
+    The selector lists this campaign and each imported year, newest first,
+    and starts on this campaign. Choosing a year shows its chart, already
+    drawn to the panel's width, its table and its quartile line in place:
+    no request, nothing on the page moves, focus stays on the selector. The
+    choice stays through Compare on day.
     """
     page.set_viewport_size({"width": 1280, "height": 900})
     errors = watch(page)
+    sent = []
+    page.on("request", lambda request: sent.append(request.url))
     page.goto(component_origin + PAGE)
-    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(6)
-    current = page.locator("[data-chart='comparison-bands-spec']")
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(DRAWN)
+    select = page.get_by_label("Year", exact=True)
+    assert [text.strip() for text in select.locator("option").all_text_contents()] == [
+        "Stewardship 2027 (so far)",
+        "2026",
+        "2025",
+        "2024",
+    ]
+    expect(select).to_have_value("current")
+    current, last_year = page.locator("#bands-current"), page.locator("#bands-2026")
     expect(current).to_be_visible()
-    expect(current).to_have_attribute("data-chart-state", "rendered")
-    expect(page.locator("#bands-current-caption")).to_be_visible()
-    years = page.locator("details.comparison-year")
-    assert [
-        text.strip() for text in years.locator("> summary").all_text_contents()
-    ] == ["2026 pledge bands", "2025 pledge bands", "2024 pledge bands"]
-    for index in range(3):
-        expect(years.nth(index)).not_to_have_attribute("open", "")
-    last_year = page.locator("#bands-2026")
-    chart = last_year.locator("[data-chart='comparison-bands-2026-spec']")
-    caption = last_year.locator("#bands-2026-caption")
-    expect(caption).to_be_hidden()
-    # Not drawn while closed: its panel has no width yet.
-    expect(chart).to_have_attribute("data-chart-state", "pending")
-    summary = last_year.locator("> summary")
-    summary.scroll_into_view_if_needed()
-    above = page.locator("#bands-current-caption").bounding_box()
-    at = summary.bounding_box()
-    summary.click()
-    expect(chart).to_have_attribute("data-chart-state", "rendered")
-    expect(caption).to_be_visible()
-    assert page.locator("#bands-current-caption").bounding_box() == above
-    assert summary.bounding_box() == at
-    # Drawn to its panel's width, not to the empty closed one.
-    view = chart.locator("[data-chart-view]")
+    expect(last_year).to_be_hidden()
+    # Exactly one chart and one band table are shown.
+    expect(page.locator(".band-pane:visible")).to_have_count(1)
+    page.evaluate(MARK)
+    select.scroll_into_view_if_needed()
+    scrolled = page.evaluate("window.scrollY")
+    at = select.bounding_box()
+    below = page.locator("#numbers-heading").bounding_box()
+    sent.clear()
+    select.focus()
+    select.select_option("2026")
+    expect(last_year).to_be_visible()
+    expect(current).to_be_hidden()
+    expect(last_year.locator("#bands-2026-caption")).to_contain_text(
+        "2026 — first quartile $400.00"
+    )
+    assert sent == []
+    assert page.evaluate(MARKED) == "kept"
+    assert page.evaluate("window.scrollY") == scrolled
+    assert select.bounding_box() == at
+    assert page.locator("#numbers-heading").bounding_box() == below
+    assert page.evaluate("document.activeElement.id") == "band-year"
+    # Drawn to its panel's width while it was hidden.
+    view = last_year.locator("[data-chart-view]")
     width = view.evaluate("e => e.clientWidth")
     drawn = float(view.locator("svg").get_attribute("width"))
     assert width > 300 and abs(drawn - width) <= 1
-    # The panel repeats no heading: its disclosure's summary names it.
-    expect(last_year.locator("h3")).to_have_count(0)
-    # Closed, narrowed, and opened again: the chart follows the new width.
-    summary.click()
-    expect(caption).to_be_hidden()
-    page.set_viewport_size({"width": 900, "height": 900})
-    summary.click()
-    expect(caption).to_be_visible()
-    narrower = view.evaluate("e => e.clientWidth")
-    assert 300 < narrower < width
-    # Polled from here: the page's CSP refuses wait_for_function's eval.
-    eventually(
-        page,
-        """([node, target]) => {
-          const svg = node.querySelector("svg");
-          return !!svg && Math.abs(Number(svg.getAttribute("width")) - target) <= 1;
-        }""",
-        arg=[view.element_handle(), narrower],
-    )
-    page.set_viewport_size({"width": 1280, "height": 900})
-    # The other years stay closed and undrawn.
-    expect(page.locator("#bands-2025 [data-chart]")).to_have_attribute(
-        "data-chart-state", "pending"
-    )
-    # Compare on day keeps the opened year (and the data notes) open.
+    expect(view).to_have_attribute("aria-label", "Pledge bands, 2026")
+    # Compare on day keeps the chosen year (and the open data notes).
     page.locator("details.comparison-notes > summary").click()
     page.get_by_label("Compare on day").fill("5")
     with page.expect_request(lambda request: request.url.endswith(DAY_5)):
         page.get_by_role("button", name="Compare", exact=True).click()
     expect(page.locator("#comparison-report p").first).to_contain_text("Day 5 of")
-    expect(page.locator("#bands-2026")).to_have_attribute("open", "")
+    expect(select).to_have_value("2026")
+    expect(page.locator("#bands-2026")).to_be_visible()
+    expect(page.locator("#bands-current")).to_be_hidden()
     expect(page.locator("#comparison-notes")).to_have_attribute("open", "")
-    expect(page.locator("#bands-2025")).not_to_have_attribute("open", "")
-    expect(
-        page.locator("#bands-2026 [data-chart='comparison-bands-2026-spec']")
-    ).to_have_attribute("data-chart-state", "rendered")
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(DRAWN)
     assert_clean(page, errors)
+
+
+def test_a_year_with_older_bands_shows_its_note_in_place(page, component_origin):
+    """The older band set's note takes the chart's place; nothing moves."""
+    page.set_viewport_size({"width": 320, "height": 900})
+    page.goto(component_origin + "/campaign-comparison-crowded")
+    select = page.get_by_label("Year", exact=True)
+    below = page.locator("#numbers-heading").bounding_box()
+    select.select_option("2020")
+    pane = page.locator("#bands-2020")
+    expect(pane).to_be_visible()
+    expect(pane).to_contain_text("import the year again to compare its bands")
+    expect(pane.locator("[data-chart]")).to_have_count(0)
+    assert page.locator("#numbers-heading").bounding_box() == below
 
 
 def test_compare_on_day_refuses_a_day_past_the_last_complete_one(

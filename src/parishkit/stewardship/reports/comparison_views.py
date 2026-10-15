@@ -161,12 +161,12 @@ def page_context(comparison, principal, *, refused=False, mutable=True):
 def distributions(comparison, edges):
     """Each year's pledge-band table entry with its chart, current year first.
 
-    The page shows the current campaign's entry and keeps each imported
-    year's in a closed disclosure (#1161), so an entry carries its own
-    chart (``distribution_chart``, None when it has no bands to draw),
-    whether it is the current campaign's, and a ``key`` for its element
-    ids ("current", or the imported year). Empty without Financial
-    stewardship.
+    The page shows one entry at a time, chosen by the section's year
+    selector (#1221), so an entry carries its own chart
+    (``distribution_chart``, None when it has no bands to draw), whether it
+    is the current campaign's, and a ``key`` for its element ids and its
+    selector option ("current", or the imported year). Empty without
+    Financial stewardship.
     """
     if not comparison.financial:
         return []

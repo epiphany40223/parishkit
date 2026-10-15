@@ -97,7 +97,7 @@
   };
   // Draw every pending chart in ``root`` (the document, or a region swapped
   // in place), and let go of views whose figures were replaced. A chart in
-  // a closed disclosure (Campaign comparison's prior years, #1161) waits:
+  // a closed disclosure waits:
   // its panel has no width until it opens, and Vega would measure the
   // container as empty. Opening the disclosure draws it (below).
   const render = (root) => {
