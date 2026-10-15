@@ -136,26 +136,36 @@ def test_all_core_steps_require_explicit_completion(missing):
 
 
 def test_system_setup_compiles_without_a_campaign():
-    """System setup (#142): no campaign, content or schedules in the candidate.
+    """System setup (#142): no campaign, content or schedules in the candidate."""
+    base, args = compilation()
+    sections = compile_candidate(base, **args).candidate.document()["sections"]
+    assert not sections.get("campaigns")
+    assert not sections.get("content") and not sections.get("schedules")
+    assert sections["parish"] and sections["integrations"]
 
-    First-campaign sections a draft saved before the upgrade, retired content
-    steps among them, are never compiled.
+
+@pytest.mark.parametrize(
+    "step", ["campaign", "email_initial", "page_submission_confirmation", "schedules"]
+)
+def test_sections_outside_the_wizard_are_refused(step):
+    """A first-campaign or retired step a draft may hold is refused, not dropped.
+
+    The setup preview passes only the wizard's sections; a caller that passed
+    a whole draft must fail closed rather than compile without its campaign.
     """
     base, args = compilation()
     attempt = str(args["attempt_id"])
     revision = content(attempt, kind="email", slot="initial")
-    args["sections"] |= {
+    args["sections"][step] = {
         "campaign": {"source_result": str(uuid4()), "campaign": campaign()["values"]},
         "email_initial": revision,
         "page_submission_confirmation": content(
             attempt, slot="submission_confirmation"
         ),
         "schedules": {"records": [schedule(attempt, template_version=revision["id"])]},
-    }
-    sections = compile_candidate(base, **args).candidate.document()["sections"]
-    assert not sections.get("campaigns")
-    assert not sections.get("content") and not sections.get("schedules")
-    assert sections["parish"] and sections["integrations"]
+    }[step]
+    with pytest.raises(ConfigError, match="setup wizard's own sections"):
+        compile_candidate(base, **args)
 
 
 @pytest.mark.parametrize(

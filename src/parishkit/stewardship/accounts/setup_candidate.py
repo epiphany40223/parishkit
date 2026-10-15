@@ -96,8 +96,9 @@ def compile_candidate(
     UUIDs for new public records are scoped to the original attempt. Setup
     (#142) has no campaign, so the candidate holds the Parish profile,
     integrations and login rules only, and no campaign, content or
-    schedules. Only the wizard's steps (``FORMS``) are read; the setup
-    preview passes no others (``setup_preview.SYSTEM_SECTIONS``). An attempt
+    schedules. Only the wizard's steps (``FORMS``) are accepted, and any
+    other section is refused; the setup preview passes no others
+    (``setup_preview.SYSTEM_SECTIONS``). An attempt
     confirmed before #142 with a campaign finishes from its frozen
     candidate and is never compiled again.
     """
@@ -108,6 +109,10 @@ def compile_candidate(
         raise TypeError("Explicit setup compilation identities are required.")
     if type(sections) is not dict or not set(FORMS) <= sections.keys():
         raise ConfigError("Complete every required setup section before final preview.")
+    # Fail closed: a caller that passed a whole draft, first-campaign steps
+    # and all, must not have them silently dropped.
+    if sections.keys() - set(FORMS):
+        raise ConfigError("Only the setup wizard's own sections can be compiled.")
     values = {step: validate_values(step, sections[step]) for step in FORMS}
     public = _system_records(
         base, attempt_id, operation_id, values, branding, credentials
