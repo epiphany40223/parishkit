@@ -314,6 +314,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # it widens the operational event check and replaces the safe context and
 # log writer functions in place, so a rerun of its file is harmless and
 # nothing is registered for it.
+# 0090 (#528) creates nothing: it replaces the derived guard (a base function)
+# and two of 0087's guards in place, so once 0087's file installs again with its
+# older guard bodies, 0090's file runs again too (``CLOSURE_RERUN``).
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -487,6 +490,18 @@ CLOSURE_CREATED = {
             ),
         ),
         ("stewardship_responses", "0004_publication_plans"),
+    ),
+}
+
+
+# A closure migration whose frozen file only replaces functions another
+# closure file creates, with that file's migration: when ``swap_pending``
+# installs the creating file again, the replacing one runs again after it,
+# so later tests keep the replaced bodies. Running it twice is harmless.
+CLOSURE_RERUN = {
+    ("stewardship_responses", "0005_publication_worker"): (
+        "stewardship_responses",
+        "0004_publication_plans",
     ),
 }
 
@@ -776,6 +791,7 @@ def swap_pending():
     assert set(CLOSURE_CREATED.values()) <= set(closure)
     assert set(CLOSURE_ALTERED.values()) <= set(closure)
     assert {key for key, _ in CLOSURE_REPLACED.values()} <= set(closure)
+    assert set(CLOSURE_RERUN) | set(CLOSURE_RERUN.values()) <= set(closure)
     removed = []
     with transaction.atomic(), connection.cursor() as cursor:
         for app, name in closure:
@@ -812,9 +828,15 @@ def swap_pending():
             cursor.execute(SWAP[: SWAP.index("DO $check$")])
             # A frozen file makes all its objects again, the tables with
             # their guard functions, so each runs at most once.
+            installed = set()
             for function, key in CLOSURE_CREATED.items():
                 cursor.execute("SELECT to_regprocedure(%s)", [function])
                 if cursor.fetchone()[0] is None:
+                    module = sys.modules[loader.disk_migrations[key].__module__]
+                    cursor.execute(Path(module.FROZEN_SQL).read_text(encoding="utf-8"))
+                    installed.add(key)
+            for key, created_by in CLOSURE_RERUN.items():
+                if created_by in installed:
                     module = sys.modules[loader.disk_migrations[key].__module__]
                     cursor.execute(Path(module.FROZEN_SQL).read_text(encoding="utf-8"))
             # After the created objects: a frozen file run again above (0059)

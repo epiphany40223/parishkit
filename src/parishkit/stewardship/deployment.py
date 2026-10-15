@@ -197,6 +197,14 @@ BULK_SEND_BATCH_VARIABLE = "PARISHKIT_STEWARDSHIP_BULK_SEND_BATCH"
 # any other value is refused outside the local profile.
 LOCAL_SMTP_LATENCY_VARIABLE = "PARISHKIT_STEWARDSHIP_LOCAL_SMTP_LATENCY_MS"
 LOCAL_SMTP_LATENCY_MAX_MS = 5000
+# Census publication to ParishSoft (#528, BG-09): off by default, and it
+# must stay off until the Member contact read the worker needs is confirmed
+# and the human-run write smoke test has passed (see
+# docs/guides/stewardship-member-requests.md#parishsoft-publication). While
+# it is off the publish worker refuses before it takes the source lease or
+# makes any ParishSoft call. "1" (or ``parishsoft_publication: true`` in the
+# deployment YAML) on the worker turns it on.
+PARISHSOFT_PUBLICATION_VARIABLE = "PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION"
 
 
 @dataclass(frozen=True)
@@ -224,6 +232,7 @@ class DeploymentConfiguration:
     bulk_family_send: bool = False
     bulk_send_batch: int = 20
     local_smtp_latency_ms: int = 0
+    parishsoft_publication: bool = False
 
 
 def _mapping(value: object, keys: set[str] | frozenset[str], label: str) -> dict:
@@ -409,6 +418,7 @@ def load_deployment(
             "bulk_family_send",
             "bulk_send_batch",
             "local_smtp_latency_ms",
+            "parishsoft_publication",
         },
         "deployment",
     )
@@ -694,6 +704,14 @@ def load_deployment(
     if latency and profile is not DeploymentProfile.LOCAL:
         # A rehearsal aid only: a real deployment never waits on purpose.
         raise ConfigError("local_smtp_latency_ms is admitted only in the local profile")
+    publication = select("PARISHSOFT_PUBLICATION", None)
+    if publication in (None, ""):
+        # Empty means unset, as for the bulk send switch above.
+        publication = deployment.get("parishsoft_publication", False)
+    elif publication in {"0", "1"}:
+        publication = publication == "1"
+    if type(publication) is not bool:
+        raise ConfigError("parishsoft_publication must be true or false (1 or 0)")
     supplied_keys = set(explicit) | {
         key for key in env if key.startswith("PARISHKIT_STEWARDSHIP_")
     }
@@ -723,4 +741,5 @@ def load_deployment(
         bulk,
         batch,
         latency,
+        publication,
     )

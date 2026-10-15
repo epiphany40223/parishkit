@@ -4886,7 +4886,61 @@ BEGIN
             THEN
                 RAISE EXCEPTION 'Proposal history and terminal outcomes are immutable' USING ERRCODE='23514';
             END IF;
-            IF current_user='pk_stewardship_worker' THEN
+            IF current_user='pk_stewardship_worker'
+               AND NEW.current_source_id IS NOT DISTINCT FROM OLD.current_source_id THEN
+                -- ParishSoft publication (#528, BG-09): with the source
+                -- reference unchanged (reconciliation always changes it),
+                -- the worker changes only the execution, and only as the
+                -- confirmed plan and its outcomes say. It queues an approved
+                -- automatic Member change at the version its plan recorded,
+                -- in a confirmed Production plan whose entity is unfinished,
+                -- while the system is in Production mode and the live
+                -- publication lease's task is running; it then publishes it
+                -- when the entity's latest outcome is published, or returns
+                -- it to pending or failed when that outcome is invalidated.
+                IF ROW(NEW.current_available,NEW.current_value,NEW.admin_value_set,
+                       NEW.admin_value,NEW.decision,NEW.superseded_by_id)
+                   IS DISTINCT FROM
+                   ROW(OLD.current_available,OLD.current_value,OLD.admin_value_set,
+                       OLD.admin_value,OLD.decision,OLD.superseded_by_id)
+                   OR NOT (
+                   (OLD.execution IN ('pending','failed') AND NEW.execution='queued'
+                       AND OLD.decision='approved' AND OLD.handling='api' AND OLD.entity_kind='member'
+                       AND EXISTS (SELECT 1 FROM public.stewardship_publication_field f
+                           JOIN public.stewardship_publication_entity e ON e.id=f.entity_id
+                           JOIN public.stewardship_publication_plan p ON p.id=e.plan_id
+                           JOIN public.stewardship_publication_confirmation c ON c.plan_id=p.id
+                           WHERE f.proposal_id=OLD.id AND f.proposal_version=OLD.version AND f.outcome='write'
+                             AND e.planned_sha256 IS NOT NULL AND NOT p.testing
+                             AND NOT EXISTS (SELECT 1 FROM public.stewardship_publication_outcome o
+                                 WHERE o.entity_id=e.id AND o.result IN ('published','invalidated')))
+                       AND EXISTS (SELECT 1 FROM public.stewardship_system_configuration
+                           WHERE mode='production')
+                       AND EXISTS (SELECT 1 FROM public.stewardship_source_lease l
+                           JOIN public.stewardship_task_run t ON t.id=l.owner_id
+                           WHERE l.singleton AND l.phase='publication'
+                             AND l.expires_at>clock_timestamp() AND t.state='running'
+                             AND t.fence=l.task_fence AND t.worker_id=l.worker_id
+                             AND t.lease_expires_at>clock_timestamp()))
+                   OR (OLD.execution='queued' AND NEW.execution IN ('published','pending','failed')
+                       -- Only the plan that queued it settles it: the latest
+                       -- confirmed plan writing it at that version, since an
+                       -- earlier one (invalidated without queueing) had to
+                       -- finish before a later one could be confirmed.
+                       AND (SELECT latest.result FROM public.stewardship_publication_field f
+                           JOIN public.stewardship_publication_entity e ON e.id=f.entity_id
+                           JOIN public.stewardship_publication_confirmation c ON c.plan_id=e.plan_id
+                           LEFT JOIN LATERAL (SELECT o.result FROM public.stewardship_publication_outcome o
+                               WHERE o.entity_id=f.entity_id ORDER BY o.attempt DESC LIMIT 1) latest ON true
+                           WHERE f.proposal_id=OLD.id AND f.proposal_version=OLD.version-1
+                             AND f.outcome='write'
+                           ORDER BY c.created_at DESC, c.id DESC LIMIT 1)
+                       IS NOT DISTINCT FROM CASE WHEN NEW.execution='published'
+                           THEN 'published' ELSE 'invalidated' END))
+                THEN
+                    RAISE EXCEPTION 'Proposal publication requires its confirmed plan and outcome' USING ERRCODE='23514';
+                END IF;
+            ELSIF current_user='pk_stewardship_worker' THEN
                 IF NEW.execution NOT IN ('pending','conflict','resolved_upstream','cancelled')
                    OR NEW.current_source_id=OLD.current_source_id
                    OR NOT public.stewardship_response_source_owner_v1(NEW.current_source_id)
