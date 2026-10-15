@@ -336,6 +336,9 @@ FROZEN = {
     "0101_publication_tasks.sql": (
         "6d1e92b1571c696103b9e72bf302ce67f4f161bb8ab86d44d95618a9bd9f4b2f"
     ),
+    "0102_setup_load_void.sql": (
+        "5dcfeb9a0cf08bbd2ffce1d54235d901490e8971106d205578ed364ef544817e"
+    ),
 }
 
 

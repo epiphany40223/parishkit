@@ -101,14 +101,20 @@ def admit_cleanup(action, status):
 
 
 def _unscheduled():
-    """Terminal attempts with source work that no cleanup Task owns yet."""
+    """Terminal attempts with source work that no cleanup Task owns yet.
+
+    Source work is any load the attempt ever ran, so a load discarded before
+    setup ended (#1353) is still disposed of.
+    """
     scheduled = TaskRun.objects.filter(
         task_type=TASK_TYPE, domain_request_id=OuterRef("id")
     )
-    return SetupAttempt.objects.filter(
-        state__in=("expired", "completed"),
-        source_task_id__isnull=False,
-    ).filter(~Exists(scheduled))
+    loaded = TaskRun.objects.filter(
+        task_type="setup_source_load", domain_request_id=OuterRef("id")
+    )
+    return SetupAttempt.objects.filter(state__in=("expired", "completed")).filter(
+        Exists(loaded), ~Exists(scheduled)
+    )
 
 
 def produce_setup_cleanup(guard):

@@ -76,7 +76,11 @@ def _receive(execution, claim):
 
 
 def _failed(execution, error, claim):
-    """Known drained reads may fail/retry; invariant and lost-fence errors propagate."""
+    """Known drained reads may fail/retry; invariant and lost-fence errors propagate.
+
+    A permanent failure also returns the live attempt to collecting with its
+    failed load still bound (#1353); a retry leaves it loading.
+    """
     decision = classify_read_failure(error, has_source_claim=claim is not None)
     if decision is None:
         raise error
@@ -125,6 +129,22 @@ def _failed(execution, error, claim):
                     else {}
                 ),
             )
+            if action == "permanent_failure":
+                # A load that will not retry returns setup to collecting in
+                # the same transaction, keeping its binding (#1353): every
+                # page is editable again, the loading watchdog stops, and the
+                # Admin can correct the ParishSoft connection or load again.
+                # A cancelled (expired) setup is left as it is.
+                changed = SetupAttempt.objects.filter(
+                    pk=attempt.pk, version=attempt.version, state="loading"
+                ).update(
+                    state="collecting",
+                    actor_id=attempt.owner_id,
+                    correlation_id=execution.correlation_id,
+                    version=F("version") + 1,
+                )
+                if changed != 1:
+                    raise StorageInvariantError("Setup changed before source failure.")
             operational(
                 decision.event,
                 level="CRITICAL" if action == "permanent_failure" else "INFO",

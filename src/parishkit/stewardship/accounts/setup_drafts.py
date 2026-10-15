@@ -32,6 +32,9 @@ class DraftView:
     absolute_at: datetime
     watchdog_at: datetime | None
     source_task_id: UUID | None = None
+    # The bound load's Task state (#1353): a failed load leaves setup
+    # collecting, so only "succeeded" means the parish data is loaded.
+    source_task_state: str | None = None
     # Wizard pages the admin has explicitly reviewed (see mark_reviewed).
     reviewed: dict = field(default_factory=dict)
 
@@ -111,6 +114,7 @@ def view_draft(request, service, attempt_id=None):
             window.absolute_at,
             window.watchdog_at,
             row.source_task_id,
+            row.source_task.state if row.source_task_id else None,
             _reviewed(request, row.pk),
         )
 

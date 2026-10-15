@@ -680,9 +680,17 @@ def run_wizard(
         attempt_id = wizard_collect(request, service, fake_key=fake_key)
 
     def loaded():
-        """The attempt collects again once the worker's load has finished."""
-        row = SetupAttempt.objects.get(pk=attempt_id)
-        if row.state == "collecting":
+        """The attempt collects again once the worker's load has finished.
+
+        A failed load also returns it to collecting (#1353), so the bound
+        Task's state says which: a failed load stops the run.
+        """
+        row = SetupAttempt.objects.select_related("source_task").get(pk=attempt_id)
+        if row.state == "collecting" and row.source_task_id is not None:
+            if row.source_task.state != "succeeded":
+                raise SeedWebRefused(
+                    f"The setup source load ended in {row.source_task.state}."
+                )
             return True
         if row.state not in {"loading", "collecting"}:
             raise SeedWebRefused(f"The setup source load ended in {row.state}.")
