@@ -892,7 +892,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `ministry_leavers` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry requests — Requested leavers; Leaving; Members leaving | `/admin/reports/ministries/leaving/` | (retired; 404) | Retired with no redirect (#1157), as Members joining. |
 | `ministry_followup` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry follow-up; Follow-up | `/admin/reports/ministries/follow-up/` | (retired; 404) | Retired with no redirect ([#1133](https://github.com/epiphany40223/parishkit/issues/1133)): the queue is now Ministry requests, at `/admin/reports/ministries/`. |
 | `ministry_followup_item` | Follow-up request | Ministry requests | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/ministries/follow-up/<request>/` | (same) | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). Shows the Member's contact details (#1157). A resolved join or leave's Entered in ParishSoft tick posts to `follow-up/<request>/roster/` (#528). |
-| `ministry_roster` | Roster changes to enter | Ministry requests | Administrator, Staff | (new, #528) | (none) | `/admin/reports/ministries/follow-up/roster/` | [Roster changes to enter](#roster-changes-to-enter); its CSV/XLSX/PDF download (`roster/exports/`) is a non-page action. |
+| `ministry_roster` | Roster changes to enter | Ministry requests | Administrator, Staff | (new, #528) | (none) | `/admin/reports/ministries/follow-up/roster/` | [Roster changes to enter](#roster-changes-to-enter); its CSV/XLSX/PDF download (`roster/exports/`) and its bulk Mark entered in ParishSoft (`roster/marks/`, #879) are non-page actions. |
 | `family_directory` | Active parishioner family directory | Menu: Active parishioner family directory | Administrator, Staff | (same) | `/admin/reports/families/` | (same) |  |
 | `family_timeline` | Family timeline | Active parishioner family directory | Administrator, Staff | (new, #477) | `/admin/reports/families/<family>/` | (same) | Opened from each directory row (and Find a Family, NAV-19); `<family>` is the opaque campaign record id. Staff see the summary only. |
 | `emailed_reports` | Emailed reports | Menu: Emailed reports | Administrator, Staff | (new) | `/admin/reports/emailed/` | (same) | New page (decision 7, ADM-12.17): the current campaign's daily reports (and weekly reports for Administrators), newest first, each linking its page; Send a weekly report now is on it and returns to it, linking the report it produced. |
@@ -5233,7 +5233,8 @@ change stays listed, since it may still need entering), Family, Family
 DUID, Ministry, Request (Join or Leave), Resolved, Resolved by,
 Replaced by a later response (Yes when the Family answered again after the
 change was resolved), Entered in ParishSoft (Yes or Not yet), Entered by and
-Entered at, with the tick last; a resolver or marker whose portal user is
+Entered at, with the tick last as the row's
+[row action](../ui-conventions/spec.md#row-actions-and-confirmation); a resolver or marker whose portal user is
 gone shows as "Former portal user"; times are browser-local in the compact date format. Every named
 column sorts in place, and Show, Ministry, sorting and paging travel in the
 address,
@@ -5244,6 +5245,16 @@ Show, Ministry, sort and page; a tick someone else changed first leaves the
 list as it is with a notice, which is what the page announces; the notice's
 two lines are kept while empty
 ([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
+
+Several changes not yet ticked can be marked at once
+([#879](https://github.com/epiphany40223/parishkit/issues/879)) through the
+shared selection column, bulk bar and confirmation dialog of
+[row actions](../ui-conventions/spec.md#row-actions-and-confirmation): the
+bar's only action is Mark entered in ParishSoft, and clearing stays per row.
+The dialog posts to `roster/marks/`, which records each chosen tick exactly
+as a single tick is recorded (its own entry and audit event), all in one
+transaction or none; a change someone else ticked or cleared first refuses
+the whole request, naming that change in the dialog.
 
 Its CSV, XLSX and PDF downloads carry the page's columns, without the tick
 ([downloaded files](../ui-conventions/spec.md#downloaded-files)), for every
