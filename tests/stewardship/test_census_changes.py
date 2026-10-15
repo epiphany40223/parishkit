@@ -539,6 +539,32 @@ def test_shape_offers_only_the_actions_the_row_allows(values, resolve, reopen):
     assert (shown["can_resolve"], shown["can_reopen"]) == (resolve, reopen)
 
 
+@pytest.mark.parametrize(
+    ("values", "reviews"),
+    [
+        # To review: approve or ignore it.
+        ({}, ["approve", "ignore_automatic"]),
+        ({"decision": "approved"}, ["ignore_automatic", "to_review"]),
+        ({"decision": "ignored"}, ["approve", "to_review"]),
+        # A failed publication may be approved again; a conflict is resolved
+        # before it is approved.
+        ({"execution": "failed", "decision": "ignored"}, ["approve", "to_review"]),
+        ({"execution": "conflict"}, ["ignore_automatic"]),
+        # Queued for publication, or final: nothing.
+        ({"execution": "queued", "decision": "approved"}, []),
+        ({"execution": "published", "decision": "approved"}, []),
+        ({"execution": "resolved_upstream"}, []),
+        # By-hand rows are reviewed nowhere; they take Record outcome.
+        ({"handling": "manual", "field": "suffix"}, []),
+        ({"entity_kind": "family", "field": "home_address"}, []),
+    ],
+)
+def test_shape_offers_reviews_only_on_open_automatic_rows(values, reviews):
+    """An Automatic row's Review offers exactly what the service accepts
+    (#528, ADM-09): a different decision, while the change is open."""
+    assert shape(row(**values))["review_actions"] == reviews
+
+
 def test_shape_reads_the_latest_resolution():
     """The latest resolution's who, when and note reach the page and files."""
     when = datetime(2054, 10, 6, 15, tzinfo=UTC)
@@ -622,8 +648,11 @@ def test_page_offers_record_outcome_last_and_only_where_allowed():
     assert 'id="resolve-ignored"' in html and 'value="reopened"' in html
     assert "staff@example.org" in html and "Duplicate" in html
     assert "data-compact>2054-10-06T15:00:00+00:00</time>" in html
+    # An Automatic row's Review is the Administrator's alone.
+    assert 'id="review-auto"' in html and 'value="approve"' in html
     staff = page(False)
     assert 'id="resolve-todo"' in staff and 'id="resolve-ignored"' not in staff
+    assert 'id="review-' not in staff
     # Entered in ParishSoft asks first, naming the row, in the page's dialog.
     assert 'data-confirm-submit="census-enter-confirm"' in html
     assert 'id="census-enter-confirm"' in html
@@ -632,6 +661,7 @@ def test_page_offers_record_outcome_last_and_only_where_allowed():
     gated = page(True, mutable=False)
     assert "Record outcome" not in gated.split("</h1>", 1)[1].split("<table", 1)[1]
     assert 'id="resolve-' not in gated and 'id="census-enter-confirm"' not in gated
+    assert 'id="review-' not in gated
     assert "Other campaign work" in gated
 
 

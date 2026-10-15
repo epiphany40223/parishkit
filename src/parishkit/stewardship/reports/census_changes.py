@@ -29,6 +29,7 @@ from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.responses.census import FAMILY_FIELDS
 from parishkit.stewardship.responses.census_resolution import allowed
+from parishkit.stewardship.responses.census_review import reviewable
 from parishkit.stewardship.responses.comparison import ADDRESS_COMPONENTS
 from parishkit.stewardship.responses.member_census import MEMBER_FIELDS
 from parishkit.stewardship.responses.member_requests import REQUEST_FIELDS
@@ -234,12 +235,20 @@ JOIN stewardship_family_campaign f ON f.id=s.family_id
 LEFT JOIN stewardship_snapshot_member mm ON p.entity_kind='member'
     AND mm.snapshot_id=sc.snapshot_id AND mm.source_key=p.entity_key
 LEFT JOIN stewardship_source_member sm ON sm.id=mm.payload_id
--- The latest Staff or Admin resolution (#528), with who made it.
+-- The latest Staff or Admin resolution or Administrator review (#528),
+-- with who made it. Each advances the proposal's version, so the two
+-- histories never share one.
 LEFT JOIN LATERAL (
-    SELECT r.action, r.note, r.created_at, u.email
-    FROM stewardship_proposal_resolution r
-    LEFT JOIN stewardship_portal_user u ON u.id=r.actor_id
-    WHERE r.proposal_id=p.id ORDER BY r.expected_version DESC LIMIT 1
+    SELECT h.action, h.note, h.created_at, u.email
+    FROM (
+        SELECT r.action, r.note, r.created_at, r.actor_id, r.expected_version
+        FROM stewardship_proposal_resolution r WHERE r.proposal_id=p.id
+        UNION ALL
+        SELECT v.decision, v.note, v.created_at, v.actor_id, v.expected_version
+        FROM stewardship_proposal_review v WHERE v.proposal_id=p.id
+    ) h
+    LEFT JOIN stewardship_portal_user u ON u.id=h.actor_id
+    ORDER BY h.expected_version DESC LIMIT 1
 ) latest ON true
 WHERE c.id=%s AND p.handling<>'report-only'
 ORDER BY f.family_duid, s.submitted_at, p.entity_kind,
@@ -270,6 +279,13 @@ COLUMNS = (
     "resolution_note",
     "resolution_at",
     "resolution_by",
+)
+
+# The Review buttons' form values and the decision each records, in order.
+REVIEW_CHOICES = (
+    ("approve", "approved"),
+    ("ignore_automatic", "ignored"),
+    ("to_review", "unreviewed"),
 )
 
 JSON_COLUMNS = ("baseline_value", "submitted_value", "current_value", "admin_value")
@@ -431,6 +447,13 @@ def shape(row):
     )
     shown["can_resolve"] = allowed(state, "entered")
     shown["can_reopen"] = allowed(state, "reopened")
+    # An Administrator's Review of an Automatic row (ADM-09): the form values
+    # (census_change_views.REVIEWS) it may record now, in the page's order.
+    shown["review_actions"] = [
+        action
+        for action, decision in REVIEW_CHOICES
+        if shown["automatic"] and reviewable(state, decision)
+    ]
     if isinstance(shown.get("resolution_at"), str):
         shown["resolution_at"] = datetime.fromisoformat(shown["resolution_at"])
     if shown.get("resolution_action") and not shown.get("resolution_by"):
