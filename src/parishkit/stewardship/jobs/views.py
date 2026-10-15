@@ -218,6 +218,8 @@ TASK_NAMES = {
     "branding_cleanup": _("Removing old logo files"),
     "campaign_boundary": _("Campaign start or end"),
     "campaign_mail_test": _("Campaign test email"),
+    "census_publication_preflight": _("Checking census changes against ParishSoft"),
+    "census_publication": _("Publishing census changes to ParishSoft"),
     "daily_digest_prepare": _("Preparing the daily Admin report"),
     "daily_digest_finalize": _("Finishing the daily Admin report"),
     "weekly_digest_prepare": _("Preparing the weekly Admin report"),

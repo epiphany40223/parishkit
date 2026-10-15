@@ -78,6 +78,8 @@ def test_a_testing_draft_offers_no_control(admin):
     assert result["inventory"]["queued"] == result["inventory"]["held"] == 0
     assert result["health"] == {
         "ready": False,
+        "required": False,
+        "trouble": None,
         "checked_at": None,
         "expires_at": None,
     }
@@ -170,12 +172,12 @@ def test_a_production_campaign_is_the_pages_status(scheduled, monkeypatch):
     assert result["inventory"]["types"] == [
         {"kind": "initial", "queued": 1, "held": 1, "submitting": 0, "unknown": 0}
     ]
-    # Before its start, resuming only releases held mail; no sender check
-    # has passed since the pause.
+    # Before its start, resuming only releases held mail; an ordinary pause
+    # needs no sender check (#1288).
     assert not result["pause_available"]
     assert result["resume_available"] and not result["resolve_available"]
     assert result["resolution"] is None
-    assert not result["health"]["ready"]
+    assert result["health"]["ready"] and not result["health"]["required"]
     assert result["family_recovery"] == raw(
         commands.family_recovery_impact, campaign_id
     )
@@ -236,6 +238,6 @@ def test_a_paused_closed_campaign_offers_its_resolution(
                 "cancellable": True,
             },
         ]
-        # No sender check since the pause: Release waits; Cancel is offered.
-        assert not resolution["release"] and resolution["cancel"]
+        # An ordinary pause needs no sender check (#1288): both are offered.
+        assert resolution["release"] and resolution["cancel"]
         assert result == page_document(item)

@@ -60,12 +60,25 @@ CREATE VIEW public.stewardship_delivery_control_inventory AS
     ) AS inventory FROM scope;
 REVOKE ALL ON public.stewardship_delivery_control_inventory FROM PUBLIC;
 
--- A successful explicit test after this pause proves the exact current sender
--- and credential, without asking the web process to contact a provider. Failed
--- or unresolved later tests and typed live-provider failures veto that proof.
--- Bound freshness to five minutes; durable acceptance alone is not perpetual
--- permission to release mail. Only this current-campaign projection is public
--- to the restricted web role, never provider evidence or message bodies.
+-- Whether resume (or a closed campaign's Release) may hand held mail to the
+-- current sender (#1288). An ordinary administrative pause needs no sender
+-- check. One is required (``trouble``) only after real sender or delivery
+-- trouble: a test email since the pause still being sent; a live outcome
+-- of the current sender whose provider health is unavailable or systemic
+-- (an outage, or a refusal of the whole account such as a suspended
+-- account or a revoked credential), whatever its reason, unless a healthy
+-- one submitted after it was recorded came before the pause; a test since
+-- the pause that failed or may not have arrived; or a sender (settings or
+-- credential) other than the one behind the last live outcome before the
+-- pause. Then a test the mail service accepted after the pause and after
+-- that trouble, with the current settings and credential, proves the
+-- sender without the web process contacting a provider, for 30 minutes:
+-- long enough to read the preview and confirm a fresh sign-in, short
+-- enough that it still describes the sender as it is. Only this
+-- current-campaign projection is public to the restricted web role, never
+-- provider evidence or message bodies. A Gmail sending-limit refusal is
+-- not trouble: it carries healthy health, the message was not sent, and
+-- the limit hold retries it after its own wait.
 CREATE VIEW public.stewardship_delivery_control_health AS
     WITH scope AS (
         SELECT c.id AS campaign_id,r.active_configuration_id AS configuration_id,
@@ -78,28 +91,72 @@ CREATE VIEW public.stewardship_delivery_control_health AS
         JOIN public.stewardship_applied_integration w
             ON w.configuration_id=r.active_configuration_id AND w.kind='google_workspace'
         WHERE r.mode='production'
+    ), facts AS (
+        SELECT s.*,
+            -- When the current sender's last healthy live outcome before the
+            -- pause was submitted. Provider outcomes are judged by their
+            -- recorded health, never their reason, exactly as
+            -- jobs/mail_health.py observed_results and health_filter (and
+            -- the outbox_provider_healthy index) select them.
+            (SELECT e.submitted_at FROM public.stewardship_outbox_event e
+                WHERE e.provider_identity=s.identity AND e.created_at<s.paused_at
+                    AND e.evidence_note LIKE '{"health":"healthy",%'
+                    AND e.previous_state='submitting' AND e.submitted_at IS NOT NULL
+                    AND e.reason IN ('smtp_accepted','smtp_transient','smtp_unavailable',
+                        'smtp_permanent','smtp_delivery_unknown','smtp_systemic')
+                ORDER BY e.created_at DESC,e.id DESC LIMIT 1) AS healthy_submitted_at,
+            -- Which sender gave the last live outcome before the pause.
+            (SELECT e.provider_identity FROM public.stewardship_outbox_event e
+                WHERE e.previous_state='submitting' AND e.created_at<s.paused_at
+                    AND e.provider_identity<>''
+                ORDER BY e.created_at DESC,e.id DESC LIMIT 1) AS last_identity,
+            (SELECT max(t.created_at) FROM public.stewardship_campaign_mail_test t
+                WHERE t.campaign_id=s.campaign_id AND t.created_at>=s.paused_at
+                    AND t.state IN ('queued','submitting')) AS pending_test_at,
+            (SELECT max(t.created_at) FROM public.stewardship_campaign_mail_test t
+                WHERE t.campaign_id=s.campaign_id AND t.created_at>=s.paused_at
+                    AND t.state IN ('not_sent','delivery_unknown')) AS failed_test_at
+        FROM scope s WHERE s.delivery_paused
+    ), trouble AS (
+        SELECT f.*,
+            -- The current sender's latest live outcome with unavailable or
+            -- systemic health, whatever its reason (a delivery-unknown or
+            -- temporary refusal can carry it), unless that healthy outcome
+            -- was submitted after it was recorded. As in mail_health.py's
+            -- recovery, a healthy send already in flight when the failure
+            -- came (submitted before it) does not clear it.
+            (SELECT max(e.created_at) FROM public.stewardship_outbox_event e
+                WHERE e.provider_identity=f.identity
+                    AND e.created_at>=coalesce(f.healthy_submitted_at,'-infinity')
+                    AND (e.evidence_note LIKE '{"health":"unavailable",%'
+                        OR e.evidence_note LIKE '{"health":"systemic",%')
+                    AND e.previous_state='submitting' AND e.submitted_at IS NOT NULL
+                    AND e.reason IN ('smtp_accepted','smtp_transient','smtp_unavailable',
+                        'smtp_permanent','smtp_delivery_unknown','smtp_systemic')) AS failure_at,
+            -- The settings or credential changed since that last outcome.
+            f.identity='' OR coalesce(f.last_identity<>f.identity,false) AS sender_changed
+        FROM facts f
+    ), reason AS (
+        SELECT t.*,CASE
+            WHEN t.pending_test_at IS NOT NULL THEN 'test_in_progress'
+            WHEN t.failure_at IS NOT NULL THEN 'provider_failure'
+            WHEN t.failed_test_at IS NOT NULL THEN 'test_failed'
+            WHEN t.sender_changed THEN 'sender_changed' END AS code
+        FROM trouble t
     ), proof AS (
-        SELECT t.id,t.submitted_at,t.finished_at FROM public.stewardship_campaign_mail_test t,scope s
-        WHERE s.delivery_paused AND t.campaign_id=s.campaign_id
-            AND t.configuration_id=s.configuration_id AND t.fingerprint=s.credential_fingerprint
-            AND t.state='accepted' AND t.submitted_at>=s.paused_at
-            AND t.submitted_at>clock_timestamp()-interval '5 minutes'
+        SELECT t.id,t.submitted_at,t.finished_at FROM public.stewardship_campaign_mail_test t,reason r
+        WHERE t.campaign_id=r.campaign_id
+            AND t.configuration_id=r.configuration_id AND t.fingerprint=r.credential_fingerprint
+            AND t.state='accepted' AND t.submitted_at>=r.paused_at
+            AND t.submitted_at>clock_timestamp()-interval '30 minutes'
+            AND t.submitted_at>coalesce(greatest(r.pending_test_at,r.failure_at,r.failed_test_at),'-infinity')
         ORDER BY t.finished_at DESC,t.id DESC LIMIT 1
     ) SELECT s.campaign_id,jsonb_build_object(
-        'ready',p.id IS NOT NULL AND NOT EXISTS(
-            SELECT 1 FROM public.stewardship_campaign_mail_test t
-            WHERE t.campaign_id=s.campaign_id AND t.configuration_id=s.configuration_id
-                AND t.created_at>=p.submitted_at
-                AND t.state IN ('queued','submitting','not_sent','delivery_unknown'))
-            AND NOT EXISTS(SELECT 1 FROM public.stewardship_outbox_event e
-                WHERE e.provider_identity=s.identity AND e.created_at>=p.submitted_at
-                    AND e.previous_state='submitting' AND e.submitted_at IS NOT NULL
-                    AND e.reason IN ('smtp_unavailable','smtp_systemic')
-                    AND (e.evidence_note LIKE '{"health":"unavailable",%'
-                        OR e.evidence_note LIKE '{"health":"systemic",%')),
+        'ready',r.campaign_id IS NOT NULL AND (r.code IS NULL OR p.id IS NOT NULL),
+        'required',r.code IS NOT NULL,'trouble',r.code,
         'proof',p.id,'checked_at',p.finished_at,
-        'expires_at',p.submitted_at+interval '5 minutes'
-    ) AS health FROM scope s LEFT JOIN proof p ON true;
+        'expires_at',p.submitted_at+interval '30 minutes'
+    ) AS health FROM scope s LEFT JOIN reason r ON true LEFT JOIN proof p ON r.code IS NOT NULL;
 REVOKE ALL ON public.stewardship_delivery_control_health FROM PUBLIC;
 
 CREATE TABLE public.stewardship_delivery_control (

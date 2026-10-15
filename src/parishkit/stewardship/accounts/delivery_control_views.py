@@ -70,6 +70,8 @@ def control(request, campaign_id):
             service,
             render(request, "stewardship/delivery-control.html", context),
         )
+    except commands.SenderCheckRequired:
+        return _sender_check_required(request, service, campaign_id)
     except ConfigurationBusy:
         return error_response(
             StaleRecordError("Another operation is finishing; retry delivery control.")
@@ -78,3 +80,20 @@ def control(request, campaign_id):
         return error_response(LookupError("Delivery controls are unavailable."))
     except ERRORS as error:
         return error_response(error)
+
+
+def _sender_check_required(request, service, campaign_id):
+    """Draw the page again when a needed sender check is missing (#1288).
+
+    The refused preview or confirmation changed nothing. The page, read
+    afresh, shows Resume (or Release) unavailable with the reason and the
+    link to the test send in place, so the Administrator is never sent to
+    the generic "This information changed" page for this refusal.
+    """
+    context = commands.page(request, service, campaign_id)
+    context["sender_check_refused"] = True
+    return _checked(
+        request,
+        service,
+        render(request, "stewardship/delivery-control.html", context, status=409),
+    )

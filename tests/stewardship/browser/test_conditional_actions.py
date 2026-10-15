@@ -184,3 +184,21 @@ def test_resolution_stuck_before_the_check_names_every_way_forward(
     reason = unavailable(page)
     assert "To release held messages, pass the provider and sender check" in reason
     assert "Daily Admin reports, Weekly Admin reports" in reason
+
+
+def test_resume_waits_for_a_needed_sender_check(page, component_origin):
+    """After sender trouble, Preview resume is unavailable with its reason and
+    the test-send link in place (#1288); no reason field is offered yet."""
+    page.goto(component_origin + "/delivery-resume-check")
+    control = page.locator(".disabled-control-link")
+    visible(control)
+    assert control.inner_text() == "Preview resume"
+    assert control.get_attribute("aria-disabled") == "true"
+    assert page.get_by_role("button", name="Preview resume").count() == 0
+    reason = page.locator("#" + control.get_attribute("aria-describedby"))
+    visible(reason)
+    assert "Send a test email first" in reason.inner_text()
+    assert page.get_by_label("Reason for resuming live delivery").count() == 0
+    assert (
+        "A sender check is needed" in page.locator("#sender-check-reason").inner_text()
+    )

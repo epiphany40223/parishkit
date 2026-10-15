@@ -137,9 +137,13 @@ frozen migration 0015), so it can change while the campaign runs, and needs
 no configuration schema version: like `artwork`, documents without it stay
 valid. Each source refresh records what it read in its snapshot cursor's
 load evidence, `cursor.load.reminder_workgroup = {name, found,
-family_duids}`; nothing else stores the membership, and no Family row,
+family_duids}`; when `found` is false, `family_duids` is the set the
+snapshot before it applied, kept until a refresh finds the named WorkGroup
+(#1305), not a membership ParishSoft reported. Nothing else stores the membership, and no Family row,
 eligibility flag, code or link changes because of it. The current snapshot's
-record applies only while its `name` equals the campaign's setting (see
+record applies while the campaign names any WorkGroup, even one whose `name`
+differs from the record's until a refresh reads it, and never while the
+setting is cleared (see
 [background processing](../background-processing/spec.md#family-invitations-and-reminders)).
 
 One versioned `SystemConfiguration` holds the global `testing` or `production`
@@ -1973,10 +1977,20 @@ entities. An entity's written proposals are `queued` from just before its PUT
 until its outcome: `published` when verified, or, when the entity is
 invalidated, back to `failed` (an attempt failed) or `pending`. Every entity a
 run leaves without a published or invalidated outcome, and any left by a
-crashed run once its plan's execution window has passed, is invalidated, so a
-new preflight can plan it and it never blocks a later confirmation. A crash
-after a PUT is recovered by the next run's read, without a second PUT. After
-releasing the lease, a final targeted/full refresh reconciles
+crashed run once its plan's execution window has passed, is closed, so a
+new preflight can plan it and it never blocks a later confirmation. One whose
+changes the plan queued (its PUT may have landed) is read back first and
+recorded published when ParishSoft holds the planned payload; any other is
+invalidated. A crash after a PUT is recovered by the next run's read, without
+a second PUT. If the system switches to Testing mode or the
+`parishsoft_publication` setting goes off after such a crash, the next run
+refuses before any read or lease, so the crashed entity's proposals stay
+`queued`. They stay that way until a run in Production mode with the setting
+on (a recovery retry or an Administrator's rerun) reads them back and closes
+them. This is safe: a `queued` proposal refuses every review and resolution
+and no preflight plans it, so nothing can change it or plan a second write
+while its PUT may have landed. Turning publication off never needs them
+cleared first. After releasing the lease, a final targeted/full refresh reconciles
 the promoted snapshot under a new lease claim. Publication ships switched off;
 the [publication guide](../../../guides/stewardship-member-requests.md#parishsoft-publication)
 says what must happen before it is switched on.

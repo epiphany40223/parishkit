@@ -121,6 +121,12 @@
 !src/parishkit/stewardship/schema/migrations/0094_source_status_names.sql
 !src/parishkit/stewardship/schema/migrations/0095_canonical_timezone.sql
 !src/parishkit/stewardship/schema/migrations/0096_proposal_review.sql
+!src/parishkit/stewardship/schema/migrations/0097_resume_sender_check.sql
+!src/parishkit/stewardship/schema/migrations/0098_debug_off_clear_subject.sql
+!src/parishkit/stewardship/schema/migrations/0099_workgroup_rename_keep.sql
+!src/parishkit/stewardship/schema/migrations/0100_information_status_counts.sql
+!src/parishkit/stewardship/schema/migrations/0101_publication_tasks.sql
+!src/parishkit/stewardship/schema/migrations/0102_setup_load_void.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

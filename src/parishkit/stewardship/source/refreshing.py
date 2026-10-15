@@ -57,6 +57,7 @@ from .windows import RefreshWindow
 from .workgroups import (
     EVIDENCE_KEY,
     configured_name,
+    keep_when_missing,
     load_reminder_workgroup,
     recorded,
     warn_if_missing,
@@ -462,7 +463,13 @@ def load_and_stage_attempt(execution, claim, credential, *, unchanged=None):
         # The Reminder WorkGroup (#861) is read on every refresh, full and
         # quick, after the corpus: one list call plus the one WorkGroup's
         # members, and nothing at all when the campaign names none.
-        workgroup = load_reminder_workgroup(client, inputs.workgroup_name)
+        # A name ParishSoft does not have keeps the set applied before it
+        # (#1305), so a misspelled rename skips the same Families until a
+        # refresh finds the WorkGroup.
+        workgroup = keep_when_missing(
+            load_reminder_workgroup(client, inputs.workgroup_name),
+            inputs.base_workgroup,
+        )
     finally:
         session.close()
     evidence = loaded.evidence

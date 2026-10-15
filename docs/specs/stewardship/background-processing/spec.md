@@ -1591,10 +1591,30 @@ coalesces into the invitation. Everything else is unchanged: the invitation,
 receipts and confirmations still go out, the Family keeps its portal access,
 code and link, its eligibility flags do not change, and it stays in every
 count and report. Membership comes from the current snapshot's recorded read
-(see the [delta cycle](#delta-cycle)) and applies only while the recorded name
-is the campaign's current setting, so clearing or changing the name takes
-effect at once for the old membership and at the next refresh for the new
-one. The scheduler plans every Family at each reminder's lead-window start
+(see the [delta cycle](#delta-cycle)), which a refresh records for the name
+set when it ran. Clearing the setting stops every exclusion at once. A new
+name applies from the next refresh that reads it; until then a rename keeps
+excluding the Families the recorded read found for the previous name
+([#1305](https://github.com/epiphany40223/parishkit/issues/1305)), so a
+corrected spelling or next year's WorkGroup never sends a Reminder to every
+Family meant to be skipped (the safer failure for duplicate or staff
+records), and a snapshot with no recorded read (no name was set when it was
+read) excludes nobody, so the first name set applies from the next refresh.
+A clear followed by a new name before any refresh therefore excludes the
+recorded read's Families again until that refresh. A refresh that finds no
+Family WorkGroup by the name set (a misspelled rename, or a WorkGroup
+deleted in ParishSoft) records it as not found but keeps the Families the
+snapshot before it applied (`source.workgroups.keep_when_missing`), so a
+typo is never a Reminder to every Family meant to be skipped; the page and
+System health show the missing name until a refresh finds it, and the set
+it then reads replaces the kept one. A WorkGroup that is found but has no
+members excludes nobody, as the Administrator intends. The recorded read
+belongs to the snapshot, not to a campaign: when another campaign becomes
+current and names any WorkGroup, the previous campaign's recorded Families
+stay skipped until its first refresh reads its name (fewer Reminders,
+briefly, never more), and a campaign that names none skips nobody. One
+definition, `source.workgroups.applied_evidence`, gives every Python reader
+this set. The scheduler plans every Family at each reminder's lead-window start
 and due time, and the mail dispatcher plans the Family again just before
 sending, so a reminder prepared ahead for a Family that joined the WorkGroup
 afterwards is skipped and its unsent email cancelled with the same reason;
@@ -1603,7 +1623,8 @@ the WorkGroup (its SQL proof admits only the established skip reasons); a
 reminder it selects is skipped when it is dispatched. The paused-delivery
 resume plan (the `stewardship_delivery_family_recovery` view, behind both the
 resume preview's counts and `stewardship_delivery_recover_families_v1`) reads
-the same recorded membership under the same name rule and skips a WorkGroup
+the same recorded membership under the same rule (frozen migration 0099
+dropped the name comparison it had, #1305) and skips a WorkGroup
 Family's due reminders as `workgroup_excluded`, in the same order of reasons
 ([#866](https://github.com/epiphany40223/parishkit/issues/866)). The preview
 counts them as skipped, confirming the resume writes them so, and none
@@ -2524,18 +2545,38 @@ unavailability, not a retry conflict.
 
 ## ParishSoft publication
 
-Not built yet: publication is ADM-09
-([#528](https://github.com/epiphany40223/parishkit/issues/528)), and today
-census changes reach ParishSoft by hand from the
+Not in use yet: publication is ADM-09
+([#528](https://github.com/epiphany40223/parishkit/issues/528)), its Publish
+page is not built and it ships switched off, so today census changes reach
+ParishSoft by hand from the
 [Census changes](../reports/spec.md#pending-census-changes) page.
 
-Publication runs in a dedicated queue with lower concurrency and uses the same
-`SourceMutationLease` as refresh. Preflight and execution are separate task
-phases with one durable plan version. A changed decision/source after preflight
-invalidates the plan and requires a new confirmation. Execution owns and
-heartbeats the lease through final ParishSoft verification, releases it, and
-then queues the targeted reconciliation refresh, which claims the lease
-normally.
+Publication runs on the worker's source queue (the low-concurrency
+ParishSoft consumer refresh uses) and uses the same `SourceMutationLease` as
+refresh. Preflight and execution are separate task types with one durable
+plan version, and only the web login creates either:
+
+- `census_publication_preflight`, queued for an Administrator, reads each
+  affected Member without the lease and records the plan; its request key
+  makes a repeat the same task and plan. A read the gateway cannot make at
+  all fails it with no plan; one Member's failed read blocks that Member.
+- `census_publication` runs one confirmed plan. The Administrator's
+  confirmation queues it in the same transaction, and at most one run of a
+  plan is unfinished at a time.
+
+Both tasks, and the web calls that queue them, refuse while the deployment's
+`parishsoft_publication` setting is off. The audit records who asked for each
+preflight and rerun, and when, and why a task was refused: the setting off,
+the contact read not confirmed yet, or another refusal, each its own event
+type. A run that ends with an error is
+abandoned and retried on the same plan, at most three runs; after that, or
+after a refusal, an Administrator may rerun that plan while it still has an
+unfinished entity. A rerun reads before each PUT and never repeats a write
+that landed. A changed decision/source after preflight invalidates the plan
+and requires a new confirmation. Execution owns and heartbeats the lease
+through final ParishSoft verification, releases it, and then queues the
+targeted reconciliation refresh, which claims the lease normally (not yet
+built).
 
 Writes use shared v2 `PUT` contact primitives, expected-tenant guard, current
 full payload merge, idempotent retry, and read-after-write verification as

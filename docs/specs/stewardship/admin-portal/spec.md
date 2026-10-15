@@ -311,6 +311,28 @@ reads; an open Technical details stays open as they update. On success it shows 
 result with Continue to the next wizard page; on failure it says what to do
 next.
 
+A load that fails for good (for example, a wrong ParishSoft key or
+organization ID, which never retries, or a load whose worker stopped on its
+last allowed attempt, which recovery then fails) returns setup to collecting
+with the failed load still bound, so every page is editable again and the
+watchdog, which runs only while loading, stops (#1353). The test email and
+test Slack message still require a load that succeeded. A load that has
+finished, succeeded or failed, can be discarded, and only then (never one
+running, waiting to retry or abandoned): saving a different ParishSoft key
+or organization ID discards it, saving the same key and
+organization keeps it, and Load again discards the load and queues a new
+one. Load again is offered for a load that failed and for one that succeeded
+but whose staged data is no longer valid by the check review uses (its
+credential version or fingerprint changed, its exchange was scrubbed, or its
+snapshot or fences no longer match); the Load parish data page then says the
+data needs loading again, and the step is not done. Only a still-valid load
+shows as loaded. Each discard is audited as
+`setup_source_voided` with why (`key_changed`, `organization_changed` or
+`reload`) and how the load had ended, never the key. A discarded load's
+staging is never used again: finalization and campaign staging bind only to
+the current load. It is disposed of with the attempt's other source staging
+when setup ends, and the time zone the load fixed can change again.
+
 The two-hour watchdog is an intentional hard, non-extendable fail-safe. A normal
 complete ParishSoft load is expected to take several minutes (about ten for a
 parish of a few thousand Families and 200 Ministries);
@@ -1579,8 +1601,13 @@ reviewed, applied and followed
 (#750), and editable while the campaign is live because staff mark Families
 in ParishSoft during the campaign. Below that, the page says what the
 newest refresh found: no WorkGroup set, the name not read yet (it takes
-effect at the next refresh), no ParishSoft WorkGroup by that name, or how
-many Families are in it. What the exclusion does and when it
+effect at the next refresh; meanwhile the page says how many Families of
+the previous WorkGroup the newest refresh found and still skips, or that no
+Family is skipped), no ParishSoft WorkGroup by that name (with how many
+Families skipped before are still skipped until a refresh finds it), or how
+many Families are in it. The review says when the change applies: a clear at
+once, the name the newest refresh read at once, and any other name at the
+next refresh, with the Families still skipped until then (#1305). What the exclusion does and when it
 applies is in the background-processing specification's
 [No-reminders WorkGroup](../background-processing/spec.md#family-invitations-and-reminders)
 rules; nothing else about those Families changes.
@@ -3552,12 +3579,35 @@ banner; for an Administrator it also names who paused and why, since when
 not-sure-it-arrived counts, and links to Pause and resume mail, which shows the
 held counts by message type.
 
-Resume requires fresh authentication, successful current provider/sender
-health, an exact backlog preview, and explicit confirmation. Current health is
-a test email to the Testing recipient (**Preview and send a test**, on the same
-page) that the mail service accepted after the pause, with the current mail
-settings, less than five minutes before; a later test still in progress, failed or
-uncertain, or a mail-service outage since, means a new test. Resume is refused
+Resume requires fresh authentication, a passed sender check when one is
+needed, an exact backlog preview, and explicit confirmation.
+
+An ordinary administrative pause needs no sender check: Resume, and a closed
+campaign's Release below, go ahead without a test email
+([#1288](https://github.com/epiphany40223/parishkit/issues/1288)). A check is
+needed only after real sender or delivery trouble: a test email sent since the
+pause that is still being sent (wait for its answer), that was not sent or that
+may not have arrived; a send by the current sender whose mail-service health
+was unavailable or systemic (an outage, or a refusal of the whole account such
+as a suspended account or a refused sign-in), whatever its outcome, unless a
+healthy send submitted after that failure was recorded came before the pause
+(the rule mail-service recovery uses, see
+[#1288](https://github.com/epiphany40223/parishkit/issues/1288)); or mail
+settings or a credential other than the ones behind the last send before the
+pause. A refusal at Gmail's sending limit is not trouble: the email was not
+sent, and the limit hold retries it after its own wait. The check is a test email to the Testing recipient
+(**Preview and send a test**, on the same page) that the mail service accepted
+after the pause and after that trouble, with the current mail settings and
+credential. It lasts 30 minutes: long enough to read the preview and confirm a
+fresh sign-in, short enough to still describe the sender as it is. The page
+says in place which holds: no check is needed; a check is needed, why, and to
+send a test email first, with the link; or when the sender was checked and the
+time to resume before. While a needed check is missing, Preview resume is shown
+unavailable with that reason, as the
+[prerequisite gates](../ui-conventions/spec.md#prerequisite-gates) convention
+requires. A preview or confirmation the server refuses because the check is
+missing or has run out draws the page again with that reason, never the
+generic "This information changed" page. Resume is refused
 while any message is still being handed to the mail service or not sure it
 arrived (resolve those first, as above), while a Family group is blocked or a
 report is still being prepared, and, after a direct activation, until the
@@ -3579,14 +3629,15 @@ toward clearing the pause; an uncertain provider outcome is never cancelled
 this way and still blocks the clear.
 Accepted receipts and completed-day Admin digests remain held. Before archive,
 an Admin must use a freshly authenticated **Resolve held messages** workflow to
-release selected non-Family-access message types after a provider check or
+release selected non-Family-access message types (after the sender check
+above, when one is needed) or
 cancel them with exact counts and a reason. This does not reopen Family access
 or campaign schedules. Once every held or uncertain row is resolved, the same
 atomic workflow clears the durable pause control; closed campaigns do not use
 the ordinary Resume action. Reopen readiness is blocked until the prior pause
 and held-message state is resolved. The form offers only choices the server's
 rules accept (#563): a message type appears only while it has held messages;
-Release only after the provider and sender check has passed; Cancel only for
+Release only while no sender check is needed or it has passed; Cancel only for
 types with no email still being handed to the mail service or not sure it
 arrived; Clear only when the pause would clear with no type selected; and the
 types only for Release or Cancel, which need at least one ticked. With no
@@ -6197,8 +6248,9 @@ might be held back:
   resolves on the first refresh that is neither.
 - **An unknown No-reminders WorkGroup** (#861): the newest refresh found no
   ParishSoft Family WorkGroup with the campaign's
-  [No-reminders WorkGroup](#parish-and-integration-configuration) name, so no
-  Family's Reminders are being skipped. The notice names the setting and
+  [No-reminders WorkGroup](#parish-and-integration-configuration) name, so
+  only the Families skipped before stay skipped until a refresh finds it
+  ([#1305](https://github.com/epiphany40223/parishkit/issues/1305)). The notice names the setting and
   links its page; the refresh itself logs a WARNING. It is a panel notice,
   not one of the problems listed first, and it clears when a refresh finds
   the name or the setting is cleared.
@@ -6824,8 +6876,10 @@ login can be told apart in SQL from the web login, which `pk-admin` and the
 online operator commands share. The switch records that the server
 operator cleared it, and when, and the command records
 `debug_logging_allowed` with `actor_kind` `operator` in the same
-transaction. That event names no subject: the admin-recovery login cannot
-read the switch it cleared. While debug logging is back in effect, the
+transaction. That event names the switch as its subject, as the
+Administrator's clear does: the admin-recovery login cannot read the switch
+table, so its clear returns the id of the switch it cleared (#1229). While
+debug logging is back in effect, the
 panel says when the server operator cleared the switch.
 In Testing mode the region also offers **Allow debug logging again**
 (ADM-13 PR 6c), below Turn off debug logging, while the switch is set. Its
@@ -7310,7 +7364,8 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   changes who leads; see [Ministry
   leaders](../data/spec.md#ministry-leader-changes)), `chair_reconciled`,
   `admin_cmd_refresh_start`
-  and the setup load (`setup_source_started`, `setup_source_completed`), and
+  and the setup load (`setup_source_started`, `setup_source_completed`,
+  `setup_source_voided`), and
   the operational failures and holds (`source_refresh_invalid`,
   `source_provider_failed`, `source_credential_failed`,
   `source_tenant_mismatch`, `source_destructive_change`,

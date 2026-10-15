@@ -363,6 +363,18 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0090's rerun puts 0090's derived guard back, ``CLOSURE_REPLACED_ONLY``
 # then runs 0096's replacement statement alone (its table cannot be made
 # twice).
+# 0098 (#1229) drops 0078's count-only operator clear and creates its v2,
+# which names the cleared switch. Its entry follows 0078's below, so once
+# 0078's file installs again (making v1 again), 0098's file runs after it
+# and drops v1 again.
+# 0100 (#720) creates nothing: it replaces 0064's information selection in
+# place again, after 0094, so once 0064's file (``CLOSURE_CREATED``) and
+# 0094's (``CLOSURE_REPLACED``) install it again without the counts,
+# ``CLOSURE_REPLACED`` runs 0100's file again.
+# 0102 (#1353) creates nothing: it replaces the setup attempt's guards, the
+# setup disposal check and the safe context in place. Only the safe context
+# comes back older (0089's, through ``CLOSURE_REPLACED``), so
+# ``CLOSURE_REPLACED_AGAIN`` runs 0102's file after it.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -482,7 +494,6 @@ CLOSURE_CREATED = {
         (
             "public.stewardship_debug_off_switch_guard_v1()",
             "public.stewardship_debug_logging_off_v1()",
-            "public.stewardship_debug_off_clear_v1()",
         ),
         ("stewardship_jobs", "0028_debug_off_switch"),
     ),
@@ -551,6 +562,10 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_responses", "0006_proposal_review"),
     ),
+    "public.stewardship_debug_off_clear_v2()": (
+        "stewardship_jobs",
+        "0032_debug_off_clear_subject",
+    ),
 }
 
 
@@ -611,6 +626,10 @@ CLOSURE_ALTERED = {
 # puts back the Ministry selections 0092's and 0093's files ran again
 # (``CLOSURE_RERUN``) with older bodies, as it runs after them. 0095 (#1286)
 # replaces the comparison function 0067's and 0072's files bring back.
+# 0100 (#720) replaces the information selection 0094 also replaces, so its
+# entry comes after 0094's: 0094's file, run again for the limitations
+# report, puts that selection back without the counts first.
+# 0101 (#528) replaces the task-type maps 0077's file brings back.
 CLOSURE_REPLACED = {
     "public.stewardship_debug_off_switch_guard_v1()": (
         ("stewardship_jobs", "0031_debug_allow"),
@@ -623,7 +642,6 @@ CLOSURE_REPLACED = {
     **dict.fromkeys(
         (
             "public.stewardship_limitations_report_v1(uuid,jsonb)",
-            "public.stewardship_information_report_v2(uuid,jsonb,integer,uuid,integer)",
             "public.stewardship_ministry_report_v3"
             "(uuid,jsonb,boolean,bigint[],integer,text,integer,integer)",
         ),
@@ -632,6 +650,29 @@ CLOSURE_REPLACED = {
     "public.stewardship_campaign_comparison_v1(uuid,date,numeric[],uuid)": (
         ("stewardship_reports", "0027_canonical_timezone"),
         "stewardship_timezone_name_v1(selected.timezone)",
+    ),
+    "public.stewardship_information_report_v2(uuid,jsonb,integer,uuid,integer)": (
+        ("stewardship_reports", "0028_information_status_counts"),
+        "'counts',(SELECT jsonb_build_object(",
+    ),
+    **dict.fromkeys(
+        (
+            "public.stewardship_task_type_login_v1(text)",
+            "public.stewardship_task_type_creators_v1(text)",
+        ),
+        (("stewardship_responses", "0007_publication_tasks"), "census_publication"),
+    ),
+}
+
+
+# Functions a ``CLOSURE_REPLACED`` file brings back with an older body that a
+# still later closure file replaces again, with that file and its phrase;
+# run after ``CLOSURE_REPLACED`` the same way. 0102 (#1353) widens 0089's
+# safe context, which 0089's rerun (for its event check) puts back.
+CLOSURE_REPLACED_AGAIN = {
+    "public.stewardship_safe_context_v1(text,jsonb)": (
+        ("stewardship_accounts", "0023_setup_load_void"),
+        "ELSIF key='void_reason' THEN",
     ),
 }
 
@@ -935,6 +976,7 @@ def swap_pending():
     assert set(CLOSURE_CREATED.values()) <= set(closure)
     assert set(CLOSURE_ALTERED.values()) <= set(closure)
     assert {key for key, _ in CLOSURE_REPLACED.values()} <= set(closure)
+    assert {key for key, _ in CLOSURE_REPLACED_AGAIN.values()} <= set(closure)
     assert set(CLOSURE_RERUN) | set(CLOSURE_RERUN.values()) <= set(closure)
     assert set(CLOSURE_OLD_BODIES) <= set(closure)
     assert {key for key, _ in CLOSURE_REPLACED_ONLY.values()} <= set(closure)
@@ -999,7 +1041,10 @@ def swap_pending():
                     cursor.execute(Path(module.FROZEN_SQL).read_text(encoding="utf-8"))
             # After both: a created function's earlier body, made again
             # above, gets the later file's replacement back.
-            for function, (key, phrase) in CLOSURE_REPLACED.items():
+            for function, (key, phrase) in (
+                *CLOSURE_REPLACED.items(),
+                *CLOSURE_REPLACED_AGAIN.items(),
+            ):
                 cursor.execute(
                     "SELECT prosrc LIKE %s FROM pg_proc WHERE oid=to_regprocedure(%s)",
                     [f"%{phrase}%", function],
