@@ -295,7 +295,7 @@ def test_only_setup_credential_steps_pass_the_setup_window():
         if "SETUP_FRESH_SECONDS" in path.read_text(encoding="utf-8")
     )
     assert users == [
-        "stewardship/accounts/migrations/0023_setup_sign_in_hour.py",
+        "stewardship/accounts/migrations/0024_setup_sign_in_hour.py",
         "stewardship/accounts/sessions.py",
         "stewardship/accounts/setup_credential_views.py",
         "stewardship/accounts/setup_credentials.py",

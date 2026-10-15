@@ -1,4 +1,4 @@
--- Frozen forward migration file 0097 (the repository-wide file sequence):
+-- Frozen forward migration file 0103 (the repository-wide file sequence):
 -- the setup wizard's credential steps accept a sign-in up to an hour old
 -- (#1402). This file is installed by the Django migration that names it in
 -- FROZEN_SQL and must never change once released;
@@ -28,7 +28,7 @@ SET LOCAL search_path = public;
 -- The function's grants before the replacement, compared in the DO block.
 -- A transaction-local setting holds them, not a temporary table: the
 -- migration login has no TEMP privilege.
-SELECT set_config('stewardship.migration_0097_acl', (
+SELECT set_config('stewardship.migration_0103_acl', (
     SELECT coalesce(p.proacl::text,'default')
     FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
     WHERE n.nspname='public' AND p.proname='stewardship_setup_secret_guard_v1'), true);
@@ -153,13 +153,13 @@ BEGIN
           AND p.prosrc NOT LIKE '%authenticated_at>stamp-interval ''5 minutes''%')<>1
        OR (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
            WHERE n.nspname='public' AND p.proname='stewardship_setup_secret_guard_v1')<>1 THEN
-        RAISE EXCEPTION 'Migration 0097: the setup credential guard is not installed as declared';
+        RAISE EXCEPTION 'Migration 0103: the setup credential guard is not installed as declared';
     END IF;
-    IF current_setting('stewardship.migration_0097_acl', true) IS DISTINCT FROM (
+    IF current_setting('stewardship.migration_0103_acl', true) IS DISTINCT FROM (
            SELECT coalesce(p.proacl::text,'default')
            FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
            WHERE n.nspname='public' AND p.proname='stewardship_setup_secret_guard_v1') THEN
-        RAISE EXCEPTION 'Migration 0097: the setup credential guard lost or changed its grants';
+        RAISE EXCEPTION 'Migration 0103: the setup credential guard lost or changed its grants';
     END IF;
     -- The guard still guards the sealed setup credential table.
     IF NOT EXISTS (SELECT 1 FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid
@@ -167,7 +167,7 @@ BEGIN
                      AND t.tgname='stewardship_setup_secret_admission'
                      AND p.proname='stewardship_setup_secret_guard_v1'
                      AND t.tgenabled='O') THEN
-        RAISE EXCEPTION 'Migration 0097: the setup credential guard trigger is missing';
+        RAISE EXCEPTION 'Migration 0103: the setup credential guard trigger is missing';
     END IF;
 END
 $check$;

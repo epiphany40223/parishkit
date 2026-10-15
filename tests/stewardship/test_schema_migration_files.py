@@ -339,6 +339,9 @@ FROZEN = {
     "0102_setup_load_void.sql": (
         "ff6a6644235b6efc39d9a95622e86ee89b8e67b20f26e55b2d44a29840a88d34"
     ),
+    "0103_setup_sign_in_hour.sql": (
+        "289a1c5a029d70eb66dd886368fe82e82f7373faacd4a294e6c2b3fc9890322c"
+    ),
 }
 
 
