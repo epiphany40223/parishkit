@@ -196,7 +196,10 @@ def test_loading_keeps_completed_steps_but_links_only_the_load():
 
 def test_a_failed_load_leaves_the_load_to_do_and_every_page_open():
     """A failed load returns setup to collecting (#1353) but is not done."""
-    sections = {key: VALUES[key] for key in ("parish", "mail", "testing", "slack")}
+    # Parish logos and Administrative access come before the load (#1389).
+    sections = {
+        key: VALUES[key] for key in ("parish", "mail", "testing", "slack", "access")
+    } | {"branding": {"bundle_id": str(uuid4())}}
     wizard = build(
         draft(sections, source=uuid4(), task_state="failed"),
         "source",
