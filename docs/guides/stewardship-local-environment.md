@@ -69,7 +69,7 @@ never needs a copy of the repository.
 | --- | --- |
 | `vm create` | Create and start the Lima instance from `deploy/stewardship/lima-local.yaml` (Ubuntu 24.04 arm64, Docker Engine, forwards only 8443 and 8025, no shared directories). Takes a few minutes the first time. |
 | `vm start` / `vm stop` | Start or stop the VM. |
-| `vm create --rehearsal` / `vm delete` | Create a throwaway VM from `deploy/stewardship/lima-rehearsal.yaml`, which forwards no port, so it runs beside the day-to-day one; it needs its own `PARISHKIT_LOCAL_VM`. `vm delete` (type the instance name) removes an instance with every container, image and volume in it. For the [full-size rehearsal](#full-size-rehearsal). |
+| `vm create --rehearsal` / `vm delete` | Create a throwaway VM from `deploy/stewardship/lima-rehearsal.yaml`, which forwards no port, so it runs beside the day-to-day one; it needs its own `PARISHKIT_LOCAL_VM`. `vm delete` (type the instance name) removes such an instance with every container, image and volume in it. `vm delete`, `compare` and `rehearse --full` refuse any instance not made by `vm create --rehearsal` (its configuration carries a marker line), so they can never touch the default or day-to-day one. For the [full-size rehearsal](#full-size-rehearsal). |
 | `up [--families N]` | First-time install from this checkout (below). `N` is the synthetic parish size, default 100. Refuses if a deployment exists. |
 | `up --ref REF` / `deploy --ref REF` / `reset --reinstall --ref REF` | The same, building the commit `REF` names (`git archive`) instead of the work tree, so one checkout builds a release and a pull request. |
 | `start` | Start a stopped deployment's services (after `down` or a VM restart) in the recorded clock mode. |
@@ -479,13 +479,22 @@ Gmail latency before each one. Production is never involved. The VM needs
    - restores the seeded snapshot;
    - deploys the build with `--bulk on` and `--smtp-latency-ms 600`
      (`--smtp-latency-ms` changes it);
-   - runs `rehearse --full` labelled `<label>-a` or `<label>-b`.
+   - runs `rehearse --full` labelled `<label>-<run id>-a` or
+     `<label>-<run id>-b`, with a new random run id for each `compare`, so
+     the comparison can only read this invocation's runs.
 
-   Last, it prints the two summaries side by side. To rehearse the build
+   Last, it prints the two summaries side by side. `compare` exits
+   non-zero when either side's rehearsal failed or was refused (the table
+   is still printed). To rehearse the build
    that is already deployed, run `rehearse --full` alone. `--harness`
    builds this checkout as the harness first.
 4. When you are done, `tools/stewardship-local.sh vm delete` removes the VM
-   and everything in it.
+   and everything in it. Lima keeps the Ubuntu image it downloaded in its
+   cache (under `~/Library/Caches/lima` on macOS). `limactl prune`
+   empties that whole cache; a later `vm create` simply downloads again.
+   With `--keep-referred` it keeps what an existing instance's
+   configuration names, which includes this image while the day-to-day
+   instance exists.
 
 A full-size run is a `rehearse` run (above), plus these:
 
@@ -505,9 +514,12 @@ A full-size run is a `rehearse` run (above), plus these:
   The form step issues the form baseline under the work-order lock, so it
   shows what a Family waits for while the send holds the lock.
 - **Credential fingerprint.** Before and after the send, one read-only
-  query takes a row count and an md5 for each credential table: every
-  Family's code ciphertext, the code MACs, the link tokens, the token
-  generations and the rehearsal credentials. The two must be identical.
+  query takes a row count and an md5 over every credential record: every
+  Family's code ciphertext and code MAC; each link token's ciphertext,
+  digest, rotation and destruction; each token generation's state, key and
+  credential epoch; the deployment's global link fence; the campaign's
+  active generation; the rehearsal epoch and its state; and each rehearsal
+  credential's code and link. The two must be identical.
 - **Mailpit audit.** After the send, every message in Mailpit is read. For
   the run's messages, the audit counts the Family links, any link that came
   in two messages, and any link that had never been emailed before the run
@@ -526,8 +538,17 @@ The report adds:
 - the credential and Mailpit audits.
 
 Correctness additionally requires identical fingerprints, an audit with no
-link in two messages and no link not emailed before, and, when a pause was
-asked for, a pause and a confirmed resume. The run's directory also holds
+link in two messages, no link not emailed before and as many distinct links
+as accepted messages, and, when a pause was asked for, a pause and a
+confirmed resume. The seed's rule that no message is created before its
+due time is kept, except that a bulk Production Reminder may be prepared
+up to two hours ahead (BG-12 PR 2); in every run, nothing may be submitted
+before its due time.
+
+Each run is one sample. Treat small differences between two runs (a few
+percent of lock time, a probe percentile over a dozen probes) as one
+sample each until repeated runs show the spread; the exactly-once,
+credential, prebuilt and correctness results do not depend on that. The run's directory also holds
 `probe.jsonl`, `pause.json`, `resume.json`, `credentials-*.tsv` and
 `audit.json`. `compare`'s table is kept as
 `/var/log/stewardship-rehearsal-compare-*.txt`.
