@@ -1690,6 +1690,11 @@ signatures:
   `reminder_workgroup_views.review_change`, which the page's Review now
   calls (`workgroup show` needed none: the page's campaign check and
   `source.workgroups.current_evidence` were already request-free).
+  `campaign preview` moved Campaign settings' Review into
+  `campaign_views.review_settings` (the locked-field check and the draft,
+  live and Ministries reviews, each returning the review instead of a
+  response), and `campaign confirm` its Apply routing into
+  `campaign_views.confirm_route`; the page now calls both.
 - **PR 11:** user, event and follow-up actions from their views (the users
   model of #952 replaces the rule actions; #922 retired the assignment and
   Chairperson actions). The event acknowledgements moved each view's
@@ -1869,7 +1874,7 @@ none.
 | `schedule_calendar` | `schedule show` (PR 3a): the read-only Campaign calendar (#469) draws the saved schedules and campaign dates that `schedule show` lists |
 | `campaign_end_date_check` | `schedule preview` (PR 4): Campaign settings' no-save live check of a live campaign's end date answers what a preview of that end date would refuse |
 | `configuration_request` | `config request show --watch` (PR 4); `config request cancel` ([#944](https://github.com/epiphany40223/parishkit/pull/944)), an operator recovery with no page button |
-| `campaign_settings`, `campaign_create`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm`, `campaign clone`, `campaign ministries` (PR 10; a live campaign's Ministries change on Campaign settings, #1119); until #145, creating or copying a campaign is refused, except the first campaign through [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142) ([navigation rule 10](../ui-conventions/spec.md#navigation-rules)): commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, will get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
+| `campaign_settings`, `campaign_create`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), Campaign settings' read, Review and Apply, a live campaign's Ministries included (#1119); `campaign create-preview`, `campaign create` and `campaign clone` (PR 10); until #145, creating or copying a campaign is refused, except the first campaign through [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142) ([navigation rule 10](../ui-conventions/spec.md#navigation-rules)): commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, will get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
 | `share_settings` | `campaign shares` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the Share options read; Share option changes (PR 10) |
 | `reminder_workgroup` (its review and apply, #750) | `workgroup show`, `workgroup preview`, `workgroup confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
 | `content_catalog`, `content_edit`, `content_revision`, `content_delete`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content history` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `content preview`, `content confirm` (PR 10), the plain-text preview with `content preview` |
@@ -2166,6 +2171,53 @@ excluded (`source.workgroups.current_evidence`), on the page as on the
 command line. The command names, `--name`/`--clear` and the `state` codes
 are defaults, pending Administrator confirmation. The
 [operator guide](../../../guides/stewardship-admin-automation.md#no-reminders-workgroup)
+lists the fields.
+
+`campaign show`, `campaign preview --changes … --expected-version …` and
+`campaign confirm --token …` are Campaign settings (#1119): its read, its
+one Review and its Apply, as `parish show`, `parish preview` and `parish
+confirm` are Parish settings'. All three act on the current campaign, as
+the page's address names no other (none is `not_available`), through the
+page's own pinned state, campaign guards, openness and form
+(`campaign_views._state`, `_target`, `_openness`, `_settings_form`).
+`campaign show` is Administrators only (`CONFIGURE`), admitted passively
+so any session scope reads, with no event; it prints `version`,
+`campaign_id`, `state`, `editable` (the whole draft is open), `open` (the
+fields that can change now) and `settings`, each form field's saved value.
+`campaign preview` admits as the page's Review post does (recording
+activity) and, in the page's work transaction, binds the change document
+(`{"campaign": {...}}`, keyed by the form's field names; omitted fields
+keep their saved values, and only the open fields are posted, as the page
+posts no disabled field) to the page's form and runs the page's
+`review_settings`. A document field that is locked now and differs from
+its saved value (an unticked locked module box included, which a bound
+form would silently drop) is refused first with the page's own lock
+refusal (`campaign_views.locked_refusal`), `stale_version`, as is another
+version; the form's field errors (at
+`campaign.<field>`), no change, Ministries with another change, mail being
+sent now and a candidate the configuration refuses are `invalid`. A
+draft's dates-only change while it has mail schedules, which the page
+sends to Dates and mail schedules, is `invalid` naming `schedule preview`.
+It prints `kind` (`settings`, `end_date` or `ministries`), the stored
+`changes`, `replanned` (an end date's re-planned schedule ids),
+`ministries` (a Ministries review's additions and removals with their
+counts, and `open_forms`), `notes` and `preview.token`, the page's own
+signed binding, so a token from either channel confirms on the other; it
+records nothing. `campaign confirm` records the configuration request as
+the page's Apply does, through `admin_editing.confirm_intent` with the
+salt, scope and companion the page's `confirm_route` picks: an end-date
+token as Dates and mail schedules confirms it (binding its exceptional
+intent and recording `campaign_end_date_requested`, and refusing an
+archived campaign as the page does), a Ministries token with the page's
+`campaign_ministries_requested`, anything else as an ordinary settings
+change; it adds `admin_cmd_campaign_confirm` in the request's own
+transaction, and a repeat returns the original request. The preview and
+confirm need a full-scope session; neither is fresh-gated or prompts, as
+the page asks for no recent sign-in and its Apply is the reviewed token.
+The inventory's placeholder `campaign ministries` folded into `campaign
+preview` when #1119 made the page one editor. The document shape and
+`kind` are defaults, pending Administrator confirmation. The
+[operator guide](../../../guides/stewardship-admin-automation.md#campaign-settings)
 lists the fields.
 
 `parish show`, `ministries list`, `branding show` and `campaign shares
@@ -3670,6 +3722,8 @@ exactly the commands that exist.
   `files delete`, `files rename`), artwork (`artwork show`, then
   `artwork remove-preview` and `artwork remove`), the No-reminders
   WorkGroup (`workgroup show`, `workgroup preview`, `workgroup confirm`),
+  Campaign settings (`campaign show`, `campaign preview`, `campaign
+  confirm`),
   branding confirmation, integration settings
   (`integration list`, `integration show` and `integration status`, then
   `integration preview` and `integration confirm`) with the

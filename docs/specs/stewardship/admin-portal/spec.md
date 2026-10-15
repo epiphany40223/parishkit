@@ -7331,7 +7331,8 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   of sign-in rules into users, `operator_users_upgraded`), the command
   line's parish profile changes (`admin_cmd_parish_confirm`) and Campaign
   image removals (`admin_cmd_artwork_remove`), No-reminders WorkGroup changes
-  (`admin_cmd_workgroup_confirm`), integration settings
+  (`admin_cmd_workgroup_confirm`), Campaign settings changes
+  (`admin_cmd_campaign_confirm`), integration settings
   changes and removals (`admin_cmd_integration_confirm`), the command line's backup folder checks (`admin_cmd_integration_backup_probe`) and key change dismissals (`admin_cmd_integration_dismiss`), Finish switching to a new key (`admin_cmd_integration_key_finish_switching`), hosted files (`hosted_file_*`), stored key
   replacements
   (`secret_replacement_requested`, `secret_request_*`,

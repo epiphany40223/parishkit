@@ -70,6 +70,8 @@ the Roster changes to enter list, whose download is ``export roster`` (in
 ``admin_artwork``) read Campaign images and remove one of them.
 ``workgroup show``, ``workgroup preview`` and ``workgroup confirm`` (PR 10,
 in ``admin_workgroup``) read and change the No-reminders WorkGroup.
+``campaign show``, ``campaign preview`` and ``campaign confirm`` (PR 10, in
+``admin_campaign``) read and change Campaign settings.
 """
 
 import argparse
@@ -1420,6 +1422,42 @@ def workgroup_confirm(args, preamble, runtime, context):
     from .admin_workgroup import confirm_workgroup
 
     return confirm_workgroup(
+        context["caller"],
+        runtime,
+        token=_input(args.token, context, TOKEN_LIMIT),
+        context=context,
+    )
+
+
+def campaign_show(args, preamble, runtime, context):
+    """Campaign settings: the current campaign's settings (PR 10)."""
+    from .admin_campaign import read_campaign
+
+    return read_campaign(context["caller"], runtime)
+
+
+def campaign_preview(args, preamble, runtime, context):
+    """Review a change to the current campaign's settings (PR 10)."""
+    from .admin_campaign import CHANGES_LIMIT, preview_campaign
+
+    # The role first (#1341): denied before any input is read.
+    _role_first(context, runtime)
+    return preview_campaign(
+        context["caller"],
+        runtime,
+        expected_version=args.expected_version,
+        changes=_input(args.changes, context, CHANGES_LIMIT),
+    )
+
+
+def campaign_confirm(args, preamble, runtime, context):
+    """Confirm a reviewed Campaign settings change as a request (PR 10)."""
+    from .admin_campaign import confirm_campaign
+    from .admin_changes import TOKEN_LIMIT
+
+    # The role first (#1341): denied before any input is read.
+    _role_first(context, runtime)
+    return confirm_campaign(
         context["caller"],
         runtime,
         token=_input(args.token, context, TOKEN_LIMIT),
@@ -3967,6 +4005,30 @@ def _workgroup_confirm_options(parser):
     )
 
 
+def _campaign_preview_options(parser):
+    """Options of ``campaign preview``: the settings' version and the change."""
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_digest,
+        help="the version campaign show printed",
+    )
+    parser.add_argument(
+        "--changes",
+        required=True,
+        help="the change document as JSON, or - to read it from standard input",
+    )
+
+
+def _campaign_confirm_options(parser):
+    """Options of ``campaign confirm``: the preview's token."""
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from campaign preview, or - for standard input",
+    )
+
+
 def _users_confirm_options(parser):
     """Options of ``users confirm``: the preview's token."""
     parser.add_argument(
@@ -4827,6 +4889,54 @@ def _workgroup_specs():
             WorkGroupConfirm.field_names(),
             10,
             options=(_workgroup_confirm_options,),
+        ),
+    )
+
+
+def _campaign_specs():
+    """Campaign settings (PR 10, ``admin_campaign``).
+
+    Like ``parish show``, any session runs ``campaign show`` and it records
+    nothing, as the page's GET records nothing. The page's Review and Apply
+    are ``campaign preview`` and ``campaign confirm``, as ``parish
+    preview`` and ``parish confirm``: full scope, as the page's posts record
+    activity; neither is fresh-gated nor prompts, as the page asks for no
+    recent sign-in and its Apply is the reviewed token.
+    """
+    from .admin_campaign import CampaignConfirm, CampaignPreview, CampaignShow
+
+    return (
+        CommandSpec(
+            "campaign show",
+            "Show the current campaign's settings.",
+            campaign_show,
+            "read_only",
+            False,
+            CampaignShow.field_names(),
+            10,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "campaign preview",
+            "Review a change to the current campaign's settings.",
+            campaign_preview,
+            "full",
+            False,
+            CampaignPreview.field_names(),
+            10,
+            options=(_campaign_preview_options,),
+            expected_version=True,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "campaign confirm",
+            "Confirm a reviewed change to the current campaign's settings.",
+            campaign_confirm,
+            "full",
+            True,
+            CampaignConfirm.field_names(),
+            10,
+            options=(_campaign_confirm_options,),
         ),
     )
 
@@ -5741,6 +5851,7 @@ COMMANDS = (
     + _file_specs()
     + _settings_specs()
     + _workgroup_specs()
+    + _campaign_specs()
     + _operation_specs()
     + _report_specs()
     + _users_specs()
