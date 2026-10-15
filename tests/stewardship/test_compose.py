@@ -25,6 +25,12 @@ from parishkit.stewardship.urls import internal_patterns
 ROOT = Path(__file__).resolve().parents[2]
 DEPLOY = ROOT / "deploy/stewardship"
 FIXTURES = Path(__file__).with_name("fixtures")
+# The in-image run executes the whole default (non-database) suite. On
+# 2026-10-14 CI it took 468-594s; this is about 1.5x the slowest, as a guard
+# against a hung container rather than a performance budget (#500, #1278).
+# The test prints elapsed against this limit on success; raise it, or split
+# the run into parallel parts, when that figure approaches the limit.
+BASELINE_TIMEOUT = 900
 
 
 def collection_manifest(output):
@@ -801,6 +807,7 @@ def test_development_container_lifecycle(tmp_path):
 
     def compose(*arguments, check=True, timeout=120, diagnose_timeout=False):
         """Run only against the fresh disposable project, preserving error output."""
+        started = time.monotonic()
         try:
             result = subprocess.run(
                 [*prefix, *arguments],
@@ -818,8 +825,11 @@ def test_development_container_lifecycle(tmp_path):
             output = error.stdout or b""
             if isinstance(output, bytes):
                 output = output.decode("utf-8", errors="replace")
+            # Say what was killed, its limit and how long it ran, so a slow
+            # runner is distinguishable from a hang in the job log.
             pytest.fail(
-                f"Disposable Compose command exceeded {timeout}s: {arguments!r}\n"
+                f"Disposable Compose command exceeded {timeout}s limit after "
+                f"{time.monotonic() - started:.0f}s: {arguments!r}\n"
                 + "\n".join(output.splitlines()[-40:])[-8000:],
                 pytrace=False,
             )
@@ -917,6 +927,27 @@ def test_development_container_lifecycle(tmp_path):
             check=True,
             timeout=120,
         )
+        # Parity needs only collection: compare in seconds, before execution,
+        # so a mount omission fails fast with its missing/unexpected IDs.
+        image_collection = compose(
+            "run",
+            "--rm",
+            "--no-deps",
+            "tests",
+            "tests",
+            "--collect-only",
+            "--collection-manifest",
+            "-q",
+            "-o",
+            "addopts=",
+            "-p",
+            "no:cacheprovider",
+            diagnose_timeout=True,
+        )
+        assert_collection_parity(host_collection.stdout, image_collection.stdout)
+        # Separately execute the default suite in the image (M0.02). Its own
+        # manifest is checked again, so the executed selection stays exact.
+        started = time.monotonic()
         baseline = compose(
             "run",
             "--rm",
@@ -930,15 +961,16 @@ def test_development_container_lifecycle(tmp_path):
             "addopts=",
             "-p",
             "no:cacheprovider",
-            # This executes the whole default suite, not just a startup probe.
-            # The in-image run took 197-282s in CI by October 2026 (98s when
-            # first sized), so keep a finite guard against a hung container
-            # with room for slower runners (#500).
-            timeout=600,
+            timeout=BASELINE_TIMEOUT,
             diagnose_timeout=True,
         )
         assert_collection_parity(host_collection.stdout, baseline.stdout)
         print(baseline_summary(baseline.stdout))
+        # Show drift toward the limit in ordinary logs, before it fails a run.
+        print(
+            f"In-image baseline took {time.monotonic() - started:.0f}s "
+            f"of its {BASELINE_TIMEOUT}s limit"
+        )
         compose("up", "--wait", "--wait-timeout", "90", "web", "postgres", "valkey")
         assert compose("exec", "-T", "web", "id", "-u").stdout.strip() == "10001"
         origin = "http://" + compose("port", "web", "8000").stdout.strip()

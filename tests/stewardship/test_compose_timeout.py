@@ -1,5 +1,6 @@
 """The full-suite Compose deadline retains bounded diagnostics and cleanup."""
 
+import re
 import subprocess
 import sys
 from contextlib import nullcontext
@@ -8,6 +9,8 @@ from unittest.mock import Mock
 import pytest
 
 from . import test_compose as compose_tests
+
+MANIFEST = 'PARISHKIT_TEST_NODEIDS=["synthetic"]\n'
 
 
 def test_success_summary_omits_oversized_progress_but_preserves_collection_evidence():
@@ -35,7 +38,9 @@ def test_baseline_failure_bounds_progress_and_traceback_before_disposable_cleanu
     def run(command, **kwargs):
         """Fail only the baseline; synthetic diagnostics and cleanup still run."""
         code, output, error = 0, "", ""
-        if "--ci-progress" in command:
+        if command[0] == sys.executable or "--collect-only" in command:
+            output = MANIFEST
+        elif "--ci-progress" in command:
             code = 1
             output = (
                 "CI_PROGRESS START test["
@@ -61,6 +66,31 @@ def test_baseline_failure_bounds_progress_and_traceback_before_disposable_cleanu
     assert "down" in runner.call_args.args[0]
 
 
+def test_image_collection_mismatch_fails_before_suite_execution(tmp_path, monkeypatch):
+    """Parity needs only collection, so a mount omission never waits on the suite."""
+    checkout = tmp_path / "checkout"
+    (checkout / "src").mkdir(parents=True)
+    monkeypatch.setattr(compose_tests, "ROOT", checkout)
+    monkeypatch.delenv("PARISHKIT_COMPOSE_NATIVE_POSTGRES", raising=False)
+
+    def run(command, **kwargs):
+        """The image collects a different test; nothing else may execute."""
+        assert "--ci-progress" not in command
+        output = ""
+        if command[0] == sys.executable:
+            output = MANIFEST
+        elif "--collect-only" in command:
+            output = 'PARISHKIT_TEST_NODEIDS=["other"]\n'
+        return subprocess.CompletedProcess(command, 0, stdout=output, stderr="")
+
+    runner = Mock(side_effect=run)
+    monkeypatch.setattr(compose_tests.subprocess, "run", runner)
+    with pytest.raises(AssertionError, match="Missing in image: \\['synthetic'\\]"):
+        compose_tests.test_development_container_lifecycle(tmp_path)
+    assert runner.call_count == 3
+    assert "down" in runner.call_args.args[0]
+
+
 @pytest.mark.parametrize(
     "kind,cleanup_timeout",
     [("bytes", False), ("text", False), ("empty", False), ("bytes", True)],
@@ -81,9 +111,11 @@ def test_baseline_timeout_preserves_progress_and_disposable_cleanup(
 
     def run(command, **kwargs):
         """Fail only full-suite execution and allow the existing cleanup command."""
-        if command[0] == sys.executable:
+        if command[0] == sys.executable or "--collect-only" in command:
+            # Host and in-image collection are bounded like startup commands.
             assert kwargs["timeout"] == 120
-            return subprocess.CompletedProcess(command, 0, stdout="unused", stderr="")
+            assert "--ci-progress" not in command
+            return subprocess.CompletedProcess(command, 0, stdout=MANIFEST, stderr="")
         if "down" in command:
             assert kwargs["timeout"] == 60
             if cleanup_timeout:
@@ -91,8 +123,8 @@ def test_baseline_timeout_preserves_progress_and_disposable_cleanup(
             return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
         assert command[0:2] == ["docker", "compose"]
         assert "--collection-manifest" in command and "--ci-progress" in command
-        assert kwargs["timeout"] == 600
-        raise subprocess.TimeoutExpired(command, 600, output=output)
+        assert kwargs["timeout"] == compose_tests.BASELINE_TIMEOUT == 900
+        raise subprocess.TimeoutExpired(command, 900, output=output)
 
     runner = Mock(side_effect=run)
     monkeypatch.setattr(compose_tests.subprocess, "run", runner)
@@ -103,7 +135,9 @@ def test_baseline_timeout_preserves_progress_and_disposable_cleanup(
     )
     with (
         warning,
-        pytest.raises(pytest.fail.Exception, match="exceeded 600s") as failure,
+        pytest.raises(
+            pytest.fail.Exception, match=r"exceeded 900s limit after \d+s"
+        ) as failure,
     ):
         compose_tests.test_development_container_lifecycle(tmp_path)
     assert len(str(failure.value)) < 8500
@@ -112,16 +146,18 @@ def test_baseline_timeout_preserves_progress_and_disposable_cleanup(
         assert str(failure.value).count("discarded-old-line") < 40
     if kind == "bytes":
         assert "invalid-utf8-\ufffd" in str(failure.value)
-    assert runner.call_count == 3
+    # Host collection, in-image collection, in-image execution, cleanup.
+    assert runner.call_count == 4
     commands = [call.args[0] for call in runner.call_args_list]
+    assert "--collect-only" in commands[1] and "--ci-progress" in commands[2]
     assert "down" in commands[-1]
     project = commands[1][commands[1].index("-p") + 1]
     assert project.startswith("pk-stewardship-smoke-")
-    assert commands[2][commands[2].index("-p") + 1] == project
+    assert {command[command.index("-p") + 1] for command in commands[1:]} == {project}
 
 
 def test_liveness_timeout_still_retries_through_actual_compose_helper(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, capsys
 ):
     """Do not translate the probe's native timeout into an immediate pytest failure."""
     checkout = tmp_path / "checkout"
@@ -159,3 +195,7 @@ def test_liveness_timeout_still_retries_through_actual_compose_helper(
         compose_tests.test_development_container_lifecycle(tmp_path)
     assert len(probes) == 2
     assert "down" in runner.call_args.args[0]
+    # A passing baseline still reports its elapsed time against the limit.
+    assert re.search(
+        r"In-image baseline took \d+s of its 900s limit", capsys.readouterr().out
+    )
