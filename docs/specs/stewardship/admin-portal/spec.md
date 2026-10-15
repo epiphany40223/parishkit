@@ -3059,7 +3059,8 @@ mail schedules and Campaign images it is **Continue to** the next step not
 done yet (on Dates and mail schedules with no schedule saved, **Continue
 without schedules for now**; Go-live readiness still lists the missing
 initial invitation schedule): it records the step kept as is and opens that
-step. While a form on the page holds a change, Continue is unavailable, with
+step. While a form on the page holds a change (on Campaign images, a chosen
+image not uploaded yet), Continue is unavailable, with
 a hint after the row in a line that is always reserved, so the page's own
 Save (with its review dialog, for now) stays the way on. Preview and test
 email offers Continue to Go-live readiness only once its test is accepted,
@@ -3068,9 +3069,9 @@ has Back only. Back and Continue never save, discard or submit the page's
 form, so an Admin who leaves a page without confirming its review keeps the
 campaign as it was. Every step stays a link (Preview and test email only
 while there is an invitation to test; until then Back and Continue skip it).
-The pages a step opens are its sub-pages: Pages and emails' editor (with its
-preview) and content history, and Dates and mail schedules' New and Edit
-scheduled email and Campaign calendar. They draw the same stepper with their
+The pages a step opens are its sub-pages: Campaign settings' content
+history, Pages and emails' editor (with its preview), and Dates and mail
+schedules' New and Edit scheduled email and Campaign calendar. They draw the same stepper with their
 step current, and their action row is **Return to** that step. The stepper is
 an [in-place](../ui-conventions/spec.md#in-place-controls) region: after a
 [review dialog](../ui-conventions/spec.md#review-dialog)'s Apply (Share

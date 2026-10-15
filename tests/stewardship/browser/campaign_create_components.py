@@ -11,6 +11,10 @@ The browser checks need no database. Every page is the real
   stops following at once and redraws the page's region from that address:
   the campaign created, its status and the offer to load its ParishSoft data.
 
+``ONWARD`` is the confirmation the view now draws (#1404): it names the
+next Campaign setup step, the stepper's Share options fixture page
+(``stepper_components.PATH``), which the dialog opens once Apply is applied.
+
 ``POSTS`` lists the fixture server's answer to the page's Apply POST.
 """
 
@@ -23,9 +27,12 @@ from parishkit.stewardship.accounts import setup_help
 from parishkit.stewardship.accounts.admin_editing import review_region, summary_errors
 from parishkit.stewardship.accounts.campaign_forms import CampaignForm
 
+from .stepper_components import PATH as STEPPER
+
 PAGE = "/campaign-create-confirm"
 REVIEW = "/campaign-create-confirm-review"
 REFUSED = "/campaign-create-confirm-refused"
+ONWARD = "/campaign-create-confirm-onward"
 REQUEST = UUID("13560000-0000-4000-8000-000000001356")
 APPLIED = f"{PAGE}?request={REQUEST}"
 # The values a test types, which the confirmation must never repeat.
@@ -104,6 +111,19 @@ def components(context, admin):
             render_to_string(
                 "stewardship/campaign-create-review.html",
                 {"review": {"content": 7, "preview": "synthetic-signed-intent"}},
+            ),
+        ),
+        ONWARD: (
+            "text/html",
+            render_to_string(
+                "stewardship/campaign-create-review.html",
+                {
+                    "review": {
+                        "content": 7,
+                        "preview": "synthetic-signed-intent",
+                        "next_url": STEPPER,
+                    }
+                },
             ),
         ),
         REFUSED: page(_form(sent)),

@@ -2114,15 +2114,18 @@
       || (saved.has(key) ? saved.get(key).value === value : blank));
   };
   // A Campaign setup step's Continue (#1404, campaign-step-actions.html)
-  // records the step kept as is, so it waits while a change-gated form on
-  // the page holds a change: the page's own Save stays the way on. Its hint
-  // after the row keeps its line (data-idle hides it with visibility), and
-  // names the button only while it is shown.
+  // records the step kept as is, so it waits while the page holds a change:
+  // a change-gated form that differs from its saved values, or an upload
+  // form (Campaign images) with a file chosen but not uploaded yet. The
+  // page's own Review stays the way on. Its hint after the row keeps its
+  // line (data-idle hides it with visibility), and names the button only
+  // while it is shown.
   const gateStepContinue = () => {
     const form = document.querySelector("form[data-campaign-continue]");
     if (!form) return;
-    const held = [...document.querySelectorAll("form[data-require-change]")]
-      .some((node) => node.hasAttribute("data-holds-change"));
+    const held = Boolean(document.querySelector("form[data-require-change][data-holds-change]"))
+      || [...document.querySelectorAll('form input[type="file"]')]
+        .some((node) => !node.matches(":disabled") && node.files?.length > 0);
     const hint = document.getElementById("campaign-continue-hint");
     hint?.toggleAttribute("data-idle", !held);
     form.querySelectorAll("button[type=submit]").forEach((node) => {
@@ -2167,7 +2170,12 @@
       else node.removeAttribute("aria-describedby");
     });
   };
-  const gateChanges = () => document.querySelectorAll("form[data-require-change]").forEach(gateChange);
+  const gateChanges = () => {
+    document.querySelectorAll("form[data-require-change]").forEach(gateChange);
+    // A page without a change-gated form (Campaign images) still gates its
+    // Continue, and a redraw that empties its file inputs releases it.
+    gateStepContinue();
+  };
   // Note what each Review sends, and which Review an Apply applies: an Apply
   // sits in the review of its form (data-review-of names it). The in-place
   // handler (above) calls this only once a request really starts, so a
@@ -2188,6 +2196,7 @@
   // A removed new schedule row (schedules-changed) changes the form too.
   ["input", "change", "schedules-changed"].forEach((type) => document.addEventListener(type, (event) => {
     if (event.target instanceof Element) gateChange(event.target.closest("form"));
+    if (event.target instanceof HTMLInputElement && event.target.type === "file") gateStepContinue();
   }));
   window.addEventListener("pageshow", gateChanges);
   gateChanges();

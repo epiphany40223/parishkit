@@ -25,8 +25,9 @@ The stepper's summary names the next step that is not done yet and offers
 Leave campaign setup; the action row at the bottom of each step page
 (campaign-step-actions.html) holds Back and the one primary Continue. The
 sub-pages a step opens (an email's editor, a new or edited mail schedule,
-the Campaign calendar, content history) draw the same stepper with their
-step current and a Return to <step> link instead (``SUBPAGES``).
+the Campaign calendar, and Campaign settings' content history) draw the
+same stepper with their step current and a Return to <step> link instead
+(``SUBPAGES``).
 """
 
 from dataclasses import dataclass
@@ -349,8 +350,9 @@ ROUTES = {page.route: page.key for page in PAGES}
 SUBPAGES = {
     "content_edit": "content",
     "content_revision": "content",
-    "content_history": "content",
-    "content_history_revision": "content",
+    # Content history is opened from Campaign settings, its trail's parent.
+    "content_history": "settings",
+    "content_history_revision": "settings",
     "schedule_new": "schedules",
     "schedule_edit": "schedules",
     "schedule_calendar": "schedules",

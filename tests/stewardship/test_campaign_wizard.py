@@ -374,7 +374,8 @@ def test_load_notice_offers_the_load_until_families_exist():
         ("content_catalog", "content", False),
         ("content_edit", "content", True),
         ("content_revision", "content", True),
-        ("content_history", "content", True),
+        ("content_history", "settings", True),
+        ("content_history_revision", "settings", True),
         ("schedule_new", "schedules", True),
         ("schedule_edit", "schedules", True),
         ("schedule_calendar", "schedules", True),
@@ -430,3 +431,50 @@ def test_status_leads_back_to_a_sub_pages_step():
         },
     )
     assert '<a href="/admin/campaign/content/">Return to Pages and emails</a>' in html
+
+
+@pytest.mark.parametrize(
+    ("step", "shown", "expected"),
+    [
+        # A step the stepper offers: back to that step's page.
+        ("content", True, "/admin/campaign/content/"),
+        # Preview and test email's address carries its revision.
+        ("mail_test", True, TEST_URL),
+        # An unknown key, no key, or no stepper at all: the refresh page.
+        ("users", True, None),
+        ("", True, None),
+        ("content", False, None),
+    ],
+)
+def test_a_load_returns_only_to_a_step_the_stepper_offers(
+    monkeypatch, step, shown, expected
+):
+    """Load the campaign's ParishSoft data returns to its step (#1404).
+
+    The posted ``return_step`` picks the redirect, so only a step of the
+    live stepper is accepted; anything else lands on Refresh from
+    ParishSoft as before.
+    """
+    from django.test import RequestFactory
+
+    from parishkit.stewardship.accounts import refresh_views
+
+    stepper = wizard.build(False, None, done={"settings"}, mail_test_url=TEST_URL)
+    monkeypatch.setattr(wizard, "current", lambda: stepper if shown else None)
+    key = uuid4()
+    monkeypatch.setattr(
+        refresh_views,
+        "request_manual_refresh",
+        lambda *_: SimpleNamespace(task_root_id=uuid4()),
+    )
+    request = RequestFactory().post(
+        "/admin/parish/parishsoft-refresh/",
+        {"request_key": str(key), "return_step": step},
+    )
+    request.session = {}
+    response = refresh_views._request(request, None, None)
+    assert response.status_code == 302
+    assert response["Location"] == (
+        expected or reverse("admin:source_refresh") + "#refresh-run"
+    )
+    assert refresh_views.RUN_KEY in request.session
