@@ -161,6 +161,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "report census",
         # A Census changes row's Record outcome (#528).
         "census resolve",
+        # An Automatic row's Review (#528, ADM-09).
+        "census review",
         "export census",
         "export limitations",
         "export roster",
@@ -730,6 +732,21 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert options["--action"]["choices"] == ["entered", "ignored", "reopened"]
     assert options["--action"]["required"] and options["--expected-version"]["required"]
     assert not options["--note"]["required"]
+    # census review: an Automatic row's Review, keyed and versioned, full
+    # scope, not fresh-gated; every review can be changed again until
+    # publication starts, so, as on its page, it never prompts.
+    review = entries["census review"]
+    assert review["scope"] == "full" and review["changes_state"]
+    assert review["request_key"] and review["expected_version"]
+    assert not review["prompts"] and not review["fresh_gated"]
+    assert review["audit_event"] == "admin_cmd_census_review"
+    assert review["arguments"] == ["PROPOSAL_ID"]
+    assert review["result_fields"] == ["created", "request_key", "review", "proposal"]
+    options = {option["name"]: option for option in review["options"]}
+    assert options["--decision"]["choices"] == ["approved", "ignored", "unreviewed"]
+    assert options["--decision"]["required"]
+    assert options["--expected-version"]["required"]
+    assert not options["--note"]["required"]
 
 
 def test_every_state_change_has_a_registered_described_event():
@@ -784,6 +801,8 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_digest_weekly_request",
         # census resolve: a Census changes row's Record outcome (#528).
         "admin_cmd_census_resolve",
+        # census review: an Automatic row's Review (#528, ADM-09).
+        "admin_cmd_census_review",
         "admin_cmd_users_confirm",
         "admin_cmd_users_import_leaders",
         "admin_cmd_events_acknowledge",

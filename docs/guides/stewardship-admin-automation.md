@@ -1848,13 +1848,13 @@ pk-admin census resolve PROPOSAL_ID --action reopened --expected-version 4 \
     --note - --yes < note.txt
 ```
 
-`PROPOSAL_ID` and the `--expected-version` are the change's id and version.
-No command or download prints them yet: they are only in the hidden fields
-of the change's row form on the Census changes page (the page's downloads
-leave them out). `export census` will print them. `--note` is optional,
-except to reopen; `-` reads it from standard input, which keeps a note that
-names people out of shell history and the process list, and then needs
-`--yes`, because standard input cannot carry both the note and an answer. `--request-key` is made for you and
+`PROPOSAL_ID` and the `--expected-version` are the change's id and version,
+which `export census --format jsonl` prints (`proposal_id` and `version`,
+with the `actions` the change takes now; the page's own downloads leave
+them out). `--note` is optional, except to reopen; `-` reads it from
+standard input, which keeps a note that names people out of shell history
+and the process list, and then needs `--yes`, because standard input cannot
+carry both the note and an answer. `--request-key` is made for you and
 written to standard error when left out. Repeating the command with the
 same key returns the same resolution (`created` false) and records nothing
 new; the key used for another outcome or note is exit 1 (`invalid`). A
@@ -1871,6 +1871,42 @@ The result has `created`, `request_key`, `resolution` (`id`,
 left them), never the note, the Family, the Member or the value. System
 logs show the page's `census_change_updated` and the command's
 `admin_cmd_census_resolve`.
+
+### Reviewing an automatic census change
+
+`census review` is an Automatic row's **Review**: Approve (`approved`),
+Ignore (`ignored`) or Back to To review (`unreviewed`). Only an
+Administrator may review (Staff and Ministry leaders get `denied`, before
+anything is read), with a full-scope session and no recent sign-in, as on
+the page. Every review can be changed again until publication of the change
+starts, so, as on the page, it asks nothing. Approving does not publish
+anything: publication is a separate step.
+
+```sh
+pk-admin census review PROPOSAL_ID --decision approved --expected-version 3
+pk-admin census review PROPOSAL_ID --decision ignored --expected-version 4 \
+    --note - < note.txt
+```
+
+Take `PROPOSAL_ID` and `--expected-version` from `export census --format
+jsonl` (`proposal_id` and `version`); its `reviews` key lists the decisions
+the change takes now. `--note` is optional; `-` reads it from standard
+input. `--request-key` works as for `census resolve`: made for you and
+written to standard error when left out, and a repeat with the same key
+returns the same review (`created` false) and records nothing new; the key
+used for another decision or note is exit 1 (`invalid`). A change someone
+updated since that version is exit 1 (`stale_version`). A decision the change does not
+take now is exit 1 (`invalid`): a By-hand change, the decision it already
+has, approving a Conflict, or any review of a change that is queued for
+publication or already has a final outcome. A change that is not the
+current campaign's is exit 1 (`not_available`), and so is a repeat after
+the current campaign changed.
+
+The result has `created`, `request_key`, `review` (`id`, `proposal_id`,
+`decision`, `expected_version`, `created_at`) and `proposal` (the change's
+`id`, `version`, `decision` and `execution` as the command left them),
+never the note, the Family, the Member or the value. System logs show the
+page's `census_change_updated` and the command's `admin_cmd_census_review`.
 
 ## Digests
 
@@ -2302,8 +2338,10 @@ and `version`, which recording a row's outcome needs and the page's files
 leave out, and `actions`: the outcomes you may record on that row now
 (`entered` and `ignored` on a By-hand change still open, `reopened` on an
 ignored one, for Administrators only, and only with a `--note` saying
-why). `actions` is empty while other campaign work holds the campaign, as
-the page then offers no Record outcome. The file names Families and
+why), and `reviews`: the decisions `census review` takes on that row now
+(an Automatic change still open, for Administrators only). Both are empty
+while other campaign work holds the campaign, as the page then offers no
+Record outcome or Review. The file names Families and
 Members with their contact details, so create it private, as above, and
 delete it once used; the wrapper refuses to write it to a terminal.
 
@@ -2820,3 +2858,10 @@ print is exit 1 (`invalid`).
 - `pk-admin/1` (#469): additive. `schedule preview`'s change document
   takes `series` entries ("this and following", the whole series, or
   delete a remembered series), and the preview gains `series_changes`.
+- `pk-admin/1` (#528): additive. `census review PROPOSAL_ID --decision
+  approved|ignored|unreviewed --expected-version VERSION [--note TEXT|-]
+  [--request-key KEY]`, an Automatic Census changes row's Review (full
+  scope, Administrators only, neither fresh-gated nor prompting;
+  `census_change_updated` and `admin_cmd_census_review`). `export census
+  --format jsonl` records gain `reviews`, the decisions `census review`
+  takes on the row now.

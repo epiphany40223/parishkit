@@ -217,6 +217,11 @@ DESCRIPTIONS = {
         "in ParishSoft, ignored or reopened), as the Census changes page's "
         "Record outcome does."
     ),
+    "admin_cmd_census_review": _(
+        "An automation session reviewed an automatic census change "
+        "(approved, ignored or sent back to To review), as the Census "
+        "changes page's Review does."
+    ),
     "admin_cmd_refresh_start": _(
         "An automation session asked for a full ParishSoft refresh, as the "
         "Refresh from ParishSoft page's confirmation does."

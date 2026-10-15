@@ -2375,6 +2375,39 @@ def census_resolve(args, preamble, runtime, context):
     )
 
 
+def census_review(args, preamble, runtime, context):
+    """Review an Automatic census change, as its row's Review does (#528).
+
+    Approve (``approved``), Ignore (``ignored``) or Back to To review
+    (``unreviewed``). Without ``--request-key`` a new key is made and
+    written to standard error before anything is done. Every review can be
+    changed again until publication of the change starts, so, as on the
+    page, it asks nothing.
+    """
+    from .accounts.policy import Capability
+    from .admin_census import review_census
+    from .responses.census_resolution import MAX_NOTE
+
+    # The role first (#1341): an Administrator's, so Staff are denied before
+    # any input or lookup.
+    _role_first(context, runtime, Capability.PUBLISH_CENSUS)
+
+    key = _request_key(args, context)
+    # The page strips the note it posts; so does a note read from standard
+    # input (``_input``).
+    note = _input(args.note, context, MAX_NOTE * 4).strip()
+    return review_census(
+        context["caller"],
+        runtime,
+        args.proposal_id,
+        decision=args.decision,
+        expected_version=args.expected_version,
+        note=note,
+        request_key=key,
+        context=context,
+    )
+
+
 def report_source_form(args, preamble, runtime, context):
     """Families the form cannot open, by DUID only (#774)."""
     from .admin_source_form import read_source_form
@@ -3722,6 +3755,35 @@ def _census_resolve_options(parser):
     _request_key_option(parser)
 
 
+# An Administrator's review decisions (``responses.models.REVIEW_DECISIONS``),
+# spelled out because the parser is built before Django is set up; a test
+# keeps them equal.
+CENSUS_DECISIONS = ("approved", "ignored", "unreviewed")
+
+
+def _census_review_options(parser):
+    """Options of ``census review``: an Automatic row's Review."""
+    parser.add_argument("proposal_id", type=_uuid, metavar="PROPOSAL_ID")
+    parser.add_argument(
+        "--decision",
+        required=True,
+        choices=CENSUS_DECISIONS,
+        help="approved (Approve), ignored (Ignore) or unreviewed (Back to To review)",
+    )
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_version,
+        help="the change's version, as export census --format jsonl prints it",
+    )
+    parser.add_argument(
+        "--note",
+        default="",
+        help="an optional note, or - to read it from standard input",
+    )
+    _request_key_option(parser)
+
+
 def _snapshot_option(parser):
     """The retained report, by the id in its page's address."""
     parser.add_argument("snapshot_id", type=_uuid, metavar="SNAPSHOT_ID")
@@ -5029,7 +5091,7 @@ def _report_specs():
     (``admin_digests``) and PR 8e the Family-level exports
     (``admin_family_exports``).
     """
-    from .admin_census import CensusReport, CensusResolve
+    from .admin_census import CensusReport, CensusResolve, CensusReview
     from .admin_census_export import CensusExport
     from .admin_data_to_fix import DataToFixReport
     from .admin_digests import DailyDigest, DigestList, WeeklyDigest, WeeklyRequest
@@ -5521,6 +5583,20 @@ def _report_specs():
             options=(_census_resolve_options,),
             # Only Entered in ParishSoft, which cannot be undone, asks.
             prompts=True,
+            request_key=True,
+            expected_version=True,
+        ),
+        # An Automatic row's Review (#528, ADM-09): the page's service,
+        # keyed by the page's request key; reversible, so it asks nothing.
+        CommandSpec(
+            "census review",
+            "Review an automatic census change, as its row's Review does.",
+            census_review,
+            "full",
+            True,
+            CensusReview.field_names(),
+            8,
+            options=(_census_review_options,),
             request_key=True,
             expected_version=True,
         ),
