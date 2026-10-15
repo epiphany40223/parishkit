@@ -527,7 +527,10 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   status region an in-place refresh replaced, and watches the fresh one
   while it is still pending, so a Refresh or Dismiss that brings back work
   in progress keeps updating by itself; there is always one watcher per
-  status region. A control that must sit inside a status region, next to
+  status region. A quiet follow-up refresh (a settled status re-reading its
+  page in place) keeps focus: a focused element in a region it replaces is
+  focused again in the fresh copy, by its id or else by its link and text,
+  without scrolling ([#1354](https://github.com/epiphany40223/parishkit/issues/1354)). A control that must sit inside a status region, next to
   the status it answers, goes in an element marked `data-live-keep`: once
   it has contents, each status update puts the live element back in place
   of its fresh copy and ignores its contents when comparing, so an open
