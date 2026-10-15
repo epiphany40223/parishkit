@@ -329,13 +329,15 @@ def test_a_one_time_new_schedule_confirms_without_repeating_the_form():
         "blocking": 0,
         "preview": "signed",
     }
-    assert _sends_once(reviewed)
-    assert not _sends_once(reviewed | {"changes": [once, once]})
+    assert _sends_once(reviewed, None)
+    assert not _sends_once(reviewed | {"changes": [once, once]}, None)
     recurring = scheduled() | {"after": {"date": None}}
-    assert not _sends_once(reviewed | {"changes": [recurring]})
-    assert not _sends_once(reviewed | {"changes": [once | {"operation": "update"}]})
-    assert not _sends_once(reviewed | {"window_changes": {"end_date": 1}})
-    assert not _sends_once(reviewed | {"series": [{"id": "x"}]})
+    assert not _sends_once(reviewed | {"changes": [recurring]}, None)
+    assert not _sends_once(
+        reviewed | {"changes": [once | {"operation": "update"}]}, None
+    )
+    assert not _sends_once(reviewed | {"window_changes": {"end_date": 1}}, None)
+    assert not _sends_once(reviewed | {"series": [{"id": "x"}]}, None)
     text = render_to_string(
         "stewardship/schedule-review.html",
         {"changes": [once], "preview": "signed", "new": True, "confirmation": True},

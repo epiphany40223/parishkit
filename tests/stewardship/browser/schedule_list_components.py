@@ -449,7 +449,7 @@ def _review(owner, changes, *, new=True, blocking=0):
     }
     return render_to_string(
         "stewardship/schedule-review.html",
-        reviewed | {"confirmation": new and _sends_once(reviewed)},
+        reviewed | {"confirmation": new and _sends_once(reviewed, None)},
     )
 
 
