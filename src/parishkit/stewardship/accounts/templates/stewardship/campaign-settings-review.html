@@ -12,8 +12,17 @@ campaign's Ministry change, reviewed on its own, shows its impact instead
 is what the dialog's Apply posts to Campaign settings, and data-review-done
 starts the status line the page shows once the change is applied. A review
 lasts fifteen minutes, as every review does.
-{% endcomment %}<div data-review-answer data-review-done="{% translate 'Campaign settings changed.' %}">
-{% if review.changes %}<div class="table-scroll" tabindex="0" role="region" aria-labelledby="campaign-review-caption">
+A change of one or two short settings (campaign_views._compact: not the
+Ministries, the financial periods and funds or the share options) is a
+compact review instead (UX conventions, "A compact review when Review adds
+only the old value", #1356): the new values are the form behind the
+dialog, so it lists one "Setting: old → new" line each
+(campaign-review-summary), with the change's notes, and names its own
+question (data-review-title) and description (data-review-describedby).
+Any other change gets the dialog's own title back.
+{% endcomment %}<div data-review-answer data-review-done="{% translate 'Campaign settings changed.' %}"{% if review.compact %} data-review-title="{% translate 'Save this change?' %}" data-review-describedby="campaign-review-summary"{% endif %}>
+{% if review.compact %}{% include "stewardship/components/compact-review.html" with changes=review.changes summary_id="campaign-review-summary" %}
+{% elif review.changes %}<div class="table-scroll" tabindex="0" role="region" aria-labelledby="campaign-review-caption">
 <table class="data-table">
   <caption id="campaign-review-caption" class="visually-hidden">{% translate "What changes" %}</caption>
   <thead><tr><th scope="col">{% translate "Setting" %}</th><th scope="col">{% translate "Now" %}</th><th scope="col">{% translate "After this change" %}</th></tr></thead>
@@ -22,6 +31,6 @@ lasts fifteen minutes, as every review does.
 </div>{% endif %}
 {% if review.ministries %}{% include 'stewardship/campaign-ministries-review.html' with ministries=review.ministries %}{% endif %}
 {% for note in review.notes %}<p class="notice" role="note">{{ note }}</p>{% endfor %}
-<p>{% if review.changes|length > 1 %}{% translate "These changes apply together, or none do." %} {% endif %}{% translate "Nothing changes until you choose Apply." %}</p>
+{% if not review.compact %}<p>{% if review.changes|length > 1 %}{% translate "These changes apply together, or none do." %} {% endif %}{% translate "Nothing changes until you choose Apply." %}</p>{% endif %}
 <input type="hidden" name="preview" value="{{ review.preview }}" data-review-preview>
 </div>

@@ -587,3 +587,43 @@ def test_share_options_mark_only_what_changed():
     assert 'name="preview" value="signed" data-review-preview' in text
     page = (TEMPLATES / "share-settings.html").read_text()
     assert 'describedby="share-review-summary" %}' in page
+
+
+def test_a_small_campaign_settings_change_is_a_compact_review():
+    """Campaign settings (#1356): one or two short settings changed is a
+    compact review, which names its own question and description and keeps
+    the change's notes; more settings, or a long one, keep the full table
+    under the dialog's own title."""
+    from parishkit.stewardship.accounts.campaign_views import _compact
+
+    assert _compact({"name": "Renamed"})
+    assert _compact({"name": "Renamed", "modules": ["census"]})
+    assert not _compact({"name": "A", "modules": ["census"], "end_date": "x"})
+    for key in ("ministry_duids", "financial", "share_options"):
+        assert not _compact({key: []})
+    changes = [{"label": "Campaign name", "before": "Old", "after": "New"}]
+
+    def fragment(compact, notes=()):
+        """The review fragment as campaign_views._review draws it."""
+        return render_to_string(
+            "stewardship/campaign-settings-review.html",
+            {
+                "review": {
+                    "changes": changes,
+                    "notes": list(notes),
+                    "compact": compact,
+                    "preview": "signed",
+                }
+            },
+        )
+
+    compact = fragment(True, ["Share options go."])
+    assert 'data-review-title="Save this change?"' in compact
+    assert 'data-review-describedby="campaign-review-summary"' in compact
+    assert '<ul class="compact-review" id="campaign-review-summary">' in compact
+    assert "<table" not in compact and "Nothing changes until" not in compact
+    assert '<p class="notice" role="note">Share options go.</p>' in compact
+    assert 'name="preview" value="signed" data-review-preview' in compact
+    full = fragment(False)
+    assert "data-review-title" not in full and "campaign-review-summary" not in full
+    assert "<table" in full and "Nothing changes until you choose Apply." in full

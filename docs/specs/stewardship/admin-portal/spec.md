@@ -2380,12 +2380,20 @@ every campaign state. There is no second, read-only copy of the settings.
   alone holds says it can change once that work finishes. A disabled
   setting is not sent, and the server keeps its saved value whatever is
   posted, so a locked setting never changes through this page.
-- **One Review changes.** The page has exactly one **Review changes**,
+- **One Save.** The page has exactly one **Save** (its Review),
   unavailable until the form holds a real change, with its hint after it
   ([review dialog](../ui-conventions/spec.md#review-dialog)); with nothing
   open (a closed campaign) the hint says that nothing on the page can
   change now and that each greyed-out setting's "i" says why. Review and
-  Apply happen in the review dialog, titled "Review campaign settings".
+  Apply happen in the review dialog, titled "Review campaign settings". A
+  change of one or two short settings (not the Ministries, the financial
+  periods and funds or the share options) is a
+  [compact review](../ui-conventions/spec.md#review-dialog) instead
+  (#1356), titled "Save this change?": one line per changed setting, such
+  as "Campaign name: old → new", with the change's notes (the share
+  options a removed Financial stewardship discards). Every other change,
+  including a live end date with its re-planned digests and a live Ministry
+  change, keeps the full review below.
   Once the change is applied, the form is redrawn in place at the new
   version and the status line under it says "Campaign settings changed."
   and when.

@@ -683,6 +683,11 @@ def test_campaign_settings_reviews_in_the_dialog_once():
     assert "'stewardship/settings-review.html'" not in text
     assert 'dialog_id="campaign-review"' in text and "review=True" in text
     assert "(read-only)" not in text
+    # Save is the action's own label (#1356), for a compact review and a
+    # full one alike.
+    assert 'translate "Save" as save_label' in text
+    assert "hint=unchanged_hint label=save_label" in text
+    assert 'translate "Change a setting to save it." as unchanged_hint' in text
 
 
 def test_campaign_images_review_in_the_dialog():

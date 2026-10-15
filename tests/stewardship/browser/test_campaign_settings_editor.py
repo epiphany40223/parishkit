@@ -2,7 +2,7 @@
 
 Every setting shows once, in the same order in every campaign state: open
 where it can change, otherwise disabled where it stands, with the reason in
-its "i" tip. One Review changes, unavailable until the form holds a real
+its "i" tip. One Save, unavailable until the form holds a real
 change, opens the shared review dialog (#750); once applied, the dialog
 closes, the form's region is redrawn in place and the status line says so.
 Pages and POST answers are ``campaign_settings_components``'; a route
@@ -12,6 +12,7 @@ answers each Review POST.
 import re
 
 import pytest
+from playwright.sync_api import expect
 
 from parishkit.stewardship.accounts.campaign_views import (
     LOCKED_CLOSED,
@@ -36,6 +37,14 @@ from .test_in_place import MARK, MARKED
 from .test_live_end_date import answer_checks, enabled
 from .test_settings_in_place import answer_reviews, expect_review
 from .waits import eventually, has_attribute, hidden, same_place, visible
+
+
+def expect_save(page, **expected):
+    """``expect_review`` for Campaign settings, whose button reads Save and
+    whose hint says so (#1356)."""
+    expected.setdefault("hint", "Change a setting to save it.")
+    expect_review(page, name="Save", **expected)
+
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -68,21 +77,22 @@ def watch(page):
     return failures
 
 
-def dialog_of(page):
-    """The review dialog, once it is open."""
-    dialog = page.get_by_role("dialog", name="Review campaign settings")
+def dialog_of(page, name="Review campaign settings"):
+    """The review dialog, once it is open: a full review's title, or a
+    compact review's own question (#1356)."""
+    dialog = page.get_by_role("dialog", name=name)
     visible(dialog)
     return dialog
 
 
 def test_every_setting_shows_once_in_the_same_order(page, component_origin):
     """A draft, a live campaign and a closed one draw the same settings in
-    the same order, with one Review changes and no read-only copy; only
+    the same order, with one Save and no read-only copy; only
     what can change now is open."""
     orders, opened = {}, {}
     for path in (DRAFT, LIVE, LOCKED):
         page.goto(component_origin + path)
-        assert page.get_by_role("button", name="Review changes").count() == 1
+        assert page.get_by_role("button", name="Save", exact=True).count() == 1
         assert page.get_by_text("Saved campaign settings").count() == 0
         assert page.get_by_text("read-only").count() == 0
         orders[path] = page.evaluate(NAMES)
@@ -102,13 +112,24 @@ def test_a_draft_change_is_reviewed_and_applied_in_the_dialog(page, component_or
     reviews = answer_reviews(page, component_origin, DRAFT_REVIEW, address=DRAFT)
     page.goto(component_origin + DRAFT)
     failures = watch(page)
-    expect_review(page, enabled=False)
+    expect_save(page, enabled=False)
     page.get_by_label("Campaign name").fill("Renamed campaign")
-    expect_review(page, enabled=True)
-    page.get_by_role("button", name="Review changes").click()
-    dialog = dialog_of(page)
+    expect_save(page, enabled=True)
+    page.get_by_role("button", name="Save", exact=True).click()
+    dialog = dialog_of(page, "Save this change?")
     assert page.evaluate(FOCUSED) == "campaign-review-title"
-    assert "Renamed campaign" in dialog.inner_text()
+    # A compact review (#1356): one line for the one setting changed, which
+    # describes the dialog, and no Now and After table.
+    lines = dialog.locator("#campaign-review-summary li")
+    assert lines.count() == 1
+    text = lines.first.inner_text()
+    assert text.startswith("Campaign name: Sample campaign")
+    assert text.endswith(" Renamed campaign") and "→" in text
+    assert dialog.locator("table").count() == 0
+    assert dialog.get_attribute("aria-describedby") == "campaign-review-summary"
+    expect(dialog).to_have_accessible_description(
+        re.compile(r"^Campaign name: Sample campaign ?, becomes Renamed campaign$")
+    )
     assert len(reviews) == 1 and "name=Renamed+campaign" in reviews[0]
     outcome = page.locator("#settings-outcome").evaluate(PLACE)
     dialog.get_by_role("button", name="Apply").click()
@@ -122,12 +143,12 @@ def test_a_draft_change_is_reviewed_and_applied_in_the_dialog(page, component_or
     digest = page.locator("#settings-form input[name=base_digest]")
     assert digest.input_value() == "b" * 64
     assert page.get_by_label("Campaign name").input_value() == "Renamed campaign"
-    expect_review(page, enabled=False)
+    expect_save(page, enabled=False)
     group = page.locator("#ministry-selections")
     hidden(group)
     page.get_by_label("Ministry stewardship").check()
     visible(group)
-    expect_review(page, enabled=True)
+    expect_save(page, enabled=True)
     assert page.evaluate(MARKED) == "kept"
     assert not failures
 
@@ -136,20 +157,20 @@ def test_review_waits_for_a_change(page, component_origin):
     """A text edit or a module tick makes Review available, undoing it makes
     it unavailable again, and a restored tick is noticed on pageshow (#921)."""
     page.goto(component_origin + DRAFT)
-    expect_review(page, enabled=False)
+    expect_save(page, enabled=False)
     name = page.get_by_label("Campaign name")
     name.fill("Renamed campaign")
-    expect_review(page, enabled=True)
+    expect_save(page, enabled=True)
     name.fill("Sample campaign")
-    expect_review(page, enabled=False)
+    expect_save(page, enabled=False)
     module = page.get_by_label("Ministry stewardship")
     module.check()
-    expect_review(page, enabled=True)
+    expect_save(page, enabled=True)
     module.uncheck()
-    expect_review(page, enabled=False)
+    expect_save(page, enabled=False)
     module.evaluate("box => { box.checked = true; }")
     page.evaluate(RESTORE)
-    expect_review(page, enabled=True)
+    expect_save(page, enabled=True)
 
 
 def test_a_refused_review_marks_the_field_and_keeps_the_dialog_shut(
@@ -160,7 +181,7 @@ def test_a_refused_review_marks_the_field_and_keeps_the_dialog_shut(
     page.goto(component_origin + DRAFT)
     failures = watch(page)
     page.get_by_label("Campaign name").fill("Renamed campaign")
-    page.get_by_role("button", name="Review changes").click()
+    page.get_by_role("button", name="Save", exact=True).click()
     visible(page.locator("[data-error-summary]"))
     has_attribute(page.get_by_label("Campaign name"), "aria-invalid", "true")
     assert not page.locator("dialog[data-review-dialog]").is_visible()
@@ -182,7 +203,7 @@ def test_a_dates_only_review_leads_to_another_page(page, component_origin):
     page.route(lambda url: url.split("#")[0] == component_origin + DRAFT, elsewhere)
     page.goto(component_origin + DRAFT)
     page.get_by_label("Campaign start date").fill("2054-10-02")
-    page.get_by_role("button", name="Review changes").click()
+    page.get_by_role("button", name="Save", exact=True).click()
     page.wait_for_url(component_origin + "/in-place-other")
 
 
@@ -201,12 +222,16 @@ def test_a_live_end_date_and_leader_roles_are_one_review(page, component_origin)
     assert roles.get_by_label("Staff").is_enabled()
     form.get_by_label("Campaign end date").fill("2054-11-15")
     roles.get_by_label("Staff").uncheck()
-    review = page.get_by_role("button", name="Review changes")
+    review = page.get_by_role("button", name="Save", exact=True)
     enabled(review)
     review.click()
     dialog = dialog_of(page)
     text = dialog.inner_text()
     assert "Campaign end date" in text and "Ministry leader roles" in text
+    # The end date's re-planned digests keep the full review (#1356), under
+    # the dialog's own title and with no compact description.
+    assert dialog.locator("table").count() == 1
+    assert dialog.get_attribute("aria-describedby") is None
     assert "Family codes and links already sent keep working" in text
     assert len(reviews) == 1
     assert "end_date=2054-11-15" in reviews[0]
@@ -242,7 +267,7 @@ def test_nothing_can_change_on_a_closed_campaign(page, component_origin):
     Review changes stays unavailable with its reason."""
     page.goto(component_origin + LOCKED)
     assert page.evaluate(OPEN) == []
-    expect_review(
+    expect_save(
         page,
         enabled=False,
         hint="Nothing on this page can change now; each greyed-out setting's "
@@ -260,7 +285,7 @@ def test_a_change_the_installer_refuses_is_shown_in_the_dialog(page, component_o
     page.goto(component_origin + LIVE_REFUSING)
     failures = watch(page)
     page.locator("#settings-form").get_by_label("Campaign end date").fill("2054-11-15")
-    review = page.get_by_role("button", name="Review changes")
+    review = page.get_by_role("button", name="Save", exact=True)
     enabled(review)
     review.click()
     dialog = dialog_of(page)
@@ -286,10 +311,10 @@ def test_a_live_ministry_change_is_reviewed_with_its_impact(page, component_orig
     answer_checks(page, component_origin)
     page.goto(component_origin + LIVE)
     failures = watch(page)
-    expect_review(page, enabled=False)
+    expect_save(page, enabled=False)
     page.get_by_label("Included Ministries").select_option(["4"])
-    expect_review(page, enabled=True)
-    page.get_by_role("button", name="Review changes").click()
+    expect_save(page, enabled=True)
+    page.get_by_role("button", name="Save", exact=True).click()
     dialog = dialog_of(page)
     text = dialog.inner_text()
     assert "Ministries to remove" in text and "Food pantry" in text
@@ -314,7 +339,7 @@ def test_a_ministry_change_with_another_is_refused_in_the_dialog(
     page.get_by_label("Included Ministries").select_option(["4"])
     roles = page.get_by_role("group", name="Ministry leader roles")
     roles.get_by_label("Staff").uncheck()
-    page.get_by_role("button", name="Review changes").click()
+    page.get_by_role("button", name="Save", exact=True).click()
     dialog = dialog_of(page)
     error = dialog.locator("[data-confirm-error]")
     visible(error)
