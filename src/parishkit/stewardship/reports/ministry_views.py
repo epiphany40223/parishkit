@@ -25,6 +25,7 @@ from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
 from parishkit.stewardship.web.tables import report_table
 
+from .chart_specs import ministry_followup
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .ministries import (
@@ -33,9 +34,11 @@ from .ministries import (
     MinistryQuery,
     campaign_ids,
     can_report,
+    matching_summaries,
     ministry_page,
     packet_choices,
     reads_every_ministry,
+    summary_totals,
     unscoped,
 )
 from .ministry_exports import MAX_PACKET_MINISTRIES
@@ -200,11 +203,22 @@ def report(request, campaign_id):
                 admit_campaign(campaign_id, mutating=True)
             except PermissionError:
                 mutable = False
+            # Every Ministry matching the search, not just this page's rows,
+            # for the totals and the follow-up chart (#720).
+            matching = matching_summaries(
+                result,
+                query,
+                lambda given: ministry_page(campaign_id, given, actor, every=True),
+            )
+            totals = summary_totals(matching)
             context = result | {
+                "totals": totals,
+                "followup_chart": ministry_followup(totals),
                 # The packet's choices, on the summary only: every Ministry
-                # in scope, not just this page's rows (#533).
+                # in scope, not just this page's rows (#533). The matching
+                # rows are already the whole scope without a search.
                 "packet_choices": packet_choices(
-                    result,
+                    {"summaries": matching, "total": total},
                     query,
                     lambda: ministry_page(
                         campaign_id, MinistryQuery(), actor, every=True

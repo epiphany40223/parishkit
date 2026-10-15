@@ -657,3 +657,33 @@ def population_progress(active):
         compared="Share of active Families",
         progress=True,
     )
+
+
+# The Ministry requests summary's follow-up bars (#720), in drawing order:
+# (bar label, summary count).
+FOLLOW_UP = (
+    ("Resolved or closed", "completed"),
+    ("Unresolved", "unresolved"),
+)
+
+
+def ministry_followup(totals):
+    """The Ministry requests summary's "Follow-up progress" chart (#720).
+
+    ``totals`` are ``ministries.summary_totals`` of every Ministry matching
+    the search: each follow-up state is a progress bar against all their
+    current requests, which those two states always add up to. With no
+    request there is no progress to draw, so ``None`` is returned and the
+    page shows only the request tiles.
+    """
+    if not totals["requests"]:
+        return None
+    return count_bars(
+        "ministry-followup",
+        "Follow-up progress",
+        [(label, totals[field]) for label, field in FOLLOW_UP],
+        total=totals["requests"],
+        compared="Share of all requests",
+        noun="Requests",
+        progress=True,
+    )

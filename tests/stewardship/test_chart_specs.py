@@ -22,6 +22,7 @@ from parishkit.stewardship.reports.chart_specs import (
     financial_charts,
     funnel_chart,
     label_room,
+    ministry_followup,
     population_progress,
     quiet_slots,
     share,
@@ -525,3 +526,42 @@ def test_population_progress_without_families_or_observation():
     assert {row[2] for row in chart.table.rows} == {"—"}
     assert chart.spec["data"]["values"][0]["text"] == "0 out of 0 (—)"
     assert population_progress(None) is None
+
+
+def test_ministry_followup_draws_each_state_against_all_requests():
+    """Resolved or closed and Unresolved are progress bars against every
+    current request of the matching Ministries (#720), each bar's value on
+    its axis label's second line, as the Participation chart draws it."""
+    totals = {
+        "joining": 30,
+        "leaving": 10,
+        "unresolved": 28,
+        "completed": 12,
+        "requests": 40,
+    }
+    chart = ministry_followup(totals)
+    assert (chart.key, chart.title) == ("ministry-followup", "Follow-up progress")
+    spec = json.loads(json.dumps(chart.spec))
+    assert spec["encoding"]["x"]["scale"] == {"domain": [0, 40], "nice": False}
+    assert spec["encoding"]["x"]["title"] == "Requests"
+    assert [row["tick"] for row in spec["data"]["values"]] == [
+        "Resolved or closed — 12 out of 40 (30%)",
+        "Unresolved — 28 out of 40 (70%)",
+    ]
+    assert chart.summary == (
+        "Follow-up progress: Resolved or closed 12 out of 40 (30%), "
+        "Unresolved 28 out of 40 (70%)."
+    )
+    assert chart.table.headings == (
+        "Follow-up progress",
+        "Requests",
+        "Share of all requests",
+    )
+
+
+def test_ministry_followup_without_requests_draws_nothing():
+    """No request means no progress to draw, not a chart of empty bars."""
+    totals = dict.fromkeys(
+        ("joining", "leaving", "unresolved", "completed", "requests"), 0
+    )
+    assert ministry_followup(totals) is None

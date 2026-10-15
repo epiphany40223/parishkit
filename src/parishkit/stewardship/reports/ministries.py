@@ -210,6 +210,33 @@ class MinistryQuery:
         return int(self.size)
 
 
+# The summary counts added up across Ministries for the page's totals (#720).
+TOTALS = ("joining", "leaving", "unresolved", "completed", "requests")
+
+
+def summary_totals(summaries):
+    """Each summary count added up across ``summaries`` (#720).
+
+    The page passes every Ministry matching the search, not one page of the
+    table, so its tiles and follow-up chart describe the whole selection.
+    Each row's counts are already the latest live requests only, so the
+    totals count each request once.
+    """
+    return {key: sum(row[key] for row in summaries) for key in TOTALS}
+
+
+def matching_summaries(result, query, read_every):
+    """Every summary row matching the query's search, whatever page is shown.
+
+    A page that already holds every matching row is reused; otherwise
+    ``read_every(query)`` reads the whole matching summary once more,
+    through the same role-scoped selection.
+    """
+    if result["total"] > len(result["summaries"]):
+        return read_every(query)["summaries"]
+    return result["summaries"]
+
+
 def packet_choices(result, query, read_every):
     """Every Ministry the packet may include, by name, whatever the table shows.
 
