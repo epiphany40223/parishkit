@@ -190,7 +190,12 @@ def scheduler_handlers():
         """A scheduler cannot become a provider worker by calling a registry value."""
         raise PermissionError("The scheduler cannot execute provider work.")
 
+    from .responses.publication_tasks import (
+        scheduler_handlers as publication_scheduler_handlers,
+    )
+
     return {
+        **publication_scheduler_handlers(unavailable),
         DAILY_PREPARE: daily_handler(scheduler=True),
         DAILY_FINALIZE: finalization_handler(scheduler=True),
         WEEKLY_PREPARE: weekly_handler(scheduler=True),
@@ -442,6 +447,25 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
                     suppressions=source_refusal_suppressions,
                 ),
                 unchanged=refresh_unchanged(suppressions=source_refusal_suppressions),
+            )
+            from .responses.publication_tasks import (
+                PREFLIGHT_TASK_TYPE,
+                PUBLICATION_TASK_TYPE,
+                parishsoft_gateway,
+                preflight_handler,
+                publication_handler,
+            )
+
+            # Census publication (#528) reads and writes ParishSoft with the
+            # same credential, and obeys the real parishsoft_publication
+            # setting (off by default), so both tasks refuse while it is off.
+            gateway = parishsoft_gateway(configuration.secrets["parishsoft"])
+            enabled = configuration.parishsoft_publication
+            handlers[PREFLIGHT_TASK_TYPE] = preflight_handler(
+                enabled=enabled, gateway=gateway
+            )
+            handlers[PUBLICATION_TASK_TYPE] = publication_handler(
+                enabled=enabled, gateway=gateway
             )
     handlers = bind_authority(handlers, store, heartbeat=heartbeat)
     if role in {ServiceRole.WORKER, ServiceRole.SCHEDULER}:
