@@ -903,7 +903,7 @@ that use the complete-before-submit gate above. Three shared checks in
 `ui-v1.js` cover the common cases (#563): `data-not-before="<start id>"` on
 an end date (or a text amount) keeps it no earlier than its start, as the
 report and System logs filters and the campaign and financial period end
-dates on Campaign settings and Setup › First campaign do (an end on its
+dates on Campaign settings do (an end on its
 start's own day and a financial period that isn't exactly one year are
 refused by the server, at the end field); `data-max-bytes` on a file input
 refuses a file larger than the limit, or than the room left, at once (Hosted
@@ -1938,8 +1938,6 @@ without the mark ([#1117](https://github.com/epiphany40223/parishkit/issues/1117
 | ParishSoft refresh schedule | Each rule's At, From and To; each skip's At, From and To | One time, refresh schedule time |
 | ParishSoft refresh schedule, Edit as text | Full refresh times | List, refresh schedule time |
 | New and Edit scheduled email | Send time | One time, browser time |
-| First-campaign Mail schedules | Send time | One time, browser time |
-| First-campaign Mail schedules, Repeat a reminder | Send time | One time, browser time |
 | The date-change review | Send time | One time, campaign time |
 | Ministry requests' follow-up request | Contact attempt time | One time, browser time zone |
 | Logs, reports | Date filters | Dates only, no time of day |
