@@ -15,7 +15,9 @@ remembered queue view (``LAST_ITEM`` to ``QUEUE_VIEW``). The bulk
 outcome queue (#1131, ``BULK_QUEUE``) has open join and leave requests and a
 closed one; its dialog redraws the table from the remembered view
 ``BULK_VIEW``, which shows the join request resolved. The tests answer the
-dialog's POST (``BULK_POST``) themselves, with a route.
+dialog's POST (``BULK_POST``) themselves, with a route. ``GONE_QUEUE`` is
+Staff's Status choice for Members no longer in ParishSoft (#1217), and
+``GONE_ITEM`` one of its request pages.
 """
 
 from datetime import UTC, datetime
@@ -30,6 +32,8 @@ from parishkit.stewardship.reports.ministry_followup import (
     CHANNELS,
     FILTER_OUTCOMES,
     HISTORY_STATES,
+    MEMBER_STATUS_MARKS,
+    NOT_IN_SOURCE,
     SORTING,
     STATES,
     FollowupQuery,
@@ -82,6 +86,8 @@ BULK_VIEW = reverse("admin:ministry_followup") + f"?queue={BULK_TOKEN}"
 BULK_POST = reverse("admin:ministry_followup_bulk")
 BULK_KEY = UUID(int=104)
 BULK_JOIN, BULK_LEAVE, BULK_CLOSED = UUID(int=105), UUID(int=106), UUID(int=107)
+# Staff's view of requests for Members no longer in ParishSoft (#1217).
+GONE_QUEUE, GONE_ITEM = "/followup-gone", "/followup-gone-item"
 # The fixture server's answers to a Save (status, Location, body).
 POSTS = {
     UPDATE: (303, SAVED, ""),
@@ -156,6 +162,8 @@ def components(context, admin):
         # Staff or an Administrator: the help explains the Removed badge
         # (#1135).
         campaign_marks=True,
+        # Staff's Status choice for Members no longer in ParishSoft (#1217).
+        not_in_source=NOT_IN_SOURCE,
         campaign_id=campaign,
         query=query,
         table=_table([row], query, 51, campaign),
@@ -315,6 +323,18 @@ def components(context, admin):
         ),
         *bulk_rows[1:],
     ]
+    # Two open requests whose Members ParishSoft no longer lists: one
+    # inactive there, one gone, with a name long enough to be cut short.
+    gone_query = FollowupQuery(state=NOT_IN_SOURCE)
+    gone_rows = [
+        row | dict(id=str(UUID(int=110)), source_mark=MEMBER_STATUS_MARKS["inactive"]),
+        leave
+        | dict(
+            id=str(UUID(int=111)),
+            member_name="Bartholomew-Fitzgerald, Maximilian <Example>",
+            source_mark=MEMBER_STATUS_MARKS["missing"],
+        ),
+    ]
     bulk_page = values | dict(
         query=unfiltered, queue_token=BULK_TOKEN, refresh_url=BULK_VIEW
     )
@@ -343,7 +363,17 @@ def components(context, admin):
             table=_table(full_page, unfiltered, 60, campaign),
         ),
         # What a Ministry leader is served: no campaign help (#1135).
-        "/followup-leader": values | dict(campaign_marks=False),
+        "/followup-leader": values | dict(campaign_marks=False, not_in_source=None),
+        GONE_QUEUE: values
+        | dict(
+            query=gone_query,
+            gone_view=True,
+            rows=gone_rows,
+            table=_table(gone_rows, gone_query, 2, campaign),
+            total=2,
+        ),
+        GONE_ITEM: values
+        | dict(item=gone_rows[0], form=form, history=[revision], gone_view=False),
         "/followup-empty": values
         | dict(rows=[], total=0, table=_table([], query, 0, campaign)),
         "/followup-gated": values | dict(mutable=False),

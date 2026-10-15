@@ -192,3 +192,20 @@ def test_a_leader_sees_no_tick_at_all():
         )
         for compact in (True, False):
             assert tick_html(row, can_tick=False, compact=compact, mutable=True) == ""
+
+
+def test_download_names_a_member_no_longer_in_parishsoft_in_its_own_column():
+    """The Member's ParishSoft status is blank while ParishSoft lists them,
+    and otherwise #1216's phrase, beside the Member, not in the name (#1217)."""
+    zone = ZoneInfo("UTC")
+    rows = [
+        roster_row(),
+        roster_row(id="2", source_mark=("Deceased in ParishSoft", "reason")),
+    ]
+    table = list(csv.reader(io.StringIO(roster_csv(rows, zone).decode())))
+    lines = [dict(zip(HEADINGS, line, strict=True)) for line in table[1:]]
+    assert [line["ParishSoft status"] for line in lines] == [
+        "",
+        "Deceased in ParishSoft",
+    ]
+    assert lines[1]["Member"] == "Sample, Pat"

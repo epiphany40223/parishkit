@@ -91,6 +91,22 @@ class BulkStale(StaleRecordError):
         self.request_id = request_id
 
 
+class MemberNotInSource(StaleRecordError):
+    """A chosen request's Member is no longer in ParishSoft (#1217).
+
+    ParishSoft no longer lists the Member in the request's Family, or lists
+    them as inactive or deceased, so nothing can be recorded for the request
+    (stewardship_ministry_request_member_status_v1). The pages never offer
+    one; a page read before ParishSoft changed is refused like any other
+    stale edit, and ``request_id`` names the request for a bulk dialog.
+    Nothing of the edit or batch is saved, and the request is unchanged.
+    """
+
+    def __init__(self, request_id):
+        super().__init__("A selected Ministry request's Member left ParishSoft.")
+        self.request_id = request_id
+
+
 @dataclass(frozen=True)
 class WorkflowChange:
     """The complete resulting workflow of one edit, validated without a database.
@@ -206,7 +222,12 @@ def _revise(store, actor_id, target, expected_version, request_key, change, syst
 
 
 def _targets(store, actor_id, versions):
-    """Lock live requests in one stable order and authorize each Ministry."""
+    """Lock live requests in one stable order and authorize each Ministry.
+
+    Then refuse the whole edit if any request's Member is no longer in
+    ParishSoft (#1217, ``MemberNotInSource``): read after the locks and the
+    scope check, so it names only a request the actor may edit.
+    """
     rows = list(
         MinistryRequest.objects.select_for_update(of=("self",))
         .select_related("submission")
@@ -219,7 +240,29 @@ def _targets(store, actor_id, versions):
         authorize_ministry(store, actor_id, ministry)
     for campaign in {row.submission.campaign_id for row in rows}:
         admit_campaign(campaign, mutating=True)
+    gone = _not_in_source([row.pk for row in rows if row.entity_kind == "member"])
+    if gone:
+        raise MemberNotInSource(gone[0])
     return rows
+
+
+def _not_in_source(request_ids):
+    """The given requests whose Member ParishSoft no longer lists, in id order.
+
+    The same standing the selections filter on, from the same SQL
+    (stewardship_ministry_request_member_status_v1, #1217); a Member the
+    Family added on the form has none and is never listed.
+    """
+    if not request_ids:
+        return []
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT t.id FROM unnest(%s::uuid[]) t(id) "
+            "WHERE stewardship_ministry_request_member_status_v1(t.id)<>'current' "
+            "ORDER BY t.id",
+            [request_ids],
+        )
+        return [row[0] for row in cursor.fetchall()]
 
 
 def _system():
@@ -232,7 +275,11 @@ def _system():
 def update_request(
     store, actor_id, request_id, *, expected_version, request_key, change
 ):
-    """Apply one replay-safe Staff edit under the shared work order."""
+    """Apply one replay-safe Staff edit under the shared work order.
+
+    A request whose Member is no longer in ParishSoft is refused
+    (``MemberNotInSource``, #1217), as a stale edit is.
+    """
     identities = (actor_id, request_id, request_key)
     if (
         any(not isinstance(value, UUID) for value in identities)
@@ -288,10 +335,11 @@ def apply_bulk_outcome(store, actor_id, versions, *, action, outcome, bulk_key, 
     each; its state, outcome and notes are set here (each request keeps its
     own notes). ``(action, outcome)`` is one of ``BULK_ACTIONS``: every
     request must be of that kind. Any request that is outside the actor's
-    Ministries refuses the whole batch as denied; one of another kind raises
-    the ``outcome_kind`` refusal with its ``request_id``; and one that changed
-    or closed since the page was read raises ``BulkStale`` naming it.
-    Nothing is saved then.
+    Ministries refuses the whole batch as denied; one whose Member is no
+    longer in ParishSoft raises ``MemberNotInSource`` naming it (#1217); one
+    of another kind raises the ``outcome_kind`` refusal with its
+    ``request_id``; and one that changed or closed since the page was read
+    raises ``BulkStale`` naming it. Nothing is saved then.
 
     Every revision and audit event shares one correlation id (the web
     request's), and one ``ministry_followup_bulk_applied`` event records the

@@ -83,6 +83,9 @@ SHOW = {"todo": "Not yet entered", "all": "All, including entered"}
 HEADINGS = (
     "Member",
     "Member DUID",
+    # Blank while ParishSoft lists the Member; otherwise #1216's phrase
+    # (#1217), in its own column so the name stays a name.
+    "ParishSoft status",
     "Family",
     "Family DUID",
     "Ministry",
@@ -98,15 +101,16 @@ HEADINGS = (
 # DUID, "Not yet" and "Leave" stay on one line, and a compact time keeps its
 # date on one line and its time on the next; names and addresses wrap.
 PDF_WEIGHTS = {
-    "Member": 9,
+    "Member": 8,
     "Member DUID": 7,
-    "Family": 11,
+    "ParishSoft status": 5,
+    "Family": 10,
     "Family DUID": 7,
-    "Ministry": 13,
+    "Ministry": 12,
     "Request": 6,
     "Resolved": 10,
-    "Resolved by": 8,
-    "Replaced by a later response": 6,
+    "Resolved by": 7,
+    "Replaced by a later response": 5,
     "Entered in ParishSoft": 7,
     "Entered by": 6,
     "Entered at": 10,
@@ -161,7 +165,10 @@ def roster_rows(campaign_id, principal, show, ministry=""):
     a join or leave it still asks for, and the resolved one would otherwise
     vanish from the list before anyone entered it. Eligibility keeps only
     resolved roster outcomes with no resolution source, so a superseded or
-    cancelled request never appears. ``ministry`` (a DUID as text, or "")
+    cancelled request never appears. A change for a Member ParishSoft no
+    longer lists, or lists as inactive or deceased, stays listed, marked
+    (``source_mark``): it may still need entering (#1217); the list is
+    Admin and Staff only. ``ministry`` (a DUID as text, or "")
     keeps one Ministry's changes. Returns the shown rows and the selection's
     result (for its metadata and its Ministries).
     """
@@ -170,6 +177,7 @@ def roster_rows(campaign_id, principal, show, ministry=""):
         FollowupQuery(state="resolved", history="all"),
         principal,
         whole=True,
+        every_member=True,
     )
     rows = [row for row in result["rows"] if eligible(row)]
     ids = [row["id"] for row in rows]
@@ -256,6 +264,7 @@ def export_rows(rows, zone, *, time_text=iso_time):
         (
             row["member_name"],
             str(row["member_duid"]) if row["member_duid"] else NEW_MEMBER,
+            row["source_mark"][0] if row.get("source_mark") else "",
             row["family_name"],
             str(row["family_duid"]) if row["family_duid"] else "",
             row["ministry_name"],

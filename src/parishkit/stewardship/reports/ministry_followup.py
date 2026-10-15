@@ -61,6 +61,30 @@ STATE_LABELS = STATES | {
 }
 # History shows what each past edit recorded, including an old assignment.
 HISTORY_STATES = STATE_LABELS | {"assigned": "Assigned"}
+# The Status filter's one extra choice for Staff and Administrators (#1217):
+# the current requests, of any status, whose Member ParishSoft no longer
+# lists in that Family, or lists as inactive or deceased. The default queue
+# and every other choice leave them out, and a Ministry leader never gets
+# them (the selection itself refuses: schema/ministry_followup.sql).
+NOT_IN_SOURCE = "not_in_parishsoft"
+# How a Member's standing in ParishSoft (stewardship_member_source_status_v1)
+# is marked: the badge's words, #1216's phrases, so they cannot be taken for
+# a Ministry's own activity marks, and the specific reason the request page
+# gives. A Member who moved to another Family reads as not in ParishSoft, as
+# #1216 proposes; #1216 will share these words portal-wide.
+MEMBER_STATUS_MARKS = {
+    "missing": (
+        "Not in ParishSoft",
+        "ParishSoft no longer has this Member; the record may have been "
+        "deleted or merged into another",
+    ),
+    "moved": (
+        "Not in ParishSoft",
+        "ParishSoft now lists this Member in another Family",
+    ),
+    "inactive": ("Inactive in ParishSoft", "ParishSoft marks this Member inactive"),
+    "deceased": ("Deceased in ParishSoft", "ParishSoft marks this Member deceased"),
+}
 # The Outcome filter's choices: every outcome a person can record, with the
 # combined labels (both meanings of declined, #1132), plus Closed: no
 # response's. A retired outcome (Duplicate request, #1131) is not offered;
@@ -122,7 +146,7 @@ class FollowupQuery:
         query = cls(**(values | {"page": parse_page(values.get("page", "1"))}))
         if (
             query.action not in {"any", "join", "leave"}
-            or query.state not in {"any", "unresolved", *STATES}
+            or query.state not in {"any", "unresolved", NOT_IN_SOURCE, *STATES}
             or query.outcome not in {"any", *FILTER_OUTCOMES}
             or query.history != "current"
             or query.sort not in SORTING.tokens
@@ -165,18 +189,38 @@ def can_follow_up(principal):
     )
 
 
-def selection_filters(query):
+def selection_filters(query, *, every_member=False):
     """The selection's ``filters`` JSON for ``query``.
 
     The frozen selection still reads an assignee filter
     (schema/ministry_followup.sql); without one every row fails it, so
     always send the neutral "any" (#552). The menu's open count (#585,
     admin_context._open_counts) sends the default query through here too.
+    The Status choice for Members no longer in ParishSoft (#1217) is the
+    selection's ``presence`` filter with any status; every other choice
+    lists only Members still current there. ``every_member`` lists both,
+    for Staff and Administrators only (the selection gives a leader only
+    current ones): Roster changes to enter, whose roster work may still be
+    real.
     """
-    return json.dumps(query.form_values() | {"assignee": "any"})
+    values = query.form_values() | {"assignee": "any", "presence": "current"}
+    if query.state == NOT_IN_SOURCE:
+        values |= {"state": "any", "presence": "gone"}
+    if every_member:
+        values["presence"] = "any"
+    return json.dumps(values)
 
 
-def _select(campaign_id, query, principal, *, request_id=None, limit, offset=0):
+def _select(
+    campaign_id,
+    query,
+    principal,
+    *,
+    request_id=None,
+    limit,
+    offset=0,
+    every_member=False,
+):
     """Run the installed follow-up selection for ``principal``; None if absent.
 
     The selection derives the principal's current role scope in SQL from the
@@ -192,7 +236,7 @@ def _select(campaign_id, query, principal, *, request_id=None, limit, offset=0):
             "request_uuid => %s, page_limit => %s, page_offset => %s)::text",
             [
                 campaign_id,
-                selection_filters(query),
+                selection_filters(query, every_member=every_member),
                 principal.identity,
                 request_id,
                 limit,
@@ -291,7 +335,9 @@ def member_duids(rows):
         row["member_duid"] = int(key) if key else None
 
 
-def followup_page(campaign_id, query, principal, *, request_id=None, whole=False):
+def followup_page(
+    campaign_id, query, principal, *, request_id=None, whole=False, every_member=False
+):
     """Read one coherent page under the response guard's freshly resolved actor.
 
     SQL derives the actor's current role scope (stewardship_ministry_followup_v2,
@@ -300,10 +346,17 @@ def followup_page(campaign_id, query, principal, *, request_id=None, whole=False
     different error. Python's scope is a pre-check and a cross-check. No
     contact, address or financial column is selected. ``whole`` reads every
     matching row (no LIMIT), for a list that is filtered and paged in memory
-    (Roster changes to enter, #528).
+    (Roster changes to enter, #528). ``every_member`` also lists requests
+    for Members no longer in ParishSoft, marked (``selection_filters``).
     """
     if not can_follow_up(principal):
         raise PermissionError("Ministry follow-up access is unavailable.")
+    if query.state == NOT_IN_SOURCE and not allows(
+        principal, Capability.MINISTRY_FOLLOWUP
+    ):
+        # Only Staff and Administrators are offered it (#1217); the
+        # selection would list a leader none of these requests anyway.
+        raise ValueError("Invalid follow-up filters.")
     result = _select(
         campaign_id,
         query,
@@ -311,6 +364,7 @@ def followup_page(campaign_id, query, principal, *, request_id=None, whole=False
         request_id=request_id,
         limit=None if whole else query.page_size,
         offset=0 if whole else (query.page - 1) * query.page_size,
+        every_member=every_member,
     )
     if result is None:
         raise ReadUnavailable("Ministry follow-up inputs are unavailable.")
@@ -335,6 +389,9 @@ def followup_page(campaign_id, query, principal, *, request_id=None, whole=False
         row["state_label"] = STATE_LABELS[row["state"]]
         # The packet's exact labels, by the row's kind of request (#1132).
         row["outcome_label"] = outcome_label(row["outcome"], row["action"])
+        # A Member ParishSoft no longer lists here (#1217): marked, and
+        # nothing can be recorded for the request (workflows/followup.py).
+        row["source_mark"] = MEMBER_STATUS_MARKS.get(row.pop("member_status", None))
         for field in (
             "submitted_at",
             "resolved_at",

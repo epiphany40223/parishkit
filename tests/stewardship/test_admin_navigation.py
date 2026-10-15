@@ -1170,9 +1170,11 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
             assert "operational" not in statements[0]
             assert "scope" not in statements[0]
             assert statements[0]["campaign"] == campaign.pk
-            # The count runs the follow-up page's own default filters.
+            # The count runs the follow-up page's own default filters, which
+            # leave out Members no longer in ParishSoft (#1217).
             assert json.loads(statements[0]["filters"]) == (
-                FollowupQuery().form_values() | {"assignee": "any"}
+                FollowupQuery().form_values()
+                | {"assignee": "any", "presence": "current"}
             )
             assert statements[0]["viewer"] == actor.identity
     # A count over a Ministry outside the leader's own scope is drift the

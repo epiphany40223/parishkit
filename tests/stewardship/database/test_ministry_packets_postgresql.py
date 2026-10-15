@@ -24,7 +24,7 @@ from parishkit.stewardship.reports.ministry_packets import (
 from .test_background_grants_postgresql import task_login
 from .test_export_views_postgresql import post
 from .test_ministry_exports_postgresql import create, leader
-from .test_ministry_followup_postgresql import edit, requests
+from .test_ministry_followup_postgresql import edit, member_gone, requests
 from .test_ministry_reports_postgresql import setup
 from .test_ministry_responses_postgresql import respond, revisit
 from .test_policy_postgresql import user
@@ -291,3 +291,21 @@ def test_packet_contact_dates_follow_a_same_intent_resubmission(response_service
     # History never resurrects the superseded predecessors as extra rows.
     _, everything = sections(packet(harness, admin, history=True))
     assert [len(everything[duid]["rows"]) for duid in (4, 9)] == [1, 1]
+
+
+def test_packets_leave_out_members_no_longer_in_parishsoft(response_service, google):
+    """A packet never lists a request whose Member ParishSoft dropped, moved
+    or marked inactive or deceased, for a leader or Staff, and lists it again
+    once the Member is current (#1217)."""
+    harness = setup(response_service)
+    _, head, _, _ = leader(harness, google)
+    admin = user("admin@example.org").pk
+    join, _ = requests()
+    member_gone(harness, "moved")
+    for actor_id in (admin, head):
+        snapshot, found = sections(packet(harness, actor_id))
+        assert snapshot.row_count == 0
+        assert all(entry["rows"] == [] for entry in found.values())
+    member_gone(harness, "current")
+    _, found = sections(packet(harness, head))
+    assert [row["id"] for row in found[9]["rows"]] == [str(join.pk)]

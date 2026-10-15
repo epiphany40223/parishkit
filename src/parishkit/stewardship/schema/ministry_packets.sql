@@ -12,7 +12,7 @@
 -- add resolved and withdrawn requests but can never resurrect a superseded one.
 -- `selection` is NULL for every authorized Ministry or an explicit DUID array;
 -- either way it is intersected with current scope, never trusted as authority.
-CREATE FUNCTION stewardship_ministry_packet_v1(
+CREATE FUNCTION public.stewardship_ministry_packet_v1(
     campaign_uuid uuid, selection bigint[], include_history boolean,
     operational boolean, ministry_scope bigint[]
 ) RETURNS jsonb LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
@@ -111,6 +111,9 @@ WITH selected AS MATERIALIZED (
         AND p.family_key=r.family_duid::text
     WHERE r.revision=1
         AND (include_history OR r.state IN ('new','assigned','in_progress'))
+        -- Not a request for a Member no longer in ParishSoft (#1217).
+        AND (r.entity_kind<>'member' OR stewardship_member_source_status_v1(
+            x.source_id,r.entity_key,r.family_duid)='current')
 ), detail AS (
     SELECT r.id,r.ministry_duid,r.entity_kind,r.action,r.state,r.outcome,
         r.submitted_at,

@@ -5050,6 +5050,43 @@ system's bookkeeping for a Family's resubmission, not a leader's decision. A
 request page reached by an old link still says the Family has since replaced
 or withdrawn the request. Each request page's history shows the past.
 
+Requests for Members no longer in ParishSoft are left out of the Ministry
+leaders' work (Administrator, 2026-10-13,
+[#1217](https://github.com/epiphany40223/parishkit/issues/1217)). A Member
+request is one when ParishSoft's data the campaign reads (the current
+snapshot, or an archived campaign's own) no longer has the Member, has them
+in another Family, or marks them inactive or deceased. A Member added on the
+form is never one. One SQL function decides this
+(`stewardship_member_source_status_v1`, migration 0092), the definition
+[#1216](https://github.com/epiphany40223/parishkit/issues/1216) shares:
+
+- A Ministry leader never sees, counts or acts on such a request: the queue,
+  Members joining and leaving, Home's My Ministries panel, the menu count,
+  the [Ministry requests](../reports/spec.md#ministry-change-summary) lists
+  and counts and the
+  [packets](../reports/spec.md#multi-ministry-follow-up-packet) leave it
+  out. Its request page reads as an unknown request.
+- Staff and Administrators see the same by default, so their counts match.
+  Their queue's Status filter has one more choice, "Members no longer in
+  ParishSoft", which lists only these requests, of any status. Each is
+  marked beside the Member's name with a small badge in #1216's words ("Not
+  in ParishSoft", "Inactive in ParishSoft" or "Deceased in ParishSoft"), so
+  it cannot be taken for a Ministry's activity mark, until #1216 gives the
+  portal one shared mark. That view has no selection column or bulk bar. A
+  request page opened from it gives the specific reason (no longer in
+  ParishSoft, now in another Family, inactive or deceased) and has no
+  follow-up form.
+- [Roster changes to enter](#roster-changes-to-enter) still lists such a
+  Member's resolved joins and leaves, with the same words in its
+  ParishSoft status column and downloads, because the roster work may still
+  be real.
+- The server refuses a single or bulk edit of such a request, as it refuses
+  a stale one (409), naming the request in the bulk dialog, so a page read
+  before ParishSoft changed cannot record anything.
+- Nothing is deleted, cancelled or resolved, and no Family code or link
+  changes. The filter is worked out on every read, so when ParishSoft lists
+  the Member again the request comes back as it was.
+
 Leaders record one outcome for several requests at once
 ([#1131](https://github.com/epiphany40223/parishkit/issues/1131)), through the
 shared [selection column, bulk bar](../ui-conventions/spec.md#admin-tables) and
@@ -5084,8 +5121,8 @@ The server refuses the whole batch, saving nothing, when:
 
 - any request is outside the leader's Ministries (denied, as an unknown
   request is);
-- any request changed or closed since the page was read (named in the
-  dialog);
+- any request changed or closed since the page was read, or its Member is
+  no longer in ParishSoft (each named in the dialog);
 - any request is not of the button's kind (named in the dialog; the page
   never offers such a batch); or
 - the contact attempt is refused, as on the request form.
@@ -5206,7 +5243,11 @@ and leaves with no resolution source that are not yet ticked, or, with
 and **Ministry** narrows it to one Ministry (a closed DUID value, no schema
 change). Its columns follow the
 [table column order](../ui-conventions/spec.md#table-column-order): Member,
-Member DUID ("New Member" for a Member added on the form), Family, Family
+Member DUID ("New Member" for a Member added on the form), ParishSoft
+status (blank while ParishSoft lists the Member in that Family; otherwise
+Not in ParishSoft, Inactive in ParishSoft or Deceased in ParishSoft,
+[#1217](https://github.com/epiphany40223/parishkit/issues/1217): such a
+change stays listed, since it may still need entering), Family, Family
 DUID, Ministry, Request (Join or Leave), Resolved, Resolved by,
 Replaced by a later response (Yes when the Family answered again after the
 change was resolved), Entered in ParishSoft (Yes or Not yet), Entered by and

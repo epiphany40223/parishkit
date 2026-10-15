@@ -34,6 +34,7 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.workflows.followup import (
     BulkStale,
     FollowupRefusal,
+    MemberNotInSource,
     WorkflowChange,
     _system,
     _targets,
@@ -56,10 +57,12 @@ from .test_information_followup_postgresql import search
 from .test_ministry_exports_postgresql import leader
 from .test_ministry_reports_postgresql import actor, setup
 from .test_ministry_reports_postgresql import page as report_page
-from .test_ministry_responses_postgresql import respond, revisit
+from .test_ministry_reports_postgresql import prepare as report_prepare
+from .test_ministry_responses_postgresql import ministry_source, respond, revisit
 from .test_policy_postgresql import user
 from .test_report_workspace_postgresql import read as get
 from .test_response_http_postgresql import answers_for
+from .test_source_families_postgresql import promote
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -1555,3 +1558,333 @@ def test_bulk_outcome_route_refuses_in_the_dialog_and_marks_history(
         assert response.status_code == 200
         assert b"Joined the Ministry (bulk)" in body
         assert b"PRIVATE-NOTE spoke to them" in body
+
+
+def member_gone(harness, standing):
+    """Promote ParishSoft again with Member 3 no longer current (#1217).
+
+    ``standing`` is what stewardship_member_source_status_v1 should then
+    report: ``missing`` (deleted, with their contact details and Choir
+    role), ``moved`` (now in Family 2), ``inactive`` or ``deceased``. Any
+    other value promotes the unchanged source, so Member 3 is current again.
+    """
+    data = ministry_source()
+    if standing == "missing":
+        del data.members[3], data.member_contactinfos[3]
+        data.ministry_type_memberships[4]["membership"] = []
+    elif standing == "moved":
+        data.members[3]["familyDUID"] = 2
+    elif standing in {"inactive", "deceased"}:
+        data.members[3]["memberStatus"] = standing.capitalize()
+    snapshot, claim = report_prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+
+
+def standing(request_id):
+    """stewardship_ministry_request_member_status_v1 under the web role."""
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(
+            "SELECT stewardship_ministry_request_member_status_v1(%s)", [request_id]
+        )
+        return cursor.fetchone()[0]
+
+
+@pytest.mark.parametrize(
+    "case, mark",
+    [
+        ("missing", "Not in ParishSoft"),
+        ("moved", "Not in ParishSoft"),
+        ("inactive", "Inactive in ParishSoft"),
+        ("deceased", "Deceased in ParishSoft"),
+    ],
+)
+def test_requests_for_members_no_longer_in_parishsoft_leave_leaders_work(
+    response_service, google, case, mark
+):
+    """A Member ParishSoft drops, moves, deactivates or marks deceased takes
+    their requests out of a leader's queue, request pages, counts and My
+    Ministries; Staff list them only with Status set to Members no longer
+    in ParishSoft, marked; no edit, single or bulk, records anything; and
+    when the Member is current again every request is back unchanged
+    (#1217)."""
+    from parishkit.stewardship.accounts import admin_context
+
+    harness = setup(response_service)
+    _, head, _, _ = leader(harness, google)
+    admin = user("admin@example.org").pk
+    staff = Principal(admin, frozenset({"staff"}), frozenset())
+    scoped = Principal(head, frozenset({"ministry_leader"}), frozenset({9}))
+    join, leave = requests()
+    items = [SimpleNamespace(name="ministry_followup", url="/admin/follow-up/")]
+
+    def counts(principal):
+        """The menu count and, for the leader, My Ministries' join count."""
+        with (
+            task_login(ServiceRole.WEB, exact=True, reconnect=True),
+            transaction.atomic(),
+        ):
+            menu = admin_context._open_counts(
+                SimpleNamespace(), principal, items, harness.campaign
+            )["ministry_followup"]
+            mine = my_ministries(harness.campaign.pk, principal)
+        listed = (mine or {}).get("ministries", [])
+        return menu, [(entry["duid"], entry["join"]) for entry in listed]
+
+    assert standing(join.pk) == "current"
+    assert counts(scoped) == (1, [(9, 1)]) and counts(staff)[0] == 2
+    member_gone(harness, case)
+    assert standing(join.pk) == standing(leave.pk) == case
+    # A leader never sees, counts or opens them.
+    assert read(harness, scoped)["total"] == 0
+    assert read(harness, scoped, state="any")["total"] == 0
+    with pytest.raises(ObjectDoesNotExist):
+        read(harness, scoped, request_id=join.pk)
+    with pytest.raises(ValueError):
+        read(harness, scoped, state="not_in_parishsoft")
+    assert counts(scoped) == (0, [(9, 0)])
+    # Staff's default view and count match the leader's; the one Status
+    # choice lists them, of any status, each marked.
+    assert read(harness, staff)["total"] == 0 and counts(staff)[0] == 0
+    gone = read(harness, staff, state="not_in_parishsoft")
+    assert gone["total"] == 2
+    assert {row["source_mark"][0] for row in gone["rows"]} == {mark}
+    assert "member_status" not in gone["rows"][0]
+    (item,) = read(harness, staff, request_id=join.pk)["rows"]
+    assert item["source_mark"][0] == mark and item["open"]
+    # The server refuses every edit, single or bulk, by anyone.
+    for actor_id in (admin, head):
+        with pytest.raises(MemberNotInSource) as refused:
+            edit(harness, actor_id, join)
+        assert refused.value.request_id == join.pk
+    with pytest.raises(MemberNotInSource) as refused:
+        bulk(harness, admin, {join.pk: 1}, "join", "joined")
+    assert refused.value.request_id == join.pk
+    # Nothing was deleted, cancelled, resolved or written.
+    assert MinistryWorkflowRevision.objects.count() == 0
+    assert sorted(
+        MinistryRequest.objects.values_list("state", "version", "outcome")
+    ) == [("new", 1, None), ("new", 1, None)]
+    # Current again: every request is back as it was, for everyone.
+    member_gone(harness, "current")
+    assert counts(scoped) == (1, [(9, 1)]) and counts(staff)[0] == 2
+    (back,) = read(harness, scoped)["rows"]
+    assert back["id"] == str(join.pk) and back["source_mark"] is None
+    assert read(harness, staff, state="not_in_parishsoft")["total"] == 0
+    edit(harness, head, join)
+    join.refresh_from_db()
+    assert join.state == "in_progress"
+
+
+def test_member_standing_reads_the_snapshot_it_is_given(response_service):
+    """stewardship_member_source_status_v1 reads one snapshot: an earlier
+    (archived campaign's) snapshot keeps the Member current after the
+    current one drops them, and a Member the Family added on the form has
+    no standing and keeps their requests (#1217)."""
+    harness = setup(response_service)
+    form = revisit(harness)
+    answers = answers_for(form)
+    identifier = str(uuid4())
+    answers["proposed_members"][identifier] = member(
+        first_name="New", last_name="Person", email="proposed@example.org"
+    )
+    answers["ministries"]["proposed_members"][identifier] = {"join": [9]}
+    answers["ministries"]["members"]["3"] = {"join": [9], "leave": [4]}
+    respond(harness, form, answers)
+    proposed = MinistryRequest.objects.get(entity_kind="proposed_member", state="new")
+    family = proposed.submission.family.family_duid
+
+    def current_snapshot():
+        """The promoted snapshot the campaign reads now."""
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT snapshot_id FROM stewardship_source_current")
+            return cursor.fetchone()[0]
+
+    def status(snapshot, key="3", family_duid=family):
+        """The function under the web role."""
+        with (
+            task_login(ServiceRole.WEB, exact=True, reconnect=True),
+            connection.cursor() as cursor,
+        ):
+            cursor.execute(
+                "SELECT stewardship_member_source_status_v1(%s,%s,%s)",
+                [snapshot, key, family_duid],
+            )
+            return cursor.fetchone()[0]
+
+    earlier = current_snapshot()
+    assert status(earlier) == "current"
+    assert status(earlier, family_duid=2) == "moved"
+    assert status(earlier, key="999999") == "missing"
+    member_gone(harness, "deceased")
+    assert status(current_snapshot()) == "deceased"
+    assert status(earlier) == "current"
+    assert standing(proposed.pk) is None and standing(uuid4()) is None
+    staff = Principal(user("admin@example.org").pk, frozenset({"staff"}), frozenset())
+    rows = read(harness, staff)["rows"]
+    assert [(row["id"], row["source_mark"]) for row in rows] == [
+        (str(proposed.pk), None)
+    ]
+
+
+def test_queue_pages_mark_and_refuse_members_no_longer_in_parishsoft(
+    response_service, google
+):
+    """The pages (#1217): a leader's queue lists none and offers no choice
+    for them, and their request pages read as unknown; Staff get the one
+    off-by-default Status choice, which lists them marked with no selection
+    column or bulk bar, and a request page with a notice and no form. A
+    stale single save answers 409 and a stale bulk outcome names the row;
+    nothing is saved."""
+    harness = setup(response_service)
+    browser, _, _, _ = leader(harness, google)
+    join, leave = requests()
+    route = reverse("admin:ministry_followup")
+    bulk_route = reverse("admin:ministry_followup_bulk")
+    option = b'<option value="not_in_parishsoft"'
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        _, before = get(browser, route)
+        detail = reverse("admin:ministry_followup_item", args=[join.pk])
+        _, form_page = get(browser, detail)
+    request_key = re.search(rb'name="request_key" value="([^"]+)"', form_page)[1]
+    member_gone(harness, "inactive")
+    rule = address("clerk@example.org", roles=("staff",))
+    store = harness.service.store
+    change(
+        store,
+        store.active(),
+        uuid4(),
+        [{"operation": "add", "section": "login_rules", **rule}],
+    )
+    google[0]["email"] = "clerk@example.org"
+    google[0]["sub"] = "synthetic-clerk-subject"
+    clerk, login = signed_in()
+    assert login.status_code == 302
+    single = {
+        "expected_version": "1",
+        "request_key": request_key.decode(),
+        "state": "in_progress",
+        "notes": "",
+        "contact_channel": "",
+    }
+    bulk_form = {
+        "outcome": "join:joined",
+        "bulk_key": str(uuid4()),
+        "request": [f"{join.pk}:1"],
+        "contact_channel": "",
+    }
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert option not in before
+        assert f'value="{join.pk}:1" form="followup-bulk"'.encode() in before
+        # The leader: nothing listed, nothing to choose, nothing to open.
+        _, body = search(browser, route, {"state": "any"})
+        assert str(join.pk).encode() not in body and option not in body
+        assert b"No matching requests." in body
+        crafted = search(browser, route, {"state": "not_in_parishsoft"})[0]
+        assert crafted.status_code == 400
+        assert get(browser, detail)[0].status_code == 403
+        # A page read before ParishSoft changed: refused, nothing saved.
+        update = reverse("admin:ministry_followup_update", args=[join.pk])
+        assert post(browser, update, single).status_code == 409
+        assert post(browser, bulk_route, bulk_form).status_code == 409
+        # Staff: the default queue leaves them out too; the choice lists them.
+        _, body = get(clerk, route)
+        assert option in body and str(join.pk).encode() not in body
+        _, body = search(clerk, route, {"state": "not_in_parishsoft"})
+        assert option + b" selected" in body
+        assert str(join.pk).encode() in body and str(leave.pk).encode() in body
+        assert body.count(b"data-source-mark") == 2
+        assert b"data-source-mark>Inactive in ParishSoft</span>" in body
+        assert b"data-select-row" not in body and b"data-select-all" not in body
+        assert b"data-bulk-action" not in body and b"bulk-bar" not in body
+        response, body = get(clerk, detail)
+        assert response.status_code == 200
+        assert b'id="followup-not-in-source"' in body
+        assert (
+            b"Inactive in ParishSoft: ParishSoft marks this Member inactive. "
+            b"There is nothing to record" in body
+        )
+        assert b"followup-save" not in body
+        assert b"This request is closed." not in body
+        refused = post(clerk, bulk_route, bulk_form)
+        assert refused.status_code == 409
+        assert json.loads(refused.content)["refusal"]["message"] == (
+            "Example, Member — Food pantry is for a Member no longer in "
+            "ParishSoft, or inactive or deceased there, so nothing can be "
+            "recorded for it. Nothing was saved."
+        )
+    assert MinistryWorkflowRevision.objects.count() == 0
+
+
+def test_save_and_next_skips_members_no_longer_in_parishsoft(response_service, google):
+    """Save and next opens the next request there is something to record
+    for: once ParishSoft marks Member 3 inactive, a request page's next
+    request is never one of theirs (#1217)."""
+    harness = setup(response_service)
+    form = revisit(harness)
+    answers = answers_for(form)
+    identifier = str(uuid4())
+    # "Aardvark, Zed" sorts before "Example, Member", so Member 3's requests
+    # follow it in a Member-name view.
+    answers["proposed_members"][identifier] = member(
+        first_name="Zed", last_name="Aardvark"
+    )
+    answers["ministries"]["proposed_members"][identifier] = {"join": [9]}
+    answers["ministries"]["members"]["3"] = {"join": [9], "leave": [4]}
+    respond(harness, form, answers)
+    proposed = MinistryRequest.objects.get(entity_kind="proposed_member", state="new")
+    member_three = {
+        str(pk)
+        for pk in MinistryRequest.objects.filter(
+            entity_kind="member", state="new"
+        ).values_list("pk", flat=True)
+    }
+    browser, _, _, _ = leader(harness, google, roles=("staff",))
+    route = reverse("admin:ministry_followup")
+    item = reverse("admin:ministry_followup_item", args=[proposed.pk])
+
+    def following():
+        """The next request the proposed Member's page offers, or ""."""
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            _, body = search(browser, route, {"state": "any", "sort": "name"})
+            token = re.search(rb"\?queue=([0-9a-f]+)", body)[1].decode()
+            _, page = get(browser, f"{item}?queue={token}")
+        return re.search(rb'name="next" value="([^"]*)"', page)[1].decode()
+
+    assert following() in member_three
+    member_gone(harness, "inactive")
+    assert following() == ""
+
+
+def test_an_archived_campaigns_request_reads_its_own_snapshot(response_service):
+    """A request of an archived campaign reads the campaign's frozen
+    snapshot, so a Member ParishSoft dropped later is still current there
+    (#1217). The archive is simulated in a rolled-back transaction with the
+    guards' triggers off."""
+    harness = setup(response_service)
+    join, _ = requests()
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT snapshot_id FROM stewardship_source_current")
+        (earlier,) = cursor.fetchone()
+    member_gone(harness, "deceased")
+    assert standing(join.pk) == "deceased"
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL session_replication_role = replica")
+        cursor.execute(
+            "UPDATE stewardship_campaign_credentials SET source_snapshot_id=%s "
+            "WHERE campaign_id=%s",
+            [earlier, harness.campaign.pk],
+        )
+        assert cursor.rowcount == 1
+        cursor.execute(
+            "UPDATE stewardship_campaign SET state='archived' WHERE id=%s",
+            [harness.campaign.pk],
+        )
+        cursor.execute(
+            "SELECT stewardship_ministry_request_member_status_v1(%s)", [join.pk]
+        )
+        assert cursor.fetchone()[0] == "current"
+        transaction.set_rollback(True)
+    assert standing(join.pk) == "deceased"
