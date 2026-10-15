@@ -193,7 +193,7 @@ a:hover { text-decoration-thickness: .15em; }
 .appearance-switch label:has(> input[type=radio]) { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 36px; min-height: 0; height: 36px; margin: 0; padding: 0; border-radius: calc(var(--radius-small) - 2px); color: var(--muted); }
 .appearance-switch label:has(> input[type=radio]) > input { inset: 0; width: 100%; height: 100%; opacity: 0; }
 .appearance-switch svg { width: 18px; height: 18px; pointer-events: none; }
-.appearance-switch label:hover { background: var(--accent-soft); color: var(--accent-strong); }
+.appearance-switch label:has(> input[type=radio]):hover { background: var(--accent-soft); color: var(--accent-strong); }
 :is(html[data-theme-choice=light] [data-choice=light], html[data-theme-choice=dark] [data-choice=dark], html[data-theme-choice=auto] [data-choice=auto]):is(.appearance-switch label) { background: var(--accent); color: var(--paper); }
 .appearance-switch label:has(> input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
 /* Forced colours drop backgrounds, so the selected segment keeps a system
