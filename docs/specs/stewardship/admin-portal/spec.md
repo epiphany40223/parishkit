@@ -368,19 +368,22 @@ In Testing mode, every Admin page has a prominent persistent banner naming the
 test recipient and linking to mode configuration. Staff/leader pages show a
 smaller non-dismissible Testing indicator so report interpretation is clear.
 
-In Production mode, while the web process has debug logging on
-(`PARISHKIT_DEBUG_LOGGING=1`), every Admin page, for every role, shows a
-prominent non-dismissible error banner saying in plain language that debug
-logging must be off in Production, because debug logs can hold personal data,
-and that the operator turns it off by recreating the application containers
-with the variable `0` or unset. It is a warning only: no process refuses to
-start with the switch on. The banner reads only the web process's own
-setting. For Administrators it links the debug logging panel of
-[System health](#system-health), which shows every service's setting. Turning
-debug logging off from that page, after which the banner stays until every
-service reports it off, comes with
-[turn off debug logging](#turn-off-debug-logging) (ADM-13 PR 6, not built
-yet); until then the banner asks for the operator.
+In Production mode, while the web process has debug logging in effect
+(`PARISHKIT_DEBUG_LOGGING=1` and no debug-off switch set), every Admin page,
+for every role, shows a prominent non-dismissible error banner saying in
+plain language that debug logging must be off in Production, because debug
+logs can hold personal data. It says that an Administrator can turn it off
+now with [turn off debug logging](#turn-off-debug-logging) on System health,
+and that the operator removes it for good by recreating the application
+containers with the variable `0` or unset. It is a warning only: no process
+refuses to start with the switch on. The banner reads only the web process's
+own effective state, so it ends once the web process applies the debug-off
+switch (within about a minute). For Administrators it links the debug
+logging panel of [System health](#system-health), which shows every
+service's state; another service still logging in debug form stays a
+problem on System health and Home until it reports debug logging off
+(ADM-13 PR 6c decided this: reading every service's status record would add
+a query to every Admin page).
 
 Every Admin page also shows a critical-problems banner while CRITICAL
 operational events from the last 24 hours are unacknowledged. It names each
@@ -5278,6 +5281,15 @@ and 6b; Testing's **Allow debug logging again** is not built yet). For
 names the runbook step instead, and that step, listed under
 [runbook steps the page replaces](#runbook-steps-the-page-replaces), remains
 the way to do it. A halt's kind arrives with PR 4.
+`system health` command. Two of the four actions have landed: **Take a
+backup now** (PR 3) and **Turn off debug logging** (PR 6a and 6b, with
+Testing's **Allow debug logging again** in PR 6c). For the other two (PR 4
+and PR 5) no panel offers a button yet; each problem sentence names the
+runbook step instead, and the steps listed under
+[runbook steps the page replaces](#runbook-steps-the-page-replaces) remain
+the way to do those things. Some panel details arrive with those pull
+requests too: a halt's kind (PR 4) and the example Families of a refused
+change (PR 5).
 
 ### System health page
 
@@ -6617,7 +6629,9 @@ switch stays set until it is cleared.
    environment, so it stays off after a clear until its service is
    recreated.
 4. The page shows when every service reports debug logging off. The debug
-   logging banner stays until they all do.
+   logging banner, which reads only the web process's own state, ends when
+   the web process applies the switch; System health and Home keep naming
+   any other service until it reports debug logging off.
 5. Lines written before a process first reads the switch at startup are not
    covered. The preview says so.
 
@@ -6627,10 +6641,10 @@ until the server operator recreates the services; and the startup gap
 above.
 
 **Where it appears.** The page draws the action only while some service
-has debug logging in effect when the page is drawn; once drawn it stays in
-place, and its button follows the 10-second status, so nothing moves under
-the pointer. Its help (only the server operator clears the switch, offline,
-and services started again afterwards log in debug form again where the
+has debug logging in effect, or the switch is set, when the page is drawn;
+once drawn it stays in place, and its buttons follow the 10-second status,
+so nothing moves under the pointer. Its help (who clears the switch, and
+that services started again afterwards log in debug form again where the
 server's setting is still on) is in an "i" toggletip.
 
 **Unavailable when** (greyed, with the reason): the switch is already set
@@ -6659,13 +6673,28 @@ operator cleared it, and when, and the command records
 transaction. That event names no subject: the admin-recovery login cannot
 read the switch it cleared. While debug logging is back in effect, the
 panel says when the server operator cleared the switch.
-In Testing mode the page will also offer **Allow debug logging again**
-(not built yet), which clears the switch under the same rules and records
-`debug_logging_allowed`.
-In Production the page never offers it, and the server refuses it
-([decision 3](#system-health-decisions)): its SQL guard refuses unless the
-global mode is Testing, in addition to the shared checks. Turning debug
-logging off is offered in both modes.
+In Testing mode the region also offers **Allow debug logging again**
+(ADM-13 PR 6c), below Turn off debug logging, while the switch is set. Its
+preview says when the switch was set, that services started with debug
+logging on log in debug form again within about a minute (never one started
+without it), and that debug logs can hold personal data; confirming clears
+the switch (`cleared_by` `administrator`, the Administrator recorded), under
+the [shared rules](#shared-rules-for-health-actions), and records
+`debug_logging_allowed` naming the switch (from the command line also
+`admin_cmd_system_debug_allow`, `pk-admin system debug-allow`). Each step is
+answered in place, with the same fresh sign-in step-up. A repeated
+confirmation returns the switch already cleared; one another Administrator
+or the server operator cleared first is refused as stale. It is greyed,
+with the reason, while no switch is set, and in Production ("In Production
+only the server operator can clear the debug-off switch"). In Production the
+page never offers it, and the server refuses it
+([decision 3](#system-health-decisions)): the switch's guard (migration
+0088) admits the web login's clear only while the global mode is Testing,
+for an enabled Administrator with a live session signed in within five
+minutes (or a live full-scope automation session), once, changing only the
+clear's time, kind and Administrator. Turning debug logging off is offered
+in both modes. The operator's offline clear is unchanged and still names no
+subject.
 
 ### Service status records
 

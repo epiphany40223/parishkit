@@ -993,6 +993,15 @@ its reads, inserts and deletes of examples and the web login its reads. No
 other step is needed. Only refusals recorded after the upgrade have
 examples; the preview of an earlier refusal says none are available.
 
+The later release that adds **Allow debug logging again** (#1207) is also a
+schema and grant change: with `STEWARDSHIP_SCHEMA_CHANGE=1`, step 4 runs
+migration (`stewardship_jobs.0031_debug_allow` installs frozen file 0088,
+which replaces the switch's guard and refuses to commit unless the new one
+is installed) and then `database-grants`, which gives the web login its
+column update on the switch's clear. In Testing an Administrator can then
+clear the switch from System health; in Production the guard still refuses
+every clear but this offline one.
+
 ### Preparing reminders ahead (BG-12)
 
 The release that prepares bulk-send reminders before their due time

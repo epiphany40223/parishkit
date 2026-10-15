@@ -9,22 +9,39 @@
   step's result: ``preview`` (a system_health.DebugOffPreview),
   ``requested`` (the switch just set, or the first one when the
   confirmation was repeated) or ``refused`` (why the step was refused, with
-  the step-up for a stale sign-in). Without a preview, the button is shown
-  in a data-live-mirror-target that the polled region keeps current. The
-  server checks every condition again; greying only helps the reader.
+  the step-up for a stale sign-in). Allow debug logging again (PR 6c,
+  Testing only) answers in this region too, its result marked ``allow``:
+  ``preview`` is then a system_health.DebugAllowPreview and ``allowed`` the
+  switch it cleared. Without a preview, the buttons are shown in a
+  data-live-mirror-target that the polled region keeps current. The server
+  checks every condition again; greying only helps the reader.
 {% endcomment %}<section class="panel" id="debug-off" data-in-place-region aria-labelledby="debug-off-heading">
 <h2 id="debug-off-heading">{% translate "Turn off debug logging" %}</h2>
-{% translate "Only the server operator can clear the switch, offline, with the services stopped, using pk-stewardship debug-off-clear; this page cannot. When the services start again, those whose server setting is still on log in debug form again." as clear_tip %}
-{% if debug_off.preview %}{% with preview=debug_off.preview %}<p>{% translate "This turns debug logging off in every service now, without restarting them, until the server operator clears the debug-off switch." %}</p>
+{% if health.mode == "testing" %}{% translate "In Testing, Allow debug logging again on this page clears the switch. The server operator can also clear it, offline, with the services stopped, using pk-stewardship debug-off-clear. When the services start again, those whose server setting is still on log in debug form again." as clear_tip %}{% else %}{% translate "Only the server operator can clear the switch, offline, with the services stopped, using pk-stewardship debug-off-clear; this page cannot. When the services start again, those whose server setting is still on log in debug form again." as clear_tip %}{% endif %}
+{% if debug_off.allow and debug_off.preview %}{% with preview=debug_off.preview %}<p>{% translate "This clears the debug-off switch set at" %} <time datetime="{{ preview.set_at|instant }}" data-local-instant>{{ preview.set_at|instant }}</time>. {% translate "Testing only." %}</p>
+<ul>
+<li>{% translate "Services started with debug logging on log in debug form again within about a minute. It never turns debug logging on in a service started without it." %}</li>
+<li>{% translate "Debug logs record extra detail that can include Families' personal information." %}</li>
+</ul>
+<form method="post" action="{% url 'admin:system_health' %}#debug-off" data-in-place="debug-allow-confirm" data-in-place-fallback="debug-allow-preview" data-in-place-message="{% translate 'Debug logging allowed again.' %}">{% csrf_token %}<input type="hidden" name="action" value="debug_allow_confirm"><input type="hidden" name="key" value="{{ preview.key }}">{% button type="submit" data-submit-waits %}{% translate "Confirm: allow debug logging again" %}{% endbutton %}</form>
+<form method="post" action="{% url 'admin:system_health' %}#debug-off" data-in-place="debug-allow-cancel" data-in-place-fallback="debug-allow-preview" data-in-place-message="{% translate 'Debug logging not changed.' %}">{% csrf_token %}<input type="hidden" name="action" value="debug_allow_cancel">{% button type="submit" variant="secondary" %}{% translate "Cancel" %}{% endbutton %}</form>{% endwith %}
+{% elif debug_off.preview %}{% with preview=debug_off.preview %}<p>{% translate "This turns debug logging off in every service now, without restarting them, until the server operator clears the debug-off switch." %}</p>
 <ul>
 <li>{% if preview.processes %}{% translate "Debug logging is on in:" %} {{ preview.processes|join:", " }}.{% else %}{% translate "No service reports debug logging right now." %}{% endif %}</li>
 <li>{% translate "Lines already written stay in the logs, and so do lines a service writes when it starts, before it first reads the switch." %}</li>
 <li>{% translate "The setting on the server still says “on” until the server operator recreates the services without it." %}</li>
-<li><span id="debug-off-clear">{% translate "Only the server operator can clear the switch." %}</span> {% include "stewardship/components/toggletip.html" with tip_id="debug-off-clear-tip" tip_label_id="debug-off-clear" tip_text=clear_tip %}</li>
+<li><span id="debug-off-clear">{% if health.mode == "testing" %}{% translate "In Testing you can allow debug logging again from this page." %}{% else %}{% translate "Only the server operator can clear the switch." %}{% endif %}</span> {% include "stewardship/components/toggletip.html" with tip_id="debug-off-clear-tip" tip_label_id="debug-off-clear" tip_text=clear_tip %}</li>
 </ul>
 <form method="post" action="{% url 'admin:system_health' %}#debug-off" data-in-place="debug-off-confirm" data-in-place-message="{% translate 'Debug logging turned off.' %}">{% csrf_token %}<input type="hidden" name="action" value="debug_off_confirm"><input type="hidden" name="key" value="{{ preview.key }}">{% button type="submit" data-submit-waits %}{% translate "Confirm: turn off debug logging" %}{% endbutton %}</form>
 <form method="post" action="{% url 'admin:system_health' %}#debug-off" data-in-place="debug-off-cancel" data-in-place-fallback="debug-off-preview" data-in-place-message="{% translate 'Debug logging not changed.' %}">{% csrf_token %}<input type="hidden" name="action" value="debug_off_cancel">{% button type="submit" variant="secondary" %}{% translate "Cancel" %}{% endbutton %}</form>{% endwith %}
-{% else %}{% if debug_off.requested %}<p data-debug-off-set>{% translate "Debug logging turned off at" %} <time datetime="{{ debug_off.requested.set_at|instant }}" data-local-instant>{{ debug_off.requested.set_at|instant }}</time>. {% translate "Each service stops logging in debug form within about a minute; the Debug logging panel above shows when every one has." %}</p>
+{% else %}{% if debug_off.allowed %}<p data-debug-allowed>{% translate "Debug-off switch cleared at" %} <time datetime="{{ debug_off.allowed.cleared_at|instant }}" data-local-instant>{{ debug_off.allowed.cleared_at|instant }}</time>. {% translate "Services started with debug logging on log in debug form again within about a minute; the Debug logging panel above shows which." %}</p>
+{% elif debug_off.allow and debug_off.refused == "reauthenticate" %}<div class="notice" data-debug-allow-refused="reauthenticate"><p>{% if local_environment %}{% translate "For your security, confirm your sign-in before allowing debug logging again. Nothing was changed." %}{% else %}{% translate "For your security, confirm it's you with Google before allowing debug logging again. Nothing was changed; you will return to this page." %}{% endif %}</p>
+{% url 'admin:system_health' as here %}{% include 'stewardship/components/reauthenticate.html' with next=here %}</div>
+{% elif debug_off.allow and debug_off.refused == "busy" %}<p class="notice" data-debug-allow-refused="busy">{% translate "The debug-off switch is no longer set, so nothing was changed. The Debug logging panel above shows who cleared it and when." %}</p>
+{% elif debug_off.allow and debug_off.refused == "production" %}<p class="notice notice-error" data-debug-allow-refused="production">{% translate "In Production only the server operator can clear the debug-off switch, offline, with pk-stewardship debug-off-clear. Nothing was changed." %}</p>
+{% elif debug_off.allow and debug_off.refused == "denied" %}<p class="notice notice-error" data-debug-allow-refused="denied">{% translate "The server refused to allow debug logging again, so nothing was changed. System logs record why; ask the server operator to check the database grants." %}</p>
+{% elif debug_off.allow and debug_off.refused == "invalid" %}<p class="notice notice-error" data-debug-allow-refused="invalid">{% translate "That request could not be read. Nothing was changed; try again." %}</p>
+{% elif debug_off.requested %}<p data-debug-off-set>{% translate "Debug logging turned off at" %} <time datetime="{{ debug_off.requested.set_at|instant }}" data-local-instant>{{ debug_off.requested.set_at|instant }}</time>. {% translate "Each service stops logging in debug form within about a minute; the Debug logging panel above shows when every one has." %}</p>
 {% elif debug_off.refused == "reauthenticate" %}<div class="notice" data-debug-off-refused="reauthenticate"><p>{% if local_environment %}{% translate "For your security, confirm your sign-in before turning off debug logging. Nothing was changed." %}{% else %}{% translate "For your security, confirm it's you with Google before turning off debug logging. Nothing was changed; you will return to this page." %}{% endif %}</p>
 {% url 'admin:system_health' as here %}{% include 'stewardship/components/reauthenticate.html' with next=here %}</div>
 {% elif debug_off.refused == "busy" %}<p class="notice" data-debug-off-refused="busy">{% translate "Debug logging has already been turned off, so nothing was changed. The Debug logging panel above shows who did it and when." %}</p>

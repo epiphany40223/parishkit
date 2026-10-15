@@ -65,13 +65,15 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "go-live progress",
         "system health",
     }
-    # Take a backup now (ADM-13 PR 3b), Accept this change once (PR 5b) and
-    # Turn off debug logging (PR 6b), catalogued with System health.
+    # Take a backup now (ADM-13 PR 3b), Accept this change once (PR 5b),
+    # Turn off debug logging (PR 6b) and Allow debug logging again (PR 6c),
+    # catalogued with System health.
     health = {
         "system backup-now",
         "system refresh-accept-preview",
         "system refresh-accept",
         "system debug-off",
+        "system debug-allow",
     }
     changes = {
         "schedule preview",
@@ -229,6 +231,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "system backup-now",
                 "system debug-off",
                 "system refresh-accept",
+                "system debug-allow",
                 "export regenerate",
                 "export financial",
                 "export directory",
@@ -425,6 +428,14 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "live",
         "task_root_id",
     ]
+    # Allow debug logging again: keyed by the switch it clears (--switch),
+    # not a request key.
+    allow = entries["system debug-allow"]
+    assert allow["scope"] == "full" and allow["changes_state"]
+    assert allow["fresh_gated"] and allow["prompts"] and not allow["request_key"]
+    assert allow["audit_event"] == "admin_cmd_system_debug_allow"
+    assert allow["result_fields"] == ["switch_id", "created", "cleared_at"]
+    assert {option["name"] for option in allow["options"]} >= {"--switch"}
     for name in ("send progress", "go-live progress", "system health"):
         watch = {option["name"] for option in entries[name]["options"]}
         assert {"--watch", "--timeout"} <= watch, name
@@ -683,6 +694,7 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_system_backup_now",
         "admin_cmd_system_debug_off",
         "admin_cmd_system_refresh_accept",
+        "admin_cmd_system_debug_allow",
         "admin_cmd_schedule_confirm",
         "admin_cmd_config_request_cancel",
         "admin_cmd_refresh_start",

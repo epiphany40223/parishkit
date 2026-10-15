@@ -13,6 +13,7 @@ from parishkit.stewardship.system_health import (
     AcceptPreview,
     BackupPreview,
     BackupRequestStatus,
+    DebugAllowPreview,
     DebugOffPreview,
     DebugSwitchStatus,
     DropAcceptanceStatus,
@@ -67,6 +68,12 @@ ACCEPT_LATE = "/system-health-accept-late"
 ACCEPT_STALE = "/system-health-accept-stale"
 ACCEPT_STALE_STATUS = "/system-health-accept-stale/status"
 ACCEPT_LATE_STATUS = "/system-health-accept-late/status"
+# Allow debug logging again (ADM-13 PR 6c): a Testing page with the switch
+# set, its poll (unchanged), and the answers its steps get.
+ALLOW_PAGE = "/system-health-allow"
+ALLOW_STATUS = "/system-health-allow/status"
+ALLOW_PREVIEW = "/system-health-allow-preview"
+ALLOW_CLEARED = "/system-health-allow-cleared"
 # A healthy page whose next poll changes only a time's datetime attribute.
 DATED = "/system-health-dated"
 DATED_STATUS = "/system-health-dated/status"
@@ -108,12 +115,14 @@ def health(
     switch=False,
     refused=False,
     accepted=False,
+    mode="production",
 ):
     """A deployment with several problems, or a healthy one.
 
     ``debug``: the web portal reports debug logging in effect; ``switch``:
     the debug-off switch is set (ADM-13 PR 6b). ``refused``: a large change
     was refused, and ``accepted``: it was accepted once (ADM-13 PR 5b).
+    ``mode``: the global mode.
     """
     refused = refused or troubled
     rows = [
@@ -159,7 +168,7 @@ def health(
     )
     return SystemHealth(
         checked_at=now,
-        mode="production",
+        mode=mode,
         problems=problems,
         processes=processes,
         missing_services=(),
@@ -238,6 +247,7 @@ def components(context, admin):
         refused=False,
         accepted=False,
         attempt=REFUSED_ATTEMPT,
+        mode="production",
         **extra,
     ):
         """Template context the view would build."""
@@ -254,6 +264,7 @@ def components(context, admin):
                     switch=switch,
                     refused=refused,
                     accepted=accepted,
+                    mode=mode,
                 ),
                 "debug_actor": "other@example.org" if switch else None,
                 "accept_actor": "other@example.org" if accepted else None,
@@ -531,6 +542,56 @@ def components(context, admin):
                     status_url=ACCEPT_STATUS,
                     accept={"refused": "busy"},
                     accept_shown=True,
+                ),
+            ),
+        ),
+        ALLOW_PAGE: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(False, switch=True, mode="testing", status_url=ALLOW_STATUS),
+            ),
+        ),
+        ALLOW_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html",
+                values(False, switch=True, mode="testing"),
+            ),
+        ),
+        ALLOW_PREVIEW: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(
+                    False,
+                    switch=True,
+                    mode="testing",
+                    status_url=ALLOW_STATUS,
+                    debug_off={
+                        "allow": True,
+                        "preview": DebugAllowPreview(
+                            key=UUID(int=1207), set_at=now - timedelta(minutes=2)
+                        ),
+                    },
+                    debug_off_shown=True,
+                ),
+            ),
+        ),
+        ALLOW_CLEARED: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(
+                    False,
+                    mode="testing",
+                    status_url=ALLOW_STATUS,
+                    debug_off={
+                        "allow": True,
+                        "allowed": SimpleNamespace(cleared_at=now),
+                        "created": True,
+                    },
+                    debug_off_shown=True,
                 ),
             ),
         ),

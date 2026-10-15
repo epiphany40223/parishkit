@@ -176,7 +176,7 @@ WEB_INSERT_TABLES = frozenset(
         "stewardship_backup_request",
         # Turn off debug logging (ADM-13 PR 6b): its guard (0078) admits only
         # a freshly signed-in Administrator, while no switch is set. The web
-        # cannot clear one: only the operator's offline definer does.
+        # clears one only in Testing (a column UPDATE below, 0088).
         "stewardship_debug_off_switch",
         # Accept this change once (ADM-13 PR 5b): its guard (0080) admits
         # only a freshly signed-in Administrator, for the newest refusal with
@@ -952,6 +952,12 @@ def runtime_grants(role, *, target=None):
         from .source.grants import SCHEDULER_CANCEL_COLUMNS
 
         columns["stewardship_task_run"] = {"UPDATE": set(SCHEDULER_CANCEL_COLUMNS)}
+        # Allow debug logging again (ADM-13 PR 6c, #1207): the switch's guard
+        # (0088) admits a web clear only in Testing mode, for a freshly
+        # signed-in Administrator, once; it keeps who set the switch and when.
+        columns["stewardship_debug_off_switch"] = {
+            "UPDATE": {"cleared_at", "cleared_by", "cleared_actor_id"}
+        }
         # Deleting a hosted file; its guard refuses one still in use.
         tables["stewardship_hosted_file"].add("DELETE")
         tables["stewardship_sealed_credential_staging"] = {"INSERT"}

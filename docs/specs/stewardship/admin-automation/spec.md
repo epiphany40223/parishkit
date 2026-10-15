@@ -2605,7 +2605,7 @@ lists the fields and refusals.
 | `system_mail_check`, `system_mail_clear` (ADM-13) | `system mail-clear-preview` (starts the mailbox check and waits for it), `system mail-clear --token …` |
 | `system_health` POST, Accept this change once (ADM-13 PR 5b, 5c) | `system refresh-accept-preview` (the page's preview: every recorded count, the example Family DUIDs without names, and `preview.token`), `system refresh-accept --token …` (fresh-gated, always prompts with the page's tick box); its effect is `system health`'s `drop_acceptance`, with `--watch` |
 | `system_health` POST, Turn off debug logging (ADM-13 PR 6b) | `system debug-off [--request-key UUID]` (fresh-gated, always prompts); its effect is `system health`'s `debug_switch` and each process's `debug_logging`, with `--watch` |
-| `system_debug_allow` (ADM-13, not built yet) | `system debug-allow` (Testing only) |
+| `system_health` POST, Allow debug logging again (ADM-13 PR 6c, Testing only) | `system debug-allow [--switch UUID]` (fresh-gated, always prompts, refused in Production); its effect is `system health`'s `debug_switch` |
 | `source_form` ([#774](https://github.com/epiphany40223/parishkit/issues/774)) | `report source-form`, counts and DUIDs only ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the host's `pk-stewardship source-form-check` lists the same Families |
 | `parishsoft_fixes` ([#1011](https://github.com/epiphany40223/parishkit/issues/1011)) | `report data-to-fix`, section counts only, as [Data to fix in ParishSoft](../admin-portal/spec.md#data-to-fix-command-and-downloads) describes |
 
@@ -2656,6 +2656,13 @@ that fell too far and the page's tick box, records the acceptance with the
 page's `accept_change` (the acceptance's guard admits the session as the
 fresh sign-in) and asks for a full refresh, recording `source_drop_accepted`
 and `admin_cmd_system_refresh_accept`. The other ADM-13 rows name routes and
+`admin_cmd_system_debug_off`. `system debug-allow` (ADM-13 PR 6c) is
+Allow debug logging again, in Testing only: the page's preview at the
+prompt (refused before it in Production or while no switch is set), the
+switch cleared with the page's `allow_debug` (the guard admits the
+session as the fresh sign-in), recording `debug_logging_allowed` naming
+the switch and `admin_cmd_system_debug_allow`. `--switch` names the switch
+cleared, so a repeat returns it. The other ADM-13 rows name routes and
 commands that do not exist yet: each action, its route and its command land together in their
 own ADM-13 pull request (PR 3 to PR 6); ADM-11 PR 5, which lets automation
 pass the fresh-sign-in check, has landed. The ADM-13 action routes will be

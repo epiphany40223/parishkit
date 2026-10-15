@@ -1,8 +1,9 @@
 """System health's debug-off switch under the real logins and guard (#530).
 
 The web login sets a switch only for a freshly signed-in Administrator, one
-at a time; nobody but the schema owner (the admin-recovery login's definer)
-clears it, and only once; nobody deletes it. Every runtime login reads it
+at a time; only the schema owner (the admin-recovery login's definer) and, in
+Testing, the web login for a fresh Administrator (0088) clear it, and only
+once; nobody deletes it. Every runtime login reads it
 through its one-boolean definer, the backup login through pg_read_all_data,
 and a login with neither (the download login) cannot tell; only web, for
 System health's panel, reads the table itself. A process started with debug
@@ -140,14 +141,16 @@ def test_the_web_sets_one_switch_for_a_fresh_administrator(auth_service, google)
     assert DebugOffSwitch.objects.filter(cleared_at__isnull=True).count() == 1
 
 
-def test_no_other_login_sets_and_the_web_never_clears_or_deletes(auth_service, google):
-    """Even with every grant added, the guard keeps the boundary."""
+def test_no_other_login_sets_and_the_web_never_clears_as_operator(auth_service, google):
+    """Even with every grant added, the guard keeps the boundary: the web
+    clears only as an Administrator (Allow debug logging again, 0088, tested
+    in test_debug_allow_postgresql), never as the operator."""
     signed_in()
     with task_login(ServiceRole.WORKER, exact=True), refused("permission denied"):
         web_set()
     switch = owner_set()
     with web_with("SELECT", "INSERT", "UPDATE", "DELETE"):
-        with refused("Only the server operator"):
+        with refused("only as an Administrator"):
             DebugOffSwitch.objects.filter(pk=switch.pk).update(
                 cleared_at=now(), cleared_by="operator"
             )

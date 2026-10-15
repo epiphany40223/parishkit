@@ -11,6 +11,9 @@ from .system_health_components import (
     ACCEPT_PAGE,
     ACCEPT_PREVIEW,
     ACCEPT_STALE,
+    ALLOW_CLEARED,
+    ALLOW_PAGE,
+    ALLOW_PREVIEW,
     BACKUP_BUSY,
     BACKUP_PAGE,
     BACKUP_PREVIEW,
@@ -759,6 +762,82 @@ def test_the_accept_region_is_accessible_at_phone_and_desktop_widths(
     for path in (ACCEPT_PAGE, ACCEPT_PREVIEW):
         page.goto(component_origin + path)
         assert page.locator("#accept-change").count() == 1
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        page.evaluate(axe_source)
+        assert (
+            page.evaluate("""async () => (await axe.run(document, {
+            runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']}
+        })).violations.map(({id,impact}) => ({id,impact}))""")
+            == []
+        )
+
+
+def test_allow_debug_logging_again_previews_and_confirms_in_place(
+    page, component_origin, axe_source
+):
+    """In Testing with the switch set: preview, then confirm, each swapped
+    into #debug-off; focus follows; nothing above the region moves; the
+    region passes axe (ADM-13 PR 6c)."""
+    _routed(
+        page,
+        component_origin,
+        {
+            "debug_allow_preview": (200, ALLOW_PREVIEW),
+            "debug_allow_confirm": (200, ALLOW_CLEARED),
+        },
+        shown=ALLOW_PAGE,
+    )
+    page.goto(component_origin + BACKUP_PAGE)
+    kept = _not_reloaded(page)
+    region = page.locator("#debug-off")
+    heading = region.get_by_role("heading", name="Turn off debug logging", exact=True)
+
+    def place():
+        """The heading's place in the document, wherever the page is scrolled."""
+        return heading.evaluate("e => e.getBoundingClientRect().top + window.scrollY")
+
+    top = place()
+    expect(
+        region.get_by_role("button", name="Turn off debug logging", exact=True)
+    ).to_be_disabled()
+    region.get_by_role("button", name="Allow debug logging again", exact=True).click()
+    confirm = page.get_by_role(
+        "button", name="Confirm: allow debug logging again", exact=True
+    )
+    expect(confirm).to_be_visible()
+    expect(confirm).to_be_focused()
+    visible(region.get_by_text("never turns debug logging on"))
+    assert abs(place() - top) < 0.5
+    page.evaluate(axe_source)
+    assert (
+        page.evaluate("""async () => (await axe.run(document, {
+        runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']}
+    })).violations.map(({id,impact}) => ({id,impact}))""")
+        == []
+    )
+    confirm.click()
+    done = region.locator("[data-debug-allowed] time")
+    expect(done).to_be_visible()
+    stamp = done.get_attribute("datetime")
+    expect(done).not_to_have_text(stamp)
+    assert "UTC" not in region.inner_text()
+    assert kept()
+    assert abs(place() - top) < 0.5
+    assert page.evaluate(
+        "document.getElementById('debug-off').contains(document.activeElement)"
+    )
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_the_allow_region_is_accessible_at_phone_and_desktop_widths(
+    page, component_origin, axe_source, width
+):
+    """The Testing region with both buttons, and its preview, pass axe and
+    fit a phone without scrolling."""
+    page.set_viewport_size({"width": width, "height": 900})
+    for path in (ALLOW_PAGE, ALLOW_PREVIEW, DEBUG_PAGE):
+        page.goto(component_origin + path)
+        assert page.locator("#debug-off").count() == 1
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         page.evaluate(axe_source)
         assert (
