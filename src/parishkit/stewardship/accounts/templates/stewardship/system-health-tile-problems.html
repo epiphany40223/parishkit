@@ -9,15 +9,17 @@
   kind) follows the problems as a Warning item, and a refused large change
   comes last (``tile.refusal``): its item holds the refused counts, so
   Accept this change once, which follows the problems in the tile, sits
-  right under them. In the Backups tile its page findings (``tile.findings``,
-  in FINDINGS's order) follow the problems the same way, each a Warning
-  item with its sentence and link (system-health-finding.html), so the
-  panel content below repeats none of them. Shared by the page's tile and
+  right under them. A refusal that cannot be accepted has no such section;
+  its sentence says why (system-health-accept-unavailable.html). In the
+  Backups tile its page findings (``tile.findings``, in FINDINGS's order)
+  follow the problems the same way, each a Warning item with its sentence
+  and link (system-health-finding.html), so the panel content below
+  repeats none of them. Shared by the page's tile and
   the polled region's copy.
 {% endcomment %}{% if tile.problems or tile.findings %}<ul class="health-problems">{% for part in tile.listed %}{% include "stewardship/system-health-tile-problem.html" %}{% endfor %}
 {% if tile.key == "backups" %}{% for finding in tile.findings %}{% include "stewardship/system-health-finding.html" %}{% endfor %}{% endif %}
 {% if tile.key == "source" and workgroup_missing %}<li class="notice" data-problem="workgroup_missing" data-severity="warning" data-workgroup-missing>{% reminder_workgroup_name as workgroup %}{% blocktranslate with name=workgroup_missing trimmed %}The campaign's {{ workgroup }} “{{ name }}” is not a Family WorkGroup in ParishSoft, so no Family's Reminders are being skipped.{% endblocktranslate %} <a href="{% url 'admin:reminder_workgroup' %}">{% blocktranslate %}Check the {{ workgroup }} setting{% endblocktranslate %}</a></li>{% endif %}
 {% if tile.refusal %}{% include "stewardship/system-health-tile-problem.html" with part=tile.refusal %}{% endif %}</ul>{% endif %}
 {% if tile.key == "source" and health.refused_counts and not tile.refusal %}{# A refusal whose problem is no longer open still shows its counts, with its own sentence. #}<div class="notice notice-error"><p>{% translate "A ParishSoft refresh was refused at" %} <time datetime="{{ health.refused_at|instant }}" data-local-instant>{{ health.refused_at|instant }}</time> {% translate "because some counts fell too far. The system keeps using the data it had." %}</p>
-<p>{% translate "Check these numbers in ParishSoft first. Until the drop is fixed there, or accepted once with Accept this change once just below, every later refresh is refused too." %}</p>
+<p>{% if health.accept_unavailable %}{% include "stewardship/system-health-accept-unavailable.html" %}{% else %}{% translate "Check these numbers in ParishSoft first. Until the drop is fixed there, or accepted once with Accept this change once just below, every later refresh is refused too." %}{% endif %}</p>
 {% include "stewardship/system-health-refused-counts.html" %}</div>{% endif %}

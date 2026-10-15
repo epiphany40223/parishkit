@@ -894,6 +894,17 @@ class SystemHealth(ReadModel):
         return accept_state(self.refused_counts, self.drop_acceptance)
 
     @property
+    def accept_unavailable(self):
+        """Whether a refusal is shown that can never be accepted now.
+
+        True for ``lapsed`` and ``empty``. System health then draws no
+        Accept this change once section, and the refusal's problem line
+        says why instead (Administrator, 2026-10-15, the conditional-fields
+        rule: a control is drawn only while it is relevant).
+        """
+        return self.accept_state in {"lapsed", "empty"}
+
+    @property
     def attention(self):
         """The problems that need the Administrator, which the page counts.
 

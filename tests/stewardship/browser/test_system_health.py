@@ -7,6 +7,7 @@ import pytest
 from .system_health_components import (
     ACCEPT_CHANGED,
     ACCEPT_DONE,
+    ACCEPT_LAPSED,
     ACCEPT_LATE,
     ACCEPT_PAGE,
     ACCEPT_PREVIEW,
@@ -1480,6 +1481,39 @@ def test_a_refusal_settled_by_a_poll_takes_its_accept_button_with_it(
     assert page.evaluate("""() => !document.querySelector(
         '#accept-change [data-in-place="accept-preview"]')""")
     assert region.evaluate("e => e.innerText.trim()") == ""
+
+
+def test_a_lapsed_acceptance_takes_the_section_away_and_says_why(
+    page, component_origin
+):
+    """A refusal accepted once whose acceptance lapses on the next poll can
+    never be accepted again, so that poll removes the section and the
+    problem line says why, in the same update; nothing above the tile's
+    details moves and the page is not reloaded (Administrator, 2026-10-15)."""
+    page.goto(component_origin + ACCEPT_LAPSED + "#health-source")
+    kept = _not_reloaded(page)
+    region = page.locator("#accept-change")
+    expect(region.locator("#accept-change-reason")).to_contain_text("Accepted by")
+    places = _places(page, page.locator("#health-source-name"))
+    _away(page)
+    eventually(
+        page,
+        """() => !!document.querySelector(
+            '#health-source-details [data-accept-unavailable="lapsed"]')""",
+    )
+    # Both in the one update: the reason is there once the section is gone.
+    assert region.evaluate("e => e.innerText.trim()") == ""
+    expect(region.get_by_role("button")).to_have_count(0)
+    reason = page.locator('#health-source-details [data-accept-unavailable="lapsed"]')
+    expect(reason).to_contain_text("can be accepted only once")
+    expect(
+        page.locator("#health-source-details").get_by_role(
+            "link", name="Refresh from ParishSoft"
+        )
+    ).not_to_have_count(0)
+    expect(page.locator("[data-refused-change]")).to_be_visible()
+    assert kept()
+    assert places() == []
 
 
 def test_a_changed_refusal_is_said_in_the_region(page, component_origin):

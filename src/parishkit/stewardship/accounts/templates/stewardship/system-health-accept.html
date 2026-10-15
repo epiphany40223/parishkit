@@ -6,7 +6,8 @@
   region to swap in, but it shows nothing while there is nothing to accept
   (batch 24a): without a step result it holds only a data-live-mirror-target
   that the polled region keeps current with system-health-accept-offer.html,
-  which draws the section only while a refusal is shown. The section so
+  which draws the section only while the refusal shown can be accepted or
+  was accepted (not for a lapsed or never-acceptable one). The section so
   appears and goes in the same poll as the refusal's problem item (both
   targets are data-live-mirror-hold). Its forms post to the System health
   page itself, which answers with this page; ui-v1.js swaps this region in
@@ -22,7 +23,9 @@
   Administrators only), or says none are available; they are part of the
   preview, drawn with it, so nothing appears or moves afterwards. A
   requested or refused result keeps the button in a data-live-mirror-target
-  that the polled region keeps current. The preview names the refusal it
+  that the polled region keeps current; like the problems it waits while
+  the pointer is over the grid (data-live-mirror-hold), since its height
+  changes (accepted to lapsed, for one). The preview names the refusal it
   reviews (data-live-keep-for); once a poll shows another (or none) in the
   region's data-live-key, live-status-v1.js marks it changed on its
   reserved line and holds Confirm. Confirm waits for the tick box
@@ -53,5 +56,5 @@
 {% elif accept.refused == "denied" %}<p class="notice notice-error" data-accept-refused="denied">{% translate "The server refused this acceptance, so nothing was accepted. System logs record why; ask the server operator to check the database grants." %}</p>
 {% elif accept.refused == "invalid" %}<p class="notice notice-error" data-accept-refused="invalid">{% translate "That request could not be read, or the box was not ticked. Nothing was accepted; review it again." %}</p>
 {% endif %}
-<div data-live-mirror-target="accept-button">{% include 'stewardship/system-health-accept-button.html' %}</div>{% endif %}
+<div data-live-mirror-target="accept-button" data-live-mirror-hold>{% include 'stewardship/system-health-accept-button.html' %}</div>{% endif %}
 </section>{% endif %}</div>

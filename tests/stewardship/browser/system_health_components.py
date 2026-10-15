@@ -93,6 +93,11 @@ ACCEPT_LATE_STATUS = "/system-health-accept-late/status"
 # A page drawn with a refusal, whose next poll shows it settled (no refusal).
 ACCEPT_SETTLED = "/system-health-accept-settled"
 ACCEPT_SETTLED_STATUS = "/system-health-accept-settled/status"
+# A page drawn with a refusal accepted once, whose next poll shows that
+# acceptance lapsed unused: the refusal can no longer be accepted, so the
+# section goes and the problem line says why (2026-10-15).
+ACCEPT_LAPSED = "/system-health-accept-lapsed"
+ACCEPT_LAPSED_STATUS = "/system-health-accept-lapsed/status"
 # Allow debug logging again (ADM-13 PR 6c): a Testing page with the switch
 # set, its poll (unchanged), and the answers its steps get.
 ALLOW_PAGE = "/system-health-allow"
@@ -162,7 +167,8 @@ def health(
 
     ``debug``: the web portal reports debug logging in effect; ``switch``:
     the debug-off switch is set (ADM-13 PR 6b). ``refused``: a large change
-    was refused, and ``accepted``: it was accepted once (ADM-13 PR 5b).
+    was refused, and ``accepted``: it was accepted once (ADM-13 PR 5b), or
+    ``"lapsed"``: that acceptance ended unused.
     ``mode``: the global mode. ``request``: the newest Take a backup now
     request's page status; without it, ``waiting`` gives a held request.
     """
@@ -264,7 +270,7 @@ def health(
             id=UUID(int=5),
             created_at=now - timedelta(minutes=1),
             expires_at=now + timedelta(hours=24),
-            live=True,
+            live=accepted is True,
         )
         if accepted
         else None,
@@ -372,7 +378,7 @@ def components(context, admin):
                 ),
                 "source_form_count": 0,
                 "debug_actor": "other@example.org" if switch else None,
-                "accept_actor": "other@example.org" if accepted else None,
+                "accept_actor": "other@example.org" if accepted is True else None,
                 "refused_attempt": attempt if refused else None,
                 "campaign_id": None,
                 "pause": {"actor": "admin@example.org", "reason": "Checking a typo"}
@@ -740,6 +746,22 @@ def components(context, admin):
             render_to_string(
                 "stewardship/system-health-status.html",
                 values(False),
+            ),
+        ),
+        ACCEPT_LAPSED: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(
+                    False, refused=True, accepted=True, status_url=ACCEPT_LAPSED_STATUS
+                ),
+            ),
+        ),
+        ACCEPT_LAPSED_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html",
+                values(False, refused=True, accepted="lapsed"),
             ),
         ),
         ACCEPT_CHANGED: (
