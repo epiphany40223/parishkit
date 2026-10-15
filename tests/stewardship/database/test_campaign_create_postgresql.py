@@ -481,6 +481,47 @@ def test_two_creations_confirmed_together_apply_one(auth_service, google):
     assert 'id="settings-form"' not in failed
 
 
+def test_a_failed_change_with_no_campaign_links_back_to_the_page(auth_service, google):
+    """A reload of a failed creation's address, with no campaign, has a way back.
+
+    The address draws only the change's status, so without a link the failed
+    status would be a dead end (review of #1357).
+    """
+    from parishkit.stewardship.accounts.configuration_installation import (
+        install_request,
+    )
+
+    publish(source())
+    browser, _ = signed_in()
+    store = auth_service.store
+    proposal = token(post(browser, CREATE, new_fields(store)))
+    accepted = post(browser, CREATE, {"action": "confirm", "preview": proposal})
+    # Any other configuration change made meanwhile leaves the creation on a
+    # stale base, so it fails when it installs and no campaign is created.
+    version = store.active()
+    parish = version.document()["sections"]["parish"][0]
+    change(
+        store,
+        version,
+        uuid4(),
+        [
+            {
+                "operation": "update",
+                "section": "parish",
+                "id": parish["id"],
+                "values": {"name": "Changed Parish"},
+            }
+        ],
+    )
+    state = install_request(
+        store, request_id=requested(accepted), correlation_id=uuid4()
+    ).state
+    assert state == "failed" and not Campaign.objects.exists()
+    failed = browser.get(accepted["Location"]).content.decode()
+    assert "A campaign already exists." not in failed
+    assert f'href="{CREATE}"' in failed
+
+
 def test_local_seeder_creates_the_campaign_through_the_page(auth_service, google):
     """The seeder's campaign step (#142) uses this page's form, review and Apply.
 
