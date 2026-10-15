@@ -387,7 +387,8 @@ LEDGER = {
     "ministry_followup_roster": pending("PR 11", "followup roster-entered"),
     # Counts only (#463): its rows name Members, so they are export roster's.
     "ministry_roster": command("report roster"),
-    "ministry_roster_export": pending("PR 8g", "export roster"),
+    # The page's download, through the page's own writer.
+    "ministry_roster_export": command("export roster"),
     # Integrations and credentials.
     "integrations": command("integration list"),
     # The settings page as it opens, its Save, its Remove and the backup

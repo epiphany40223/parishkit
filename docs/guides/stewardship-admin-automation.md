@@ -108,7 +108,8 @@ and exits 2. Each command prints exactly one JSON document (schema
 `pk-admin/1`) on standard output, except one that writes a file there
 (`logs export`, see [System logs](#system-logs), `export census`, see
 [Census changes download](#census-changes-download), `export limitations`,
-see [Limitations download](#limitations-download), and `export download`, see
+see [Limitations download](#limitations-download), `export roster`, see
+[Roster changes download](#roster-changes-download), and `export download`, see
 [report exports](#report-exports)), whose document goes to standard error; warnings, such as a session with less than
 72 hours left, and structured logs go to standard error. The document's
 fields, the exit codes and the error codes are in the specification's
@@ -1810,8 +1811,9 @@ list's rows), `joins`, `leaves`, `entered` (already marked; 0 with `--show
 todo`), `replaced` (the page's "Replaced by a later response") and
 `ministries`: the same counts for each Ministry on the list, by DUID
 (`ministry`) with its `name`. Each row names a Member and a Family, so the
-rows stay on the page and its downloads. It records the page's "viewed"
-event with a count of 0.
+rows stay on the page and its downloads (`export roster`, see
+[Roster changes download](#roster-changes-download)). It records the page's
+"viewed" event with a count of 0.
 
 `report census` counts **Census changes**, the census changes Families
 reported, which are carried into ParishSoft automatically or by hand. Like
@@ -2245,6 +2247,28 @@ The files are the page's own, with the same two tables (Members, then
 Families) and columns; `count` is the Member rows plus the Family rows. The
 file names Families and Members, so create it private, as above, and
 delete it once used; the wrapper refuses to write it to a terminal.
+
+### Roster changes download
+
+`export roster` writes the page's download of **Roster changes to enter**
+to standard output, and its document (`campaign_id`, `file_name`,
+`content_type`, `format`, `timezone`, `size`, `sha256`, `count`) to
+standard error, as `export limitations` does. It needs a full-scope
+session, as every export does; Administrators and Staff may run it, and a
+Ministry leader is refused (`denied`). It takes `report roster`'s options,
+`--show todo` (the default: not yet marked Entered in ParishSoft) or
+`--show all`, and `--ministry DUID`, plus `--format` (`xlsx`, the default,
+`csv` or `pdf`) and `--timezone` (UTC, the default, or a time zone name,
+for the file's times). It records the page's "downloaded" event
+(`roster_changes_exported`) with the number of changes in the file.
+
+```sh
+(umask 077; pk-admin export roster --ministry 9 --format csv > roster.csv)
+```
+
+The files are the page's own, with its columns. They name Members and
+Families, so create them private, as above, and delete them once used; the
+wrapper refuses to write one to a terminal.
 
 ### Census changes download
 
@@ -2786,3 +2810,7 @@ print is exit 1 (`invalid`).
   fresh-gated and prompting, recording
   `admin_cmd_integration_key_finish_switching` and a `policy_change`
   notice).
+- `pk-admin/1` (#463): additive. `export roster [--show todo|all]
+  [--ministry DUID] [--format csv|xlsx|pdf] [--timezone ZONE]`, the Roster
+  changes to enter download (full scope, Administrators and Staff, the
+  page's `roster_changes_exported`), streamed as `export limitations` is.

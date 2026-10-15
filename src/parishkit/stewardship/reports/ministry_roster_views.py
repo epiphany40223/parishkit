@@ -366,6 +366,52 @@ def _audit(action, principal, campaign_id, outcome, count=0):
         )
 
 
+def export_choice(fmt, zone_name):
+    """The download's format and display zone, as ``{"format", "zone"}``.
+
+    UTC or one supported timezone name, and one of ``FORMATS``; anything
+    else is a ``ValueError`` (the page's 400, the command's ``invalid``).
+    The page and ``pk-admin export roster`` both check through here.
+    """
+    if fmt not in FORMATS or (zone_name != "UTC" and zone_name not in timezone_names()):
+        raise ValueError("Invalid roster export choice.")
+    return {"format": fmt, "zone": ZoneInfo(zone_name)}
+
+
+def export_file_name(fmt, now):
+    """The download's file name, stamped with the UTC instant ``now``."""
+    return f"stewardship-roster-changes-{now.strftime('%Y%m%d-%H%M%SZ')}.{fmt}"
+
+
+def export_body(campaign_id, rows, fmt, zone):
+    """The shown rows as the chosen file's bytes, times in ``zone``.
+
+    The page's download and ``pk-admin export roster`` (#463) both render
+    through here, so their CSV, XLSX and PDF cannot drift. The PDF names the
+    parish and campaign in its page header and dates itself in the parish's
+    date format, lent explicitly, as the Census changes download does.
+    """
+    if fmt != "pdf":
+        writer = roster_xlsx if fmt == "xlsx" else roster_csv
+        return writer(rows, zone)
+    parish = (
+        SystemConfiguration.objects.select_related("active_configuration__parish")
+        .get()
+        .active_configuration.parish
+    )
+    campaign = Campaign.objects.select_related("active_configuration").get(
+        pk=campaign_id
+    )
+    with dates.using(parish.date_format):
+        return roster_pdf(
+            rows,
+            zone,
+            parish=parish.name,
+            campaign=campaign.active_configuration.name,
+            as_of=database_now(),
+        )
+
+
 def _choices(parameters, *, export):
     """The request's closed choices: Show, and paging or format and timezone.
 
@@ -388,13 +434,10 @@ def _choices(parameters, *, export):
     ):
         raise ValueError("Invalid roster list choice.")
     if export:
-        fmt, zone = (
-            values.get("format", DEFAULT_EXPORT_FORMAT),
-            values.get("timezone", "UTC"),
+        chosen = export_choice(
+            values.get("format", DEFAULT_EXPORT_FORMAT), values.get("timezone", "UTC")
         )
-        if fmt not in FORMATS or (zone != "UTC" and zone not in timezone_names()):
-            raise ValueError("Invalid roster export choice.")
-        return show, {"format": fmt, "zone": ZoneInfo(zone), "ministry": ministry}
+        return show, chosen | {"ministry": ministry}
     # Refuse a bad sort, page or size now, as a 400, not while rendering.
     paginate([], values, sorting=SORTING)
     return show, {"paging": values, "changed": changed == "1", "ministry": ministry}
@@ -464,9 +507,8 @@ def _respond(request, campaign_id, *, export, parameters, render):
             return _error(status=503)
         handed_off = response.status_code == 200 and response.streaming
         if export and handed_off:
-            stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%SZ")
             for name, value in download_headers(
-                f"stewardship-roster-changes-{stamp}.{extra['format']}",
+                export_file_name(extra["format"], datetime.now(UTC)),
                 content_type=FORMATS[extra["format"]],
             ).items():
                 response[name] = value
@@ -541,33 +583,8 @@ def export(request, campaign_id):
     """Download the list as CSV, XLSX or PDF, rendered on request."""
 
     def render(rows, result, show, extra):
-        """The chosen file format, with times in the chosen timezone.
-
-        The PDF names the parish and campaign in its page header and dates
-        itself in the parish's date format, lent explicitly, as the Census
-        changes download does.
-        """
-        if extra["format"] == "pdf":
-            parish = (
-                SystemConfiguration.objects.select_related(
-                    "active_configuration__parish"
-                )
-                .get()
-                .active_configuration.parish
-            )
-            campaign = Campaign.objects.select_related("active_configuration").get(
-                pk=campaign_id
-            )
-            with dates.using(parish.date_format):
-                return roster_pdf(
-                    rows,
-                    extra["zone"],
-                    parish=parish.name,
-                    campaign=campaign.active_configuration.name,
-                    as_of=database_now(),
-                )
-        writer = roster_xlsx if extra["format"] == "xlsx" else roster_csv
-        return writer(rows, extra["zone"])
+        """The chosen file format, with times in the chosen timezone."""
+        return export_body(campaign_id, rows, extra["format"], extra["zone"])
 
     if request.GET:
         return _error(status=400)
