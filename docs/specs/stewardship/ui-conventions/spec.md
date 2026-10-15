@@ -1000,7 +1000,11 @@ with `data-review-open`; its Review answers a fragment marked
 `data-review-answer` (with `data-review-done`, the start of the status
 line), whose hidden fields Apply posts, the signed preview marked
 `data-review-preview`. A field-value refusal answers the form again (status
-400); any other refusal is the closed JSON refusal. **Precedent.**
+400); any other refusal is the closed JSON refusal, or a fragment marked
+`data-review-refusal` that the dialog shows as drawn. A page whose own
+address records a view when read (System health) marks its dialog
+`data-review-redraw="body"`: Apply's answer then holds the regions the
+change redraws, and the page is not read again. **Precedent.**
 Administrator decision, 2026-10-11, on
 [#750](https://github.com/epiphany40223/parishkit/issues/750), which replaces
 the in-place review panel of #532 and the separate Review and Change status
@@ -1117,7 +1121,10 @@ section says how every Review behaves.
   and the form keeps the reader's values at the version they came from,
   never the current one, so a stale page can never quietly propose undoing a
   change made elsewhere. A refusal that needs a fresh sign-in offers
-  **Confirm with Google** and its step-up page, as it does today.
+  **Confirm with Google** and its step-up page, as it does today. A
+  refusal the server draws itself (a fragment marked `data-review-refusal`,
+  such as the shared step-up notice with its **Confirm with Google**) is
+  shown in the dialog as drawn.
 - **Uploads.** In an upload editor (Campaign images, Parish logos), choosing
   the file and selecting Review uploads it as the first step of Review: the
   server stages it and the dialog shows its preview (each generated size, the

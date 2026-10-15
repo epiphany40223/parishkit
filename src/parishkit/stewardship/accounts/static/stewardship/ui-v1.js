@@ -3752,11 +3752,29 @@
   });
   // Show why the action was not done, below the dialog's buttons; ``link``
   // is an optional same-origin {href, text} (a change's status page).
+  // text is a sentence, or the nodes of a refusal the server drew
+  // (refusalMarkup), shown as drawn.
   const refuseConfirm = (state, text, link) => {
     const error = state.dialog.querySelector("[data-confirm-error]");
-    const line = document.createElement("p");
-    line.textContent = text;
-    error.replaceChildren(line);
+    if (Array.isArray(text)) {
+      error.replaceChildren(...text);
+      // A drawn refusal can carry a control (the step-up's Confirm with
+      // Google), which must not be read as part of the announcement: only
+      // its sentences are the alert, as step-up-notice.html's role rule
+      // says, so the line itself is no live region then.
+      error.removeAttribute("role");
+      error.querySelectorAll(":scope > p, [data-step-up-notice] > p").forEach((line) => {
+        line.setAttribute("role", "alert");
+      });
+      // A LOCAL step-up it brings records its return path (recordStepUp).
+      recordStepUp(error);
+    } else {
+      // A sentence is the whole alert (a drawn refusal may have removed it).
+      error.setAttribute("role", "alert");
+      const line = document.createElement("p");
+      line.textContent = text;
+      error.replaceChildren(line);
+    }
     if (link && sameOrigin(link.href)) {
       const anchor = document.createElement("a");
       anchor.href = link.href;
@@ -3843,6 +3861,15 @@
     } catch { /* not JSON: the plain message below */ }
     return CONFIRM_REFUSED[status] || CONFIRM_UNAVAILABLE;
   };
+  // A refusal the server draws as markup, marked data-review-refusal: the
+  // nodes to show, or null for any other answer. System health's actions
+  // (#1356) answer so, since a stale sign-in brings the shared step-up
+  // notice and its Confirm with Google, which a sentence cannot carry.
+  const refusalMarkup = (text) => {
+    const node = new DOMParser().parseFromString(text, "text/html")
+      .querySelector("[data-review-refusal]");
+    return node ? [...node.childNodes].map((child) => document.importNode(child, true)) : null;
+  };
   // A change's status page: {state, text} from its data-live-status region,
   // or null for any other page (the change needed no waiting).
   const changeStatus = (text) => {
@@ -3885,8 +3912,13 @@
       return false;
     }
     if (!answer.response.ok) {
+      // A refusal the server draws (data-review-refusal, #1364) is shown as
+      // drawn; any other is marked at its fields when it names them (z27),
+      // else said in the dialog.
+      const markup = refusalMarkup(answer.text);
       const text = refusalText(answer.response.status, answer.text);
-      if (!refuseAtFields(state, answer.text, text)) refuseConfirm(state, text);
+      if (markup) refuseConfirm(state, markup);
+      else if (!refuseAtFields(state, answer.text, text)) refuseConfirm(state, text);
       return false;
     }
     onRecorded?.();
@@ -4271,7 +4303,8 @@
       // review opens the schedule editors the answer drew open).
       form.dispatchEvent(new CustomEvent("review-refused", {detail: parsed}));
     } else {
-      openReview(dialog, form, opener, null, refusalText(answer.response.status, answer.text));
+      openReview(dialog, form, opener, null, refusalMarkup(answer.text)
+        || refusalText(answer.response.status, answer.text));
     }
   };
   document.addEventListener("submit", (event) => {
@@ -4317,11 +4350,16 @@
     // applied (Create the campaign, data-review-redraw="answer") is redrawn
     // from the address Apply's answer ended on, the page naming its change,
     // which then becomes the page's address so a reload shows the same.
+    // A dialog marked data-review-redraw="body" is redrawn from Apply's
+    // answer itself, which holds the regions it changed: System health,
+    // whose own address records a page view each time it is read (#1356).
     const region = state.form.closest(REGIONS);
     const fromAnswer = dialog.dataset.reviewRedraw === "answer"
       && sameOrigin(answer.response.url) ? answer.response.url : "";
-    const fresh = await freshPage(fromAnswer || region?.dataset.refreshUrl
-      || window.location.href);
+    const fresh = dialog.dataset.reviewRedraw === "body"
+      ? new DOMParser().parseFromString(answer.text, "text/html")
+      : await freshPage(fromAnswer || region?.dataset.refreshUrl
+        || window.location.href);
     if (!fresh) return;
     state.done = true;
     dialog.close();

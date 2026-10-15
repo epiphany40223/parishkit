@@ -455,3 +455,19 @@ def test_removing_a_campaign_image_is_a_confirmation():
     upload = artwork_fragment(False)
     assert "data-review-title" not in upload and "artwork-review-summary" not in upload
     assert "not yet in use" in upload
+
+
+def test_apply_may_post_another_action_and_a_drawn_refusal_is_shown():
+    """Apply posts "confirm" unless the page names another action
+    (apply_action, System health's steps, #1356), and a refusal the server
+    draws (data-review-refusal) is shown as drawn, step-up included."""
+    assert 'name="action" value="confirm"' in dialog()
+    named = dialog(apply_action="debug_off_confirm")
+    assert 'name="action" value="debug_off_confirm"' in named
+    script = (TEMPLATES.parents[1] / "static/stewardship/ui-v1.js").read_text()
+    assert '.querySelector("[data-review-refusal]")' in script
+    assert "refusalMarkup(answer.text)\n        || refusalText(" in script
+    assert script.count("refusalMarkup(answer.text)") == 2
+    # Redrawn from Apply's answer itself, without reading the page again.
+    assert 'data-review-redraw="body"' in dialog(redraw_body=True)
+    assert 'dialog.dataset.reviewRedraw === "body"' in script
