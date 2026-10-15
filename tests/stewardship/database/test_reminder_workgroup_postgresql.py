@@ -107,10 +107,14 @@ def test_a_live_campaign_sets_and_clears_its_reminder_workgroup(invited):  # noq
     assert current_evidence(values(harness)) == (NAME, None)
     record(NAME, {1})
     assert excluded_duids(values(harness)) == {1}
-    # A different recorded name, or a cleared setting, excludes nobody.
+    # A read recorded for another name still applies, as after a rename,
+    # until a refresh reads this one (#1305); a cleared setting excludes
+    # nobody at once.
     record("Last year", {1})
-    assert excluded_duids(values(harness)) == frozenset()
+    assert excluded_duids(values(harness)) == {1}
+    assert current_evidence(values(harness)) == (NAME, None)
     set_workgroup(harness, None)
+    assert excluded_duids(values(harness)) == frozenset()
     assert "reminder_workgroup" not in values(harness)
 
 
@@ -231,6 +235,60 @@ def test_refreshes_record_the_workgroup_and_a_change_is_promoted(tmp_path, monke
     assert changed.cursor["load"][EVIDENCE_KEY]["family_duids"] == [1, 2]
     assert SourceCurrent.objects.get().snapshot_id == changed.pk
     assert reads == [NAME, NAME, NAME]
+
+
+def test_a_misspelled_rename_keeps_the_old_set_until_a_refresh_finds_it(
+    tmp_path, monkeypatch
+):
+    """A refresh that finds no WorkGroup by the new name keeps the Families
+    applied before (#1305), refresh after refresh; once a refresh finds the
+    corrected name, its members apply, and a found but empty WorkGroup
+    excludes nobody."""
+    reads = {NAME: [1], "Corrected": [2], "Empty": []}
+    name = {"value": NAME}
+
+    def read(client, configured):
+        """Stand in for the ParishSoft WorkGroup read (no HTTP)."""
+        if configured not in reads:
+            return {"name": configured, "found": False, "family_duids": []}
+        return {"name": configured, "found": True, "family_duids": reads[configured]}
+
+    def setting():
+        """The campaign values naming the current test name."""
+        return {"reminder_workgroup": name["value"]}
+
+    monkeypatch.setattr(refreshing, "load_reminder_workgroup", read)
+    monkeypatch.setattr(refreshing, "configured_name", lambda values: name["value"])
+    refreshes = Refreshes(tmp_path, monkeypatch)
+    assert excluded_duids(setting()) == {1}
+    # The misspelled name: the refresh records it as not found, keeping {1}.
+    name["value"] = "Activ: Stewardship 2027"
+    missing, *_ = refreshes.quick()
+    assert missing.state == "promoted"
+    assert missing.cursor["load"][EVIDENCE_KEY] == {
+        "name": "Activ: Stewardship 2027",
+        "found": False,
+        "family_duids": [1],
+    }
+    assert excluded_duids(setting()) == {1}
+    assert current_evidence(setting())[1]["found"] is False
+    # Still misspelled: the next refresh changes nothing and keeps {1}.
+    again, *_ = refreshes.quick()
+    assert again.state == "unchanged"
+    assert excluded_duids(setting()) == {1}
+    # Corrected: the found WorkGroup's members replace the kept set.
+    name["value"] = "Corrected"
+    corrected, *_ = refreshes.quick()
+    assert corrected.cursor["load"][EVIDENCE_KEY]["found"] is True
+    assert excluded_duids(setting()) == {2}
+    # A found WorkGroup with no members excludes nobody, and a later
+    # missing name has nothing to keep.
+    name["value"] = "Empty"
+    refreshes.quick()
+    assert excluded_duids(setting()) == frozenset()
+    name["value"] = "Gone"
+    refreshes.quick()
+    assert excluded_duids(setting()) == frozenset()
 
 
 def test_migration_check_refuses_the_old_guard_and_admits_the_new():

@@ -26,18 +26,24 @@ construction:
 - an entity whose proposals are queued and whose fresh read already equals
   the planned payload (a crash after its PUT) is verified and recorded
   ``published`` without a second PUT;
-- when the run ends, every entity still unfinished is recorded
-  ``invalidated`` and its queued proposals go back to ``failed`` (an
-  attempt failed) or ``pending`` (none did), so a new preflight can plan
-  them and they never block a later confirmation; plans left unfinished by
-  a crashed run are treated the same once ``EXECUTION_WINDOW`` has passed.
+- when the run ends, every entity still unfinished is closed: one whose
+  written proposals this plan queued (its PUT may have landed) is read back
+  first and recorded ``published`` if ParishSoft holds the planned payload;
+  any other is recorded ``invalidated`` and its queued proposals go back to
+  ``failed`` (an attempt failed) or ``pending`` (none did), so a new
+  preflight can plan them and they never block a later confirmation. Plans
+  left unfinished by a crashed run are closed the same way once
+  ``EXECUTION_WINDOW`` has passed, and so is every remaining entity after a
+  switch to Testing.
 
 SQL checks the same rules independently (``schema/migrations/0090``: the
 derived guard admits each proposal state change only as the confirmed plan
 and its outcomes say). Each provider request has a hard deadline; the real
 gateway's transport kills a request at it and logs ``helper_timed_out``
 with what, the limit and the elapsed time. This module only drives a
-``ContactGateway``; it never builds one, so CI runs it on a fake.
+``ContactGateway``; it never builds one, so CI runs it on a fake. The
+``census_publication`` task (``responses.publication_tasks``) builds the
+real one and passes the real ``parishsoft_publication`` setting.
 """
 
 from dataclasses import dataclass
@@ -98,7 +104,7 @@ def _production():
     return SystemConfiguration.objects.filter(mode="production").exists()
 
 
-def _unfinished(plan_ids):
+def unfinished(plan_ids):
     """Entities with something to write and no final outcome, in pk order."""
     return list(
         PublicationEntity.objects.filter(
@@ -241,9 +247,19 @@ def _record(claim, item, result, failure_kind=""):
 
 
 def _queue(claim, item):
-    """Queue the entity's writes under the fence; False if anything moved."""
+    """Queue the entity's writes under the fence.
+
+    Returns True when queued, False (changing nothing) if any proposal
+    moved, and None when the system has left Production mode. The mode is
+    read again inside this transaction (#1245 review note 1): a switch
+    between the caller's check and the queue then stops the run cleanly,
+    rather than leaving the derived guard's refusal to end it with an
+    error. The guard still checks the mode in this same transaction.
+    """
     with work_transaction():
         verify_source(claim)
+        if not _production():
+            return None
         return item.queue()
 
 
@@ -281,7 +297,10 @@ def _attempt(execution, claim, gateway, item):
             return "invalidated"
         if not _production():
             return "stop"
-        if not _queue(claim, item):
+        queued = _queue(claim, item)
+        if queued is None:
+            return "stop"
+        if not queued:
             _record(claim, item, "invalidated")
             return "invalidated"
         execution.check()
@@ -305,6 +324,30 @@ def _attempt(execution, claim, gateway, item):
     return "published"
 
 
+def _close(claim, gateway, item):
+    """Close an entity this run will not attempt again; return its result.
+
+    An entity whose written proposals this plan queued may have had its PUT
+    land before a crash, a stop or the end of its attempts. It is read back
+    first (#1245 review note 3) and recorded ``published`` when ParishSoft
+    holds exactly the planned payload; otherwise, or if the read fails, it
+    is ``invalidated``. An entity with nothing queued was never written, so
+    it is invalidated without a read.
+    """
+    rows = item.rows()
+    # rows() shows a proposal this plan queued as an _Unqueued wrapper.
+    if any(isinstance(row, _Unqueued) for row in rows):
+        try:
+            fresh = _read(claim, gateway, item)
+        except ContactGatewayError:
+            fresh = None
+        if item.landed(rows, fresh):
+            _record(claim, item, "published")
+            return "published"
+    _record(claim, item, "invalidated")
+    return "invalidated"
+
+
 def _confirmed_plan(plan_id):
     """The plan's confirmation, refusing a missing or Testing-mode one."""
     confirmation = (
@@ -326,6 +369,20 @@ def _expired_plans():
     )
 
 
+def check_publishable(plan_id, *, enabled):
+    """Refuse, before any lease or provider call, a plan that cannot run now.
+
+    ``enabled`` is the deployment's ``parishsoft_publication`` setting; the
+    system must be in Production mode and the plan confirmed and not from
+    Testing mode. The publish task calls this before it builds a gateway.
+    """
+    if enabled is not True:
+        raise PublicationDisabled("ParishSoft publication is switched off.")
+    if not _production():
+        raise PublicationRefused("Publication stops after preflight in Testing mode.")
+    _confirmed_plan(plan_id)
+
+
 def publish_plan(execution, plan_id, gateway, *, enabled):
     """Write one confirmed plan to ParishSoft through ``gateway``; see module.
 
@@ -333,11 +390,7 @@ def publish_plan(execution, plan_id, gateway, *, enabled):
     ``effect`` and ``maintain_source``); ``enabled`` is the deployment's
     ``parishsoft_publication`` setting. Returns the run's ``RunResult``.
     """
-    if enabled is not True:
-        raise PublicationDisabled("ParishSoft publication is switched off.")
-    if not _production():
-        raise PublicationRefused("Publication stops after preflight in Testing mode.")
-    _confirmed_plan(plan_id)
+    check_publishable(plan_id, enabled=enabled)
     with execution.effect():
         claim = acquire_source(
             task_id=execution.claim.run_id,
@@ -350,11 +403,10 @@ def publish_plan(execution, plan_id, gateway, *, enabled):
         with execution.maintain_source(claim):
             expired = _expired_plans()
             # Abandoned work: earlier plans a crashed run left unfinished.
-            for entity in _unfinished([pk for pk in expired if pk != plan_id]):
-                _record(claim, _Entity(entity), "invalidated")
-                counts["invalidated"] += 1
+            for entity in unfinished([pk for pk in expired if pk != plan_id]):
+                counts[_close(claim, gateway, _Entity(entity))] += 1
             stopped = plan_id in expired
-            for entity in _unfinished([plan_id]):
+            for entity in unfinished([plan_id]):
                 item = _Entity(entity)
                 for _ in range(ATTEMPTS):
                     if stopped:
@@ -366,11 +418,10 @@ def publish_plan(execution, plan_id, gateway, *, enabled):
                         counts[result] += 1
                     if result != "failed":
                         break
-            # Every entity this run did not finish is invalidated, so none
-            # is left queued or blocking a later confirmation.
-            for entity in _unfinished([plan_id]):
-                _record(claim, _Entity(entity), "invalidated")
-                counts["invalidated"] += 1
+            # Every entity this run did not finish is closed, so none is
+            # left queued or blocking a later confirmation.
+            for entity in unfinished([plan_id]):
+                counts[_close(claim, gateway, _Entity(entity))] += 1
     finally:
         with work_transaction():
             release_source(claim)

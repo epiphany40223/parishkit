@@ -37,7 +37,11 @@ from parishkit.stewardship.campaigns.work_locks import (
     read_transaction,
     work_transaction,
 )
-from parishkit.stewardship.source.workgroups import current_evidence
+from parishkit.stewardship.source.workgroups import (
+    applied_evidence,
+    current_evidence,
+    snapshot_evidence,
+)
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.refusals import UserFacingStale, stale_page
 
@@ -119,6 +123,12 @@ def _page(request, configuration, campaign, form, *, status=200, **region):
     apply (#196), all on this page.
     """
     name, evidence = current_evidence(campaign.active_configuration.values)
+    # What Reminders skip now (#1305): while a rename waits for a refresh,
+    # the previous WorkGroup's Families, which the Now panel says. The review
+    # needs what any name will apply until the next refresh: the snapshot's
+    # evidence, whatever the setting is now.
+    applied = applied_evidence(campaign.active_configuration.values)
+    recorded = snapshot_evidence()
     step = "review" if region.get("review") else "edit"
     if region.get("receipt"):
         step = "apply"
@@ -131,6 +141,8 @@ def _page(request, configuration, campaign, form, *, status=200, **region):
             "form": form,
             "current": name,
             "evidence": evidence,
+            "applied": applied,
+            "recorded": recorded,
             **review_region("reminder_workgroup", form, **region),
         },
         status=status,

@@ -638,28 +638,31 @@ only for the current Production campaign.
       its cause (usually ParishSoft
       availability), choose **Retry report work** on the task's page, and
       wait for it to complete.
-   2. Three five-minute clocks govern the rest (the sign-in, the sender test
-      and the preview), so do steps 2 to 4 in one go.
-      Confirming needs a Google sign-in from the last five minutes: choose
+   2. Confirming needs a Google sign-in from the last five minutes: choose
       **Confirm with Google**, and the sign-in brings you back to this page.
-      Then choose **Preview and send a test to the configured Testing
-      recipient**, which opens the campaign mail page, send the test there,
-      go straight back to **Pause and resume mail**, and reload until it
-      says **The current provider and sender accepted a test after this
-      pause.** That proof is also valid for five minutes, and the preview
-      and the confirmation both check it again.
+      The **Provider and sender check** panel says whether a sender check is
+      needed. After an ordinary pause it says none is, and you go straight
+      to step 3. After sender trouble it says why one is needed, and
+      Preview resume stays unavailable until it passes: choose **Preview and
+      send a test to the configured Testing recipient**, send the test on
+      the campaign mail page, go back to **Pause and resume mail**, and
+      reload until it says when the sender was checked and when to resume
+      before. That check lasts 30 minutes, and the preview and the
+      confirmation both check it again
+      ([rule](../specs/stewardship/admin-portal/spec.md#live-delivery-pause)).
    3. Give the reason and choose **Preview resume**. Review the exact
       preview: overdue invitations and reminders are coalesced (redundant
       slots coalesced, inapplicable ones skipped), overdue daily or weekly
       reports each become one report obligation, every held receipt is
       released, and future work keeps its original due time.
    4. Choose **Confirm resume of live delivery**, within five minutes of
-      the sign-in, the test and the preview. Every input is checked again;
+      the sign-in and the preview. Every input is checked again;
       anything that changed cancels the confirmation without releasing mail,
       and you preview again. If the confirm button is missing, or confirming
       reports an authentication error, changed inputs or "This preview is
       out of date.", a clock has run out: confirm with Google again as in
-      step 2, send a new test, and preview again.
+      step 2 and preview again. If the page comes back saying a sender
+      check is needed, send a test as in step 2 first.
 
 If the campaign closes while delivery is paused, resuming no longer applies:
 invitations and reminders follow the ordinary close policy and cannot be
@@ -911,9 +914,11 @@ email progress counts the skipped Reminders separately.
    Quick updates wait while a Family email send is in progress, so make
    ParishSoft changes before a Reminder's preparation starts (two hours
    before it is due) when you can; a Family added later is still skipped at
-   send time once a refresh has read it. Any edit to the name, even of its
-   capitals, stops the exclusion until the next refresh, so run **Refresh
-   from ParishSoft** after every edit.
+   send time once a refresh has read it. After an edit to the name, even of
+   its capitals, the Families the newest refresh found in the previous
+   WorkGroup are still skipped until the next refresh reads the new name, so
+   run **Refresh from ParishSoft** after every edit. Clearing the name stops
+   skipping at once.
 4. Check it against live ParishSoft right after the deploy, and well before
    the night a Reminder is prepared (preparation starts two hours before it
    is due): set the name, run **Refresh from ParishSoft**, and confirm that
@@ -925,8 +930,9 @@ email progress counts the skipped Reminders separately.
 **How you know it worked.** The No-reminders WorkGroup page says how many
 Families the newest refresh found in the WorkGroup, and each one's Family
 timeline names it. If the name matches no Family WorkGroup in ParishSoft,
-the page and System health say so, the refresh logs a warning, and nobody's
-Reminders are skipped: fix the name in either place.
+the page and System health say so and the refresh logs a warning; the
+Families skipped before stay skipped, and no others are, until a refresh
+finds the name: fix it in either place.
 
 **What not to do.** Do not make the Family inactive or move it out of the
 parish in ParishSoft to stop Reminders: that removes it from the campaign,

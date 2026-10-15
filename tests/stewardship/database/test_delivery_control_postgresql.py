@@ -222,8 +222,9 @@ def test_pause_is_atomic_exact_and_keeps_delivery_payload(
         assert receipt.inventory["queued"] == 1
         assert commands.confirm(*item.arguments, token=token).pk == receipt.pk
         status = commands.page(*item.arguments)
-        # The successful go-live test predates this pause and cannot release it.
-        assert not status["health"]["ready"]
+        # An ordinary pause, with no sender trouble, needs no sender check
+        # (#1288); the tests below make one required.
+        assert status["health"]["ready"] and not status["health"]["required"]
         assert status["inventory"]["held"] == 1
         assert status["campaign"].delivery_paused
         page = item.browser.get(path)
@@ -265,7 +266,9 @@ def test_pause_is_atomic_exact_and_keeps_delivery_payload(
             )
             assert not commands.health(item.campaign.pk)["ready"]
             if resume_token:
-                with pytest.raises(StaleRecordError, match="inputs changed"):
+                # A test in progress makes the earlier check not current; the
+                # refusal is the in-place sender check one (#1288).
+                with pytest.raises(commands.SenderCheckRequired):
                     commands.confirm(*item.arguments, token=resume_token)
         monkeypatch.setattr(
             "parishkit.stewardship.accounts.campaign_mail_tasks.submit_sample",
@@ -457,7 +460,17 @@ def test_failed_initial_defers_only_its_family_not_campaign_resume(
 
 
 def accepted_sender_check(item, monkeypatch, tmp_path):
-    """Exercise the real explicit-test owner; only the provider result is fake."""
+    """A test email the mail service accepts: a sender check that passes."""
+    sender_check(item, monkeypatch, tmp_path, DeliveryOutcome.ACCEPTED)
+
+
+def sender_check(item, monkeypatch, tmp_path, outcome):
+    """Exercise the real explicit-test owner; only the provider result is fake.
+
+    A ``NOT_SENT`` or ``UNKNOWN`` outcome is sender trouble since the pause,
+    so a sender check becomes required (#1288). With ``outcome`` None the
+    test is only queued, so it is still in progress.
+    """
     with web_login():
         status = commands.page(*item.arguments)
         path = reverse("admin:campaign_mail", args=[status["test_template"]])
@@ -472,9 +485,11 @@ def accepted_sender_check(item, monkeypatch, tmp_path):
             ).status_code
             == 302
         )
+    if outcome is None:
+        return
     monkeypatch.setattr(
         "parishkit.stewardship.accounts.campaign_mail_tasks.submit_sample",
-        lambda *args, **kwargs: DeliveryOutcome.ACCEPTED,
+        lambda *args, **kwargs: outcome,
     )
     assert (
         deliver(
@@ -485,7 +500,7 @@ def accepted_sender_check(item, monkeypatch, tmp_path):
                 tmp_path / "google_workspace" / "credential",
             )
         ).state
-        == "accepted"
+        == outcome.value
     )
 
 

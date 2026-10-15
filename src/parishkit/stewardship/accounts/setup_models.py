@@ -24,7 +24,9 @@ class SetupAttempt(MutableRecord):
         "owner_id",
         "base_id",
     )
-    write_once_fields = ("source_task_id", "expired_at")
+    # The source load binding is not write-once: a finished load can be
+    # discarded to load again (#1353); SQL admits only that and the binding.
+    write_once_fields = ("expired_at",)
     session_id = models.UUIDField(unique=True)
     owner_id = models.UUIDField()
     base = models.ForeignKey("AppliedConfigurationVersion", on_delete=models.PROTECT)

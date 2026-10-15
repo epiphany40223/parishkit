@@ -32,6 +32,13 @@ class DraftView:
     absolute_at: datetime
     watchdog_at: datetime | None
     source_task_id: UUID | None = None
+    # The bound load's Task state (#1353): a failed load leaves setup
+    # collecting, so only "succeeded" means the parish data is loaded.
+    source_task_state: str | None = None
+    # Whether that load's staged data is still valid (staged_load): a load
+    # that succeeded can go stale when its credential changes, and then
+    # needs loading again (#1353).
+    source_loaded: bool = False
     # Wizard pages the admin has explicitly reviewed (see mark_reviewed).
     reviewed: dict = field(default_factory=dict)
 
@@ -62,6 +69,39 @@ def _reviewed(request, attempt_id):
     if reviewed.get("attempt") != str(attempt_id):
         return {}
     return {key: value for key, value in reviewed.items() if key != "attempt"}
+
+
+def staged_load(attempt):
+    """The attempt's exact, still-valid staged load result, or None.
+
+    Valid means: the bound load succeeded, its exchange is unscrubbed and
+    on the Task's fence, the staged ParishSoft credential still has the
+    version and fingerprint the load read, and its snapshot is ready on the
+    same fences. Review, campaign staging and the wizard's Load parish data
+    step all use this one predicate (#1353), and the attempt's audit trigger
+    repeats it in SQL to refuse a Load again of a still-valid load.
+    """
+    from .setup_exchange_models import SetupSourceResult
+
+    if attempt.source_task_id is None:
+        return None
+    return (
+        SetupSourceResult.objects.filter(
+            exchange__attempt=attempt,
+            exchange__scrubbed_at=None,
+            exchange__task__root_id=attempt.source_task_id,
+            exchange__task__state="succeeded",
+            exchange__task_fence=F("exchange__task__fence"),
+            exchange__credential__scrubbed_at=None,
+            exchange__credential_version=F("exchange__credential__version"),
+            exchange__fingerprint=F("exchange__credential__fingerprint"),
+            snapshot__state="ready",
+            snapshot__task_id=F("exchange__task_id"),
+            snapshot__source_fence=F("exchange__source_fence"),
+        )
+        .order_by("-snapshot__completed_at", "-pk")
+        .first()
+    )
 
 
 def _owned(request, service, attempt_id=None):
@@ -111,6 +151,8 @@ def view_draft(request, service, attempt_id=None):
             window.absolute_at,
             window.watchdog_at,
             row.source_task_id,
+            row.source_task.state if row.source_task_id else None,
+            row.state == SetupState.COLLECTING and staged_load(row) is not None,
             _reviewed(request, row.pk),
         )
 

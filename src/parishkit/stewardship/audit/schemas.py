@@ -123,6 +123,17 @@ class Action(StrEnum):
     CENSUS_PUBLICATION_PLANNED = "census_publication_planned"
     CENSUS_PUBLICATION_CONFIRMED = "census_publication_confirmed"
     CENSUS_PUBLICATION_RECORDED = "census_publication_recorded"
+    # Who asked for a preflight or a rerun of a plan's failed run, and when
+    # (the subject is the task run), and why a preflight or publish run was
+    # refused, failing it with nothing written (the subject is the refused
+    # run): the setting switched off, the contact read not confirmed yet, or
+    # any other refusal. One event type per reason, so the reason needs no
+    # new context field.
+    CENSUS_PUBLICATION_PREFLIGHT_REQUESTED = "census_publication_preflight_requested"
+    CENSUS_PUBLICATION_RERUN_REQUESTED = "census_publication_rerun_requested"
+    CENSUS_PUBLICATION_SWITCHED_OFF = "census_publication_switched_off"
+    CENSUS_PUBLICATION_READ_UNCONFIRMED = "census_publication_read_unconfirmed"
+    CENSUS_PUBLICATION_REFUSED = "census_publication_refused"
     ROSTER_CHANGES_VIEWED = "roster_changes_viewed"
     ROSTER_CHANGES_EXPORTED = "roster_changes_exported"
     RESPONSE_DASHBOARD_VIEWED = "response_dashboard_viewed"
@@ -161,8 +172,8 @@ class Action(StrEnum):
     # The debug-off switch cleared: by an Administrator in Testing (Allow
     # debug logging again, ADM-13 PR 6c; the subject is the switch), or by
     # the server operator's offline ``debug-off-clear``, recorded with actor
-    # kind ``operator`` and no subject (that login cannot read the switch it
-    # cleared).
+    # kind ``operator``; both name the switch as the subject (the operator's
+    # definer returns the id it cleared, #1229).
     DEBUG_LOGGING_ALLOWED = "debug_logging_allowed"
     # Accept this change once (ADM-13 PR 5b); the subject is the acceptance.
     SOURCE_DROP_ACCEPTED = "source_drop_accepted"
@@ -200,6 +211,9 @@ class Action(StrEnum):
     SETUP_STARTED = "setup_started"
     SETUP_SOURCE_STARTED = "setup_source_started"
     SETUP_SOURCE_COMPLETED = "setup_source_completed"
+    # A finished setup load discarded by a ParishSoft connection change or
+    # a Load again (#1353); written by the attempt's audit trigger.
+    SETUP_SOURCE_VOIDED = "setup_source_voided"
     SETUP_FROZEN = "setup_frozen"
     SETUP_EXPIRED = "setup_expired"
     SETUP_CREDENTIAL_STAGED = "setup_credential_staged"
@@ -479,6 +493,10 @@ FIELDS = {
         "archive_year",
         "archive_days",
         "archive_family_rows",
+        # A discarded setup load (#1353): why it was discarded and how the
+        # load had ended, both closed words.
+        "void_reason",
+        "task_state",
     },
 }
 
@@ -492,6 +510,10 @@ MINISTRY_LIST_FIELDS = frozenset(
     }
 )
 REVIEW_DECISIONS = frozenset({"keep_role", "restore", "remove"})
+# Why a finished setup load was discarded, and how that load had ended
+# (#1353); mirrored in stewardship_safe_context_v1.
+VOID_REASONS = frozenset({"key_changed", "organization_changed", "reload"})
+VOIDED_TASK_STATES = frozenset({"succeeded", "failed"})
 # An on-request report's system mode and filter choices (#556); mirrored in
 # stewardship_safe_context_v1. The filters are each report's own fixed
 # choices: the Limitations report's Show words (reports.limitations.SHOW_WORDS),
@@ -810,6 +832,12 @@ def sanitize(kind, values):
             safe[key] = value
         elif key == "decision":
             valid = type(value) is str and value in REVIEW_DECISIONS
+            safe[key] = value
+        elif key == "void_reason":
+            valid = type(value) is str and value in VOID_REASONS
+            safe[key] = value
+        elif key == "task_state":
+            valid = type(value) is str and value in VOIDED_TASK_STATES
             safe[key] = value
         elif key in {"file_slug", "previous_file_slug"}:
             valid = type(value) is str and re.fullmatch(

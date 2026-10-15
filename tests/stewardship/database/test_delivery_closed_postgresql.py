@@ -36,6 +36,7 @@ from parishkit.stewardship.jobs.delivery_states import DeliveryAction
 from parishkit.stewardship.jobs.family_mail_dispatch import finish_submission
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage
 from parishkit.stewardship.jobs.scheduler import scheduler_session
+from parishkit.stewardship.readiness_delivery import DeliveryOutcome
 from parishkit.stewardship.reports.digest_models import DailyDigestRecipient
 from parishkit.stewardship.reports.digest_tasks import daily_handler
 from parishkit.stewardship.reports.weekly_manual import request_manual_report
@@ -52,7 +53,7 @@ from .test_background_grants_postgresql import task_login
 from .test_daily_digest_dispatch_postgresql import allocated, begin
 from .test_daily_digest_planning_postgresql import allocate
 from .test_daily_digest_tasks_postgresql import execute
-from .test_delivery_control_postgresql import accepted_sender_check
+from .test_delivery_control_postgresql import accepted_sender_check, sender_check
 from .test_family_auth_postgresql import login as family_login
 from .test_family_mail_dispatch_postgresql import claim
 from .test_outbox_postgresql import change as change_delivery
@@ -713,7 +714,11 @@ def test_closed_resolution_releases_only_selected_mail_and_can_cancel_without_he
             assert page.context["inventory"]["held"] == expected_held
             with pytest.raises(StaleRecordError):
                 commands.preview_resume(*item.arguments, reason="Do not reopen")
-            with pytest.raises(StaleRecordError, match="sender check"):
+        # A test that was not sent is sender trouble since the pause, so
+        # Release now needs a passing sender check (#1288).
+        sender_check(item, monkeypatch, tmp_path, DeliveryOutcome.NOT_SENT)
+        with web_login():
+            with pytest.raises(commands.SenderCheckRequired, match="sender check"):
                 commands.preview_resolution(
                     *item.arguments,
                     reason="Not healthy yet",
@@ -793,7 +798,10 @@ def test_closed_resolution_releases_only_selected_mail_and_can_cancel_without_he
                 *item.arguments, reason="Review final report"
             )
             commands.confirm(*item.arguments, token=token)
-            assert not commands.health(item.campaign.pk)["ready"]
+            # The earlier failed test predates this ordinary pause, so no
+            # sender check is required for it (#1288).
+            health = commands.health(item.campaign.pk)
+            assert health["ready"] and not health["required"]
         # A newly generated final report receives a durable hold immediately;
         # no mail worker has inspected this message yet.
         with (

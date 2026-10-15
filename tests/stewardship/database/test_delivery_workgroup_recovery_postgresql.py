@@ -129,8 +129,8 @@ def test_resume_skips_workgroup_reminders_and_keeps_the_invitation(
 ):
     """Preview and confirm agree: the WorkGroup Family's reminders are skipped,
     its invitation is still selected, the ordinary Family's reminders still
-    coalesce into its invitation, and a different recorded name excludes
-    nobody."""
+    coalesce into its invitation, and a name no refresh has read yet, with
+    no earlier WorkGroup read recorded, excludes nobody."""
     item = two_families
     # Only the first Family is in the WorkGroup; the second is ordinary.
     families = list(FamilyCampaign.objects.filter(campaign=item.campaign))
@@ -149,8 +149,8 @@ def test_resume_skips_workgroup_reminders_and_keeps_the_invitation(
         .first()
     )
     set_workgroup(item, NAME)
-    # A refresh that read a different name excludes nobody.
-    record("Last year", {excluded.family_duid})
+    # The snapshot recorded no WorkGroup read, so the new name excludes
+    # nobody until a refresh reads it.
     with campaign_clock(due):
         with web_login():
             _, token = commands.preview_pause(*item.arguments, reason="Review backlog")
@@ -337,6 +337,79 @@ def test_migration_check_refuses_the_old_view_and_admits_the_new():
     old = view.replace(scope, "    SELECT c.id,c.production_cycle,p.ends_at\n")
     old = old.replace(reason, "")
     assert "workgroup" not in old.lower()
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(acl)
+        cursor.execute(check)  # The installed (new) view passes.
+        with (
+            pytest.raises(DatabaseError, match="was not replaced"),
+            transaction.atomic(),
+        ):
+            cursor.execute(old)
+            cursor.execute(check)
+        cursor.execute(check)  # Rolled back to the new view.
+
+
+RENAME_MIGRATION = MIGRATION.with_name("0099_workgroup_rename_keep.sql")
+# The name comparison the #1305 view dropped from its WorkGroup read.
+NAME_MATCH = (
+    "            AND s.cursor->'load'->'reminder_workgroup'->>'name'"
+    "=p.values->>'reminder_workgroup'\n"
+)
+
+
+def test_resume_keeps_a_renamed_workgroups_families_until_a_refresh(two_families):
+    """The resume plan reads the WorkGroup as planning does (#1305): a rename
+    keeps the previous read's Families, a refresh of the new name moves the
+    skip to its Families, and a clear skips nobody at once."""
+    item = two_families
+    excluded, ordinary = sorted(
+        FamilyCampaign.objects.filter(campaign=item.campaign),
+        key=lambda family: family.family_duid,
+    )
+    reminders = ScheduleDefinition.objects.filter(
+        campaign=item.campaign, kind="reminder"
+    ).count()
+    due = (
+        ScheduleDefinition.objects.filter(campaign=item.campaign)
+        .order_by("-current_revision__due_at")
+        .values_list("current_revision__due_at", flat=True)
+        .first()
+    )
+    set_workgroup(item, NAME)
+    record(NAME, {excluded.family_duid})
+    set_workgroup(item, "Renamed")
+
+    def skipped():
+        """The resume plan's skipped count, read as the preview reads it."""
+        with web_login():
+            return commands.family_recovery_impact(item.campaign.pk)["skipped"]
+
+    with campaign_clock(due):
+        with web_login():
+            _, token = commands.preview_pause(*item.arguments, reason="Review backlog")
+            commands.confirm(*item.arguments, token=token)
+        # Renamed, not yet refreshed: the previous WorkGroup's Family.
+        assert skipped() == reminders
+        # A refresh read the new name, which holds both Families.
+        record("Renamed", {excluded.family_duid, ordinary.family_duid})
+        assert skipped() == 2 * reminders
+        # Cleared: nobody, at once.
+        set_workgroup(item, None)
+        assert skipped() == 0
+
+
+def test_rename_migration_check_refuses_the_name_matching_view():
+    """0099's DO block fails against the #866 view that compared names."""
+    text = RENAME_MIGRATION.read_text(encoding="utf-8")
+    start = text.index("CREATE OR REPLACE VIEW public.")
+    view = text[start : text.index("FROM reasons;", start) + len("FROM reasons;")]
+    acl = text[text.index("SELECT set_config(") : text.index("true);") + len("true);")]
+    check = text[text.index("DO $check$") : text.index("$check$;") + len("$check$;")]
+    anchor = "->'name')='string'\n"
+    assert view.count(anchor) == 1 and NAME_MATCH not in view
+    old = view.replace(anchor, anchor + NAME_MATCH)
+    # The #866 view 0035 installed is exactly that (bar its comments).
+    assert NAME_MATCH in MIGRATION.read_text(encoding="utf-8")
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(acl)
         cursor.execute(check)  # The installed (new) view passes.

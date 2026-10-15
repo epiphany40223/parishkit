@@ -11,12 +11,27 @@ from parishkit.stewardship.accounts.setup_wizard import PAGES, build
 from .test_setup_forms import VALUES
 
 
-def draft(sections=None, *, state=SetupState.COLLECTING, source=None, reviewed=None):
-    """A detached stand-in carrying only what the stepper reads."""
+def draft(
+    sections=None,
+    *,
+    state=SetupState.COLLECTING,
+    source=None,
+    reviewed=None,
+    task_state=None,
+):
+    """A detached stand-in carrying only what the stepper reads.
+
+    A bound load (``source``) is running while loading and has succeeded
+    otherwise, unless ``task_state`` says how it ended.
+    """
+    if source is not None and task_state is None:
+        task_state = "running" if state == SetupState.LOADING else "succeeded"
     return SimpleNamespace(
         status=SimpleNamespace(state=state, attempt_id=uuid4(), version=3),
         sections=sections or {},
         source_task_id=source,
+        source_task_state=task_state,
+        source_loaded=task_state == "succeeded",
         reviewed=reviewed or {},
     )
 
@@ -177,6 +192,31 @@ def test_loading_keeps_completed_steps_but_links_only_the_load():
     assert {shown[key] for key in ("preview", "mail_test", "finish")} == {"blocked"}
     assert all(step.url is None for step in wizard.steps if step.key != "source")
     assert wizard.next.key == "preview" and wizard.next.url is None
+
+
+def test_a_failed_load_leaves_the_load_to_do_and_every_page_open():
+    """A failed load returns setup to collecting (#1353) but is not done."""
+    sections = {key: VALUES[key] for key in ("parish", "mail", "testing", "slack")}
+    wizard = build(
+        draft(sections, source=uuid4(), task_state="failed"),
+        "source",
+        credentials={"parishsoft": True, "google_workspace": True},
+    )
+    shown = states(wizard)
+    assert shown["source"] == "todo"
+    assert wizard.step("source").url == "/admin/setup/source"
+    assert shown["parishsoft"] == "done"
+    assert wizard.step("parishsoft").url == "/admin/setup/credentials/parishsoft"
+    # Unlike while loading, the earlier pages are links again.
+    for key in ("parish", "mail", "testing", "google_workspace", "slack"):
+        assert wizard.step(key).url is not None, key
+    # A discarded load (no binding) is not done either.
+    voided = build(
+        draft(sections),
+        "source",
+        credentials={"parishsoft": True, "google_workspace": True},
+    )
+    assert voided.step("source").state == "todo"
 
 
 def test_stepper_marks_current_step_with_text_not_color_alone():

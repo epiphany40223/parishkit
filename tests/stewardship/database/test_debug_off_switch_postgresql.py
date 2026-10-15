@@ -9,7 +9,9 @@ and a login with neither (the download login) cannot tell; only web, for
 System health's panel, reads the table itself. A process started with debug
 logging honors it on a new connection and on its service status record, and
 the operator's offline ``debug-off-clear`` clears it, recording
-``debug_logging_allowed`` as the operator in the same transaction.
+``debug_logging_allowed`` as the operator, naming the switch, in the same
+transaction (0098, #1229, which replaced 0078's count-only clear with
+``stewardship_debug_off_clear_v2()``).
 """
 
 import logging
@@ -44,6 +46,16 @@ MIGRATIONS = Path(__file__).resolve().parents[3] / (
 )
 TEXT = (MIGRATIONS / "0078_debug_off_switch.sql").read_text(encoding="utf-8")
 CHECK = re.search(r"^DO \$check\$.*?^\$check\$;", TEXT, re.M | re.S)[0]
+# 0078's count-only clear, which 0098 drops: 0078's own check needs it back.
+OLD_CLEAR = re.search(
+    r"^CREATE FUNCTION public\.stewardship_debug_off_clear_v1\(\).*?"
+    r"^REVOKE ALL ON FUNCTION public\.stewardship_debug_off_clear_v1\(\) FROM PUBLIC;",
+    TEXT,
+    re.M | re.S,
+)[0]
+SUBJECT = (MIGRATIONS / "0098_debug_off_clear_subject.sql").read_text(encoding="utf-8")
+SUBJECT_CHECK = re.search(r"^DO \$check\$.*?^\$check\$;", SUBJECT, re.M | re.S)[0]
+CLEAR = "public.stewardship_debug_off_clear_v2()"
 WEB = "pk_stewardship_web"
 
 
@@ -109,9 +121,9 @@ def refused(message):
 
 
 def owner_clear():
-    """Clear every set switch as the operator's definer would."""
+    """Clear the set switch as the operator's definer would; its id or None."""
     with connection.cursor() as cursor:
-        cursor.execute("SELECT public.stewardship_debug_off_clear_v1()")
+        cursor.execute(f"SELECT {CLEAR}")
         return cursor.fetchone()[0]
 
 
@@ -124,7 +136,7 @@ def test_the_web_sets_one_switch_for_a_fresh_administrator(auth_service, google)
             web_set()
     first.refresh_from_db()
     assert first.cleared_at is None and first.set_at is not None
-    assert owner_clear() == 1
+    assert owner_clear() == first.pk
     current = session()
     with web_with("SELECT", "INSERT"):
         # A stale sign-in, another Administrator's id or a made-up session
@@ -161,7 +173,7 @@ def test_no_other_login_sets_and_the_web_never_clears_as_operator(auth_service, 
         refused("permission denied"),
         connection.cursor() as cursor,
     ):
-        cursor.execute("SELECT public.stewardship_debug_off_clear_v1()")
+        cursor.execute(f"SELECT {CLEAR}")
 
 
 def test_a_switch_keeps_who_set_it_and_is_cleared_once(auth_service):
@@ -175,11 +187,11 @@ def test_a_switch_keeps_who_set_it_and_is_cleared_once(auth_service):
     ):
         with refused("keeps who set it"):
             DebugOffSwitch.objects.filter(pk=switch.pk).update(**{field: value})
-    assert owner_clear() == 1
+    assert owner_clear() == switch.pk
     switch.refresh_from_db()
     assert (switch.cleared_by, switch.cleared_actor_id) == ("operator", None)
     assert switch.cleared_at is not None
-    assert owner_clear() == 0
+    assert owner_clear() is None
     with refused("cleared once"):
         DebugOffSwitch.objects.filter(pk=switch.pk).update(cleared_at=now())
     with refused("never deleted"):
@@ -226,18 +238,46 @@ def test_the_backup_login_reads_the_table_and_another_login_cannot_tell():
 
 
 def test_admin_recovery_clears_the_switch_as_the_operator():
-    """The definer is admin recovery's alone, and clears exactly once."""
+    """The definer clears exactly once, answering the cleared switch's id
+    (0098), which admin recovery cannot read from the table itself."""
     switch = owner_set()
     with (
         task_login(ServiceRole.ADMIN_RECOVERY, exact=True),
         connection.cursor() as cursor,
     ):
-        cursor.execute("SELECT public.stewardship_debug_off_clear_v1()")
-        assert cursor.fetchone()[0] == 1
-        cursor.execute("SELECT public.stewardship_debug_off_clear_v1()")
-        assert cursor.fetchone()[0] == 0
+        cursor.execute(f"SELECT {CLEAR}")
+        assert cursor.fetchone()[0] == switch.pk
+        cursor.execute(f"SELECT {CLEAR}")
+        assert cursor.fetchone()[0] is None
     switch.refresh_from_db()
     assert switch.cleared_by == "operator" and switch.cleared_at is not None
+
+
+@pytest.mark.parametrize(
+    "service",
+    [
+        ServiceRole.WEB,
+        ServiceRole.WORKER,
+        ServiceRole.SCHEDULER,
+        ServiceRole.MAIL_DISPATCH,
+        ServiceRole.CONFIG_INSTALLER,
+    ],
+)
+def test_only_admin_recovery_may_run_the_operators_clear(service):
+    """Every other runtime login is refused the definer, and 0078's v1 is gone."""
+    owner_set()
+    with (
+        task_login(service, exact=True),
+        refused("permission denied"),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(f"SELECT {CLEAR}")
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT to_regprocedure('public.stewardship_debug_off_clear_v1()')"
+        )
+        assert cursor.fetchone()[0] is None
+    assert DebugOffSwitch.objects.get().cleared_at is None
 
 
 @pytest.fixture
@@ -268,11 +308,11 @@ def test_the_operator_command_clears_the_switch(offline):
     """``debug-off-clear`` admits the offline login, then clears and reports.
 
     The clear is audited as the operator (``debug_logging_allowed``, actor
-    kind ``operator``, no actor), once: a second run clears nothing and
-    records nothing.
+    kind ``operator``, no actor), naming the cleared switch (#1229), once: a
+    second run clears nothing and records nothing.
     """
     configuration = offline
-    owner_set()
+    switch = owner_set()
     with task_login(ServiceRole.ADMIN_RECOVERY, exact=True, reconnect=True):
         assert operator_commands.debug_off_clear_command(configuration) == {
             "debug_off_cleared": True
@@ -282,7 +322,7 @@ def test_the_operator_command_clears_the_switch(offline):
         }
     assert DebugOffSwitch.objects.get().cleared_by == "operator"
     event = AuditEvent.objects.get(event_type="debug_logging_allowed")
-    assert event.actor_id is None and event.subject_id is None
+    assert event.actor_id is None and event.subject_id == switch.pk
     context = AuditContext.objects.get(event=event)
     assert (context.actor_kind, context.schema) == ("operator", "action")
     assert context.context == {"outcome": "succeeded"}
@@ -316,10 +356,7 @@ def test_the_operator_command_names_a_missing_grant(offline):
     with task_login(ServiceRole.ADMIN_RECOVERY, exact=True, reconnect=True):
         with connection.cursor() as cursor:
             cursor.execute("RESET SESSION AUTHORIZATION")
-            cursor.execute(
-                "REVOKE EXECUTE ON FUNCTION public.stewardship_debug_off_clear_v1() "
-                f"FROM {login}"
-            )
+            cursor.execute(f"REVOKE EXECUTE ON FUNCTION {CLEAR} FROM {login}")
             cursor.execute(f"SET SESSION AUTHORIZATION {login}")
         with pytest.raises(ConfigError, match="run database-grants"):
             operator_commands.debug_off_clear_command(offline)
@@ -403,8 +440,13 @@ def test_the_service_status_record_reports_the_effective_state(monkeypatch):
 
 
 def test_the_migration_check_passes_and_refuses_drift():
-    """The closing DO block passes as installed and refuses each drift."""
+    """The closing DO block passes as installed and refuses each drift.
+
+    0098 dropped the count-only clear this check names, so each run puts it
+    back first, inside the rolled-back transaction.
+    """
     with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(OLD_CLEAR)
         cursor.execute(CHECK)
         transaction.set_rollback(True)
     for change, message in (
@@ -448,5 +490,46 @@ def test_the_migration_check_passes_and_refuses_drift():
             pytest.raises(DatabaseError, match=message),
             transaction.atomic(),
         ):
+            cursor.execute(OLD_CLEAR)
             cursor.execute(change)
             cursor.execute(CHECK)
+
+
+def test_the_subject_migration_replaces_the_count_only_clear():
+    """0098 run on 0078's schema drops v1 and installs v2; its check flips."""
+    with transaction.atomic(), connection.cursor() as cursor:
+        # Back to the schema before 0098: v1, no v2. The check refuses it.
+        cursor.execute(f"DROP FUNCTION {CLEAR}")
+        cursor.execute(OLD_CLEAR)
+        with pytest.raises(DatabaseError, match="not installed"), transaction.atomic():
+            cursor.execute(SUBJECT_CHECK)
+        cursor.execute(SUBJECT)
+        cursor.execute(
+            "SELECT to_regprocedure('public.stewardship_debug_off_clear_v1()'),"
+            "p.prosecdef FROM pg_proc p WHERE p.oid=%s::regprocedure",
+            [CLEAR],
+        )
+        assert cursor.fetchone() == (None, True)
+        transaction.set_rollback(True)
+
+
+def test_the_subject_migration_check_passes_and_refuses_drift():
+    """0098's closing DO block passes as installed and refuses each drift."""
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(SUBJECT_CHECK)
+        transaction.set_rollback(True)
+    for change in (
+        OLD_CLEAR,
+        f"DROP FUNCTION {CLEAR}",
+        f"ALTER FUNCTION {CLEAR} SECURITY INVOKER",
+        f"GRANT EXECUTE ON FUNCTION {CLEAR} TO PUBLIC",
+        f"ALTER FUNCTION {CLEAR} STABLE",
+        f"ALTER FUNCTION {CLEAR} RESET search_path",
+    ):
+        with (
+            connection.cursor() as cursor,
+            pytest.raises(DatabaseError, match="0098 .* is not installed"),
+            transaction.atomic(),
+        ):
+            cursor.execute(change)
+            cursor.execute(SUBJECT_CHECK)

@@ -31,7 +31,8 @@ def components(context, admin):
         "available": True,
         "fresh": True,
         "inventory": inventory,
-        "health": {"ready": False},
+        # A sender check is required (#1288) and has not passed.
+        "health": {"ready": False, "required": True, "trouble": "test_failed"},
         "next_due": {"at": context["deadline"].isoformat(), "count": 2},
         "control_token": "synthetic-pause-preview",
     }
@@ -43,6 +44,10 @@ def components(context, admin):
     counts = {"queued": 0, "held": 0, "submitting": 0, "unknown": 0}
     stranded = counts | {"held": 3, "stranded": 3, "types": {}}
     variants = {
+        # An ordinary pause needs no sender check (#1288); after a provider
+        # failure Resume waits for one, shown unavailable with its reason.
+        "resume": {"health": {"ready": True, "required": False}},
+        "resume-check": {},
         "resolve-ready": {
             "health": {"ready": True},
             "inventory": inventory
@@ -70,7 +75,7 @@ def components(context, admin):
         current = variant.get("inventory", inventory)
         proof = variant.get("health", values["health"])
         variant["resolution"] = resolution_choices(current, proof)
-    for action in ("pause", "resume", "resolve", *variants):
+    for action in ("pause", "resolve", *variants):
         campaign = Value(
             pk=UUID(int=62),
             active_configuration=Value(name="Annual campaign"),
@@ -79,7 +84,7 @@ def components(context, admin):
             paused_at=context["server_now"],
         )
         selection = {
-            "plan": "before_start" if action == "resume" else "closed",
+            "plan": "before_start" if action.startswith("resume") else "closed",
             "decision": "cancel",
             "types": ["receipt", "weekly_digest"],
             "coverage": {"receipt": {"items": 1234, "daily_ranges": 0}},
@@ -92,7 +97,7 @@ def components(context, admin):
                 | variants.get(action, {})
                 | {
                     "campaign": campaign,
-                    "resume_available": action == "resume",
+                    "resume_available": action.startswith("resume"),
                     "resolve_available": action.startswith("resolve"),
                     "preview": {
                         "action": "resolve" if action.startswith("resolve") else action,
