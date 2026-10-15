@@ -1558,6 +1558,24 @@
   window.addEventListener("pageshow", (event) => {
     if (event.persisted) unloading = false;
   });
+  // How to find the focused element again after a quiet refresh replaces
+  // the region it is in: its id, else its tag, link target and text. Null
+  // when focus is not in an in-place region.
+  const heldFocus = () => {
+    const node = document.activeElement;
+    if (!(node instanceof Element) || !node.closest(REGIONS)) return null;
+    return node.id ? {id: node.id}
+      : {tag: node.tagName, href: node.getAttribute("href"), text: node.textContent};
+  };
+  // Focus the fresh element matching ``held`` without scrolling, unless
+  // focus already moved somewhere still on the page.
+  const refocusHeld = (held) => {
+    if (!held || (document.activeElement && document.activeElement !== document.body)) return;
+    const match = held.id ? document.getElementById(held.id)
+      : [...document.querySelectorAll(held.tag)].find((node) => node.closest(REGIONS)
+        && node.getAttribute("href") === held.href && node.textContent === held.text);
+    match?.focus({preventScroll: true});
+  };
   const refreshRegions = async (region, control, url, init, fallback, options, controller, form) => {
     const owner = options.owner || null;
     // Every way out below that hands the page to the browser (a full load,
@@ -1666,6 +1684,10 @@
     const only = anywhere || Boolean(owner?.hasAttribute("data-in-place-only"));
     const alsoSwapped = anywhere ? []
       : (owner?.getAttribute("data-in-place-only") || "").split(/\s+/).filter(Boolean);
+    // A quiet refresh happens without the reader acting (a status that
+    // settled, #869, #1354), so it must not take their focus away: a focused
+    // element in a region it replaces is found again in the fresh copy.
+    const held = options.quiet ? heldFocus() : null;
     swappingFor = control instanceof Element ? control : null;
     try {
       document.querySelectorAll(REGIONS).forEach((other) => {
@@ -1717,7 +1739,10 @@
       const view = parsed.querySelector("[data-queue-address]")?.getAttribute("data-queue-address");
       if (view && sameOrigin(view)) window.history.replaceState(window.history.state, "", keepHash(view));
     }
-    if (options.quiet && !refused) return;
+    if (options.quiet && !refused) {
+      refocusHeld(held);
+      return;
+    }
     // A refusal's summary (now in the region) takes focus, as it does on an
     // ordinary load; without one the control does, as after a success. A
     // control that is gone (a save that closed a follow-up request leaves no
