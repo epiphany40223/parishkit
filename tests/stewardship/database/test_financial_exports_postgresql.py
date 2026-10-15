@@ -363,7 +363,7 @@ def test_financial_export_needs_a_fresh_sign_in(response_service, google):
         page = refused.content.decode()
         assert "Confirm with Google" in page and "Nothing was done" in page
         assert f'name="next" value="{route}"' in page
-        assert "You will then return to Financial stewardship." in page
+        assert "you will then return to Financial stewardship." in page
         assert not ExportRequest.objects.exists()
     signed_in(browser)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):

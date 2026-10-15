@@ -200,7 +200,7 @@ def test_refusals_answer_inside_the_region(page, component_origin):
     resend = region.get_by_role("button", name="Send these again", exact=True).first
     before = (_top(release), _top(resend))
     release.click()
-    expect(region.get_by_text("confirm it's you with Google first")).to_be_visible()
+    expect(region.get_by_text("this step needs a Google sign-in")).to_be_visible()
     expect(region.get_by_role("button", name="Confirm with Google")).to_be_visible()
     # The refusal is drawn after the controls, so none of them moved.
     after = (_top(release), _top(resend))

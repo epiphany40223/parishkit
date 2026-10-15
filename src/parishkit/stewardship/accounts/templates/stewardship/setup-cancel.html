@@ -16,10 +16,7 @@
 <p>{% translate "Backups are encrypted with the public key installed with the deployment. To check its fingerprint, or to replace it later, open Integrations and choose Backup encryption key." %}</p>
 <div class="setup-actions"><a class="setup-continue" href="/admin/">{% translate "Continue" %}</a></div>
 </div>
-{% if reauthenticate %}<div class="notice notice-error" role="alert">
-<p>{% if local_environment %}{% translate "Your sign-in is too old for installing credentials. Sign in again with the same email address to continue; your setup is kept." %}{% else %}{% translate "Your Google sign-in is too old for installing credentials. Sign in again with the same account to continue; your setup is kept." %}{% endif %}</p>
-{% include 'stewardship/components/reauthenticate.html' with next=next %}
-</div>{% endif %}
+{% if reauthenticate %}{% translate "installing credentials" as step_up_action %}{% translate "Your setup is kept." as step_up_outcome %}{% if local_environment %}{% translate "Sign in again with the same email address." as step_up_note %}{% else %}{% translate "Use the same Google account." as step_up_note %}{% endif %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action outcome=step_up_outcome note=step_up_note next=next role="alert" %}{% endif %}
 {% if overall == 'failed' %}<p class="notice notice-error" role="alert">{% translate "Setup could not finish. The failed step below explains what happened and what to do." %}</p>{% endif %}
 <section class="panel" data-finishing data-finishing-url="{{ status_url }}" data-finishing-signature="{{ signature }}">
 <h2>{% translate "Progress" %}</h2>

@@ -325,7 +325,7 @@ def test_a_stale_sign_in_gets_the_step_up_page(scenario):
         page = refused.content.decode()
         assert "Confirm with Google" in page and "Nothing was done" in page
         assert f'name="next" value="{reverse("admin:past_campaigns")}"' in page
-        assert "You will then return to Past campaigns." in page
+        assert "you will then return to Past campaigns." in page
     assert not ExportRequest.objects.exists()
     signed_in(browser)
     with day_two(harness), task_login(ServiceRole.WEB, exact=True, reconnect=True):

@@ -30,8 +30,7 @@
 {% if proved %}
 <section class="panel" aria-labelledby="prove-done">
 <h2 id="prove-done">{% translate "Code accepted" %}</h2>
-<p>{% if local_environment %}{% translate "For security, confirm your sign-in before reviewing the change. The code does not need to be typed again." %}{% else %}{% translate "For security, confirm your Google sign-in before reviewing the change. You will come back to this page to review and confirm it; the code does not need to be typed again." %}{% endif %}</p>
-{% include 'stewardship/components/reauthenticate.html' with next=next %}
+{% translate "reviewing the change" as step_up_action %}{% translate "You do not need to type the code again." as step_up_note %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action note=step_up_note next=next %}
 </section>
 {% elif challenge %}
 <section class="panel" aria-labelledby="prove-key">
@@ -52,7 +51,7 @@
 {% else %}
 <form method="post" class="panel" autocomplete="off" data-require-complete>{% csrf_token %}<input type="hidden" name="action" value="challenge">
 <h2>{% translate "Replace the key" %}</h2>
-{% if not fresh %}<p class="help">{% if local_environment %}{% translate "For security, replacing the key asks you to confirm your sign-in first if you have not signed in within the last five minutes." %}{% else %}{% translate "For security, replacing the key asks you to confirm your Google sign-in first if you have not signed in within the last five minutes." %}{% endif %}</p>{% endif %}
+{% if not fresh %}{% translate "replacing the key" as step_up_action %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action %}{% endif %}
 <div><label for="backup-key-public">{% translate "New public key" %}</label>
 <input type="text" id="backup-key-public" name="public_key" maxlength="200" autocomplete="off" spellcheck="false" required pattern="\s*[A-Za-z0-9+\/]{43}=\s*" data-missing-hint="{% translate 'Paste the public_key value: one line of 44 characters ending in =.' %}" aria-describedby="backup-key-public-help{% if key_error %} backup-key-public-error{% endif %}"{% if key_error %} aria-invalid="true"{% endif %}>
 <p class="help" id="backup-key-public-help">{% translate "The public_key value from backup-keygen: one line of 44 characters ending in =. Never paste the private key." %}</p>

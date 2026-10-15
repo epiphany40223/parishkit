@@ -49,14 +49,14 @@ def pages():
             "stewardship/setup.html",
             {"draft": None},
             (
-                "Saving a credential needs a Google sign-in from the last five"
-                " minutes. If yours is older, the page asks you to confirm it's"
-                " you with Google; your setup is kept.",
+                "For security, saving a credential needs a Google sign-in from"
+                " the last five minutes. That step asks you to confirm it's you"
+                " with Google if you need to then. Your setup is kept.",
             ),
             (
-                "Saving a credential needs a sign-in from the last five minutes."
-                " If yours is older, the page asks you to confirm your sign-in;"
-                " your setup is kept.",
+                "For security, saving a credential needs a sign-in from the last"
+                " five minutes. That step asks you to confirm your sign-in if you"
+                " need to then. Your setup is kept.",
             ),
         ),
         "setup-credential": (
@@ -69,13 +69,13 @@ def pages():
             },
             (
                 "For security, saving a credential needs a Google sign-in from"
-                " the last five minutes; if yours is older, you will be asked to"
-                " confirm it's you with Google, which keeps this setup.",
+                " the last five minutes. When you continue, you are asked to"
+                " confirm it's you with Google first. This setup is kept.",
             ),
             (
                 "For security, saving a credential needs a sign-in from the last"
-                " five minutes; if yours is older, you will be asked to confirm"
-                " your sign-in, which keeps this setup.",
+                " five minutes. When you continue, you are asked to confirm your"
+                " sign-in first. This setup is kept.",
             ),
         ),
         "setup-access": (
@@ -129,13 +129,14 @@ def pages():
             {},
             (
                 "For security, queuing this export needs a Google sign-in from"
-                " the last five minutes. If yours is older, you are asked to"
-                " confirm it's you with Google first and nothing is queued:",
+                " the last five minutes. When you continue, you are asked to"
+                " confirm it's you with Google first. If you continue now,"
+                " nothing is queued:",
             ),
             (
                 "For security, queuing this export needs a sign-in from the last"
-                " five minutes. If yours is older, you are asked to confirm your"
-                " sign-in first and nothing is queued:",
+                " five minutes. When you continue, you are asked to confirm your"
+                " sign-in first. If you continue now, nothing is queued:",
             ),
         ),
         "credential-selection": (
@@ -146,25 +147,26 @@ def pages():
                 "preview": "p",
             },
             (
-                "Confirming needs a Google sign-in from the last few minutes; if"
-                " yours is older, you are asked to confirm it's you with Google"
-                " first.",
+                "For security, finishing the switch to the new key needs a Google"
+                " sign-in from the last five minutes. When you continue, you are"
+                " asked to confirm it's you with Google first.",
             ),
             (
-                "Confirming needs a sign-in from the last few minutes; if yours is"
-                " older, you are asked to confirm your sign-in first.",
+                "For security, finishing the switch to the new key needs a"
+                " sign-in from the last five minutes. When you continue, you are"
+                " asked to confirm your sign-in first.",
             ),
         ),
         "family-portal-maintenance": (
             "stewardship/family-portal-maintenance.html",
             {"state": Value(closed=False), "message_limit": 500},
             (
-                "Changing this requires you to confirm your sign-in with Google,"
-                " and every change is recorded in the audit log.",
+                "For security, closing or reopening the Family portal needs a"
+                " Google sign-in from the last five minutes.",
             ),
             (
-                "Changing this requires you to confirm your sign-in, and every"
-                " change is recorded in the audit log.",
+                "For security, closing or reopening the Family portal needs a"
+                " sign-in from the last five minutes.",
             ),
         ),
         "users": (
@@ -335,6 +337,12 @@ def test_fresh_pages_keep_their_other_rules(monkeypatch):
         "family-portal-maintenance", False, timedelta(0), monkeypatch
     )
     assert "Every change is recorded in the audit log." in maintenance
+    # The shared notice is the page's one step-up hint (#1297 review).
+    stale = render_signed_in(
+        "family-portal-maintenance", False, timedelta(minutes=6), monkeypatch
+    )
+    assert "Every change is recorded in the audit log." in stale
+    assert stale.count("the last five minutes") == 1
 
 
 # The integrations with a key field: ParishSoft and Slack drew a second

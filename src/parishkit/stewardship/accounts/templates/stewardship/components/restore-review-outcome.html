@@ -4,8 +4,7 @@
   controls, so it never moves them. `step` is the view's answer: found
   (listed), settled, or a refusal. A stale sign-in carries the step-up, which
   returns to the page.
-{% endcomment %}{% if step.refused == "reauthenticate" %}<div class="notice" data-restore-refused="reauthenticate"><p>{% if local_environment %}{% translate "For your security, confirm your sign-in first. Nothing was changed." %}{% else %}{% translate "For your security, confirm it's you with Google first. Nothing was changed; you will return to this page." %}{% endif %}</p>
-{% include 'stewardship/components/reauthenticate.html' with next=page_url %}</div>
+{% endcomment %}{% if step.refused == "reauthenticate" %}{% translate "this step" as step_up_action %}{% translate "Nothing was changed." as step_up_outcome %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action outcome=step_up_outcome next=page_url marker="restore-refused" marker_value="reauthenticate" %}
 {% elif step.refused == "changed" %}<p class="notice" data-restore-refused="changed">{% translate "Something changed since you looked (another Administrator, or more held emails were found). Nothing was changed; review the counts and try again." %}</p>
 {% elif step.refused == "superseded" %}<p class="notice notice-error" data-restore-refused="superseded">{% translate "A later reminder already reached some of these Families or is on its way, so sending this one again would arrive out of order. Nothing was changed; assume these were sent instead." %}</p>
 {% elif step.refused == "held_elsewhere" %}<p class="notice notice-error" data-restore-refused="held_elsewhere">{% translate "An earlier restore still holds some of these emails undecided or assumed sent, so sending them again would send nothing. Nothing was changed; assume these were sent instead." %}</p>

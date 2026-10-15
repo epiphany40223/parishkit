@@ -36,7 +36,7 @@
 <li>{% translate "Optionally, a Slack app bot token (xoxb-…) and the ID of the alert channel." %}</li>
 <li>{% translate "A staff mailbox for Testing mode, the parish logo image, and the first campaign's dates." %}</li>
 </ul>
-{% fresh_sign_in as fresh %}{% if not fresh %}<p class="notice">{% if local_environment %}{% translate "Saving a credential needs a sign-in from the last five minutes. If yours is older, the page asks you to confirm your sign-in; your setup is kept." %}{% else %}{% translate "Saving a credential needs a Google sign-in from the last five minutes. If yours is older, the page asks you to confirm it's you with Google; your setup is kept." %}{% endif %}</p>{% endif %}
+{% fresh_sign_in as fresh %}{% if not fresh %}{% translate "saving a credential" as step_up_action %}{% translate "Your setup is kept." as step_up_note %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action note=step_up_note later=True %}{% endif %}
 <p>{% translate "Complete the Parish and first campaign setup using this login. Another login cannot resume your temporary settings." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="start">{% button type="submit" %}{% translate "Start setup" %}{% endbutton %}</form>
 {% endif %}

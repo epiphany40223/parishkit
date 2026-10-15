@@ -868,7 +868,7 @@ def test_directory_export_and_regenerate_need_a_fresh_sign_in(
             assert "Confirm with Google" in page and "Nothing was done" in page
             assert f'name="next" value="{back}"' in page
             assert (
-                "You will then return to Active parishioner family directory." in page
+                "you will then return to Active parishioner family directory." in page
             )
             assert harness.code not in page
         assert not ExportRequest.objects.exists()
@@ -890,7 +890,7 @@ def test_directory_export_and_regenerate_need_a_fresh_sign_in(
         assert refused.status_code == 403
         page = refused.content.decode()
         assert f'name="next" value="/admin/reports/exports/{request.pk}/"' in page
-        assert "You will then return to Report export." in page
+        assert "you will then return to Report export." in page
         assert ExportRequest.objects.count() == 1
     # Render the file and let it expire; after the step-up, regenerating works.
     root = tmp_path / "directory-reports"

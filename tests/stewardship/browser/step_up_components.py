@@ -31,9 +31,9 @@ PAGES = {
             "home_label": "Administration home",
         },
         (
-            "For your security, confirm it's you with Google before this action.",
-            "Google may ask you to choose your account or sign in. You will then"
-            " return to this page.",
+            "For security, this action needs a Google sign-in from the last five"
+            " minutes.",
+            "Confirm it's you with Google; you will come back to this page.",
         ),
     ),
     "delivery-control": (
@@ -45,17 +45,18 @@ PAGES = {
             "next_due": {},
         },
         (
-            "For your security, confirm it's you with Google before confirming a"
-            " pause, resume or resolution.",
+            "For security, pausing, resuming or resolving delivery needs a Google"
+            " sign-in from the last five minutes. Confirm it's you with Google;"
+            " you will come back to this page.",
         ),
     ),
     "production-withdrawal": (
         "stewardship/production-withdrawal.html",
         {"available": True},
         (
-            "Cancelling go-live needs a Google sign-in from the last five minutes."
-            " Confirm it's you with Google; you will come back here, then preview"
-            " the cancellation again.",
+            "For security, cancelling go-live needs a Google sign-in from the"
+            " last five minutes. Confirm it's you with Google; you will come back"
+            " to this page. When you come back, preview the cancellation again.",
         ),
     ),
     "production-confirmation": (
@@ -66,10 +67,9 @@ PAGES = {
             "transition": Value(pk=UUID(int=620)),
         },
         (
-            "Confirm it's you with Google",
-            "Going live needs a Google sign-in from the last five minutes. Confirm"
-            " it's you with Google; you will come back here, then check the impact"
-            " below.",
+            "For security, going live needs a Google sign-in from the last five"
+            " minutes. Confirm it's you with Google; you will come back to this"
+            " page. When you come back, check the impact below.",
         ),
     ),
     "family-tests": (
@@ -86,8 +86,9 @@ PAGES = {
             "next": NEXT,
         },
         (
-            "Sending tests to real Families requires confirming your sign-in with"
-            " Google (you signed in 7 minutes ago).",
+            "For security, sending tests to real Families needs a Google sign-in"
+            " from the last five minutes. You signed in 7 minutes ago. Confirm"
+            " it's you with Google; you will come back to this page.",
         ),
     ),
     "setup-finishing": (
@@ -100,8 +101,9 @@ PAGES = {
             "elapsed_minutes": 2,
         },
         (
-            "Your Google sign-in is too old for installing credentials. Sign in"
-            " again with the same account to continue; your setup is kept.",
+            "For security, installing credentials needs a Google sign-in from the"
+            " last five minutes. Your setup is kept. Confirm it's you with Google;"
+            " you will come back to this page. Use the same Google account.",
         ),
     ),
     "backup-key": (
@@ -112,16 +114,18 @@ PAGES = {
             "proved": True,
             "next": NEXT,
         },
-        ("For security, confirm your Google sign-in before reviewing the change.",),
+        (
+            "For security, reviewing the change needs a Google sign-in from the"
+            " last five minutes.",
+        ),
     ),
-    # The automation pages (#582) were already worded without Google; they
-    # are here so a later edit cannot add it back.
     "automation-access": (
         "stewardship/automation-access.html",
         {"sessions": [], "live": [], "approval_url": "/admin/automation/approve"},
         (
-            "Approving a session first asks you to confirm your sign-in, then"
-            " takes you to the approval page.",
+            "For security, approving a session needs a Google sign-in from the"
+            " last five minutes. Confirm it's you with Google; you will then"
+            " return to the approval page.",
         ),
     ),
     "automation-approval": (
@@ -132,40 +136,49 @@ PAGES = {
             "back": "/admin/automation",
             "back_label": "Return to Automation access",
         },
-        ("For security, confirm your sign-in before approving a session.",),
+        (
+            "For security, approving a session needs a Google sign-in from the"
+            " last five minutes.",
+        ),
     ),
 }
 # Page name -> the sentences LOCAL shows instead of the Production ones.
 LOCAL_WORDING = {
-    "error": ("For your security, confirm your sign-in before this action.",),
+    "error": ("For security, this action needs a sign-in from the last five minutes.",),
     "delivery-control": (
-        "For your security, confirm your sign-in before you pause, resume or"
-        " resolve delivery. You need to have signed in within the last five"
-        " minutes.",
+        "For security, pausing, resuming or resolving delivery needs a sign-in"
+        " from the last five minutes.",
     ),
     "production-withdrawal": (
-        "Cancelling go-live needs a sign-in from the last five minutes. Confirm"
-        " your sign-in, then preview the cancellation again.",
+        "For security, cancelling go-live needs a sign-in from the last five"
+        " minutes. When you come back, preview the cancellation again.",
     ),
     "production-confirmation": (
-        "Confirm your sign-in",
-        "Going live needs a sign-in from the last five minutes. Confirm your"
-        " sign-in, then check the impact below.",
+        "For security, going live needs a sign-in from the last five minutes."
+        " When you come back, check the impact below.",
     ),
     "family-tests": (
-        "Sending tests to real Families requires confirming your sign-in (you"
-        " signed in 7 minutes ago).",
+        "For security, sending tests to real Families needs a sign-in from the"
+        " last five minutes. You signed in 7 minutes ago. Your chosen Families"
+        " will be shown again when you return; nothing is sent until you press"
+        " Send.",
     ),
     "setup-finishing": (
-        "Your sign-in is too old for installing credentials. Sign in again with"
-        " the same email address to continue; your setup is kept.",
+        "For security, installing credentials needs a sign-in from the last"
+        " five minutes. Your setup is kept. Sign in again with the same email"
+        " address.",
     ),
     "backup-key": (
-        "For security, confirm your sign-in before reviewing the change. The"
-        " code does not need to be typed again.",
+        "For security, reviewing the change needs a sign-in from the last five"
+        " minutes. You do not need to type the code again.",
     ),
-    "automation-access": PAGES["automation-access"][2],
-    "automation-approval": PAGES["automation-approval"][2],
+    "automation-access": (
+        "For security, approving a session needs a sign-in from the last five minutes.",
+    ),
+    "automation-approval": (
+        "For security, approving a session needs a sign-in from the last five"
+        " minutes. The code still works for ten minutes after it was shown.",
+    ),
 }
 
 

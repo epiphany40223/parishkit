@@ -56,7 +56,7 @@
 {% if fresh %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="cleanup"><input type="hidden" name="preview_token" value="{{ cleanup_token }}">
 <label><input type="checkbox" name="acknowledge" value="yes" required data-acknowledgment> {% translate "I acknowledge that deleting the inventoried Testing data is irreversible." %}</label>
 {% button type="submit" %}{% translate "Start Testing cleanup" %}{% endbutton %}</form>
-{% else %}<div class="notice" data-cleanup-step-up><p>{% if local_environment %}{% translate "For your security, confirm your sign-in before starting cleanup. You need to have signed in within the last five minutes. Then select Check readiness and public web address again." %}{% else %}{% translate "For your security, confirm it's you with Google before starting cleanup. You need to have signed in within the last five minutes. You will come back to this page; then select Check readiness and public web address again." %}{% endif %}</p>{% url 'admin:go_live' as here %}{% include 'stewardship/components/reauthenticate.html' with next=here %}</div>{% endif %}
+{% else %}{% url 'admin:go_live' as here %}{% translate "starting cleanup" as step_up_action %}{% translate "When you come back, select Check readiness and public web address again." as step_up_note %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action note=step_up_note next=here marker="cleanup-step-up" %}{% endif %}
 </section>
 {% else %}
 {% comment %}Until a passing check signs a cleanup preview, Start Testing

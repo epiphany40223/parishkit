@@ -110,7 +110,7 @@ def test_refusals_answer_inside_the_region(page, component_origin):
     ).nth(1)
     before = (_top(resend), _top(assume))
     resend.click()
-    expect(region.get_by_text("confirm it's you with Google first")).to_be_visible()
+    expect(region.get_by_text("this step needs a Google sign-in")).to_be_visible()
     expect(region.get_by_role("button", name="Confirm with Google")).to_be_visible()
     # The refusal is drawn after the table, so no control moved.
     assert (_top(resend), _top(assume)) == pytest.approx(before, abs=1)

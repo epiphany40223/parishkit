@@ -833,7 +833,7 @@ def test_turn_off_debug_logging_previews_and_confirms_in_place(
 
 
 def test_a_stale_sign_in_offers_the_step_up_in_the_debug_region(page, component_origin):
-    """The "For your security" notice and Confirm with Google, in place."""
+    """The shared "For security" notice and Confirm with Google, in place."""
     _routed(
         page,
         component_origin,
@@ -845,7 +845,7 @@ def test_a_stale_sign_in_offers_the_step_up_in_the_debug_region(page, component_
     region = page.locator("#debug-off")
     region.get_by_role("button", name="Turn off debug logging", exact=True).click()
     expect(region.get_by_role("button", name="Confirm with Google")).to_be_visible()
-    visible(region.get_by_text("For your security"))
+    visible(region.get_by_text("For security, turning off debug logging"))
     assert kept()
     assert '"errors"' not in page.content()
 

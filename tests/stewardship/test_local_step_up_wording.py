@@ -49,9 +49,9 @@ def test_local_prompt_never_mentions_google(name):
 @pytest.mark.parametrize(
     "minutes,says",
     [
-        (1, "confirming your sign-in (you signed in 1 minute ago)."),
-        (7, "confirming your sign-in (you signed in 7 minutes ago)."),
-        (None, "Sending tests to real Families requires confirming your sign-in."),
+        (1, "last five minutes. You signed in 1 minute ago. Your chosen"),
+        (7, "last five minutes. You signed in 7 minutes ago. Your chosen"),
+        (None, "last five minutes. Your chosen"),
     ],
 )
 def test_family_test_prompt_counts_minutes_in_local(minutes, says):
@@ -60,3 +60,5 @@ def test_family_test_prompt_counts_minutes_in_local(minutes, says):
     other = render("family-tests", CONTEXT, signed_in_minutes=minutes)
     assert says in local and "Google" not in local
     assert "with Google" in other and says not in other
+    if minutes is None:
+        assert "You signed in" not in local + other

@@ -266,7 +266,7 @@ def test_starting_a_key_change_needs_a_recent_sign_in(auth_service, google):
     browser, _ = signed_in()
     _, public = keypair()
     stale_sign_in()
-    assert b"confirm your Google sign-in" in browser.get(URL).content
+    assert b"replacing the key needs a Google sign-in" in browser.get(URL).content
     response = post(browser, URL, {"action": "challenge", "public_key": public})
     assert response.status_code == 403
     assert "PKBKP1:" not in response.content.decode()

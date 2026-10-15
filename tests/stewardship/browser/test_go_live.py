@@ -69,7 +69,7 @@ def test_stale_sign_in_offers_the_step_up_instead_of_start(
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/go-live-stale")
     main = page.locator("main")
-    assert "confirm it's you with Google before starting cleanup" in (main.inner_text())
+    assert "starting cleanup needs a Google sign-in" in (main.inner_text())
     visible(page.get_by_role("button", name="Confirm with Google"))
     assert page.get_by_role("button", name="Start Testing cleanup").count() == 0
     assert page.locator("input[data-acknowledgment]").count() == 0
@@ -88,5 +88,5 @@ def test_stale_sign_in_offers_the_step_up_instead_of_start(
     )
     page.goto(component_origin + "/go-live-stale-local")
     text = page.locator("[data-cleanup-step-up]").inner_text()
-    assert "confirm your sign-in before starting cleanup" in text
+    assert "starting cleanup needs a sign-in" in text
     assert "Google" not in text
