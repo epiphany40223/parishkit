@@ -45,6 +45,12 @@ A refusal or failure exits with 1, a usage error with 2, and Ctrl-C with
 
 ## Releases
 
+- [`tools/stewardship-ops/merge-train.sh`](../../tools/stewardship-ops/merge-train.sh)
+  merges a release train's pull requests into main in train order, once the
+  train's full CI run has passed, and fails unless main ends on exactly the
+  tree that run tested. The
+  [release-train procedure](stewardship-test-efficiency.md#release-trains)
+  says when to run it.
 - [`tools/stewardship-ops/ci-watch.sh`](../../tools/stewardship-ops/ci-watch.sh)
   watches one GitHub Actions run and returns at the first failed job,
   rather than when the slowest shard finishes, or at a merge conflict on

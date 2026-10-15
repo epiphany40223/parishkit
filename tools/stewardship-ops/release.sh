@@ -101,18 +101,8 @@ ops_require_count STEWARDSHIP_POLL_SECONDS "$poll"
 checkout=$(CDPATH='' cd "$here/../.." && pwd)
 git=(git -C "$checkout")
 
-# 1. The remote is the repository gh acts on; the configured URL, not the
-# rewritten one, so a url.insteadOf mirror cannot hide another repository.
-url=$("${git[@]}" config --get "remote.$remote.url" || true)
-if [[ $url =~ ^(https://github\.com/|git@github\.com:|ssh://git@github\.com/)(.+)$ ]]; then
-    named=${BASH_REMATCH[2]%/}
-    named=${named%.git}
-else
-    named=""
-fi
-if [ "$named" != "$repo" ]; then
-    ops_refuse "Git remote $remote is '${url:-unset}', not GitHub's $repo (set STEWARDSHIP_GIT_REMOTE or STEWARDSHIP_GH_REPO)"
-fi
+# 1. The remote is the repository gh acts on.
+ops_require_github_remote "$checkout" "$remote" "$repo"
 
 # main's head, its committed version, and no existing tag.
 ops_limited 120 "git fetch of main" "${git[@]}" fetch -q --no-tags "$remote" "+refs/heads/main:refs/remotes/$remote/main"
@@ -219,7 +209,7 @@ evidence() {
     if [ "$found" != 0 ]; then
         ops_refuse "Cannot look up the release evidence for $sha"
     fi
-    read -r chosen status conclusion head docs <<<"$line" || true
+    read -r chosen status conclusion head docs attempt <<<"$line" || true
 }
 
 # Documentation is a test input. When the evidence tree differs from main's
@@ -329,6 +319,10 @@ require_evidence() {
 require_evidence "After the watch"
 docs_checks
 ops_log "release evidence: CI run $run on $head ($docs docs-safe paths differ from $sha)"
+# A pass after re-running failed jobs is still evidence; say so (#158).
+if [ "${attempt:-1}" -gt 1 ]; then
+    ops_log "CI run $run passed on attempt $attempt, after its failed jobs were re-run"
+fi
 
 # 4. Confirm; then, immediately before tagging, check that no newer run
 # took its place as the one release.yml will check; tag and push.

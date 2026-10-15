@@ -152,7 +152,9 @@ def test_fast_feedback_precedes_full_candidate_suites():
 
     jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
     fast = jobs["validate"]
-    assert "if" not in fast and "needs" not in fast
+    # A push to main runs only the tree-evidence check (#158).
+    assert fast["if"] == "${{ github.event_name != 'push' }}"
+    assert "needs" not in fast
     smoke = next(
         step
         for step in fast["steps"]
@@ -506,7 +508,9 @@ def test_failed_shard_never_publishes_receipt(
     assert ci.run_shard(repository, output, 1, 8) == (1 if failed < 0 else failed)
     assert ("SIGSEGV" in capsys.readouterr().err) is (failed < 0)
     assert not (output / "receipt.json").exists()
-    assert run.call_count == 1 + ci.BASELINE_PARTS
+    # Counted from call_args_list: shard one calls run_child from several
+    # threads, and Python 3.12's Mock.call_count += 1 can lose an update.
+    assert len(run.call_args_list) == 1 + ci.BASELINE_PARTS
     command = child_call(run, "database").args[0]
     assert "--require-postgresql-tests" in command
     assert "--ci-shard=1/8" in command
@@ -889,7 +893,9 @@ def test_successful_shard_baseline_and_deadline(
     monkeypatch.setattr(ci, "run_child", run)
     monkeypatch.setattr(ci, "merge_coverage", merge)
     assert ci.run_shard(repository, output, index, 2, tmp_path / "tmp") == 0
-    assert run.call_count == (1 + ci.BASELINE_PARTS if index == 1 else 1)
+    # Counted from call_args_list: shard one calls run_child from several
+    # threads, and Python 3.12's Mock.call_count += 1 can lose an update.
+    assert len(run.call_args_list) == (1 + ci.BASELINE_PARTS if index == 1 else 1)
     database = child_call(run, "database")
     assert database.kwargs["timeout"] == ci.SHARD_TIMEOUT
     assert database.kwargs["env"]["COVERAGE_FILE"] == str(output / "coverage.data")
@@ -1009,7 +1015,9 @@ def test_baseline_timeout_fails_shard_one(repository, tmp_path, monkeypatch):
     monkeypatch.setattr(ci, "run_child", run)
     with pytest.raises(subprocess.TimeoutExpired):
         ci.run_shard(repository, output, 1, 8)
-    assert run.call_count == 1 + ci.BASELINE_PARTS
+    # Counted from call_args_list: shard one calls run_child from several
+    # threads, and Python 3.12's Mock.call_count += 1 can lose an update.
+    assert len(run.call_args_list) == 1 + ci.BASELINE_PARTS
     assert not (output / "receipt.json").exists()
 
 

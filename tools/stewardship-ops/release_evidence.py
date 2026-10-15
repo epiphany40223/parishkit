@@ -8,7 +8,10 @@ ancestor of the tag: a nightly train head that was tested once and then
 merged into main in the same order has main's tree under a different SHA.
 
 Both release.yml (independently, on every tag push) and release.sh (before
-it tags) ask this script which run decides, so the rule lives in one place:
+it tags) ask this script which run decides, so the rule lives in one place.
+ci.yml's main-tree-evidence job (on every push to main, #158) and
+merge-train.sh (before a train merges) ask it the same question about main's
+head and a train head:
 
 - Only runs named exactly "CI (jobs: all)" from a workflow_dispatch count; a
   jobs=affected dispatch may have skipped job groups (#626).
@@ -43,11 +46,13 @@ Usage:
         [--run ID [--retry-seconds N]]
     release_evidence.py docs-tests
 
-prints "RUN_ID STATUS CONCLUSION HEAD_SHA DOCS_PATHS" (tab separated;
-STATUS is "unreadable" for an unreadable run; DOCS_PATHS counts the
-docs-safe paths that differ) for the deciding run, or nothing when no full
-run qualifies. Progress and failures go to stderr. Exit status 3 means a git
-or gh call passed its time limit; 1 means gh failed every attempt.
+prints "RUN_ID STATUS CONCLUSION HEAD_SHA DOCS_PATHS ATTEMPT" (tab
+separated; STATUS is "unreadable" for an unreadable run; DOCS_PATHS counts
+the docs-safe paths that differ; ATTEMPT is the run's latest attempt, more
+than 1 when failed jobs were re-run, #158) for the deciding run, or nothing
+when no full run qualifies. Progress and failures go to stderr. Exit status
+3 means a git or gh call passed its time limit; 1 means gh failed every
+attempt.
 """
 
 import argparse
@@ -263,6 +268,8 @@ def view_run(repo, run_id):
         "displayTitle": record["display_title"],
         "event": record["event"],
         "path": record["path"],
+        # Informational only (a rerun's attempt number), so never required.
+        "attempt": record.get("run_attempt", 1),
     }
 
 
@@ -380,7 +387,7 @@ def list_runs(repo, limit):
         "--limit",
         str(limit),
         "--json",
-        "databaseId,headSha,status,conclusion,displayTitle,event",
+        "databaseId,headSha,status,conclusion,displayTitle,event,attempt",
     ]
     runs = gh_json("gh run list", command)
     log(f"gh run list returned {len(runs)} of {limit} requested runs")
@@ -426,7 +433,10 @@ def main(argv=None):
         status = run["status"] if paths is not None else "unreadable"
         fields = (run["databaseId"], status, run["conclusion"] or "-")
         count = len(paths) if paths is not None else 0
-        print(*fields, run["headSha"], count, sep="\t")
+        # A run that passed only after its failed jobs were re-run is still
+        # evidence, but callers name the attempt so the rerun stays visible.
+        attempt = run.get("attempt") or 1
+        print(*fields, run["headSha"], count, attempt, sep="\t")
     return 0
 
 

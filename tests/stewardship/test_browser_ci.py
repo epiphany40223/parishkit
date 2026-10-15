@@ -510,7 +510,11 @@ def test_browser_workflow_contract():
 def test_ci_cancels_only_superseded_pr_heads():
     """Keep main evidence independent and omit duplicate merge-queue runs.
 
-    Marking a draft ready starts no run (#624).
+    Marking a draft ready starts no run (#624). A newer push to main cancels
+    an older push's run, so only the last push of a train's merge burst runs
+    main-tree-evidence (#158); a dispatched full run, including the backfill
+    that job starts, has its own group and is never cancelled. No job may
+    override the workflow's group, or that debounce would not hold.
     """
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
     # PyYAML's YAML 1.1 resolver treats the Actions `on` key as a boolean.
@@ -535,6 +539,11 @@ def test_ci_cancels_only_superseded_pr_heads():
         ),
         "cancel-in-progress": "${{ github.event_name != 'workflow_dispatch' }}",
     }
+    assert not [name for name, job in workflow["jobs"].items() if "concurrency" in job]
+    # On a push, only main-tree-evidence runs: the browser engines need
+    # validate, which a push skips, and the gate skips a push itself.
+    assert workflow["jobs"]["validate"]["if"] == "${{ github.event_name != 'push' }}"
+    assert workflow["jobs"]["stewardship-browser-engine"]["needs"] == "validate"
 
 
 @pytest.mark.parametrize(

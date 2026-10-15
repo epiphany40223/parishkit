@@ -237,19 +237,23 @@ def test_release_requires_full_ci_of_the_release_tree_before_build():
     ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
     release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
     # PyYAML reads the bare `on:` key as the boolean true. Pushes to main run
-    # light validation only (temporarily); a manual dispatch must run every
+    # only the tree-evidence check (#158); a manual dispatch must run every
     # job by default, or a tagged commit could lack complete evidence; the
     # release gate accepts only a run named "CI (jobs: all)"
     # (release_evidence.py and its tests).
     assert ci[True]["push"] == {"branches": ["main"]}
     assert ci[True]["workflow_dispatch"]["inputs"]["jobs"]["default"] == "all"
-    for job in ci["jobs"].values():
-        condition = job.get("if", "${{ always() }}")
-        assert (
-            condition == "${{ always() }}"
-            or "github.event_name == 'workflow_dispatch' ||" in condition
-            or condition == "${{ always() && github.event_name != 'push' }}"
-        )
+    for name, job in ci["jobs"].items():
+        condition = job["if"]
+        if name == MAIN_CHECK:
+            assert condition == "${{ github.event_name == 'push' }}"
+        else:
+            # Every other job is skipped on a push to main.
+            assert (
+                condition == "${{ github.event_name != 'push' }}"
+                or "github.event_name == 'workflow_dispatch' ||" in condition
+                or condition == "${{ always() && github.event_name != 'push' }}"
+            ), name
     job = release["jobs"]["validate-build"]
     assert "services" not in job
     assert job["permissions"] == {"actions": "read", "contents": "read"}
@@ -300,6 +304,9 @@ def test_release_requires_full_ci_of_the_release_tree_before_build():
     [
         ("", 1, "No full CI run exists"),
         ("77\tcompleted\tsuccess\tabc000\t2", 0, "Full CI run 77 passed on abc000"),
+        ("77\tcompleted\tsuccess\tabc000\t2\t1", 0, "Full CI run 77 passed on abc000"),
+        # A pass after a re-run of failed jobs is still evidence, named (#158).
+        ("77\tcompleted\tsuccess\tabc000\t2\t3", 0, "passed on attempt 3"),
         ("77\tcompleted\tfailure\tabc000\t0", 1, "did not pass (failure)"),
         ("77\tcompleted\tcancelled\tabc000\t0", 1, "did not pass (cancelled)"),
         ("77\tunreadable\tsuccess\tabc000\t0", 1, "cannot be fetched"),
@@ -335,11 +342,47 @@ def test_release_gate_acts_on_the_deciding_run(tmp_path, selection, code, messag
     assert result.returncode == code
     assert message in result.stdout
     if code == 0:
+        attempt = "3" if "attempt 3" in message else "1"
         assert output.read_text().splitlines() == [
             "run=77",
             "commit=abc000",
             "docs=2",
+            f"attempt={attempt}",
         ]
+    assert ("::warning::" in result.stdout) == ("attempt 3" in message)
+
+
+def test_release_notes_name_a_re_run_evidence_attempt(tmp_path):
+    """The release notes say when the evidence run passed after a re-run."""
+    release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
+    (notes,) = [
+        step
+        for step in release["jobs"]["validate-build"]["steps"]
+        if step.get("name") == "Generate release notes"
+    ]
+    assert notes["env"]["EVIDENCE_ATTEMPT"] == "${{ steps.evidence.outputs.attempt }}"
+    for attempt, named in (("1", False), ("2", True)):
+        (tmp_path / "RELEASE_NOTES.md").write_text("Notes.\n")
+        result = subprocess.run(
+            ["bash", "-e", "-c", notes["run"]],
+            cwd=tmp_path,
+            env={
+                "PATH": os.environ["PATH"],
+                "GITHUB_REF_NAME": "v1.2.3",
+                "GITHUB_SERVER_URL": "https://github.com",
+                "GITHUB_REPOSITORY": "owner/repository",
+                "EVIDENCE_RUN": "77",
+                "EVIDENCE_COMMIT": "abc000",
+                "EVIDENCE_DOCS": "0",
+                "EVIDENCE_ATTEMPT": attempt,
+            },
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, result.stderr
+        text = (tmp_path / "release-notes.md").read_text()
+        assert ("passed on attempt 2" in text) == named
 
 
 def test_release_gate_waits_for_a_pending_run(tmp_path):
@@ -366,6 +409,109 @@ def test_release_gate_waits_for_a_pending_run(tmp_path):
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.count("in_progress; waiting.") == 2
+
+
+MAIN_CHECK = "main-tree-evidence"
+MAIN_CHECK_STEP = "Require a full CI run of main's tree"
+
+
+def main_check():
+    """ci.yml's main-tree-evidence job (#158)."""
+    ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    return ci["jobs"][MAIN_CHECK]
+
+
+def test_a_push_to_main_only_checks_for_full_run_evidence():
+    """A push to main runs one cheap job that asks the release gate's rule.
+
+    It needs no other job, installs nothing, and may dispatch a full run
+    after a debounce; the workflow's push concurrency group (pinned in
+    test_browser_ci.py) cancels it when a newer push arrives, so the job
+    sets no group of its own.
+    """
+    job = main_check()
+    assert "needs" not in job and "concurrency" not in job
+    assert job["permissions"] == {"contents": "read", "actions": "write"}
+    assert job["timeout-minutes"] == 15
+    checkout, step = job["steps"]
+    assert checkout["uses"] == "actions/checkout@v4"
+    assert checkout["with"] == {"fetch-depth": 0, "persist-credentials": False}
+    assert step["name"] == MAIN_CHECK_STEP
+    assert step["env"]["MAIN_COMMIT"] == "${{ github.sha }}"
+    assert step["env"]["DEBOUNCE_SECONDS"] == "300"
+    assert "python3 tools/stewardship-ops/release_evidence.py select" in step["run"]
+    assert '--commit "${MAIN_COMMIT}"' in step["run"]
+
+
+DISPATCH = "gh workflow run ci.yml --repo owner/repository --ref main -f jobs=all"
+WAIT = ["sleep 300", "git ls-remote origin refs/heads/main"]
+NONE = ""
+PASSED = "7\tcompleted\tsuccess\tabc\t0\t1"
+GONE = "7\tunreadable\tsuccess\tgone\t0\t1"
+
+
+@pytest.mark.parametrize(
+    "selections,main,code,message,events",
+    [
+        ([PASSED], "abc", 0, "Full CI run 7 passed", []),
+        (["7\tcompleted\tsuccess\ttrain\t2\t1"], "abc", 0, "2 docs-safe", []),
+        (["7\tcompleted\tsuccess\tabc\t0\t2"], "abc", 0, "passed on attempt 2", []),
+        (["7\tcompleted\tfailure\tabc\t0\t1"], "abc", 1, "did not pass (failure)", []),
+        (["7\tcompleted\tcancelled\tabc\t0\t1"], "abc", 1, "did not pass (cancel", []),
+        # A pending run is noted, never waited for: its result is the signal.
+        (["7\tin_progress\t-\tabc\t0\t1"], "abc", 0, "::notice::Full CI run 7", []),
+        (["7\tqueued\t-\ttrain\t0\t1"], "abc", 0, "is queued", []),
+        # No run: wait, then dispatch only if main is still this commit and
+        # still uncovered.
+        ([NONE], "abc", 0, "was dispatched on main", [*WAIT, DISPATCH]),
+        ([GONE], "abc", 0, "cannot be fetched", [*WAIT, DISPATCH]),
+        ([NONE], "newer", 0, "main has moved on to newer", WAIT),
+        ([NONE, PASSED], "abc", 0, "Full CI run 7 passed", WAIT),
+        ([NONE, "7\tqueued\t-\tabc\t0\t1"], "abc", 0, "is queued", WAIT),
+    ],
+)
+def test_main_check_acts_on_the_deciding_run(
+    tmp_path, selections, main, code, message, events
+):
+    """Pass, note, fail, or debounce and dispatch, by the deciding run.
+
+    Shell functions stand in for python3 (each call answers the next
+    selection, the last one repeating), git ls-remote (main's head after
+    the wait), gh and sleep, which record what they were asked in order;
+    the real step text runs unchanged after them.
+    """
+    answers = tmp_path / "answers"
+    answers.write_text("".join(f"{line}\n" for line in selections))
+    log = tmp_path / "events"
+    script = (
+        "python3() {\n"
+        f'  head -n 1 "{answers}"\n'
+        f'  if [ "$(wc -l <"{answers}")" -gt 1 ]; then\n'
+        f'    tail -n +2 "{answers}" >"{answers}.next"\n'
+        f'    mv "{answers}.next" "{answers}"\n'
+        "  fi\n"
+        "}\n"
+        f'git() {{ echo "git $*" >>"{log}"; '
+        'printf "%s\\trefs/heads/main\\n" "$FAKE_MAIN"; }\n'
+        f'gh() {{ echo "gh $*" >>"{log}"; }}\n'
+        f'sleep() {{ echo "sleep $*" >>"{log}"; }}\n' + main_check()["steps"][1]["run"]
+    )
+    result = subprocess.run(
+        ["bash", "-e", "-c", script],
+        env={
+            "PATH": os.environ["PATH"],
+            "MAIN_COMMIT": "abc",
+            "FAKE_MAIN": main,
+            "DEBOUNCE_SECONDS": "300",
+            "GITHUB_REPOSITORY": "owner/repository",
+        },
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == code, result.stdout + result.stderr
+    assert message in result.stdout
+    assert (log.read_text().splitlines() if log.exists() else []) == events
 
 
 def test_build_lock_is_pinned_and_compatible_with_runtime_lock():

@@ -85,6 +85,7 @@ def run(number, sha, title="CI (jobs: all)", event="workflow_dispatch", **state)
         "event": event,
         "status": state.get("status", "completed"),
         "conclusion": state.get("conclusion", "success"),
+        "attempt": state.get("attempt", 1),
     }
 
 
@@ -343,6 +344,7 @@ def rest(number, sha, path=".github/workflows/ci.yml", **state):
         "display_title": listed["displayTitle"],
         "event": listed["event"],
         "path": path,
+        "run_attempt": listed["attempt"],
     }
 
 
@@ -508,9 +510,28 @@ def test_select_prints_the_listed_decision(monkeypatch, capsys):
     monkeypatch.setattr(evidence, "differing_paths", lambda *args: TREES[args[2]])
     argv = ["select", "--repo", "o/r", "--commit", "tag", "--run", "80"]
     assert evidence.main([*argv, "--retry-seconds", "0"]) == 0
-    assert capsys.readouterr().out == "80\tin_progress\t-\tsame\t0\n"
+    assert capsys.readouterr().out == "80\tin_progress\t-\tsame\t0\t1\n"
     assert pauses == []
     # Missing from every listing: nothing is printed, so release.sh refuses.
     _, pauses = fake_gh(monkeypatch, rest(80, "same"), [])
     assert evidence.main([*argv, "--retry-seconds", "0"]) == 0
     assert capsys.readouterr().out == "" and pauses == [0, 0, 0]
+
+
+def test_select_names_the_attempt_of_a_re_run(monkeypatch, capsys):
+    """A run that passed after its failed jobs were re-run says so (#158).
+
+    It is still evidence; the attempt only makes the rerun visible to
+    release.yml, release.sh, merge-train.sh and the main push check. A
+    listing without the field, as the scripted gh stand-ins in
+    test_ops_scripts.py write, reads as attempt 1.
+    """
+    fake_gh(monkeypatch, None, [run(81, "docs", attempt=3)])
+    monkeypatch.setattr(evidence, "differing_paths", lambda *args: TREES[args[2]])
+    assert evidence.main(["select", "--repo", "o/r", "--commit", "tag"]) == 0
+    assert capsys.readouterr().out == "81\tcompleted\tsuccess\tdocs\t2\t3\n"
+    legacy = run(82, "same")
+    del legacy["attempt"]
+    fake_gh(monkeypatch, None, [legacy])
+    assert evidence.main(["select", "--repo", "o/r", "--commit", "tag"]) == 0
+    assert capsys.readouterr().out == "82\tcompleted\tsuccess\tsame\t0\t1\n"

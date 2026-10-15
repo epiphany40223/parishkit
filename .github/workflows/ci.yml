@@ -3,10 +3,12 @@ name: CI
 # Drafts get fast feedback. A full run comes from opened, synchronize or
 # reopened on a non-draft PR, or from a manual dispatch; marking a draft ready
 # starts no run (#624: delivery marks a PR ready seconds before it is merged).
-# Pushes to main run only the light validate job (temporary, to stay within
-# the free plan's 20 concurrent jobs; see issue #158). A manual dispatch runs
-# the full suite on any ref by default, and releases require that full run on
-# the tagged tree, apart from docs (#662). Ready PRs, and dispatches that
+# A push to main runs only main-tree-evidence (#158): main may rest only on a
+# tree that a successful full run already tested, normally a release train's
+# run, so the push is checked rather than retested, and a full run is
+# dispatched only when no run covers the tree. A manual dispatch runs the full
+# suite on any ref by default, and releases require that full run on the
+# tagged tree, apart from docs (#662). Ready PRs, and dispatches that
 # explicitly ask for "affected" jobs, skip the heavy job groups their changed
 # paths cannot affect (parishkit.stewardship.quality_paths, issue #626); the
 # aggregate gates accept only that intentional skip, never a draft, failed,
@@ -39,14 +41,18 @@ permissions:
   contents: read
 
 # Superseded PR heads cannot satisfy the final-head gate, and an older main
-# push is superseded by a newer one, so stop spending runner time on them.
-# Manual full runs (release evidence) keep unique, uncancelled groups.
+# push is superseded by a newer one, so stop spending runner time on them:
+# only the last push of a train's merge burst checks main's tree. Manual full
+# runs (release evidence, and a backfill main-tree-evidence dispatches) keep
+# unique, uncancelled groups.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || (github.event_name == 'push' && github.ref) || github.run_id }}
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
+  # A push to main never retests here; main-tree-evidence checks it instead.
   validate:
+    if: ${{ github.event_name != 'push' }}
     runs-on: ubuntu-latest
     # The complete non-database suite adds a few minutes when shards are
     # skipped, and an affected dispatch's database test selection up to 10.
@@ -570,3 +576,83 @@ jobs:
           # combine logs a map it could not build; that never fails a run.
           if-no-files-found: warn
           retention-days: 14
+
+  # main may rest only on a tree with a successful full CI run ("CI (jobs:
+  # all)") on an identical tree, or one differing only in docs-safe paths:
+  # the release gate's rule, which release_evidence.py holds for both (#158,
+  # #662). Under the release-train procedure the train's run already covers
+  # main's tree, so this costs about a runner-minute. It fails when the
+  # deciding run did not pass (a re-run would hide a real failure; a human
+  # decides) and only notes a pending one, whose own result is the signal.
+  # When no run covers the tree it waits DEBOUNCE_SECONDS first: a newer
+  # push in the same concurrency group cancels this job during the wait, so
+  # an intermediate commit of a slow train merge never dispatches. Only when
+  # main is still this commit and still uncovered does it dispatch a full
+  # run on main, whose result then lands on this commit. A dispatched run
+  # has a unique group, so no push cancels it.
+  main-tree-evidence:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    # About a minute normally; DEBOUNCE_SECONDS more before a dispatch.
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # gh workflow run, for the backfill full run.
+      actions: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          # Candidate commits are diffed against main's head.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The runner's own python3 suffices: release_evidence.py needs only the
+      # standard library, git and gh, so no setup or install time is spent.
+      - name: Require a full CI run of main's tree
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAIN_COMMIT: ${{ github.sha }}
+          DEBOUNCE_SECONDS: "300"
+        run: |
+          # Ask the release gate's rule which full run decides for main's
+          # head; act on it, or return when no run covers the tree.
+          decide() {
+            selection="$(python3 tools/stewardship-ops/release_evidence.py select \
+              --repo "${GITHUB_REPOSITORY}" --commit "${MAIN_COMMIT}")"
+            read -r run status conclusion head docs run_attempt <<<"${selection:-}" || true
+            case "${status:-}" in
+              completed)
+                if test "${conclusion}" = success; then
+                  echo "Full CI run ${run} passed on ${head}, which has main's tree (${docs} docs-safe paths differ)."
+                  if test "${run_attempt:-1}" -gt 1; then
+                    echo "::warning::Full CI run ${run} passed on attempt ${run_attempt}: failed jobs were re-run before it passed."
+                  fi
+                  exit 0
+                fi
+                echo "::error::The newest full CI run of main's tree, run ${run} on ${head}, did not pass (${conclusion}). Fix main, or re-run that run or dispatch a full run on main if the failure was not real, then re-run this job."
+                exit 1 ;;
+              "" | unreadable)
+                if test "${status:-}" = unreadable; then
+                  echo "Full CI run ${run} is newer than any qualifying run, but its commit ${head} cannot be fetched."
+                fi
+                return 0 ;;
+              *)
+                echo "::notice::Full CI run ${run} on ${head}, which covers main's tree, is ${status}; its own result is this commit's evidence."
+                exit 0 ;;
+            esac
+          }
+          decide
+          echo "No full CI run covers main's tree at ${MAIN_COMMIT}; waiting ${DEBOUNCE_SECONDS} s for a newer push before dispatching one."
+          sleep "${DEBOUNCE_SECONDS}"
+          # A newer push's check owns a newer head; a dispatch from here
+          # would test that head, not this one.
+          current="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if test "${current}" != "${MAIN_COMMIT}"; then
+            echo "main has moved on to ${current}; the check of that push decides."
+            exit 0
+          fi
+          # A run may have been dispatched meanwhile.
+          decide
+          gh workflow run ci.yml --repo "${GITHUB_REPOSITORY}" --ref main -f jobs=all
+          echo "::warning::No successful full CI run covers main's tree at ${MAIN_COMMIT}, so a full CI run (jobs: all) was dispatched on main; its result is this commit's evidence."
