@@ -28,6 +28,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.campaigns import restore_review as review
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.web.refusals import unexpected_fields
 
 from .access_gate import status_page
 from .admin_editing import error_response
@@ -176,7 +177,7 @@ def _step(request, principal, state):
     if action not in _FIELDS or set(request.POST) - _FIELDS[action] - {
         "csrfmiddlewaretoken"
     }:
-        raise ValueError("Invalid restore review step.")
+        raise unexpected_fields()
     actor = principal.identity
     if action == "cancel":
         return {}
@@ -303,7 +304,7 @@ def _held_step(request, actor, state):
     if action not in _HELD_FIELDS or set(request.POST) - _HELD_FIELDS[action] - {
         "csrfmiddlewaretoken"
     }:
-        raise ValueError("Invalid held-email step.")
+        raise unexpected_fields()
     if action == "cancel":
         return {}
     # A decision needs a fresh sign-in first, so the step-up comes before

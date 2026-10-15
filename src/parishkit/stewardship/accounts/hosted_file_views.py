@@ -313,7 +313,7 @@ def upload(request):
             or any(len(values) != 1 for _, values in request.POST.lists())
             or any(len(values) != 1 for _, values in request.FILES.lists())
         ):
-            raise ValueError("Invalid upload fields.")
+            raise unexpected_fields()
         form = UploadForm(request.POST, request.FILES)
         if form.is_valid():
             value = form.cleaned_data["file"]
@@ -417,7 +417,7 @@ def rename(request, file_id):
         status = 200
         if request.method == "POST":
             if set(request.POST) - {"slug", "csrfmiddlewaretoken"}:
-                raise ValueError("Invalid rename fields.")
+                raise unexpected_fields()
             form = RenameForm(request.POST)
             if form.is_valid():
                 try:

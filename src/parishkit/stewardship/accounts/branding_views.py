@@ -33,7 +33,11 @@ from parishkit.stewardship.web.contracts import (
     filters,
     validation_response,
 )
-from parishkit.stewardship.web.refusals import UserFacingStale, stale_page
+from parishkit.stewardship.web.refusals import (
+    UserFacingStale,
+    stale_page,
+    unexpected_fields,
+)
 
 from . import admin_navigation, field_tips
 from .admin_editing import (
@@ -319,7 +323,7 @@ def _upload(request, service):
         or any(len(values) != 1 for _, values in request.POST.lists())
         or any(len(values) != 1 for _, values in request.FILES.lists())
     ):
-        raise ValueError("Invalid logo upload fields.")
+        raise unexpected_fields()
     form = LogoUploadForm(request.POST, request.FILES)
     if form.is_valid():
         graphics = None

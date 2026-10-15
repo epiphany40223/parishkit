@@ -45,7 +45,11 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.content import MAX_IMAGE_BYTES, prepare_artwork
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.refusals import UserFacingStale, stale_page
+from parishkit.stewardship.web.refusals import (
+    UserFacingStale,
+    stale_page,
+    unexpected_fields,
+)
 
 from . import admin_navigation
 from .admin_editing import (
@@ -517,7 +521,7 @@ def artwork_upload(request, campaign_id, slot):
             or any(len(values) != 1 for _, values in request.POST.lists())
             or any(len(values) != 1 for _, values in request.FILES.lists())
         ):
-            raise ValueError("Invalid campaign image upload fields.")
+            raise unexpected_fields()
         form = ArtworkForm(request.POST, request.FILES, auto_id=f"id_{slot}_%s")
         reason = unavailable(campaign, slot)
         if reason is not None:

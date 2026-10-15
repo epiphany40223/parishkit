@@ -305,7 +305,7 @@ def test_standard_refusals_and_link_validation():
     assert stale.status_code == 409
     assert "another tab" in json.loads(stale.content)["refusal"]["message"]
     invalid = json.loads(error_response(unexpected_fields()).content)
-    assert invalid["refusal"]["fix"] == "Reload the page and try again."
+    assert invalid["refusal"]["fix"] == "Reload the page, then try again."
     assert invalid["refusal"]["link"] is None
     for link, label in (
         ("https://example.org/", "Elsewhere"),
@@ -315,6 +315,35 @@ def test_standard_refusals_and_link_validation():
     ):
         with pytest.raises(TypeError):
             UserFacingError("Message", link=link, link_label=label)
+
+
+def test_unexpected_fields_say_the_page_is_out_of_date():
+    """A form posted with fields it does not have (#1401): the page says what
+    happened and to reload, not "Check your entries" as if a value were
+    wrong; the refusal itself (400, code ``invalid``) is unchanged."""
+    from parishkit.stewardship.web.refusals import unexpected_fields
+
+    response = error_response(unexpected_fields())
+    assert response.status_code == 400
+    data = json.loads(response.content)
+    assert [error["code"] for error in data["errors"]] == ["invalid"]
+    assert data["refusal"]["message"] == (
+        "Nothing was done: this page sent something the server did not "
+        "expect, which usually means the page changed after you opened it."
+    )
+    page = through(RequestFactory().post("/admin/setup/branding", **PAGE), response)
+    body = page.content.decode()
+    assert page.status_code == 400 and page.stewardship_safe_error
+    assert "<h1>This page is out of date</h1>" in body
+    assert "the page changed after you opened it" in body
+    assert "Reload the page, then try again." in body
+    for generic in (
+        "Check your entries",
+        "Check this value.",
+        "correct the entries",
+        "unexpected data",
+    ):
+        assert generic not in body
 
 
 # Untyped 404s on portal addresses (#927): an unknown address or Http404.

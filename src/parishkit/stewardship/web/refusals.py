@@ -139,10 +139,22 @@ def stale_page():
 
 
 def unexpected_fields():
-    """The standard refusal for a form posted with fields it does not have."""
+    """The standard refusal for a form posted with fields it does not have.
+
+    A field the form does not have, or one sent twice, almost always means a
+    page left open while it changed (a release changed the form) or a stale,
+    cached copy of it: nothing the person typed is wrong, and reloading is
+    the fix (#1401). So the page is titled for that, rather than the
+    ``invalid`` category's "Check your entries", and the wording says that
+    nothing was done. The status (400) and the JSON code stay ``invalid``.
+    """
     return UserFacingError(
-        _("The form was submitted with unexpected data."),
-        fix=_("Reload the page and try again."),
+        _(
+            "Nothing was done: this page sent something the server did not "
+            "expect, which usually means the page changed after you opened it."
+        ),
+        fix=_("Reload the page, then try again."),
+        title=_("This page is out of date"),
     )
 
 

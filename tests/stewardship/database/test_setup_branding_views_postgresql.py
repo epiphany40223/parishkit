@@ -114,3 +114,54 @@ def test_setup_logo_left_empty_is_not_refused_as_an_extra_field(request):
         assert kept.status_code == 302, kept.content
         assert kept["Location"] == "/admin/setup/access"
         assert BrandingBundle.objects.count() == 1
+
+
+def test_setup_logo_kept_again_after_back_and_a_stale_form_says_reload(request):
+    """With a logo saved, Save and continue with no file chosen keeps it, and
+    still does after Back from the next step (#1396). A post with a field the
+    form does not have, as a page left open while it changed would send, is
+    refused with the plain "out of date" page, not "Check your entries"
+    (#1401)."""
+    request.getfixturevalue("setup_http")
+    request.getfixturevalue("google")
+    request.getfixturevalue("media")
+    url = "/admin/setup/branding"
+
+    def version():
+        """The step's current draft version, as its page carries it."""
+        page = browser.get(url).content.decode()
+        return re.search(r'name="version" value="(\d+)"', page).group(1)
+
+    with web_login():
+        browser = started()
+        empty = [("logo", "", b"")]
+        saved = post(browser, url, {"version": version(), "logo": upload()})
+        assert saved.status_code == 302, saved.content
+        kept = browser_post(browser, {"version": version()}, empty, url=url)
+        assert kept["Location"] == "/admin/setup/access"
+        # Back from the next step is a link to this step, which keeps the
+        # saved logo optional.
+        access = browser.get("/admin/setup/access").content.decode()
+        (back,) = re.findall(r'<a class="setup-back" href="([^"]+)"', access)
+        assert back == url
+        again = browser_post(browser, {"version": version()}, empty, url=url)
+        assert again.status_code == 302, again.content
+        assert again["Location"] == "/admin/setup/access"
+        assert BrandingBundle.objects.count() == 1
+        stale = browser.post(
+            url,
+            {
+                "version": version(),
+                "path": "/private",
+                "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
+            },
+            HTTP_ACCEPT="text/html",
+            HTTP_SEC_FETCH_MODE="navigate",
+        )
+        body = stale.content.decode()
+        assert stale.status_code == 400
+        assert "<h1>This page is out of date</h1>" in body
+        assert "the page changed after you opened it" in body
+        assert "Reload the page, then try again." in body
+        assert "Check your entries" not in body and "unexpected data" not in body
+        assert BrandingBundle.objects.count() == 1

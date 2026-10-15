@@ -1096,6 +1096,17 @@ def test_preparation_retry_form_preserves_failed_task_and_hides_stale_action(
                 ).status_code
                 == 403
             )
+            # A field the form does not have (a stale page) says to reload,
+            # not the closed "Check this value." (#1401); nothing is retried.
+            stale = browser.post(
+                page_path + "family-preparation-retry/",
+                values | {"extra": "x"},
+                HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
+            )
+            assert stale.status_code == 400
+            assert b"the page changed after you opened it" in stale.content
+            assert b"Reload the page, then try again." in stale.content
+            assert b"Check this value." not in stale.content
             for _ in range(2):
                 result = browser.post(
                     page_path + "family-preparation-retry/",

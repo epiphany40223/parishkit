@@ -935,7 +935,7 @@ def test_delete_refuses_a_sent_email_the_confirmation_or_a_bad_post(
         {"base_digest": digest, "revision_id": [spare["id"], spare["id"]]}
     )
     assert "at least one" in refused({"base_digest": digest})
-    assert "unexpected data" in refused(
+    assert "did not expect" in refused(
         {"base_digest": digest, "revision_id": spare["id"], "action": "confirm"}
     )
     refused({"base_digest": "b" * 64, "revision_id": spare["id"]}, status=409)

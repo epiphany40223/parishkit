@@ -13,6 +13,7 @@ from django.views.decorators.http import require_http_methods
 from parishkit.stewardship.jobs.delivery_metadata import STATE_LABELS
 from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.refusals import unexpected_fields
 
 from . import admin_navigation
 from .admin_editing import form_action, summary_errors
@@ -92,7 +93,7 @@ def _action(request):
     """Reject hidden, repeated and cross-action fields before reading any value."""
     filters(request.GET, allowed=set())
     if request.FILES:
-        raise ValueError("Invalid Family test fields.")
+        raise unexpected_fields()
     return form_action(
         request.POST, preview_fields={"families"}, confirm_fields={"acknowledge"}
     )
