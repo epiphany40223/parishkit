@@ -4063,9 +4063,14 @@
   // the title; once applied the dialog closes, and either the page goes
   // to the dialog's data-review-return (a New or Edit page's table) or, with
   // none, every region is redrawn from the form's region's data-refresh-url.
-  // Either way the page's reserved status line named by
-  // data-review-outcome then says what was applied and when, and takes
-  // focus. Across a page change that line's text waits in sessionStorage,
+  // Either way the page's reserved status line then says what was applied
+  // and when, and takes focus. That line is the one the form that opened
+  // the dialog names with its own data-review-outcome, else the dialog's:
+  // a page whose panes share one dialog (Campaign images' slots) gives each
+  // pane its own line, so the status shows next to the control that caused
+  // it and the page never scrolls to a line elsewhere (UX conventions,
+  // "Review dialog"). A line inside a redrawn region is written after the
+  // redraw, so the redraw never wipes it. Across a page change that line's text waits in sessionStorage,
   // for that address only and for a minute: it is the review's short
   // sentence and a time, never an answer, a value or a credential.
   const REVIEW_OUTCOME = "pk-review-outcome";
@@ -4279,7 +4284,7 @@
     dialog.querySelector("[data-confirm-status]").textContent = dialog.dataset.applied || "Applied.";
     const text = [review.done, fillIn(dialog.dataset.appliedAt || "Applied at {time}.",
       {time: clockTime()})].filter(Boolean).join(" ");
-    const outcome = dialog.dataset.reviewOutcome || "";
+    const outcome = state.form.dataset.reviewOutcome || dialog.dataset.reviewOutcome || "";
     const back = dialog.dataset.reviewReturn;
     if (back) {
       const target = new URL(back, document.baseURI);

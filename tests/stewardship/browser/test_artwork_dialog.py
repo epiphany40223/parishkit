@@ -25,10 +25,11 @@ pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
 FOCUSED = "document.activeElement && document.activeElement.id"
-# The first slot's and the status line's places in the document: nothing
-# may move a slot, and a slot gaining an image never moves what is below.
+# The first slot's and the last slot's status line's places in the document:
+# nothing may move a slot, and a slot gaining an image never moves what is
+# below it.
 PLACES = """() => [document.querySelector('.artwork-slot'),
-    document.getElementById('artwork-outcome')].map((node) => {
+    document.getElementById('artwork-outcome-closing')].map((node) => {
         const box = node.getBoundingClientRect();
         return [box.left + window.scrollX, box.top + window.scrollY];
     })"""
@@ -37,6 +38,11 @@ PLACES = """() => [document.querySelector('.artwork-slot'),
 def applied_line(start):
     """The status line once a change is applied, starting with ``start``."""
     return re.compile(rf"^{re.escape(start)} Applied at \d{{1,2}}:\d{{2}}\s?[AP]M\.$")
+
+
+def said(slot):
+    """A script that is true once ``slot``'s own status line says something."""
+    return f"document.getElementById('artwork-outcome-{slot}').textContent !== ''"
 
 
 def png():
@@ -96,10 +102,10 @@ def test_an_upload_is_reviewed_and_applied_in_the_dialog(page, component_origin)
     assert banner.get_by_text("Current image").count() == 0
     dialog.get_by_role("button", name="Apply").click()
     hidden(dialog)
-    eventually(page, "document.getElementById('artwork-outcome').textContent !== ''")
-    line = page.locator("#artwork-outcome")
+    eventually(page, said("banner"))
+    line = page.locator("#artwork-outcome-banner")
     assert applied_line("Campaign image changed.").search(line.inner_text())
-    assert page.evaluate(FOCUSED) == "artwork-outcome"
+    assert page.evaluate(FOCUSED) == "artwork-outcome-banner"
     visible(banner.get_by_text("Current image"))
     visible(banner.get_by_role("button", name="Remove this image"))
     assert page.locator("[data-edits-lost]").count() == 0
@@ -127,11 +133,62 @@ def test_remove_this_image_is_reviewed_in_the_dialog(page, component_origin):
     assert len(reviews) == 1 and "slot=welcome" in reviews[0]
     dialog.get_by_role("button", name="Apply").click()
     hidden(dialog)
-    eventually(page, "document.getElementById('artwork-outcome').textContent !== ''")
-    line = page.locator("#artwork-outcome").inner_text()
+    eventually(page, said("welcome"))
+    line = page.locator("#artwork-outcome-welcome").inner_text()
     assert applied_line("Campaign image removed.").search(line), line
-    assert page.evaluate(FOCUSED) == "artwork-outcome"
+    assert page.evaluate(FOCUSED) == "artwork-outcome-welcome"
     assert same_place(page.evaluate(PLACES), places)
+    assert page.evaluate(MARKED) == "kept"
+    assert not failures
+
+
+# A window short enough that the last slot is well below the fold.
+SHORT_WINDOW = {"width": 1280, "height": 600}
+
+
+@pytest.mark.parametrize("change", ["upload", "remove"])
+def test_the_status_line_is_in_the_slot_and_the_page_never_jumps(
+    page, component_origin, change
+):
+    """Once a change is applied, the status line saying so is the one in
+    the slot's own pane, beside the control that made the change, and the
+    page does not scroll: no jump to a line at the bottom of the page
+    (UX conventions, "Review dialog"). Every other slot's line stays
+    empty."""
+    page.set_viewport_size(SHORT_WINDOW)
+    if change == "remove":
+        answer_reviews(page, component_origin, REMOVAL, address=PAGE)
+    page.goto(component_origin + PAGE)
+    failures = watch(page)
+    if change == "upload":
+        changed, start, name = "banner", "Campaign image changed.", "Banner"
+        upload_banner(page)
+    else:
+        changed, start, name = "welcome", "Campaign image removed.", "Welcome"
+        slot(page, "Welcome page icon").get_by_role(
+            "button", name="Remove this image"
+        ).click()
+    dialog = dialog_of(page)
+    scrolled = page.evaluate("window.scrollY")
+    dialog.get_by_role("button", name="Apply").click()
+    hidden(dialog)
+    eventually(page, said(changed))
+    pane = page.locator(
+        ".artwork-slot", has=page.locator(f"#artwork-outcome-{changed}")
+    )
+    assert pane.get_by_role("heading").inner_text().startswith(name)
+    line = pane.get_by_role("status")
+    assert applied_line(start).search(line.inner_text())
+    assert page.evaluate(FOCUSED) == f"artwork-outcome-{changed}"
+    assert page.evaluate("window.scrollY") == pytest.approx(scrolled, abs=1)
+    # The line is in view where the reader already was.
+    box = line.bounding_box()
+    assert box["y"] >= 0 and box["y"] + box["height"] <= SHORT_WINDOW["height"]
+    others = page.evaluate(
+        "[...document.querySelectorAll('[data-review-outcome]')]"
+        ".filter((node) => node.tagName === 'P' && node.textContent).map((n) => n.id)"
+    )
+    assert others == [f"artwork-outcome-{changed}"]
     assert page.evaluate(MARKED) == "kept"
     assert not failures
 
@@ -190,7 +247,7 @@ def test_a_refused_apply_shows_in_the_dialog(page, component_origin):
     assert "Reload the page, then upload the image again." in error.inner_text()
     dialog.get_by_role("button", name="Cancel").click()
     hidden(dialog)
-    assert page.locator("#artwork-outcome").inner_text() == ""
+    assert page.locator("#artwork-outcome-banner").inner_text() == ""
     assert banner.get_by_text("Current image").count() == 0
     assert page.evaluate(MARKED) == "kept"
     assert not failures

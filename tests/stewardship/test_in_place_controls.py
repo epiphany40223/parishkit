@@ -660,6 +660,12 @@ def test_campaign_images_review_in_the_dialog():
     for form in forms:
         assert 'data-review-open="artwork-review"' in form
         assert "data-in-place" not in form
+        # Each names its slot's own status line, drawn in the slot's pane,
+        # so the status shows beside the control and the page never jumps.
+        assert 'data-review-outcome="artwork-outcome-{{ entry.slot }}"' in form
+    slot_end = text.index("</section>")
+    assert text.rindex('outcome_id="artwork-outcome-"|add:entry.slot', 0, slot_end) > 0
+    assert "outcome_id=" not in text[text.index("{% endfor %}") :]
     upload = next(form for form in forms if "artwork-upload-" in form)
     assert 'enctype="multipart/form-data"' in upload
     assert "data-require-complete" in upload
@@ -670,6 +676,7 @@ def test_campaign_images_review_in_the_dialog():
     assert 'dialog_id="artwork-review"' in text and "review=True" in text
     script = (TEMPLATES.parents[1] / "static/stewardship/ui-v1.js").read_text()
     assert 'form.enctype === "multipart/form-data" ? data' in script
+    assert "state.form.dataset.reviewOutcome || dialog.dataset.reviewOutcome" in script
 
 
 def test_the_follow_up_carries_only_the_change():

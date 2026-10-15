@@ -312,6 +312,13 @@ An Admin control acts where the reader is: it never reloads the page or sends
 the reader back to its top (#519). The [table controls](#admin-tables) are one case;
 the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
 
+A status line appears next to the control that caused it: under the form or
+button it answers, or inside the pane that holds that control on a page with
+several panes (each pane its own line), never in one line elsewhere on the
+page. So the reader sees what happened where they are looking, and the page
+never scrolls to show it (Administrator, pk-local review of
+[#750](https://github.com/epiphany40223/parishkit/issues/750), 2026-10-15).
+
 - **Regions.** A page marks each part a control can change as a region, an
   element with a stable id (a table's region, or `data-in-place-region`). The
   id is also the control's URL fragment, which is required: the script finds
@@ -659,7 +666,10 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   Apply with the new current image. Each slot is the same height with or
   without an image (its image box keeps the slot's image size, its caption
   is one line, and the removal line keeps the button's space), so that
-  redraw never moves the status line below the slots. Each upload form has
+  redraw never moves a slot. Each slot ends with its own reserved status
+  line, which its upload and its Remove this image name, so the line saying
+  what was applied is in the slot where the change was made and the page
+  never jumps to it. Each upload form has
   an id, so a file chosen while the slots are redrawn is said not to be
   kept.
 - **In-place review: Parish logos (#750).** Parish logos has no settings
@@ -1056,7 +1066,11 @@ section says how every Review behaves.
   what was applied and when ("Applied at 3:42 PM."), and focus moves to it.
   The line is a polite live region (`role="status"`), so a screen reader
   hears it, and its space is reserved, so it never moves a control ([no
-  layout shift](#no-layout-shift)).
+  layout shift](#no-layout-shift)). It sits
+  [next to the control that caused it](#in-place-controls): where panes
+  share one dialog, each pane has its own line, which the pane's forms name
+  with `data-review-outcome` in place of the dialog's line, so the page
+  never scrolls to a line elsewhere.
 - **Refusals stay in the dialog.** A Review or Apply refused because the
   settings changed elsewhere (another tab or another Administrator), an
   out-of-date or expired preview, a change that failed to apply or was
