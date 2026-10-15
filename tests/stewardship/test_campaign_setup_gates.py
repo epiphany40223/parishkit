@@ -1,4 +1,4 @@
-"""Campaign and Slack setup forms say what their action waits for (#563).
+"""Campaign and setup forms say what their action waits for (#563).
 
 The page script's complete gate (ui-v1.js, data-require-complete) keeps an
 action unavailable until the form's shown required fields are filled in.
@@ -10,6 +10,7 @@ browser/test_campaign_setup_gates.py.
 
 import re
 
+import pytest
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts.campaign_forms import (
@@ -64,18 +65,40 @@ def test_slack_channel_shows_and_is_required_only_while_slack_is_enabled():
     )
 
 
-def test_other_setup_steps_and_finish_keep_their_plain_action_row():
-    """Only the forms this slice gates opt in; the rest render as before."""
+# Each form step's own hint, used for a missing field without a hint of its
+# own (#1332 item 27).
+STEP_HINTS = {
+    "parish": "Fill in the parish name, website, time zone and telephone correctly",
+    "access": "Fill in every required field correctly to save.",
+    "mail": "Enter a valid mailbox, From address and Reply-to address to save.",
+    "testing": "Enter a valid Testing email address to save.",
+}
+
+
+@pytest.mark.parametrize("step", sorted(STEP_HINTS))
+def test_every_setup_form_step_waits_for_its_required_fields(step):
+    """Every form step's Save waits for its fields, as Slack's does, with its
+    own hint after the action row (#1332 item 27)."""
     html = page(
         "setup-step.html",
-        "testing",
-        form=FORMS["testing"](),
-        step="testing",
-        step_label=SETUP_STEPS["testing"].label,
+        step,
+        form=FORMS[step](),
+        step=step,
+        step_label=SETUP_STEPS[step].label,
     )
-    assert "data-require-complete" not in form_tag(html)
-    assert "data-complete-hint" not in html
-    assert "aria-describedby" not in after_actions(html)
+    tag = form_tag(html)
+    assert "data-require-complete" in tag
+    assert f'data-missing-hint="{STEP_HINTS[step]}' in tag
+    tail = after_actions(html)
+    assert re.search(SAVE_NAMES_HINT, tail)
+    assert (
+        '<p class="help" id="setup-complete-hint" data-complete-hint hidden>'
+        in (tail.split("</div>", 1)[1])
+    )
+
+
+def test_finish_setup_keeps_its_plain_action_row():
+    """Finish setup has its own gates, not the complete gate."""
     finish = page(
         "setup-confirmation.html",
         "confirmation",
