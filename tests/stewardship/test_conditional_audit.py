@@ -139,6 +139,21 @@ def test_a_held_roster_tick_is_shown_unavailable_with_why(entered):
     assert "followup-locked" not in open_
 
 
+def test_participation_exports_without_their_data_are_shown_unavailable():
+    """With no chart, or no data for a new export, each export button is
+    drawn disabled, named by the sentence that says why."""
+    text = (TEMPLATES / "participation.html").read_text()
+    for reason, label in [
+        ("participation-chart-export-unavailable", "Generate export"),
+        ("participation-exact-export-unavailable", "Queue export with the latest data"),
+    ]:
+        assert text.count(f'id="{reason}"') == 1
+        assert (
+            f'{{% button type="submit" enabled=False aria-describedby="{reason}" %}}'
+            f'{{% translate "{label}" %}}'
+        ) in text
+
+
 def test_family_portal_message_error_is_shown_at_the_field():
     """A refused message comes back in its field, marked, with the reason."""
     html = render_to_string(
