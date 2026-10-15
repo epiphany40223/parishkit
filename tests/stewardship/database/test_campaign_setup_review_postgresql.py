@@ -192,9 +192,15 @@ def test_sql_admits_a_review_only_during_setup_with_its_audit(auth_service, goog
     with pytest.raises(DatabaseError, match=refused):
         insert(row, actor, "images")
     with unguarded(), connection.cursor() as cursor:
-        cursor.execute(
-            "DELETE FROM stewardship_campaign_credentials"
-        )
+        cursor.execute("DELETE FROM stewardship_campaign_credentials")
+    # A draft that is not the current campaign (only one campaign may be
+    # current, so the pointer is cleared, as only a superuser could).
+    with unguarded():
+        SystemConfiguration.objects.update(current_campaign=None)
+    with pytest.raises(DatabaseError, match=refused):
+        insert(row, actor, "images")
+    with unguarded():
+        SystemConfiguration.objects.update(current_campaign=row)
     with unguarded():
         SystemConfiguration.objects.update(mode="production")
     with pytest.raises(DatabaseError, match=refused):
@@ -233,3 +239,32 @@ def test_the_do_block_refuses_an_incomplete_install(auth_service):
     ):
         cursor.execute(weakened)
         cursor.execute(check)
+    # A guard that fires on INSERT only would let rows be rewritten.
+    with (
+        pytest.raises(DatabaseError, match="not guarded as declared"),
+        transaction.atomic(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(
+            "DROP TRIGGER stewardship_campaign_setup_review_guard"
+            " ON stewardship_campaign_setup_review;"
+            " CREATE TRIGGER stewardship_campaign_setup_review_guard"
+            " BEFORE INSERT ON stewardship_campaign_setup_review FOR EACH ROW"
+            " EXECUTE FUNCTION stewardship_campaign_setup_review_guard_v1()"
+        )
+        cursor.execute(check)
+    # A body without its immutability refusal or current-campaign join.
+    for phrase in ("TG_OP<>'INSERT'", "c.id=s.current_campaign_id"):
+        body = text[start:end].replace(
+            "CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1
+        )
+        assert phrase in body
+        with (
+            pytest.raises(DatabaseError, match="not guarded as declared"),
+            transaction.atomic(),
+            connection.cursor() as cursor,
+        ):
+            cursor.execute(
+                body.replace(phrase, "true" if "TG_OP" in phrase else "c.id=c.id")
+            )
+            cursor.execute(check)

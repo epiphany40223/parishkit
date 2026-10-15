@@ -346,7 +346,7 @@ FROZEN = {
         "7248a23e6fdf74141c68528d089b02ba4f112e5d9736f7f24fd0234306a1a378"
     ),
     "0105_campaign_setup_review.sql": (
-        "d47aaa5e0b900ee41e35d2a416de27b297d87859dc9f66675f6f1f28e787ca6b"
+        "c49eb82e252a0588ec584b530ed228011d134b7f29bc26650b5871993f80c0b5"
     ),
 }
 

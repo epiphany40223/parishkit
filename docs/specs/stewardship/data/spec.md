@@ -378,7 +378,11 @@ for the current campaign while the system is in Testing mode, the campaign is
 a draft and no go-live has started, and requires the
 `campaign_setup_step_reviewed` audit event in the same transaction. Rows are
 retained with their campaign; the campaign purge, when it lands, must
-inventory and delete them as campaign-owned setup detail.
+inventory and delete them as campaign-owned setup detail. Because the guard
+refuses every DELETE and the campaign foreign key blocks deleting the
+campaign while rows remain, that purge needs a forward migration that gives
+the guard a purge path (for example, admitting DELETE from the purge
+worker under its own lock); until then a purge attempt fails closed.
 
 Deleting a Campaign through ordinary CRUD is impossible. Closing and archiving
 retain all relationships. Exceptional purge is defined by the

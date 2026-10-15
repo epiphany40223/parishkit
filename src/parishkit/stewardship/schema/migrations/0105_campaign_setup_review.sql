@@ -80,8 +80,16 @@ BEGIN
             WHERE tgname='stewardship_campaign_setup_review_effect'
               AND tgrelid='public.stewardship_campaign_setup_review'::regclass
               AND tgdeferrable AND tginitdeferred)
+       -- The guard fires BEFORE each row's INSERT, UPDATE and DELETE
+       -- (tgtype ROW|BEFORE|INSERT|DELETE|UPDATE = 31), so rows stay immutable.
+       OR NOT EXISTS(SELECT 1 FROM pg_trigger
+            WHERE tgname='stewardship_campaign_setup_review_guard'
+              AND tgrelid='public.stewardship_campaign_setup_review'::regclass
+              AND tgtype=31)
        OR NOT EXISTS(SELECT 1 FROM pg_proc
             WHERE oid='public.stewardship_campaign_setup_review_guard_v1()'::regprocedure
+              AND prosrc LIKE '%TG_OP<>''INSERT''%'
+              AND prosrc LIKE '%c.id=s.current_campaign_id%'
               AND prosrc LIKE '%stewardship_export_authorized_v1(NEW.actor_id,true)%'
               AND prosrc LIKE '%s.mode=''testing'' AND c.state=''draft''%'
               AND prosrc LIKE '%k.go_live_gate%')
