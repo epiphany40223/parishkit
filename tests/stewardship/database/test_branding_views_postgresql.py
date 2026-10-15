@@ -493,10 +493,11 @@ def test_each_size_upload_without_stored_logos_generates_from_large(
     }
 
 
-def browser_post(browser, fields, files):
-    """Post Parish logos' form as a browser does: each ``files`` item is a
-    (name, filename, bytes) part, and a file input left empty is a part
-    with an empty filename, which Django's test client cannot send."""
+def browser_post(browser, fields, files, url=URL):
+    """Post a logo form (Parish logos' unless ``url``) as a browser does:
+    each ``files`` item is a (name, filename, bytes) part, and a file input
+    left empty is a part with an empty filename, which Django's test client
+    cannot send."""
     boundary = "pk-browser-boundary"
     fields = fields | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value}
     parts = [
@@ -513,7 +514,7 @@ def browser_post(browser, fields, files):
             + b"\r\n"
         )
     return browser.post(
-        URL,
+        url,
         b"".join(parts) + f"--{boundary}--\r\n".encode(),
         content_type=f"multipart/form-data; boundary={boundary}",
     )
@@ -548,6 +549,15 @@ def test_empty_file_inputs_a_browser_sends_are_not_refused(auth_service, google,
             [("logo", "logo.png", image)],
         )
         assert crafted.status_code == 400
+        # An empty part is allowed only under a file field's name, and only
+        # once.
+        for extra in ([("path", "", b"")], [("large", "", b""), ("large", "", b"")]):
+            refused = browser_post(
+                browser,
+                {"base_digest": digest, "editor_mode": "basic"},
+                [("logo", "logo.png", image)] + extra,
+            )
+            assert refused.status_code == 400
     modes = sorted(BrandingBundle.objects.values_list("mode", flat=True))
     assert modes == ["advanced", "basic"]
 
