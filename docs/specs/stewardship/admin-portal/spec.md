@@ -281,8 +281,13 @@ test Slack message still require a load that succeeded. A load that has
 finished, succeeded or failed, can be discarded, and only then (never one
 running, waiting to retry or abandoned): saving a different ParishSoft key
 or organization ID discards it, saving the same key and
-organization keeps it, and Load again after a failure discards the failed
-load and queues a new one. Each discard is audited as
+organization keeps it, and Load again discards the load and queues a new
+one. Load again is offered for a load that failed and for one that succeeded
+but whose staged data is no longer valid by the check review uses (its
+credential version or fingerprint changed, its exchange was scrubbed, or its
+snapshot or fences no longer match); the Load parish data page then says the
+data needs loading again, and the step is not done. Only a still-valid load
+shows as loaded. Each discard is audited as
 `setup_source_voided` with why (`key_changed`, `organization_changed` or
 `reload`) and how the load had ended, never the key. A discarded load's
 staging is never used again: finalization and campaign staging bind only to

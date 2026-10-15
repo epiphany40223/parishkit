@@ -6278,9 +6278,33 @@ BEGIN
         why=current_setting('stewardship.setup_void_reason', true);
         SELECT state INTO previous FROM stewardship_task_run WHERE id=OLD.source_task_id;
         IF why IS NULL OR why NOT IN ('key_changed','organization_changed','reload')
-           OR previous IS NULL OR previous NOT IN ('succeeded','failed')
-           OR (why='reload' AND previous<>'failed') THEN
+           OR previous IS NULL OR previous NOT IN ('succeeded','failed') THEN
             RAISE EXCEPTION 'A discarded setup load requires its closed reason'
+                USING ERRCODE='23514';
+        END IF;
+        -- Load again needs a load that failed, or one that succeeded but whose
+        -- staged result is no longer valid (accounts.setup_drafts.staged_load,
+        -- the predicate review uses): its credential version or fingerprint
+        -- changed, its exchange was scrubbed, or its snapshot or fences no
+        -- longer match.
+        IF why='reload' AND previous='succeeded' AND EXISTS (
+            SELECT 1 FROM stewardship_setup_source_result result
+            JOIN stewardship_setup_source_exchange exchange
+                ON exchange.id=result.exchange_id AND exchange.attempt_id=NEW.id
+                AND exchange.scrubbed_at IS NULL
+            JOIN stewardship_task_run task ON task.id=exchange.task_id
+                AND task.root_id=OLD.source_task_id AND task.state='succeeded'
+                AND task.fence=exchange.task_fence
+            JOIN stewardship_setup_sealed_credential credential
+                ON credential.id=exchange.credential_id
+                AND credential.scrubbed_at IS NULL
+                AND credential.version=exchange.credential_version
+                AND credential.fingerprint=exchange.fingerprint
+            JOIN stewardship_source_snapshot snapshot
+                ON snapshot.id=result.snapshot_id AND snapshot.state='ready'
+                AND snapshot.task_id=exchange.task_id
+                AND snapshot.source_fence=exchange.source_fence) THEN
+            RAISE EXCEPTION 'A still-valid setup load cannot be loaded again'
                 USING ERRCODE='23514';
         END IF;
         PERFORM set_config('stewardship.setup_void_reason', '', true);

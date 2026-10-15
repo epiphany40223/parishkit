@@ -17,7 +17,7 @@ from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.contracts import check_version
 
 from .sessions import authenticated_admin, database_now
-from .setup_drafts import _owned
+from .setup_drafts import _owned, staged_load
 from .setup_models import SetupAttempt, SetupDraftSection
 from .setup_policy import SetupState
 from .setup_secret_models import SetupSealedCredential
@@ -28,6 +28,21 @@ from .setup_staging import _expiry
 VOID_SETTING = "stewardship.setup_void_reason"
 # How a bound load can have ended for it to be discarded.
 FINISHED = frozenset({"succeeded", "failed"})
+
+
+def needs_reload(attempt):
+    """Whether a collecting attempt's bound load must be loaded again (#1353).
+
+    A load that failed, or one that succeeded but whose staged data is no
+    longer valid by review's own predicate (``staged_load``). SQL repeats
+    the check when the discard is audited with reason ``reload``.
+    """
+    return (
+        attempt.state == SetupState.COLLECTING
+        and attempt.source_task_id is not None
+        and attempt.source_task.state in FINISHED
+        and staged_load(attempt) is None
+    )
 
 
 def void_source_load(attempt, *, reason, actor_id):
@@ -69,19 +84,19 @@ def start_source_load(request, service, attempt_id, *, expected_version):
 
     No provider call, credential read or source lease acquisition occurs in the
     browser transaction. The task and attempt binding commit together. A load
-    already bound is returned as it is, except a failed one: Load again
-    discards it (audit reason ``reload``) and queues a new load in the same
-    transaction (#1353). A successful load is kept; changing the ParishSoft
-    connection is what discards it (see setup_credentials.stage_credential).
+    already bound is returned as it is unless it needs loading again: one
+    that failed, or one that succeeded but whose staged data is no longer
+    valid (``staged_load``; for example its credential version changed).
+    Load again discards it (audit reason ``reload``) and queues a new load in
+    the same transaction (#1353). A still-valid load is kept; changing the
+    ParishSoft connection is what discards it (see
+    setup_credentials.stage_credential).
     """
     with work_transaction():
         actor, attempt = _owned(request, service, attempt_id)
         if _expiry(attempt, database_now()) is not None:
             raise PermissionError("Setup has expired.")
-        if attempt.source_task_id is not None and not (
-            attempt.state == SetupState.COLLECTING
-            and attempt.source_task.state == "failed"
-        ):
+        if attempt.source_task_id is not None and not needs_reload(attempt):
             return task_status(attempt.source_task)
         check_version(attempt, expected_version)
         if attempt.state != SetupState.COLLECTING or not (

@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from django.db.models import F
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
@@ -16,8 +15,7 @@ from parishkit.stewardship.source.version_models import SnapshotFund, SnapshotMi
 from parishkit.stewardship.web.refusals import UserFacingMissing
 
 from .sessions import database_now
-from .setup_drafts import _owned
-from .setup_exchange_models import SetupSourceResult
+from .setup_drafts import _owned, staged_load
 from .setup_models import SetupDraftSection
 from .setup_staging import _expiry
 
@@ -34,23 +32,7 @@ class SetupCatalog:
 
 def _source_result(attempt):
     """The attempt's exact, still-valid staged load result, or None."""
-    return (
-        SetupSourceResult.objects.filter(
-            exchange__attempt=attempt,
-            exchange__scrubbed_at=None,
-            exchange__task__root_id=attempt.source_task_id,
-            exchange__task__state="succeeded",
-            exchange__task_fence=F("exchange__task__fence"),
-            exchange__credential__scrubbed_at=None,
-            exchange__credential_version=F("exchange__credential__version"),
-            exchange__fingerprint=F("exchange__credential__fingerprint"),
-            snapshot__state="ready",
-            snapshot__task_id=F("exchange__task_id"),
-            snapshot__source_fence=F("exchange__source_fence"),
-        )
-        .order_by("-snapshot__completed_at", "-pk")
-        .first()
-    )
+    return staged_load(attempt)
 
 
 def require_staged_load(request, service, attempt_id):

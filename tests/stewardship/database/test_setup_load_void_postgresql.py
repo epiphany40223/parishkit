@@ -201,6 +201,10 @@ def test_the_same_connection_keeps_a_load_and_a_change_discards_it(
     assert status.version == before.version
     assert not AuditEvent.objects.filter(event_type="setup_source_voided").exists()
 
+    # Load again of a still-valid load is refused in SQL, by the same
+    # predicate review uses.
+    with pytest.raises(IntegrityError, match="still-valid"):
+        void(before, "reload")
     status, changed = stage(request, setup_service, **change)
     row = SetupAttempt.objects.get()
     assert (row.state, row.source_task_id, row.renewed_at) == ("collecting", None, None)
@@ -222,6 +226,68 @@ def test_the_same_connection_keeps_a_load_and_a_change_discards_it(
         )
     assert load.run_id != task.run_id
     assert SetupAttempt.objects.get().source_task_id == load.run_id
+
+
+def source_page(request, service):
+    """The Load parish data page as its view renders it, and the draft."""
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.accounts.setup_views import _context
+
+    with web_login():
+        draft = view_draft(request, service)
+        context = _context(draft, "source")
+    context["source_step"] = context["wizard"].step("source")
+    return render_to_string("stewardship/setup-source.html", context), context
+
+
+def test_a_load_whose_credential_version_moved_needs_loading_again(
+    setup_service, monkeypatch
+):
+    """A succeeded load that review would refuse is not shown as loaded (#1353).
+
+    The Administrator's dead end: after a successful load the ParishSoft
+    credential's version moved, so review refused ("Load the parish data
+    before reviewing setup") while Load parish data still said loaded and
+    offered no action. Load again now discards it with reason reload.
+    """
+    from parishkit.stewardship.accounts.setup_secret_models import (
+        SetupSealedCredential,
+    )
+
+    short_request_budgets(monkeypatch)
+    request, attempt, task, private = queued(setup_service)
+    assert dispatch(monkeypatch, private, task.run_id) == "succeeded"
+    html, page = source_page(request, setup_service)
+    assert page["draft"].source_loaded
+    assert page["wizard"].step("source").state == "done"
+    assert "Parish data is loaded" in html
+    # The staged credential's version moves on without a new load.
+    with web_login(), work_transaction():
+        SetupSealedCredential.objects.filter(target="parishsoft").update(
+            version=F("version") + 1
+        )
+    html, page = source_page(request, setup_service)
+    draft = page["draft"]
+    assert draft.source_task_state == "succeeded" and not draft.source_loaded
+    assert page["wizard"].step("source").state != "done"
+    assert "Parish data is loaded" not in html
+    assert "data-source-stale" in html and 'value="load"' in html
+    with web_login():
+        again = start_source_load(
+            request,
+            setup_service,
+            draft.status.attempt_id,
+            expected_version=draft.status.version,
+        )
+    assert again.run_id != task.run_id
+    assert SetupAttempt.objects.get().source_task_id == again.run_id
+    assert context("setup_source_voided") == {
+        "version": draft.status.version + 1,
+        "outcome": "cancelled",
+        "void_reason": "reload",
+        "task_state": "succeeded",
+    }
 
 
 def finished(service, outcome):
@@ -277,7 +343,6 @@ def test_sql_discards_only_a_finished_load_by_its_owner_with_a_reason(setup_serv
     for reason, actor, message in (
         (None, None, "closed reason"),
         ("unknown", None, "closed reason"),
-        ("reload", None, "closed reason"),  # only a failed load reloads
         ("key_changed", uuid4(), "original authorized base"),
     ):
         with pytest.raises(IntegrityError, match=message):

@@ -16,7 +16,10 @@
 -- failed load still bound, and the owning live Admin can discard a finished
 -- (succeeded or failed) load: the binding and renewal time are cleared, so a
 -- new load can bind. The application discards one when the ParishSoft key or
--- organization changes, or for Load again after a failure. Each discard is
+-- organization changes, or for Load again after a failure or once a
+-- successful load's staged result is no longer valid (its credential
+-- version or fingerprint changed, its exchange was scrubbed, or its snapshot
+-- or fences no longer match; the predicate review uses). Each discard is
 -- audited as setup_source_voided with closed words for why and how the load
 -- had ended, never the key. A discarded load's staging stays inert (every
 -- later step binds to the current load) and the setup source cleanup now
@@ -27,8 +30,10 @@
 --                                             failed load to collecting; the
 --                                             owner may discard a finished one
 --   stewardship_setup_attempt_audit_v1        records setup_source_voided
---                                             with its reason, and a failed
---                                             load's end as outcome 'failed'
+--                                             with its reason (reload only
+--                                             for a failed or no longer valid
+--                                             load), and a failed load's end
+--                                             as outcome 'failed'
 --   stewardship_setup_attempt_mutable_v1      source_task_id is no longer
 --                                             write-once (the model's
 --                                             write_once_fields drops it)
@@ -247,9 +252,33 @@ BEGIN
         why=current_setting('stewardship.setup_void_reason', true);
         SELECT state INTO previous FROM stewardship_task_run WHERE id=OLD.source_task_id;
         IF why IS NULL OR why NOT IN ('key_changed','organization_changed','reload')
-           OR previous IS NULL OR previous NOT IN ('succeeded','failed')
-           OR (why='reload' AND previous<>'failed') THEN
+           OR previous IS NULL OR previous NOT IN ('succeeded','failed') THEN
             RAISE EXCEPTION 'A discarded setup load requires its closed reason'
+                USING ERRCODE='23514';
+        END IF;
+        -- Load again needs a load that failed, or one that succeeded but whose
+        -- staged result is no longer valid (accounts.setup_drafts.staged_load,
+        -- the predicate review uses): its credential version or fingerprint
+        -- changed, its exchange was scrubbed, or its snapshot or fences no
+        -- longer match.
+        IF why='reload' AND previous='succeeded' AND EXISTS (
+            SELECT 1 FROM stewardship_setup_source_result result
+            JOIN stewardship_setup_source_exchange exchange
+                ON exchange.id=result.exchange_id AND exchange.attempt_id=NEW.id
+                AND exchange.scrubbed_at IS NULL
+            JOIN stewardship_task_run task ON task.id=exchange.task_id
+                AND task.root_id=OLD.source_task_id AND task.state='succeeded'
+                AND task.fence=exchange.task_fence
+            JOIN stewardship_setup_sealed_credential credential
+                ON credential.id=exchange.credential_id
+                AND credential.scrubbed_at IS NULL
+                AND credential.version=exchange.credential_version
+                AND credential.fingerprint=exchange.fingerprint
+            JOIN stewardship_source_snapshot snapshot
+                ON snapshot.id=result.snapshot_id AND snapshot.state='ready'
+                AND snapshot.task_id=exchange.task_id
+                AND snapshot.source_fence=exchange.source_fence) THEN
+            RAISE EXCEPTION 'A still-valid setup load cannot be loaded again'
                 USING ERRCODE='23514';
         END IF;
         PERFORM set_config('stewardship.setup_void_reason', '', true);
@@ -679,14 +708,19 @@ BEGIN
               OR p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']))<>7 THEN
         RAISE EXCEPTION 'Migration 0102: a replaced function is not installed as declared';
     END IF;
-    -- The binding is no longer write-once, and the guard still lets only a
-    -- running load's worker return setup to collecting after a failure.
+    -- The binding is no longer write-once, the guard still lets only a
+    -- running load's worker return setup to collecting after a failure, and
+    -- the audit refuses Load again of a still-valid load.
     IF EXISTS (SELECT 1 FROM pg_proc
                WHERE oid='public.stewardship_setup_attempt_mutable_v1()'::regprocedure
                  AND strpos(prosrc, 'source_task_id')>0)
        OR NOT EXISTS (SELECT 1 FROM pg_proc
                WHERE oid='public.stewardship_setup_attempt_guard_v1()'::regprocedure
-                 AND strpos(prosrc, 'previous IS DISTINCT FROM ''failed'' AND NOT EXISTS')>0) THEN
+                 AND strpos(prosrc, 'previous IS DISTINCT FROM ''failed'' AND NOT EXISTS')>0)
+       OR NOT EXISTS (SELECT 1 FROM pg_proc
+               WHERE oid='public.stewardship_setup_attempt_audit_v1()'::regprocedure
+                 AND strpos(prosrc, 'A still-valid setup load cannot be loaded again')>0
+                 AND strpos(prosrc, 'credential.version=exchange.credential_version')>0) THEN
         RAISE EXCEPTION 'Migration 0102: the setup load binding guards are not installed as declared';
     END IF;
     -- The three setup attempt triggers still run the replaced functions.
