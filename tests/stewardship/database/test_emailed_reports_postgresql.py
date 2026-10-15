@@ -8,14 +8,16 @@ Send a weekly report now returns to it and names the request it made.
 from uuid import uuid4
 
 import pytest
+from django.db import connection
 from django.urls import reverse
 
+from parishkit.stewardship.accounts import admin_navigation as navigation
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.weekly_models import WeeklyManualRequest
 
 from ..policy_factory import address, assignment
-from .auth_builders import signed_in
+from .auth_builders import signed_in, unguarded
 from .campaign_builders import campaign_clock, change
 from .test_background_grants_postgresql import task_login
 from .test_daily_digest_dispatch_postgresql import allocated as daily_allocated
@@ -170,3 +172,23 @@ def test_send_a_weekly_report_now_returns_to_emailed_reports(response_service, g
             other = browser.get(f"{reverse(PAGE)}?requested={uuid4()}")
         assert other.status_code == 200
         assert b"Your weekly report" not in other.content
+
+
+def test_an_archived_campaign_greys_the_add_a_schedule_link(response_service, google):
+    """An archived campaign's hint greys its Dates and mail schedules link (#1261).
+
+    The menu greys Dates and mail schedules for an archived campaign and every
+    page under it refuses (#1258), so the hint after the unavailable Send a
+    weekly report now shows the link text as the shared greyed-out control
+    with the menu's reason, never a link to the refusal.
+    """
+    with campaign_clock(WEEKLY_INSTANT):
+        browser, _ = signed_in()
+        with unguarded(), connection.cursor() as cursor:
+            cursor.execute("UPDATE public.stewardship_campaign SET state='archived'")
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            page = browser.get(reverse(PAGE)).content.decode()
+        assert "Available once the campaign has a Weekly Admin digest schedule." in page
+        assert f'href="{reverse("admin:schedule_settings")}"' not in page
+        assert 'aria-describedby="schedule-settings-link-tip"' in page
+        assert f"{navigation.ARCHIVED}</span>" in page

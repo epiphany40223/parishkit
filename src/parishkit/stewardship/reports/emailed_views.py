@@ -8,7 +8,9 @@ already allow. Send a weekly report now is an Administrator action at the top
 of this page, above both lists, so a long list of daily reports never hides
 it. It is always shown to an Administrator, and unavailable, with a hint and
 a link to Dates and mail schedules, while the campaign has no Weekly Admin
-digest schedule, which the report needs. It returns here;
+digest schedule, which the report needs; the template's ``menu_link`` greys
+that link with the menu's reason while the menu does (an archived campaign,
+#1261). It returns here;
 ``?requested=<request>`` names the request just made, so the page can link
 the report it produced, or its background task while the report is still
 being prepared.

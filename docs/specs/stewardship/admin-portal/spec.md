@@ -553,6 +553,10 @@ Notes on the groups:
   lists, so a long list of daily reports never hides it; while the campaign
   has no Weekly Admin digest schedule (which the report needs) it is
   unavailable, with a short hint after it linking Dates and mail schedules.
+  That link, and the one in Send a weekly report now's own missing-schedule
+  notice, grey out with the menu's reason while the menu greys Dates and mail
+  schedules, as for an archived campaign (#1261;
+  [unavailable menu pages](../ui-conventions/spec.md#unavailable-menu-pages)).
 - **Ministries** is the one home for Ministries: parish-wide
   [Ministry activity](#ministry-activity-management), with
   [this campaign's Ministries](#changing-a-live-campaigns-ministries) reached
