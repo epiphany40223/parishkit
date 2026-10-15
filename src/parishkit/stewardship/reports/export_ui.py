@@ -255,11 +255,14 @@ def detail(request, request_id):
                 admit_campaign(campaign_id, mutating=True)
             except PermissionError:
                 mutable = False
-            # The report page the export came from, for the trail (#196). A
+            # The report page the export came from, for the trail (#196),
+            # and any route arguments and query that page's crumb needs. A
             # report's export is named after that report's page (#520), so
             # ``title`` stays None for those and is built from the page's
             # name below; other files have names of their own.
             title = None
+            arguments = {}
+            queries = {}
             if job.report == "ministry":
                 source = "ministry_report"
                 report_url = reverse("admin:ministry_report")
@@ -287,15 +290,20 @@ def detail(request, request_id):
                     "admin:campaign_mail_families", args=[job.parameters["revision"]]
                 )
             elif job.report == "family_timeline":
-                # The timeline page is reached from the Family directory; the
-                # way back is the Family's own timeline page.
+                # The export sits under the Family's own timeline page, so the
+                # trail runs Directory > Family timeline > export and keeps
+                # which Family it was (#521).
                 from .family_timeline_views import timeline_url
 
                 title = _("Family timeline export")
-                source = "family_directory"
-                report_url = timeline_url(
-                    job.timeline_snapshot.family_id, job.parameters["mode"]
-                )
+                source = "family_timeline"
+                family_id = job.timeline_snapshot.family_id
+                arguments = {"family_id": family_id}
+                report_url = timeline_url(family_id, job.parameters["mode"])
+                # The crumb opens the timeline in the mode exported, as the
+                # "Return to" link does.
+                if "?" in report_url:
+                    queries = {source: report_url.split("?", 1)[1]}
             elif job.report in {"family_directory", "postal_outreach"}:
                 source = "family_directory"
                 if job.parameters["postal"]:
@@ -328,6 +336,8 @@ def detail(request, request_id):
             admin_navigation.place(
                 request,
                 parent=source,
+                arguments=arguments,
+                queries=queries,
                 flow="export",
                 step=_export_step(state["state"]),
             )

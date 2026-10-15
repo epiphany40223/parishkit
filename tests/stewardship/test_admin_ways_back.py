@@ -18,24 +18,15 @@ from .test_admin_page_names import TEMPLATE_DIR, TEMPLATES
 
 # Pages whose templates ``TEMPLATES`` leaves out (a review step, a template
 # shared by two views, a page whose heading the view supplies), each with the
-# page whose trail the template is drawn under.
+# page whose trail the template is drawn under. The report roots' "no
+# campaign" page sits under Home alone. Error pages are left out on purpose:
+# rule 3 lets an error page offer a way back.
 EXTRA = {
     ("content_edit", "content-settings.html"),
     ("content_edit", "content-preview.html"),
     ("daily_digest_snapshot", "daily-digest.html"),
     ("schedule_settings", "schedule-reconcile.html"),
-}
-
-# Templates still drawing such a link, held by open pull requests when this
-# check was added (Preview and test email #1230, and Send to chosen Families
-# beneath it, #1247 and #1248; the go-live pages #1233; Data to fix in
-# ParishSoft #1228). The list may only shrink.
-PENDING = {
-    "campaign-mail-families.html",
-    "go-live-cleanup.html",
-    "go-live-families.html",
-    "go-live-links.html",
-    "source-form.html",
+    ("reports", "report-empty.html"),
 }
 
 # "Return to" links that name a page in the trail but keep the reader's place
@@ -93,16 +84,13 @@ PAIRS = sorted(set(TEMPLATES.items()) | EXTRA)
 def test_no_return_link_repeats_the_trail(page, template):
     """A page's template links no ancestor or Home in a "Return to" link."""
     repeats = _repeats(page, template)
-    if template in PENDING:
-        assert repeats, f"{template} no longer repeats its trail; drop it from PENDING"
-    else:
-        assert not repeats, (page, template, repeats)
+    assert not repeats, (page, template, repeats)
 
 
-def test_pending_templates_are_pages_checked_here():
-    """Every PENDING or KEPT template is one this check reads, so neither goes stale."""
+def test_kept_templates_are_pages_checked_here():
+    """Every KEPT template is one this check reads, so the list cannot go stale."""
     checked = {template for _, template in PAIRS}
-    assert checked >= PENDING | {template for template, _ in KEPT}
+    assert checked >= {template for template, _ in KEPT}
 
 
 @pytest.mark.parametrize(("template", "label"), sorted(KEPT))

@@ -1637,7 +1637,6 @@ def component_origin():
                 "unavailable": "Only 1 more Family test may be requested now.",
                 "fresh": True,
                 "refresh_url": "/family-tests-check",
-                "sample_url": "/campaign-mail",
             },
         ),
         # A step whose earlier step is not done: Save is unavailable (#563).

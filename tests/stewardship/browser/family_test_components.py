@@ -69,7 +69,6 @@ def _page(context, admin, address, *, local=False, **values):
                 "items": items,
                 "refresh": False,
                 "refresh_url": address,
-                "sample_url": "/campaign-mail",
                 "next": address,
             }
             | values

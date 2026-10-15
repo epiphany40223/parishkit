@@ -11,7 +11,6 @@
 <section class="panel" aria-labelledby="approved-heading" role="status">
   <h2 id="approved-heading">{% translate "Session approved" %}</h2>
   <p>{% blocktranslate with label=session.label scope=scope_label %}“{{ label }}” can now act as you ({{ scope }}) until{% endblocktranslate %} <time datetime="{{ session.expires_at|instant }}" data-local-instant>{{ session.expires_at|instant }}</time>. {% translate "The command line picks it up within a few seconds." %}</p>
-  <p><a href="{{ back }}">{{ back_label }}</a></p>
 </section>
 {% elif state == "review" %}
 <section class="panel" aria-labelledby="review-heading">
@@ -49,7 +48,6 @@
     <input id="automation-code" name="code" autocomplete="off" spellcheck="false" maxlength="16" required{% if not fresh %} disabled aria-describedby="approval-unavailable"{% endif %}>
     {% button type="submit" enabled=fresh aria-describedby=fresh|yesno:",approval-unavailable" %}{% translate "Continue" %}{% endbutton %}
   </form>
-  <p><a href="{{ back }}">{{ back_label }}</a></p>
 </section>
 {% endif %}
 {% endblock %}

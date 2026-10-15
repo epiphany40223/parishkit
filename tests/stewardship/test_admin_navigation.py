@@ -287,6 +287,27 @@ def test_a_test_email_trail_names_its_email_editor():
     assert navigation.back(match, placed)["url"] == trail[4]["url"]
 
 
+def test_a_timeline_export_trail_keeps_the_timeline_mode():
+    """A placed query reaches the ancestor's crumb and back link, nothing else."""
+    family = uuid4()
+    placed = navigation.Placement(
+        parent="family_timeline",
+        arguments={"family_id": family},
+        queries={"family_timeline": "mode=testing"},
+    )
+    match = _match("report_export", request_id=uuid4())
+    _, trail = navigation.build(match, _items(), placed)
+    timeline = reverse("admin:family_timeline", args=[family])
+    assert [crumb["label"] for crumb in trail][2:] == [
+        navigation.PAGES["family_directory"].label,
+        navigation.PAGES["family_timeline"].label,
+        navigation.PAGES["report_export"].label,
+    ]
+    assert trail[2]["url"] == reverse("admin:family_directory")
+    assert trail[3]["url"] == timeline + "?mode=testing"
+    assert navigation.back(match, placed)["url"] == timeline + "?mode=testing"
+
+
 def test_a_placed_configuration_change_joins_its_origin_section():
     """A change confirmed on an editor shows that editor's trail and section."""
     campaign, request_id = uuid4(), uuid4()
