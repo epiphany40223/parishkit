@@ -15,6 +15,7 @@ from .content_catalog_components import (
     BULK,
     CATALOG,
     FAILED,
+    GONE,
     OTHER,
     REFUSAL,
     REFUSED,
@@ -238,6 +239,24 @@ def test_a_bare_400_says_to_reload_not_to_wait(page, component_origin):
     text = error.inner_text()
     assert "the page sent something the server did not expect" in text
     assert "Reload the page, then try again." in text
+    assert "right now" not in text
+    assert reminders(page).count() == 3
+    assert not failures
+
+
+@pytest.mark.parametrize("status", [404, 410])
+def test_a_bare_404_or_410_says_it_no_longer_exists(page, component_origin, status):
+    """A gone item with no explanation of its own says so and to reload,
+    never "try again in a moment" (#1400)."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + GONE.format(status))
+    failures = watch(page)
+    page.get_by_role("button", name="Delete Last call").click()
+    dialog(page).get_by_role("button", name="Delete", exact=True).click()
+    error = dialog(page).locator("[data-confirm-error]")
+    visible(error)
+    text = error.inner_text()
+    assert "This was not done: it no longer exists. Reload the page." in text
     assert "right now" not in text
     assert reminders(page).count() == 3
     assert not failures
