@@ -69,7 +69,9 @@ never needs a copy of the repository.
 | --- | --- |
 | `vm create` | Create and start the Lima instance from `deploy/stewardship/lima-local.yaml` (Ubuntu 24.04 arm64, Docker Engine, forwards only 8443 and 8025, no shared directories). Takes a few minutes the first time. |
 | `vm start` / `vm stop` | Start or stop the VM. |
+| `vm create --rehearsal` / `vm delete` | Create a throwaway VM from `deploy/stewardship/lima-rehearsal.yaml`, which forwards no port, so it runs beside the day-to-day one; it needs its own `PARISHKIT_LOCAL_VM`. `vm delete` (type the instance name) removes such an instance with every container, image and volume in it. `vm delete`, `compare` and `rehearse --full` refuse any instance not made by `vm create --rehearsal` (its configuration carries a marker line), so they can never touch the default or day-to-day one. For the [full-size rehearsal](#full-size-rehearsal). |
 | `up [--families N]` | First-time install from this checkout (below). `N` is the synthetic parish size, default 100. Refuses if a deployment exists. |
+| `up --ref REF` / `deploy --ref REF` / `reset --reinstall --ref REF` | The same, building the commit `REF` names (`git archive`) instead of the work tree, so one checkout builds a release and a pull request. |
 | `start` | Start a stopped deployment's services (after `down` or a VM restart) in the recorded clock mode. |
 | `deploy [--schema-change]` | Build the image from this checkout, then upgrade the running deployment to it, data and all, by the Production upgrade's steps (`tools/stewardship-upgrade-host.sh` in local mode; [below](#testing-a-pull-request-on-seeded-data)). `--schema-change` is what `STEWARDSHIP_SCHEMA_CHANGE=1` is to Production: without it, a build whose upgrade check expects migration or grant changes is refused before anything stops. Refuses unless a snapshot exists to return to. |
 | `deploy --bulk on\|off` / `deploy --smtp-latency-ms N` | The same deploy, rendering the bulk Family send on or off, or the modeled Gmail latency of `N` milliseconds (0–5000; 0 turns it off). Each carries over to later deploys until changed. For [rehearsing a bulk send](#rehearsing-a-bulk-send). |
@@ -80,6 +82,8 @@ never needs a copy of the repository.
 | `seed [--response-scale M]` | Seed a campaign in progress under the fake clock ([below](#seeding-a-campaign)); refuses on a seeded deployment. Takes a lock and keeps `~/.parishkit-local/seed.log`. |
 | `reseed` | `reset` to the post-setup snapshot, then `seed`. |
 | `rehearse [--due-in MIN] [--send-only] [--timeout MIN] [--label NAME]` | Add a Reminder due in `MIN` minutes (default 5), measure its send and print the report ([below](#rehearsing-a-bulk-send)). Seeded deployments only. Keeps `~/.parishkit-local/rehearse.log`. |
+| `rehearse --full` (or any of `--pause-after N`, `--pause-seconds S`, `--probe-every S`, `--harness`) | The [full-size rehearsal](#full-size-rehearsal): the same send, paused and resumed part way, with a Family probe, the credential fingerprint and the Mailpit audit. |
+| `compare --ref A --ref B [--label NAME] [--smtp-latency-ms N] [...]` | For each build: restore the seeded snapshot, deploy it with the bulk send on and the modeled latency (default 600 ms), run the full-size rehearsal; then print both side by side ([below](#full-size-rehearsal)). Keeps `~/.parishkit-local/compare.log`. |
 | `spike [--families N] [--sources S] [--during-send] [--wait MIN] [--label NAME]` | Have `N` Families (default 200) open their emailed links and submit through Caddy from `S` sources (default 8), and print the report ([below](#checking-the-launch-day-spike)). Seeded deployments only. Keeps `~/.parishkit-local/spike.log`. |
 | `status` | The VM, every service's state and health, Docker disk use, VM disk use, snapshots. |
 | `down` | Stop the services (90-second grace per container; a container Docker had to kill is named). Data is never removed. |
@@ -415,13 +419,146 @@ report shows no lock holds or renewal waits. The one-at-a-time path logs no
 lock holds; there the lock samples and the send statistics are the
 measurements.
 
-**Not yet supported: the 1,100-Family invitation.** The protocol's larger
-size (plan steps 3 and 4) measures a 1,100-Family campaign's initial
-invitation end to end, activated to Production with its Initial due a few
-minutes ahead. `rehearse` measures a Reminder on a seeded deployment, and
-the seeder only activates a campaign under the fake clock, so that run is
-deferred to a later BG-12 pull request, before PR 4's acceptance run. The
-Reminder runs work at any parish size `up --families` gave the deployment.
+## Full-size rehearsal
+
+The full-size rehearsal (BG-12 PR 4, #447) runs the send at the parish's
+real size, in a **throwaway VM** beside the day-to-day one, and compares two
+builds: the current release and a pull request. It never touches the
+day-to-day deployment, and no mail leaves the VM: every message goes to the
+deployment's Mailpit (relaying off), and the mail sender waits the modeled
+Gmail latency before each one. Production is never involved. The VM needs
+4 CPUs, 4 GiB and up to 30 GB of the laptop's disk; check `df -h` first.
+
+1. Create the VM and install the release, with 1,100 Families:
+
+   ```sh
+   export PARISHKIT_LOCAL_VM=pk-rehearsal
+   tools/stewardship-local.sh vm create --rehearsal
+   tools/stewardship-local.sh up --ref v1.14.0 --families 1100
+   tools/stewardship-local.sh wizard
+   tools/stewardship-local.sh snapshot
+   ```
+
+   The synthetic parish already has realistic households at that size:
+   household sizes, about 10% of Families without an email address, 8%
+   inactive, and some heads with two addresses.
+2. Seed it with few responses, so almost every Family is still a Reminder
+   candidate, and keep it:
+
+   ```sh
+   tools/stewardship-local.sh seed --response-scale 0.05
+   tools/stewardship-local.sh snapshot --seeded
+   ```
+
+   **Seed on a day without a seeded Reminder in the last 24 hours.** The
+   seeder sends a Reminder on Tuesdays and Thursdays at 09:00 (campaign
+   time), and those messages count toward the deployment's own daily
+   sending limit: 1,600 recipients for bulk mail in a rolling 24 hours. A
+   rehearsal that the remaining room cannot fit is refused before it
+   starts, with the room and the candidate estimate it found. So seed on
+   a Wednesday, Friday, Saturday, Sunday or Monday after 09:00.
+
+   A Reminder to the Families that have not responded is then about the
+   size of the Initial invitation, through the same send path, in
+   Production mode. (The seeder activates a campaign only under the fake
+   clock, so the real Initial invitation is not rehearsed here.) For a
+   typical Reminder instead, seed with the default response scale. At
+   1,100 Families a much larger scale makes the seed's `drive` step
+   outlast its one-hour limit (2.5 did, on a 4-CPU VM).
+3. Compare two builds:
+
+   ```sh
+   tools/stewardship-local.sh compare --ref v1.14.0 --ref origin/pr/topic
+   ```
+
+   `compare` first builds this checkout as the **harness image**. The steps
+   a released build may not have yet run from it: the pause and resume, the
+   probe, the audit, the credential query and the report. The harness must
+   have the same schema as both builds (no migration between them).
+   Then, for each `--ref` in turn, `compare`:
+   - restores the seeded snapshot;
+   - deploys the build with `--bulk on` and `--smtp-latency-ms 600`
+     (`--smtp-latency-ms` changes it);
+   - runs `rehearse --full` labelled `<label>-<run id>-a` or
+     `<label>-<run id>-b`, with a new random run id for each `compare`, so
+     the comparison can only read this invocation's runs.
+
+   Last, it prints the two summaries side by side. `compare` exits
+   non-zero when either side's rehearsal failed or was refused (the table
+   is still printed). To rehearse the build
+   that is already deployed, run `rehearse --full` alone. `--harness`
+   builds this checkout as the harness first.
+4. When you are done, `tools/stewardship-local.sh vm delete` removes the VM
+   and everything in it. Lima keeps the Ubuntu image it downloaded in its
+   cache (under `~/Library/Caches/lima` on macOS). `limactl prune`
+   empties that whole cache; a later `vm create` simply downloads again.
+   With `--keep-referred` it keeps what an existing instance's
+   configuration names, which includes this image while the day-to-day
+   instance exists.
+
+A full-size run is a `rehearse` run (above), plus these:
+
+- **Pause and resume.** `--pause-after N` (default 300 messages; 0 means
+  no pause). The pause goes through the Pause and resume mail page's own
+  preview and confirm (the seeder's `pause` step), as the deployment's
+  Administrator. After `--pause-seconds` (default 60), the `resume` step:
+  - waits until nothing is submitting;
+  - sends the Reminder's sample to the Testing recipient (in Mailpit),
+    which is the sender test a resume requires;
+  - waits for the sender check to turn ready;
+  - then previews and confirms the resume.
+- **Family probe.** `--probe-every S` (default 15 s; 0 means none). Every
+  `S` seconds, one Family whose email arrived during the run opens its link
+  and submits its form unchanged through Caddy, using the spike check's
+  browser. The probe container is on the ingress network, inside the VM.
+  The form step issues the form baseline under the work-order lock, so it
+  shows what a Family waits for while the send holds the lock.
+- **Credential fingerprint.** Before and after the send, one read-only
+  query takes a row count and an md5 over every credential record: every
+  Family's code ciphertext and code MAC; each link token's ciphertext,
+  digest, rotation and destruction; each token generation's state, key and
+  credential epoch; the deployment's global link fence; the campaign's
+  active generation; the rehearsal epoch and its state; and each rehearsal
+  credential's code and link. The two must be identical.
+- **Mailpit audit.** After the send, every message in Mailpit is read. For
+  the run's messages, the audit counts the Family links, any link that came
+  in two messages, and any link that had never been emailed before the run
+  (that would mean a changed token).
+
+The report adds:
+
+- the work-order lock time per accepted message: every prepare, commit and
+  outcome batch's hold, added up and divided by the messages accepted;
+- the send time and rate without the pause;
+- each probe step's seconds, with its outcomes;
+- the pause: the outcomes before it, the outcomes that settled while
+  paused (messages already submitting finish), the time from the pause to
+  quiet, the resume's waits, and the time from the resume to the first
+  outcome;
+- the credential and Mailpit audits.
+
+Correctness additionally requires identical fingerprints, an audit with no
+link in two messages, no link not emailed before and as many distinct links
+as accepted messages, and, when a pause was asked for, a pause and a
+confirmed resume. The seed's rule that no message is created before its
+due time is kept, except that a bulk Production Reminder may be prepared
+up to two hours ahead (BG-12 PR 2); in every run, nothing may be submitted
+before its due time.
+
+Each run is one sample. Treat small differences between two runs (a few
+percent of lock time, a probe percentile over a dozen probes) as one
+sample each until repeated runs show the spread; the exactly-once,
+credential, prebuilt and correctness results do not depend on that. The run's directory also holds
+`probe.jsonl`, `pause.json`, `resume.json`, `credentials-*.tsv` and
+`audit.json`. `compare`'s table is kept as
+`/var/log/stewardship-rehearsal-compare-*.txt`.
+
+**Real Gmail is not part of this harness.** The local profile submits only
+to Mailpit. The small real-Gmail check the Administrator approved
+(about 50 messages, Testing mode, redirected to the Administrator's own
+address, on a day with no Production sends) needs the Workspace sending
+credentials and a deployment that can use them. It is a separate, manual
+step.
 
 ## Checking the launch-day spike
 

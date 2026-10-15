@@ -488,7 +488,14 @@ def test_a_send_only_run_measures_from_the_dispatch_restart():
         (measured(), {"timed_out": True}),
         (measured(count=0), {}),
         (measured(twice=1), {}),
-        (measured(invariants={"messages before their occurrence": 1}), {}),
+        (
+            measured(
+                invariants={
+                    "delivered fulfillments before their message was delivered": 1
+                }
+            ),
+            {},
+        ),
     ],
 )
 def test_any_correctness_fault_fails_the_run(document, meta):

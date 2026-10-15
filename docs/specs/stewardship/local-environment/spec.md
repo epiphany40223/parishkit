@@ -1130,7 +1130,9 @@ section is the contract.
 | --- | --- |
 | `vm create` | Create the `parishkit-local` Lima instance with the [VM settings](#host-virtual-machine) and install Docker Engine |
 | `vm start` / `vm stop` | Start or stop the VM |
+| `vm create --rehearsal` / `vm delete` | Create a throwaway instance under another `PARISHKIT_LOCAL_VM` name that forwards no port ([full-size rehearsal](#operator-script)), or delete an instance after its name is typed |
 | `up [--families N]` | First-time install (below), with a synthetic parish of `N` Families (default 100) |
+| `--ref REF` (on `up`, `deploy`, `reset --reinstall`) | Build the commit `REF` names instead of the checkout's work tree |
 | `deploy [--schema-change] [--bulk on\|off] [--smtp-latency-ms N]` | Build the image from the checkout and upgrade the running deployment to it by the Production upgrade's steps (below); `--schema-change` is that upgrade's `STEWARDSHIP_SCHEMA_CHANGE=1`; `--bulk` renders the bulk Family send on or off and `--smtp-latency-ms` the [modeled latency](#mail-catcher), each carried over when not given |
 | `deploy --rollback` | That upgrade's image-only rollback to the image the last `deploy` replaced (below) |
 | `snapshot [--seeded]` | Stop the services and save the runtime root as the post-setup snapshot, or with `--seeded` as the seeded snapshot, preserving numeric ownership and modes, then restart |
@@ -1140,6 +1142,8 @@ section is the contract.
 | `seed [--response-scale m]` | Seed the current deployment at the current time (below) |
 | `reseed` | Restore the post-setup snapshot, then `seed` |
 | `rehearse [--due-in MIN] [--send-only] [--timeout MIN] [--label NAME]` | Measure one scheduled Family send on a seeded deployment ([bulk-send rehearsal](#operator-script)) |
+| `rehearse --full [--pause-after N] [--pause-seconds S] [--probe-every S] [--harness]` | The full-size rehearsal of that send ([below](#operator-script)) |
+| `compare --ref A --ref B` | Restore the seeded snapshot, deploy and run the full-size rehearsal for each build, then print both side by side |
 | `spike [--families N] [--sources S] [--during-send] [--wait MIN] [--label NAME]` | Measure Families opening their emailed links and submitting through Caddy on a seeded deployment ([launch-day spike check](#launch-day-spike-check)) |
 | `status` | Show the VM, service health, Docker disk use and VM disk use |
 | `down` | Stop the services; never removes data |
@@ -1329,6 +1333,28 @@ is the how-to. The contract:
   the limit and the time taken;
 - it exits non-zero unless the report's correctness check passed and the
   send settled within `--timeout`.
+
+The full-size rehearsal (BG-12 PR 4; the
+[guide](../../../guides/stewardship-local-environment.md#full-size-rehearsal)
+is the how-to) adds:
+
+- it runs in a throwaway instance that forwards no port, never in the
+  day-to-day one: `vm delete`, `compare` and `rehearse --full` refuse any
+  instance whose configuration lacks the marker `vm create --rehearsal`
+  writes, and its mail goes only to that instance's Mailpit;
+- `compare` labels each invocation's runs with a new run id and fails when
+  either side fails or is refused;
+- its further writes are the ones an Administrator and Families make: a
+  pause and a resume through the delivery-control commands, the resume's
+  sender test (a sample to the Testing recipient), and the probed Families'
+  unchanged submissions;
+- the steps a released build lacks run from a harness image built from the
+  checkout, which must have the deployed build's schema;
+- the credential fingerprint and the Mailpit audit report digests and
+  counts only, never a code, token, link or address, and its correctness
+  check requires identical fingerprints, no Family link in two messages and
+  none that was not emailed before the run, and, when asked for, a pause
+  and a confirmed resume.
 
 **Safety rules.**
 

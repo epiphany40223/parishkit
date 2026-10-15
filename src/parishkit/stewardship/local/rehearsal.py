@@ -30,11 +30,12 @@ profile.
 
 import json
 from datetime import timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from .seeder import (
     MONOTONE_CHECKS,
+    SeedFailed,
     SeedRefused,
     admin,
     configure_web_process,
@@ -338,6 +339,165 @@ def measure_snapshot(campaign_id, due_at):
         if campaign_id is None:
             campaign_id = current_campaign().pk
         return measure(cursor, campaign_id, due_at)
+
+
+# The full-size rehearsal's credential fingerprint (BG-12 PR 4, #447): one
+# row per credential record kind, with its row count and an md5 over every
+# row's identity, stored secret form and every field whose change would
+# invalidate an emailed code or link, in id order. The operator script reads
+# it before and after a send, in a read-only session; the two answers must be
+# identical. That shows the send created, changed or removed no Family code
+# or code MAC; no link token, its rotation or destruction; no token
+# generation or its credential epoch; not the deployment's global link fence
+# (family_link_epoch); not the campaign's active generation; not the
+# rehearsal epoch or its state; and no rehearsal code or link. Only digests
+# leave the database, never a code or token. A PostgreSQL test runs it
+# against the real schema.
+CREDENTIALS_SQL = """
+SELECT 'family_codes', count(*), coalesce(md5(string_agg(
+    id::text || ':' || coalesce(code_ciphertext, '-'), ',' ORDER BY id)), '-')
+  FROM stewardship_family_campaign
+UNION ALL
+SELECT 'code_macs', count(*), coalesce(md5(string_agg(
+    id::text || ':' || key_id || ':' || digest, ',' ORDER BY id)), '-')
+  FROM stewardship_family_code_mac
+UNION ALL
+SELECT 'link_tokens', count(*), coalesce(md5(string_agg(
+    id::text || ':' || generation_id::text || ':' || coalesce(ciphertext, '-')
+    || ':' || coalesce(digest, '-') || ':' || coalesce(rotated_at::text, '-')
+    || ':' || coalesce(destroyed_at::text, '-'), ',' ORDER BY id)), '-')
+  FROM stewardship_family_token
+UNION ALL
+SELECT 'token_generations', count(*), coalesce(md5(string_agg(
+    id::text || ':' || state || ':' || key_id || ':' || credential_epoch::text,
+    ',' ORDER BY id)), '-')
+  FROM stewardship_family_token_generation
+UNION ALL
+SELECT 'link_fence', count(*), coalesce(md5(string_agg(
+    id::text || ':' || family_link_epoch::text, ',' ORDER BY id)), '-')
+  FROM stewardship_credential_deployment
+UNION ALL
+SELECT 'campaign_generations', count(*), coalesce(md5(string_agg(
+    id::text || ':' || coalesce(active_token_generation_id::text, '-'),
+    ',' ORDER BY id)), '-')
+  FROM stewardship_campaign
+UNION ALL
+SELECT 'rehearsal_epochs', count(*), coalesce(md5(string_agg(
+    c.id::text || ':' || coalesce(c.rehearsal_epoch_id::text, '-') || ':'
+    || coalesce(e.state, '-'), ',' ORDER BY c.id)), '-')
+  FROM stewardship_campaign_credentials c
+  LEFT JOIN stewardship_rehearsal_epoch e ON e.id = c.rehearsal_epoch_id
+UNION ALL
+SELECT 'rehearsal_credentials', count(*), coalesce(md5(string_agg(
+    id::text || ':' || code_ciphertext || ':' || token_ciphertext || ':'
+    || token_digest, ',' ORDER BY id)), '-')
+  FROM stewardship_rehearsal_credential
+"""
+
+# How the rehearsal's pause and resume (``control_step``) describe themselves
+# in the delivery-control record, as an Administrator's reason would.
+PAUSE_REASON = "Local BG-12 rehearsal: pause in the middle of the send."
+RESUME_REASON = "Local BG-12 rehearsal: resume after the pause."
+# How long the resume may wait for the paused send to go quiet (nothing
+# submitting), for its sender test to be accepted and for the sender check
+# to turn ready; each expiry is logged with its limit and elapsed time.
+CONTROL_WAIT_SECONDS = 600
+
+
+def control_step(request, configuration):
+    """Pause or resume the current campaign's mail as an Administrator would.
+
+    The full-size rehearsal (BG-12 PR 4) pauses its send part way through
+    and resumes it, through the Pause and resume mail page's own commands
+    (``delivery_control_commands``): a signed preview, then its confirm,
+    under the deployment's Administrator signed in through the shared
+    identity core (``seeder.admin``). ``pause`` needs nothing more. A
+    ``resume`` first waits until the pause has taken hold (no message is
+    submitting), then sends the sender test the resume requires (the
+    Reminder email's sample, as the page's "send a sample" does, to the
+    Testing recipient in Mailpit), waits for it to be accepted and for the
+    sender check to turn ready, and only then previews and confirms the
+    resume. Returns the instants, so the report can time the pause.
+    """
+    configure_web_process(configuration)
+    from parishkit.stewardship.accounts import delivery_control_commands as commands
+    from parishkit.stewardship.accounts.campaign_mail_models import CampaignMailTest
+
+    from . import seed_web
+
+    campaign = current_campaign()
+    service = seed_web.admin_runtime()
+    web = admin(request)
+    began = database_now()
+    if request.step == "pause":
+        _, token = commands.preview_pause(
+            web, service, campaign.pk, reason=PAUSE_REASON
+        )
+        commands.confirm(web, service, campaign.pk, token=token)
+        return {
+            "step": "pause",
+            "requested_at": began.isoformat(),
+            "confirmed_at": database_now().isoformat(),
+            "paused": current_campaign().delivery_paused,
+        }
+
+    def quiet():
+        """Nothing is submitting or of unknown outcome (the resume's rule)."""
+        current = commands.inventory(campaign.pk)
+        if current.get("submitting") or current.get("unknown"):
+            return "messages are still submitting"
+        return True
+
+    quiet_seconds = wait_until(
+        "the paused send to stop submitting", quiet, limit=CONTROL_WAIT_SECONDS
+    )
+    # The sample needs a fresh sign-in, as the page's step-up does.
+    seed_web.sign_in_admin(web, request.admin_email)
+    template, _subject = reminder_reference(
+        service.store.active().document(), campaign.pk
+    )
+    tested_since = database_now()
+    seed_web.sample_mail(web, service, campaign.pk, UUID(str(template)))
+
+    def tested():
+        """The sender test after the pause was accepted (or failed)."""
+        row = (
+            CampaignMailTest.objects.filter(
+                campaign_id=campaign.pk, created_at__gte=tested_since
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        if row is not None and row.state == "accepted":
+            return True
+        if row is not None and row.state not in {"queued", "submitting"}:
+            raise SeedFailed(f"The resume's sender test ended in {row.state}.")
+        return "the resume's sender test"
+
+    test_seconds = wait_until(
+        "the resume's sender test to be accepted", tested, limit=CONTROL_WAIT_SECONDS
+    )
+    wait_until(
+        "the sender check to turn ready",
+        lambda: (
+            commands.health(campaign.pk).get("ready") is True
+            or "the sender check is not ready"
+        ),
+        limit=CONTROL_WAIT_SECONDS,
+    )
+    seed_web.sign_in_admin(web, request.admin_email)
+    requested = database_now()
+    _, token = commands.preview_resume(web, service, campaign.pk, reason=RESUME_REASON)
+    commands.confirm(web, service, campaign.pk, token=token)
+    return {
+        "step": "resume",
+        "began_at": began.isoformat(),
+        "quiet_seconds": round(quiet_seconds, 1),
+        "test_seconds": round(test_seconds, 1),
+        "requested_at": requested.isoformat(),
+        "confirmed_at": database_now().isoformat(),
+        "paused": current_campaign().delivery_paused,
+    }
 
 
 def measure_step(request, configuration):

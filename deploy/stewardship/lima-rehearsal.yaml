@@ -1,0 +1,41 @@
+# Lima instance for BG-12's throwaway full-size rehearsal (#447), created by
+# `tools/stewardship-local.sh vm create --rehearsal` under its own instance
+# name (PARISHKIT_LOCAL_VM, for example pk-rehearsal). It is the local
+# environment's VM (lima-local.yaml) with two differences: it forwards NO
+# port to the laptop, so it never collides with the day-to-day local
+# deployment's 8443 and 8025 (the rehearsal's probes and Mailpit reads run
+# inside the VM), and its disk is smaller. `vm delete` removes it with every
+# container, image and volume inside it.
+# The next line marks a throwaway instance; tools/stewardship-local.sh runs
+# `vm delete`, `compare` and `rehearse --full` only on an instance carrying it.
+# parishkit-local: throwaway rehearsal instance
+vmType: vz
+arch: aarch64
+cpus: 4
+memory: 4GiB
+disk: 30GiB
+images:
+  - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"
+    arch: aarch64
+# No host directory is shared; source reaches the VM only as a packed archive.
+mounts: []
+# Docker Engine, not Lima's bundled containerd.
+containerd:
+  system: false
+  user: false
+# Nothing is forwarded: Lima's automatic forwarding is turned off for every
+# guest port, TCP and UDP.
+portForwards:
+  - guestPortRange: [1, 65535]
+    proto: any
+    ignore: true
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux
+      if ! command -v docker >/dev/null; then
+        curl -fsSL https://get.docker.com | sh
+      fi
+      apt-get install -y jq rsync
+      mkdir -p /opt/parishkit

@@ -454,7 +454,12 @@ new behavior, including preparing ahead, is simply how the bulk path works.
    replaces the post-setup slot, so take the 100-Family seeded snapshot
    first. The initial invitation is triggered by activating the campaign to
    Production with its Initial schedule due a few minutes ahead, as the
-   seeder does.
+   seeder does. PR 4's harness (`compare`, in the
+   [local guide](../../guides/stewardship-local-environment.md#full-size-rehearsal))
+   measures the invitation size as a Production Reminder to every Family
+   that has not responded on a low-response 1,100-Family seed: the same
+   send path and about the Initial's count, since the seeder activates a
+   campaign only under the fake clock.
 4. **Each build.** For each size, measure the one-at-a-time path, the bulk
    path of the current release, and the bulk path of the build under test,
    restoring the size's snapshot between runs. Trigger a reminder by adding
