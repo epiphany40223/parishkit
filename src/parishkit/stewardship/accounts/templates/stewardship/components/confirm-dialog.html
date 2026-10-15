@@ -41,6 +41,10 @@
     data-confirm-reset go back to their defaults each time it opens.
   - plain_accept=True draws Confirm as an ordinary primary button, not a
     destructive one (the same option as #1145's).
+  - answer_page=True is for a page whose view travels only in POST bodies
+    (Census changes, #528): the form posts to the page itself with the
+    view's fields, and the page is redrawn from that answer rather than
+    read again from its address, which would show the default view.
 
   With review=True it is instead the shared review dialog of Admin editors
   (UX conventions, "Review dialog", #750): a form marked
@@ -71,7 +75,7 @@
 <div class="dialog-actions">{% button type="button" data-confirm-accept %}{% translate "Apply" %}{% endbutton %}{% button type="button" variant="secondary" data-confirm-cancel %}{% translate "Cancel" %}{% endbutton %}</div>
 <p class="dialog-status" role="status" data-confirm-status></p>
 <div class="notice notice-error" role="alert" data-confirm-error hidden></div>
-</dialog>{% else %}<dialog id="{{ dialog_id }}" class="confirm-dialog" aria-labelledby="{{ dialog_id }}-title" aria-describedby="{{ dialog_id }}-body" data-confirm-dialog data-confirm-form="{{ form_id }}" data-confirm-fallback="{{ fallback }}" data-title-one="{{ title_one }}" data-title-many="{{ title_many }}" data-done-one="{{ done_one }}" data-done-many="{{ done_many }}" data-working="{% translate 'Working…' %}">
+</dialog>{% else %}<dialog id="{{ dialog_id }}" class="confirm-dialog" aria-labelledby="{{ dialog_id }}-title" aria-describedby="{{ dialog_id }}-body" data-confirm-dialog data-confirm-form="{{ form_id }}" data-confirm-fallback="{{ fallback }}" data-title-one="{{ title_one }}" data-title-many="{{ title_many }}" data-done-one="{{ done_one }}" data-done-many="{{ done_many }}"{% if answer_page %} data-confirm-answer-page{% endif %} data-working="{% translate 'Working…' %}">
 <h2 id="{{ dialog_id }}-title" data-confirm-title>{{ title_many }}</h2>
 <p id="{{ dialog_id }}-body" data-confirm-body>{{ body }}</p>
 {% if caution %}<p class="notice">{{ caution }}</p>{% endif %}
