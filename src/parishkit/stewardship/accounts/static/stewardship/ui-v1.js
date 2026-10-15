@@ -179,12 +179,16 @@
     // engine may report ICU's older name for a zone the list offers by its
     // IANA name (Chromium says America/Louisville for
     // America/Kentucky/Louisville), so an option this engine resolves to the
-    // reported name matches too.
+    // reported name matches too. A browser reporting UTC (or one of its
+    // aliases) is treated like one reporting no zone: a server, VM or
+    // privacy setting reports it, rarely a parish's own clock.
     const resolved = (name) => {
       try { return new Intl.DateTimeFormat("en-US", {timeZone: name}).resolvedOptions().timeZone; } catch (_) { return ""; }
     };
+    const unknownZone = !zone || zone === "Etc/Unknown"
+      || /^(Etc\/)?(UTC|UCT|Universal|Zulu)$/.test(zone);
     root.querySelectorAll("select[data-browser-default]").forEach((select) => {
-      if (select.disabled || !zone || zone === "Etc/Unknown") return;
+      if (select.disabled || unknownZone) return;
       const values = Array.from(select.options, (option) => option.value).filter(Boolean);
       const match = values.includes(zone) ? zone : values.find((value) => resolved(value) === zone);
       if (match) select.value = match;

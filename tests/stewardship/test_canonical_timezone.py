@@ -146,3 +146,17 @@ def test_a_saved_setup_zone_is_kept():
     assert "data-browser-default" not in menu
     assert 'value="America/Chicago" selected' in menu
     assert options(form)[0][0] != ""
+
+
+def test_the_setup_zone_help_names_the_browser_only_for_a_new_zone():
+    """The help says the browser's zone is selected only when it is: a
+    saved zone (and so a zone the source load has fixed) says nothing of
+    the browser."""
+
+    def help_text(form):
+        field = form.fields["timezone"]
+        return str(getattr(field, "tip", field.help_text))
+
+    assert "browser's time zone is selected" in help_text(SetupParishForm())
+    saved = SetupParishForm(initial={"timezone": "America/Chicago"})
+    assert "browser" not in help_text(saved)

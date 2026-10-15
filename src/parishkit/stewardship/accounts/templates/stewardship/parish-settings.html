@@ -7,7 +7,7 @@
 <p>{{ configuration.mode|capfirst }}</p>
 {% if configuration.mode == 'testing' %}<p>{% translate "Test recipient:" %} {{ configuration.testing_recipient }}</p>{% endif %}
 <p>{% translate "Production activation is a separate campaign readiness workflow, not a profile setting." %}</p></section>
-<p class="notice">{% translate "Changing the Parish timezone affects general presentation and future campaign drafts. Existing campaign timezones, dates, schedules and historical reports do not change." %}</p>
+<p class="notice">{% translate "Changing the Parish timezone affects general presentation and the fallback zone for a new campaign draft, used when the browser reports none. Existing campaign timezones, dates, schedules and historical reports do not change." %}</p>
 {% comment %}Review and apply happen in place, below the form (#532).{% endcomment %}<form id="settings-form" method="post" action="#settings-review" class="panel" data-in-place data-table-sync data-in-place-message="{% translate 'Review ready.' %}" data-require-change="base_digest">
   {% csrf_token %}<input type="hidden" name="action" value="preview">
   {{ form.as_div }}
