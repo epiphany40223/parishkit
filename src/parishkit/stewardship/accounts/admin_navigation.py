@@ -226,15 +226,14 @@ PAGES = {
         "reports", _("Weekly report item"), "weekly_digest_snapshot"
     ),
     "daily_digest_snapshot": Page("reports", _("Daily report"), "emailed_reports"),
+    # Ministry requests is the follow-up queue (#1133); Ministry follow-up,
+    # once a page of its own, was merged into it.
     "ministry_report": Page("reports", _("Ministry requests")),
-    "ministry_followup": Page("reports", _("Ministry follow-up")),
     "ministry_followup_item": Page(
-        "reports", _("Follow-up request"), "ministry_followup"
+        "reports", _("Follow-up request"), "ministry_report"
     ),
     # Resolved Ministry joins and leaves to enter in ParishSoft by hand (#528).
-    "ministry_roster": Page(
-        "reports", _("Roster changes to enter"), "ministry_followup"
-    ),
+    "ministry_roster": Page("reports", _("Roster changes to enter"), "ministry_report"),
     "family_directory": Page("reports", _("Active parishioner family directory")),
     # One Family's summary and timeline (#477), opened from its directory row.
     "family_timeline": Page("reports", _("Family timeline"), "family_directory"),
@@ -521,7 +520,6 @@ MENU = (
     Entry("census_changes", Capability.VIEW_CENSUS, CENSUS),
     Entry("information_queue", Capability.ADDITIONAL_FOLLOWUP, _downloaded(_campaign)),
     Entry("ministry_report", Capability.MINISTRY_REPORT, MINISTRY, scoped=True),
-    Entry("ministry_followup", Capability.MINISTRY_FOLLOWUP, MINISTRY, scoped=True),
     Entry("family_directory", Capability.FAMILY_CODES, _downloaded(_campaign)),
     # Staff see its daily reports; Send a weekly report now is on the page.
     Entry("emailed_reports", Capability.CAMPAIGN_REPORT),

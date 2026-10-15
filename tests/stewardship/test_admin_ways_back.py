@@ -34,7 +34,7 @@ EXTRA = {
 # opened from. Each is (template, target label).
 KEPT = {
     ("information.html", "Additional information"),
-    ("ministry-followup.html", "Ministry follow-up"),
+    ("ministry-followup.html", "Ministry requests"),
 }
 
 # A "Return to" link: its href (often a reversed Admin URL name, sometimes a

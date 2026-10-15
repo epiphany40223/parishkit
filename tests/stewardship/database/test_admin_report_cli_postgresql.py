@@ -305,7 +305,7 @@ def test_participation_responses_information_and_the_list(http_scenario, cli):  
 
 
 def test_ministry_summary_and_request_counts(response_service, google, cli):
-    """The Ministry page's summary, and one list's count without its Members.
+    """The Ministry summary's command, and one list's count without its Members.
 
     The list's own page (Members joining) was retired (#1157); the command's
     count of it stays.
@@ -316,11 +316,15 @@ def test_ministry_summary_and_request_counts(response_service, google, cli):
     run = cli()
     root = "/admin/reports/ministries/"
 
-    parity(
-        "ministry_report_viewed",
-        lambda: read(browser, root),
-        lambda: run("report", "ministry"),
-    )
+    # Ministry requests (#1133) is the follow-up queue: the page records the
+    # queue's view audit, and the command keeps the summary's own.
+    before = events("ministry_report_viewed")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert read(browser, root)[0].status_code == 200
+    assert events("ministry_report_viewed") == before
+    run("report", "ministry")
+    recorded = events("ministry_report_viewed") - before
+    assert {outcome for outcome, _ in recorded} == {"started", "succeeded"}
     # One list's page was retired (#1157); its command still counts it.
     code, document = run("report", "ministry")
     assert code == 0, document

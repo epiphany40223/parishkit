@@ -1067,6 +1067,11 @@ th:not([aria-sort]) .sort-indicator { opacity: .45; }
 .followup-filters > div { flex: 1 1 12rem; }
 .followup-filters > div.followup-search { flex: 2 1 26rem; }
 .followup-table .cell-ellipsis { max-width: 13rem; }
+/* Ministry requests' By Ministry counts (#1133): a long scope scrolls inside
+   its own box, with its column headings kept in view, so the queue table
+   below stays near; a scope of a few Ministries never reaches the limit. */
+.by-ministry-scroll { max-height: 18rem; overflow-y: auto; }
+.by-ministry-scroll thead th { position: sticky; top: 0; background: var(--paper-soft); }
 .cell-with-badge { position: relative; display: flex; align-items: center; gap: .4rem; }
 .cell-with-badge > .cell-ellipsis { min-width: 0; }
 .cell-with-badge > .cell-clamp { flex: 0 1 auto; }

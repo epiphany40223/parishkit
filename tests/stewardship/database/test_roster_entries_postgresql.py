@@ -273,7 +273,7 @@ def test_a_leader_never_sees_the_tick_nor_the_list(response_service, google):
     Administrators keep seeing it and the "update ParishSoft yourself" help."""
     harness, admin, join, _ = resolved(response_service)
     item = f"/admin/reports/ministries/follow-up/{join.pk}/"
-    queue = "/admin/reports/ministries/follow-up/"
+    queue = "/admin/reports/ministries/"
     browser, _, _, _ = leader(harness, google)
 
     def hidden(entered):

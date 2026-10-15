@@ -51,7 +51,7 @@ def test_next_steps_link_their_pages_and_never_shift(
     # Ministry stewardship is off: the step is text with the menu's reason.
     greyed = panel.locator("[data-next-step]").nth(2)
     expect(greyed).to_have_text(
-        "Ministry follow-up — This campaign does not include Ministry stewardship"
+        "Ministry requests — This campaign does not include Ministry stewardship"
     )
     assert greyed.get_by_role("link").count() == 0
     mail = panel.get_by_role("link", name="Outgoing mail", exact=True)

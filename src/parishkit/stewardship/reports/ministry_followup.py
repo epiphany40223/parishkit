@@ -335,8 +335,95 @@ def member_duids(rows):
         row["member_duid"] = int(key) if key else None
 
 
+def _admit(result, principal, *, empty=False):
+    """Refuse a selection result the page may not show (followup_page).
+
+    No result or unavailable inputs are a temporary failure; follow-up
+    turned off, or a result outside Python's view of the actor's scope
+    (the cross-check, ``in_scope``), is refused. With ``empty``, a campaign
+    that asks about no Ministry at all reads as an empty queue for Staff
+    and Administrators, as the Ministry report reads (an unfinished draft
+    they may inspect). The selection names no operational flag, so the
+    caller must also read the Ministry report's selection, whose own
+    cross-check refuses a principal SQL does not treat as operational:
+    Ministry requests does, through its By Ministry read (#1133).
+    """
+    if result is None:
+        raise ReadUnavailable("Ministry follow-up inputs are unavailable.")
+    if result.get("disabled"):
+        raise PermissionError("Ministry follow-up is not enabled for this campaign.")
+    if result.get("unavailable"):
+        raise ReadUnavailable("Ministry follow-up inputs are unavailable.")
+    if (
+        empty
+        and not result["authorized"]
+        and not result["ministries"]
+        and allows(principal, Capability.MINISTRY_FOLLOWUP)
+    ):
+        return
+    if not in_scope(
+        principal,
+        result["authorized"],
+        [ministry["duid"] for ministry in result["ministries"]],
+    ):
+        raise PermissionError("Ministry follow-up access is unavailable.")
+
+
+def request_totals(campaign_id, query, principal, total, *, empty=False):
+    """Ministry requests' totals for the applied queue view (#1133, #720).
+
+    ``total`` is the view's own count (the page's ``followup_page`` total).
+    The tiles count the requests the view's filters select, every page of
+    them: ``joining`` and ``leaving`` add up to ``total``. The Follow-up
+    progress chart counts the same requests whatever their Status and
+    Outcome (``requests``, of which ``completed`` are resolved or closed and
+    ``unresolved`` are not), since progress is about status: with the
+    filters' own status the queue's default view (Unresolved) would always
+    read 100% unresolved. The Staff-only Members no longer in ParishSoft
+    view has nothing to record, so it has no progress (``requests`` None).
+
+    Each further count is the queue's own selection read with no rows
+    (``page_limit`` 0), so it applies the same scope and cross-check
+    (``empty`` as in ``_admit``), and a count the view's total already
+    answers is not read again.
+    """
+
+    def count(**changes):
+        """The view's count with ``changes`` to its filters."""
+        result = _select(campaign_id, replace(query, **changes), principal, limit=0)
+        _admit(result, principal, empty=empty)
+        return result["total"]
+
+    if query.action == "any":
+        joining = count(action="join") if total else 0
+    else:
+        joining = total if query.action == "join" else 0
+    totals = {"joining": joining, "leaving": total - joining, "requests": None}
+    if query.state == NOT_IN_SOURCE:
+        return totals
+    every = replace(query, state="any", outcome="any")
+    requests = total if every == query else count(state="any", outcome="any")
+    unresolved = (
+        total
+        if replace(every, state="unresolved") == query
+        else count(state="unresolved", outcome="any")
+    )
+    return totals | {
+        "requests": requests,
+        "unresolved": unresolved,
+        "completed": requests - unresolved,
+    }
+
+
 def followup_page(
-    campaign_id, query, principal, *, request_id=None, whole=False, every_member=False
+    campaign_id,
+    query,
+    principal,
+    *,
+    request_id=None,
+    whole=False,
+    every_member=False,
+    empty=False,
 ):
     """Read one coherent page under the response guard's freshly resolved actor.
 
@@ -348,6 +435,8 @@ def followup_page(
     matching row (no LIMIT), for a list that is filtered and paged in memory
     (Roster changes to enter, #528). ``every_member`` also lists requests
     for Members no longer in ParishSoft, marked (``selection_filters``).
+    ``empty`` admits a campaign with no Ministry for Staff and
+    Administrators (``_admit``).
     """
     if not can_follow_up(principal):
         raise PermissionError("Ministry follow-up access is unavailable.")
@@ -366,18 +455,7 @@ def followup_page(
         offset=0 if whole else (query.page - 1) * query.page_size,
         every_member=every_member,
     )
-    if result is None:
-        raise ReadUnavailable("Ministry follow-up inputs are unavailable.")
-    if result.get("disabled"):
-        raise PermissionError("Ministry follow-up is not enabled for this campaign.")
-    if result.get("unavailable"):
-        raise ReadUnavailable("Ministry follow-up inputs are unavailable.")
-    if not in_scope(
-        principal,
-        result["authorized"],
-        [ministry["duid"] for ministry in result["ministries"]],
-    ):
-        raise PermissionError("Ministry follow-up access is unavailable.")
+    _admit(result, principal, empty=empty)
     if request_id is not None and not result["rows"]:
         raise ObjectDoesNotExist("Ministry request is unavailable.")
     for row in result["rows"]:

@@ -1,72 +1,84 @@
 """Ministry and Member tables give each DUID its own column (#932).
 
-The Ministry report's summary and the Campaign Ministries review follow
-the admin-portal spec's "Table column order": dates first, then the Member
-or Ministry name, then its DUID in a column of its own.
+Ministry requests' By Ministry counts and the Campaign Ministries review
+follow the admin-portal spec's "Table column order": the Member or Ministry
+name, and no Ministry DUID (#1123).
 """
 
 from datetime import UTC, datetime
+from uuid import UUID
 
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.reports.chart_specs import ministry_followup
-from parishkit.stewardship.reports.ministries import (
-    SUMMARY_SORTING,
-    TOTALS,
-    MinistryQuery,
-    summary_totals,
+from parishkit.stewardship.reports.ministry_followup import (
+    FILTER_OUTCOMES,
+    SORTING,
+    STATES,
+    FollowupQuery,
+)
+from parishkit.stewardship.reports.ministry_followup_views import (
+    BULK_KIND_HINTS,
+    bulk_actions,
 )
 from parishkit.stewardship.web.tables import report_table
 
 SUBMITTED = datetime(2054, 10, 5, 14, 30, tzinfo=UTC)
 
 
-def ministry_page(rows, *, summaries=(), packet_choices=()):
-    """Render the Ministry report as its view does, from detached rows.
-
-    The page is the campaign-wide summary only; ``rows`` is kept so callers
-    read alike, but one Ministry's request lists were retired (#1157).
+def ministry_page(rows=(), *, summaries=(), packet_choices=(), totals=None, **extra):
+    """Render Ministry requests (#1133) as its queue view does, from detached
+    values: the queue's ``rows``, the By Ministry ``summaries`` and the
+    packet's choices. ``totals`` default to none of either request, so no
+    follow-up chart is drawn; ``extra`` overrides any other context value.
     """
-    query = MinistryQuery()
-    shown = list(summaries)
-    # The page's totals and follow-up chart (#720), as the view builds them;
-    # a sample row without a count adds nothing.
-    totals = summary_totals([{key: row.get(key, 0) for key in TOTALS} for row in shown])
-    return render_to_string(
-        "stewardship/ministry-report.html",
-        {
-            "metadata": {
-                "name": "Renewal",
-                "report_date": SUBMITTED.date(),
-                "timezone": "America/Chicago",
-                "source_as_of": SUBMITTED,
-                "source_generation": 1,
-            },
-            "summaries": list(summaries),
-            "totals": totals,
-            "followup_chart": ministry_followup(totals),
-            "packet_choices": list(packet_choices),
-            "packet_limit": 200,
-            "rows": rows,
-            "total": len(shown),
-            "mutable": True,
-            "query": query,
-            # As Staff or an Administrator sees it: with the ParishSoft and
-            # campaign marks.
-            "show_marks": True,
-            "report_url": "/report",
-            "table": report_table(
-                shown,
-                number=1,
-                size=50,
-                total=len(shown),
-                carry=[],
-                sorting=SUMMARY_SORTING,
-                sort=query.sort,
-                action="/report",
-            ),
-        },
-    )
+    query = FollowupQuery()
+    rows = list(rows)
+    totals = totals or {
+        "joining": 0,
+        "leaving": 0,
+        "requests": 0,
+        "unresolved": 0,
+        "completed": 0,
+    }
+    context = {
+        "metadata": {"name": "Renewal", "source_as_of": SUBMITTED},
+        "rows": rows,
+        "total": len(rows),
+        "ministries": [],
+        "query": query,
+        "table": report_table(
+            rows,
+            number=1,
+            size=50,
+            total=len(rows),
+            carry=[],
+            sorting=SORTING,
+            sort=query.sort,
+            action="/admin/reports/ministries/",
+        ),
+        "mutable": True,
+        "item": None,
+        "states": STATES,
+        "outcomes": FILTER_OUTCOMES,
+        "bulk_actions": bulk_actions(),
+        "bulk_kind_hints": BULK_KIND_HINTS,
+        "bulk_key": UUID(int=1),
+        "export_fields": query.form_values(),
+        "export_timezones": ["UTC"],
+        "export_pdf_limit": 1000,
+        "totals": totals,
+        "followup_chart": ministry_followup(totals),
+        "by_ministry": list(summaries),
+        # As Staff or an Administrator sees it: with the ParishSoft and
+        # campaign marks (#1135).
+        "show_marks": True,
+        "campaign_marks": True,
+        "packet_choices": list(packet_choices),
+        "packet_limit": 200,
+        "packet_key": UUID(int=2),
+    }
+    return render_to_string("stewardship/ministry-followup.html", context | extra)
 
 
 def in_order(html, *texts):
@@ -75,8 +87,8 @@ def in_order(html, *texts):
     return positions == sorted(positions)
 
 
-def test_summary_names_each_ministry_without_its_duid():
-    """The summary's Ministry name heads the row; no Ministry DUID (#1123)."""
+def test_by_ministry_names_each_ministry_without_its_duid():
+    """By Ministry's name heads each row; no Ministry DUID (#1123, #1133)."""
     summary = {
         "name": "Food pantry",
         "duid": 9,
@@ -85,17 +97,17 @@ def test_summary_names_each_ministry_without_its_duid():
         "joining": 1,
         "leaving": 0,
         "unresolved": 1,
-        "progress": "0 of 1",
     }
-    html = ministry_page([], summaries=[summary])
-    start = html.index("Current Ministry request summary")
+    other = summary | {"name": "Choir", "duid": 8}
+    html = ministry_page(summaries=[summary, other])
+    start = html.index('id="by-ministry"')
     table = html[start : html.index("</table>", start)]
-    assert in_order(table, 'data-sort-column="ministry"', ">Joining</th>")
+    assert in_order(table, ">Ministry</th>", ">Join requests</th>", ">Unresolved</th>")
     # A Ministry ParishSoft lists has no mark: there is no Active or
     # Inactive any more (#1267).
     assert '<th scope="row">Food pantry</th>' in table
     assert "Active" not in table and "Inactive" not in table
-    assert "DUID" not in table and 'class="numeric">9<' not in table
+    assert "DUID" not in table and ">9<" not in table
 
 
 def test_campaign_ministries_review_names_ministries_without_duids():

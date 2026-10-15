@@ -285,7 +285,7 @@ def test_open_counts_read_with_their_entry(page, component_origin):
     sidebar = _sidebar(page)
     for name, count in (
         ("Additional information", "3"),
-        ("Ministry follow-up", "1,250"),
+        ("Ministry requests", "1,250"),
     ):
         link = sidebar.locator("a", has_text=name)
         expect(link).to_have_accessible_name(f"{name} ({count} open)")
@@ -312,7 +312,7 @@ def test_open_counts_read_with_their_entry(page, component_origin):
         )
 
     before = layout()
-    for name in ("Additional information", "Ministry follow-up"):
+    for name in ("Additional information", "Ministry requests"):
         sidebar.locator("a", has_text=name).hover()
         page.wait_for_timeout(300)
         assert layout() == before, name

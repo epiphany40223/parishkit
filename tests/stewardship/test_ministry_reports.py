@@ -7,18 +7,18 @@ from django.http import QueryDict
 
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.audit.schemas import ContextKind, sanitize
-from parishkit.stewardship.reports.ministries import (
-    MinistryQuery,
-    can_report,
-    matching_summaries,
-    packet_choices,
-    summary_totals,
-)
+from parishkit.stewardship.reports import ministry_followup
+from parishkit.stewardship.reports.ministries import MinistryQuery, can_report
 from parishkit.stewardship.reports.ministry_export_views import (
     TOO_MANY,
     TOO_MANY_FIX,
     TooManyMinistries,
     packet_selection,
+)
+from parishkit.stewardship.reports.ministry_followup import (
+    NOT_IN_SOURCE,
+    FollowupQuery,
+    request_totals,
 )
 
 from .test_ministry_table_columns import ministry_page as render_report
@@ -124,59 +124,12 @@ def test_audit_scope_is_only_a_canonical_ministry_duid():
             sanitize(ContextKind.ACTION, {"ministry_duid": value})
 
 
-def summary_result(*names, total=None):
-    """A summary page as the selection returns it: Ministries named ``names``."""
-    rows = [{"duid": duid, "name": name} for duid, name in enumerate(names, 1)]
-    return {"summaries": rows, "total": len(rows) if total is None else total}
-
-
-def test_packet_choices_reuse_a_page_that_holds_the_whole_summary():
-    """A page with every unfiltered Ministry needs no second read (#533).
-
-    The choices are by name, case-insensitively, whatever the table's sort.
-    """
-
-    def read_every():
-        """Fails the test: this page already holds every Ministry."""
-        raise AssertionError("The whole summary was read again.")
-
-    result = summary_result("choir", "Altar servers", "Bread")
-    assert [
-        row["name"]
-        for row in packet_choices(result, MinistryQuery(sort="duid_desc"), read_every)
-    ] == ["Altar servers", "Bread", "choir"]
-
-
-@pytest.mark.parametrize(
-    "query, total",
-    [
-        (MinistryQuery(), 3),  # More Ministries than this page shows.
-        (MinistryQuery(page=2), 3),  # A later page.
-        (MinistryQuery(search="choir"), 1),  # A search narrows the table.
-    ],
-)
-def test_packet_choices_list_every_ministry_beyond_the_table(query, total):
-    """A page or search narrower than the scope reads it whole (#533)."""
-    reads = []
-
-    def read_every():
-        """The whole unfiltered summary in scope."""
-        reads.append(True)
-        return summary_result("Choir", "Bread", "Altar servers")
-
-    choices = packet_choices(summary_result("Choir", total=total), query, read_every)
-    assert reads == [True]
-    assert [row["name"] for row in choices] == ["Altar servers", "Bread", "Choir"]
-    # Only names and DUIDs: the choices carry no request counts.
-    assert all(set(row) == {"duid", "name"} for row in choices)
-
-
 def test_packet_boxes_list_the_choices_not_the_table_rows():
     """The packet's boxes are its choices, and they do not follow the table.
 
-    The table shows one Ministry; the packet offers both. Its choices are
-    not marked data-table-sync, so paging or re-sorting the table in place
-    keeps the reader's ticks (#533).
+    By Ministry shows one Ministry; the packet offers both. Its choices are
+    not marked data-table-sync, so filtering, paging or re-sorting the
+    table in place keeps the reader's ticks (#533).
     """
     shown = {
         "name": "Food pantry",
@@ -186,7 +139,6 @@ def test_packet_boxes_list_the_choices_not_the_table_rows():
         "joining": 1,
         "leaving": 0,
         "unresolved": 1,
-        "progress": "0 of 1",
     }
     choices = [{"duid": 4, "name": "Choir"}, {"duid": 9, "name": "Food pantry"}]
     html = render_report([], summaries=[shown], packet_choices=choices)
@@ -217,87 +169,166 @@ def test_packet_limit_is_refused_with_its_own_message():
     assert "leave every box unticked" in str(TOO_MANY_FIX)
 
 
-def counted(name, joining, leaving, completed):
-    """A summary row as the selection returns it, with consistent counts."""
-    requests = joining + leaving
-    return {
-        "duid": len(name),
-        "name": name,
-        "joining": joining,
-        "leaving": leaving,
-        "unresolved": requests - completed,
-        "completed": completed,
-        "requests": requests,
-        "progress": f"{completed} out of {requests}",
-    }
+def selection(totals):
+    """A stand-in for the queue's selection: each read's total by filters.
 
-
-def test_summary_totals_add_up_every_count():
-    """The page's totals add each count across the Ministries given (#720)."""
-    rows = [counted("Choir", 3, 1, 2), counted("Bread", 0, 2, 2)]
-    assert summary_totals(rows) == {
-        "joining": 3,
-        "leaving": 3,
-        "unresolved": 2,
-        "completed": 4,
-        "requests": 6,
-    }
-    assert summary_totals([])["requests"] == 0
-
-
-def test_matching_summaries_reuse_a_page_that_holds_every_match():
-    """A page with every matching Ministry needs no second read (#720)."""
-
-    def read_every(query):
-        """Fails the test: this page already holds every match."""
-        raise AssertionError("The matching summary was read again.")
-
-    result = summary_result("Choir", "Bread")
-    assert (
-        matching_summaries(result, MinistryQuery(), read_every) == (result["summaries"])
-    )
-
-
-def test_matching_summaries_read_beyond_the_page_with_the_same_search():
-    """Totals cover every page: the whole match is read with the query's
-    search, so they follow the search and not the paging (#720)."""
+    ``totals`` maps (action, state) to the count the selection would give;
+    every read is recorded, so a test can see which counts were read.
+    """
     reads = []
-    query = MinistryQuery(search="o", page=2)
 
-    def read_every(given):
-        """The whole matching summary for ``given``."""
-        reads.append(given)
-        return summary_result("Choir", "Food", "Hospitality")
+    def select(campaign_id, query, principal, *, limit, **_):
+        """The selection's answer with no rows (``page_limit`` 0)."""
+        assert limit == 0
+        reads.append((query.action, query.state, query.outcome))
+        return {
+            "authorized": True,
+            "ministries": [],
+            "total": totals[(query.action, query.state)],
+        }
 
-    rows = matching_summaries(summary_result("Choir", total=3), query, read_every)
-    assert reads == [query]
-    assert [row["name"] for row in rows] == ["Choir", "Food", "Hospitality"]
+    return select, reads
 
 
-def test_totals_tiles_chart_and_cell_bars_render_above_the_table():
-    """The totals region follows the search in place, its chart draws its
-    values so it has no exact-values table, and each row's progress cell
-    has a bar hidden from assistive technology (#720)."""
-    html = render_report(
-        [], summaries=[counted("Choir", 3, 1, 2), counted("Bread", 0, 0, 0)]
+STAFF = Principal(uuid4(), frozenset({"staff"}))
+
+
+def test_totals_count_the_view_and_its_progress_whatever_the_status(monkeypatch):
+    """The tiles count what the table selects; the progress chart counts
+    the same requests whatever their status (#1133)."""
+    select, reads = selection(
+        {("join", "unresolved"): 3, ("any", "any"): 10, ("any", "unresolved"): 4}
     )
+    monkeypatch.setattr(ministry_followup, "_select", select)
+    # The default view: 4 unresolved requests, 3 of them joins.
+    totals = request_totals(None, FollowupQuery(), STAFF, 4)
+    assert totals == {
+        "joining": 3,
+        "leaving": 1,
+        "requests": 10,
+        "unresolved": 4,
+        "completed": 6,
+    }
+    # The view's own total answered the unresolved count: not read again.
+    assert reads == [("join", "unresolved", "any"), ("any", "any", "any")]
+
+
+def test_totals_read_nothing_the_view_already_answers(monkeypatch):
+    """A Join view of every status needs only the unresolved count."""
+    select, reads = selection({("join", "unresolved"): 2})
+    monkeypatch.setattr(ministry_followup, "_select", select)
+    query = FollowupQuery(action="join", state="any")
+    assert request_totals(None, query, STAFF, 5) == {
+        "joining": 5,
+        "leaving": 0,
+        "requests": 5,
+        "unresolved": 2,
+        "completed": 3,
+    }
+    assert reads == [("join", "unresolved", "any")]
+
+
+def test_totals_for_members_no_longer_in_parishsoft_have_no_progress(monkeypatch):
+    """Nothing can be recorded for those requests, so no chart (#1217)."""
+    select, reads = selection({("join", NOT_IN_SOURCE): 1})
+    monkeypatch.setattr(ministry_followup, "_select", select)
+    totals = request_totals(None, FollowupQuery(state=NOT_IN_SOURCE), STAFF, 2)
+    assert totals == {"joining": 1, "leaving": 1, "requests": None}
+    # An empty view reads nothing at all.
+    reads.clear()
+    assert request_totals(None, FollowupQuery(state=NOT_IN_SOURCE), STAFF, 0) == {
+        "joining": 0,
+        "leaving": 0,
+        "requests": None,
+    }
+    assert reads == []
+
+
+def test_totals_refuse_a_count_outside_the_readers_scope(monkeypatch):
+    """Each count passes the queue's cross-check (#389 L3)."""
+
+    def select(campaign_id, query, principal, *, limit, **_):
+        """A count naming a Ministry this leader does not lead."""
+        return {"authorized": True, "ministries": [{"duid": 77}], "total": 1}
+
+    monkeypatch.setattr(ministry_followup, "_select", select)
+    leader = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({9}))
+    with pytest.raises(PermissionError):
+        request_totals(None, FollowupQuery(), leader, 1)
+
+
+TOTALS = {"joining": 3, "leaving": 1, "requests": 6, "unresolved": 4, "completed": 2}
+
+
+def test_totals_tiles_and_chart_render_between_the_filters_and_the_table():
+    """The totals follow the filters in place (data-table-sync), under the
+    filter bar so a change in their height never moves Apply filters; the
+    chart draws its values, so it has no exact-values table (#720, #1133)."""
+    html = render_report([], totals=TOTALS)
     start = html.index('<div id="ministry-totals" data-table-sync>')
-    region = html[start : html.index('<div id="', start + 1)]
-    assert "Totals for all matching Ministries" in region
+    region = html[start : html.index("</div>", html.index("</ul>", start))]
+    assert ">Totals</h2>" in region
     assert 'class="stat-value">3</span>' in region  # Join requests.
     assert 'class="stat-value">1</span>' in region  # Leave requests.
-    assert 'data-chart="ministry-followup-spec"' in region
-    assert "Exact values" not in region
-    assert start < html.index("<table>")
-    assert (
-        '<progress value="2" max="4" aria-hidden="true"></progress> 2 out of 4' in html
-    )
-    # A Ministry with no request has no bar, only its text.
-    assert '<td class="progress-cell">0 out of 0</td>' in html
+    assert 'data-chart="ministry-followup-spec"' in html
+    assert "Exact values" not in html
+    assert html.index('id="table-filters"') < start < html.index('id="by-ministry"')
+    assert html.index('id="by-ministry"') < html.index("data-table-region")
 
 
 def test_totals_without_requests_show_tiles_and_no_chart():
     """With no request nothing is drawn: the tiles still read zero."""
-    html = render_report([], summaries=[counted("Choir", 0, 0, 0)])
+    html = render_report([])
     assert 'id="ministry-totals"' in html
     assert "data-chart=" not in html
+
+
+def counts(duid, name, joining=0, leaving=0, unresolved=0, links=None):
+    """One By Ministry row as the view builds it, with its count links."""
+    return {
+        "duid": duid,
+        "name": name,
+        "active": True,
+        "in_campaign": True,
+        "joining": joining,
+        "leaving": leaving,
+        "unresolved": unresolved,
+        "count_links": links or {},
+    }
+
+
+def test_by_ministry_counts_apply_their_filters_in_place():
+    """Each linked count applies its Ministry and request to the table in
+    place and sets the filter bar (#1133); a count without a link (zero, or
+    a Ministry the reader may not follow up) is plain text."""
+    link = "/admin/reports/ministries/?ministry=9&amp;action=join&amp;state=any"
+    rows = [
+        counts(9, "Choir", 3, 0, 2, {"joining": link.replace("&amp;", "&")}),
+        counts(4, "Bread", 1, 1, 1),
+    ]
+    html = render_report([], summaries=rows)
+    start = html.index('<section id="by-ministry" data-table-sync')
+    section = html[start : html.index("</section>", start)]
+    anchor = section[section.index(f'<a href="{link}#table"') :]
+    anchor = anchor[: anchor.index("</a>")]
+    for attribute in (
+        'data-in-place="count-9-joining"',
+        "data-in-place-filters",
+        'aria-label="3 join requests for Choir"',
+        'data-in-place-message="Join requests for Choir shown."',
+    ):
+        assert attribute in anchor, attribute
+    assert section.count("<a ") == 1
+    assert '<td class="numeric">2</td>' in section  # Choir's unresolved.
+
+
+def test_one_ministry_reads_as_one_line():
+    """A reader with one Ministry gets one line, not a table (#1133)."""
+    html = render_report([], summaries=[counts(9, "Choir", 1, 2, 3)], show_marks=False)
+    start = html.index('<section id="by-ministry"')
+    section = html[start : html.index("</section>", start)]
+    assert "<table" not in section
+    assert (
+        '<p class="by-ministry-line">Choir: 1 join request · 2 leave requests'
+        " · 3 unresolved"
+    ) in " ".join(section.split())
