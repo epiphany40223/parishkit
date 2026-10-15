@@ -342,12 +342,17 @@ def measure_snapshot(campaign_id, due_at):
 
 
 # The full-size rehearsal's credential fingerprint (BG-12 PR 4, #447): one
-# row per credential table, with its row count and an md5 over every row's
-# identity and stored secret form, in id order. The operator script reads it
-# before and after a send, in a read-only session; the two answers must be
-# identical, which shows that no Family's code, code MAC, link token, token
-# generation or rehearsal credential was created, changed or removed by the
-# send. Only digests leave the database, never a code or token.
+# row per credential record kind, with its row count and an md5 over every
+# row's identity, stored secret form and every field whose change would
+# invalidate an emailed code or link, in id order. The operator script reads
+# it before and after a send, in a read-only session; the two answers must be
+# identical. That shows the send created, changed or removed no Family code
+# or code MAC; no link token, its rotation or destruction; no token
+# generation or its credential epoch; not the deployment's global link fence
+# (family_link_epoch); not the campaign's active generation; not the
+# rehearsal epoch or its state; and no rehearsal code or link. Only digests
+# leave the database, never a code or token. A PostgreSQL test runs it
+# against the real schema.
 CREDENTIALS_SQL = """
 SELECT 'family_codes', count(*), coalesce(md5(string_agg(
     id::text || ':' || coalesce(code_ciphertext, '-'), ',' ORDER BY id)), '-')
@@ -359,15 +364,33 @@ SELECT 'code_macs', count(*), coalesce(md5(string_agg(
 UNION ALL
 SELECT 'link_tokens', count(*), coalesce(md5(string_agg(
     id::text || ':' || generation_id::text || ':' || coalesce(ciphertext, '-')
-    || ':' || coalesce(digest, '-'), ',' ORDER BY id)), '-')
+    || ':' || coalesce(digest, '-') || ':' || coalesce(rotated_at::text, '-')
+    || ':' || coalesce(destroyed_at::text, '-'), ',' ORDER BY id)), '-')
   FROM stewardship_family_token
 UNION ALL
 SELECT 'token_generations', count(*), coalesce(md5(string_agg(
-    id::text || ':' || state || ':' || key_id, ',' ORDER BY id)), '-')
+    id::text || ':' || state || ':' || key_id || ':' || credential_epoch::text,
+    ',' ORDER BY id)), '-')
   FROM stewardship_family_token_generation
 UNION ALL
+SELECT 'link_fence', count(*), coalesce(md5(string_agg(
+    id::text || ':' || family_link_epoch::text, ',' ORDER BY id)), '-')
+  FROM stewardship_credential_deployment
+UNION ALL
+SELECT 'campaign_generations', count(*), coalesce(md5(string_agg(
+    id::text || ':' || coalesce(active_token_generation_id::text, '-'),
+    ',' ORDER BY id)), '-')
+  FROM stewardship_campaign
+UNION ALL
+SELECT 'rehearsal_epochs', count(*), coalesce(md5(string_agg(
+    c.id::text || ':' || coalesce(c.rehearsal_epoch_id::text, '-') || ':'
+    || coalesce(e.state, '-'), ',' ORDER BY c.id)), '-')
+  FROM stewardship_campaign_credentials c
+  LEFT JOIN stewardship_rehearsal_epoch e ON e.id = c.rehearsal_epoch_id
+UNION ALL
 SELECT 'rehearsal_credentials', count(*), coalesce(md5(string_agg(
-    id::text || ':' || code_ciphertext, ',' ORDER BY id)), '-')
+    id::text || ':' || code_ciphertext || ':' || token_ciphertext || ':'
+    || token_digest, ',' ORDER BY id)), '-')
   FROM stewardship_rehearsal_credential
 """
 

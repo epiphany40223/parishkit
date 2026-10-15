@@ -30,7 +30,7 @@ import json
 import math
 import sys
 from contextlib import suppress
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # The DEBUG timing lines' prefixes, as the instrumented code writes them.
@@ -40,11 +40,14 @@ RENEWAL_PREFIX = "lease renewal timing: "
 PHASES = ("wait_ms", "request_ms", "submit_ms", "helper_ms", "smtp_ms", "total_ms")
 # The bulk timing line kinds, in the order a send goes through them.
 KINDS = ("prepare", "commit", "outcome")
-# The seed's ordering invariant that a message is not created before its
-# occurrence is due no longer holds for a Production Reminder prepared ahead
-# of its due time (BG-12 PR 2, up to two hours early). The report leaves it
-# out and checks instead that no message was submitted before its due time.
-PREPARED_AHEAD_INVARIANTS = frozenset({"messages before their occurrence"})
+# The seed's ordering invariant that no message is created before its
+# occurrence is due. Since BG-12 PR 2 the bulk sweep prepares a Production
+# Reminder up to PREPARE_AHEAD early (campaigns/family_schedule_planning.py;
+# a test keeps the two equal), so for such a run the whole-database count is
+# replaced by the run's own count bounded by that lead. Every other run
+# (bulk off, Testing, an Initial invitation) keeps the invariant unchanged.
+CREATION_INVARIANT = "messages before their occurrence"
+PREPARE_AHEAD = timedelta(hours=2)
 # Occurrence and message states that end a send's work.
 FINAL_OCCURRENCE_STATES = frozenset(
     {"succeeded", "skipped", "coalesced", "failed", "delivery_unknown"}
@@ -280,6 +283,12 @@ def send_summary(meta, measure):
         _instant(row["submitted_at"]) for row in outcomes if row.get("submitted_at")
     ]
     created = [_instant(row["created_at"]) for row in messages if row.get("created_at")]
+    # A bulk Production Reminder-only run is the one prepared ahead.
+    ahead = (
+        meta.get("bulk") is True
+        and set(measure.get("kinds", [])) == {"reminder"}
+        and set(measure.get("modes", [])) == {"production"}
+    )
     last = max(settled, default=None)
     first_submit = min(submitted, default=None)
     resumed = _instant(meta.get("dispatch_started_at"))
@@ -342,10 +351,16 @@ def send_summary(meta, measure):
         "invariant_violations": {
             label: count
             for label, count in measure.get("invariant_violations", {}).items()
-            if label not in PREPARED_AHEAD_INVARIANTS
+            if not (ahead and label == CREATION_INVARIANT)
         },
-        # What the creation-order invariant stood for: nothing is SENT
-        # before its due time, prepared ahead or not.
+        # The run's messages created earlier than they may be: before the
+        # due time, or before the lead for a Reminder prepared ahead.
+        "created_too_early": sum(
+            1
+            for at in created
+            if due and at < due - (PREPARE_AHEAD if ahead else timedelta())
+        ),
+        # Prepared ahead or not, nothing is SENT before its due time.
         "submitted_before_due": sum(1 for at in submitted if due and at < due),
     }
     correct["passed"] = (
@@ -353,6 +368,7 @@ def send_summary(meta, measure):
         and len(accepted) == candidates
         and not correct["accepted_twice"]
         and not correct["invariant_violations"]
+        and not correct["created_too_early"]
         and not correct["submitted_before_due"]
         and not correct["two_messages"]
         and not correct["two_fulfillments"]
@@ -606,6 +622,12 @@ def full_summary(meta, measure, send, holds, extras):
     correct["mail_audit"] = audit is not None
     correct["links_in_two_messages"] = (audit or {}).get("links_in_two_messages")
     correct["links_not_emailed_before"] = (audit or {}).get("links_not_emailed_before")
+    # Every accepted Family message carries exactly one Family link (the
+    # resume's sender test and receipts carry none), so the distinct links
+    # the run's mail carried must equal the accepted messages.
+    correct["links_match_accepted"] = (audit or {}).get("run_links") == send[
+        "correctness"
+    ]["accepted"]
     pause = pause_summary(measure, extras.get("pause"), extras.get("resume"))
     wanted_pause = bool(meta.get("pause_after"))
     correct["pause_resumed"] = (
@@ -619,6 +641,7 @@ def full_summary(meta, measure, send, holds, extras):
         and audit is not None
         and audit.get("links_in_two_messages") == 0
         and audit.get("links_not_emailed_before") == 0
+        and correct["links_match_accepted"]
         and (not wanted_pause or correct["pause_resumed"])
     )
     accepted = send["correctness"]["accepted"]
@@ -892,6 +915,7 @@ def render(summary):
         f"unfinished {correct['unfinished']}",
         f"  deadlocks (40P01) {correct['deadlocks']}, timed out {correct['timed_out']}",
         f"  ordering invariant violations {correct['invariant_violations'] or 'none'}, "
+        f"created too early {correct['created_too_early']}, "
         f"submitted before the due time {correct['submitted_before_due']}",
         f"  occurrence states {send['occurrence_states']}",
         f"  message states {send['message_states']}",
@@ -900,7 +924,8 @@ def render(summary):
         lines.append(
             f"  credentials unchanged {correct['credentials_unchanged']}, Mailpit "
             f"links in two messages {correct['links_in_two_messages']}, not emailed "
-            f"before {correct['links_not_emailed_before']}, pause and resume "
+            f"before {correct['links_not_emailed_before']}, links match accepted "
+            f"{correct['links_match_accepted']}, pause and resume "
             f"{correct['pause_resumed']}"
         )
     return "\n".join(lines) + "\n"

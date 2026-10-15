@@ -345,6 +345,16 @@ def test_a_full_size_run_reports_lock_probes_pause_and_audits(tmp_path, capsys):
             }
         },
         {"pause": False},
+        # A Family message that went out without its link.
+        {
+            "audit": {
+                "run_messages": 4,
+                "run_messages_without_link": 1,
+                "run_links": 3,
+                "links_in_two_messages": 0,
+                "links_not_emailed_before": 0,
+            }
+        },
     ],
 )
 def test_a_changed_credential_a_second_link_or_no_pause_fails(tmp_path, options):
@@ -401,9 +411,22 @@ def test_the_credential_fingerprint_covers_every_credential_table():
         "stewardship_family_token",
         "stewardship_family_token_generation",
         "stewardship_rehearsal_credential",
+        "stewardship_credential_deployment",
+        "stewardship_campaign",
     ):
         assert f"FROM {table}\n" in CREDENTIALS_SQL, table
-    assert CREDENTIALS_SQL.count("md5(") == 5
+    for column in (
+        "family_link_epoch",
+        "active_token_generation_id",
+        "rehearsal_epoch_id",
+        "rotated_at",
+        "destroyed_at",
+        "credential_epoch",
+        "token_ciphertext",
+        "token_digest",
+    ):
+        assert column in CREDENTIALS_SQL, column
+    assert CREDENTIALS_SQL.count("md5(") == 8
 
 
 @pytest.mark.parametrize(
@@ -422,13 +445,47 @@ def test_the_new_commands_take_only_their_options(argv, capsys):
     assert raised.value.code == 2
 
 
-def test_a_reminder_prepared_ahead_passes_but_a_send_before_due_fails():
-    """Messages created before the due time are prepare-ahead (BG-12 PR 2);
-    a submission before the due time is still a fault."""
-    document = measured(invariants={"messages before their occurrence": 4})
-    correct = report.send_summary({"due_at": DUE.isoformat()}, document)["correctness"]
-    assert correct["passed"] and correct["invariant_violations"] == {}
+def created_at(document, offset):
+    """``document`` with every message created ``offset`` from the due time."""
+    for row in document["messages"]:
+        row["created_at"] = (DUE + offset).isoformat()
+    return document
+
+
+@pytest.mark.parametrize(
+    "bulk, invariants, offset, passed",
+    [
+        # A bulk Production Reminder prepared up to two hours early passes.
+        (True, {"messages before their occurrence": 4}, -timedelta(hours=1), True),
+        # Beyond the lead, it fails even prepared ahead.
+        (True, {"messages before their occurrence": 4}, -timedelta(hours=3), False),
+        # One at a time (bulk off) nothing is prepared ahead: the seed's
+        # invariant is kept and the run's own count is bounded by the due time.
+        (False, {"messages before their occurrence": 4}, -timedelta(hours=1), False),
+        (False, {}, -timedelta(minutes=1), False),
+        (False, {}, timedelta(seconds=5), True),
+    ],
+)
+def test_creation_before_the_due_time_is_bounded_by_the_lead(
+    bulk, invariants, offset, passed
+):
+    """BG-12 PR 2 prepares bulk Production Reminders ahead; nothing else is."""
+    document = created_at(measured(invariants=invariants), offset)
+    meta = {"due_at": DUE.isoformat(), "bulk": bulk}
+    assert report.send_summary(meta, document)["correctness"]["passed"] is passed
+
+
+def test_the_report_lead_is_the_planning_lead():
+    """The report's PREPARE_AHEAD is the scheduler's own."""
+    from parishkit.stewardship.campaigns import family_schedule_planning
+
+    assert report.PREPARE_AHEAD == family_schedule_planning.PREPARE_AHEAD
+
+
+def test_a_send_before_the_due_time_fails():
+    """Prepared ahead or not, a submission before the due time is a fault."""
     early = measured()
     early["outcomes"][0]["submitted_at"] = (DUE - timedelta(seconds=5)).isoformat()
-    correct = report.send_summary({"due_at": DUE.isoformat()}, early)["correctness"]
+    meta = {"due_at": DUE.isoformat(), "bulk": True}
+    correct = report.send_summary(meta, early)["correctness"]
     assert correct["submitted_before_due"] == 1 and correct["passed"] is False
