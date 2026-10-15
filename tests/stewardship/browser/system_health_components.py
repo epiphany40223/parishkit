@@ -110,8 +110,13 @@ ACCEPT_LAPSED_STATUS = "/system-health-accept-lapsed/status"
 # set, its poll (unchanged), and the answers its steps get.
 ALLOW_PAGE = "/system-health-allow"
 ALLOW_STATUS = "/system-health-allow/status"
+# Its status once Apply has cleared the switch (the page rechecks at once).
+ALLOW_CLEARED_STATUS = "/system-health-allow/status-cleared"
 ALLOW_PREVIEW = "/system-health-allow-preview"
 ALLOW_CLEARED = "/system-health-allow-cleared"
+# Allow debug logging again's steps answer the review dialog with this
+# fragment (#1356).
+ALLOW_ANSWER = "stewardship/system-health-debug-allow-review.html"
 # A healthy page whose next poll changes only a time's datetime attribute.
 DATED = "/system-health-dated"
 DATED_STATUS = "/system-health-dated/status"
@@ -822,10 +827,16 @@ def components(context, admin):
                 values(False, switch=True, mode="testing"),
             ),
         ),
+        ALLOW_CLEARED_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html", values(False, mode="testing")
+            ),
+        ),
         ALLOW_PREVIEW: (
             "text/html",
             render_to_string(
-                "stewardship/system-health.html",
+                ALLOW_ANSWER,
                 values(
                     False,
                     switch=True,
@@ -844,7 +855,7 @@ def components(context, admin):
         ALLOW_CLEARED: (
             "text/html",
             render_to_string(
-                "stewardship/system-health.html",
+                ALLOW_ANSWER,
                 values(
                     False,
                     mode="testing",

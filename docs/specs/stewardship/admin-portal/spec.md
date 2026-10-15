@@ -6478,11 +6478,13 @@ checks.
   preview binding that other Admin previews use, and the server refuses it
   when that state has changed ("This changed since you looked; review it
   again"). A repeated click returns the first result. **Take a backup
-  now** and **Turn off debug logging** confirm in the shared
+  now**, **Turn off debug logging** and **Allow debug logging again**
+  confirm in the shared
   [review dialog](../ui-conventions/spec.md#review-dialog) as a
   confirmation (#1356): their previews would only repeat what the page
   shows (the last backup in the Backups details, the services with debug
-  logging on in its panel, the actions' rules in "About this page"), so the
+  logging on and when the switch was set in its panel, the actions' rules
+  in "About this page"), so the
   dialog says in one sentence what Apply does and adds only what the server
   worked out. Their refusals, the step-up included, show in the dialog, and
   Apply's answer redraws the action's region, its button greyed with the
@@ -7037,14 +7039,17 @@ debug logging is back in effect, the
 panel says when the server operator cleared the switch.
 In Testing mode the region also offers **Allow debug logging again**
 (ADM-13 PR 6c), below Turn off debug logging, while the switch is set. Its
-preview says when the switch was set, that services started with debug
-logging on log in debug form again within about a minute (never one started
-without it), and that debug logs can hold personal data; confirming clears
+preview is a confirmation in the review dialog (#1356), "Allow debug logging
+again?": when the switch was set is on the page behind it (the button's
+reason and the panel), so one sentence says that clearing it lets services
+started with debug logging on (never one started without it) log in debug
+form again within about a minute, which can record Families' personal
+information; confirming clears
 the switch (`cleared_by` `administrator`, the Administrator recorded), under
 the [shared rules](#shared-rules-for-health-actions), and records
 `debug_logging_allowed` naming the switch (from the command line also
 `admin_cmd_system_debug_allow`, `pk-admin system debug-allow`). Each step is
-answered in place, with the same fresh sign-in step-up. A repeated
+answered in the dialog, with the same fresh sign-in step-up. A repeated
 confirmation returns the switch already cleared; one another Administrator
 or the server operator cleared first is refused as stale. It is greyed,
 with the reason, while no switch is set, and in Production ("In Production

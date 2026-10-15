@@ -224,7 +224,7 @@ def system_health_status(request):
 # 3b), Accept this change once's (PR 5b, named accept_*; ``checked`` is the
 # "I checked this in ParishSoft" tick box), Turn off debug logging's (PR
 # 6b, named debug_off_*) and Allow debug logging again's (PR 6c, named
-# debug_allow_*, answered in Turn off debug logging's region).
+# debug_allow_*, whose answer redraws Turn off debug logging's region).
 _ACTION_FIELDS = {
     "accept_preview": {"action"},
     "accept_confirm": {"action", "token", "checked"},
@@ -235,9 +235,9 @@ _ACTION_FIELDS = {
     "debug_off_confirm": {"action", "key"},
     "debug_allow_preview": {"action"},
     "debug_allow_confirm": {"action", "key"},
-    "debug_allow_cancel": {"action"},
 }
-# What an in-place refusal is answered with (HTTP status, the region's words).
+# What a refusal is answered with (HTTP status; the words are the region's,
+# or the review dialog fragment's).
 _REFUSALS = {
     "reauthenticate": 403,
     "busy": 409,
@@ -260,6 +260,7 @@ _REGIONS = (
 _DIALOG_ANSWERS = {
     ("backup_now", False): "stewardship/system-health-backup-review.html",
     ("debug_off", False): "stewardship/system-health-debug-off-review.html",
+    ("debug_off", True): "stewardship/system-health-debug-allow-review.html",
 }
 
 
@@ -307,9 +308,9 @@ def _step(action, request, service):
             request, service.store, key=UUID(request.POST.get("key", ""))
         )
         return {"requested": row, "created": created}
-    # Cancel only closes the preview; nothing was recorded. Take a backup
-    # now and Turn off debug logging have no Cancel step: the review
-    # dialog's Cancel sends nothing.
+    # Cancel only closes the preview; nothing was recorded. Only Accept
+    # this change once has a Cancel step: the review dialog's Cancel sends
+    # nothing.
     _principal(request, service.store, activity=True)
     return None
 
@@ -318,10 +319,9 @@ def _act(request):
     """An action's step, posted to the System health page itself.
 
     Accept this change once's answer is the whole page at its own address,
-    so ui-v1.js swaps its region (``#accept-change``) in place, and so is
-    Allow debug logging again's (``#debug-off``). Take a backup now and Turn
-    off debug logging confirm in the shared review dialog (#1356): each of
-    their steps is
+    so ui-v1.js swaps its region (``#accept-change``) in place. Take a backup
+    now, Turn off debug logging and Allow debug logging again confirm in the
+    shared review dialog (#1356): each of their steps is
     answered with its fragment (``_DIALOG_ANSWERS``), the preview's
     confirmation, the request made, or a refusal the dialog shows as drawn.
     The step's result goes to the template as ``backup_now``, ``accept`` or

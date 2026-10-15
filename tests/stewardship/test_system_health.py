@@ -1843,11 +1843,18 @@ SET = DebugSwitchStatus(set_at=NOW, cleared_at=None, cleared_by=None)
 
 
 def test_allow_debug_logging_again_is_offered_only_in_testing_while_set():
-    """Testing with the switch set: the button posts the preview in place,
-    and the polled copy carries it. Otherwise it is greyed with why."""
+    """Testing with the switch set: the button posts the preview to its
+    review dialog (#1356), and the polled copy carries it. Otherwise it is
+    greyed with why."""
     body = debug_page(switch=SET, debug=False, mode="testing")
     assert 'value="debug_allow_preview"' in body
-    assert 'data-in-place="debug-allow-preview"' in body
+    assert 'data-review-open="debug-allow-review"' in body
+    assert "data-in-place=" not in section(body, 'id="debug-off"')
+    page = (TEMPLATES / "system-health.html").read_text()
+    assert 'dialog_id="debug-allow-review"' in page
+    assert 'apply_action="debug_allow_confirm"' in page
+    assert 'describedby="debug-allow-review-summary"' in page
+    assert 'translate "Allow debug logging again?" as debug_allow_title' in page
     assert body.count('value="debug_allow_preview"') == 2  # region and mirror
     assert "In Testing, Allow debug logging again on this page clears" in body
     production = debug_page(switch=SET, debug=False)
@@ -1859,36 +1866,43 @@ def test_allow_debug_logging_again_is_offered_only_in_testing_while_set():
     assert "The debug-off switch is not set." in unset
 
 
-def test_the_allow_preview_result_and_refusals_read_in_the_region():
-    """Allow debug logging again answers inside #debug-off, in its own words."""
-    preview = DebugAllowPreview(key="k-2", set_at=NOW)
-    body = debug_page(
-        switch=SET, mode="testing", debug_off={"allow": True, "preview": preview}
-    )
-    for words in (
-        "This clears the debug-off switch set at",
-        "never turns debug logging on in a service started without it",
-        "Confirm: allow debug logging again",
-    ):
-        assert words in body, words
-    assert 'name="key" value="k-2"' in body
-    assert 'value="debug_allow_confirm"' in body
-    assert 'value="debug_allow_cancel"' in body
-    # The region alone: the tile's panel content follows it, in its own
-    # mirror target.
-    start = body.index('id="debug-off"')
-    region = body[start : body.index("</section>", start)]
-    assert "data-live-mirror-target" not in region
-    assert "Confirm: turn off debug logging" not in body
+def debug_allow_answer(**result):
+    """Allow debug logging again's review dialog fragment for one result."""
     cleared = DebugSwitchStatus(
         set_at=NOW - timedelta(hours=1), cleared_at=NOW, cleared_by="administrator"
     )
-    done = debug_page(
-        switch=cleared,
-        mode="testing",
-        debug_off={"allow": True, "allowed": cleared, "created": True},
+    return render_to_string(
+        "stewardship/system-health-debug-allow-review.html",
+        {
+            "health": health(debug_switch=cleared, mode="testing"),
+            "debug_actor": None,
+            "poll_interval": 10000,
+            "debug_off": {"allow": True} | result,
+        },
     )
-    assert "data-debug-allowed" in done and "Debug-off switch cleared at" in done
+
+
+def test_the_allow_confirmation_result_and_refusals_answer_the_dialog():
+    """Allow debug logging again's preview is one sentence that keeps the
+    personal-information caution, never the switch's set time the page
+    shows; Apply's answer draws Turn off debug logging's region again; each
+    refusal is marked for the dialog, in its own words."""
+    preview = DebugAllowPreview(key="k-2", set_at=NOW)
+    text = debug_allow_answer(preview=preview)
+    assert (
+        '<div data-review-answer data-review-done="Debug logging allowed again.">'
+    ) in text
+    assert (
+        '<p id="debug-allow-review-summary">This clears the debug-off switch:'
+        " within about a minute, services started with debug logging on log in"
+        " debug form again, which can record Families' personal"
+        " information.</p>"
+    ) in text
+    assert 'name="key" value="k-2" data-review-preview' in text
+    assert "set at" not in text and NOW.isoformat() not in text
+    assert "Confirm: allow debug logging again" not in text
+    done = debug_allow_answer(allowed=SimpleNamespace(cleared_at=NOW), created=True)
+    assert 'id="debug-off"' in done and "data-review-answer" not in done
     for refused, words in (
         ("reauthenticate", "allowing debug logging again needs a Google sign-in"),
         ("busy", "The debug-off switch is no longer set"),
@@ -1896,7 +1910,8 @@ def test_the_allow_preview_result_and_refusals_read_in_the_region():
         ("denied", "The server refused to allow debug logging again"),
         ("invalid", "That request could not be read."),
     ):
-        answer = debug_page(debug_off={"allow": True, "refused": refused})
+        answer = debug_allow_answer(refused=refused)
+        assert answer.strip().startswith("<div data-review-refusal>"), refused
         assert f'data-debug-allow-refused="{refused}"' in answer
         assert words in answer, refused
 

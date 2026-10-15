@@ -1156,9 +1156,11 @@ cancelling go-live, pausing and resuming mail, fixing many emails at once,
 test email sends, a manual ParishSoft refresh, Family portal maintenance) keep
 the flows their own sections describe; whether any of them moves to the
 dialog is decided on [#750](https://github.com/epiphany40223/parishkit/issues/750).
-System health's Take a backup now and Turn off debug logging confirm in the
-dialog ([#1356](https://github.com/epiphany40223/parishkit/issues/1356)),
-since their previews would only repeat the page.
+System health's Take a backup now, Turn off debug logging and Allow debug
+logging again confirm in the dialog
+([#1356](https://github.com/epiphany40223/parishkit/issues/1356)), since
+their previews would only repeat the page; Accept this change once keeps its
+in-place preview of the counts.
 
 Current state, to be converted: Users' New user, Edit user and Import
 Ministry leaders, New and Edit scheduled email,
