@@ -48,8 +48,8 @@ source-form`` (in ``admin_source_form``), ``report data-to-fix`` (in
 ``admin_data_to_fix``), ``files list``, ``files
 delete`` and ``files rename`` (PR 10, in ``admin_hosted_files``),
 ``content list``, ``content show`` and ``content history`` (PR 10, in
-``admin_content``), ``integration list``, ``integration show`` and
-``integration status`` (PR 10, in ``admin_integrations``),
+``admin_content``), ``integration list``, ``integration show``, ``integration status``
+and ``integration schedule-preview`` (PR 10, in ``admin_integrations``),
 ``parish show``, ``ministries list``, ``branding show`` and ``campaign
 shares`` (PR 10, in ``admin_settings``), ``parish preview`` and
 ``parish confirm`` (PR 10, in ``admin_parish``), and ``events list`` and
@@ -1238,6 +1238,23 @@ def integration_status(args, preamble, runtime, context):
     from .admin_integrations import read_integration_status
 
     return read_integration_status(context["caller"], runtime, args.target)
+
+
+def integration_schedule_preview(args, preamble, runtime, context):
+    """Preview the applied or a proposed ParishSoft refresh schedule (#632).
+
+    The role first (#1339): Staff is denied before standard input is read.
+    """
+    from .admin_integration_changes import CHANGES_LIMIT
+    from .admin_integrations import read_schedule_preview
+
+    _role_first(context, runtime)
+    schedule = args.refresh_schedule
+    return read_schedule_preview(
+        context["caller"],
+        runtime,
+        None if schedule is None else _input(schedule, context, CHANGES_LIMIT),
+    )
 
 
 def integration_preview(args, preamble, runtime, context):
@@ -3098,6 +3115,16 @@ def _integration_preview_options(parser):
         "--refresh-schedule",
         help="ParishSoft's refresh schedule as YAML or JSON in the stored "
         "refresh_rules shape, or - to read it from standard input",
+    )
+
+
+def _integration_schedule_preview_options(parser):
+    """Options of ``integration schedule-preview``: a proposed schedule, if any."""
+    parser.add_argument(
+        "--refresh-schedule",
+        help="a proposed refresh schedule as YAML or JSON in the stored "
+        "refresh_rules shape, or - to read it from standard input "
+        "(default: the applied schedule)",
     )
 
 
@@ -4995,11 +5022,13 @@ def _integration_specs():
     Like ``parish show``, any session runs them and they record nothing, as
     the pages' GETs record nothing. ``integration status`` takes ``--watch``,
     as the settings page follows its status line while a change runs.
-    A settings page's Save and Remove are ``integration preview`` and
-    ``integration confirm`` (``admin_integration_changes``), as ``parish
-    preview`` and ``parish confirm``: full scope, as the page's posts record
-    activity. The page asks for a recent sign-in (#547), so ``integration
-    confirm`` is fresh-gated and prompts; the preview records nothing.
+    ``integration schedule-preview`` is the ParishSoft page's live schedule
+    check, which records nothing either. A settings page's Save and Remove
+    are ``integration preview`` and ``integration confirm``
+    (``admin_integration_changes``), as ``parish preview`` and ``parish
+    confirm``: full scope, as the page's posts record activity. The page
+    asks for a recent sign-in (#547), so ``integration confirm`` is
+    fresh-gated and prompts; the preview records nothing.
     ``integration backup-probe`` (Test access) and ``integration dismiss``
     (a key change line's Dismiss) are full scope and neither fresh-gated
     nor prompting, as those pages ask for neither
@@ -5013,7 +5042,12 @@ def _integration_specs():
     from .admin_integration_actions import BackupProbe, KeyDismissal
     from .admin_integration_changes import IntegrationConfirm, IntegrationPreview
     from .admin_integration_keys import FinishConfirm, FinishPreview, KeyStatus
-    from .admin_integrations import IntegrationList, IntegrationShow, IntegrationStatus
+    from .admin_integrations import (
+        IntegrationList,
+        IntegrationShow,
+        IntegrationStatus,
+        SchedulePreview,
+    )
 
     return (
         CommandSpec(
@@ -5048,6 +5082,17 @@ def _integration_specs():
             options=(_integration_status_options,),
             audit_event=None,
             watch=True,
+        ),
+        CommandSpec(
+            "integration schedule-preview",
+            "Preview the ParishSoft refresh schedule's next seven days and cost.",
+            integration_schedule_preview,
+            "read_only",
+            False,
+            SchedulePreview.field_names(),
+            10,
+            options=(_integration_schedule_preview_options,),
+            audit_event=None,
         ),
         CommandSpec(
             "integration preview",

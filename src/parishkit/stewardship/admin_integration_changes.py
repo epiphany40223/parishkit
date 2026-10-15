@@ -302,8 +302,16 @@ def schedule_errors(editor):
     its order), or ``refresh_schedule`` for the schedule as a whole, each
     with the page's words. An unchanged schedule's problems never block.
     """
-    if not editor.blocking:
-        return []
+    return editor_problems(editor) if editor.blocking else []
+
+
+def editor_problems(editor):
+    """Every problem the page's schedule editor found, at each row.
+
+    The same places and words as ``schedule_errors``, whether or not they
+    block saving: ``integration schedule-preview`` reports them as the
+    page's live check does.
+    """
     return [
         _schedule_problem(
             f".{problem.scope}[{problem.index}]" if problem.scope else "",

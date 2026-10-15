@@ -401,7 +401,8 @@ LEDGER = {
         owed="PR 10",
     ),
     "integration_status": command("integration status"),
-    "refresh_schedule_check": pending("PR 10", "integration schedule-preview"),
+    # The ParishSoft page's live refresh schedule check (#632).
+    "refresh_schedule_check": command("integration schedule-preview"),
     "credential_status": command("integration key status"),
     "dismiss_credential_result": command("integration dismiss"),
     "select_credential": command(
