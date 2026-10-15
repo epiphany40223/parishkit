@@ -624,8 +624,9 @@
         // an in-place refresh replaced the region, must not swap, finish or
         // navigate.
         if (stopped || gone()) return;
-        if ([401, 403, 404].includes(response.status) || response.redirected) {
-          // Signed out or no longer allowed: retrying cannot help.
+        if ([400, 401, 403, 404].includes(response.status) || response.redirected) {
+          // Signed out, no longer allowed, or refused as a bad request (such
+          // as Slack turned off): retrying cannot help.
           const settled = region.querySelector("template[data-live-refused]");
           if (settled) {
             region.replaceChildren(settled.content.cloneNode(true));

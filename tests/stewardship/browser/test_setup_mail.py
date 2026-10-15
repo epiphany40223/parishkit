@@ -197,6 +197,24 @@ def test_status_error_retries_and_refusal_stops(page, component_origin):
     assert page.locator("[data-mail-send]").first.is_disabled()
 
 
+def test_bad_request_refusal_stops_watching(page, component_origin, delivery_channel):
+    """A 400 (such as Slack turned off) is a refusal like a 403: no retry."""
+    from playwright.sync_api import expect
+
+    page.clock.install(time=NOW)
+    queued = mail_status([status_row(QUEUED_ID, "queued", NOW)], pending=True)
+    polls = status_route(page, delivery_channel, [queued, 400])
+    page.goto(component_origin + f"/setup-{delivery_channel}-test")
+    page.clock.fast_forward(2000)
+    recorded(page, polls, 1)
+    page.clock.fast_forward(2000)
+    recorded(page, polls, 2)
+    expect(page.locator(".live-status-problem")).to_contain_text("Couldn't check")
+    page.clock.fast_forward(60000)
+    page.wait_for_timeout(200)
+    assert len(polls) == 2
+
+
 def test_accepted_email_test_offers_continue_and_another_send(page, component_origin):
     """After acceptance the primary action is Continue; sending again is secondary."""
     page.goto(component_origin + "/setup-mail-test-done")
