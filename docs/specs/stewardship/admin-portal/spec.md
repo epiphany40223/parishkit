@@ -5634,8 +5634,10 @@ current; slice 2b draws them always. The exception is
 [Accept this change once](#accept-a-large-parishsoft-change-once), which
 answers the refused change and is not a standing control: it is drawn
 only while a refusal is shown, or while a step's result is (Administrator,
-pk-local batch 24a). "Refresh System health" stays at the end of the page,
-after the tiles.
+pk-local batch 24a). The page has no plain "Refresh System health" link at
+its end (Administrator, pk-local batch 24a): it refreshes itself, and the
+line's [Not current](#overall-status-line) button checks again when it
+stops.
 
 #### Health problem registry
 

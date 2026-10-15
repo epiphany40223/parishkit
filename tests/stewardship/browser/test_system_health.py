@@ -385,7 +385,9 @@ def test_an_update_leaves_focus_outside_and_keeps_a_tables_sideways_scroll(
     table = page.locator("#health-version-details .table-scroll")
     assert table.evaluate("(node) => node.scrollWidth > node.clientWidth")
     table.evaluate("(node) => { node.scrollLeft = 40; }")
-    outside = page.get_by_role("link", name="Refresh System health")
+    # The page's "About this page" disclosure, outside the tiles and the
+    # polled region.
+    outside = page.locator("summary", has_text="About this page")
     outside.focus()
     _away(page)
     expect(
