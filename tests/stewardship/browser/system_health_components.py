@@ -71,13 +71,16 @@ DEBUG_TILE_STATUS = "/system-health-debug-tile/status"
 # a page whose web portal reports debug logging and which polls only once a
 # minute, so only the answer's own check can bring the tile up to date; its
 # status before the switch is set (``/status``) and after (``/status-set``),
-# with no service named any more; and the confirmation's answer (``/set``).
+# with no service named any more; and Apply's review-dialog answer (``/set``).
 DEBUG_LIVE = "/system-health-debug-live-"
 # Take a backup now, followed in place (#1317): a page with no request that
 # polls every 2 seconds; its status with no request (``/status``), with the
 # request running (``/status-running``) and finished (``/status-finished``);
 # and Apply's review-dialog answer, the request waiting (``/requested``).
 BACKUP_LIVE = "/system-health-backup-live"
+# Turn off debug logging's steps answer the review dialog with this
+# fragment (#1356), as Take a backup now's do.
+DEBUG_ANSWER = "stewardship/system-health-debug-off-review.html"
 # Accept this change once (ADM-13 PR 5b): a page showing only a refused
 # large change, the answers its steps get, and its next poll, in which
 # another Administrator has accepted it. The browser test serves the page at
@@ -436,15 +439,23 @@ def components(context, admin):
         )
         extra[f"{base}/status"] = status(values(False, debug=True, mode=mode))
         extra[f"{base}/status-set"] = status(values(False, switch=True, mode=mode))
-        extra[f"{base}/set"] = page(
-            values(
-                False,
-                switch=True,
-                mode=mode,
-                status_url=f"{base}/status",
-                debug_off={"requested": SimpleNamespace(set_at=now), "created": True},
-                debug_off_shown=True,
-            )
+        # Apply's answer in the review dialog (#1356): the region drawn again.
+        extra[f"{base}/set"] = (
+            "text/html",
+            render_to_string(
+                DEBUG_ANSWER,
+                values(
+                    False,
+                    switch=True,
+                    mode=mode,
+                    status_url=f"{base}/status",
+                    debug_off={
+                        "requested": SimpleNamespace(set_at=now),
+                        "created": True,
+                    },
+                    debug_off_shown=True,
+                ),
+            ),
         )
     extra[BACKUP_LIVE] = page(
         values(False, status_url=f"{BACKUP_LIVE}/status", poll_interval=2000)
@@ -623,7 +634,7 @@ def components(context, admin):
         DEBUG_PREVIEW: (
             "text/html",
             render_to_string(
-                "stewardship/system-health.html",
+                DEBUG_ANSWER,
                 values(
                     False,
                     debug=True,
@@ -640,7 +651,7 @@ def components(context, admin):
         DEBUG_SET: (
             "text/html",
             render_to_string(
-                "stewardship/system-health.html",
+                DEBUG_ANSWER,
                 values(
                     False,
                     debug=True,
@@ -657,7 +668,7 @@ def components(context, admin):
         DEBUG_STEP_UP: (
             "text/html",
             render_to_string(
-                "stewardship/system-health.html",
+                DEBUG_ANSWER,
                 values(
                     False,
                     debug=True,

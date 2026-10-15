@@ -1193,11 +1193,20 @@ def debug_page(
 
 
 def test_turn_off_debug_logging_is_offered_while_a_service_has_it_on():
-    """The button posts the preview step in place; help says who clears it."""
+    """The button posts the preview step to the page's review dialog
+    (#1356); help says who clears it."""
     body = debug_page()
     assert 'value="debug_off_preview"' in body
-    assert 'data-in-place="debug-off-preview"' in body
-    assert 'action="/admin/system/health/#debug-off"' in body
+    assert 'data-review-open="debug-off-review"' in body
+    assert 'data-in-place="debug-off-preview"' not in body
+    assert body.index('id="debug-off-outcome"') > body.index('id="debug-off"')
+    page = (TEMPLATES / "system-health.html").read_text()
+    assert 'dialog_id="debug-off-review"' in page
+    assert 'apply_action="debug_off_confirm"' in page
+    assert 'describedby="debug-off-review-summary"' in page
+    assert 'translate "Turn off debug logging?" as debug_off_title' in page
+    # What the switch leaves alone moved to the page's help.
+    assert "before it first reads the switch" in page
     # The polled copy carries the same enabled button for the mirror.
     assert '<template data-live-mirror="debug-off-button">' in body
     assert "pk-stewardship debug-off-clear" in body
@@ -1237,35 +1246,54 @@ def test_a_cleared_switch_is_named_only_while_debug_logging_is_back():
     assert "cleared the debug-off switch" not in debug_page(switch=cleared, debug=False)
 
 
-def test_the_preview_and_each_refusal_read_in_the_region():
-    """Preview, result and refusals are drawn inside #debug-off."""
-    preview = DebugOffPreview(key="k-1", processes=("the web portal",))
-    body = debug_page(debug_off={"preview": preview})
-    for words in (
-        "Debug logging is on in: the web portal.",
-        "Lines already written stay in the logs",
-        "still says “on” until the server operator recreates the services",
-        "Only the server operator can clear the switch.",
-        "Confirm: turn off debug logging",
-    ):
-        assert words in body, words
-    assert 'name="key" value="k-1"' in body
-    assert 'value="debug_off_confirm"' in body and 'value="debug_off_cancel"' in body
-    # The preview replaces the region's button, so a poll cannot discard it.
-    region = section(body, 'id="debug-off"')
-    assert "data-live-mirror-target" not in region
-    done = debug_page(
-        switch=DebugSwitchStatus(set_at=NOW, cleared_at=None, cleared_by=None),
-        debug_off={"requested": SimpleNamespace(set_at=NOW), "created": True},
+def debug_off_answer(**result):
+    """Turn off debug logging's review dialog fragment for one step's result."""
+    return render_to_string(
+        "stewardship/system-health-debug-off-review.html",
+        {
+            "health": health(
+                processes=group_processes([row(debug_logging=True)], NOW),
+                debug_switch=DebugSwitchStatus(
+                    set_at=NOW, cleared_at=None, cleared_by=None
+                ),
+            ),
+            "debug_actor": "admin@example.org",
+            "poll_interval": 10000,
+            "debug_off": result,
+        },
     )
-    assert "data-debug-off-set" in done and "Debug logging turned off at" in done
+
+
+def test_the_debug_off_confirmation_and_each_refusal_answer_the_dialog():
+    """The preview is one sentence naming the services with debug logging on,
+    never the fixed bullets the About panel holds; Apply's answer draws the
+    region again, its button greyed; each refusal is marked for the dialog."""
+    preview = DebugOffPreview(key="k-1", processes=("the web portal",))
+    text = debug_off_answer(preview=preview)
+    assert (
+        '<div data-review-answer data-review-done="Debug logging turned off.">'
+    ) in text
+    assert (
+        '<p id="debug-off-review-summary">This turns debug logging off now in the'
+        " services that have it on (the web portal), without restarting them,"
+        " until the debug-off switch is cleared.</p>"
+    ) in text
+    assert 'name="key" value="k-1" data-review-preview' in text
+    for words in ("Lines already written", "still says", "Confirm: turn off"):
+        assert words not in text, words
+    quiet = debug_off_answer(preview=DebugOffPreview(key="k-1", processes=()))
+    assert "No service reports debug logging right now" in quiet
+    done = debug_off_answer(requested=SimpleNamespace(set_at=NOW), created=True)
+    assert 'id="debug-off"' in done and "data-review-answer" not in done
+    assert 'disabled aria-describedby="debug-off-reason"' in done
     for refused, words in (
         ("reauthenticate", "For security, turning off debug logging needs a Google"),
         ("busy", "Debug logging has already been turned off"),
         ("denied", "The server refused to turn off debug logging"),
         ("invalid", "That request could not be read."),
     ):
-        answer = debug_page(debug_off={"refused": refused})
+        answer = debug_off_answer(refused=refused)
+        assert answer.strip().startswith("<div data-review-refusal>"), refused
         assert f'data-debug-off-refused="{refused}"' in answer
         assert words in answer, refused
 
@@ -2553,14 +2581,15 @@ def test_the_backup_region_checks_the_status_again_once_answered():
 
 def test_the_debug_regions_answers_point_where_things_are_said():
     """After turning it off, nothing points to a service list the
-    Production panel no longer has; a repeated request points to the greyed
-    button, which says who and when; the Testing note about the button is
+    Production panel no longer has; a repeated request, refused in the
+    review dialog (#1356), points to the greyed button, which says who and
+    when (no "below" in a dialog); the Testing note about the button is
     left out while the switch greys it."""
-    body = debug_page(debug_off={"requested": SimpleNamespace(set_at=NOW)})
-    assert "Each service stops logging in debug form within about a minute." in body
+    body = debug_off_answer(requested=SimpleNamespace(set_at=NOW))
     assert "details below show when" not in body
-    busy = debug_page(switch=SET, debug_off={"refused": "busy"})
-    assert "The greyed button below says who did it and when." in busy
+    busy = debug_off_answer(refused="busy")
+    assert "The greyed button says who did it and when." in busy
+    assert "below" not in busy
     assert "Turn off debug logging works here too" in debug_page(mode="testing")
     assert "works here too" not in debug_page(switch=SET, mode="testing")
 

@@ -1109,11 +1109,14 @@ def test_the_button_catches_up_once_the_reader_leaves_it(page, component_origin)
     visible(region.get_by_text("and is held while a Family email send is in progress."))
 
 
-def test_turn_off_debug_logging_previews_and_confirms_in_place(
+def test_turn_off_debug_logging_confirms_in_the_review_dialog(
     page, component_origin, axe_source
 ):
-    """Preview, then confirm, each swapped into #debug-off; focus follows;
-    nothing above the region moves (ADM-13 PR 6b)."""
+    """The button opens the review dialog as a confirmation (#1356), naming
+    the services with debug logging on; Apply closes it, the region is
+    redrawn from Apply's answer, its button greyed with who set the switch
+    (browser-local time), and the status line after it says so; nothing
+    above the region moves, and nothing reloads (ADM-13 PR 6b)."""
     _routed(
         page,
         component_origin,
@@ -1133,36 +1136,32 @@ def test_turn_off_debug_logging_previews_and_confirms_in_place(
         return heading.evaluate("e => e.getBoundingClientRect().top + window.scrollY")
 
     top = place()
-    region.get_by_role("button", name="Turn off debug logging", exact=True).click()
-    confirm = page.get_by_role("button", name="Confirm: turn off debug logging")
-    expect(confirm).to_be_visible()
-    expect(confirm).to_be_focused()
-    visible(region.get_by_text("Debug logging is on in: Web portal."))
-    # Firefox may report the same place a few millionths of a pixel apart.
-    assert abs(place() - top) < 0.5
-    # The help is one click away, in a toggletip.
+    # The help is one click away, in a toggletip, before and after.
     region.get_by_role("button", name="More information").click()
     visible(region.get_by_text("using pk-stewardship debug-off-clear"))
-    page.evaluate(axe_source)
-    assert (
-        page.evaluate("""async () => (await axe.run(document, {
-        runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']}
-    })).violations.map(({id,impact}) => ({id,impact}))""")
-        == []
+    region.get_by_role("button", name="Turn off debug logging", exact=True).click()
+    dialog = _dialog(page, "Turn off debug logging?")
+    expect(dialog.locator("[data-review-title]")).to_be_focused()
+    assert dialog.get_attribute("aria-describedby") == "debug-off-review-summary"
+    expect(dialog.locator("#debug-off-review-summary")).to_contain_text(
+        "in the services that have it on (Web portal)"
     )
-    confirm.click()
-    done = region.locator("[data-debug-off-set] time")
-    expect(done).to_be_visible()
+    assert "Lines already written" not in dialog.inner_text()
+    assert _axe(page, axe_source) == []
+    dialog.get_by_role("button", name="Apply").click()
+    expect(dialog).to_be_hidden()
+    line = page.locator("#debug-off-outcome")
+    expect(line).to_have_text(re.compile(r"^Debug logging turned off\. Applied at "))
+    expect(line).to_be_focused()
+    reason = region.locator("#debug-off-reason")
+    expect(reason).to_contain_text("Debug logging was turned off by other@example.org")
     # Shown in the browser's own time zone, never as the ISO instant.
-    stamp = done.get_attribute("datetime")
-    expect(done).not_to_have_text(stamp)
+    stamp = reason.locator("time").get_attribute("datetime")
+    expect(reason.locator("time")).not_to_have_text(stamp)
     assert "UTC" not in region.inner_text()
     assert kept()
     # Firefox may report the same place a few millionths of a pixel apart.
     assert abs(place() - top) < 0.5
-    assert page.evaluate(
-        "document.getElementById('debug-off').contains(document.activeElement)"
-    )
 
 
 def _answered_then_set(page, component_origin, base, answers):
@@ -1206,11 +1205,11 @@ def _answered_then_set(page, component_origin, base, answers):
 def test_turning_off_debug_logging_updates_the_tile_and_both_buttons_at_once(
     page, component_origin, mode
 ):
-    """Confirming updates the Debug logging tile's word and summary, the
-    overall line and both buttons without a reload, and without waiting for
-    the next poll (a minute away here): the answer checks the status at once
-    (#1317). Allow debug logging again becomes available in Testing only;
-    in Production it stays greyed, saying why."""
+    """Applying the review dialog (#1356) updates the Debug logging tile's
+    word and summary, the overall line and both buttons without a reload,
+    and without waiting for the next poll (a minute away here): the answer
+    checks the status at once (#1317). Allow debug logging again becomes
+    available in Testing only; in Production it stays greyed, saying why."""
     base = DEBUG_LIVE + mode
     _answered_then_set(
         page,
@@ -1225,13 +1224,15 @@ def test_turning_off_debug_logging_updates_the_tile_and_both_buttons_at_once(
     if mode == "production":
         expect(word).to_have_text("Warning")
     region.get_by_role("button", name="Turn off debug logging", exact=True).click()
-    confirm = region.get_by_role("button", name="Confirm: turn off debug logging")
-    expect(confirm).to_be_focused()
+    dialog = _dialog(page, "Turn off debug logging?")
     # The preview's own check found the switch not yet set.
     if mode == "production":
         expect(word).to_have_text("Warning")
-    confirm.click()
-    expect(region.locator("[data-debug-off-set]")).to_be_visible()
+    dialog.get_by_role("button", name="Apply").click()
+    expect(dialog).to_be_hidden()
+    expect(page.locator("#debug-off-outcome")).to_contain_text(
+        "Debug logging turned off."
+    )
     # The pointer stays on the tile grid: the summary row and the buttons
     # still follow at once.
     expect(word).to_have_text("Working", timeout=5000)
@@ -1255,8 +1256,9 @@ def test_turning_off_debug_logging_updates_the_tile_and_both_buttons_at_once(
     assert kept()
 
 
-def test_a_stale_sign_in_offers_the_step_up_in_the_debug_region(page, component_origin):
-    """The shared "For security" notice and Confirm with Google, in place."""
+def test_a_stale_sign_in_offers_the_step_up_in_the_debug_dialog(page, component_origin):
+    """The shared "For security" notice and Confirm with Google, in the
+    dialog."""
     _routed(
         page,
         component_origin,
@@ -1267,8 +1269,11 @@ def test_a_stale_sign_in_offers_the_step_up_in_the_debug_region(page, component_
     kept = _not_reloaded(page)
     region = page.locator("#debug-off")
     region.get_by_role("button", name="Turn off debug logging", exact=True).click()
-    expect(region.get_by_role("button", name="Confirm with Google")).to_be_visible()
-    visible(region.get_by_text("For security, turning off debug logging"))
+    dialog = _dialog(page, "Turn off debug logging?")
+    error = dialog.locator("[data-confirm-error]")
+    expect(error.get_by_role("button", name="Confirm with Google")).to_be_visible()
+    expect(error).to_contain_text("For security, turning off debug logging")
+    expect(dialog.get_by_role("button", name="Apply")).to_be_hidden()
     assert kept()
     assert '"errors"' not in page.content()
 
@@ -1293,19 +1298,27 @@ def test_the_debug_button_follows_a_switch_set_elsewhere(page, component_origin)
 def test_the_debug_region_is_accessible_at_phone_and_desktop_widths(
     page, component_origin, axe_source, width
 ):
-    """Its button and its preview pass axe and fit a phone without scrolling."""
+    """Its button, and its confirmation in the review dialog (#1356), pass
+    axe and fit a phone without scrolling."""
     page.set_viewport_size({"width": width, "height": 900})
-    for path in (DEBUG_PAGE, DEBUG_PREVIEW):
-        page.goto(component_origin + path)
-        assert page.locator("#debug-off").count() == 1
-        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-        page.evaluate(axe_source)
-        assert (
-            page.evaluate("""async () => (await axe.run(document, {
-            runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']}
-        })).violations.map(({id,impact}) => ({id,impact}))""")
-            == []
-        )
+    _routed(
+        page,
+        component_origin,
+        {"debug_off_preview": (200, DEBUG_PREVIEW)},
+        shown=DEBUG_PAGE,
+    )
+    page.goto(component_origin + BACKUP_PAGE)
+    assert page.locator("#debug-off").count() == 1
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert _axe(page, axe_source) == []
+    page.locator("#debug-off").get_by_role(
+        "button", name="Turn off debug logging", exact=True
+    ).click()
+    dialog = _dialog(page, "Turn off debug logging?")
+    box = dialog.bounding_box()
+    assert box["x"] >= 0 and box["x"] + box["width"] <= width
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert _axe(page, axe_source) == []
 
 
 def test_accept_this_change_once_previews_and_confirms_in_place(

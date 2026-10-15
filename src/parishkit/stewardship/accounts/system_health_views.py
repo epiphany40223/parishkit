@@ -233,7 +233,6 @@ _ACTION_FIELDS = {
     "confirm": {"action", "key"},
     "debug_off_preview": {"action"},
     "debug_off_confirm": {"action", "key"},
-    "debug_off_cancel": {"action"},
     "debug_allow_preview": {"action"},
     "debug_allow_confirm": {"action", "key"},
     "debug_allow_cancel": {"action"},
@@ -260,6 +259,7 @@ _REGIONS = (
 # refusal (data-review-refusal) or the result, never the whole page.
 _DIALOG_ANSWERS = {
     ("backup_now", False): "stewardship/system-health-backup-review.html",
+    ("debug_off", False): "stewardship/system-health-debug-off-review.html",
 }
 
 
@@ -307,9 +307,9 @@ def _step(action, request, service):
             request, service.store, key=UUID(request.POST.get("key", ""))
         )
         return {"requested": row, "created": created}
-    # Cancel only closes the preview; nothing was recorded. Only Accept
-    # this change once has a Cancel step: the review dialog's Cancel sends
-    # nothing.
+    # Cancel only closes the preview; nothing was recorded. Take a backup
+    # now and Turn off debug logging have no Cancel step: the review
+    # dialog's Cancel sends nothing.
     _principal(request, service.store, activity=True)
     return None
 
@@ -318,8 +318,10 @@ def _act(request):
     """An action's step, posted to the System health page itself.
 
     Accept this change once's answer is the whole page at its own address,
-    so ui-v1.js swaps its region (``#accept-change``) in place. Take a backup
-    now confirms in the shared review dialog (#1356): each of its steps is
+    so ui-v1.js swaps its region (``#accept-change``) in place, and so is
+    Allow debug logging again's (``#debug-off``). Take a backup now and Turn
+    off debug logging confirm in the shared review dialog (#1356): each of
+    their steps is
     answered with its fragment (``_DIALOG_ANSWERS``), the preview's
     confirmation, the request made, or a refusal the dialog shows as drawn.
     The step's result goes to the template as ``backup_now``, ``accept`` or

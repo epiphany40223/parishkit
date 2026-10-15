@@ -6478,14 +6478,15 @@ checks.
   preview binding that other Admin previews use, and the server refuses it
   when that state has changed ("This changed since you looked; review it
   again"). A repeated click returns the first result. **Take a backup
-  now** confirms in the shared
+  now** and **Turn off debug logging** confirm in the shared
   [review dialog](../ui-conventions/spec.md#review-dialog) as a
-  confirmation (#1356): its preview would only repeat what the page shows
-  (the last backup in the Backups details, the request's rules in "About
-  this page"), so the dialog says in one sentence what Apply does and adds
-  only what the server worked out. Its refusals, the step-up included, show
-  in the dialog, and Apply's answer redraws the action's region, its button
-  greyed with the reason. The server's checks, the preview's key and the
+  confirmation (#1356): their previews would only repeat what the page
+  shows (the last backup in the Backups details, the services with debug
+  logging on in its panel, the actions' rules in "About this page"), so the
+  dialog says in one sentence what Apply does and adds only what the server
+  worked out. Their refusals, the step-up included, show in the dialog, and
+  Apply's answer redraws the action's region, its button greyed with the
+  reason. The server's checks, the preview's key and the
   audit are unchanged.
 - **Unavailable buttons are greyed, never hidden.** A button that cannot be
   used right now stays in place, unavailable, with its reason shown and
@@ -6986,12 +6987,15 @@ switch stays set until it is cleared.
    apply the switch. The debug logging banner, which reads only the web
    process's own state, ends when that process applies the switch.
 5. Lines written before a process first reads the switch at startup are not
-   covered. The preview says so.
+   covered. "About this page" says so.
 
-**Preview.** The services with debug logging in effect; that lines already
-written stay in the logs; that the setting on the server still says "on"
-until the server operator recreates the services; and the startup gap
-above.
+**Preview.** A confirmation in the review dialog (#1356), "Turn off debug
+logging?": one sentence says debug logging is turned off now, without
+restarting them, in the services the server found with it on (named), until
+the switch is cleared. That lines already written stay in the logs, the
+startup gap above, and that the setting on the server still says "on" until
+the server operator recreates the services are in "About this page", the
+region's toggletip and the panel, so the dialog does not repeat them.
 
 **Where it appears.** In the [Debug logging tile](#health-tiles)'s
 details, after its problems and before the panel content. The page always

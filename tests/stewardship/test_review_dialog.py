@@ -102,6 +102,7 @@ def test_the_row_action_dialog_is_unchanged():
 # while the dialogs sit outside every region on the page.
 DIALOG_PAGES = {
     "system-health-backup-button.html": "system-health.html",
+    "system-health-debug-button.html": "system-health.html",
 }
 
 
