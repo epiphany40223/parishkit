@@ -93,8 +93,10 @@ def add_digest_web_grants(tables, columns):
     columns["stewardship_daily_digest_ready"]["SELECT"].update(
         {"fact_set_id", "chart", "comparison"}
     )
-    # Whether the email had its Response funnel charts (#477): the saved
-    # page draws them only then. An aggregate image, never mail prose.
+    # Whether the email had its Response funnel charts (#477), granted by
+    # 0083. The saved page no longer reads it (#1370: it draws no funnel
+    # charts); the grant stays until a forward migration drops the column.
+    # An aggregate image, never mail prose.
     columns["stewardship_daily_digest_ready"]["SELECT"].add("funnel_chart")
 
 

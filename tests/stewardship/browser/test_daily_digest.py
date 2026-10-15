@@ -211,10 +211,9 @@ def test_missing_controls_keeps_static_report_usable(page, component_origin):
 def test_the_saved_report_shows_the_response_funnel(
     page, component_origin, axe_source, width
 ):
-    """The funnel charts, table and figures are readable, accessible and fit (#477).
+    """The funnel table and figures are readable, accessible and fit (#477).
 
-    Slice 2: the email's two charts draw first under the real CSP, each with
-    its heading, then the funnel's own table.
+    The panel draws no charts (#1370), only the funnel's own table.
     """
     from playwright.sync_api import expect
 
@@ -226,11 +225,8 @@ def test_the_saved_report_shows_the_response_funnel(
     page.goto(component_origin + "/daily-digest-funnel")
     funnel = page.locator("[data-digest-funnel]")
     visible(funnel.get_by_role("heading", name="Response funnel", level=2))
-    expect(funnel.locator("[data-chart][data-chart-state=rendered]")).to_have_count(2)
-    assert funnel.get_by_role("heading", level=3).all_inner_texts() == [
-        "Response funnel",
-        "Response activity by hour",
-    ]
+    expect(funnel.locator("[data-chart]")).to_have_count(0)
+    expect(funnel.get_by_role("heading", level=3)).to_have_count(0)
     # Four stages: "Link followed" is left out (#1016).
     table = funnel.locator('table[aria-labelledby="digest-funnel-heading"]')
     assert table.locator("tbody tr").count() == 4
