@@ -38,7 +38,9 @@
 // read is refused (signed out, or no longer allowed, such as after a change
 // that removed the reader's own access), its content replaces the region as
 // a settled final status, so the page never looks as if it were still
-// waiting (#952). Without one, the refusal is said under the region.
+// waiting (#952). Without one, the refusal is said under the region; a
+// region's data-live-problem-id names that line, for the buttons marked
+// data-live-problem-named to name it while it shows (#1332, see watch()).
 //
 // A region may also set data-live-give-up="<ms>" (at most 3 hours) to
 // replace the one-hour limit; the limit then counts from the last poll that
@@ -174,16 +176,31 @@
     let failures = 0;
     const saysCurrent = region.hasAttribute("data-live-not-current");
 
-    // One status line after the region reports checking problems.
+    // One status line after the region reports checking problems. A region
+    // marked data-live-problem-id="<id>" gives the line that id, and while
+    // the line says something each [data-live-problem-named] button names
+    // it (aria-describedby) beside its own reason, so a Send held while a
+    // test is pending also says that its status could not be checked (the
+    // setup test pages, #1332).
     const problem = document.createElement("p");
     problem.className = "notice live-status-problem";
     problem.setAttribute("role", "status");
     problem.hidden = true;
+    const problemId = region.getAttribute("data-live-problem-id");
+    if (problemId) problem.id = problemId;
     region.after(problem);
 
     function say(text) {
       problem.textContent = text;
       problem.hidden = !text;
+      if (!problemId) return;
+      document.querySelectorAll("[data-live-problem-named]").forEach((button) => {
+        const ids = (button.getAttribute("aria-describedby") || "").split(/\s+/)
+          .filter((id) => id && id !== problemId);
+        if (text) ids.push(problemId);
+        if (ids.length) button.setAttribute("aria-describedby", ids.join(" "));
+        else button.removeAttribute("aria-describedby");
+      });
     }
 
     function localize(scope) {

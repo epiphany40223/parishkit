@@ -245,3 +245,51 @@ def test_restored_settled_page_is_read_again(page, component_origin):
     hidden(page.locator(".setup-actions").get_by_role("link", name="Continue"))
     assert len(reads) == 1
     assert page.evaluate(MARKED) == "kept"
+
+
+def named(button):
+    """The ids ``button`` names (aria-describedby)."""
+    return (button.get_attribute("aria-describedby") or "").split()
+
+
+def test_held_send_names_the_pending_test_and_a_failed_check(
+    page, component_origin, delivery_channel
+):
+    """While a test is pending, Send is unavailable and names the pending
+    line below the action row; while the status cannot be checked, it names
+    that line too, and stops once a check succeeds (#1332 item 28)."""
+    from playwright.sync_api import expect
+
+    page.clock.install(time=NOW)
+    queued = mail_status([status_row(QUEUED_ID, "queued", NOW)], pending=True)
+    polls = status_route(page, delivery_channel, [500, queued, 403])
+    page.goto(component_origin + f"/setup-{delivery_channel}-test")
+    page.evaluate(MARK)
+    send = page.locator("[data-mail-send]").first
+    pending = page.locator("#setup-test-pending")
+    assert send.is_disabled()
+    visible(pending)
+    has_text(
+        pending,
+        "A test is on its way. Another test can be sent once its result is known.",
+    )
+    assert named(send) == ["setup-test-pending"]
+    # A failed check: its line has an id, and Send names it as well.
+    page.clock.fast_forward(2000)
+    recorded(page, polls, 1)
+    problem = page.locator("#setup-test-problem")
+    expect(problem).to_contain_text("retrying")
+    assert named(send) == ["setup-test-pending", "setup-test-problem"]
+    # A successful check clears the line and Send's mention of it.
+    page.clock.fast_forward(2000)
+    recorded(page, polls, 2)
+    hidden(problem)
+    assert named(send) == ["setup-test-pending"]
+    # A refused check stops watching; Send names why it still waits.
+    page.clock.fast_forward(3000)
+    recorded(page, polls, 3)
+    expect(problem).to_contain_text("Couldn't check status")
+    assert named(send) == ["setup-test-pending", "setup-test-problem"]
+    assert send.is_disabled()
+    assert page.locator("#setup-test-problem").count() == 1
+    assert page.evaluate(MARKED) == "kept"
