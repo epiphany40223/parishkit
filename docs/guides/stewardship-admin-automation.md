@@ -107,7 +107,8 @@ in the directory; with several files and no choice the wrapper lists them
 and exits 2. Each command prints exactly one JSON document (schema
 `pk-admin/1`) on standard output, except one that writes a file there
 (`logs export`, see [System logs](#system-logs), `export census`, see
-[Census changes download](#census-changes-download), and `export download`, see
+[Census changes download](#census-changes-download), `export limitations`,
+see [Limitations download](#limitations-download), and `export download`, see
 [report exports](#report-exports)), whose document goes to standard error; warnings, such as a session with less than
 72 hours left, and structured logs go to standard error. The document's
 fields, the exit codes and the error codes are in the specification's
@@ -1894,9 +1895,32 @@ pk-admin export archive --yes
   current campaign can be exported, so download the final file before the
   next campaign is created.
 
-The Limitations download is not on the command line yet; use the page. The
-lists of Families behind the response counts are `export directory` with
-the directory's Response filters.
+The lists of Families behind the response counts are `export directory`
+with the directory's Response filters.
+
+### Limitations download
+
+`export limitations` writes the page's download of the **Limitations**
+report to standard output, and its document (`campaign_id`, `file_name`,
+`content_type`, `format`, `timezone`, `size`, `sha256`, `count`) to
+standard error, as `export census` does. It needs a full-scope session, as
+every export does; Administrators and Staff may run it, and a Ministry
+leader is refused (`denied`). It takes the page's Show menu as `--show`
+(`any`, the default, `cannot_serve` for Members who cannot participate in
+ministries, or `cannot_attend` for Families that cannot attend Mass or
+prayer services), without the page's search, `--format` (`xlsx`, the
+default, `csv` or `pdf`) and `--timezone` (UTC, the default, or a time zone
+name, for the file's times). It records the page's "downloaded" event
+(`talents_report_exported`) with the number of rows in the file.
+
+```sh
+(umask 077; pk-admin export limitations --show cannot_serve > limitations.xlsx)
+```
+
+The files are the page's own, with the same two tables (Members, then
+Families) and columns; `count` is the Member rows plus the Family rows. The
+file names Families and Members, so create it private, as above, and
+delete it once used; the wrapper refuses to write it to a terminal.
 
 ### Census changes download
 
@@ -2398,3 +2422,8 @@ print is exit 1 (`invalid`).
   read "Family" or "Unavailable Member"). The commands' options and
   documents are unchanged, and the only readers are Administrator-run
   assistants; a script that reads these files by position must change.
+- `pk-admin/1` (#463): additive. `export limitations [--show
+  any|cannot_serve|cannot_attend] [--format csv|xlsx|pdf] [--timezone
+  ZONE]`, the Limitations report's download (full scope, Administrators and
+  Staff, the page's `talents_report_exported`), streamed as `export census`
+  is.

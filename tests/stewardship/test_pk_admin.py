@@ -1084,7 +1084,12 @@ def test_the_streaming_list_names_every_streaming_command():
         "_".join(spec.name.split()) for spec in admin_cli.COMMANDS if spec.streams
     }
     assert set(listed.split()) == streaming
-    assert {"logs_export", "export_download", "export_census"} <= streaming
+    assert {
+        "logs_export",
+        "export_download",
+        "export_census",
+        "export_limitations",
+    } <= streaming
 
 
 def test_the_prompting_list_names_every_prompting_command():

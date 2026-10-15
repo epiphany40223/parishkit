@@ -92,7 +92,11 @@ def parse(*argv):
 
 
 def test_pk_admin_file_commands_default_to_xlsx_and_still_take_csv():
-    """``logs export`` and ``export census`` write XLSX unless told otherwise."""
-    for command in (("logs", "export"), ("export", "census")):
+    """The file commands write XLSX unless told otherwise."""
+    for command in (
+        ("logs", "export"),
+        ("export", "census"),
+        ("export", "limitations"),
+    ):
         assert parse(*command).format == "xlsx"
         assert parse(*command, "--format", "csv").format == "csv"
