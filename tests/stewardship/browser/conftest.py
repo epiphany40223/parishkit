@@ -85,6 +85,8 @@ from .automation_components import POSTS as AUTOMATION_POSTS
 from .automation_components import SLOW_GETS as AUTOMATION_SLOW_GETS
 from .automation_components import canonical
 from .automation_components import components as automation_components
+from .backup_test_components import components as backup_test_components
+from .backup_test_components import posts as backup_test_posts
 from .branding_components import POSTS as BRANDING_POSTS
 from .branding_components import components as branding_components
 from .campaign_settings_components import POSTS as CAMPAIGN_SETTINGS_POSTS
@@ -2177,6 +2179,7 @@ def component_origin():
     responses.update(live_status_components(context, admin))
     responses.update(in_place_commands_components(context, admin))
     responses.update(campaign_test_components(context, admin))
+    responses.update(backup_test_components(context, admin))
     responses.update(family_test_components(context, admin))
     responses.update(upload_defaults_components(context, admin))
     responses.update(settings_components(context, admin))
@@ -2198,6 +2201,7 @@ def component_origin():
         | DELIVERY_POSTS
         | in_place_commands_posts(context, admin)
         | campaign_test_posts(context, admin)
+        | backup_test_posts(context, admin)
         | AUTOMATION_POSTS
         | SIGNED_IN_POSTS
         | FOLLOWUP_POSTS

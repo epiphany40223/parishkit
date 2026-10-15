@@ -137,6 +137,9 @@ REVIEW_PAGES = (
 )
 HOSTED = {
     "integration-summary.html": ("integration-settings.html",),
+    # Off-site backups' settled access check (#519): its follow-up re-reads
+    # the settings page's status line.
+    "backup-status-lines.html": ("integration-settings.html",),
     "settings-review.html": REVIEW_PAGES,
     "configuration-request-status.html": REVIEW_PAGES,
     # Refresh from ParishSoft shows the run it requested (#521).
@@ -333,6 +336,31 @@ def test_campaign_test_send_is_in_place_and_live():
     assert 'href="{{ page_url }}#campaign-test-send"' in follow
     assert "Refresh test results" not in text
     assert "live-status-v1.js" in text
+
+
+def test_backup_test_access_is_in_place():
+    """Off-site backups' Test access posts in place (#519): only the backup
+    page's settings form is data-in-place, naming the status line region,
+    and its Save is marked data-in-place-native so it still submits
+    natively. The settled check's follow-up re-reads the status line in
+    place instead of reloading the page."""
+    text = (TEMPLATES / "integration-settings.html").read_text()
+    form = re.search(
+        r'<form method="post" class="panel" autocomplete="off"[^>]*>', text
+    )
+    assert (
+        "{% if target == 'backup' %} action=\"#integration-status\" "
+        'data-in-place="backup-test"'
+    ) in form.group(0)
+    assert names_region(text, "integration-status")
+    save = re.search(
+        r'\{% button type="submit" name="action" value="preview"[^%]*%\}', text
+    )
+    assert "data-in-place-native" in save.group(0)
+    lines = (TEMPLATES / "backup-status-lines.html").read_text()
+    follow = re.search(r"<a hidden data-live-follow[^>]*>", lines).group(0)
+    assert "data-in-place data-in-place-quiet" in follow
+    assert 'href="{{ follow_url }}#integration-status"' in follow
 
 
 def test_information_reopen_confirmation_shows_only_when_unticking():

@@ -442,7 +442,14 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   heading takes focus. The list updates by itself while a test is on its
   way, and once the test settles a quiet follow-up re-reads only the
   form's region, so Send, the acknowledgement and a fresh preview come
-  back without moving focus; the page has no manual refresh link. One
+  back without moving focus; the page has no manual refresh link.
+  Off-site backups' Test access posts in place as well: its status line
+  is swapped in and watched while the check runs, focus stays on Test
+  access, and the settled check re-reads that line in place, so a folder
+  link typed but not saved is kept. Save in the same form is marked
+  `data-in-place-native` and submits natively; the Integrations Save and
+  Remove forms stay ordinary forms until they move to the review dialog
+  ([#750](https://github.com/epiphany40223/parishkit/issues/750)). One
   request is in flight at a time: a newer choice cancels an older
   read, but a POST that saves a change is never cancelled, and other
   in-place controls and repeats are ignored (the live region says "Still

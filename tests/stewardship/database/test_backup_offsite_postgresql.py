@@ -967,6 +967,30 @@ def page_post(browser, values):
     )
 
 
+def test_test_access_answers_in_place(workspace):
+    """Test access posts in place (#519): the page's form names its status
+    line, Save submits natively, and Test access's redirect is this page,
+    whose status line runs the check. Once it settles, the passive status
+    read's follow-up re-reads that line in place rather than reloading."""
+    browser, _ = signed_in()
+    page = browser.get(URL).content.decode()
+    form = re.search(r'<form [^>]*data-in-place="backup-test"[^>]*>', page).group(0)
+    assert 'action="#integration-status"' in form
+    save = re.search(r'<button [^>]*value="preview"[^>]*>', page).group(0)
+    assert "data-in-place-native" in save
+    response = post(browser, URL, {"action": "test", "target": LINK})
+    assert (response.status_code, response["Location"]) == (302, URL)
+    probe = BackupDriveProbe.objects.get()
+    assert b"data-live-pending" in browser.get(URL).content
+    BackupDriveProbe.objects.filter(pk=probe.pk).update(
+        state="failed", failure_kind="permission", completed_at=database_now_sql()
+    )
+    status = browser.get(URL + "status/").content.decode()
+    follow = re.search(r"<a hidden data-live-follow[^>]*>", status).group(0)
+    assert "data-in-place data-in-place-quiet" in follow
+    assert f'href="{URL}#integration-status"' in follow
+
+
 def test_test_access_refusals_say_what_to_fix(workspace):
     """A missing or wrong folder link names the problem, not "Check your entries"."""
     browser, _ = signed_in()
