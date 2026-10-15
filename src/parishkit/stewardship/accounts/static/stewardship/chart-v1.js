@@ -82,7 +82,8 @@
       // description; name it by the chart's title instead (the summary is
       // its description). It takes focus so a keyboard or screen-reader user
       // hears that name and summary; tooltips follow only the pointer, so
-      // those users get the exact values from the table below the chart.
+      // those users get the exact values from the table below the chart,
+      // or, where the chart draws its values, from each mark's name.
       view.setAttribute("aria-label", view.dataset.chartTitle || "");
       view.tabIndex = 0;
       view.style.minHeight = "";

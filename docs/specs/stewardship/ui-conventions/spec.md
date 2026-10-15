@@ -211,7 +211,8 @@ The UI meets WCAG 2.2 AA: semantic landmarks, labels and instructions, keyboard
 operation, visible focus, sufficient contrast, error summaries with field
 links, non-color-only change indicators, reduced-motion support, and accessible
 table/chart alternatives. Generated PDFs use tagged structure where the chosen
-renderer supports it; every chart has an equivalent data table.
+renderer supports it; every chart has an equivalent data table or draws
+its values in the chart ([chart engine](../reports/spec.md#chart-engine)).
 
 A person never sees raw JSON. Request errors use closed, server-owned
 messages. Scripts that ask for JSON (`Accept: application/json`, or any
@@ -253,9 +254,14 @@ small ES5 feature check reveals it and never alters the form.
 [chart engine](../reports/spec.md#chart-engine).
 
 All charts have title, legend, labeled axes with units, accessible color/line
-patterns, hover/focus values, and equivalent data tables. They download as PNG
-or PDF. Dollar/count series on one chart use separate labeled axes rather than
-comparing unlike units on one scale.
+patterns, hover/focus values, and equivalent data tables or values drawn in
+the chart ([chart engine](../reports/spec.md#chart-engine)). They download as
+PNG or PDF. Dollar/count series on one chart use separate labeled axes rather
+than comparing unlike units on one scale.
+A chart's caption never repeats figures its table, legend or drawn values
+already show; it keeps only what they don't, such as a scope note, and the
+chart keeps its accessible name and description
+([chart engine](../reports/spec.md#chart-engine)).
 
 ## Admin portal interaction
 
