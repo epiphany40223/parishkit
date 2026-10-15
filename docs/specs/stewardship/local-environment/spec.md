@@ -1339,7 +1339,11 @@ The full-size rehearsal (BG-12 PR 4; the
 is the how-to) adds:
 
 - it runs in a throwaway instance that forwards no port, never in the
-  day-to-day one, and its mail goes only to that instance's Mailpit;
+  day-to-day one: `vm delete`, `compare` and `rehearse --full` refuse any
+  instance whose configuration lacks the marker `vm create --rehearsal`
+  writes, and its mail goes only to that instance's Mailpit;
+- `compare` labels each invocation's runs with a new run id and fails when
+  either side fails or is refused;
 - its further writes are the ones an Administrator and Families make: a
   pause and a resume through the delivery-control commands, the resume's
   sender test (a sample to the Testing recipient), and the probed Families'

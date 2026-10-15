@@ -194,9 +194,11 @@ upload_host_script() {
 }
 
 confirm_instance_name() {
-    # Deleting the root needs the operator to type the instance name.
-    local typed
-    echo "This removes the local deployment's containers and runtime root in $vm" >&2
+    # confirm_instance_name [WHAT]: deleting needs the operator to type the
+    # instance name. WHAT says what goes (default: the deployment's root).
+    local typed what="This removes the local deployment's containers and runtime root in $vm"
+    [ $# -eq 0 ] || what=$1
+    echo "$what" >&2
     printf 'Type the instance name (%s) to continue: ' "$vm" >&2
     read -r typed
     [ "$typed" = "$vm" ] || refuse "Not confirmed; nothing changed."
@@ -209,6 +211,20 @@ check_families() {
 # The full-size rehearsal's options (BG-12 PR 4): pause after N messages
 # (0: none) for S seconds, a Family probe every P seconds (0: none).
 full=0 pause_after=300 pause_seconds=60 probe_every=15
+# The line `vm create --rehearsal` instances carry in their configuration
+# (deploy/stewardship/lima-rehearsal.yaml; Lima keeps a verbatim copy at
+# $LIMA_HOME/<instance>/lima.yaml).
+rehearsal_marker="# parishkit-local: throwaway rehearsal instance"
+require_rehearsal_vm() {
+    # Refuse a destructive or full-size command anywhere but a throwaway
+    # instance made by `vm create --rehearsal`: never the default instance,
+    # and never the day-to-day one under any other name.
+    [ "$vm" != parishkit-local ] ||
+        refuse "Refusing on the default instance '$vm': this runs only on a VM made by 'vm create --rehearsal' (set PARISHKIT_LOCAL_VM)."
+    grep -qxF "$rehearsal_marker" "$lima_home/$vm/lima.yaml" 2>/dev/null ||
+        refuse "Refusing on '$vm': it was not made by 'vm create --rehearsal' (no rehearsal marker in $lima_home/$vm/lima.yaml)."
+}
+
 check_rehearsal_options() {
     # The rehearse and compare options shared with the VM half, checked here
     # before anything reaches the VM, then normalized to base 10.
@@ -286,7 +302,8 @@ case "$command" in
                 # container, image and volume inside it go. The operator types
                 # the name, as for a wipe.
                 [ -n "$(vm_status)" ] || refuse "No Lima instance '$vm'."
-                confirm_instance_name
+                require_rehearsal_vm
+                confirm_instance_name "This deletes the Lima instance $vm itself: its disk, and every container, image, volume and snapshot in it"
                 limactl delete --force "$vm" ;;
             *) usage ;;
         esac ;;
@@ -393,6 +410,7 @@ case "$command" in
         if [ "$full" = 1 ] && [ "$send_only" = 1 ]; then
             refuse "--send-only does not combine with the full-size options."
         fi
+        [ "$full" = 0 ] || require_rehearsal_vm
         require_running
         mkdir -p "$state"
         if [ "$full" = 0 ]; then
@@ -427,35 +445,46 @@ case "$command" in
             esac
         done
         [ "${#refs[@]}" -eq 2 ] || refuse "compare needs exactly two --ref options (baseline first)."
-        [[ $label =~ ^[A-Za-z0-9._-]{1,30}$ ]] || refuse "--label must be 1-30 letters, digits, '.', '_' or '-'."
+        [[ $label =~ ^[A-Za-z0-9._-]{1,28}$ ]] || refuse "--label must be 1-28 letters, digits, '.', '_' or '-'."
         if ! [[ $latency =~ ^[0-9]{1,4}$ ]] || [ "$((10#$latency))" -gt 5000 ]; then
             refuse "--smtp-latency-ms must be a whole number from 0 to 5000."
         fi
         latency=$((10#$latency))
         check_rehearsal_options
+        require_rehearsal_vm
         require_running
         run_remote has-snapshot seeded || refuse "No seeded snapshot; seed and run: $0 snapshot --seeded"
         mkdir -p "$state"
+        # One run id per invocation: each side's label is new, so the VM
+        # half's pointer to a label's latest run can only name this
+        # invocation's run, never an earlier compare's.
+        run_id=$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')
         {
             pack_checkout
             run_remote build "$tag"
             harness=$tag
-            side=a
+            side=a failed=""
             # pack_checkout builds $ref when it is set: the harness above is
             # this work tree (ref still empty), each side its own commit.
             for ref in "${refs[@]}"; do
-                echo "==> $label-$side: $ref"
+                echo "==> $label-$run_id-$side: $ref"
                 run_remote reset seeded
                 pack_checkout
                 run_remote build "$tag"
                 upload_host_script
                 run_remote deploy "$tag" 0 "$host_remote" on "$latency"
-                # A failed run still leaves its files for the comparison.
-                run_remote rehearse "$due_in" 0 "$limit" "$label-$side" "$pause_after" \
-                    "$pause_seconds" "$probe_every" "$harness" || true
+                # A failed or refused run is remembered; the comparison still
+                # prints what both sides left, then the command fails.
+                run_remote rehearse "$due_in" 0 "$limit" "$label-$run_id-$side" "$pause_after" \
+                    "$pause_seconds" "$probe_every" "$harness" || failed+=" $side"
                 side=b
             done
-            run_remote compare "$harness" "$label-a" "$label-b"
+            run_remote compare "$harness" "$label-$run_id-a" "$label-$run_id-b" || failed+=" compare"
+            if [ -n "$failed" ]; then
+                echo "compare $run_id FAILED:$failed (see the runs above)" >&2
+                exit 1
+            fi
+            echo "compare $run_id passed on both sides"
         } 2>&1 | tee -a "$state/compare.log" ;;
     spike)
         # The launch-day spike check on a seeded deployment (developer guide,

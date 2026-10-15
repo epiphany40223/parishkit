@@ -6,6 +6,9 @@
 # deployment's 8443 and 8025 (the rehearsal's probes and Mailpit reads run
 # inside the VM), and its disk is smaller. `vm delete` removes it with every
 # container, image and volume inside it.
+# The next line marks a throwaway instance; tools/stewardship-local.sh runs
+# `vm delete`, `compare` and `rehearse --full` only on an instance carrying it.
+# parishkit-local: throwaway rehearsal instance
 vmType: vz
 arch: aarch64
 cpus: 4

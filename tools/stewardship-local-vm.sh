@@ -1125,8 +1125,10 @@ daily_headroom() {
     # campaign's earlier Initial and Reminder messages (a Family emailed at
     # two addresses counts twice).
     local limit reserved sent candidates per recipients room
-    limit=$(image_constant parishkit.stewardship.jobs.family_mail_dispatch DAILY_SEND_LIMIT 1800)
-    reserved=$(image_constant parishkit.stewardship.jobs.family_mail_dispatch RESERVED_SENDS 200)
+    # No fallback: an image whose constants moved must not be checked
+    # against stale numbers, so a missing constant refuses below.
+    limit=$(image_constant parishkit.stewardship.jobs.family_mail_dispatch DAILY_SEND_LIMIT)
+    reserved=$(image_constant parishkit.stewardship.jobs.family_mail_dispatch RESERVED_SENDS)
     sent=$(psql_query "SELECT public.stewardship_family_daily_sends_v1()")
     candidates=$(psql_query "SELECT count(*) FROM stewardship_family_campaign f
         JOIN stewardship_system_configuration r ON r.current_campaign_id = f.campaign_id
@@ -1137,7 +1139,7 @@ daily_headroom() {
         FROM stewardship_outbox_message m JOIN stewardship_outbox_render r ON r.id = m.render_id
         WHERE m.purpose IN ('initial', 'reminder')")
     [[ $limit =~ ^[0-9]+$ && $reserved =~ ^[0-9]+$ && $sent =~ ^[0-9]+$ && $candidates =~ ^[0-9]+$ && $per =~ ^[0-9]+$ ]] ||
-        refuse "Could not read the daily sending limit's inputs; refusing."
+        refuse "Could not read the daily sending limit's inputs (DAILY_SEND_LIMIT '$limit', RESERVED_SENDS '$reserved' from the deployed image); refusing."
     room=$(( limit - reserved - sent ))
     recipients=$(( (candidates * per + 99) / 100 ))
     echo "    daily sending limit: $sent recipients in the last 24 hours, room for $room; about $candidates candidates, $recipients recipients"
@@ -1178,6 +1180,16 @@ accepted_since() {
     fi
 }
 
+step_limit() {
+    # step_limit WANTED STARTED LIMIT: a control step's time limit, WANTED
+    # seconds but no more than what is left of the wait that began at
+    # STARTED with LIMIT seconds (at least 60), so a step cannot carry the
+    # run past its own deadline.
+    local left=$(( $3 - ($(date -u +%s) - $2) ))
+    [ "$left" -ge 60 ] || left=60
+    [ "$1" -le "$left" ] && echo "$1" || echo "$left"
+}
+
 wait_with_pause() {
     # wait_with_pause DUE LIMIT_SECONDS: wait for the send to settle (as
     # `settled`), pausing it once PAUSE_AFTER messages have arrived and
@@ -1195,7 +1207,7 @@ wait_with_pause() {
         fi
         if [ "$pause_after" -gt 0 ] && [ -z "$paused_at" ] && [ "$(accepted_since)" -ge "$pause_after" ]; then
             step "Pausing the campaign's mail after $pause_after messages (for ${pause_seconds}s)"
-            if ! harness_step 300 pause; then
+            if ! harness_step "$(step_limit 300 "$started" "$limit")" pause; then
                 echo "FAILED: the pause step; the run stops here (its report fails)" >&2
                 return 1
             fi
@@ -1204,7 +1216,11 @@ wait_with_pause() {
         elif [ -n "$paused_at" ] && [ ! -e "$rehearsal_out/resume.json" ] &&
             [ $(( $(date -u +%s) - paused_at )) -ge "$pause_seconds" ]; then
             step "Resuming the campaign's mail (sender test first, as the page requires)"
-            if ! harness_step 1500 resume; then
+            # The resume's three inner waits (rehearsal.CONTROL_WAIT_SECONDS,
+            # 600 s each) fit inside its outer limit, so an inner wait logs
+            # what it waited for before the outer kill could fire; both are
+            # capped by what is left of this wait's own limit.
+            if ! harness_step "$(step_limit 2100 "$started" "$limit")" resume; then
                 # Left paused: a throwaway deployment's mail stays held until
                 # `reset --seeded`; the run stops rather than wait it out.
                 echo "FAILED: the resume step; the campaign's mail stays paused and the run stops here (its report fails)" >&2
