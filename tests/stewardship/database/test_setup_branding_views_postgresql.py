@@ -162,6 +162,8 @@ def test_setup_logo_kept_again_after_back_and_a_stale_form_says_reload(request):
         assert stale.status_code == 400
         assert "<h1>This page is out of date</h1>" in body
         assert "the page changed after you opened it" in body
-        assert "Reload the page, then try again." in body
+        # Reload would post the same form again: open the page again.
+        assert "Open the page again, then try again." in body
+        assert f'<a href="{url}">Return to the previous page</a>' in body
         assert "Check your entries" not in body and "unexpected data" not in body
         assert BrandingBundle.objects.count() == 1

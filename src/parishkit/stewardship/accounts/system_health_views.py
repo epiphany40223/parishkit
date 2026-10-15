@@ -41,6 +41,7 @@ from parishkit.stewardship.system_health import (
     read_health,
 )
 from parishkit.stewardship.web.contracts import ErrorCode, filters
+from parishkit.stewardship.web.refusals import refusal_text, unexpected_fields
 
 from .admin_editing import editable_configuration
 from .authentication import runtime
@@ -346,7 +347,7 @@ def _act(request):
         service = runtime()
         try:
             if action not in _ACTION_FIELDS:
-                raise ValueError("Invalid System health action step.")
+                raise unexpected_fields()
             _closed(request, _ACTION_FIELDS[action])
             result = _step(action, request, service)
         except FreshAuthenticationRequired:
@@ -364,8 +365,9 @@ def _act(request):
             # A ValueError too, but the system's configuration, not the
             # form: the outer handler answers it as unavailable (503).
             raise
-        except ValueError:
-            result = {"refused": "invalid"}
+        except ValueError as error:
+            # A stale form's unexpected fields say so in the region (#1401).
+            result = {"refused": "invalid", "refusal_text": refusal_text(error)}
         if result and "refused" in result:
             result["allow"] = allow
             status = _REFUSALS[result["refused"]]

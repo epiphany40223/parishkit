@@ -10,6 +10,7 @@ from django.db import DatabaseError, IntegrityError, transaction
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import (
@@ -33,7 +34,7 @@ from parishkit.stewardship.web.contracts import (
     ErrorCode,
     expected_version,
 )
-from parishkit.stewardship.web.refusals import unexpected_fields
+from parishkit.stewardship.web.refusals import refusal_text, unexpected_fields
 from parishkit.stewardship.web.tables import (
     window_table,
 )
@@ -93,29 +94,21 @@ def _database_error(error):
     return _error(ErrorCode.UNAVAILABLE, 503)
 
 
-def _refusal_text(error):
-    """A user-facing refusal's reviewed explanation and fix, else ``None``.
-
-    Only ``web.refusals`` types carry one (static, server-owned text); any
-    other exception keeps the closed message for its code.
-    """
-    refusal = getattr(error, "refusal", None)
-    if refusal is None:
-        return None
-    return " ".join(str(part) for part in (refusal.message, refusal.fix) if part)
-
-
-def _error(code, status, error=None):
+def _error(code, status, error=None, back=None):
     """Render fixed, accessible recovery without submitted evidence or DB chrome.
 
     In particular, an unavailable database must not be queried a second time
     by the Admin navigation context processor while rendering the error. A
     user-facing refusal (``error``, such as an unexpected-fields refusal)
-    shows its own reviewed text instead of the closed message (#1401).
+    shows its own reviewed full-page text instead of the closed message
+    (#1401). ``back`` is the server-owned path of the page the refused form
+    came from, which the page links to so that it can be opened again.
     """
-    message = _refusal_text(error) or MESSAGES[code]
+    message = refusal_text(error, page=True) or MESSAGES[code]
     response = HttpResponse(
-        render_to_string("stewardship/delivery-error.html", {"message": message}),
+        render_to_string(
+            "stewardship/delivery-error.html", {"message": message, "back": back}
+        ),
         status=status,
     )
     response.stewardship_safe_error = True
@@ -209,7 +202,7 @@ def _page(request, template, load, *, subject=None, status=200):
     except UNAVAILABLE:
         return _error(ErrorCode.UNAVAILABLE, 503)
     except ValueError as error:
-        return _error(ErrorCode.INVALID, 400, error)
+        return _error(ErrorCode.INVALID, 400, error, back=request.path)
 
 
 def _next(request, window, has_next):
@@ -363,7 +356,7 @@ def _bulk(request):
     except ValueError as error:
         # A stale form's unexpected fields say so; other invalid input keeps
         # the region's "Enter a note…" guidance (#1401).
-        text = _refusal_text(error)
+        text = refusal_text(error)
         if text:
             return dict(bulk_errors=[dict(message=text)]), 400
         return _bulk_refused("invalid", 400)
@@ -536,7 +529,12 @@ def clear_refusal(request, refusal_id):
     except UNAVAILABLE:
         return _error(ErrorCode.UNAVAILABLE, 503)
     except ValueError as error:
-        return _error(ErrorCode.INVALID, 400, error)
+        return _error(
+            ErrorCode.INVALID,
+            400,
+            error,
+            back=reverse("admin:delivery_refusal", kwargs={"refusal_id": refusal_id}),
+        )
 
 
 @require_POST
@@ -586,7 +584,12 @@ def bounce_report(request, message_id):
     except UNAVAILABLE:
         return _error(ErrorCode.UNAVAILABLE, 503)
     except ValueError as error:
-        return _error(ErrorCode.INVALID, 400, error)
+        return _error(
+            ErrorCode.INVALID,
+            400,
+            error,
+            back=reverse("admin:delivery", kwargs={"message_id": message_id}),
+        )
 
 
 @require_POST
@@ -632,7 +635,12 @@ def resolution_command(request, message_id):
     except UNAVAILABLE:
         return _error(ErrorCode.UNAVAILABLE, 503)
     except ValueError as error:
-        return _error(ErrorCode.INVALID, 400, error)
+        return _error(
+            ErrorCode.INVALID,
+            400,
+            error,
+            back=reverse("admin:delivery", kwargs={"message_id": message_id}),
+        )
 
 
 @require_POST
@@ -669,4 +677,9 @@ def preparation_retry(request, task_id, *, daily=False, weekly=False):
     except UNAVAILABLE:
         return _error(ErrorCode.UNAVAILABLE, 503)
     except ValueError as error:
-        return _error(ErrorCode.INVALID, 400, error)
+        return _error(
+            ErrorCode.INVALID,
+            400,
+            error,
+            back=reverse("admin:background_task_page", kwargs={"task_id": task_id}),
+        )

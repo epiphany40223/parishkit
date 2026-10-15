@@ -1105,7 +1105,11 @@ def test_preparation_retry_form_preserves_failed_task_and_hides_stale_action(
             )
             assert stale.status_code == 400
             assert b"the page changed after you opened it" in stale.content
-            assert b"Reload the page, then try again." in stale.content
+            assert b"Open the page again, then try again." in stale.content
+            assert (
+                f'<a href="{page_path}">Return to the previous page</a>'.encode()
+                in stale.content
+            )
             assert b"Check this value." not in stale.content
             for _ in range(2):
                 result = browser.post(

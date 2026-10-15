@@ -34,6 +34,12 @@ class Refusal:
     refusal whose status does not describe it, such as a page refused
     because of the deployment's state rather than an out-of-date form.
     Scripts have no heading, so it is not part of :meth:`as_dict`.
+
+    ``page_fix`` replaces ``fix`` on the browser error page that answers a
+    form's POST, for a fix that would not work there: on that page the
+    browser's Reload sends the same refused form again, while a dialog or
+    in-place region (which reads ``fix`` from the JSON) is still on the
+    page it can reload.
     """
 
     message: str
@@ -41,6 +47,7 @@ class Refusal:
     link: str | None = None
     link_label: str | None = None
     title: str | None = None
+    page_fix: str | None = None
 
     def as_dict(self):
         """JSON-safe fields for scripts; the link is a same-origin path."""
@@ -58,10 +65,20 @@ class UserFacing:
 
     ``link`` must be a server-owned same-origin path (for example from
     ``reverse``); ``link_label`` names where it goes. ``title`` is the page's
-    own heading, when the closed category's would mislead.
+    own heading, when the closed category's would mislead; ``page_fix`` the
+    fix a POST's error page shows instead of ``fix`` (see ``Refusal``).
     """
 
-    def __init__(self, message, *, fix=None, link=None, link_label=None, title=None):
+    def __init__(
+        self,
+        message,
+        *,
+        fix=None,
+        link=None,
+        link_label=None,
+        title=None,
+        page_fix=None,
+    ):
         """Validate the fix link and keep the refusal's reviewed text."""
         if link is not None and (
             type(link) is not str or not link.startswith("/") or link.startswith("//")
@@ -70,7 +87,21 @@ class UserFacing:
         if (link is None) != (link_label is None):
             raise TypeError("A refusal link needs a label, and a label a link.")
         super().__init__(str(message))
-        self.refusal = Refusal(message, fix, link, link_label, title)
+        self.refusal = Refusal(message, fix, link, link_label, title, page_fix)
+
+
+def refusal_text(error, *, page=False):
+    """A user-facing refusal's explanation and fix as one line, else ``None``.
+
+    For pages and regions that show their own fixed text and only a
+    ``web.refusals`` type's static, reviewed text instead. ``page`` picks
+    the full-page fix (``Refusal.page_fix``) when there is one.
+    """
+    refusal = getattr(error, "refusal", None)
+    if refusal is None:
+        return None
+    fix = (refusal.page_fix if page else None) or refusal.fix
+    return " ".join(str(part) for part in (refusal.message, fix) if part)
 
 
 class UserFacingError(UserFacing, ValueError):
@@ -141,12 +172,17 @@ def stale_page():
 def unexpected_fields():
     """The standard refusal for a form posted with fields it does not have.
 
-    A field the form does not have, or one sent twice, almost always means a
-    page left open while it changed (a release changed the form) or a stale,
-    cached copy of it: nothing the person typed is wrong, and reloading is
-    the fix (#1401). So the page is titled for that, rather than the
-    ``invalid`` category's "Check your entries", and the wording says that
-    nothing was done. The status (400) and the JSON code stay ``invalid``.
+    A field the form does not have, a field sent twice, or a hidden or
+    always-sent field left out (the Admin portal requires JavaScript, so a
+    required checkbox is always present too) almost always means a page left
+    open while it changed (a release changed the form), a stale, cached copy
+    of it, or a hand-made post: nothing the person typed is wrong (#1401).
+    So the page is titled for that, rather than the ``invalid`` category's
+    "Check your entries", and the wording says that nothing was done. A
+    dialog or in-place region is told to reload; the full error page that
+    answers a form's POST, where Reload would send the same form again, is
+    told to open the page again, and its "Return to the previous page" link
+    does that. The status (400) and the JSON code stay ``invalid``.
     """
     return UserFacingError(
         _(
@@ -154,6 +190,7 @@ def unexpected_fields():
             "expect, which usually means the page changed after you opened it."
         ),
         fix=_("Reload the page, then try again."),
+        page_fix=_("Open the page again, then try again."),
         title=_("This page is out of date"),
     )
 
