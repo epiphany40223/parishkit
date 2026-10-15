@@ -4426,9 +4426,14 @@ fields:
   the reason in a line under the roles that is reserved while empty (#563);
   the server refuses that change anyway.
 
-**Review** shows each changed value, before and after, and **Apply** records
-one configuration change. Review and Apply follow the [review dialog](../ui-conventions/spec.md#review-dialog):
-Review is unavailable until a value changes, and once the change is applied
+On Edit, **Review** shows each changed value, before and after. On New, the
+button reads **Add the user** and its dialog, "Add this user?", is a
+[confirmation](../ui-conventions/spec.md#review-dialog) (#1356), since every
+value is on the form behind it: one sentence says the user is added and can
+then sign in with the account of that address, and the dialog adds only the
+warning when the new user is an Administrator. **Apply** records one
+configuration change. Review and Apply follow the [review dialog](../ui-conventions/spec.md#review-dialog):
+Edit's Review is unavailable until a value changes, and once the change is applied
 the reader returns to Users, whose status line says what was applied. An unknown
 `<user>` (for example, one deleted meanwhile) is refused, even from an old
 link.

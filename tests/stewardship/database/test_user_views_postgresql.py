@@ -191,8 +191,11 @@ def test_new_user_defaults_to_ministry_leader_and_applies_audited(converted):
         {"email": " New.Person@Example.org ", "name": " Person, New ", "role": "staff"},
     )
     text = reviewed.content.decode()
-    assert "new.person@example.org" in text and "Person, New" in text
-    assert "Staff" in text and "This adds a new user." in text
+    # A confirmation (#1356): the sentence, none of the form's values, and
+    # no Administrator warning for Staff.
+    assert '<p id="user-review-summary">This adds the user' in text
+    assert "new.person@example.org" not in text and "Person, New" not in text
+    assert "Staff" not in text and "Administrator, who can see" not in text
     request = user_change(
         store,
         browser,
@@ -209,6 +212,24 @@ def test_new_user_defaults_to_ministry_leader_and_applies_audited(converted):
     assert not PolicySecurityEvent.objects.filter(
         target="new.person@example.org"
     ).exists()
+
+
+def test_a_new_administrator_is_confirmed_with_its_warning(converted):
+    """New user's confirmation keeps the one thing the form does not say
+    (#1356): the person becomes an Administrator, whom every Administrator
+    is told about. Nothing is recorded by the Review."""
+    store, browser = converted
+    reviewed = review(
+        store,
+        browser,
+        NEW,
+        {"email": "boss@example.org", "name": "Boss, Bo", "role": "administrator"},
+    )
+    assert reviewed.status_code == 200
+    text = reviewed.content.decode()
+    assert '<p id="user-review-summary">This adds the user' in text
+    assert "This makes the person an Administrator" in text
+    assert "boss@example.org" not in text and "boss@example.org" not in users(store)
 
 
 def test_new_user_refusals_are_shown_at_their_fields(converted):

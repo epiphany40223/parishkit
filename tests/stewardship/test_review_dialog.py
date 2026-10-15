@@ -158,7 +158,42 @@ def test_the_user_review_is_a_fragment_for_the_dialog():
     assert re.search(r'name="preview" value="signed" data-review-preview', text)
     assert "<form" not in text and "<h1" not in text and "<html" not in text
     assert "Return to" not in text and "Cancel" not in text
-    assert "new@example.org" in text and "Smith, Ann" in text
+
+
+def test_new_user_confirms_without_repeating_the_form():
+    """New user's Review is a confirmation (#1356): one sentence the dialog
+    names as its description, and none of the form's values; making the
+    person an Administrator keeps its warning."""
+    text = review_fragment()
+    assert '<p id="user-review-summary">This adds the user' in text
+    assert "new@example.org" not in text and "Smith, Ann" not in text
+    assert "Staff" not in text and "(none)" not in text and "<table" not in text
+    records = [user("admin@example.org", "administrator", "Admin, Ada")]
+    (change,), _patch = plan_changes(
+        records,
+        [{"email": "new@example.org", "name": "Smith, Ann", "role": "administrator"}],
+    )
+    granted = render_to_string(
+        "stewardship/user-review.html", {"change": change, "preview": "signed"}
+    )
+    assert "This makes the person an Administrator" in granted
+    source = (TEMPLATES / "user-entry.html").read_text(encoding="utf-8")
+    assert 'translate "Add the user" %}{% endbutton %}' in source
+    assert 'translate "Add this user?" as review_title' in source
+    assert 'describedby=new|yesno:"user-review-summary,"' in source
+
+
+def test_edit_user_still_reviews_each_changed_value():
+    """Edit user (class A2, a later part of #1356) keeps Now and After."""
+    records = [user(), user("ann@example.org", "staff", "Smith, Ann")]
+    (change,), _patch = plan_changes(
+        records, [{"id": records[1]["id"], "name": "Jones, Ann", "role": "staff"}]
+    )
+    text = render_to_string(
+        "stewardship/user-review.html", {"change": change, "preview": "signed"}
+    )
+    assert "Smith, Ann" in text and "Jones, Ann" in text
+    assert "user-review-summary" not in text
 
 
 def test_the_leader_review_offers_apply_only_with_someone_to_import():

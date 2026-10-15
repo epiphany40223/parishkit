@@ -1151,8 +1151,8 @@ dialog is decided on [#750](https://github.com/epiphany40223/parishkit/issues/75
 Current state, to be converted: Users' New user, Edit user and Import
 Ministry leaders, New and Edit scheduled email,
 [Campaign settings](../admin-portal/spec.md#campaign-settings-page) (#1119),
-Share options, Campaign images, Parish logos and Create the campaign (a
-confirmation under #1356) use the dialog. Parish settings and No-reminders
+Share options, Campaign images, Parish logos and Create the campaign use the
+dialog; Create the campaign and New user are confirmations under #1356. Parish settings and No-reminders
 WorkGroup show the in-place
 review panel of #532 and #750
 ([in-place controls](#in-place-controls)); the other editors use separate
