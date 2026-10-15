@@ -1,15 +1,15 @@
 """A real backup restored into a fresh PostgreSQL, with the image's own tools.
 
 The automated restore test (#305, #392): after the operational scenario has
-completed the setup wizard (a promoted ParishSoft snapshot, a Family campaign
-with a sealed Family code, keyrings and schedules), this module takes a
-backup exactly as the host's cron does, then follows the backup runbook's
-restore with the same image: open the set with the kept key, check it with
-``restore-check``, compare its schema with ``restore-compare`` on a scratch
-server, and restore it into a new, empty PostgreSQL as a replacement host
-does (``database-roles``, then step 6's commands). It passes only when every
-table holds the rows it held at the backup and ``web`` starts and reports
-ready on the restored database.
+completed the setup wizard (a promoted ParishSoft snapshot with its Families,
+the setup completion, sealed credentials and keyrings; setup creates no
+campaign since #142), this module takes a backup exactly as the host's cron
+does, then follows the backup runbook's restore with the same image: open
+the set with the kept key, check it with ``restore-check``, compare its
+schema with ``restore-compare`` on a scratch server, and restore it into a
+new, empty PostgreSQL as a replacement host does (``database-roles``, then
+step 6's commands). It passes only when every table holds the rows it held
+at the backup and ``web`` starts and reports ready on the restored database.
 
 Everything runs against the scenario's disposable Compose project and named
 volume, with a throwaway key pair and synthetic data only.
@@ -38,16 +38,17 @@ ROW_COUNTS = (
     "WHERE s.nspname='public' AND c.relkind IN ('r','p') ORDER BY 1"
 )
 # Whole-row digests of a few tables whose values matter most to a restore:
-# the applied migrations, the campaign, each Family's sealed code and the
-# promoted source snapshot. Equal digests mean equal rows, not just counts.
+# the applied migrations, the setup completion, the promoted source
+# snapshot and its Families. Equal digests mean equal rows, not just counts.
+# (Setup creates no campaign since #142, so campaign tables would be empty.)
 CONTENT = "SELECT " + ",".join(
     f"(SELECT md5(coalesce(string_agg(t::text, '|' ORDER BY t::text), '')) "
     f"FROM public.{table} t)"
     for table in (
         "django_migrations",
-        "stewardship_campaign",
-        "stewardship_family_campaign",
+        "stewardship_setup_completion",
         "stewardship_source_snapshot",
+        "stewardship_snapshot_family",
     )
 )
 # The runbook's flags for the release image run on the operator's machine.
@@ -488,8 +489,10 @@ def check_backup_restore(
     stop_online(file, project)
     before = operator_sql(file, project, configuration, ROW_COUNTS)
     counts = dict(line.split("=") for line in before.splitlines())
-    # Not a vacuous comparison: the wizard's Family and campaign rows exist.
-    assert int(counts["stewardship_family_campaign"]) >= 1, counts
+    # Not a vacuous comparison: the system-only setup (#142) leaves its
+    # completion and the promoted snapshot's Family rows.
+    assert int(counts["stewardship_setup_completion"]) == 1, counts
+    assert int(counts["stewardship_snapshot_family"]) >= 1, counts
     assert int(counts["django_migrations"]) > 0, counts
     proof = operator_sql(file, project, configuration, invariants)
     content = operator_sql(file, project, configuration, CONTENT)

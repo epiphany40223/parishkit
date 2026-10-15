@@ -37,7 +37,8 @@
 #                                    (default 200) open their emailed links and submit
 #                                    through Caddy from S sources (default 8), beside a
 #                                    new Reminder send with --during-send
-#   wizard                           complete the setup wizard unattended
+#   wizard                           complete the setup wizard unattended, then
+#                                    create the campaign and load its Families
 #   status                           VM, services, Docker and VM disk use
 #   down                             stop the services; never removes data
 #   sign-in --email E                print a local test sign-in link

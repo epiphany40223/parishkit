@@ -141,17 +141,3 @@ def test_the_typed_pattern_accepts_what_the_server_accepts(typed):
     server's ``typed.strip() == "Production"`` for ordinary input."""
     (pattern,) = re.findall(r'pattern="([^"]+)"', confirmation_page())
     assert bool(re.fullmatch(pattern, typed)) == (typed.strip() == "Production")
-
-
-def test_setup_reset_is_an_acknowledgment():
-    """Reset all pages and emails waits for its tick, with its own hint."""
-    html = render_to_string(
-        "stewardship/setup-content.html",
-        {"draft": {"status": {"version": 3}}, "groups": []},
-    )
-    box = tag(html, r'<input type="checkbox" name="confirm"[^>]*>')
-    assert "data-acknowledgment" in box
-    assert (
-        'data-missing-hint="Tick the box to confirm replacing every page and email."'
-        in box
-    )

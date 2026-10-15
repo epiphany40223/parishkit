@@ -4,10 +4,9 @@
 {% block content %}
 {% include 'stewardship/setup-wizard.html' %}
 <h1>{% translate "Test email" %}</h1>
-{% aboutpage "setup-mail" %}<p>{% translate "Send one fictional sample email to the Testing address to prove that Google Workspace sending works. A test accepted by Google for the current settings is required before setup can finish; after changing any setting, send a new test. Once Google accepts it, Continue takes you to the next step." %}</p>
-<p>{% translate "If a selected template is empty, a generic fictional readiness sample is used." %}</p>
+{% aboutpage "setup-mail" %}<p>{% translate "Send one fixed, fictional test email to the Testing address to prove that Google Workspace sending works. A test accepted by Google for the current settings is required before setup can finish; after changing any setting, send a new test. Once Google accepts it, Continue takes you to the next step." %}</p>
 <p>{% translate "This page checks status without extending your login's idle deadline." %}</p>{% endaboutpage %}
-<p class="notice">{% translate "Testing mode. Send a fictional sample only to the designated Testing recipient. This does not contact parishioners, satisfy a scheduled mailing, or activate the campaign." %}</p>
+<p class="notice">{% translate "Testing mode. The test goes only to the designated Testing recipient. This does not contact parishioners, satisfy a scheduled mailing, or activate the campaign." %}</p>
 <p>{% translate "Test recipient" %}: {{ testing_recipient }}</p>
 <div data-setup-mail data-mail-status-url="{% url 'admin:setup_mail_status' %}" data-mail-revision="{{ draft.status.version }}" data-mail-pending="{{ pending|yesno:'true,false' }}">
 <section class="panel"><h2>{% translate "Send an explicit test" %}</h2>
@@ -15,7 +14,6 @@
 <form method="post" id="setup-test">{% csrf_token %}
 {{ form.preview_token }}{{ form.request_key }}
 {{ form.non_field_errors }}{{ form.preview_token.errors }}{{ form.request_key.errors }}
-<p><label for="{{ form.slot.id_for_label }}">{{ form.slot.label }}</label>{{ form.slot }}{{ form.slot.errors }}</p>
 <p data-mail-uncertain {% if not unknown %}hidden{% endif %}>
 {{ form.acknowledge_unknown }}<label for="{{ form.acknowledge_unknown.id_for_label }}">{{ form.acknowledge_unknown.label }}</label>{{ form.acknowledge_unknown.errors }}</p>
 {% if tested %}<p>{% button variant="secondary" data-mail-send type="submit" disabled=pending %}{% translate "Send another test" %}{% endbutton %}</p>{% endif %}

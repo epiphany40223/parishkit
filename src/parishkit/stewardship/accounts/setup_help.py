@@ -166,7 +166,10 @@ CREDENTIALS = {
     },
 }
 
-CAMPAIGN = {
+# Campaign settings, Create the campaign and the clone page share this help.
+# (It began as the setup wizard's First campaign help; setup collects no
+# campaign since #142.)
+ADMIN_CAMPAIGN = {
     "name": _(
         "A name Families and staff will see, for example “2027 Stewardship Renewal”."
     ),
@@ -176,7 +179,11 @@ CAMPAIGN = {
         "campaign start year if there's no financial period); fill in to "
         "override, for example 2027."
     ),
-    "timezone": _("The first campaign always uses the parish time zone."),
+    "timezone": _(
+        "The time zone for this campaign's dates and scheduled email times, for "
+        "example America/New_York. A new draft starts with the parish time "
+        "zone; change it only if this campaign runs on a different local time."
+    ),
     "start_date": _(
         "The first day Families can respond. Invitations and reminders must be "
         "scheduled between the start and end dates."
@@ -190,8 +197,9 @@ CAMPAIGN = {
         "Ask Members which of the Ministries included below they want to join or leave."
     ),
     "financial_enabled": _(
-        "Ask Families for a pledge for the upcoming financial period, using the "
-        "share options you set up on a later step."
+        "Ask Families for a pledge for the upcoming financial period. After "
+        "saving, use Share options in the Campaign setup menu to set the "
+        "choices Families see for how they will give."
     ),
     "ministry_duids": _(
         "The Ministries Families can choose from. They come from the parish data "
@@ -231,42 +239,10 @@ CAMPAIGN = {
 }
 
 # The shared campaign form's own help for its multi-select lists says how to
-# choose several items. Setup replaces that help with the text above, so the
+# choose several items. The text above replaces that help, so the
 # instructions are repeated after it.
 for name in ("ministry_duids", "fund_duids", "comparison_fund_duids"):
-    CAMPAIGN[name] = format_lazy("{} {}", CAMPAIGN[name], MULTI_SELECT_HELP)
-
-# The Admin Campaign settings and clone pages reuse the setup text, except
-# where setup's wording only fits the first campaign: there the time zone is
-# fixed to the parish's, and share options are set on a later setup step.
-ADMIN_CAMPAIGN = {
-    **CAMPAIGN,
-    "timezone": _(
-        "The time zone for this campaign's dates and scheduled email times, for "
-        "example America/New_York. A new draft starts with the parish time "
-        "zone; change it only if this campaign runs on a different local time."
-    ),
-    "financial_enabled": _(
-        "Ask Families for a pledge for the upcoming financial period. After "
-        "saving, use Share options in the Campaign setup menu to set the "
-        "choices Families see for how they will give."
-    ),
-}
-
-WINDOW = {
-    "timezone": CAMPAIGN["timezone"],
-    "start_date": CAMPAIGN["start_date"],
-    "end_date": CAMPAIGN["end_date"],
-    "overlap_confirmed": CAMPAIGN["overlap_confirmed"],
-}
-
-SHARE = {
-    "label": _(
-        "The text of one choice Families see for how they will give, for "
-        "example “Weekly through online giving”."
-    ),
-    "free_text": _("Also show a text box so the Family can add details."),
-}
+    ADMIN_CAMPAIGN[name] = format_lazy("{} {}", ADMIN_CAMPAIGN[name], MULTI_SELECT_HELP)
 
 CONTENT = {
     "subject": _("The subject line of this email."),

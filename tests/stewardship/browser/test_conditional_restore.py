@@ -132,7 +132,7 @@ def test_campaign_modules_follow_a_restored_tick(page, component_origin):
 
 def test_overlap_confirmation_follows_restored_dates(page, component_origin):
     """A restored campaign end that overlaps the financial period asks again."""
-    page.goto(component_origin + "/setup-schedules-financial")
+    page.goto(component_origin + "/schedule-editor-financial")
     group = page.locator("[data-overlap-confirmation]")
     assert group.is_hidden()
     end = '[name="window-end_date"]'
@@ -144,7 +144,7 @@ def test_overlap_confirmation_follows_restored_dates(page, component_origin):
 
 def test_schedule_rows_follow_a_restored_mail_type(page, component_origin):
     """A restored mail type shows that type's fields and only its emails."""
-    page.goto(component_origin + "/setup-schedules-mail")
+    page.goto(component_origin + "/schedule-editor-mail")
     row = '[name="schedules-1-kind"]'
     weekday = page.locator(
         '[data-schedule-field="weekday"]:has([name="schedules-1-weekday"])'

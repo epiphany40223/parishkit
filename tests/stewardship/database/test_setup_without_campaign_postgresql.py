@@ -10,7 +10,6 @@ sections, as the wizard after #142 saves none.
 # ruff: noqa: F811 -- imported pytest fixtures.
 
 from functools import partial
-from types import SimpleNamespace
 
 import pytest
 
@@ -19,12 +18,12 @@ from parishkit.stewardship.accounts.setup_completion import setup_is_complete
 from parishkit.stewardship.accounts.setup_delivery_models import SetupMailDelivery
 from parishkit.stewardship.accounts.setup_install_models import SetupCompletion
 from parishkit.stewardship.accounts.setup_mail import setup_test_message
-from parishkit.stewardship.accounts.setup_models import SetupAttempt
+from parishkit.stewardship.accounts.setup_models import SetupAttempt, SetupDraftSection
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.readiness_mail import ReadinessMail
 from parishkit.stewardship.source.setup_completion import complete_setup
-from parishkit.stewardship.source.snapshot_models import SourceCurrent
+from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSnapshot
 
 from ..test_setup_forms import VALUES
 from . import test_setup_preview_postgresql as preview
@@ -32,7 +31,6 @@ from .credential_builders import keys
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_configuration_service_postgresql import config_role  # noqa: F401
 from .test_runtime_auth_grants_postgresql import web_login
-from .test_setup_campaign_postgresql import completed
 from .test_setup_final_loading_postgresql import load, prepared, queued
 from .test_setup_loading_postgresql import pages
 from .test_setup_staging_postgresql import setup_service  # noqa: F401
@@ -41,22 +39,10 @@ from .test_source_refreshing_postgresql import fake_provider
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def without_campaign(service, monkeypatch):
-    """The loaded setup draft, with no first-campaign sections at all."""
-    request, attempt = completed(service, monkeypatch)
-    status = SimpleNamespace(attempt_id=attempt.pk, version=attempt.version)
-    return request, status, None, None
-
-
 def test_system_setup_completes_without_a_campaign(
     setup_service, monkeypatch, tmp_path, config_role
 ):
     """No campaign, no Families and no codes; the parish data is still loaded."""
-    from parishkit.stewardship.accounts import setup_preview
-
-    # The back end is switched off until the wizard changes (#142 part b).
-    monkeypatch.setattr(setup_preview, "SYSTEM_ONLY_SETUP", True)
-    monkeypatch.setattr(preview, "with_schedules", without_campaign)
     _, attempt, identifier = prepared(setup_service, monkeypatch, tmp_path)
     # The accepted setup test was the fixed message, not a campaign email.
     sent = SetupMailDelivery.objects.get()
@@ -92,23 +78,35 @@ def test_system_setup_completes_without_a_campaign(
     assert runtime.mode == "testing"
     assert runtime.active_configuration_id == completed_row.activation.configuration_id
     assert SourceCurrent.objects.get().snapshot_id == completed_row.snapshot_id
+    # With no giving window the final load reads no giving (the compose
+    # setup proof, runtime_setup_compose.SETUP_PROOF, expects the same).
+    counts = SourceSnapshot.objects.get(pk=completed_row.snapshot_id).counts
+    assert (counts["pledge"], counts["contribution"]) == (0, 0)
     assert not Campaign.objects.exists()
     assert not FamilyCampaign.objects.exists()
     document = setup_service.store.active().document()["sections"]
     assert not document.get("campaigns") and not document.get("schedules")
 
 
-def test_switched_off_review_still_requires_the_first_campaign(
-    setup_service, monkeypatch
+def test_campaign_sections_saved_before_the_upgrade_are_ignored(
+    setup_service, monkeypatch, tmp_path
 ):
-    """Until the wizard changes, a draft with no campaign cannot be reviewed.
+    """A draft that staged its first campaign before #142 finishes without it.
 
-    Otherwise an Admin could skip the campaign pages and finish setup with no
-    campaign and, before Create the campaign exists, no way to make one.
+    An attempt still collecting when the release that removed the wizard's
+    campaign pages is installed keeps its saved campaign, content and
+    schedule sections, but the review compiles only the system sections.
     """
-    from parishkit.config import ConfigError
     from parishkit.stewardship.accounts.setup_preview import prepare_preview
 
-    request, _, _, _ = without_campaign(setup_service, monkeypatch)
-    with web_login(), pytest.raises(ConfigError):
-        prepare_preview(request, setup_service)
+    request, status, _ = preview.complete_draft(
+        setup_service, monkeypatch, tmp_path, campaign=True
+    )
+    assert SetupDraftSection.objects.filter(
+        attempt_id=status.attempt_id, step="campaign"
+    ).exists()
+    with web_login():
+        document = prepare_preview(request, setup_service)
+    sections = document.compiled.candidate.document()["sections"]
+    assert not sections.get("campaigns") and not sections.get("content")
+    assert not sections.get("schedules")

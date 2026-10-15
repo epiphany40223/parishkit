@@ -14,13 +14,14 @@ production code.
 The module also drives the setup wizard through the same service layer the
 wizard pages call (``begin_setup``, ``save_section``, ``stage_credential``,
 ``start_source_load``, ``prepare_preview``, ``request_sample``,
-``freeze_setup``): a LOCAL-only convenience for an unattended install, since
-the environment is otherwise set up by a developer in the browser.
+``freeze_setup``), and then Create the campaign through that page's own
+form, review and confirmation (``create_campaign``): a LOCAL-only
+convenience for an unattended install, since the environment is otherwise
+set up by a developer in the browser.
 """
 
 import logging
 from dataclasses import dataclass
-from datetime import timedelta
 from importlib import import_module
 from ipaddress import ip_address
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
@@ -649,7 +650,6 @@ def run_wizard(
     *,
     wait,
     fake_key=LOCAL_PARISHSOFT_KEY,
-    campaign_dates,
     attempt_id=None,
 ):
     """Complete the initial setup wizard for the LOCAL deployment unattended.
@@ -658,13 +658,11 @@ def run_wizard(
     the parish, access and mail settings, the ParishSoft credential (the
     fake's key and organization), the source load (the worker loads from the
     fake; ``wait`` blocks until the attempt collects again), the Workspace
-    credential (the mail-catcher document), the first campaign from the
-    loaded catalog with every module enabled, default pages and emails, the
-    Initial schedule, a generated parish logo through the real branding
-    staging, the preview, the sample mail (sent to Mailpit by mail-dispatch)
-    and the final confirmation. The caller then waits for
-    ``setup_is_complete``. The share options are part of the campaign values;
-    the wizard's shares page only reviews them.
+    credential (the mail-catcher document), a generated parish logo through
+    the real branding staging, the preview, the fixed setup test mail (sent
+    to Mailpit by mail-dispatch) and the final confirmation. The caller then
+    waits for ``setup_is_complete``. Setup collects no campaign (#142); the
+    seeder's ``campaign`` step creates it afterwards (``create_campaign``).
     """
     from parishkit.stewardship.accounts.setup_models import SetupAttempt
 
@@ -691,7 +689,7 @@ def run_wizard(
         return "the setup source load"
 
     wait("the setup source load", loaded)
-    wizard_campaign(request, service, attempt_id, campaign_dates=campaign_dates)
+    wizard_branding(request, service, attempt_id)
     return wizard_confirm(request, service, attempt_id, wait=wait)
 
 
@@ -741,100 +739,11 @@ def wizard_collect(request, service, *, fake_key=LOCAL_PARISHSOFT_KEY):
     return attempt_id
 
 
-def campaign_values(catalog, campaign_dates):
-    """The first campaign: every module, the catalog's Ministries and funds."""
-    from parishkit.stewardship.accounts.share_forms import default_share_options
-
-    funds = [int(key) for key, _ in catalog.funds]
-    start, end = campaign_dates
-    return {
-        "name": "Annual stewardship campaign",
-        # The year Families pledge for: the financial period below.
-        "year_label": str(end.year + 1),
-        "timezone": catalog.timezone,
-        "start_date": start.isoformat(),
-        "end_date": end.isoformat(),
-        # The canonical order is alphabetical (EnabledModules.to_list).
-        "modules": ["census", "financial", "ministry"],
-        # Sorted unique DUIDs; the catalog lists Ministries by name.
-        "ministry_duids": sorted({int(key) for key, _ in catalog.ministries}),
-        "financial": {
-            "start": f"{end.year + 1}-01-01",
-            "end": f"{end.year + 1}-12-31",
-            "comparison_start": f"{end.year}-01-01",
-            "comparison_end": f"{end.year}-12-31",
-            "fund_duids": funds[:1],
-            "comparison_fund_duids": funds[1:2] or funds[:1],
-            "overlap_confirmed": False,
-        },
-        "share_options": default_share_options(),
-        "content_versions": {},
-        "additional_information": True,
-    }
-
-
-def wizard_campaign(request, service, attempt_id, *, campaign_dates):
-    """After the load: the first campaign, default content, the Initial, a logo."""
-    from parishkit.stewardship.accounts.content_forms import applicable_slots
-    from parishkit.stewardship.accounts.setup_campaign import campaign_catalog
-    from parishkit.stewardship.accounts.setup_content import (
-        FILL_UNSET,
-        default_updates,
-    )
-    from parishkit.stewardship.accounts.setup_drafts import (
-        save_section,
-        save_sections,
-        view_draft,
-    )
+def wizard_branding(request, service, attempt_id):
+    """After the load: a generated parish logo, saved as the logo page does."""
+    from parishkit.stewardship.accounts.setup_drafts import save_section, view_draft
 
     status = view_draft(request, service, attempt_id).status
-    catalog = campaign_catalog(request, service, attempt_id)
-    campaign = campaign_values(catalog, campaign_dates)
-    status = save_section(
-        request,
-        service,
-        attempt_id,
-        step="campaign",
-        values={"source_result": str(catalog.result_id), "campaign": campaign},
-        expected_version=status.version,
-    )
-    draft = view_draft(request, service, attempt_id)
-    updates = default_updates(
-        draft.sections, campaign, str(attempt_id), which=FILL_UNSET
-    )
-    emails = {
-        f"{kind}_{slot}" for kind, slot in applicable_slots(campaign) if kind == "email"
-    }
-    if not emails <= set(updates):
-        raise SeedWebRefused("The default content left an email template unset.")
-    status = save_sections(
-        request, service, attempt_id, updates=updates, expected_version=status.version
-    )
-    initial = updates["email_initial"]
-    start, _ = campaign_dates
-    status = save_section(
-        request,
-        service,
-        attempt_id,
-        step="schedules",
-        values={
-            "records": [
-                {
-                    "id": str(uuid4()),
-                    "values": {
-                        "campaign_id": str(attempt_id),
-                        "kind": "initial",
-                        "date": (start + timedelta(days=1)).isoformat(),
-                        "time": "10:00:00",
-                        "weekday": None,
-                        "subject": initial["values"]["subject"],
-                        "template_version": initial["id"],
-                    },
-                }
-            ]
-        },
-        expected_version=status.version,
-    )
     bundle = stage_logo(request, service, attempt_id)
     return save_section(
         request,
@@ -843,6 +752,89 @@ def wizard_campaign(request, service, attempt_id, *, campaign_dates):
         step="branding",
         values={"bundle_id": str(bundle)},
         expected_version=status.version,
+    )
+
+
+def campaign_fields(form, campaign_dates):
+    """The Create the campaign form, filled in as an Administrator would.
+
+    Every module, every Ministry the form offers, and the first two funds
+    (the second only for the comparison period, the first again when there
+    is one fund). ``form`` is the unbound creation form, whose initial
+    values (the Parish timezone and the applied configuration's digest) are
+    kept; ``campaign_dates`` is the campaign's (start, end).
+    """
+    funds = [value for value, _ in form.fields["fund_duids"].choices]
+    start, end = campaign_dates
+    return {
+        "name": "Annual stewardship campaign",
+        # The year Families pledge for: the financial period below.
+        "year_label": str(end.year + 1),
+        "timezone": form.initial["timezone"],
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+        "census": "on",
+        "ministry": "on",
+        "financial_enabled": "on",
+        "ministry_duids": [value for value, _ in form.fields["ministry_duids"].choices],
+        "financial_start": f"{end.year + 1}-01-01",
+        "financial_end": f"{end.year + 1}-12-31",
+        "comparison_start": f"{end.year}-01-01",
+        "comparison_end": f"{end.year}-12-31",
+        "fund_duids": funds[:1],
+        "comparison_fund_duids": funds[1:2] or funds[:1],
+        "additional_information": "on",
+        "base_digest": form.initial["base_digest"],
+    }
+
+
+def create_campaign(request, service, campaign_dates):
+    """Create the deployment's campaign through Create the campaign (#142).
+
+    The page's own steps: its admission (no campaign may exist), its form
+    over the current source's Ministries and funds, its Review
+    (``creation_review``, which adds the default text for every page and
+    email) and its Apply (``confirm_intent`` with the page's salt and
+    confirmation scope). Returns the configuration request's status; the
+    configuration installer then applies it, which makes the campaign
+    current. Its Families and codes come from the full refresh the caller
+    requests afterwards, as the page's "Load the campaign's ParishSoft data"
+    does.
+    """
+    from django.urls import reverse
+
+    from parishkit.stewardship.accounts import campaign_create_views as page
+    from parishkit.stewardship.accounts.admin_editing import (
+        confirm_intent,
+        principal,
+    )
+    from parishkit.stewardship.accounts.campaign_views import _state
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+
+    actor = principal(request, service)
+    with work_transaction():
+        state = _state(service)
+        if not page._admitted(state):
+            raise SeedWebRefused("Create the campaign is unavailable.")
+        configuration, source = state[0], state[2]
+        blank = page.creation_form(configuration, source)
+        form = page.creation_form(
+            configuration, source, campaign_fields(blank, campaign_dates)
+        )
+        review = page.creation_review(service, actor, state, form)
+        if review is None:
+            raise SeedWebRefused(
+                f"Create the campaign refused the form: {form.errors.as_json()}"
+            )
+    return confirm_intent(
+        request,
+        service,
+        actor,
+        token=review["preview"],
+        salt=page.SALT,
+        link=reverse("admin:campaign_create"),
+        current_scope=page._scope,
+        first_campaign=True,
     )
 
 

@@ -22,7 +22,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 # Save and continue goes to the next page of the wizard's one ordered list.
 NEXT = {
     "parish": "/admin/setup/credentials/parishsoft",
-    "access": "/admin/setup/campaign",
+    "access": "/admin/setup/preview",
     "mail": "/admin/setup/testing",
     "slack": "/admin/setup/source",
     "testing": "/admin/setup/credentials/google_workspace",

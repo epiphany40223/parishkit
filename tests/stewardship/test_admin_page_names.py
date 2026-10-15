@@ -148,10 +148,6 @@ PENDING = {}
 # heading is the view's ``step_label``, taken from the same stepper entry.
 SETUP = {
     "branding": "setup-branding.html",
-    "campaign": "setup-campaign.html",
-    "content": "setup-content.html",
-    "shares": "setup-shares.html",
-    "schedules": "setup-schedules.html",
     "source": "setup-source.html",
     "preview": "setup-preview.html",
     "mail_test": "setup-mail.html",
@@ -319,9 +315,10 @@ def test_python_return_links_name_a_page():
         for path in sorted(PACKAGE.rglob("*.py"))
         for target in PYTHON_RETURN.findall(path.read_text("utf-8"))
     ]
-    # The guard sees the known labels (Pages and emails, Ministry follow-up,
-    # Ministry requests), so its pattern still matches.
-    assert len(found) >= 3, found
+    # The guard sees the known labels (Ministry follow-up, Ministry requests;
+    # setup_content_views' "Return to Pages and emails" was removed by #1269),
+    # so its pattern still matches.
+    assert len(found) >= 2, found
     assert all(target in labels for _path, target in found), found
 
 
@@ -486,9 +483,6 @@ RETIRED = (
 # Legitimate uses, as (path relative to the package, retired name), each
 # with the reason it is not a page name.
 ALLOWED = {
-    # "Mail schedules keep sending the same kind of email": the schedules
-    # themselves, not the page.
-    ("accounts/templates/stewardship/setup-content.html", "Mail schedules"),
     # "Back to edit" steps back inside the Family form, outside the Admin
     # portal and its page names.
     ("accounts/static/stewardship/family-v1.js", "Back to "),

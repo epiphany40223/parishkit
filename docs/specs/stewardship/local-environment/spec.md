@@ -589,11 +589,9 @@ A seeder gives the local environment a campaign in progress with realistic
 Family activity, so reports, progress pages and the planned response reporting
 ([#477](https://github.com/epiphany40223/parishkit/issues/477)) have a
 meaningful data set. It requires a completed setup wizard and the one
-campaign, rather than creating a second one. Today that campaign is the
-wizard's first campaign, which finishing setup creates with its Family codes.
-Once the setup split ships
-([#142](https://github.com/epiphany40223/parishkit/issues/142)), it will be
-created by [Create the campaign](../admin-portal/spec.md#create-the-campaign)
+campaign, rather than creating a second one. Setup collects no campaign
+([#142](https://github.com/epiphany40223/parishkit/issues/142)): the campaign
+is created by [Create the campaign](../admin-portal/spec.md#create-the-campaign)
 and loaded by its full ParishSoft refresh. The seed,
 `families`, `--response-scale` and `now` fully determine the timeline (see
 [determinism](#seed-determinism)).
@@ -674,8 +672,10 @@ the future:
 1. Set the clock to the Friday before the start Saturday, 09:00 campaign time.
 2. Apply the campaign's real dates and every Family mail schedule through one
    configuration change request under the configuration installer: the
-   Initial at Saturday 10:00, and Reminders Tuesday and Thursday 09:00 through
-   the Monday end. Wait until no configuration request is pending.
+   Initial at Saturday 10:00 (added with the campaign's Initial email when
+   the campaign has none, as Create the campaign leaves it), and Reminders
+   Tuesday and Thursday 09:00 through the Monday end. Wait until no
+   configuration request is pending.
 3. Meet the readiness prerequisites with real code:
    - a full refresh against the fake, so the source is current within
      `source_stale_seconds`;
@@ -1169,10 +1169,9 @@ as pre-launch dev deploys did. Until the image carries the
 [fake-clock](#fake-clock) override, `up` records `normal` clock mode; with it,
 `fake` at 17 days behind real time. The step-by-step account is in the
 [developer guide](../../../guides/stewardship-local-environment.md). The developer then completes the
-real setup wizard, including its campaign pages, since that is part of what
-the environment tests. Once #142 removes those pages, the developer instead
-completes the wizard and then Create the campaign, pressing Load the
-campaign's ParishSoft data afterwards. `up` also
+real setup wizard, since that is part of what the environment tests, and then
+Create the campaign, pressing Load the campaign's ParishSoft data afterwards
+(#142). `up` also
 builds the [fake-clock](#fake-clock) images and does all of this in fake-clock
 mode, with the clock 17 days behind real time, so that a later seed can start
 its clock forward of every existing row.
@@ -1202,8 +1201,8 @@ whose late-added Family may not be promoted, and `reseed` is the recovery
 either way. `reseed [--response-scale m]` restores the post-setup snapshot
 (which also restores the fake configuration) and then runs `seed`. The
 post-setup snapshot is taken once the campaign exists with its Family codes
-(today at the end of setup; after #142, after Create the campaign and its
-refresh), so it always holds the unseeded campaign the seeder requires. A
+(after Create the campaign and its refresh, #142), so it always holds the
+unseeded campaign the seeder requires. A
 deployment set up in normal mode cannot be seeded: its rows are stamped at
 real time and the seed's clock would have to start before them; `seed`
 refuses when the clock-mode marker says `normal`.
@@ -1213,20 +1212,22 @@ refuses when the clock-mode marker says `normal`.
 layer (`pk-stewardship local-seed --step wizard` under `web`: the parish,
 access, mail, Slack and Testing-recipient settings, the fake ParishSoft key
 and organization, the source load, the mail-catcher document, a generated
-logo through the real branding staging, the first campaign (every module
-from the loaded catalog, its default pages and emails and the Initial
-schedule), the review, the sample mail and the final confirmation), then follows
-the deployment runbook's post-wizard step: once the credential installers
-report `awaiting_ack`, it recreates `worker` and `mail-dispatch` from
-`compose.json` and acknowledges each request inside them, which lets the
-installer complete setup and create the campaign with its Family codes. When
-#142 removes the wizard's campaign pages, `wizard` will instead run
+logo through the real branding staging, the review, the setup test mail and
+the final confirmation), then follows the deployment runbook's post-wizard
+step: once the credential installers report `awaiting_ack`, it recreates
+`worker` and `mail-dispatch` from `compose.json` and acknowledges each
+request inside them, which lets the installer complete setup. Setup collects
+no campaign (#142), so `wizard` then runs the seeder's `campaign` step
+(`pk-stewardship local-seed --step campaign` under `web`):
 [Create the campaign](../admin-portal/spec.md#create-the-campaign) through
-that page's own service layer after setup, add the Initial schedule through
-the schedule editor's service layer, request the campaign's full ParishSoft
-refresh and wait for it, so the deployment ends with the same campaign. The
-browser wizard remains the developer-facing path; `wizard` writes nothing
-those pages would not.
+that page's own form, review and confirmation (every module from the loaded
+catalog, with its default pages and emails), a wait for the configuration
+installer to apply it, and the campaign's full ParishSoft refresh, waited on
+until the campaign has its Families and codes. Create the campaign adds no
+mail schedules, so the seed's `prepare` phase adds the Initial schedule with
+the Reminders when the campaign has none. The browser wizard and Create the
+campaign remain the developer-facing path; `wizard` writes nothing those
+pages would not.
 
 **Snapshots and fast reset.** Snapshots are uncompressed copies of the runtime
 root inside the VM, under `/opt/parishkit-snapshots/<name>` together with the
