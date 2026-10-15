@@ -972,13 +972,15 @@ opens, applies, refuses and follows its change.
 ### Review dialog
 
 **Rule.** Every Admin editor reviews and applies its change in one shared
-modal dialog over the page: **Review changes** opens the dialog with the
+modal dialog over the page: **Review changes** (or the action's own label,
+such as **Create the campaign**) opens the dialog with the
 change and its impact (or, when that would only repeat the page, a
 one-sentence confirmation), the dialog offers **Apply** and **Cancel**, and Apply's
 progress and outcome show inside it. Once the change is applied the dialog
 closes, the page refreshes in place (or a New or Edit page returns to its
-table) and a short status line says what was applied. Review changes is
-unavailable until the form holds a real change, so no page ever says that
+table) and a short status line says what was applied. That button is
+unavailable until the form holds a real change (for a new item, until every
+required field is filled in), so no page ever says that
 nothing has changed. **Why.** One way to review and apply across the portal,
 instead of some editors using a second screen and others a panel under the
 form; the reader stays on the page and never loses their place, and a dialog
