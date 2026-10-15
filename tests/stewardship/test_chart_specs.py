@@ -35,7 +35,6 @@ from parishkit.stewardship.reports.chart_specs import (
     stage_label,
     whole_dollars,
 )
-from parishkit.stewardship.reports.digest_funnel import digest_charts, email_spec
 from parishkit.stewardship.reports.money import MoneyAmount
 from parishkit.stewardship.reports.participation import ParticipationDay
 from parishkit.stewardship.reports.response_metrics import (
@@ -786,12 +785,11 @@ def test_every_page_chart_compiles_without_warnings(capfd):
 
 def empty_activity_charts():
     """The activity charts of a campaign with no activity, with and without
-    sends, as the dashboard (by hour and by day) and the digest draw them."""
+    sends, as the dashboard draws them (by hour and by day)."""
     return [
-        chart
+        activity_chart(found)
         for sends in (False, True)
         for found in (metrics((), sends=sends), metrics((), grain="day", sends=sends))
-        for chart in (activity_chart(found), digest_charts(found)[1])
     ]
 
 
@@ -824,7 +822,7 @@ def test_empty_activity_charts_draw_without_warnings(capfd):
     compiled Vega takes its domain from data (an empty layer's extent is
     infinite, which Vega warns about on every draw, #1327), and both of its
     axes draw tick labels (the y axis only its "0" baseline: a "1" would
-    read as a real count), in the page's and the email's form. A chart with
+    read as a real count). A chart with
     activity still takes its domains from its rows, so the check can fail.
     (Vega's runtime warnings are caught by the browser tests' console
     watch: vl-convert does not report them, and an epoch-number x domain,
@@ -832,9 +830,8 @@ def test_empty_activity_charts_draw_without_warnings(capfd):
     for document in empty_activity_charts():
         assert page_warnings(document.spec, capfd) == []
         assert data_domains(document.spec) == set(), document.summary
-        for spec in (document.spec, email_spec(document)):
-            x, y = axis_labels(spec)
-            assert x and y == ["0"], (document.summary, x, y)
+        x, y = axis_labels(document.spec)
+        assert x and y == ["0"], (document.summary, x, y)
     assert data_domains(activity_chart(metrics()).spec) == {"x", "y"}
 
 
@@ -873,19 +870,18 @@ def test_activity_counts_are_labelled_once_each():
     """The activity chart's Families axis labels whole numbers, each once:
     Vega's own ticks step by halves up to a peak of 2, which the whole-number
     format showed as "0, 1, 1" (#1327). Up to a peak of 5 every whole number
-    is labelled; above it Vega's own whole steps stay. Page and email."""
+    is labelled; above it Vega's own whole steps stay."""
     for peak in (1, 2, 3, 4, 5, 7, 12, 37):
         activity = (
             ActivityBucket(START, peak, 0, 0),
             ActivityBucket(START + timedelta(hours=1), 0, 1, 0),
         )
         document = activity_chart(replace(metrics(), activity=activity))
-        for spec in (document.spec, email_spec(document)):
-            _x, y = axis_labels(spec)
-            assert len(set(y)) == len(y), (peak, y)
-            if peak <= 5:
-                assert y == [str(count) for count in range(peak + 1)], (peak, y)
-            assert y[0] == "0" and int(y[-1]) >= peak, (peak, y)
+        _x, y = axis_labels(document.spec)
+        assert len(set(y)) == len(y), (peak, y)
+        if peak <= 5:
+            assert y == [str(count) for count in range(peak + 1)], (peak, y)
+        assert y[0] == "0" and int(y[-1]) >= peak, (peak, y)
 
 
 def test_empty_activity_window_is_campaign_wall_time():
