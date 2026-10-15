@@ -170,6 +170,10 @@ DESCRIPTIONS = {
         "An automation session confirmed a reviewed removal of a campaign "
         "image, which became a configuration request."
     ),
+    "admin_cmd_content_confirm": _(
+        "An automation session confirmed a built delete of unused campaign "
+        "emails, which became a configuration request."
+    ),
     "admin_cmd_integration_confirm": _(
         "An automation session confirmed a reviewed change to an "
         "integration's settings, or its removal, which became a configuration "

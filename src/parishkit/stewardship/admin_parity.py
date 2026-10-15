@@ -170,12 +170,13 @@ LEDGER = {
     # The editor as it opens; its Review and Apply are still owed.
     "content_edit": command("content show", owed="PR 10"),
     "content_revision": command("content show", owed="PR 10"),
-    "content_delete": pending("PR 10", "content preview", "content confirm"),
+    # The email tables' Delete, as a preview and a confirm (#879).
+    "content_delete": command("content preview", "content confirm"),
     "content_history": command("content history"),
     "content_history_revision": command("content history"),
-    # The editor's live preview of typed HTML: ``content preview`` will
-    # print the proposed change's cleaned HTML and generated plain text.
-    "content_plain_text": pending("PR 10", "content preview"),
+    # The editors' live preview of typed HTML: ``content preview --html``
+    # prints its cleaned HTML, generated plain text and removed markup.
+    "content_plain_text": command("content preview"),
     "parish_settings": command("parish show", "parish preview", "parish confirm"),
     # A read-only catalog since #1267, so nothing is owed.
     "ministries": command("ministries list"),
