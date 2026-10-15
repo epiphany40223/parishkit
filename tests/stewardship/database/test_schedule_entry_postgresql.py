@@ -284,6 +284,33 @@ def test_a_repeat_with_one_date_keeps_the_full_review(auth_service, google):
     assert "data-review-title" not in text
 
 
+@pytest.mark.parametrize(
+    ("kind", "fields"),
+    [("daily_digest", {}), ("weekly_digest", {"weekday": "1"})],
+)
+def test_a_new_digest_keeps_the_full_review(auth_service, google, kind, fields):
+    """A digest's send times are resolved, so it is not a confirmation."""
+    store = auth_service.store
+    row = campaign_record()
+    setup(store, row)
+    digest = content(row["id"], kind="email", slot=kind, subject="Digest")
+    added = change(
+        store,
+        store.active(),
+        uuid4(),
+        [{"operation": "add", "section": "content", **digest}],
+    )
+    assert added.state == "applied"
+    browser, _ = signed_in()
+    review = post(
+        browser,
+        NEW,
+        entry(store, kind=kind, time="07:00", template_version=digest["id"], **fields),
+    )
+    assert review.status_code == 200, review.content
+    assert "data-review-title" not in review.content.decode()
+
+
 def test_a_repeat_adds_one_ordinary_reminder_per_date(auth_service, google):
     """Each posted date is its own reminder; the rule itself is not saved."""
     store = auth_service.store
