@@ -509,7 +509,7 @@ is the emergency path.
    it, or after seven days.
 3. If the change is real, such as the parish inactivating many Families at
    once, an Administrator accepts it once on System health: **Accept this
-   change once…** (it needs a Google sign-in within five minutes), review
+   change once** (it needs a Google sign-in within five minutes), review
    the counts, tick "I checked this in ParishSoft, and the change is real",
    and confirm. That also asks for a full refresh, as **Refresh now** does.
    The section then says who accepted it, when, and when the acceptance
