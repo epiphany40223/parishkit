@@ -1,8 +1,8 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
-{% block title %}{{ report_title|default:"Participation export" }}{% endblock %}
+{% block title %}{% translate "Participation export" as fallback %}{{ report_title|default:fallback }}{% endblock %}
 {% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block content %}
-<h1>{{ report_title|default:"Participation export" }}</h1>
+{% translate "Participation export" as fallback %}<h1>{{ report_title|default:fallback }}</h1>
 {% comment %}
   The live region is what live-status-v1.js refreshes in place while the export is
   queued or running (it re-reads this passive page, which never extends the
