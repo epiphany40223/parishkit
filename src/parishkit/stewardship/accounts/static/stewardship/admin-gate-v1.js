@@ -4,8 +4,9 @@
 // js-required class on <html>, which hides the page behind a "needs
 // JavaScript" panel (ui-v1.css). This file loads in <head> without defer, so
 // removing the class here happens before the body is parsed and a browser
-// with JavaScript never shows the panel. Keep this file this small: it
-// blocks page rendering while it loads.
+// with JavaScript never shows the panel. Keep this file small, because it
+// blocks page rendering while it loads: test_admin_javascript_gate.py holds
+// it to a byte budget.
 document.documentElement.classList.remove("js-required");
 
 // The Admin portal's light or dark scheme (#1264; ui-conventions "Colour
@@ -34,12 +35,16 @@ document.documentElement.classList.remove("js-required");
     }
   }
 
-  // Set data-theme from the choice and show the choice in the select.
+  // Set data-theme from the choice and show the choice in the select. The
+  // choice is also kept as data-theme-choice, from which
+  // admin-menu-state-v1.js, running right after the sidebar is parsed,
+  // shows it in the select before the rest of the page is drawn.
   function apply() {
+    const root = document.documentElement;
     const chosen = choice();
-    const scheme = chosen === "auto" ? (device.matches ? "dark" : "light") : chosen;
-    document.documentElement.dataset.theme = scheme;
-    const select = document.querySelector("[data-appearance]");
+    root.dataset.themeChoice = chosen;
+    root.dataset.theme = chosen === "auto" ? (device.matches ? "dark" : "light") : chosen;
+    const select = document.querySelector("select[data-appearance]");
     if (select) select.value = chosen;
   }
 
@@ -56,7 +61,10 @@ document.documentElement.classList.remove("js-required");
   }
 
   apply();
-  device.addEventListener("change", apply);
+  // An assignment, not addEventListener: a page replaced through
+  // document.open (ui-v1.js's returned-page view) can run this file again, and
+  // the MediaQueryList outlives the old document, so listeners would pile up.
+  device.onchange = apply;
   // Another Admin tab changed the choice, or the page came back from the
   // back/forward cache after one did.
   window.addEventListener("storage", (event) => {
@@ -66,6 +74,6 @@ document.documentElement.classList.remove("js-required");
   document.addEventListener("DOMContentLoaded", apply);
   // The select does not exist yet, so listen on the document.
   document.addEventListener("change", (event) => {
-    if (event.target.matches("[data-appearance]")) save(event.target.value);
+    if (event.target.matches("select[data-appearance]")) save(event.target.value);
   });
 })();

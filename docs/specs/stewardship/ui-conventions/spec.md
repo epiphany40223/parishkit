@@ -1660,7 +1660,8 @@ for dark, so the Family portal is left as it is. **Shared code.**
 an `admin-document` root (set by `admin-base.html`) with
 `data-theme="dark"`. `admin-gate-v1.js` sets `data-theme` in the head from
 the saved choice or the operating system, and runs the Appearance select in
-`admin-navigation.html`. `test_design_tokens.py` checks both token sets and
+`admin-navigation.html`; `admin-menu-state-v1.js` shows the choice in the
+select as soon as the sidebar is parsed. `test_design_tokens.py` checks both token sets and
 their contrast. The browser test `test_dark_scheme.py` checks that key Admin
 pages leave no light surface or light ink in dark. It also checks the
 choice: it overrides the device in place, holds across a reload from the

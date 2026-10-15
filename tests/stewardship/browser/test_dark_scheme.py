@@ -183,11 +183,23 @@ def test_printed_admin_page_stays_light(page, component_origin):
 
 # Records, when the body element first appears, the scheme admin-gate-v1.js
 # set: a page in the saved scheme from the start never flashes the other.
+# Also records the Appearance select's value when the main content starts,
+# which admin-menu-state-v1.js sets right after the sidebar is parsed.
 AT_BODY = """new MutationObserver((records, observer) => {
-    if (!document.body) return;
-    window.__themeAtBody = document.documentElement.dataset.theme || 'none';
+    if (document.body && !window.__themeAtBody) {
+        window.__themeAtBody = document.documentElement.dataset.theme || 'none';
+    }
+    if (!document.querySelector('main')) return;
+    const select = document.querySelector('select[data-appearance]');
+    window.__choiceAtMain = select ? select.value : 'none';
     observer.disconnect();
 }).observe(document, {childList: true, subtree: true});"""
+# A browser that refuses site storage: every Storage call throws.
+NO_STORAGE = """for (const name of ['getItem', 'setItem', 'removeItem']) {
+    Storage.prototype[name] = () => {
+        throw new DOMException('denied', 'SecurityError');
+    };
+}"""
 SAVED = "() => localStorage.getItem('pk-admin-appearance')"
 
 
@@ -233,6 +245,8 @@ def test_appearance_choice_overrides_the_device_in_place_and_is_remembered(
         page.goto(component_origin + path)
         visible(page.locator("main"))
         assert page.evaluate("window.__themeAtBody") == chosen
+        if path == "/home":
+            assert page.evaluate("window.__choiceAtMain") == chosen
         assert page_colour(page) == rgb(colors["page"])
     page.goto(component_origin + "/home")
     assert page.get_by_label("Appearance").input_value() == chosen
@@ -284,3 +298,39 @@ def test_saved_dark_leaves_family_pages_and_print_light(page, component_origin):
         )
         == COLORS["page"]
     )
+
+
+def test_refused_storage_keeps_the_choice_for_this_page_only(page, component_origin):
+    """Without storage the choice still applies in place, with no script
+    error, and the next page follows the device again."""
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.add_init_script(NO_STORAGE)
+    page.emulate_media(color_scheme="light")
+    page.goto(component_origin + "/home")
+    choose(page, "dark")
+    assert page_colour(page) == rgb(DARK_COLORS["page"])
+    # The OS changing does not undo this page's explicit choice.
+    page.emulate_media(color_scheme="dark")
+    page.emulate_media(color_scheme="light")
+    assert page.evaluate("document.documentElement.dataset.theme") == "dark"
+    page.reload()
+    visible(page.locator("main"))
+    assert page_colour(page) == rgb(COLORS["page"])
+    assert page.get_by_label("Appearance").input_value() == "auto"
+    assert errors == []
+
+
+def test_back_to_a_page_shows_the_latest_choice(page, component_origin):
+    """Going back (from the back/forward cache or not) shows the choice made
+    on the later page, in the scheme and in the select."""
+    page.emulate_media(color_scheme="light")
+    page.goto(component_origin + "/home")
+    choose(page, "dark")
+    page.goto(component_origin + "/logs")
+    choose(page, "light")
+    page.go_back()
+    visible(page.locator("main"))
+    eventually(page, "document.documentElement.dataset.theme", "light")
+    assert page_colour(page) == rgb(COLORS["page"])
+    assert page.get_by_label("Appearance").input_value() == "light"
