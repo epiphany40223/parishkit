@@ -5,6 +5,7 @@ these pin the handlers' shape, their bindings and the #1245 review note 5
 rule that no approve, edit or resolve path acts on a queued change.
 """
 
+import inspect
 import re
 from pathlib import Path
 from uuid import uuid4
@@ -86,29 +87,92 @@ def test_the_scheduler_cannot_run_either_type():
             handler.execute(None)
 
 
-# A module that changes a proposal's decision or Administrator edit: an
-# update naming those fields, or a dict of them passed to one.
-_UPDATE = re.compile(r"\.update\((?:[^()]|\([^()]*\))*\b(decision|admin_value)\b", re.S)
-_CHANGE = re.compile(r'\{\s*"(decision|admin_value)"')
-# Each reviewed decision-changing path and the executions it acts on.
+# A source scan for every module that changes a proposal's decision or
+# Administrator edit. It is a tripwire for review, not the protection: the
+# SQL guards (frozen migrations 0060 and 0096) refuse a decision or edit
+# change to a queued proposal whatever Python does. So the patterns cover
+# the ORM and SQL forms this code base uses, not every way Python could
+# hide a write. A module counts when it names the model (or, for raw SQL,
+# its table) and has any of:
+_FIELD = r"\b(?:decision|admin_value)\b"
+_ORM_CHANGES = (
+    # an update naming the fields, a dict of them, or an unpacked mapping;
+    re.compile(r"\.update\((?:[^()]|\([^()]*\))*" + _FIELD, re.S),
+    re.compile(r'\{\s*"(?:decision|admin_value)"'),
+    re.compile(r"\.update\(\s*\*\*"),
+    # a bulk update listing either field;
+    re.compile(
+        r"bulk_update\((?:[^()]|\([^()]*\))*[\"'](?:decision|admin_value)[\"']", re.S
+    ),
+)
+# an assignment to either attribute, when the module also saves a model;
+_ASSIGNED = re.compile(r"\.(?:decision|admin_value)\s*=(?!=)")
+# or raw SQL that sets either column.
+_SQL_SET = re.compile(r"\bSET\b[^;]*?" + _FIELD + r"\s*=", re.I | re.S)
+# Each reviewed decision-changing path, its gate function and the
+# executions that gate admits.
 GATES = {
-    "responses/census_review.py": census_review.REVIEWABLE,
-    "responses/census_resolution.py": census_resolution.OPEN_EXECUTIONS,
+    "responses/census_review.py": (census_review.reviewable, census_review.REVIEWABLE),
+    "responses/census_resolution.py": (
+        census_resolution.allowed,
+        census_resolution.OPEN_EXECUTIONS,
+    ),
 }
+
+
+def changes_a_decision(text):
+    """Whether module source ``text`` changes a proposal's decision or edit."""
+    if "ProposedChange" in text:
+        if any(pattern.search(text) for pattern in _ORM_CHANGES):
+            return True
+        if _ASSIGNED.search(text) and ".save(" in text:
+            return True
+    return "stewardship_proposed_change" in text and bool(_SQL_SET.search(text))
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        'ProposedChange.objects.filter(pk=1).update(decision="approved")',
+        'ProposedChange.objects.filter(pk=1).update(**{"decision": "x"})',
+        "ProposedChange.objects.filter(pk=1).update(**changes)",
+        'ProposedChange.objects.bulk_update(rows, ["version", "decision"])',
+        'row = ProposedChange.objects.get(pk=1)\nrow.decision = "x"\nrow.save()',
+        "row = ProposedChange.objects.get(pk=1)\nrow.admin_value = 1\nrow.save()",
+        '"UPDATE stewardship_proposed_change SET version = 2, decision = %s"',
+    ],
+)
+def test_the_scan_sees_each_way_to_change_a_decision(source):
+    """Each form the scan looks for is found; a read is not."""
+    assert changes_a_decision(source)
+    assert not changes_a_decision('ProposedChange.objects.filter(decision="x")')
 
 
 def test_no_decision_or_edit_path_acts_on_a_queued_change():
     """Review note 5: every path that approves, ignores, reopens or edits a
     census change is listed here, and none acts while it is queued (the
     publish worker owns it then). A new path, such as Edit value, fails
-    until it is added with a gate that leaves out ``queued``."""
+    until it is added with a gate that leaves out ``queued`` and that the
+    module calls."""
     found = set()
     for path in PACKAGE.rglob("*.py"):
         if "migrations" in path.parts:
             continue
-        text = path.read_text(encoding="utf-8")
-        if "ProposedChange" in text and (_UPDATE.search(text) or _CHANGE.search(text)):
+        if changes_a_decision(path.read_text(encoding="utf-8")):
             found.add(path.relative_to(PACKAGE).as_posix())
     assert found == set(GATES)
-    for gate in GATES.values():
-        assert "queued" not in gate
+    for module, (gate, executions) in GATES.items():
+        assert "queued" not in executions
+        # The gate checks its execution set, and the module calls the gate
+        # somewhere besides its own definition.
+        assert re.search(
+            rf"\bnot in \w*{_constant(gate, executions)}\b", inspect.getsource(gate)
+        )
+        text = (PACKAGE / module).read_text(encoding="utf-8")
+        assert len(re.findall(rf"\b{gate.__name__}\(", text)) > 1
+
+
+def _constant(gate, executions):
+    """The name the gate's module gives its execution set."""
+    module = inspect.getmodule(gate)
+    return next(name for name, value in vars(module).items() if value is executions)
