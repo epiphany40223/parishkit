@@ -133,23 +133,56 @@ def test_every_failure_word_is_a_valid_outcome_kind():
 
 
 def _names(path):
-    """Every name and attribute a module's source mentions."""
+    """Every name, attribute and imported module part a module's source mentions.
+
+    Imports count in every form: ``from .a.contact_smoke import run`` and
+    ``import x.contact_smoke as y`` both name ``contact_smoke``, as does
+    ``from .a import contact_smoke``.
+    """
     tree = ast.parse(path.read_text(encoding="utf-8"))
-    return {
+    names = {
         getattr(node, "id", None) or getattr(node, "attr", None) or ""
         for node in ast.walk(tree)
         if isinstance(node, ast.Name | ast.Attribute)
-    } | {
-        alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom)
-        for alias in node.names
     }
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            names.update((node.module or "").split("."))
+        if isinstance(node, ast.Import | ast.ImportFrom):
+            for alias in node.names:
+                names.update(alias.name.split("."))
+    return names
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from .responses import contact_smoke\n",
+        "from .responses.contact_smoke import run\n",
+        "from parishkit.stewardship.responses.contact_smoke import run as go\n",
+        "import parishkit.stewardship.responses.contact_smoke as hidden\n",
+        "import parishkit.stewardship.responses.contact_smoke\n",
+    ],
+)
+def test_the_fence_sees_every_import_form(tmp_path, source):
+    """A planted import of the smoke module is caught however it is spelled."""
+    planted = tmp_path / "planted.py"
+    planted.write_text(source, encoding="utf-8")
+    assert "contact_smoke" in _names(planted)
 
 
 def test_only_the_gateway_builds_the_put_session_and_only_the_worker_writes():
     """The PUT is reachable only behind the BG-09 worker."""
-    owners = {"BoundedPublicationSession": set(), "write_member_contact": set()}
+    owners = {
+        name: set()
+        for name in (
+            "BoundedPublicationSession",
+            "write_member_contact",
+            "probe_member_record",
+            "open_operator",
+            "contact_smoke",
+        )
+    }
     for path in SRC.rglob("*.py"):
         names = _names(path)
         for name, found in owners.items():
@@ -160,10 +193,21 @@ def test_only_the_gateway_builds_the_put_session_and_only_the_worker_writes():
     assert owners["BoundedPublicationSession"] == {
         "stewardship/responses/publication_gateway.py",
     }
-    # Definitions are not uses: the worker is the one caller of the write.
+    # Definitions are not uses: the worker is the one automatic caller of
+    # the write; the human-run contact smoke check is the one other (#528).
     assert owners["write_member_contact"] == {
         "stewardship/responses/publication_worker.py",
+        "stewardship/responses/contact_smoke.py",
     }
+    # The raw probe read is the smoke check's alone: the worker's read must
+    # stay the refusing read_member_contact. The task-free opener and the
+    # smoke check itself (which writes without the publication switch) are
+    # reached only from the human-run smoke command.
+    assert owners["probe_member_record"] == {
+        "stewardship/responses/contact_smoke.py",
+    }
+    assert owners["open_operator"] == {"stewardship/smoke.py"}
+    assert owners["contact_smoke"] == {"stewardship/smoke.py"}
     # Only the transport and its helper start a helper that may PUT, so no
     # other module can build a write-admitting helper around the session.
     assert {
@@ -171,6 +215,47 @@ def test_only_the_gateway_builds_the_put_session_and_only_the_worker_writes():
         for path in SRC.rglob("*.py")
         if "contact_writes" in path.read_text(encoding="utf-8")
     } == {"parishsoft_transport.py", "parishsoft_http_worker.py"}
+
+
+def test_the_probe_reads_only_the_member_record():
+    """GET members/{id}; a 404 is None; other failures are a fixed word."""
+    session = publication_session()
+    ok = response(200)
+    ok._content = b'{"memberDUID": 5}'
+    session.get = Mock(return_value=ok)
+    gateway = ParishSoftContactGateway(session, profile="production")
+    assert gateway.probe_member_record("5", timeout=30) == {"memberDUID": 5}
+    session.get.assert_called_once_with(DEFAULT_API_BASE_URL + "/members/5", timeout=30)
+    session.get.return_value = response(404)
+    assert gateway.probe_member_record("5", timeout=30) is None
+    bad = response(200)
+    bad._content = b"[1]"
+    for answer in (response(503), bad):
+        session.get.return_value = answer
+        with pytest.raises(ContactGatewayError) as error:
+            gateway.probe_member_record("5", timeout=30)
+        assert error.value.kind == "read_unavailable"
+    session.get.side_effect = SourceTransportError("PRIVATE")
+    with pytest.raises(ContactGatewayError) as error:
+        gateway.probe_member_record("5", timeout=30)
+    assert "PRIVATE" not in str(error.value)
+    with pytest.raises(ValueError):
+        gateway.probe_member_record("5/../families", timeout=30)
+
+
+def test_the_operator_gateway_needs_a_recorder_and_no_task():
+    """The smoke check's gateway: same session and recorder rule, no task."""
+    credential = Mock(api_key="SYNTHETIC-PRIVATE-KEY")
+    with pytest.raises(TypeError, match="timeout recorder"):
+        ParishSoftContactGateway.open_operator(
+            credential, profile="production", on_timeout=None
+        )
+    gateway = ParishSoftContactGateway.open_operator(
+        credential, profile="production", on_timeout=Mock()
+    )
+    assert isinstance(gateway.session, BoundedPublicationSession)
+    gateway.session.check()
+    gateway.close()
 
 
 def test_the_real_gateway_needs_a_timeout_recorder():

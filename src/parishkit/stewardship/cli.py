@@ -60,6 +60,10 @@ _COMMAND_OPTIONS = {
         "send_to",
         "channel_id",
         "folder_link",
+        # The Member contact round trip's one chosen test Member (#528).
+        "member_id",
+        "confirm_member_id",
+        "field",
         "send",
     },
     "database-roles": {"config", "confirm_deployment"},
@@ -212,6 +216,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "send-to",
         "channel-id",
         "folder-link",
+        "member-id",
+        "confirm-member-id",
+        "field",
         "samples",
         "concurrency",
         "fake-config",
@@ -246,8 +253,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         default=None,
         help=(
-            "smoke only: post the one fixed Slack message, or copy the newest "
-            "backup set to the Drive folder, after a valid check"
+            "smoke only: post the one fixed Slack message, copy the newest "
+            "backup set to the Drive folder, or round-trip one test Member's "
+            "contact field, after a valid check"
         ),
     )
     parser.add_argument(
