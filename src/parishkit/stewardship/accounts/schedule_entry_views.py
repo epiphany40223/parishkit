@@ -739,12 +739,12 @@ def _entry(request, campaign_id, schedule_id=None):
             reviewed
             | {
                 "new": new,
-                "confirmation": new and added is None and _sends_once(reviewed),
+                "confirmation": new and added is None and _sends_once(reviewed, repeat),
             },
         )
 
 
-def _sends_once(reviewed):
+def _sends_once(reviewed, repeat):
     """Whether a review only adds one schedule that sends once (#1356).
 
     Such a review shows nothing the New page does not: no current schedule,
@@ -754,8 +754,11 @@ def _sends_once(reviewed):
     sends that block it keep the full review.
     """
     changes = reviewed["changes"]
+    # A Repeat keeps the full review even when its rule yields one date.
+    repeating = repeat is not None and repeat.cleaned_data["repeat"]
     return (
-        len(changes) == 1
+        not repeating
+        and len(changes) == 1
         and changes[0]["operation"] == "add"
         and bool(changes[0]["after"]["date"])
         and not reviewed["window_changes"]

@@ -262,6 +262,28 @@ def test_a_new_reminder_is_reviewed_then_applied_from_the_list(auth_service, goo
     )
 
 
+def test_a_repeat_with_one_date_keeps_the_full_review(auth_service, google):
+    """A Repeat is never a confirmation, even when its rule yields one date."""
+    store = auth_service.store
+    _, emails = setup(store)
+    browser, _ = signed_in()
+    data = entry(
+        store, kind="reminder", time="09:00", template_version=emails["reminder"]["id"]
+    ) | {
+        "repeat-repeat": "on",
+        "repeat-frequency": "weekly",
+        "repeat-weekdays": "1",
+        "repeat-start": "2054-10-01",
+        "repeat-until": "2054-10-07",
+        "repeat-dates": ["2054-10-06"],
+    }
+    review = post(browser, NEW, data)
+    assert review.status_code == 200, review.content
+    text = review.content.decode()
+    assert "Reminder — Add" in text
+    assert "data-review-title" not in text
+
+
 def test_a_repeat_adds_one_ordinary_reminder_per_date(auth_service, google):
     """Each posted date is its own reminder; the rule itself is not saved."""
     store = auth_service.store
