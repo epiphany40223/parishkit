@@ -140,9 +140,9 @@ def _done(key, draft, credentials, tests):
     if key == "slack_credential":
         return credentials.get("slack") is True
     if key == "source":
-        return draft.source_task_id is not None and draft.status.state != (
-            SetupState.LOADING
-        )
+        # Bound to a load that succeeded: a failed load returns setup to
+        # collecting too (#1353), and must show as not done, with Load again.
+        return draft.source_task_state == "succeeded"
     if key in {"mail_test", "slack_test"}:
         return key in tests
     if key == "preview":

@@ -129,8 +129,10 @@ def stage_credential(
     """Seal in memory after fresh original-login admission and exact-version checks.
 
     Replacing a candidate is allowed only while collecting; the same target row
-    and attempt both advance versions. Starting a source load freezes this input.
-    An expired attempt cannot regain authority by supplying valid credential bytes.
+    and attempt both advance versions. A running source load freezes this
+    input; once it has finished, a different ParishSoft key or organization
+    discards it and the same ones keep it (#1353). An expired attempt cannot
+    regain authority by supplying valid credential bytes.
     """
     if is_automation(request):
         # The first-Admin wizard is browser-only (a permanent exemption of
@@ -168,8 +170,33 @@ def stage_credential(
             .first()
         )
         identifier = row.pk if row is not None else uuid4()
-        sealed = public_handoff(target).seal(identifier, candidate)
         fingerprint = credential_receipt(candidate, target)
+        if target == "parishsoft" and attempt.source_task_id is not None:
+            # A load is bound (it succeeded or failed; a running one keeps
+            # setup loading, refused above). The same key and organization
+            # keep it and write nothing, since any write would advance the
+            # credential version the load is bound to. A change discards it
+            # first, so the next load reads the new connection (#1353).
+            if (
+                row is not None
+                and row.scrubbed_at is None
+                and row.fingerprint == fingerprint
+                and dict(row.settings) == settings
+            ):
+                authenticated_admin(request, store=service.store, activity=True)
+                return _status(attempt), _receipt(row)
+            from .setup_source import void_source_load
+
+            attempt = void_source_load(
+                attempt,
+                reason=(
+                    "key_changed"
+                    if row is None or row.fingerprint != fingerprint
+                    else "organization_changed"
+                ),
+                actor_id=actor.identity,
+            )
+        sealed = public_handoff(target).seal(identifier, candidate)
         context = dict(actor_id=actor.identity, correlation_id=current_correlation())
         values = dict(ciphertext=sealed, fingerprint=fingerprint, settings=settings)
         if row is None:

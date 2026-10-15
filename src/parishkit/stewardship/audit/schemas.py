@@ -211,6 +211,9 @@ class Action(StrEnum):
     SETUP_STARTED = "setup_started"
     SETUP_SOURCE_STARTED = "setup_source_started"
     SETUP_SOURCE_COMPLETED = "setup_source_completed"
+    # A finished setup load discarded by a ParishSoft connection change or
+    # a Load again (#1353); written by the attempt's audit trigger.
+    SETUP_SOURCE_VOIDED = "setup_source_voided"
     SETUP_FROZEN = "setup_frozen"
     SETUP_EXPIRED = "setup_expired"
     SETUP_CREDENTIAL_STAGED = "setup_credential_staged"
@@ -490,6 +493,10 @@ FIELDS = {
         "archive_year",
         "archive_days",
         "archive_family_rows",
+        # A discarded setup load (#1353): why it was discarded and how the
+        # load had ended, both closed words.
+        "void_reason",
+        "task_state",
     },
 }
 
@@ -503,6 +510,10 @@ MINISTRY_LIST_FIELDS = frozenset(
     }
 )
 REVIEW_DECISIONS = frozenset({"keep_role", "restore", "remove"})
+# Why a finished setup load was discarded, and how that load had ended
+# (#1353); mirrored in stewardship_safe_context_v1.
+VOID_REASONS = frozenset({"key_changed", "organization_changed", "reload"})
+VOIDED_TASK_STATES = frozenset({"succeeded", "failed"})
 # An on-request report's system mode and filter choices (#556); mirrored in
 # stewardship_safe_context_v1. The filters are each report's own fixed
 # choices: the Limitations report's Show words (reports.limitations.SHOW_WORDS),
@@ -821,6 +832,12 @@ def sanitize(kind, values):
             safe[key] = value
         elif key == "decision":
             valid = type(value) is str and value in REVIEW_DECISIONS
+            safe[key] = value
+        elif key == "void_reason":
+            valid = type(value) is str and value in VOID_REASONS
+            safe[key] = value
+        elif key == "task_state":
+            valid = type(value) is str and value in VOIDED_TASK_STATES
             safe[key] = value
         elif key in {"file_slug", "previous_file_slug"}:
             valid = type(value) is str and re.fullmatch(

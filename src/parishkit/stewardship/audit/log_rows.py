@@ -257,6 +257,7 @@ ACTIVITY_TYPES = {
         "admin_cmd_refresh_start",
         "setup_source_started",
         "setup_source_completed",
+        "setup_source_voided",
         "source_refresh_invalid",
         "source_provider_failed",
         "source_credential_failed",
