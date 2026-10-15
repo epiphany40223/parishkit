@@ -287,11 +287,14 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
                 ) in body
             elif format == "xlsx":
                 # The real worker's file holds summable dollar-formatted numbers,
-                # in the page's columns (no Family status column, E1).
+                # in the page's columns, with ParishSoft status split out of
+                # the Family cell (#1216), blank for a current Family.
                 sheet = load_workbook(BytesIO(body))["Financial detail"]
-                assert sheet.cell(1, 7).value == f"ParishSoft pledged ({years})"
+                assert sheet.cell(1, 2).value == "ParishSoft status"
+                assert sheet.cell(2, 2).value is None
+                assert sheet.cell(1, 8).value == f"ParishSoft pledged ({years})"
                 assert sheet.cell(2, 1).value == name.decode()
-                for column, expected in ((3, 1234.5), (7, 1200)):
+                for column, expected in ((4, 1234.5), (8, 1200)):
                     cell = sheet.cell(2, column)
                     assert (cell.data_type, cell.value) == ("n", expected)
                     assert cell.number_format == '"$"#,##0.00'

@@ -1,4 +1,4 @@
-CREATE FUNCTION stewardship_weekly_observation_v1(campaign uuid)
+CREATE FUNCTION public.stewardship_weekly_observation_v1(campaign uuid)
 RETURNS jsonb LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
 WITH selected AS MATERIALIZED (
     SELECT c.id, c.active_configuration_id AS configuration_id,
@@ -19,7 +19,11 @@ WITH selected AS MATERIALIZED (
             NULLIF(btrim(p.canonical::jsonb->>'mailingName'),''),
             NULLIF(btrim(concat_ws(' ',
                 NULLIF(btrim(p.canonical::jsonb->>'firstName'),''),
-                NULLIF(btrim(p.canonical::jsonb->>'lastName'),''))),''),'Family')
+                NULLIF(btrim(p.canonical::jsonb->>'lastName'),''))),''),
+                -- The weekly report has no badge, so a Family the data no
+                -- longer has is named by its ParishSoft status (#1216).
+                CASE WHEN p.id IS NULL THEN 'Not in ParishSoft'
+                    ELSE 'Name not recorded in ParishSoft' END)
             AS family_name
     FROM selected x
     JOIN stewardship_submission s ON s.campaign_id=x.id

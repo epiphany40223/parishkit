@@ -15,6 +15,11 @@ from typing import ClassVar
 from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.source.snapshot_names import FAMILY_NAMES_DETAIL
+from parishkit.stewardship.source.source_status import (
+    STATUS_HEADING,
+    family_status,
+    source_status_label,
+)
 from parishkit.stewardship.web import dates
 
 from .money import MoneyAmount
@@ -24,10 +29,12 @@ from .money import MoneyAmount
 # comparison period's years to them, as the page's headings show
 # ("ParishSoft pledged (2026)"). Every format has the page's columns in the
 # page's order, and no internal references (the Administrator's decisions
-# B1 and E1, #932): the report lists only active Families, so it has no
-# Family status column, and no Family version or response reference.
+# B1 and E1, #932): no Family version or response reference. ParishSoft
+# status follows the name, as the page's badge sits beside it, and the name
+# is blank for a Family the data no longer has (#1216).
 HEADINGS = (
     "Family",
+    STATUS_HEADING,
     "Family DUID",
     "Annual pledge",
     "Frequency",
@@ -91,7 +98,9 @@ def headings(comparison_start, comparison_end):
     if not years:
         return HEADINGS
     return tuple(
-        f"{heading} ({years})" if heading.startswith("ParishSoft ") else heading
+        f"{heading} ({years})"
+        if heading.startswith("ParishSoft ") and heading != STATUS_HEADING
+        else heading
         for heading in HEADINGS
     )
 
@@ -197,9 +206,13 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
     rows = []
     for row in result["rows"]:
         first, *overflow = _share_cells(row)
+        status = source_status_label(
+            family_status(row["family_name"], active=row["active"] is not False)
+        )
         rows.append(
             (
-                row["family_name"],
+                row["family_name"] or "",
+                status,
                 str(row["family_duid"]),
                 row["annual"],
                 row["frequency_label"],
@@ -218,7 +231,7 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
         # any other column never sees a second value for the Family.
         for cell in overflow:
             rows.append(
-                (row["family_name"], str(row["family_duid"]))
+                (row["family_name"] or "", status, str(row["family_duid"]))
                 + ("",) * 3
                 + (CONTINUED + cell,)
                 + ("",) * 5

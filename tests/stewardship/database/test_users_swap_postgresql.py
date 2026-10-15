@@ -35,6 +35,7 @@ from parishkit.stewardship.runtime_grants import (
     PUBLICATION_WORKER_TABLES,
 )
 from parishkit.stewardship.schema_inventory import inventory
+from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 
 from .campaign_builders import initialized
 from .test_background_grants_postgresql import task_login
@@ -349,6 +350,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0093 (#1219) creates nothing: it replaces those Ministry selections again,
 # so once 0092's file installs again with its older bodies, 0093's file runs
 # again too (``CLOSURE_RERUN``).
+# 0094 (#1216) creates nothing: it replaces those selections once more, with
+# the report selections 0056 and 0064 create, so once those files (and 0092's
+# and 0093's) install again with their older bodies, ``CLOSURE_REPLACED``
+# runs 0094's file again.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -586,6 +591,9 @@ CLOSURE_ALTERED = {
 # debug-off switch guard with the Testing-only web clear. 0089 (#1201)
 # replaces the safe context that 0083's file brings back (and the event
 # check 0078's file brings back) with its own, which admits 'retry_refusal'.
+# 0094 (#1216) replaces 0056's and 0064's report selections; its file also
+# puts back the Ministry selections 0092's and 0093's files ran again
+# (``CLOSURE_RERUN``) with older bodies, as it runs after them.
 CLOSURE_REPLACED = {
     "public.stewardship_debug_off_switch_guard_v1()": (
         ("stewardship_jobs", "0031_debug_allow"),
@@ -594,6 +602,15 @@ CLOSURE_REPLACED = {
     "public.stewardship_safe_context_v1(text,jsonb)": (
         ("stewardship_audit", "0003_retry_refusal_log"),
         "'retry_refusal'",
+    ),
+    **dict.fromkeys(
+        (
+            "public.stewardship_limitations_report_v1(uuid,jsonb)",
+            "public.stewardship_information_report_v2(uuid,jsonb,integer,uuid,integer)",
+            "public.stewardship_ministry_report_v3"
+            "(uuid,jsonb,boolean,bigint[],integer,text,integer,integer)",
+        ),
+        (("stewardship_reports", "0026_source_status_names"), NAME_NOT_RECORDED),
     ),
 }
 

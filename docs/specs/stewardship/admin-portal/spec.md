@@ -5074,10 +5074,13 @@ form is never one. One SQL function decides this
 - Staff and Administrators see the same by default, so their counts match.
   Their queue's Status filter has one more choice, "Members no longer in
   ParishSoft", which lists only these requests, of any status. Each is
-  marked beside the Member's name with a small badge in #1216's words ("Not
-  in ParishSoft", "Inactive in ParishSoft" or "Deceased in ParishSoft"), so
-  it cannot be taken for a Ministry's activity mark, until #1216 gives the
-  portal one shared mark. That view has no selection column or bulk bar. A
+  marked beside the Member's name with the shared
+  [ParishSoft status](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
+  badge ("Not in ParishSoft", "Inactive in ParishSoft" or "Deceased in
+  ParishSoft"), so it cannot be taken for a Ministry's activity mark. A
+  Member the data no longer has in this Family has no name, so the badge
+  alone is the row's link, and its request page's heading names it by that
+  status (#1216). That view has no selection column or bulk bar. A
   request page opened from it gives the specific reason (no longer in
   ParishSoft, now in another Family, inactive or deceased) and has no
   follow-up form.

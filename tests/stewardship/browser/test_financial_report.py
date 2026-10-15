@@ -165,15 +165,21 @@ def test_financial_columns_lead_with_family_and_name_the_parishsoft_year(
     """The downloads' columns in their order; the ParishSoft year has a tip.
 
     Family first, then Latest and First response, then Entered by Staff
-    last (#794), with no status, version or reference column (#932,
-    decisions B1 and E1).
+    last (#794), with no version or reference column (#932, decisions B1
+    and E1). The page shows ParishSoft status as a badge in the Family cell
+    (#1216), so its table has one column fewer than a download, whose
+    ParishSoft status column follows Family.
     """
     from parishkit.stewardship.reports.financial_documents import headings
+    from parishkit.stewardship.source.source_status import STATUS_HEADING
 
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + "/financial-report")
     shown = page.locator("table thead th").all_inner_texts()
-    expected = headings("2025-07-01", "2026-06-30")
+    download = headings("2025-07-01", "2026-06-30")
+    # A download's status column sits right after Family; the page has none.
+    assert download[:2] == ("Family", STATUS_HEADING)
+    expected = download[:1] + download[2:]
     # A sortable heading or a tip's "i" button adds text after the name.
     assert len(shown) == len(expected)
     assert all(

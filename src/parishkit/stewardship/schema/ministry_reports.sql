@@ -116,7 +116,9 @@ WITH selected AS MATERIALIZED (
             CASE WHEN r.entity_kind='member' THEN p.canonical::jsonb->>'lastName'
                 ELSE s.answers->'proposed_members'->r.entity_key->>'last_name'
                 END)),''),
-            'Unavailable Member') AS member_name
+            -- Only current Members and Members the Family added are listed
+            -- (#1217), so a missing name is a gap in the data (#1216).
+            'Name not recorded in ParishSoft') AS member_name
     FROM requests r JOIN summary_filtered m ON m.duid=r.ministry_duid
     CROSS JOIN source x
     JOIN stewardship_submission s ON s.id=r.submission_id

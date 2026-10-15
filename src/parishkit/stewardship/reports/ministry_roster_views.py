@@ -40,6 +40,7 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.source.snapshot_names import snapshot_family_names
+from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.contracts import filters
@@ -208,9 +209,10 @@ def roster_rows(campaign_id, principal, show, ministry=""):
 def _family_names(duids):
     """Each Family's surname-and-heads name, from the current ParishSoft data.
 
-    The shared helper names a Family as every Admin table does (#932). With
-    no promoted data, or a compacted snapshot, the names are blank and the
-    Family DUID still identifies the Family.
+    The shared helper names a Family as every Admin table does (#932), and
+    one with no usable surname "Name not recorded in ParishSoft" (#1216).
+    With no promoted data, or a compacted snapshot, the names are blank and
+    the Family DUID still identifies the Family.
     """
     if not duids:
         return {}
@@ -219,7 +221,7 @@ def _family_names(duids):
             "SELECT snapshot_id FROM stewardship_source_current WHERE singleton"
         )
         found = cursor.fetchone()
-    return snapshot_family_names(found[0], duids) if found else {}
+    return snapshot_family_names(found[0], duids, NAME_NOT_RECORDED) if found else {}
 
 
 def _resolvers(request_ids):

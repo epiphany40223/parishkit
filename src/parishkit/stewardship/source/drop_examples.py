@@ -251,7 +251,9 @@ def record_drop_examples(attempt_id, checks, refused, *, task_id=None):
                 return 0
             chosen = choose_examples(measures, baseline, refused)
             names = snapshot_family_names(
-                snapshot_id, {duid for duids in chosen.values() for duid in duids}
+                snapshot_id,
+                {duid for duids in chosen.values() for duid in duids},
+                UNNAMED,
             )
             rows = [
                 SourceDropExample(

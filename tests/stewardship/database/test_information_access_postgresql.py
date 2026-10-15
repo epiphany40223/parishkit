@@ -13,6 +13,7 @@ from parishkit.stewardship.reports.information import InformationQuery, informat
 from parishkit.stewardship.reports.information_exports import create_information_export
 from parishkit.stewardship.reports.weekly_observation import capture_weekly_observation
 from parishkit.stewardship.responses.models import AdditionalInformationItem
+from parishkit.stewardship.source.source_status import NOT_IN_PARISHSOFT
 
 from ..policy_factory import address
 from .auth_builders import signed_in
@@ -173,11 +174,10 @@ def test_current_source_absence_keeps_submitted_request(live_response_service):
         assert request.information_snapshot.source_id != snapshot.pk
     assert report["metadata"]["source_id"] == str(snapshot.pk)
     assert report["total"] == 1
-    assert (
-        report["rows"][0]["family_name"]
-        == weekly.items[0].value.family_name
-        == "Family"
-    )
+    # The data no longer has the Family: the report gives it no name (the
+    # page shows the badge) and the weekly email names it by its status.
+    assert report["rows"][0]["family_name"] is None
+    assert weekly.items[0].value.family_name == NOT_IN_PARISHSOFT
     assert (
         report["rows"][0]["text"] == weekly.items[0].value.text == "Keep this request"
     )

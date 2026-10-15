@@ -16,6 +16,7 @@ from parishkit.stewardship.reports.weekly_observation import (
     capture_weekly_observation,
 )
 from parishkit.stewardship.reports.weekly_selection import WeeklyHistory, select_weekly
+from parishkit.stewardship.source.source_status import NOT_IN_PARISHSOFT
 
 from .response_builders import response_source
 from .test_background_grants_postgresql import task_login
@@ -138,7 +139,8 @@ def test_current_source_changes_never_drop_a_submitted_item(
     assert after.items[0].value.family_duid == 1
     assert after.source_id == snapshot.pk != before.source_id
     if change == "removed":
-        assert after.items[0].value.family_name == "Family"
+        # The email has no badge, so the shared phrase names it (#1216).
+        assert after.items[0].value.family_name == NOT_IN_PARISHSOFT
     elif change == "name":
         assert after.items[0].value.family_name == "Changed household"
         assert before.items[0].value.family_name != "Changed household"

@@ -28,9 +28,9 @@
 {# Columns in the shared order (UX conventions, "Table column order", #932): the Member leads, the Member and Family names each with its DUID in its own column, the Ministry by name alone (#1123), then the change, its resolution and its mark, and the tick last. #}
 <caption>{% translate "Roster changes to enter" %}</caption><thead><tr>{% translate "Member" as heading %}{% sort_heading table "member" heading %}{% translate "Member DUID" as heading %}{% sort_heading table "member_duid" heading "numeric" %}<th scope="col">{% translate "ParishSoft status" %}</th>{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "Family DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}{% translate "Ministry" as heading %}{% sort_heading table "ministry" heading %}{% translate "Request" as heading %}{% sort_heading table "request" heading %}{% translate "Resolved" as heading %}{% sort_heading table "resolved" heading %}<th scope="col">{% translate "Resolved by" %}</th><th scope="col">{% translate "Replaced by a later response" %}</th><th scope="col">{% translate "Entered in ParishSoft" %}</th><th scope="col">{% translate "Entered by" %}</th><th scope="col">{% translate "Entered at" %}</th><th scope="col">{% translate "Actions" %}</th></tr></thead><tbody>
 {% for row in table.rows %}<tr>
-<th scope="row" id="member-{{ row.id }}"><a href="{% url 'admin:ministry_followup_item' row.id %}">{{ row.member_name }}</a></th>
+<th scope="row" id="member-{{ row.id }}"><a href="{% url 'admin:ministry_followup_item' row.id %}">{% if row.member_name %}{{ row.member_name }}{% else %}{{ row.member_label }}{% endif %}</a></th>
 {% if row.member_duid %}<td class="numeric">{{ row.member_duid|duid }}</td>{% else %}<td>{% translate "New Member" %}</td>{% endif %}
-<td>{% if row.source_mark %}<span class="status-badge" data-source-mark>{{ row.source_mark.0 }}</span>{% endif %}</td>
+<td>{% if row.source_mark %}{% source_status row.member_status %}{% endif %}</td>
 <td>{{ row.family_name }}</td>
 <td class="numeric">{% if row.family_duid %}{{ row.family_duid|duid }}{% endif %}</td>
 <td id="ministry-{{ row.id }}">{{ row.ministry_name }}</td>

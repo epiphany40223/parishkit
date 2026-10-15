@@ -126,7 +126,9 @@ WITH selected AS MATERIALIZED (
         coalesce(nullif(btrim(concat_ws(' ',
             coalesce(r.person->>'firstName',r.proposed->>'first_name'),
             coalesce(r.person->>'lastName',r.proposed->>'last_name'))),''),
-            'Unavailable Member') AS member_name,
+            -- Only current Members and Members the Family added are listed
+            -- (#1217), so a missing name is a gap in the data (#1216).
+            'Name not recorded in ParishSoft') AS member_name,
         CASE WHEN r.entity_kind='member' THEN r.entity_key::bigint END AS member_duid,
         CASE WHEN r.entity_kind='proposed_member' THEN r.entity_key END AS proposed_id,
         CASE WHEN NOT operational AND coalesce(

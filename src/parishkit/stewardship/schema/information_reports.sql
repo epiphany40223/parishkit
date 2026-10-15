@@ -55,13 +55,23 @@ BEGIN
                 nullif(btrim(concat_ws(' ',
                     nullif(btrim(p.canonical::jsonb->>'firstName'),''),
                     nullif(btrim(p.canonical::jsonb->>'lastName'),''))),''),
-                'Family') AS family_name,
+                -- No name (NULL) for a Family the data no longer has: the
+                -- page shows its ParishSoft status badge alone, and it sorts
+                -- after the names (#1216). A present Family without a usable
+                -- name reads so.
+                CASE WHEN p.id IS NOT NULL THEN 'Name not recorded in ParishSoft' END)
+                AS family_name,
             -- The surname that leads the shown name, as Python names it
             -- (migration 0045's shared functions); family_name above keeps
             -- its own trim for the returned rows.
-            stewardship_family_surname_v1(p.canonical::jsonb,'Family') AS surname,
+            stewardship_family_surname_v1(p.canonical::jsonb,
+                CASE WHEN p.id IS NOT NULL THEN 'Name not recorded in ParishSoft' END) AS surname,
             CASE WHEN jsonb_typeof(p.canonical::jsonb->'active_head_duids')='array'
                 THEN p.canonical::jsonb->'active_head_duids' END AS head_duids,
+            -- Whether ParishSoft marks the Family active (NULL when it is not
+            -- in the data), for its ParishSoft status (#1216).
+            CASE WHEN jsonb_typeof(p.canonical::jsonb->'active')='boolean'
+                THEN (p.canonical::jsonb->'active')::boolean END AS active,
             h.value->'reported' ? i.id::text AS previously_reported,
             h.value->'corrected' @>
                 jsonb_build_array(jsonb_build_array(i.id::text,i.disposition))

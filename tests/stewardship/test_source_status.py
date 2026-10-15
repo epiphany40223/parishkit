@@ -16,15 +16,17 @@ from django.template import Context, Template
 from parishkit.stewardship.source.source_status import (
     DECEASED_IN_PARISHSOFT,
     INACTIVE_IN_PARISHSOFT,
+    NAME_NOT_RECORDED,
     NOT_IN_PARISHSOFT,
     family_status,
     source_status_label,
 )
 
 PACKAGE = Path(__file__).resolve().parents[2] / "src/parishkit/stewardship"
-# Phrases the convention replaced. Installed SQL (schema/*.sql and frozen
-# migrations) still prints "Unavailable Member" and "Unavailable Family"
-# until later changes of #1216 replace those selections with a migration.
+# Phrases the convention replaced. Released frozen migrations still hold
+# them in the bodies later files replaced (migration 0094 replaced the last
+# installed ones), so only they are exempt; the installed bodies are checked
+# in database/test_source_status_postgresql.py.
 RETIRED = (
     "Unavailable Member",
     "Unavailable Family",
@@ -96,13 +98,17 @@ def test_the_tag_renders_the_shared_badge():
 
 
 def _sources():
-    """Every template, script and Python module of the package."""
-    for pattern in ("*.html", "*.js", "*.py"):
+    """Every template, script, Python module and baseline SQL file of the package."""
+    for pattern in ("*.html", "*.js", "*.py", "*.sql"):
         yield from PACKAGE.rglob(pattern)
 
 
 def test_pages_and_code_do_not_use_the_retired_phrases():
-    """Templates and Python use the shared words, not the six old ones."""
+    """Templates, Python and the SQL baseline use the shared words, not the old ones.
+
+    Frozen migrations and Django migrations are skipped: a released file
+    never changes, and later ones replaced what the earlier ones installed.
+    """
     found = [
         f"{path.relative_to(PACKAGE)}: {phrase}"
         for path in _sources()
@@ -111,6 +117,28 @@ def test_pages_and_code_do_not_use_the_retired_phrases():
         if phrase in path.read_text()
     ]
     assert found == []
+
+
+@pytest.mark.parametrize(
+    ("name", "phrase"),
+    [
+        ("directory_reports.sql", NAME_NOT_RECORDED),
+        ("financial_reports.sql", NAME_NOT_RECORDED),
+        ("information_reports.sql", NAME_NOT_RECORDED),
+        ("ministry_followup.sql", NAME_NOT_RECORDED),
+        ("ministry_packets.sql", NAME_NOT_RECORDED),
+        ("ministry_reports.sql", NAME_NOT_RECORDED),
+        ("weekly_capture.sql", NAME_NOT_RECORDED),
+        ("weekly_capture.sql", NOT_IN_PARISHSOFT),
+    ],
+)
+def test_installed_sql_spells_the_shared_phrases(name, phrase):
+    """SQL that names a Member or Family itself uses the Python constants' words.
+
+    A selection that builds its name in SQL cannot import them, so a change
+    to a phrase in source_status.py must also be made there (#1216).
+    """
+    assert f"'{phrase}'" in (PACKAGE / "schema" / name).read_text()
 
 
 @pytest.mark.parametrize(

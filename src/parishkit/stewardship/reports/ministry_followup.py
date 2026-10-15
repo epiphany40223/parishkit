@@ -12,6 +12,7 @@ from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.audit.schemas import Action
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
+from parishkit.stewardship.source.source_status import source_status_label
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import PageWindow, filters
 from parishkit.stewardship.web.tables import PAGE_SIZES, Sorting
@@ -68,22 +69,21 @@ HISTORY_STATES = STATE_LABELS | {"assigned": "Assigned"}
 # them (the selection itself refuses: schema/ministry_followup.sql).
 NOT_IN_SOURCE = "not_in_parishsoft"
 # How a Member's standing in ParishSoft (stewardship_member_source_status_v1)
-# is marked: the badge's words, #1216's phrases, so they cannot be taken for
-# a Ministry's own activity marks, and the specific reason the request page
-# gives. A Member who moved to another Family reads as not in ParishSoft, as
-# #1216 proposes; #1216 will share these words portal-wide.
+# is marked: the badge's words, the shared phrases (source_status.py, #1216),
+# and the specific reason the request page gives. A Member who moved to
+# another Family reads as not in ParishSoft, as a deleted one does.
 MEMBER_STATUS_MARKS = {
-    "missing": (
-        "Not in ParishSoft",
-        "ParishSoft no longer has this Member; the record may have been "
-        "deleted or merged into another",
-    ),
-    "moved": (
-        "Not in ParishSoft",
-        "ParishSoft now lists this Member in another Family",
-    ),
-    "inactive": ("Inactive in ParishSoft", "ParishSoft marks this Member inactive"),
-    "deceased": ("Deceased in ParishSoft", "ParishSoft marks this Member deceased"),
+    status: (source_status_label(status), reason)
+    for status, reason in (
+        (
+            "missing",
+            "ParishSoft no longer has this Member; the record may have been "
+            "deleted or merged into another",
+        ),
+        ("moved", "ParishSoft now lists this Member in another Family"),
+        ("inactive", "ParishSoft marks this Member inactive"),
+        ("deceased", "ParishSoft marks this Member deceased"),
+    )
 }
 # The Outcome filter's choices: every outcome a person can record, with the
 # combined labels (both meanings of declined, #1132), plus Closed: no
@@ -389,9 +389,18 @@ def followup_page(
         row["state_label"] = STATE_LABELS[row["state"]]
         # The packet's exact labels, by the row's kind of request (#1132).
         row["outcome_label"] = outcome_label(row["outcome"], row["action"])
-        # A Member ParishSoft no longer lists here (#1217): marked, and
-        # nothing can be recorded for the request (workflows/followup.py).
-        row["source_mark"] = MEMBER_STATUS_MARKS.get(row.pop("member_status", None))
+        # A Member ParishSoft no longer lists here (#1217): marked with the
+        # shared badge ({% source_status row.member_status %}), and nothing
+        # can be recorded for the request (workflows/followup.py).
+        row["source_mark"] = MEMBER_STATUS_MARKS.get(row.get("member_status"))
+        # The selection gives no name for a Member the data no longer has in
+        # this Family (#1216): its name cell holds the badge alone and a file
+        # leaves the name blank; a heading or confirmation names it by its
+        # ParishSoft status instead.
+        row["member_name"] = row["member_name"] or ""
+        row["member_label"] = row["member_name"] or source_status_label(
+            row.get("member_status")
+        )
         for field in (
             "submitted_at",
             "resolved_at",

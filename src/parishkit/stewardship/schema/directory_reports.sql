@@ -97,7 +97,8 @@ WITH selected AS MATERIALIZED (
             nullif(btrim(f.value->>'mailingName',(SELECT ws FROM name_trim)),''),
             nullif(concat_ws(' ',nullif(btrim(f.value->>'firstName',(SELECT ws FROM name_trim)),''),
                 nullif(btrim(f.value->>'lastName',(SELECT ws FROM name_trim)),'')),''),
-            'Family') AS family_name,
+            -- A listed Family is in the data; a blank name is a gap (#1216).
+            'Name not recorded in ParishSoft') AS family_name,
         f.value->'active_head_duids' AS head_duids,
         concat_ws(' ',f.value->>'firstName',f.value->>'lastName') AS search_name,
         coalesce(f.value->>'envelopeNumber','') AS envelope_number,

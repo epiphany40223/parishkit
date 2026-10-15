@@ -12,6 +12,7 @@ from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.responses.models import AdditionalInformationRevision
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.source.snapshot_names import name_file_rows
+from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import PageWindow, filters
 from parishkit.stewardship.web.dates import UnknownZone
@@ -135,11 +136,12 @@ def name_families(result):
     The name (#932) is read from the snapshot the rows were read from, for
     the page and for an export rendered later from its capture alike; SQL
     still searches and orders by the surname that leads it. A Family without
-    a surname is "Family", as the SQL names it. Once that snapshot has been
-    compacted, a late export render keeps the captured surname for every
-    row, and the file's "Family names" detail says which form it used.
+    a surname is "Name not recorded in ParishSoft", as the SQL names it, and
+    one the data no longer has keeps no name (#1216). Once that snapshot has
+    been compacted, a late export render keeps the captured surname for
+    every row, and the file's "Family names" detail says which form it used.
     """
-    name_file_rows(result["metadata"], result["rows"], default="Family")
+    name_file_rows(result["metadata"], result["rows"], default=NAME_NOT_RECORDED)
     return result
 
 

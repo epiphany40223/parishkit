@@ -11,6 +11,7 @@ from django.urls import reverse
 
 from parishkit.stewardship.reports import information_views
 from parishkit.stewardship.reports.information import InformationQuery
+from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 
 
 @pytest.mark.parametrize(
@@ -176,4 +177,4 @@ def test_name_families_names_rows_from_their_snapshot_as_the_sql_does(monkeypatc
     }
     assert information.name_families(result) is result
     assert result["rows"][0]["family_name"] == "Example, Ann and Bo"
-    assert calls == [("snap", "Family")]
+    assert calls == [("snap", NAME_NOT_RECORDED)]
