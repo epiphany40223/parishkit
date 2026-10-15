@@ -570,9 +570,11 @@ def test_bulk_outcome_buttons_follow_the_kind_of_the_ticked_requests(
     assert buttons.all_inner_texts() == BULK_NAMES
     # Page positions, not window ones: ticking a box below the fold (the
     # totals and By Ministry sit above the table, #1133) scrolls it in.
+    # Compared with same_place: Linux Firefox's fractional scroll offset
+    # adds ~0.00003 px of float noise to an unmoved box.
     place = """node => {
       const box = node.getBoundingClientRect();
-      return JSON.stringify([box.x + scrollX, box.y + scrollY, box.width, box.height]);
+      return [box.x + scrollX, box.y + scrollY, box.width, box.height];
     }"""
     before = [buttons.nth(i).evaluate(place) for i in range(buttons.count())]
     table_top = page.locator("#followup-table").evaluate(place)
@@ -585,8 +587,10 @@ def test_bulk_outcome_buttons_follow_the_kind_of_the_ticked_requests(
     page.locator(f"input[data-select-row][value^='{BULK_JOIN}:']").uncheck()
     assert bulk_gate(page) == ([False, False, True, True], BULK_KIND_HINTS["leave"])
     # Ticking never moves a control or the table (no layout shift).
-    assert [buttons.nth(i).evaluate(place) for i in range(buttons.count())] == before
-    assert page.locator("#followup-table").evaluate(place) == table_top
+    assert same_place(
+        [buttons.nth(i).evaluate(place) for i in range(buttons.count())], before
+    )
+    assert same_place(page.locator("#followup-table").evaluate(place), table_top)
     # A restored selection without change events: the join instead.
     page.evaluate(
         f"""() => {{

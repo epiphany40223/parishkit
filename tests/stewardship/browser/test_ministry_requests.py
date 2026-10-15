@@ -281,7 +281,9 @@ def test_packet_waits_while_too_many_ministries_are_ticked(page, component_origi
     boxes = page.locator("#ministry-packet-choices input[name=ministries]")
     assert boxes.count() == 2 and queue.is_enabled()
     assert "ministry-packet-hint" in queue.get_attribute("aria-describedby").split()
-    # Page coordinates: ticking a box scrolls it into view.
+    # Page coordinates: ticking a box scrolls it into view. Compared within
+    # half a pixel, as same_place does: Linux Firefox adds float noise of
+    # ~0.00005 px to an unmoved box; a real shift moves a whole pixel.
     where = (
         "e => { const r = e.getBoundingClientRect();"
         " return [r.left + scrollX, r.top + scrollY]; }"
@@ -296,7 +298,7 @@ def test_packet_waits_while_too_many_ministries_are_ticked(page, component_origi
         "2 Ministries are ticked, more than 1. Untick some, or untick them all "
         "to include every Ministry."
     )
-    assert queue.evaluate(where) == place
+    assert queue.evaluate(where) == pytest.approx(place, abs=0.5)
     boxes.nth(0).uncheck()
     assert queue.is_enabled() and hint.inner_text() == ""
     assert hint.bounding_box()["height"] == height
