@@ -217,6 +217,34 @@ def test_the_leader_review_offers_apply_only_with_someone_to_import():
     assert "Nobody to import" in none and "data-review-preview" not in none
 
 
+def test_importing_every_ticked_leader_is_a_confirmation():
+    """Import selected with nobody skipped or left over (#1356): the
+    question and sentence the dialog takes, the signed preview, and none of
+    the ticked rows."""
+    leaders = [
+        {"email": f"{name}@example.org", "name": name, "member_duid": 900 + number}
+        for number, name in enumerate(("ann", "bob"))
+    ]
+    text = render_to_string(
+        "stewardship/user-leader-import.html",
+        {
+            "added": leaders,
+            "skipped": [],
+            "preview": "signed",
+            "limit": 100,
+            "confirmation": True,
+        },
+    )
+    assert 'data-review-title="Import the selected leaders?"' in text
+    assert 'data-review-describedby="leader-import-summary"' in text
+    assert (
+        '<p id="leader-import-summary">This adds the 2 chosen leaders as users '
+        "with the role Ministry leader.</p>" in text
+    )
+    assert 'name="preview" value="signed" data-review-preview' in text
+    assert "ann@example.org" not in text and "<table" not in text
+
+
 def test_new_and_edit_user_review_in_the_dialog_and_return_to_users():
     """The entry form opens user-review; Apply posts to Users, then returns."""
     source = (TEMPLATES / "user-entry.html").read_text(encoding="utf-8")

@@ -4584,7 +4584,14 @@ something to import (and Import selected only while a row is selected). The
 **Import Ministry leaders** review, shown in the
 [review dialog](../ui-conventions/spec.md#review-dialog), lists each chosen person as a new user
 with the role Ministry leader and their default Name, and lists separately
-anyone skipped because they became a user meanwhile. **Apply** records one
+anyone skipped because they became a user meanwhile. When Import selected
+imports every ticked row, with nobody skipped and none left over for the
+per-change limit, the dialog is a
+[confirmation](../ui-conventions/spec.md#review-dialog) instead (#1356),
+"Import the selected leaders?": the ticked rows are on the page behind it,
+so it says only "This adds the 2 chosen leaders as users with the role
+Ministry leader." Import all (which takes rows on other pages), a skipped
+row or the limit keeps the full review. **Apply** records one
 configuration change for the whole batch, with one audit entry naming the
 count and one audit row per new user, and both tables then refresh in place.
 Import never changes an existing user, never grants more than Ministry
