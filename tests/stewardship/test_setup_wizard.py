@@ -31,6 +31,7 @@ def draft(
         sections=sections or {},
         source_task_id=source,
         source_task_state=task_state,
+        source_loaded=task_state == "succeeded",
         reviewed=reviewed or {},
     )
 
