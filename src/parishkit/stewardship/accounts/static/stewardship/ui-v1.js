@@ -903,7 +903,8 @@
       });
     }
   });
-  // Fill one schedule's fields (New and Edit's form, or one first-campaign
+  // Fill one schedule's fields (New and Edit's form,
+  // or one date-change review repeat
   // row) from its data-schedule-local moment, in this browser's zone.
   document.querySelectorAll("form[data-schedule-entry][data-schedule-local], "
     + "[data-schedule-row][data-schedule-local]").forEach((scope) => {
@@ -4463,7 +4464,8 @@
     });
   };
   // Every date a repeat rule gives, and why any of them will not be added
-  // (shared by the first-campaign panel and New scheduled email, #878).
+  // (shared by the date-change review repeat panel and New scheduled
+  // email, #878).
   // ``existing`` is the Family mailings already scheduled, as {kind, date,
   // time} campaign-local text; ``first`` and ``last`` the campaign's dates;
   // ``room`` how many more of the ``limit`` schedules fit; ``sendTime`` the canonical send
@@ -4880,7 +4882,8 @@
   // Reminder, a Repeat checkbox swaps the send date for a repeat rule. The
   // page's own send time and Email to send apply to every date. As the Admin
   // types, the dates the rule gives are listed with the same checks as the
-  // first-campaign panel (repeatDates), against the saved invitations and
+  // date-change review repeat panel (repeatDates), against the saved
+  // invitations and
   // reminders the page carries (data-repeat-mailings) and the schedules
   // still free (data-repeat-room). Dates and the time are this browser's
   // (#558): the saved mailings and the campaign's first and last moments

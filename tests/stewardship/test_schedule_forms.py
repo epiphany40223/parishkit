@@ -704,13 +704,13 @@ def test_a_saved_daily_digest_posted_unchanged_keeps_its_comparison():
     assert formset.patch() == []
 
 
-# The first-campaign step's send times are the browser's (#558). The
+# The date-change review's send times are the browser's (#558). The
 # fixture campaign is in New York, October 1-31, 2054.
 BROWSER_NOW = datetime(2054, 9, 1, 12, tzinfo=UTC)
 
 
 def browser_schedules(data, owner, previous, templates=(), *, zone):
-    """A first-campaign formset that takes times typed in ``zone``."""
+    """A schedule formset that takes times typed in ``zone``."""
     return Schedules(
         None if data is None else data | {"zone": zone},
         prefix="schedules",
