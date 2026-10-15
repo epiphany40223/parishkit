@@ -15,7 +15,7 @@ from uuid import UUID
 
 import pytest
 
-from parishkit.stewardship import admin_cli, admin_tests
+from parishkit.stewardship import admin_changes, admin_cli, admin_tests
 
 from .test_admin_reads import FORBIDDEN, members
 
@@ -272,6 +272,8 @@ def test_every_test_command_has_a_golden_document():
 def test_the_sample_prompts_only_while_an_outcome_is_unknown(monkeypatch, unknown):
     """The page shows its checkbox only then; so the command asks only then."""
     sent = []
+    # The role check that comes before any input or prompt (#1341) admits.
+    monkeypatch.setattr(admin_changes, "_admit_change", lambda *a, **k: None)
     monkeypatch.setattr(admin_tests, "unknown_outcome", lambda caller, run: unknown)
     monkeypatch.setattr(
         admin_tests,
@@ -324,6 +326,8 @@ def test_the_sample_token_binds_the_recipient_by_digest():
 def test_the_families_send_always_prompts(monkeypatch):
     """The page always asks, so the command always asks; nothing typed sends nothing."""
     sent = []
+    # The role check that comes before any input or prompt (#1341) admits.
+    monkeypatch.setattr(admin_changes, "_admit_change", lambda *a, **k: None)
     monkeypatch.setattr(admin_tests, "families_count", lambda token: 2)
     monkeypatch.setattr(
         admin_tests, "send_families", lambda caller, run, **values: sent.append(1)
