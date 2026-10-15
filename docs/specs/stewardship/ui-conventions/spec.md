@@ -56,7 +56,8 @@ when it lands.
   [single-campaign interim](#single-campaign-interim),
   [addresses and legacy URLs](#addresses-and-legacy-urls),
   [not-found pages](#not-found-pages),
-  [unavailable menu pages](#unavailable-menu-pages).
+  [unavailable menu pages](#unavailable-menu-pages),
+  [navigation rules](#navigation-rules).
 - Admin page layout: [page help](#page-help),
   [button labels](#button-labels), [shared visual style](#shared-visual-style),
   [colour scheme](#colour-scheme),
@@ -1057,7 +1058,7 @@ section says how every Review behaves.
   no jump to the top. A New or Edit page (New user, New scheduled email)
   returns instead to the table page it was opened from (Users, Dates and
   mail schedules), as [flows end where the reader
-  started](../admin-portal/spec.md#navigation-rules) says. A Review that the
+  started](#navigation-rules) says. A Review that the
   server answers with another page (Campaign settings' dates-only change,
   which leads to Dates and mail schedules) ends on that page. Wherever the
   reader ends, a short status line under the form or above the table says
@@ -1319,7 +1320,7 @@ or action, with the tip "Disabled; will be removed with the single-campaign
 change (#145)", shown and announced the same way as an unavailable menu
 entry's reason. The server refuses the matching actions too, so a greyed
 control cannot be bypassed
-([navigation rule 10](../admin-portal/spec.md#navigation-rules), [decisions 18 and
+([navigation rule 10](#navigation-rules), [decisions 18 and
 19](../admin-portal/spec.md#navigation-decisions)).
 
 ### Addresses and legacy URLs
@@ -1404,6 +1405,92 @@ opens one page per kind of reason. **Precedent.** #1128.
   the `menu_link` template tag (`components/menu-link.html`),
   `admin_navigation.PAGE_REASONS`, `admin_context.page_unavailable`.
   **Precedent.** #1242.
+
+### Navigation rules
+
+**Rule.** Every Admin page follows the numbered rules below: it is
+reachable, has a way back, has one name, and ends a flow where the reader
+started. **Why.** One registry and one set of rules keep the menu, the
+trails and the page names from drifting. **Shared code.** The registry in
+`accounts/admin_navigation.py`; `test_admin_navigation.py`,
+`test_admin_page_names.py`, `test_admin_ways_back.py`,
+`test_admin_message_links.py` and `test_admin_reachability_postgresql.py`.
+**Precedent.** #520, #521, #522. Where each page sits (its menu group,
+parent, name and URL) is feature placement and stays in the Admin portal's
+[Admin navigation](../admin-portal/spec.md#admin-navigation).
+
+These rules are requirements; a navigation test checks each one against the
+registry and the rendered pages.
+
+1. **Reachable.** Every registered page is a menu entry or names a parent in
+   the registry, and following parents always ends at a menu entry or Home.
+   Every child page is linked from its parent page in at least one state the
+   test renders, or is the result of a form on its parent that the registry
+   lists. No page is reachable only from an email, an error page or another
+   group's page.
+2. **Every report has a menu entry**, and every page listed under a report
+   entry is reached from that report.
+3. **A way back.** Every page except Home, the sign-in, the setup wizard and
+   the pages the access gate shows instead of a page (maintenance, not
+   configured yet, and error pages) shows a breadcrumb whose parent crumb is a
+   link the viewer may open, or a "Return to" link when the parent cannot be
+   linked. An error page offers a way back to the page the reader came from,
+   or to Home; the Restore review, maintenance and not-configured pages
+   offer sign-out. Templates do not hand-write back links that
+   repeat the trail.
+4. **One name.** A menu entry's page heading equals its menu label; a child
+   page's heading equals its breadcrumb label; the browser title starts with
+   the same name. The only exceptions are the object-named pages in the Admin portal's
+   [page names and placement](../admin-portal/spec.md#page-names-and-placement)
+   table.
+   Every "Return to" link names its target by that target's name. The
+   shared error page cannot know which page the reader came from, so its
+   link says "Return to the previous page"; the export error page reads
+   nothing from the database, so its link says "Return to the export status
+   page".
+5. **Flows end where the reader started.** After an action, the reader lands
+   on the page whose task started it: a settings change ends on the settings
+   page, and a New or Edit page's change on the table it was opened from
+   (Users, Dates and mail schedules), with the
+   [review dialog](#review-dialog)'s short status line there (until #750
+   converts a page, its separate status page returns there); Preview and test email returns to the page it was
+   opened from, remembered in the signed-in session as a change's origin is
+   (never in the URL); a manual ParishSoft refresh stays on Refresh from
+   ParishSoft and shows its progress there; sending a weekly report now ends
+   on Emailed reports with a link to the report; Cancel returns to the page it
+   was pressed on, never Home unless the flow started there.
+6. **Messages link what they name.** A message that tells the reader to use
+   another page links that page when the viewer may open it. A page is linked
+   only when the viewer may open it now: an in-page link to a page the menu
+   greys out is greyed out the same way, with the menu's reason (#1242), and
+   the navigation test fails on any followed link that answers an error,
+   apart from a short documented allow-list of fixture limits that may only
+   shrink.
+7. **Stable shape.** For each role, the menu's groups and entries are the same
+   across modes and campaign states (setup pending excepted); an unavailable
+   entry is greyed out with its reason, never removed, and stays reachable by
+   keyboard with its reason announced.
+8. **One home per concept.** A page appears under one menu entry only;
+   another page may link it, but its breadcrumb always runs through its home
+   (Content history runs through Campaign settings).
+9. **Every route classified.** Every Admin route is either a registered page
+   or listed as a non-page (form actions, downloads, images, status
+   fragments, sign-in and the setup wizard), and a test requires every new
+   route to be classified. A route that answers only POST or only JSON is a
+   non-page, not a page.
+10. **Multi-campaign controls are greyed out.** Every reachable or visible
+    control whose only purpose is multi-campaign work is an unavailable
+    control with the tip "Disabled; will be removed with the single-campaign
+    change (#145)", reachable by keyboard and announced as its description.
+    The controls are: Copy campaign on Campaign settings, and
+    the "create the successor draft" choice in the checklist after [Return to
+    Testing](../admin-portal/spec.md#return-to-testing-after-archive), which does not exist yet
+    (#527), so until it does the server's refusal alone covers it. The server
+    refuses the matching actions: cloning, creating a successor draft, and
+    choosing a campaign other than the current one for a report. The retired
+    chooser addresses are gone (404, #864). New campaign is removed outright ([decision
+    11](../admin-portal/spec.md#navigation-decisions)), not greyed, and so are the "Choose a retained
+    campaign" links once greyed on Participation and Ministry requests (#1125).
 
 ## Admin page layout and help
 

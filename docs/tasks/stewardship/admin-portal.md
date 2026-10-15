@@ -1057,7 +1057,7 @@ ADM-12.20 (NAV-17) adds
 `tests/stewardship/database/test_admin_reachability_postgresql.py`. As
 Administrator and as Staff, on a new Testing draft and on a campaign with a
 complete ParishSoft capture, it follows every GET link from Home and checks
-[navigation rules](../../specs/stewardship/admin-portal/spec.md#navigation-rules)
+[navigation rules](../../specs/stewardship/ui-conventions/spec.md#navigation-rules)
 1 (every page without route arguments that opens is reached) and 3 (every
 reached page but Home has a linked parent crumb or a "Return to" link), and
 that no `href`, `action`, `src` or `data-*-url` names the current campaign.

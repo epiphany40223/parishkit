@@ -421,6 +421,9 @@ trail above the page heading. Both come from a single declarative registry in
 `accounts/admin_navigation.py`, keyed by URL name, that gives each Admin page a
 menu group, a parent page and a label, so the menu and the trails cannot drift
 and no template hand-writes a breadcrumb or a back link that repeats the trail.
+Every Admin page follows the general
+[navigation rules](../ui-conventions/spec.md#navigation-rules) of the UX
+conventions; this section places the pages against them.
 
 This section is the target structure from issue #522, written from a walk
 through every Admin page (109 pages) and settled by the Administrator's
@@ -459,7 +462,7 @@ listed in the
 
 The Admin portal serves one current campaign; controls for more than one
 campaign follow the [single-campaign interim](../ui-conventions/spec.md#single-campaign-interim)
-rule ([navigation rule 10](#navigation-rules),
+rule ([navigation rule 10](../ui-conventions/spec.md#navigation-rules),
 [decisions 18 and 19](#navigation-decisions)).
 
 #### Menu groups
@@ -801,7 +804,8 @@ the viewer's menu entry for it is available.
 
 #### Page names and placement
 
-Every Admin page has one name. The menu entry, the breadcrumb, the page
+Every Admin page has one name
+([navigation rule 4](../ui-conventions/spec.md#navigation-rules)). The menu entry, the breadcrumb, the page
 heading, the browser title and every link or message that names the page use
 it; link text may add a verb ("Return to Pages and emails"). A page that shows
 one object (an email, an integration, an export, an error) is named after that
@@ -981,79 +985,6 @@ Admin URLs follow the menu, so the address says where the reader is
 - **Old URLs are not kept**
   ([#864](https://github.com/epiphany40223/parishkit/issues/864)): see
   [addresses and legacy URLs](../ui-conventions/spec.md#addresses-and-legacy-urls).
-
-#### Navigation rules
-
-These rules are requirements; a navigation test checks each one against the
-registry and the rendered pages.
-
-1. **Reachable.** Every registered page is a menu entry or names a parent in
-   the registry, and following parents always ends at a menu entry or Home.
-   Every child page is linked from its parent page in at least one state the
-   test renders, or is the result of a form on its parent that the registry
-   lists. No page is reachable only from an email, an error page or another
-   group's page.
-2. **Every report has a menu entry**, and every page listed under a report
-   entry is reached from that report.
-3. **A way back.** Every page except Home, the sign-in, the setup wizard and
-   the pages the access gate shows instead of a page (maintenance, not
-   configured yet, and error pages) shows a breadcrumb whose parent crumb is a
-   link the viewer may open, or a "Return to" link when the parent cannot be
-   linked. An error page offers a way back to the page the reader came from,
-   or to Home; the Restore review, maintenance and not-configured pages
-   offer sign-out. Templates do not hand-write back links that
-   repeat the trail.
-4. **One name.** A menu entry's page heading equals its menu label; a child
-   page's heading equals its breadcrumb label; the browser title starts with
-   the same name. The only exceptions are the object-named pages in the table.
-   Every "Return to" link names its target by that target's name. The
-   shared error page cannot know which page the reader came from, so its
-   link says "Return to the previous page"; the export error page reads
-   nothing from the database, so its link says "Return to the export status
-   page".
-5. **Flows end where the reader started.** After an action, the reader lands
-   on the page whose task started it: a settings change ends on the settings
-   page, and a New or Edit page's change on the table it was opened from
-   (Users, Dates and mail schedules), with the
-   [review dialog](../ui-conventions/spec.md#review-dialog)'s short status line there (until #750
-   converts a page, its separate status page returns there); Preview and test email returns to the page it was
-   opened from, remembered in the signed-in session as a change's origin is
-   (never in the URL); a manual ParishSoft refresh stays on Refresh from
-   ParishSoft and shows its progress there; sending a weekly report now ends
-   on Emailed reports with a link to the report; Cancel returns to the page it
-   was pressed on, never Home unless the flow started there.
-6. **Messages link what they name.** A message that tells the reader to use
-   another page links that page when the viewer may open it. A page is linked
-   only when the viewer may open it now: an in-page link to a page the menu
-   greys out is greyed out the same way, with the menu's reason (#1242), and
-   the navigation test fails on any followed link that answers an error,
-   apart from a short documented allow-list of fixture limits that may only
-   shrink.
-7. **Stable shape.** For each role, the menu's groups and entries are the same
-   across modes and campaign states (setup pending excepted); an unavailable
-   entry is greyed out with its reason, never removed, and stays reachable by
-   keyboard with its reason announced.
-8. **One home per concept.** A page appears under one menu entry only;
-   another page may link it, but its breadcrumb always runs through its home
-   (Content history runs through Campaign settings).
-9. **Every route classified.** Every Admin route is either a registered page
-   or listed as a non-page (form actions, downloads, images, status
-   fragments, sign-in and the setup wizard), and a test requires every new
-   route to be classified. A route that answers only POST or only JSON is a
-   non-page, not a page.
-10. **Multi-campaign controls are greyed out.** Every reachable or visible
-    control whose only purpose is multi-campaign work is an unavailable
-    control with the tip "Disabled; will be removed with the single-campaign
-    change (#145)", reachable by keyboard and announced as its description.
-    The controls are: Copy campaign on Campaign settings, and
-    the "create the successor draft" choice in the checklist after [Return to
-    Testing](#return-to-testing-after-archive), which does not exist yet
-    (#527), so until it does the server's refusal alone covers it. The server
-    refuses the matching actions: cloning, creating a successor draft, and
-    choosing a campaign other than the current one for a report. The retired
-    chooser addresses are gone (404, #864). New campaign is removed outright ([decision
-    11](#navigation-decisions)), not greyed, and so are the "Choose a retained
-    campaign" links once greyed on Participation and Ministry requests (#1125).
 
 #### Breadcrumbs and flows
 
@@ -3935,7 +3866,7 @@ in the order the Administrator asked for
 ([#1015](https://github.com/epiphany40223/parishkit/issues/1015)):
 
 1. **Heading.** The page is
-   [object-named](#navigation-rules): its heading names the email by its
+   [object-named](#page-names-and-placement): its heading names the email by its
    type and its Family, such as "Initial invitation to Morgan, Henry". The
    name is the Family's heads, surname first, from the latest ParishSoft
    data, read as Outgoing mail reads it (the shared
@@ -4287,7 +4218,7 @@ Testing.
 Superseded for the Admin portal by the
 [navigation decisions](#navigation-decisions) 10, 11 and 19: reports show the
 current campaign only, and the checklist's "create the successor draft" choice
-is greyed out under [navigation rule 10](#navigation-rules) until #145.
+is greyed out under [navigation rule 10](../ui-conventions/spec.md#navigation-rules) until #145.
 
 ## Portal user management
 
@@ -4660,7 +4591,7 @@ Refresh from ParishSoft menu entry), or with the "Run a full refresh now"
 button on the ParishSoft page and in the Admin home page's refresh
 notice (same capability and CSRF rules). The action inserts a durable task and
 returns immediately to the Refresh from ParishSoft page, which shows the task's
-status ([navigation rule 5](#navigation-rules)). If a poll is running, no
+status ([navigation rule 5](../ui-conventions/spec.md#navigation-rules)). If a poll is running, no
 concurrent poll starts; one manual full refresh may be queued to follow it.
 Repeated clicks return/link to the existing queued run.
 

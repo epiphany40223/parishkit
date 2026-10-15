@@ -1,6 +1,6 @@
 """Templates do not hand-write back links that repeat the trail (#521).
 
-Navigation rule 3 (admin-portal spec): a page's way back is its breadcrumb,
+Navigation rule 3 (UX conventions spec): a page's way back is its breadcrumb,
 whose parent crumb is a link; a "Return to" link is only for a parent that
 cannot be linked. A "Return to" link to the page's own parent, an ancestor or
 Home repeats the trail, so two ways back could drift apart. This reads each
