@@ -2534,8 +2534,9 @@ Edit page posted with the date, time and weekday it showed keeps the saved
 values exactly, so saving it unchanged never moves the send, even when the two
 zones change their clocks at different instants. A page posted without a
 usable zone is refused with a hint to check the computer's time zone setting;
-while the browser reports none, Review changes stays unavailable and says why.
-**Review changes** is unavailable until the form differs from what it was
+while the browser reports none, the button stays unavailable and says why.
+The button reads **Review changes** on Edit and **Add the scheduled email**
+on New. It is unavailable until the form differs from what it was
 drawn with (on Edit, the saved schedule as shown in the browser's zone, so a
 time typed another way that reads the same, such as "6am" for 06:00, is no
 change; on New, the blank form), with a short hint after it; there is no
@@ -2549,7 +2550,15 @@ for a rule between schedules, in the error summary); any other refusal (a
 stale page, a schedule that has run meanwhile) shows in the dialog. The
 dialog lists the change and its affected work (the same review the
 date-change review shows; a repeat lists every reminder it adds, and the
-dialog's body scrolls). While sends block the change it says so and offers
+dialog's body scrolls). A New that adds one schedule that sends once,
+without an edited email, is a
+[confirmation](../ui-conventions/spec.md#review-dialog) instead (#1356):
+nothing exists yet, so the dialog, "Add this scheduled email?", repeats none
+of the form's values and no counts (all zero for an add) and says only
+"This schedules the email to send once, at the date and time chosen;
+nothing is sent now." A recurring schedule, a digest, a repeat or an edited
+email keeps the full review, since its send times, generated reminders or
+email sample are not on the page. While sends block the change it says so and offers
 no Apply. **Apply** records the change, with the same signed preview,
 blocking-work recheck and audit as before; reminder planning and emailed
 Family codes and links are unaffected by how the review is shown.

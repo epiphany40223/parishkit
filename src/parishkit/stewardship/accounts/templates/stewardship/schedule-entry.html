@@ -13,7 +13,7 @@ returns there, where the status line says what was applied. A review refused
 for the values posted keeps the dialog shut: ui-v1.js marks each field and
 shows the summary from this page drawn again with the errors. Any other
 refusal (a stale page, a read-only schedule, a refused Apply) shows inside
-the dialog. Review changes stays unavailable until the form differs from
+the dialog. The button stays unavailable until the form differs from
 what the page was drawn with (data-require-change, #750): on Edit, the saved
 schedule as the page script shows it in this browser's zone; on New, the
 blank form. Its hint keeps its space, so it never moves the page. The repeat
@@ -23,11 +23,18 @@ Send dates and times are shown and typed in the browser's time zone (#558):
 ui-v1.js fills the hidden zone field (data-browser-zone) and names the zone
 in the note, and on an unbound Edit page fills the fields from the saved
 moment in data-schedule-local, which become the values the change gate
-compares with. Without a zone, data-zone-missing shows and Review changes
+compares with. Without a zone, data-zone-missing shows and the button
 stays unavailable.
 Both offer "Edit this schedule's email" (schedule-email.html, #446): a
 changed email is reviewed with the schedule and saved as a new email that
 only this schedule (on New, every reminder its repeat adds) sends.
+On New the button reads "Add the scheduled email" (the action's own label,
+UX conventions "A confirmation when Review would only repeat the page",
+#1356). A schedule that sends once, with no edited email, is answered with a
+confirmation that repeats none of the form's values and names its own
+question and sentence (data-review-title, data-review-describedby); any
+other New (recurring, a digest, a Repeat, an edited email) keeps the full
+review under this dialog's own title.
 {% endcomment %}
 <h1>{% if new %}{% translate "New scheduled email" %}{% else %}{% translate "Edit scheduled email" %}{% endif %}</h1>
 {% aboutpage "schedule-entry" %}{% include 'stewardship/schedule-guide.html' with window_text=window_text browser_times=True %}{% endaboutpage %}
@@ -40,7 +47,7 @@ only this schedule (on New, every reminder its repeat adds) sends.
 {% include 'stewardship/schedule-row.html' with form=entry legend=legend number=0 %}
 {% include 'stewardship/schedule-email.html' %}
 {% if repeat %}<p class="repeat-summary" role="status" data-repeat-summary hidden></p><div data-repeat-posted></div>{% endif %}
-<p>{% button type="submit" autocomplete="off" %}{% translate "Review changes" %}{% endbutton %} <a href="{{ list_url }}">{% translate "Cancel" %}</a> <span class="help unchanged-hint" data-unchanged-hint data-idle>{% if new %}{% translate "Fill in the scheduled email to review it." %}{% else %}{% translate "Change the date, time, email or comparison to review it." %}{% endif %}</span></p>
+<p>{% button type="submit" autocomplete="off" %}{% if new %}{% translate "Add the scheduled email" %}{% else %}{% translate "Review changes" %}{% endif %}{% endbutton %} <a href="{{ list_url }}">{% translate "Cancel" %}</a> <span class="help unchanged-hint" data-unchanged-hint data-idle>{% if new %}{% translate "Fill in the scheduled email to add it." %}{% else %}{% translate "Change the date, time, email or comparison to review it." %}{% endif %}</span></p>
 {% if repeat %}<div data-repeat-dates></div>{% endif %}
 </form>
 {% if new %}{% translate "Review new scheduled email" as review_title %}{% else %}{% translate "Review scheduled email change" as review_title %}{% endif %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="schedule-review" title=review_title apply_url=apply_url return_url=list_url outcome_id="schedules-outcome" fallback="schedule-entry-form" %}

@@ -228,6 +228,11 @@ def test_a_new_reminder_is_reviewed_then_applied_from_the_list(auth_service, goo
     assert 'data-review-done="Scheduled email added."' in text
     assert "<html" not in text and "<form" not in text and "<h1" not in text
     assert "data-review-preview" in text
+    # One schedule that sends once: a confirmation (#1356), no schedule or
+    # counts repeated.
+    assert 'data-review-title="Add this scheduled email?"' in text
+    assert '<p id="schedule-review-summary">' in text
+    assert "Current schedule" not in text and "Reminder — Add" not in text
     dialog = unescape(page.content.decode())
     assert 'data-review-open="schedule-review"' in dialog
     assert 'data-require-change="base_digest"' in dialog
@@ -275,6 +280,8 @@ def test_a_repeat_adds_one_ordinary_reminder_per_date(auth_service, google):
     review = post(browser, NEW, data)
     assert review.status_code == 200, review.content
     assert review.content.decode().count("Reminder — Add") == 2
+    # Its generated reminders keep the full review (#1356).
+    assert "data-review-title" not in review.content.decode()
     assert 'data-review-done="2 reminders added."' in review.content.decode()
     apply(store, post(browser, LIST, {"action": "confirm", "preview": token(review)}))
     assert (

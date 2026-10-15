@@ -286,6 +286,45 @@ def test_the_schedule_review_is_a_fragment_for_the_dialog():
     assert 'data-review-done="Scheduled email changed."' in edited
 
 
+def test_a_one_time_new_schedule_confirms_without_repeating_the_form():
+    """New scheduled email adding one schedule that sends once is a
+    confirmation (#1356): it names its own question and sentence, which the
+    dialog takes for this answer, and lists no schedule or counts. A Repeat,
+    a recurring schedule or an Edit is not."""
+    from parishkit.stewardship.accounts.schedule_entry_views import _sends_once
+
+    once = scheduled() | {"after": {"date": "2054-10-15"}}
+    reviewed = {
+        "changes": [once],
+        "window_changes": {},
+        "series": [],
+        "blocking": 0,
+        "preview": "signed",
+    }
+    assert _sends_once(reviewed)
+    assert not _sends_once(reviewed | {"changes": [once, once]})
+    recurring = scheduled() | {"after": {"date": None}}
+    assert not _sends_once(reviewed | {"changes": [recurring]})
+    assert not _sends_once(reviewed | {"changes": [once | {"operation": "update"}]})
+    assert not _sends_once(reviewed | {"window_changes": {"end_date": 1}})
+    assert not _sends_once(reviewed | {"series": [{"id": "x"}]})
+    text = render_to_string(
+        "stewardship/schedule-review.html",
+        {"changes": [once], "preview": "signed", "new": True, "confirmation": True},
+    )
+    assert re.search(
+        r'<div data-review-answer data-review-done="Scheduled email added." '
+        r'data-review-title="Add this scheduled email\?" '
+        r'data-review-describedby="schedule-review-summary">',
+        text,
+    )
+    assert '<p id="schedule-review-summary">This schedules the email' in text
+    assert 'name="preview" value="signed" data-review-preview' in text
+    assert "Current schedule" not in text and "Reminder — Add" not in text
+    source = (TEMPLATES / "schedule-entry.html").read_text(encoding="utf-8")
+    assert 'translate "Add the scheduled email" %}' in source
+
+
 def test_a_blocked_schedule_review_offers_no_apply():
     """Sends in progress block the change: the reason, and no preview."""
     text = schedule_fragment([scheduled("update", blocking=2)], new=False, blocking=2)
