@@ -49,6 +49,38 @@ def expect(locator):
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
+
+
+@pytest.fixture(autouse=True)
+def background_counts(page):
+    """Answer the header's Background work poll as the page drew it.
+
+    The component server does not serve that endpoint, so the header's 30 s
+    poll fails and shows "Background status unavailable", which wraps the
+    header to a second row at 1280 px and moves the whole page down. The
+    Not current tests wait about 30 s for three failed checks, so whether
+    that line had appeared by the time they measured was a race (seen in
+    all three engines in CI). The counts match the fixture's "1 (running:
+    1)", so the poll changes nothing, and the dashboard's own layout is
+    measured alone.
+    """
+    page.route(
+        "**/admin/background/counts",
+        lambda route: route.fulfill(
+            json={
+                "counts": {
+                    "queued": 0,
+                    "running": 1,
+                    "retry_wait": 0,
+                    "abandoned": 0,
+                    "active": 1,
+                },
+                "delivery_unknown": 0,
+            }
+        ),
+    )
+
+
 REGION = '[data-live-status="system-health"]'
 ANNOUNCER = '[data-live-announcer="system-health"]'
 
