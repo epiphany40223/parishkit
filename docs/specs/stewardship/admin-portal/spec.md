@@ -3434,12 +3434,35 @@ banner; for an Administrator it also names who paused and why, since when
 not-sure-it-arrived counts, and links to Pause and resume mail, which shows the
 held counts by message type.
 
-Resume requires fresh authentication, successful current provider/sender
-health, an exact backlog preview, and explicit confirmation. Current health is
-a test email to the Testing recipient (**Preview and send a test**, on the same
-page) that the mail service accepted after the pause, with the current mail
-settings, less than five minutes before; a later test still in progress, failed or
-uncertain, or a mail-service outage since, means a new test. Resume is refused
+Resume requires fresh authentication, a passed sender check when one is
+needed, an exact backlog preview, and explicit confirmation.
+
+An ordinary administrative pause needs no sender check: Resume, and a closed
+campaign's Release below, go ahead without a test email
+([#1288](https://github.com/epiphany40223/parishkit/issues/1288)). A check is
+needed only after real sender or delivery trouble: a test email sent since the
+pause that is still being sent (wait for its answer), that was not sent or that
+may not have arrived; a send by the current sender whose mail-service health
+was unavailable or systemic (an outage, or a refusal of the whole account such
+as a suspended account or a refused sign-in), whatever its outcome, unless a
+healthy send submitted after that failure was recorded came before the pause
+(the rule mail-service recovery uses, see
+[#1288](https://github.com/epiphany40223/parishkit/issues/1288)); or mail
+settings or a credential other than the ones behind the last send before the
+pause. A refusal at Gmail's sending limit is not trouble: the email was not
+sent, and the limit hold retries it after its own wait. The check is a test email to the Testing recipient
+(**Preview and send a test**, on the same page) that the mail service accepted
+after the pause and after that trouble, with the current mail settings and
+credential. It lasts 30 minutes: long enough to read the preview and confirm a
+fresh sign-in, short enough to still describe the sender as it is. The page
+says in place which holds: no check is needed; a check is needed, why, and to
+send a test email first, with the link; or when the sender was checked and the
+time to resume before. While a needed check is missing, Preview resume is shown
+unavailable with that reason, as the
+[prerequisite gates](../ui-conventions/spec.md#prerequisite-gates) convention
+requires. A preview or confirmation the server refuses because the check is
+missing or has run out draws the page again with that reason, never the
+generic "This information changed" page. Resume is refused
 while any message is still being handed to the mail service or not sure it
 arrived (resolve those first, as above), while a Family group is blocked or a
 report is still being prepared, and, after a direct activation, until the
@@ -3461,14 +3484,15 @@ toward clearing the pause; an uncertain provider outcome is never cancelled
 this way and still blocks the clear.
 Accepted receipts and completed-day Admin digests remain held. Before archive,
 an Admin must use a freshly authenticated **Resolve held messages** workflow to
-release selected non-Family-access message types after a provider check or
+release selected non-Family-access message types (after the sender check
+above, when one is needed) or
 cancel them with exact counts and a reason. This does not reopen Family access
 or campaign schedules. Once every held or uncertain row is resolved, the same
 atomic workflow clears the durable pause control; closed campaigns do not use
 the ordinary Resume action. Reopen readiness is blocked until the prior pause
 and held-message state is resolved. The form offers only choices the server's
 rules accept (#563): a message type appears only while it has held messages;
-Release only after the provider and sender check has passed; Cancel only for
+Release only while no sender check is needed or it has passed; Cancel only for
 types with no email still being handed to the mail service or not sure it
 arrived; Clear only when the pause would clear with no type selected; and the
 types only for Release or Cancel, which need at least one ticked. With no

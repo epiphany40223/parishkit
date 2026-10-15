@@ -790,7 +790,7 @@ pk-admin send controls
 | `paused_at`, `reason` | When it was paused and the reason the pausing Administrator gave (both null when not paused) |
 | `inventory` | Live mail by state: `queued` (unsent, held or not), `held` (stopped by the pause), `submitting` (being handed to the mail service), `unknown` (not sure it arrived), `stranded` (held invitations and reminders a closed campaign will not send), and `types`, one entry per mail type: its `kind` and the same four counts |
 | `next_due` | The next scheduled send: `at` (null when none remain), `count` (schedules due then) and `types` (each `kind` and `count`); it counts schedules, not emails |
-| `health` | The provider and sender check a resume needs: `ready`, `checked_at` and `expires_at` |
+| `health` | The [sender check](../specs/stewardship/admin-portal/spec.md#live-delivery-pause) a resume or release needs: `ready` (true while paused when no check is needed or it has passed), `required`, `trouble` (why one is needed: `test_in_progress`, `provider_failure`, `test_failed` or `sender_changed`; null when not), `checked_at` and `expires_at` |
 | `pause_available` | Whether the page offers Preview pause: `available` and not paused |
 | `resume_available`, `resolve_available` | Whether the page offers Preview resume, or Resolve held messages (a paused, closed campaign); both false unless `available` |
 | `resolution` | The Resolve held messages choices, null unless `resolve_available`: `types` (each `kind`, `name`, `held` and `cancellable`), and whether `release`, `cancel` and `clear` are offered |
@@ -2973,3 +2973,14 @@ print is exit 1 (`invalid`).
 - `pk-admin/1` (#632): additive. `integration schedule-preview
   [--refresh-schedule DOCUMENT|-]`, the ParishSoft page's live refresh
   schedule check (any session, Administrators only, no event).
+- `pk-admin/1` (#1288): a change of meaning, kept on version 1.
+  `send controls` `health` gains `required` (whether a sender check is
+  needed) and `trouble` (why: `test_in_progress`, `provider_failure`,
+  `test_failed` or `sender_changed`; null when none is needed). `ready` now
+  means "held mail may be released": while paused it is true with `proof`,
+  `checked_at` and `expires_at` all null when no check is needed, and
+  otherwise only while a passed check is current, which now lasts 30
+  minutes (it was five). It used to mean that an accepted test after the
+  pause existed. A reader that took `ready` as proof of a test must read
+  `required` and `checked_at` instead. The command mirrors the Pause and
+  resume mail page, and its only readers are Administrator-run assistants.
