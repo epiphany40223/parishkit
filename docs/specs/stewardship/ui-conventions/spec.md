@@ -2118,12 +2118,16 @@ its cell; it never takes the place of a name that is known, so it never sorts
 among the names. Only when no name is known (the data no longer has the
 Member or Family) is the badge alone in the name cell, and the DUID beside
 it identifies the row. The badge's visible text is the whole phrase, so it
-needs no tooltip, and screen readers read the same words. Until downloads
-gain their own "ParishSoft status" column, a download puts the same words in
-the name cell, in parentheses after a known name. Older phrases ("Unavailable
-Member", "Unavailable Family", "Not in the latest ParishSoft data", "Not in
-current ParishSoft data", "Name not in the current ParishSoft data", "No
-longer active in ParishSoft") are retired. This convention is about the
+needs no tooltip, and screen readers read the same words. A download splits
+the name cell into its parts, as [downloaded files](#downloaded-files)
+allows: the name stays in its column (blank when no name is known) and a
+**ParishSoft status** column right after it holds the same words, blank when
+there is nothing to mark. A file whose Family is a report detail rather than
+a column, such as the Family timeline's, has a ParishSoft status detail
+instead. Older phrases ("Unavailable Member", "Unavailable Family", "Not in
+the latest ParishSoft data", "Not in current ParishSoft data", "Name not in
+the current ParishSoft data", "No longer active in ParishSoft") are
+retired. This convention is about the
 ParishSoft data only; a Family's own report on the form ("No longer in this
 household", deceased) is the Family's answer and is worded where it is
 shown.
@@ -2136,20 +2140,27 @@ named "Unavailable" and could not tell whether two pages meant the same thing
 **Shared code.** The phrases and `source_status_label(status)` in
 `source/source_status.py`; the `{% source_status status %}` template tag in
 `accounts/templatetags/stewardship.py`, which renders the `status-badge`
-(nothing for a current Member or Family). The status keys are those of the
-SQL `stewardship_member_source_status_v1` (open PR #1218): `current`,
+(nothing for a current Member or Family); the downloads' `STATUS_HEADING`
+and `family_status(name, active=...)`, which reads a Family row's key. The
+status keys are those of the SQL `stewardship_member_source_status_v1`
+(open PR #1218): `current`,
 `missing`, `moved`, `inactive` and `deceased`. A guard test keeps the retired
 phrases out of templates and Python.
 
 **Precedent.** [#1216](https://github.com/epiphany40223/parishkit/issues/1216)
 (Administrator, 2026-10-13, on #1131). Family pages use it since #1216's
-first change. The Ministry follow-up pages, Ministry requests and packets
-still print "Unavailable Member" from their installed SQL, and the
-financial and information reports print "Unavailable Family" for a Family the
-data no longer has; they move to it in later changes of #1216, after #1217.
-The Family timeline, Outgoing mail and Testing submissions still stand
-"Family" in for a blank surname, and move to "Name not recorded in
-ParishSoft" in a later change too.
+first change, and the Family-code directory, Census changes and Family
+timeline downloads have the ParishSoft status column (or detail) since its
+second. The Ministry follow-up pages, Ministry requests and packets still
+print "Unavailable Member" from their installed SQL, and the financial and
+information reports print "Unavailable Family" for a Family the data no
+longer has; they move to it, their downloads with a ParishSoft status
+column, in later changes of #1216, after #1217. The Family timeline,
+Outgoing mail, Refused addresses, Testing submissions, the chosen-Family
+send page and "Families on the form now" word a blank surname "Name not
+recorded in ParishSoft" since that second change; the Family codes
+directory and the information reports, whose names are built in installed
+SQL, still stand "Family" in for it until the same later changes.
 
 ### Table fit and row height
 
@@ -2254,7 +2265,9 @@ demographics" was Gender, Age, Email, Phones and Known primary Family address
 [#932](https://github.com/epiphany40223/parishkit/issues/932)). Those lists
 were retired (#1157); Ministry follow-up's Export these requests splits its
 Status cell ("Resolved: Joined the Ministry") into Status and Outcome the
-same way.
+same way, and a Family cell with its
+[ParishSoft status](#members-and-families-no-longer-in-parishsoft) badge is
+Family and ParishSoft status (#1216).
 
 Recorded exceptions to the rule above:
 

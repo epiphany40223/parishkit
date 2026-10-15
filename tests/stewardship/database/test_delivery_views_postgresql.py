@@ -47,6 +47,7 @@ from parishkit.stewardship.jobs.recipient_models import (
 from parishkit.stewardship.jobs.storage import change_run, retry_failed
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.snapshot_names import snapshot_family_names
+from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 from parishkit.stewardship.web.presentation import instant
 
 from ..policy_factory import address
@@ -201,7 +202,7 @@ def family_name(message):
     """The Family name Outgoing mail shows for ``message``, from the snapshot."""
     duid = FamilyCampaign.objects.get(pk=message.family_id).family_duid
     snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
-    return snapshot_family_names(snapshot, [duid], "Family")[duid]
+    return snapshot_family_names(snapshot, [duid], NAME_NOT_RECORDED)[duid]
 
 
 def test_outgoing_mail_names_each_family_beside_its_duid(family_mail, google):  # noqa: F811
@@ -212,7 +213,7 @@ def test_outgoing_mail_names_each_family_beside_its_duid(family_mail, google):  
     assert message.updated_at != message.created_at
     duid = FamilyCampaign.objects.get(pk=message.family_id).family_duid
     name = family_name(message)
-    assert name and name != "Family"
+    assert name and name != NAME_NOT_RECORDED
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True):
         response = browser.get("/admin/mail/outgoing/", {"sort": "-duid"})
@@ -501,7 +502,7 @@ def test_outgoing_mail_and_refused_addresses_lead_to_each_other(
         mailbox: remember(event, address=mailbox) for mailbox, event in events.items()
     }
     snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
-    name = snapshot_family_names(snapshot, [1], "Family")[1]
+    name = snapshot_family_names(snapshot, [1], NAME_NOT_RECORDED)[1]
     assert name
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):

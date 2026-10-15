@@ -17,6 +17,7 @@ from parishkit.stewardship.jobs.delivery_metadata import with_name_keys
 from parishkit.stewardship.source.models import SourceCurrent
 from parishkit.stewardship.source.snapshot_name_sql import SnapshotFamilyName
 from parishkit.stewardship.source.snapshot_names import snapshot_family_names
+from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 from parishkit.stewardship.source.version_models import SnapshotFamily
 
 from .family_name_cases import BASE, DEFAULT, NAME_CASES, seed_name_cases
@@ -77,7 +78,8 @@ def test_sql_family_name_treats_non_array_heads_as_none(response_service):
 def test_outgoing_mail_name_keys_match_every_edge_case(response_service):
     """Outgoing mail's Family sort keys (delivery_metadata.with_name_keys,
     #934) are each NAME_CASES name, lowercased, and its surname alone; they
-    name a Family without any usable name "Family", as the page does."""
+    name a Family without any usable name "Name not recorded in ParishSoft",
+    as the page does (#1216)."""
     snapshot_id = SourceCurrent.objects.get().snapshot_id
     expected = seed_name_cases(snapshot_id)
     with task_login(ServiceRole.WEB, exact=True), work_transaction():
@@ -94,7 +96,7 @@ def test_outgoing_mail_name_keys_match_every_edge_case(response_service):
         }
     labels = {BASE + 1000 + offset: case[0] for offset, case in enumerate(NAME_CASES)}
     for duid, name in expected.items():
-        name = "Family" if name == DEFAULT else name
+        name = NAME_NOT_RECORDED if name == DEFAULT else name
         # No surname in these cases holds a comma, so it ends at the first.
         surname = name.split(", ")[0]
         assert (labels[duid], keys[duid]) == (

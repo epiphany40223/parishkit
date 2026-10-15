@@ -7,8 +7,9 @@ and footer and in the XLSX "Report information" sheet.
 
 - The Family-code directory lists, as the page does (#932, #933), Family
   first (the surname, then the heads of household: "Squyres, Tracy and
-  Jeff"), then Family DUID, Envelope number, Family code, and any
-  Submissions count, What to check and response dates. When it is filtered
+  Jeff"), then ParishSoft status (blank for a current Family, #1216),
+  Family DUID, Envelope number, Family code, and any Submissions count,
+  What to check and response dates. When it is filtered
   to Families that no campaign mail can reach (reach "neither"), it adds
   their phone numbers for follow-up calls.
 - Every export ends with Family head emails: each distinct head address once,
@@ -31,13 +32,18 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.source.family_names import (
+    family_heads_name,
     heads_salutation_name,
+)
+from parishkit.stewardship.source.source_status import (
+    STATUS_HEADING,
+    family_status,
+    source_status_label,
 )
 from parishkit.stewardship.web.presentation import phone as format_phone
 
 from .directories import (
     CHECKS,
-    INACTIVE,
     MISSING_NAME,
     MODES,
     REACH,
@@ -46,14 +52,14 @@ from .directories import (
     add_responses,
     head_emails_text,
     response_columns,
-    row_name,
 )
 
 # The Family-code file's identity columns, named as the page names them and
 # leading the row: the most relevant column first, and dates lead only event
-# or log tables (#932). Submissions, What to check and the response dates
-# follow them when the page shows those.
-IDENTITY_HEADINGS = ("Family", "Family DUID", "Envelope number")
+# or log tables (#932). ParishSoft status follows the name, as the page's
+# badge sits beside it (#1216). Submissions, What to check and the response
+# dates follow them when the page shows those.
+IDENTITY_HEADINGS = ("Family", STATUS_HEADING, "Family DUID", "Envelope number")
 CODE_HEADING = "Family code"
 # The code list's columns with no response columns, data check or phones.
 CODE_HEADINGS = (*IDENTITY_HEADINGS, CODE_HEADING)
@@ -222,21 +228,20 @@ def _filters(parameters):
     return "; ".join(applied) or "None"
 
 
-def _family_cell(item):
-    """The code list's Family cell: the page's name, marked when inactive.
+def _family_cells(item):
+    """The code list's Family and ParishSoft status cells.
 
-    Downloads do not have their own ParishSoft status column yet (#1216),
-    so the mark is in the cell.
-
-    A Family the Response filter lists after the current ParishSoft data
-    stopped listing it as active says so, as the page does (#933).
+    The Family cell is the page's surname-and-heads name, blank when the
+    current ParishSoft data no longer has the Family (#933). The status cell
+    holds the shared words the page's badge shows ("Not in ParishSoft" or
+    "Inactive in ParishSoft"), and is blank for a current Family (#1216).
     """
-    name = row_name(item)
-    # A Family no longer in the data at all is only "Not in ParishSoft",
-    # never also inactive, as on the page (#1216).
-    if item["family_name"] is None or item.get("active", True):
-        return name
-    return f"{name} ({INACTIVE})"
+    name = item["family_name"]
+    status = family_status(name, active=item.get("active", True))
+    return (
+        "" if name is None else family_heads_name(name, item["heads"]),
+        source_status_label(status),
+    )
 
 
 def directory_document(
@@ -322,7 +327,7 @@ def directory_document(
         add_responses(payload["rows"])
         for item in payload["rows"]:
             row = (
-                _family_cell(item),
+                *_family_cells(item),
                 str(item["family_duid"]),
                 # Envelope number 0 is a value, not a blank (#933).
                 "" if item.get("envelope") is None else str(item["envelope"]).strip(),

@@ -50,6 +50,7 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.snapshot_names import snapshot_family_facts
+from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 from parishkit.stewardship.source.workgroups import current_evidence
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.contracts import filters
@@ -265,9 +266,10 @@ def read_identity(family, *, codes, workgroup=None):
         if evidence is not None and family.family_duid in evidence["family_duids"]:
             workgroup_name = name
     snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
-    facts = snapshot_family_facts(snapshot, [family.family_duid], "Family").get(
-        family.family_duid
-    )
+    # A blank surname is a data gap, worded as the name (#1216).
+    facts = snapshot_family_facts(
+        snapshot, [family.family_duid], NAME_NOT_RECORDED
+    ).get(family.family_duid)
     code = None
     if codes and family.code_ciphertext:
         rings = family_runtime()

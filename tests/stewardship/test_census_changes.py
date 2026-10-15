@@ -240,12 +240,33 @@ def test_csv_follows_the_page_column_order_in_the_chosen_zone():
     text = census_csv(result, ZoneInfo("America/Chicago")).decode()
     table = list(csv.reader(io.StringIO(text)))
     assert tuple(table[0]) == HEADINGS
-    assert HEADINGS[2:4] == ("Who", "Member DUID")
-    assert HEADINGS[10:] == ("Submitted", "Recorded by", "Recorded at", "Note")
-    assert table[1][2] == "Pat Sample" and table[1][10] == "2054-10-05T09:30:00-05:00"
-    # No resolution yet: its three columns are blank.
-    assert table[1][11:] == ["", "", ""]
+    assert HEADINGS[:2] == ("Family", "ParishSoft status")
+    assert HEADINGS[3:5] == ("Who", "Member DUID")
+    assert HEADINGS[11:] == ("Submitted", "Recorded by", "Recorded at", "Note")
+    assert table[1][3] == "Pat Sample" and table[1][11] == "2054-10-05T09:30:00-05:00"
+    # A current Family has no status; no resolution yet: its three columns
+    # are blank.
+    assert table[1][1] == ""
+    assert table[1][12:] == ["", "", ""]
     assert len(table) == 4
+
+
+def test_downloads_put_a_missing_family_s_status_in_its_own_column():
+    """A Family the data no longer has: a blank Family cell and the shared
+    words in ParishSoft status, never the words in place of a name (#1216)."""
+    result = {"rows": [shape(row(family_name=None)), shape(row(id="2"))]}
+    zone = ZoneInfo("UTC")
+    table = list(csv.reader(io.StringIO(census_csv(result, zone).decode())))
+    assert [line[:3] for line in table] == [
+        ["Family", "ParishSoft status", "Family DUID"],
+        ["", "Not in ParishSoft", "7001"],
+        ["Sample", "", "7001"],
+    ]
+    sheet = workbook(result, zone)["Census changes"]
+    assert [sheet.cell(2, column).value for column in (1, 2)] == [
+        None,
+        "Not in ParishSoft",
+    ]
 
 
 def test_downloads_word_member_duid_as_the_page_does():
@@ -264,7 +285,7 @@ def test_downloads_word_member_duid_as_the_page_does():
     result = {"rows": [shape(item) for item in (row(), proposed, family)]}
     zone = ZoneInfo("UTC")
     table = list(csv.reader(io.StringIO(census_csv(result, zone).decode())))
-    assert [line[3] for line in table] == ["Member DUID", "41", "New Member", ""]
+    assert [line[4] for line in table] == ["Member DUID", "41", "New Member", ""]
     sheet = workbook(result, zone)["Census changes"]
     assert sheet.max_column == len(HEADINGS)
     column = HEADINGS.index("Member DUID") + 1
@@ -375,8 +396,10 @@ def test_page_shows_member_duid_beside_who():
     positions = [html.index(f">{heading}<") for heading in headings]
     assert positions == sorted(positions)
     # The downloads have exactly the page's columns, in its order (#932),
-    # except the page's last, Actions, which has no file column (#528).
-    assert page_headings(html) == [*HEADINGS, "Actions"]
+    # except the page's last, Actions, which has no file column (#528), and
+    # ParishSoft status, the badge the page shows in the Family cell (#1216).
+    page = [heading for heading in HEADINGS if heading != "ParishSoft status"]
+    assert page_headings(html) == [*page, "Actions"]
     assert '<td class="numeric">41</td>' in html
     assert '<td class="numeric">New Member</td>' in html
 
@@ -533,7 +556,7 @@ def test_shape_reads_the_latest_resolution():
     assert shown["resolution_at"] == when
     text = census_csv({"rows": [shown]}, ZoneInfo("UTC")).decode()
     line = list(csv.reader(io.StringIO(text)))[1]
-    assert line[11:] == [
+    assert line[12:] == [
         "staff@example.org",
         "2054-10-06T15:00:00+00:00",
         "Typed it in",

@@ -22,9 +22,11 @@ from parishkit.stewardship.jobs.delivery_states import DeliveryAction
 from parishkit.stewardship.source.models import SourceCurrent
 from parishkit.stewardship.source.snapshot_name_sql import SnapshotFamilyName
 from parishkit.stewardship.source.snapshot_names import snapshot_family_names
+from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 from parishkit.stewardship.source.version_models import SnapshotFamily
 from parishkit.stewardship.web.contracts import PageWindow
 
+from .family_name_cases import DEFAULT, NAME_CASES, seed_name_cases
 from .test_background_grants_postgresql import task_login
 from .test_cleanup_inventory_postgresql import mixed_mail
 from .test_outbox_postgresql import change
@@ -119,18 +121,11 @@ def test_testing_families_sort_on_the_server_by_name_or_duid(
     assert has_next and first[0]["duid"] == duids[-1]
 
 
-def test_families_missing_from_the_snapshot_sort_last_by_name(
-    response_service, monkeypatch
-):
-    """A Family absent from the source snapshot has no name to sort by, so it
-    is listed after every named Family in both directions, as Outgoing mail
-    lists its unnamed rows."""
+def every_family_has_submissions(monkeypatch):
+    """List every campaign Family as one with Testing submissions."""
     from parishkit.stewardship.campaigns import cleanup_preview as module
     from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 
-    form, answers = form_and_answers(response_service)
-    submit(response_service, form, answers)
-    campaign_id = response_service.campaign.pk
     monkeypatch.setattr(
         module,
         "inventory_queries",
@@ -140,14 +135,16 @@ def test_families_missing_from_the_snapshot_sort_last_by_name(
             )
         },
     )
-    # A campaign Family the current snapshot does not hold.
+
+
+def add_family(campaign_id, duid):
+    """Add a campaign Family with DUID ``duid``, copying another's state."""
+    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+
     template = FamilyCampaign.objects.filter(campaign_id=campaign_id).first()
-    source_id = SourceCurrent.objects.get().snapshot_id
-    missing = 10**12
-    assert not snapshot_family_names(source_id, [missing])
     FamilyCampaign.objects.create(
         campaign_id=campaign_id,
-        family_duid=missing,
+        family_duid=duid,
         active=False,
         portal_eligible=False,
         email_eligible=False,
@@ -159,6 +156,23 @@ def test_families_missing_from_the_snapshot_sort_last_by_name(
         actor_id=template.actor_id,
         correlation_id=uuid4(),
     )
+
+
+def test_families_missing_from_the_snapshot_sort_last_by_name(
+    response_service, monkeypatch
+):
+    """A Family absent from the source snapshot has no name to sort by, so it
+    is listed after every named Family in both directions, as Outgoing mail
+    lists its unnamed rows."""
+    form, answers = form_and_answers(response_service)
+    submit(response_service, form, answers)
+    campaign_id = response_service.campaign.pk
+    every_family_has_submissions(monkeypatch)
+    # A campaign Family the current snapshot does not hold.
+    source_id = SourceCurrent.objects.get().snapshot_id
+    missing = 10**12
+    assert not snapshot_family_names(source_id, [missing])
+    add_family(campaign_id, missing)
     for sort in ("name", "-name"):
         with task_login(ServiceRole.WEB), work_transaction():
             rows = cleanup_families(
@@ -167,6 +181,31 @@ def test_families_missing_from_the_snapshot_sort_last_by_name(
         assert len(rows) > 2
         assert all(row["name"] for row in rows[:-1])
         assert rows[-1] == {"duid": missing, "name": ""}
+
+
+def test_a_family_with_no_name_reads_name_not_recorded(response_service, monkeypatch):
+    """A Family the snapshot holds with no usable name is "Name not recorded
+    in ParishSoft", shown and sorted as that name, so the page's "Not in
+    ParishSoft" badge marks only a Family the data no longer has (#1216)."""
+    form, answers = form_and_answers(response_service)
+    submit(response_service, form, answers)
+    campaign_id = response_service.campaign.pk
+    every_family_has_submissions(monkeypatch)
+    source_id = SourceCurrent.objects.get().snapshot_id
+    nameless = [case for case in NAME_CASES if case[3] == DEFAULT]
+    (duid,) = seed_name_cases(source_id, nameless)
+    add_family(campaign_id, duid)
+    for sort in ("name", "-name"):
+        with task_login(ServiceRole.WEB), work_transaction():
+            rows = cleanup_families(
+                campaign_id, source_id=source_id, window=PageWindow(1, 100), sort=sort
+            )[1]
+        assert {"duid": duid, "name": NAME_NOT_RECORDED} in rows
+        # Ordered by surname, then the whole name, as the page sorts.
+        keys = [
+            (row["name"].lower().split(", ")[0], row["name"].lower()) for row in rows
+        ]
+        assert keys == sorted(keys, reverse=sort == "-name")
 
 
 def test_sql_family_name_matches_the_shown_name(response_service):

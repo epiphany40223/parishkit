@@ -1897,9 +1897,10 @@ zone the file's times are written in.
 
 CSV, XLSX and PDF are the page's own files, with the same columns. JSON
 Lines is for scripts: one object per change, the page's columns with the
-same text under the keys `family`, `family_duid`, `who`, `member_duid`,
-`what`, `parishsoft_now`, `family_answer`, `edited`, `route`, `status`,
-`submitted`, `recorded_by`, `recorded_at` and `note`, plus `proposal_id`
+same text under the keys `family`, `parishsoft_status`, `family_duid`,
+`who`, `member_duid`, `what`, `parishsoft_now`, `family_answer`, `edited`,
+`route`, `status`, `submitted`, `recorded_by`, `recorded_at` and `note`,
+plus `proposal_id`
 and `version`, which recording a row's outcome needs and the page's files
 leave out, and `actions`: the outcomes you may record on that row now
 (`entered` and `ignored` on a By-hand change still open, `reopened` on an
@@ -2341,3 +2342,11 @@ print is exit 1 (`invalid`).
   --names` now write XLSX (they wrote CSV), as every page's format menu now
   preselects XLSX. The document's fields are unchanged; a script that
   needs CSV passes `--format csv`.
+- `pk-admin/1` (#1216): a deliberate change, kept on version 1. The files
+  `export census` writes have a `ParishSoft status` column right after
+  `Family`, and its JSON Lines a `parishsoft_status` key after `family`:
+  "Not in ParishSoft" for a Family the current data no longer has, blank
+  otherwise. Such a Family's `Family` (and `family`) is now blank; it read
+  "Not in ParishSoft". The command's options and document are unchanged,
+  and the only readers are Administrator-run assistants; a script that
+  reads these files by position must change.

@@ -97,6 +97,25 @@ def test_the_document_holds_the_family_and_every_line():
     assert when.hour == 9 and when.utcoffset() is not None
 
 
+def test_a_family_the_data_no_longer_has_gets_its_status_detail():
+    """No name, and "Not in ParishSoft" as a ParishSoft status detail right
+    after Family; a current Family has no such detail (#1216)."""
+    labels = [label for label, _ in document().metadata]
+    assert "ParishSoft status" not in labels
+    built = timeline_document(
+        PAYLOAD | {"family": PAYLOAD["family"] | {"name": None}},
+        code=None,
+        parish_name="Sample Parish",
+        requested_at=REQUESTED,
+        timezone="America/New_York",
+    )
+    labels = [label for label, _ in built.metadata]
+    metadata = dict(built.metadata)
+    assert metadata["Family"] == ""
+    assert metadata["ParishSoft status"] == "Not in ParishSoft"
+    assert labels.index("ParishSoft status") == labels.index("Family") + 1
+
+
 def test_the_code_is_left_out_unless_given():
     """A requester who may not see codes gets none, and the file says so;
     a Family with no code is described as the page describes it."""

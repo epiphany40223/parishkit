@@ -34,6 +34,7 @@ from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.snapshot_names import snapshot_family_names
+from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.refusals import load_preview
 
@@ -138,11 +139,12 @@ def _family_names(current, duids):
     """Name each requested Family from the current snapshot, in two queries.
 
     Uses the Family codes directory's rule (surname, then active heads). A
-    DUID missing from the snapshot gets no name.
+    DUID missing from the snapshot gets no name; a blank surname reads "Name
+    not recorded in ParishSoft" (#1216).
     """
     if current is None:
         return {}
-    return snapshot_family_names(current.snapshot_id, duids, "Family")
+    return snapshot_family_names(current.snapshot_id, duids, NAME_NOT_RECORDED)
 
 
 def _template_in_schedule(campaign_id, revision_id):

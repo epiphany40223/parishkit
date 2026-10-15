@@ -10,6 +10,7 @@ from django.db.models.functions import Lower
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.source.snapshot_name_sql import SnapshotFamilyName
+from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 from parishkit.stewardship.web.tables import Fixed, Sorting, bounded_count, read_window
 
 from .outbox_models import OutboxMessage
@@ -86,7 +87,8 @@ def with_name_keys(selected, snapshot, duid="family__family_duid"):
     whole "Squyres, Tracy and Jeff" name, both lowercased, as the Family
     codes directory orders them. Both come from ``SnapshotFamilyName``, the
     shared SQL twin of the ``snapshot_family_names`` name ``with_family_names``
-    shows, read from ``snapshot``: the caller reads the current snapshot id
+    shows, with the same stand-in for a blank surname, read from
+    ``snapshot``: the caller reads the current snapshot id
     once and passes it here and to ``with_family_names``, so the sort and the
     shown names agree. ``duid`` names each row's Family DUID: an outbox
     message's by default, or a refusal's ``family_duid`` on Refused
@@ -103,7 +105,10 @@ def with_name_keys(selected, snapshot, duid="family__family_duid"):
         **{
             field: Lower(
                 SnapshotFamilyName(
-                    snapshot, F(duid), surname_only=surname_only, default="Family"
+                    snapshot,
+                    F(duid),
+                    surname_only=surname_only,
+                    default=NAME_NOT_RECORDED,
                 )
             )
             for field, surname_only in (

@@ -46,6 +46,7 @@ CONTENT_TYPES = {
 # (``census_changes.HEADINGS``), in the same order; a test keeps them aligned.
 JSONL_KEYS = (
     "family",
+    "parishsoft_status",
     "family_duid",
     "who",
     "member_duid",
