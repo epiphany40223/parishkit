@@ -654,13 +654,14 @@ def run_wizard(
 ):
     """Complete the initial setup wizard for the LOCAL deployment unattended.
 
-    The steps are the wizard pages' own service calls, in the wizard's order:
-    the parish, access and mail settings, the ParishSoft credential (the
-    fake's key and organization), the source load (the worker loads from the
-    fake; ``wait`` blocks until the attempt collects again), the Workspace
-    credential (the mail-catcher document), a generated parish logo through
-    the real branding staging, the preview, the fixed setup test mail (sent
-    to Mailpit by mail-dispatch) and the final confirmation. The caller then
+    The steps are the wizard pages' own service calls, in the wizard's order
+    (``setup_wizard.PAGES``, #1353): the parish, mail and Testing settings,
+    the Workspace credential (the mail-catcher document), the Slack setting
+    (off), a generated parish logo through the real branding staging, the
+    access lists, the ParishSoft credential (the fake's key and organization),
+    the source load (the worker loads from the fake; ``wait`` blocks until the
+    attempt collects again), the preview, the fixed setup test mail (sent to
+    Mailpit by mail-dispatch) and the final confirmation. The caller then
     waits for ``setup_is_complete``. Setup collects no campaign (#142); the
     seeder's ``campaign`` step creates it afterwards (``create_campaign``).
     """
@@ -689,12 +690,16 @@ def run_wizard(
         return "the setup source load"
 
     wait("the setup source load", loaded)
-    wizard_branding(request, service, attempt_id)
     return wizard_confirm(request, service, attempt_id, wait=wait)
 
 
 def wizard_collect(request, service, *, fake_key=LOCAL_PARISHSOFT_KEY):
-    """The wizard up to the source load: public settings and both credentials."""
+    """The wizard's data-entry pages, in page order, ending with the source load.
+
+    The order follows ``setup_wizard.PAGES`` (#1353): ParishSoft connection
+    and Load parish data come last, after the logo and access pages, so the
+    load is the only step left to wait for before the review.
+    """
     from parishkit.stewardship.accounts.setup_credentials import stage_credential
     from parishkit.stewardship.accounts.setup_drafts import save_section
     from parishkit.stewardship.accounts.setup_source import start_source_load
@@ -703,14 +708,10 @@ def wizard_collect(request, service, *, fake_key=LOCAL_PARISHSOFT_KEY):
 
     status = begin_setup(request, service)
     attempt_id = status.attempt_id
-    for step, values in (
-        ("parish", WIZARD_PARISH),
-        ("access", WIZARD_ACCESS),
-        ("mail", WIZARD_MAIL),
-        ("slack", WIZARD_SLACK),
-        ("testing", WIZARD_TESTING),
-    ):
-        status = save_section(
+
+    def save(step, values):
+        """Save one public settings page on the latest ``status`` version."""
+        return save_section(
             request,
             service,
             attempt_id,
@@ -718,6 +719,24 @@ def wizard_collect(request, service, *, fake_key=LOCAL_PARISHSOFT_KEY):
             values=values,
             expected_version=status.version,
         )
+
+    for step, values in (
+        ("parish", WIZARD_PARISH),
+        ("mail", WIZARD_MAIL),
+        ("testing", WIZARD_TESTING),
+    ):
+        status = save(step, values)
+    status, _ = stage_credential(
+        request,
+        service,
+        attempt_id,
+        target="google_workspace",
+        candidate=MAIL_CATCHER_DOCUMENT,
+        expected_version=status.version,
+    )
+    status = save("slack", WIZARD_SLACK)
+    status = wizard_branding(request, service, attempt_id)
+    status = save("access", WIZARD_ACCESS)
     status, _ = stage_credential(
         request,
         service,
@@ -727,20 +746,12 @@ def wizard_collect(request, service, *, fake_key=LOCAL_PARISHSOFT_KEY):
         expected_version=status.version,
         organization_id=LOCAL_ORGANIZATION_ID,
     )
-    status, _ = stage_credential(
-        request,
-        service,
-        attempt_id,
-        target="google_workspace",
-        candidate=MAIL_CATCHER_DOCUMENT,
-        expected_version=status.version,
-    )
     start_source_load(request, service, attempt_id, expected_version=status.version)
     return attempt_id
 
 
 def wizard_branding(request, service, attempt_id):
-    """After the load: a generated parish logo, saved as the logo page does."""
+    """A generated parish logo, saved as the Parish logos page does."""
     from parishkit.stewardship.accounts.setup_drafts import save_section, view_draft
 
     status = view_draft(request, service, attempt_id).status
