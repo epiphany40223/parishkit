@@ -112,6 +112,9 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "workgroup show",
         "workgroup preview",
         "workgroup confirm",
+        "campaign show",
+        "campaign preview",
+        "campaign confirm",
     }
     tests = {
         "test sample-preview",
@@ -776,6 +779,7 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_files_rename",
         "admin_cmd_parish_confirm",
         "admin_cmd_workgroup_confirm",
+        "admin_cmd_campaign_confirm",
         "admin_cmd_task_retry",
         "admin_cmd_delivery_resolve",
         "admin_cmd_delivery_resend",
