@@ -28,11 +28,14 @@ FROZEN_SQL = (
 
 class Migration(migrations.Migration):
     dependencies = [
-        # The accounts app's previous migration, which installs the
-        # previous frozen file (0102, the setup load void, #1375), so the
-        # files apply in prefix order. It follows the users swap, so
-        # `migrate --users-upgrade-base` never applies it.
+        # The accounts app's previous migration (0102, the setup load void,
+        # #1375).
         ("stewardship_accounts", "0023_setup_load_void"),
+        # The migration that installs the previous frozen file (0103, any
+        # creation time zone, #1408), so the files apply in prefix order. It
+        # follows the users swap, so `migrate --users-upgrade-base` never
+        # applies it.
+        ("stewardship_campaigns", "0013_any_creation_timezone"),
     ]
 
     operations = [migrations.RunSQL(FROZEN_SQL.read_text(encoding="utf-8"))]
