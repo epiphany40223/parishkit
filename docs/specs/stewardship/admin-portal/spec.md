@@ -199,7 +199,12 @@ one live status region that it re-reads from a passive status fragment of
 its own status address (`?format=status`). The fragment admits exactly the
 sign-in its page admits and never renews idle time. On a test page, Send test
 is answered in place, and the Recent tests list is watched while a test is
-queued or being sent. Once the test settles, the page re-reads its panel in
+queued or being sent. While it is, Send (or Send another test) is
+unavailable, named by a line after the action row saying a test is on its
+way, and, while the page cannot check the test's status, by that status line
+too ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates),
+[#1332](https://github.com/epiphany40223/parishkit/issues/1332)). Once the
+test settles, the page re-reads its panel in
 place, without moving focus, so Continue, Send another test or the
 unknown-delivery acknowledgement come from the server. No page offers a
 manual check or asks for a reload, and a page restored from the browser's
