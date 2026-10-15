@@ -494,7 +494,15 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   there is none), the fields it names are marked in error beside their
   message as the fetched page draws them, and the live region reads the
   summary's messages, or says
-  the server did not accept the change when there is no summary. Any other
+  the server did not accept the change when there is no summary. A refused
+  POST answered as JSON (a typed error, which the view sends to every
+  script's fetch: a user-facing refusal, a stale page, a denial or an
+  outage) is never shown as the page, since that would be raw JSON (#519).
+  It is shown in place as one alert line after the control's buttons, so
+  nothing above it moves: the refusal's message and fix in plain words
+  (without them, the confirm dialogs' wording for its status) and its link
+  when it has one. The page, the address and focus stay, and the next
+  answer to that form replaces the line or removes it. Any other
   refusal, and a POST's own answer that is not this page, is shown as the
   whole page, as a native submission would show it. That page keeps the
   window, so the old page is first told it is going away (a `pagehide` that

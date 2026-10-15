@@ -2351,13 +2351,17 @@ def component_origin():
                 self.end_headers()
                 return
             if self.path in posts:
-                status, location, body = posts[self.path]
+                # An answer may name its media type (a typed error's JSON,
+                # which a script's fetch gets from the real views); a page
+                # is HTML.
+                status, location, body, *kind = posts[self.path]
                 if self.path in IN_PLACE_SLOW:
                     time.sleep(1.5)
                 self.send_response(status)
                 if location:
                     self.send_header("Location", location)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
+                media = kind[0] if kind else "text/html"
+                self.send_header("Content-Type", f"{media}; charset=utf-8")
                 self.send_header("Content-Security-Policy", CSP)
                 self.end_headers()
                 self.wfile.write(body.encode())
