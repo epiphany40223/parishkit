@@ -6,11 +6,35 @@
 {% aboutpage "campaign-create" %}<p>{% translate "This creates the campaign as a draft in Testing mode. Families see nothing and no email is sent until you go live." %}</p>
 <p>{% translate "Every page and email starts with built-in default text. After the campaign is created you can change its pages and emails, share options, mail schedules and images, then check Go-live readiness." %}</p>
 <p>{% translate "The campaign uses the parish time zone; you can change it on Campaign settings while the campaign is a draft. Its Families and Family codes are added by the next full ParishSoft refresh." %}</p>{% endaboutpage %}
-{% if created %}{% comment %}A full load of a change's status once the campaign exists (a reload of the confirmation's answer): the form could only be refused now, so it is not drawn (#563). It says the campaign was created only when this change created it; a change that failed (another one created the campaign first) says a campaign exists.{% endcomment %}<p role="status">{% if receipt.state == 'applied' %}{% translate "The campaign has been created." %}{% else %}{% translate "A campaign already exists." %}{% endif %} <a href="{% url 'admin:campaign_settings' %}">{% translate "Change it on Campaign settings" %}</a></p>
-{% else %}{% comment %}Review and create happen in place, below the form, as on Campaign settings (#532). Review changes waits until every required field is filled in (data-require-complete); its hint keeps one line reserved after the button, so it showing or going never moves the review region (no layout shift).{% endcomment %}<form id="settings-form" method="post" action="#settings-review" class="panel" data-in-place data-table-sync data-in-place-message="{% translate 'Review ready.' %}" data-campaign-form data-new-campaign data-require-complete data-missing-hint="{% translate 'Fill in the required fields to review the campaign.' %}">
+{% comment %}
+Create the campaign (campaign_create_views.campaign_create). Its button is
+labelled with the action itself (UX conventions, "A confirmation when Review
+would only repeat the page", #1356) and waits until every required field is
+filled in (data-require-complete); its hint keeps one line reserved after
+it, so it showing or going never moves anything (no layout shift). It posts
+the Review without a page load (data-review-open, "Review dialog", #750): an
+accepted Review opens the shared review dialog below with
+campaign-create-review.html, a one-sentence confirmation that repeats none
+of the form's values, whose Apply posts the signed preview here and follows
+the change. Once it is applied the region is redrawn from the address Apply
+ended on (redraw_answer), the page naming its change, which shows that the
+campaign was created and offers loading its ParishSoft data; the status line
+under the region says what was applied. A Review refused for the form's
+values keeps the dialog shut: ui-v1.js marks each field and shows the
+summary from this page drawn again. Any other refusal (no longer admitted,
+a stale page, an out-of-date preview) shows inside the dialog.
+With receipt (that address, polled or reloaded) the region holds the
+change's live status, not the form, which could only be refused once the
+change applies; once a campaign exists it says whether this change created
+it (a change that failed because another one created the campaign first
+says a campaign exists) and links Campaign settings (#563).
+{% endcomment %}<div id="campaign-create-region" data-in-place-region>{% if receipt %}{% if created %}<p role="status">{% if receipt.state == 'applied' %}{% translate "The campaign has been created." %}{% else %}{% translate "A campaign already exists." %}{% endif %} <a href="{% url 'admin:campaign_settings' %}">{% translate "Change it on Campaign settings" %}</a></p>{% endif %}
+{% include 'stewardship/configuration-request-status.html' %}
+{% else %}<form id="settings-form" method="post" action="{{ page_url }}" class="panel" data-review-open="campaign-create-review" data-campaign-form data-new-campaign data-require-complete data-missing-hint="{% translate 'Fill in the required fields to create the campaign.' %}">
 {% csrf_token %}<input type="hidden" name="action" value="preview">
 {% include 'stewardship/campaign-fields.html' %}
-{% button type="submit" autocomplete="off" aria-describedby="settings-complete-hint" %}{% translate "Review changes" %}{% endbutton %}<p class="help" id="settings-complete-hint" data-complete-hint="reserve"></p>
-</form>
-{% endif %}<div id="settings-review" data-in-place-region data-keep-height>{% include 'stewardship/settings-review.html' %}</div>
+{% button type="submit" autocomplete="off" aria-describedby="settings-complete-hint" %}{% translate "Create the campaign" %}{% endbutton %}<p class="help" id="settings-complete-hint" data-complete-hint="reserve"></p>
+</form>{% endif %}</div>
+{% include 'stewardship/components/review-outcome.html' with outcome_id="campaign-create-outcome" %}
+{% translate "Create the campaign?" as review_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="campaign-create-review" title=review_title apply_url=page_url outcome_id="campaign-create-outcome" fallback="campaign-create-outcome" describedby="campaign-create-summary" redraw_answer=True %}
 {% endblock %}

@@ -633,8 +633,7 @@ never scrolls to show it (Administrator, pk-local review of
   review dialog (#1119). Parish settings' form is never redrawn; until the
   change is applied, Apply's answer hands it the version it was reviewed at.
   [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142)
-  reviews and confirms the same way, except that its status names no
-  `in_place` page, so it never refreshes the page once applied. The other
+  confirms in the review dialog (#1356). The other
   editors keep their review and Change status pages until issue 750 reaches
   them.
 - **Selection tables keep their ticks (#750).** Ministries once reviewed an
@@ -1083,7 +1082,11 @@ section says how every Review behaves.
   mail schedules), as [flows end where the reader
   started](#navigation-rules) says. A Review that the
   server answers with another page (Campaign settings' dates-only change,
-  which leads to Dates and mail schedules) ends on that page. Wherever the
+  which leads to Dates and mail schedules) ends on that page. A page whose
+  own address could only be refused once the change is applied ([Create the
+  campaign](../admin-portal/spec.md#create-the-campaign), once the campaign
+  exists) is redrawn from the address Apply's answer ended on, the page
+  naming the change, which becomes the page's address. Wherever the
   reader ends, a short status line under the form or above the table says
   what was applied and when ("Applied at 3:42 PM."), and focus moves to it.
   The line is a polite live region (`role="status"`), so a screen reader
@@ -1140,8 +1143,9 @@ dialog is decided on [#750](https://github.com/epiphany40223/parishkit/issues/75
 Current state, to be converted: Users' New user, Edit user and Import
 Ministry leaders, New and Edit scheduled email,
 [Campaign settings](../admin-portal/spec.md#campaign-settings-page) (#1119),
-Share options, Campaign images and Parish logos use the dialog. Parish
-settings and No-reminders WorkGroup show the in-place
+Share options, Campaign images, Parish logos and Create the campaign (a
+confirmation under #1356) use the dialog. Parish settings and No-reminders
+WorkGroup show the in-place
 review panel of #532 and #750
 ([in-place controls](#in-place-controls)); the other editors use separate
 Review and Change status pages.
