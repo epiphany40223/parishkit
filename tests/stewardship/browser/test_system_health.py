@@ -309,12 +309,142 @@ def test_one_column_at_phone_width(page, component_origin):
         assert _toggle(page, tile).bounding_box()["height"] >= 44
 
 
-def test_an_anchor_opens_its_tile(page, component_origin):
-    """Home's links name a tile's anchor; the page opens that tile."""
-    page.goto(component_origin + HEALTHY + "#health-backups")
-    expect(_band(page, "backups")).to_be_visible()
-    expect(_toggle(page, "backups")).to_have_attribute("aria-expanded", "true")
-    expect(_band(page, "mail")).to_be_hidden()
+def _open_tiles(page):
+    """The tiles whose toggle says open, each checked against its band."""
+    opened = []
+    for tile in TILES:
+        is_open = _toggle(page, tile).get_attribute("aria-expanded") == "true"
+        assert _band(page, tile).is_visible() == is_open
+        if is_open:
+            opened.append(tile)
+    return opened
+
+
+@pytest.mark.parametrize("named", ["source-form", "backups", "mail"])
+def test_an_anchor_opens_only_its_tile(page, component_origin, named):
+    """An address naming a tile opens exactly that tile: on the troubled
+    page every Error and Warning tile that would start open stays closed,
+    and the named tile is in view (ui-conventions "Disclosures")."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + PAGE + f"#health-{named}")
+    expect(_toggle(page, named)).to_have_attribute("aria-expanded", "true")
+    assert _open_tiles(page) == [named]
+    # Backups is the page's one Warning tile; it stays closed unless named.
+    if named != "backups":
+        expect(_band(page, "backups")).to_be_hidden()
+    box = _toggle(page, named).bounding_box()
+    # Within a pixel: scrolling it to the top can land a fraction above.
+    assert box["y"] > -1 and box["y"] + box["height"] <= 900
+
+
+def test_without_a_tile_anchor_the_troubled_tiles_start_open(page, component_origin):
+    """No anchor, or one naming no tile, keeps the default: Error and
+    Warning tiles open, Working ones closed."""
+    troubled = ["mail", "source", "backups", "resave", "version"]
+    for suffix in ("", "#main", "#health-nothing"):
+        page.goto(component_origin + PAGE + suffix)
+        expect(_band(page, "mail")).to_be_visible()
+        assert _open_tiles(page) == troubled
+
+
+def test_a_later_link_to_a_tile_opens_it_and_closes_nothing(page, component_origin):
+    """After the load, a changed anchor opens its tile and leaves the tiles
+    already open as they are."""
+    page.goto(component_origin + PAGE)
+    page.evaluate("location.hash = '#health-debug'")
+    expect(_band(page, "debug")).to_be_visible()
+    # Debug joins the troubled tiles; only Working Families-form stays closed.
+    assert _open_tiles(page) == [tile for tile in TILES if tile != "source-form"]
+
+
+# A band click closes its tile only after the double-click interval
+# (system-health-v1.js SECOND_CLICK_MS), so a check that it did not close
+# waits longer than that first.
+PAST_SECOND_CLICK_MS = 700
+
+
+def test_a_click_anywhere_on_a_tile_toggles_it(page, component_origin):
+    """The whole summary row is the toggle, and a click on an open band's
+    blank space or plain text closes the tile and focuses its toggle; the
+    row's toggles do not move, and the page does not reload."""
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.goto(component_origin + HEALTHY)
+    kept = _not_reloaded(page)
+    source = _toggle(page, "source")
+    row = page.evaluate(TOPS)[:2]
+    # A summary row's corners and blank middle are the toggle too.
+    box = source.bounding_box()
+    source.click(position={"x": 3, "y": 3})
+    expect(_band(page, "source")).to_be_visible()
+    source.click(position={"x": box["width"] - 3, "y": box["height"] - 3})
+    expect(_band(page, "source")).to_be_hidden()
+    source.click(position={"x": box["width"] / 2, "y": box["height"] / 2})
+    expect(source).to_have_attribute("aria-expanded", "true")
+    assert same_place(page.evaluate(TOPS)[:2], row)
+    # The band's blank padding closes it, after the double-click interval.
+    band = _band(page, "source")
+    width = band.bounding_box()["width"]
+    band.click(position={"x": width - 4, "y": 4})
+    expect(band).to_be_hidden()
+    expect(source).to_have_attribute("aria-expanded", "false")
+    expect(source).to_be_focused()
+    assert same_place(page.evaluate(TOPS)[:2], row)
+    # So does a single click on plain text.
+    source.click()
+    band.locator("p").filter(visible=True).first.click(position={"x": 2, "y": 2})
+    expect(band).to_be_hidden()
+    # The keyboard still opens and closes it through the toggle.
+    source.focus()
+    page.keyboard.press("Enter")
+    expect(band).to_be_visible()
+    page.keyboard.press("Space")
+    expect(band).to_be_hidden()
+    assert same_place(page.evaluate(TOPS)[:2], row)
+    assert kept()
+
+
+def test_controls_and_text_selection_inside_a_tile_do_not_toggle_it(
+    page, component_origin
+):
+    """A link or a summary in an open band does its own job, and
+    a double click or a drag that selects text, or the click that clears
+    that selection, leaves the tile open."""
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.goto(component_origin + HEALTHY)
+    _toggle(page, "version").click()
+    band = _band(page, "version")
+    expect(band).to_be_visible()
+    # The link's own click still reaches it; the test only stops the
+    # navigation, so the page stays to be checked.
+    link = band.get_by_role("link", name="System logs")
+    link.evaluate("(a) => a.addEventListener('click', (e) => e.preventDefault())")
+    link.click()
+    technical = band.locator("details.technical-details")
+    technical.locator("summary").click()
+    expect(technical).to_have_attribute("open", "")
+    page.wait_for_timeout(PAST_SECOND_CLICK_MS)
+    expect(band).to_be_visible()
+    # A double click selects a word (the paragraph is wider than its text,
+    # so the click lands on its first word) and keeps the tile open.
+    words = band.locator("p").filter(visible=True).first
+    words.dblclick(position={"x": 12, "y": 8})
+    page.wait_for_timeout(PAST_SECOND_CLICK_MS)
+    assert page.evaluate("getSelection().toString().trim()") != ""
+    expect(band).to_be_visible()
+    # So does the click that clears it.
+    words.click(position={"x": 2, "y": 2})
+    page.wait_for_timeout(PAST_SECOND_CLICK_MS)
+    expect(band).to_be_visible()
+    # A drag across the text selects it and keeps the tile open.
+    box = words.bounding_box()
+    page.mouse.move(box["x"] + 2, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(box["x"] + 90, box["y"] + box["height"] / 2, steps=5)
+    page.mouse.up()
+    page.wait_for_timeout(PAST_SECOND_CLICK_MS)
+    assert page.evaluate("getSelection().toString().trim()") != ""
+    expect(band).to_be_visible()
+    expect(_toggle(page, "version")).to_have_attribute("aria-expanded", "true")
 
 
 def test_a_poll_changes_words_but_never_opens_closes_or_moves_a_tile(
