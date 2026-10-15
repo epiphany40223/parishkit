@@ -114,6 +114,31 @@ def test_locked_report_actions_name_the_notice_that_says_why(
     assert text.count(reason) == count + notices
 
 
+@pytest.mark.parametrize("entered", [False, True])
+def test_a_held_roster_tick_is_shown_unavailable_with_why(entered):
+    """While other campaign work holds follow-up, the request page's Mark or
+    Clear Entered in ParishSoft is drawn disabled, named by the locked
+    notice; otherwise it is the plain enabled button."""
+    label = "Clear Entered in ParishSoft" if entered else "Mark entered in ParishSoft"
+    row = {
+        "id": uuid4(),
+        "roster_eligible": True,
+        "roster_entered": entered,
+        "roster_sequence": 1,
+    }
+    context = {"row": row, "can_tick": True, "roster_key": uuid4()}
+    template = "stewardship/roster-tick.html"
+    held = render_to_string(template, context | {"mutable": False})
+    assert re.search(
+        rf'<button[^>]*disabled data-server-disabled aria-describedby="followup-locked"'
+        rf"[^>]*>{label}</button>",
+        held,
+    )
+    open_ = render_to_string(template, context | {"mutable": True})
+    assert re.search(rf"<button(?![^>]*disabled)[^>]*>{label}</button>", open_)
+    assert "followup-locked" not in open_
+
+
 def test_family_portal_message_error_is_shown_at_the_field():
     """A refused message comes back in its field, marked, with the reason."""
     html = render_to_string(
