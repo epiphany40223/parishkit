@@ -1977,9 +1977,12 @@ entities. An entity's written proposals are `queued` from just before its PUT
 until its outcome: `published` when verified, or, when the entity is
 invalidated, back to `failed` (an attempt failed) or `pending`. Every entity a
 run leaves without a published or invalidated outcome, and any left by a
-crashed run once its plan's execution window has passed, is invalidated, so a
-new preflight can plan it and it never blocks a later confirmation. A crash
-after a PUT is recovered by the next run's read, without a second PUT. After
+crashed run once its plan's execution window has passed, is closed, so a
+new preflight can plan it and it never blocks a later confirmation. One whose
+changes the plan queued (its PUT may have landed) is read back first and
+recorded published when ParishSoft holds the planned payload; any other is
+invalidated. A crash after a PUT is recovered by the next run's read, without
+a second PUT. After
 releasing the lease, a final targeted/full refresh reconciles
 the promoted snapshot under a new lease claim. Publication ships switched off;
 the [publication guide](../../../guides/stewardship-member-requests.md#parishsoft-publication)
