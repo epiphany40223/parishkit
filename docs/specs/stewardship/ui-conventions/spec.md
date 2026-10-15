@@ -59,7 +59,8 @@ when it lands.
   [unavailable menu pages](#unavailable-menu-pages).
 - Admin page layout: [page help](#page-help),
   [button labels](#button-labels), [shared visual style](#shared-visual-style),
-  [status indicators](#status-indicators), [time entry](#time-entry).
+  [status indicators](#status-indicators), [time entry](#time-entry),
+  [schedules](#schedules).
 - Tables: [Admin tables](#admin-tables),
   [empty tables and lists](#empty-tables-and-lists),
   [row actions](#row-actions-and-confirmation),
@@ -104,7 +105,7 @@ denominator displays an em dash rather than a misleading percentage.
 **Rule.** Every Admin page shows and takes dates and times in the browser's
 own time zone, stored as UTC; no page labels a time "UTC" or asks the reader
 to think in the campaign's or the parish's zone. Exceptions: the ParishSoft
-refresh times stay in the parish's time zone (permanent, below); and the
+refresh times stay in the refresh schedule's time zone (permanent, below); and the
 date-change review still takes send times in the campaign's time zone, a dated
 exception (Administrator decision, 2026-10-10) until it is fixed under
 [#558](https://github.com/epiphany40223/parishkit/issues/558). **Why.** Staff read
@@ -153,18 +154,20 @@ fourth ([Reports](../reports/spec.md#additional-information)).
 Until a page's PR lands, it keeps its current zone, including the campaign zone
 for the other schedule pages, campaign dates and report day buckets (the
 participation chart still buckets by campaign time). One field is a recorded
-exception that stays in the parish's time zone after every #558 PR: the
-ParishSoft full-refresh times (Administrator decision). A refresh schedule is
+exception that stays in the refresh schedule's own time zone (the current
+campaign's, else the parish's, as the scheduler reads it) after every #558 PR:
+the ParishSoft full-refresh times (Administrator decision). A refresh schedule is
 a recurring wall-clock schedule: the parish's own daylight-saving changes
 decide when each refresh runs and when the reminders it avoids are due, and a
 time entered in another zone and converted with today's offset would move
 against the parish's clock twice a year when the two zones change on
-different dates. The settings page says the times are parish-local, and the
+different dates. The settings page names that zone, and the
 [time entry](#time-entry) reads them as it does any
 other. This is decision 18 of the
 [refresh schedule plan](../../../plans/stewardship/refresh-schedule.md#open-decisions),
 which designs the whole refresh schedule. Local-day conversion must
-handle daylight-saving gaps and folds without running an occurrence twice.
+handle daylight-saving gaps and folds without running an occurrence twice
+([schedules](#schedules)).
 
 ### Date format
 
@@ -1717,8 +1720,9 @@ email](../admin-portal/spec.md#new-and-edit-scheduled-email)); the date-change
 review still takes them in the campaign's time zone, the dated exception
 (2026-10-10) in [dates and times](#dates-and-times), until it is fixed under
 [#558](https://github.com/epiphany40223/parishkit/issues/558). The ParishSoft refresh times
-are in the parish's time zone, the recorded exception to the browser-local
-rule that those rules describe (see also
+are in the refresh schedule's time zone (the current campaign's, else the
+parish's), the recorded exception to the browser-local rule that those rules
+describe (see also
 [ParishSoft refresh schedule settings](../admin-portal/spec.md#parishsoft-refresh-schedule-settings)).
 
 **Fields.** Every Admin time of day is a shared time entry field: a form's
@@ -1730,7 +1734,7 @@ without the mark ([#1117](https://github.com/epiphany40223/parishkit/issues/1117
 | Page | Field | Entry |
 | --- | --- | --- |
 | ParishSoft refresh schedule | Each rule's At, From and To; each skip's At, From and To | One time, refresh schedule time |
-| ParishSoft refresh schedule, Edit as text | Full refresh times; Quick update times | List, refresh schedule time |
+| ParishSoft refresh schedule, Edit as text | Full refresh times | List, refresh schedule time |
 | New and Edit scheduled email | Send time | One time, browser time |
 | First-campaign Mail schedules | Send time | One time, browser time |
 | First-campaign Mail schedules, Repeat a reminder | Send time | One time, browser time |
@@ -1742,10 +1746,99 @@ The Ministry follow-up contact attempt moved to this entry after its in-place
 save work ([#592](https://github.com/epiphany40223/parishkit/pull/592))
 merged ([#398](https://github.com/epiphany40223/parishkit/issues/398)); its
 date stays a date control, and its not-in-the-future check reads the typed
-time as the server does. The planned
+time as the server does. The
 [refresh schedule editor](../admin-portal/spec.md#parishsoft-refresh-schedule-settings)
-([#632](https://github.com/epiphany40223/parishkit/issues/632)) replaces the
-"At these times" list and uses this entry for its rule and exception times.
+([#632](https://github.com/epiphany40223/parishkit/issues/632)) uses this entry
+for its rule and skip times, and its Edit as text list holds only full
+refresh times, since quick updates left the Admin UI
+([#1122](https://github.com/epiphany40223/parishkit/issues/1122)).
+
+### Schedules
+
+**Rule.** Every Admin editor that sets a future or repeating event looks and
+behaves the same way. These editors are the mail schedules (with their
+repeats and the daily and weekly Admin digests), the ParishSoft refresh
+schedule, and the campaign dates. They share plain words with no cron text,
+the [Basic and Advanced modes](#basic-and-advanced-modes), one time input,
+one day-of-week picker, one zone note, one preview pattern and one
+daylight-saving rule. **Why.** Each scheduler was built on its own, so an
+Administrator had to learn a different editor for each. One pattern is
+learned once. **Shared code.**
+
+- `parishkit.stewardship.wall_clock`: the weekday names, Monday first
+  (`WEEKDAYS`, `weekday_choices`), the stored `HH:MM` check (`is_hhmm`) and
+  its formatters (`hhmm`, `wall_hhmm`).
+- [Time entry](#time-entry): `FlexibleTimeField` and `data-time-entry`.
+- `campaigns/recurrence.py`: repeat rules. Its cases
+  (`tests/stewardship/fixtures/recurrence_cases.json`) also pin the page
+  script's `ParishRecurrence`.
+- `campaigns/intervals.resolve_local`: the daylight-saving rule.
+- `ParishEditorMode`: the Basic and Advanced modes.
+
+**Precedent.** [#1129](https://github.com/epiphany40223/parishkit/issues/1129)
+(Administrator, 2026-10-12).
+
+- **Plain words.** A schedule is described in a sentence wherever it is
+  shown: in a Basic choice, the preview, the review and a table row, such
+  as "Every Tuesday at 7:00 PM", "Daily at 6:00 AM" or "Every 4 hours from
+  12:00 AM". It is never shown as a cron expression, an ISO duration or a
+  raw stored rule.
+- **Basic and Advanced.** An editor whose full rule set is much harder than
+  the common case follows [Basic and Advanced modes](#basic-and-advanced-modes):
+  Basic has a few presets, and Advanced has the rules, the exceptions, and
+  "Edit as text" where the editor has it. An editor of one or two plain
+  fields, such as the campaign dates, has no modes.
+- **Times of day** are [time entry](#time-entry) fields. No schedule editor
+  draws its own reading or uses a native time control.
+- **Days of the week** use one picker that lists Monday to Sunday with the
+  full names from `WEEKDAYS`, and stores `date.weekday()`'s index (Monday is
+  0). One day is a select; several days are checkboxes in a `fieldset` with a
+  `legend`. A month grid, such as the
+  [Campaign calendar](../admin-portal/spec.md#campaign-calendar), starts on
+  Sunday, the parish-calendar convention, and reorders the same names.
+- **Dates** are native date controls. A date with no time is a calendar date
+  and is never shifted ([dates and times](#dates-and-times)).
+- **Time zone.** Times are entered and shown in the browser's zone
+  ([dates and times](#dates-and-times)). A repeating schedule is stored and
+  evaluated in its schedule zone: the current campaign's, or the parish's
+  when there is no campaign. The page converts a typed time through the
+  schedule's next occurrence, as
+  [New and Edit scheduled email](../admin-portal/spec.md#new-and-edit-scheduled-email)
+  does. A note beside the fields names the zone the times are typed in. The
+  [ParishSoft refresh schedule](../admin-portal/spec.md#parishsoft-refresh-schedule-settings)
+  is the recorded exception: its times are typed and shown in its schedule
+  zone (decision 18).
+- **Daylight saving.** When a schedule is evaluated, a wall time that occurs
+  twice (clocks fall back) runs once, at its first occurrence. A wall time
+  that the spring-forward change skips runs at the first instant after the
+  gap, so 2:30 AM runs at 3:00 AM. No occurrence runs twice or is dropped
+  (`resolve_local`). A one-off time typed into a page still reads a skipped
+  time with the offset in force before the change, so 2:30 AM becomes 3:30
+  AM ([dates and times](#dates-and-times)). A later #1129 change moves typed
+  times onto `resolve_local`.
+- **Preview.** Before Review, an editor shows the schedule's next
+  occurrences in plain words, each with its weekday and date, in the
+  browser's zone, and also in the schedule zone when that differs. The
+  preview is redrawn in place as the editor changes
+  ([in-place controls](#in-place-controls)), in a region that keeps its
+  place ([no layout shift](#no-layout-shift)). The review lists every
+  occurrence a change adds. A feature-specific view, such as the refresh
+  schedule's seven-day preview or the Campaign calendar, is an extra view of
+  the same evaluation, not a second preview.
+- **Limits** are refused at the field in plain words, with the limit named,
+  such as the 30-date limit on a reminder repeat.
+- **Host schedules.** Off-site backups are not edited in the Admin portal.
+  The host's scheduled job runs them, and
+  [System health](https://github.com/epiphany40223/parishkit/issues/530)
+  shows that schedule read-only, in the same plain words (the #1129 default).
+
+**Adoption.** The ParishSoft refresh schedule follows all of these rules
+except the browser-zone entry, which is its recorded exception
+([#1122](https://github.com/epiphany40223/parishkit/issues/1122)). Later
+[#1129](https://github.com/epiphany40223/parishkit/issues/1129) slices bring
+the shared zone note, preview and Basic and Advanced modes to the mail
+schedule editors, reminder repeats and digests. Until each change lands, an
+editor keeps the behavior its feature spec describes.
 
 ## Tables
 

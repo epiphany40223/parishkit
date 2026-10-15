@@ -26,6 +26,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.campaigns.schedule_evaluation import SchedulePlan
 from parishkit.stewardship.campaigns.work_locks import read_transaction
+from parishkit.stewardship.wall_clock import WEEKDAYS
 from parishkit.stewardship.web.contracts import filters
 
 from .admin_editing import error_response, principal
@@ -42,15 +43,13 @@ from .schedule_views import campaign_email_names
 # sends are read page by page to its last one, however long the campaign.
 PAGE_DATES = 1000
 # The month grids' weekday headings, Sunday first as parish calendars are:
-# the short name shown and the full name a screen reader reads.
-WEEK = (
-    (_("Sun"), _("Sunday")),
-    (_("Mon"), _("Monday")),
-    (_("Tue"), _("Tuesday")),
-    (_("Wed"), _("Wednesday")),
-    (_("Thu"), _("Thursday")),
-    (_("Fri"), _("Friday")),
-    (_("Sat"), _("Saturday")),
+# the short name shown and the shared full name a screen reader reads.
+WEEK = tuple(
+    zip(
+        (_("Sun"), _("Mon"), _("Tue"), _("Wed"), _("Thu"), _("Fri"), _("Sat")),
+        WEEKDAYS[6:] + WEEKDAYS[:6],
+        strict=True,
+    )
 )
 
 

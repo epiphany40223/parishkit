@@ -14,6 +14,7 @@ from parishkit.stewardship.campaigns.configuration import (
     campaign_values,
     schedule_values,
 )
+from parishkit.stewardship.wall_clock import weekday_choices
 from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.presentation import parish_date
 from parishkit.stewardship.web.time_entry_fields import FlexibleTimeField
@@ -33,15 +34,6 @@ FIELDS = {
     "daily_digest": ("time", "template_version", "comparison"),
     "weekly_digest": ("weekday", "time", "template_version"),
 }
-WEEKDAYS = (
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-    "Sunday",
-)
 
 
 NO_TEMPLATES = _(
@@ -443,7 +435,7 @@ class ScheduleForm(forms.Form):
         empty_value=None,
         choices=[
             ("", _("Not weekly")),
-            *((index, _(day)) for index, day in enumerate(WEEKDAYS)),
+            *weekday_choices(),
         ],
         help_text=_("Weekly Admin digests only: the day of the week it is sent."),
     )

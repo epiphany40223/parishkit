@@ -7,6 +7,7 @@ from uuid import UUID, uuid5
 from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.campaigns.intervals import resolve_local
+from parishkit.stewardship.wall_clock import is_hhmm
 
 from .canonical import canonical_payload
 
@@ -29,7 +30,6 @@ MAX_DAILY_TIMES = 96
 MAX_LEGACY_FULL_TIMES = 8
 DEFAULT_TIME = "02:00"
 DEFAULT_DELTA_REFRESH = "quarter_hour"
-TIME_PATTERN = re.compile(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]")
 QUARTER_HOUR = timedelta(minutes=15)
 HOUR = timedelta(hours=1)
 
@@ -50,11 +50,6 @@ class RefreshSlot:
     nightly_time: str | None = None
 
 
-def canonical_time(value):
-    """Whether ``value`` is a canonical local ``HH:MM`` wall time."""
-    return type(value) is str and TIME_PATTERN.fullmatch(value) is not None
-
-
 def canonical_list(values):
     """Whether ``values`` is a non-empty sorted list of unique ``HH:MM`` times.
 
@@ -64,7 +59,7 @@ def canonical_list(values):
     return (
         type(values) in (list, tuple)
         and 1 <= len(values) <= MAX_DAILY_TIMES
-        and all(canonical_time(value) for value in values)
+        and all(is_hhmm(value) for value in values)
         and list(values) == sorted(set(values))
     )
 
@@ -138,7 +133,7 @@ def _validate(
     quick = tuple(quick_refresh_times or ())
     listed = delta_refresh == "times"
     if (
-        not canonical_time(nightly_time)
+        not is_hhmm(nightly_time)
         or not canonical_times(nightly_time, full_refresh_times)
         or (not rules and (listed or len(full_refresh_times) > MAX_LEGACY_FULL_TIMES))
         or frequency not in FREQUENCIES

@@ -23,6 +23,8 @@ from zoneinfo import ZoneInfo
 from django.utils.translation import gettext
 from django.utils.translation import gettext_lazy as _
 
+from parishkit.stewardship.wall_clock import hhmm
+
 # Cells per day row: one per quarter hour of the wall clock.
 CELLS = 96
 QUARTER = timedelta(minutes=15)
@@ -88,8 +90,8 @@ def _title(index, cell, repeated):
     the cell then stands for both, and the words say so.
     """
     times = {
-        "start": _wall(index).strftime("%H:%M"),
-        "end": _wall((index + 1) % CELLS).strftime("%H:%M"),
+        "start": hhmm(_wall(index)),
+        "end": hhmm(_wall((index + 1) % CELLS)),
     }
     if repeated:
         words = [gettext("%(start)s to %(end)s, both times (clocks go back)") % times]

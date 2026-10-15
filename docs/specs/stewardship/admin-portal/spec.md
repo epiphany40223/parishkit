@@ -1752,7 +1752,8 @@ words, no cron text, and every refused or skipped time explained where it
 appears. It follows the [in-place controls](../ui-conventions/spec.md#in-place-controls) and
 conditional-field rules: nothing on the page reloads it. It follows the
 [Basic and Advanced modes](../ui-conventions/spec.md#basic-and-advanced-modes)
-convention ([#1122](https://github.com/epiphany40223/parishkit/issues/1122)).
+convention ([#1122](https://github.com/epiphany40223/parishkit/issues/1122))
+and the shared [schedules](../ui-conventions/spec.md#schedules) rules.
 
 **No quick updates in the Admin UI.** ParishSoft's list of changed
 Families returns nothing
@@ -2454,7 +2455,9 @@ The regular **Dates and mail schedules** page
 ([#878](https://github.com/epiphany40223/parishkit/issues/878)) is a list. Under
 its heading, About panel and campaign name, one line gives the campaign dates
 (with a link to change them in Campaign settings while they may still change).
-There is no separate campaign window panel. **New scheduled email**, above the
+There is no separate campaign window panel. Every editor this page opens
+follows the shared [schedules](../ui-conventions/spec.md#schedules) rules.
+**New scheduled email**, above the
 table, opens the [New scheduled email page](#new-and-edit-scheduled-email), and
 the link beside it the read-only [Campaign calendar](#campaign-calendar).
 
@@ -2553,8 +2556,10 @@ Dates and mail schedules, whose status line says what was applied. Edit
 opens it filled in
 from the saved schedule, whose mail type is fixed; a schedule that is unknown or
 read-only is refused there too, even from an old link (a GET or a POST).
-Planned ([#1129](https://github.com/epiphany40223/parishkit/issues/1129)):
-the schedule editors here, reminder repeats and the Admin digests included,
+The editor follows the shared
+[schedules](../ui-conventions/spec.md#schedules) rules. Planned
+([#1129](https://github.com/epiphany40223/parishkit/issues/1129)):
+the schedule editors here, including reminder repeats and the Admin digests,
 adopt the
 [Basic and Advanced modes](../ui-conventions/spec.md#basic-and-advanced-modes)
 convention.

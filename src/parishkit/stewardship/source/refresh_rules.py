@@ -23,7 +23,9 @@ Everything here is pure: wall times only, no time zone, no database.
 
 from dataclasses import dataclass
 
-from .cadence import MAX_DAILY_TIMES, canonical_time, refresh_settings
+from parishkit.stewardship.wall_clock import is_hhmm
+
+from .cadence import MAX_DAILY_TIMES, refresh_settings
 
 # The rule intervals the editor offers, in minutes.
 STEPS = (15, 30, 60, 120, 180, 240, 360, 480, 720)
@@ -72,13 +74,13 @@ def _rule_ok(rule):
     if type(rule) is not dict or rule.get("kind") not in KINDS:
         return False
     if rule.keys() == SINGLE_RULE:
-        return canonical_time(rule["at"])
+        return is_hhmm(rule["at"])
     return (
         rule.keys() == RANGE_RULE
         and type(rule["every"]) is int
         and rule["every"] in STEPS
-        and canonical_time(rule["from"])
-        and canonical_time(rule["to"])
+        and is_hhmm(rule["from"])
+        and is_hhmm(rule["to"])
         # A rule never crosses midnight; one whose last time equals its
         # start gives that one time.
         and rule["to"] >= rule["from"]
@@ -90,11 +92,11 @@ def _skip_ok(skip):
     if type(skip) is not dict:
         return False
     if skip.keys() == SINGLE_SKIP:
-        return canonical_time(skip["at"])
+        return is_hhmm(skip["at"])
     return (
         skip.keys() == RANGE_SKIP
-        and canonical_time(skip["from"])
-        and canonical_time(skip["to"])
+        and is_hhmm(skip["from"])
+        and is_hhmm(skip["to"])
         # The end is excluded, so it must be after the start.
         and skip["to"] > skip["from"]
     )

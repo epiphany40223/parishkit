@@ -18,13 +18,13 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.configuration import schedule_window_changed
 from parishkit.stewardship.campaigns.schedule_evaluation import preview_slots
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.wall_clock import WEEKDAYS
 from parishkit.stewardship.web.refusals import stale_page
 
 from .admin_editing import sign_preview
 from .campaign_views import _state
 from .content_forms import EMAIL_LABELS
 from .request_patch import build_candidate
-from .schedule_forms import WEEKDAYS
 from .schedule_preview import fingerprint, work_summary
 from .schedule_reads import refuse_archived
 from .series_schema import upkeep
@@ -76,7 +76,7 @@ def describe(values, campaign):
         return None
     page = preview_slots(values, campaign)
     return values | {
-        "weekday_label": _(WEEKDAYS[values["weekday"]])
+        "weekday_label": WEEKDAYS[values["weekday"]]
         if values["weekday"] is not None
         else None,
         "timezone": campaign["timezone"],

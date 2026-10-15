@@ -8,10 +8,10 @@ from parishkit.stewardship.source.cadence import (
     MAX_DAILY_TIMES,
     MAX_LEGACY_FULL_TIMES,
     canonical_list,
-    canonical_time,
     canonical_times,
 )
 from parishkit.stewardship.source.refresh_rules import spacing_conflicts, valid_shape
+from parishkit.stewardship.wall_clock import is_hhmm
 
 from .content_trust import is_carried_schedule
 
@@ -56,7 +56,7 @@ def uses_cadence(document):
 
 def _validate_cadence(settings):
     """Refuse a malformed refresh time, time list, frequency or delta cadence."""
-    if "nightly_time" in settings and not canonical_time(settings["nightly_time"]):
+    if "nightly_time" in settings and not is_hhmm(settings["nightly_time"]):
         invalid()
     if "full_refresh" in settings and settings["full_refresh"] not in FREQUENCIES:
         invalid()

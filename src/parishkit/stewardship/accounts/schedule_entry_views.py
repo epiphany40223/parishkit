@@ -57,6 +57,7 @@ from parishkit.stewardship.campaigns.work_locks import (
     work_transaction,
 )
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.wall_clock import weekday_choices
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.presentation import parish_date
@@ -83,7 +84,6 @@ from .schedule_changes import (
     preview_salt,
 )
 from .schedule_forms import (
-    WEEKDAYS,
     ZONE_MISSING,
     ScheduleForm,
     Schedules,
@@ -169,7 +169,7 @@ class RepeatRule(forms.Form):
     weekdays = forms.MultipleChoiceField(
         required=False,
         label=_("On these days"),
-        choices=[(str(index), _(day)) for index, day in enumerate(WEEKDAYS)],
+        choices=[(str(index), day) for index, day in weekday_choices()],
     )
     by = forms.ChoiceField(
         required=False,
@@ -192,7 +192,7 @@ class RepeatRule(forms.Form):
     )
     month_weekday = forms.ChoiceField(
         required=False,
-        choices=[(str(index), _(day)) for index, day in enumerate(WEEKDAYS)],
+        choices=[(str(index), day) for index, day in weekday_choices()],
     )
     start = forms.DateField(required=False)
     until = forms.DateField(required=False)

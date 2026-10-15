@@ -60,6 +60,7 @@ from parishkit.stewardship.source.refresh_rules import (
     stored_settings,
     valid_shape,
 )
+from parishkit.stewardship.wall_clock import WEEKDAYS, hhmm, wall_hhmm
 from parishkit.stewardship.web.time_entry_fields import FlexibleTimeField
 
 from .refresh_schedule_grid import HOURS, grid_rows, legend
@@ -238,11 +239,6 @@ def basic_context():
     }
 
 
-def _hhmm(value):
-    """A cleaned ``time`` as ``HH:MM`` text, or None."""
-    return None if value is None else value.strftime("%H:%M")
-
-
 def _off_quarter(value):
     """Whether ``HH:MM`` text is off the quarter hour."""
     return minutes(value) % SPACING != 0
@@ -273,7 +269,7 @@ class _Row(forms.Form):
         A missing time is reported at the field; a time off the quarter hour
         too, unless ``allow_kept`` and it is a kept time.
         """
-        value = _hhmm(self.cleaned_data.get(name))
+        value = hhmm(self.cleaned_data.get(name))
         if value is None:
             if name not in self.errors:
                 self.add_error(name, gettext("Enter a time."))
@@ -1009,25 +1005,11 @@ def _length(value):
     }
 
 
-WEEKDAYS = (
-    _("Monday"),
-    _("Tuesday"),
-    _("Wednesday"),
-    _("Thursday"),
-    _("Friday"),
-    _("Saturday"),
-    _("Sunday"),
-)
 WINDOW_WORDS = {
     "reminder_preparing": _("reminder being prepared"),
     "reminder_sending": _("reminder being sent"),
     "initial_sending": _("invitation being sent"),
 }
-
-
-def _wall(instant, timezone):
-    """An instant as the parish's ``HH:MM``."""
-    return instant.astimezone(ZoneInfo(timezone)).strftime("%H:%M")
 
 
 def _time_line(entry, timezone):
@@ -1056,7 +1038,7 @@ def _time_line(entry, timezone):
         text = gettext("%(time)s nightly full refresh") % {"time": entry.time}
     if entry.shift == "forward":
         text += gettext(": runs at %(time)s, clocks go forward") % {
-            "time": _wall(entry.due_at, timezone)
+            "time": wall_hhmm(entry.due_at, timezone)
         }
     elif entry.shift == "back":
         text += gettext(": runs once, clocks go back")
@@ -1159,8 +1141,8 @@ def preview_context(preview, *, timezone, today, daily):
             "(%(start)s to %(end)s)."
         ) % {
             "wait": _wait(fresh.longest),
-            "start": _wall(fresh.start, timezone),
-            "end": _wall(fresh.end, timezone),
+            "start": wall_hhmm(fresh.start, timezone),
+            "end": wall_hhmm(fresh.end, timezone),
         }
     return {
         "days": days,
