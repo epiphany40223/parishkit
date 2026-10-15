@@ -31,6 +31,12 @@
   quiet when there is no work. The pill's title says what the number counts
   when a sighted user hovers over it.
 
+  Appearance, just above Sign out, chooses the Admin portal's light or dark
+  scheme for this browser (#1264; ui-conventions "Colour scheme"). It has no
+  form: admin-gate-v1.js shows the saved choice in it and applies a change at
+  once, in place. autocomplete="off" stops the browser restoring an older
+  value over the saved one on reload.
+
   Sign out is a POST form (logout is CSRF-protected) styled as the last menu
   entry.
 {% endcomment %}<nav class="admin-sidebar" aria-label="{% translate 'Administration' %}">
@@ -52,6 +58,7 @@
       </li>
       {% endfor %}
       {% endif %}
+      <li class="admin-appearance"><label for="admin-appearance">{% translate "Appearance" %}</label><select id="admin-appearance" data-appearance autocomplete="off"><option value="auto">{% translate "Match this device" %}</option><option value="light">{% translate "Light" %}</option><option value="dark">{% translate "Dark" %}</option></select></li>
       <li class="admin-signout"><form method="post" action="{% url 'admin:logout' %}">{% csrf_token %}{% button type="submit" %}{% translate "Sign out" %}{% endbutton %}</form></li>
     </ul>
   </details>

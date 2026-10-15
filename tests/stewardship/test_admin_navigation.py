@@ -1061,6 +1061,33 @@ def test_the_menu_ends_with_sign_out(pending):
     assert '<form method="post" action="/admin/logout">' in menu
 
 
+@pytest.mark.parametrize("pending", [False, True])
+def test_the_appearance_choice_sits_just_above_sign_out(pending):
+    """A labelled select chooses the Admin scheme (#1264), during setup too.
+
+    It has no form: admin-gate-v1.js applies the choice in place. Match this
+    device comes first, as the default with nothing saved.
+    """
+    html = render_to_string(
+        "stewardship/admin-navigation.html",
+        {"admin_chrome": {"setup_pending": pending, "setup_url": "/admin/setup"}},
+    )
+    menu = html[: html.index("</nav>")]
+    appearance = menu[menu.index('<li class="admin-appearance">') :]
+    assert appearance.index("</li>") < appearance.index('<li class="admin-signout">')
+    assert (
+        '<label for="admin-appearance">Appearance</label>'
+        '<select id="admin-appearance" data-appearance autocomplete="off">'
+        '<option value="auto">Match this device</option>'
+        '<option value="light">Light</option>'
+        '<option value="dark">Dark</option></select>'
+    ) in appearance
+    assert "<form" not in appearance[: appearance.index("</li>")]
+    static = Path(navigation.__file__).parent / "static" / "stewardship"
+    gate = (static / "admin-gate-v1.js").read_text(encoding="utf-8")
+    assert '"pk-admin-appearance"' in gate and "[data-appearance]" in gate
+
+
 def test_admin_pages_load_the_menu_script_and_family_pages_do_not():
     """admin-menu-v1.js loads deferred on Admin pages only, apart from ui-v1.js."""
     script = '<script src="/static/stewardship/admin-menu-v1.js" defer></script>'

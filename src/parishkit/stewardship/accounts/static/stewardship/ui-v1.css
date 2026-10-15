@@ -71,14 +71,17 @@
 }
 /* The Admin portal's dark scheme (#1264; ui-conventions "Colour scheme").
    admin-base.html marks every Admin page's root (sign-in and setup too) with
-   admin-document; Family pages extend base.html and stay light. When the
-   operating system asks for dark, the colour tokens take their dark values
-   from DARK_COLORS in web/design_tokens.py (test_design_tokens.py checks
-   this block against it), so every rule that reads a token follows with no
-   per-component CSS. "screen" keeps a printed page light. color-scheme makes
-   the browser's own form controls and scrollbars dark too. */
-@media screen and (prefers-color-scheme: dark) {
-  html.admin-document {
+   admin-document, and admin-gate-v1.js, which runs in the head before the
+   body is parsed, sets data-theme to the scheme in use: the Appearance
+   choice saved in this browser, or the operating system's setting when
+   none is saved. Family pages extend base.html, never load that script and
+   stay light. In dark, the colour tokens take their values from DARK_COLORS
+   in web/design_tokens.py (test_design_tokens.py checks this block against
+   it), so every rule that reads a token follows with no per-component CSS.
+   "screen" keeps a printed page light. color-scheme makes the browser's own
+   form controls and scrollbars dark too. */
+@media screen {
+  html.admin-document[data-theme="dark"] {
     color-scheme: dark;
     --ink: #e4eaeb;
     --muted: #a8b5ba;
@@ -111,12 +114,12 @@
     --progress-track: #34434a;
   }
   /* The closed select's arrow is an image, so it cannot read --ink. */
-  html.admin-document select:not([multiple]):not([size]) { background-image: url("select-arrow-dark-v1.svg"); }
+  html.admin-document[data-theme="dark"] select:not([multiple]):not([size]) { background-image: url("select-arrow-dark-v1.svg"); }
   /* A parish logo is drawn for a light header; a white backing behind its
      transparent parts keeps a dark logo visible. It adds no size. */
-  html.admin-document .brand img { background-color: #fff; border-radius: var(--radius-small); }
+  html.admin-document[data-theme="dark"] .brand img { background-color: #fff; border-radius: var(--radius-small); }
   /* A light card keeps its edge clear of the email's text on the dark page. */
-  html.admin-document .light-card:not(.content-sample) { padding: 1rem; border-radius: var(--radius-small); }
+  html.admin-document[data-theme="dark"] .light-card:not(.content-sample) { padding: 1rem; border-radius: var(--radius-small); }
 }
 * { box-sizing: border-box; }
 /* Always reserve the vertical scrollbar's space, so a centred page does not
@@ -269,7 +272,13 @@ img { max-width: 100%; height: auto; }
 .disabled-control { position: relative; display: inline-block; }
 .disabled-control-link, .disabled-control-link:hover { color: var(--unavailable); text-decoration: none; cursor: not-allowed; }
 /* Sign out is a POST button that looks like the menu's links, set apart at the end. */
-.admin-sections > li.admin-signout { margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--border); }
+/* The Appearance choice (#1264) sits above Sign out, behind the same
+   divider, which moves up to it. The select keeps the shared full width, so
+   a longer option label never moves it. */
+.admin-sections > li.admin-appearance, .admin-sections > li.admin-signout { margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--border); }
+.admin-sections > li.admin-appearance + li.admin-signout { margin-top: .5rem; padding-top: 0; border-top: 0; }
+.admin-appearance { padding-inline: .75rem; }
+.admin-appearance label { margin-block: 0 .35rem; }
 .admin-signout form { margin: 0; }
 .admin-signout button { display: block; width: 100%; min-height: 40px; margin: 0; padding: .5rem .75rem; border: 0; border-radius: var(--radius-small); background: none; box-shadow: none; color: var(--ink); font: inherit; line-height: 1.4; text-align: start; cursor: pointer; }
 .admin-sidebar .admin-signout button:not(:disabled):hover { background: var(--accent-soft); border: 0; box-shadow: none; color: var(--accent-strong); }

@@ -6,8 +6,9 @@ the stylesheet and this module ever disagree. Email cannot load the
 stylesheet, so email components read the same values here and inline them.
 
 ``DARK_COLORS`` is the Admin portal's dark colour scheme (#1264; ui-conventions
-"Colour scheme"): ``ui-v1.css`` declares it for Admin pages when the operating
-system asks for dark, and the same test checks it. Email and downloaded files
+"Colour scheme"): ``ui-v1.css`` declares it for Admin pages whose scheme is
+dark (the Appearance choice, or the operating system's setting), and the same
+test checks it. Email and downloaded files
 never read it; they stay light.
 
 Only add a token when two places need the same value. Every text and

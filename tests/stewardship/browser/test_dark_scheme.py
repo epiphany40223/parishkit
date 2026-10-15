@@ -1,10 +1,13 @@
-"""The Admin portal follows the operating system's dark scheme (#1264).
+"""The Admin portal's light and dark schemes (#1264).
 
-With the browser asking for dark (``prefers-color-scheme``), every Admin page,
+With the browser asking for dark (``prefers-color-scheme``) and no Appearance
+choice saved, every Admin page,
 including sign-in and a setup step, draws from the dark tokens in
 ``web/design_tokens.py``: no visible element keeps a light surface or the
 light ink, and the page has no colour-contrast violation. The Family portal
 stays light, and so does an email sample preview (a light card). The
+sidebar's Appearance choice overrides the device in place, is remembered by
+the browser, applies before the body is parsed and reaches other tabs. The
 token values and their contrast are unit-tested in
 ``tests/stewardship/test_design_tokens.py``; ui-conventions "Colour scheme"
 is the rule.
@@ -16,7 +19,7 @@ from parishkit.stewardship.web.design_tokens import COLORS, DARK_COLORS, hex6
 
 from .system_health_components import PAGE as SYSTEM_HEALTH
 from .test_editor_mode import basic_from_saved, toggle
-from .waits import visible
+from .waits import eventually, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "webkit"], indirect=True
@@ -127,8 +130,15 @@ def test_focus_ring_on_the_checked_mode_segment_is_paper(
     which keeps 3:1 on --accent; orange --focus would not (#1264)."""
     page.emulate_media(color_scheme=scheme)
     basic_from_saved(page, component_origin)
-    # The component page is not built from admin-base.html; mark it as one.
-    page.evaluate("document.documentElement.classList.add('admin-document')")
+    # The component page is not built from admin-base.html; mark it as one,
+    # in the scheme admin-gate-v1.js would choose.
+    page.evaluate(
+        """(scheme) => {
+            document.documentElement.classList.add('admin-document');
+            document.documentElement.dataset.theme = scheme;
+        }""",
+        scheme,
+    )
     checked = toggle(page, "Basic")
     page.keyboard.press("Tab")  # A keyboard user: focus-visible.
     checked.focus()
@@ -163,6 +173,111 @@ def test_printed_admin_page_stays_light(page, component_origin):
     """The dark scheme is for screens; a printed Admin page is light."""
     page.emulate_media(color_scheme="dark", media="print")
     page.goto(component_origin + "/home")
+    assert (
+        page.evaluate(
+            "getComputedStyle(document.documentElement).getPropertyValue('--page').trim()"
+        )
+        == COLORS["page"]
+    )
+
+
+# Records, when the body element first appears, the scheme admin-gate-v1.js
+# set: a page in the saved scheme from the start never flashes the other.
+AT_BODY = """new MutationObserver((records, observer) => {
+    if (!document.body) return;
+    window.__themeAtBody = document.documentElement.dataset.theme || 'none';
+    observer.disconnect();
+}).observe(document, {childList: true, subtree: true});"""
+SAVED = "() => localStorage.getItem('pk-admin-appearance')"
+
+
+def page_colour(page):
+    """The body's background as getComputedStyle reports it."""
+    return page.locator("body").evaluate("el => getComputedStyle(el).backgroundColor")
+
+
+def choose(page, value):
+    """Pick an Appearance option; the page must not reload or move it."""
+    select = page.get_by_label("Appearance")
+    visible(select)
+    page.evaluate("window.__samePage = true")
+    before = select.bounding_box()
+    select.select_option(value)
+    assert page.evaluate("window.__samePage") is True
+    assert select.bounding_box() == before
+
+
+@pytest.mark.parametrize(
+    ("device", "chosen", "colors"),
+    [("light", "dark", DARK_COLORS), ("dark", "light", COLORS)],
+)
+def test_appearance_choice_overrides_the_device_in_place_and_is_remembered(
+    page, component_origin, axe_source, device, chosen, colors
+):
+    """Dark on a light device, or Light on a dark one, applies at once, stays
+    across a reload from the very first paint, and reaches the sign-in page,
+    which has no sidebar."""
+    page.emulate_media(color_scheme=device)
+    page.add_init_script(AT_BODY)
+    page.goto(component_origin + "/home")
+    assert page.get_by_label("Appearance").input_value() == "auto"
+    choose(page, chosen)
+    assert page_colour(page) == rgb(colors["page"])
+    assert page.evaluate("getComputedStyle(document.documentElement).colorScheme") == (
+        chosen
+    )
+    assert page.evaluate(SAVED) == chosen
+    page.evaluate(axe_source)
+    assert page.evaluate(CONTRAST) == []
+    for path in ("/home", "/login"):
+        page.goto(component_origin + path)
+        visible(page.locator("main"))
+        assert page.evaluate("window.__themeAtBody") == chosen
+        assert page_colour(page) == rgb(colors["page"])
+    page.goto(component_origin + "/home")
+    assert page.get_by_label("Appearance").input_value() == chosen
+
+
+def test_match_this_device_follows_a_live_device_change(page, component_origin):
+    """With nothing saved, the page follows the device as it changes."""
+    page.emulate_media(color_scheme="light")
+    page.goto(component_origin + "/home")
+    choose(page, "dark")
+    choose(page, "auto")
+    assert page.evaluate(SAVED) is None
+    assert page_colour(page) == rgb(COLORS["page"])
+    page.emulate_media(color_scheme="dark")
+    eventually(page, "document.documentElement.dataset.theme", "dark")
+    assert page_colour(page) == rgb(DARK_COLORS["page"])
+    page.emulate_media(color_scheme="light")
+    eventually(page, "document.documentElement.dataset.theme", "light")
+
+
+def test_another_open_tab_follows_a_change(page, component_origin):
+    """A choice made in one Admin tab reaches the others without a reload."""
+    page.emulate_media(color_scheme="light")
+    page.goto(component_origin + "/home")
+    other = page.context.new_page()
+    other.emulate_media(color_scheme="light")
+    other.goto(component_origin + "/logs")
+    visible(other.locator("main"))
+    choose(page, "dark")
+    eventually(other, "document.documentElement.dataset.theme", "dark")
+    assert page_colour(other) == rgb(DARK_COLORS["page"])
+
+
+def test_saved_dark_leaves_family_pages_and_print_light(page, component_origin):
+    """The Family portal shares the browser's storage but never the scheme,
+    and a printed Admin page stays light whatever was chosen."""
+    page.emulate_media(color_scheme="light")
+    page.goto(component_origin + "/home")
+    choose(page, "dark")
+    page.goto(component_origin + "/family-login")
+    visible(page.locator("main"))
+    assert page_colour(page) == rgb(COLORS["page"])
+    page.emulate_media(color_scheme="light", media="print")
+    page.goto(component_origin + "/home")
+    assert page.evaluate("document.documentElement.dataset.theme") == "dark"
     assert (
         page.evaluate(
             "getComputedStyle(document.documentElement).getPropertyValue('--page').trim()"
