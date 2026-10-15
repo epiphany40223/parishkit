@@ -198,7 +198,9 @@ queued or being sent. Once the test settles, the page re-reads its panel in
 place, without moving focus, so Continue, Send another test or the
 unknown-delivery acknowledgement come from the server. No page offers a
 manual check or asks for a reload, and a page restored from the browser's
-history checks again by itself. A status read the server refuses (signed
+history checks again by itself: a settled test page re-reads its panel in
+place on `pageshow`, so Continue never outlives a change to an earlier
+step's settings. A status read the server refuses (signed
 out, no longer allowed, or a bad request such as Slack being off) stops the
 watching instead of being retried.
 

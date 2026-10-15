@@ -2430,6 +2430,26 @@
     renew();
   });
 
+  // A settled Test email / Test Slack page restored from the back/forward
+  // cache (#563) still shows what it showed when it was left, such as
+  // Continue, although an earlier step's settings may have changed since.
+  // Its hidden follow-up link, followed as live-status-v1.js follows it once
+  // a test settles, re-reads this address's panel in place, so the panel is
+  // drawn again from the server's current state; if a test is in flight
+  // again, the fresh region is watched anew. A pending region is already
+  // polled.
+  window.addEventListener("pageshow", (event) => {
+    if (!event.persisted) return;
+    const follow = document.querySelector(
+      '[data-live-status="setup-test"]:not([data-live-pending]) a[data-live-follow][data-in-place]');
+    const panel = document.getElementById("setup-test-panel");
+    if (!follow || !panel) return;
+    const here = new URL(window.location.href);
+    here.hash = panel.id;
+    follow.href = here.href;
+    follow.click();
+  });
+
   // A control's value for the rules below (data-show-when and
   // data-required-when). A checkbox counts as its value only while it is
   // ticked and is empty otherwise, as a submission would send it:
