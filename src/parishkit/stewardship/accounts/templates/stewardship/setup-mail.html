@@ -9,7 +9,7 @@
 <p class="notice">{% translate "Testing mode. The test goes only to the designated Testing recipient. This does not contact parishioners, satisfy a scheduled mailing, or activate the campaign." %}</p>
 <p>{% translate "Test recipient" %}: {{ testing_recipient }}</p>
 <p class="visually-hidden" role="status" data-live-announcer="setup-test"></p>
-<div id="setup-test-panel" data-in-place-region data-setup-mail>
+<div id="setup-test-panel" data-in-place-region>
 <section class="panel"><h2>{% translate "Send an explicit test" %}</h2>
 <p class="help">{% translate "Provider acceptance does not guarantee inbox delivery; check the Testing mailbox. A missing result is never automatically resent." %}</p>
 <form method="post" action="#setup-test-panel" id="setup-test" data-in-place>{% csrf_token %}
