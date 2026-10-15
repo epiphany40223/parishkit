@@ -19,12 +19,13 @@ import pytest
 from parishkit.stewardship import admin_changes, admin_cli, admin_reads
 from parishkit.stewardship.accounts.configuration_requests import RequestStatus
 from parishkit.stewardship.accounts.schedule_changes import describe
+from parishkit.stewardship.campaigns.recurrence import canonical_rule
 from parishkit.stewardship.storage import StaleRecordError
 
 from .campaign_factory import campaign as campaign_record
 from .campaign_factory import financial
 from .campaign_factory import schedule as schedule_record
-from .test_admin_reads import FORBIDDEN, members
+from .test_admin_reads import FORBIDDEN, SERIES, SERIES_RULE, members
 
 CAMPAIGN = UUID("00000000-0000-4000-8000-000000000001")
 SCHEDULE = "00000000-0000-4000-8000-000000000003"
@@ -75,6 +76,7 @@ def preview_context(*, blocking=0):
         "before_window": values,
         "after_window": values,
         "blocking": blocking,
+        "series": [{"id": SERIES, "rule": SERIES_RULE, "schedules": [SCHEDULE]}],
         "preview": None if blocking else "signed:preview",
     }
 
@@ -156,6 +158,7 @@ GOLDEN = {
             ],
             "blocking": 0,
             "preview": {"token": "signed:preview"},
+            "series": [{"id": SERIES, "rule": SERIES_RULE, "schedules": [SCHEDULE]}],
         },
     ),
     "schedule confirm": (
@@ -200,6 +203,14 @@ ALLOWED = {
         "impact",
         "blocking",
         "preview",
+        # A remembered reminder series (#469) and its repeat rule.
+        "series",
+        "rule",
+        "frequency",
+        "start",
+        "end",
+        "weekdays",
+        "schedules",
         # The signed binding the specification has the preview print; the
         # page embeds the same value in its form.
         "token",
@@ -272,6 +283,10 @@ def test_a_request_watch_stops_once_the_request_is_settled():
         # A saved schedule's mail type never changes; a new one needs fields.
         f'{{"schedules": [{{"id": "{SCHEDULE}", "kind": "reminder"}}]}}',
         '{"schedules": [{}]}',
+        # Only empty or default values: the page's forms would add nothing.
+        '{"schedules": [{"comparison": false}]}',
+        '{"schedules": [{"date": null, "weekday": null}]}',
+        '{"schedules": [{"kind": ""}]}',
         '{"schedules": {}}',
         '{"schedules": [1]}',
         '{"schedules": [{"label": "x"}]}',
@@ -295,7 +310,11 @@ def test_malformed_change_documents_are_invalid(text):
 
 def test_an_empty_document_changes_nothing_and_is_well_formed():
     """Both members are optional; the page then finds no change to review."""
-    assert admin_changes.parse_changes("{}") == {"window": {}, "schedules": []}
+    assert admin_changes.parse_changes("{}") == {
+        "window": {},
+        "schedules": [],
+        "series": [],
+    }
 
 
 def weekly(**rule):
@@ -410,6 +429,54 @@ def test_a_repeat_rule_that_adds_nothing_or_too_much_is_invalid(repeat, message)
 )
 def test_a_repeat_takes_only_its_rule_time_and_email(entry):
     """No kind (always a reminder), date or id; values typed as elsewhere."""
+    with pytest.raises(ValueError, match="A repeat takes only"):
+        admin_changes.parse_changes(json.dumps({"schedules": [entry]}))
+
+
+def test_a_remembered_repeat_names_its_reminders_among_the_added():
+    """Positions count added entries only, a repeat's reminders each once."""
+    document = {
+        "schedules": [
+            {"id": SCHEDULE, "time": "10:00"},
+            {"kind": "reminder", "date": REMINDER_DAY, "time": "10:00"},
+            {"repeat": weekly(end="2054-10-08"), "time": "09:00"},
+            {"repeat": weekly(end="2054-10-05"), "time": "08:00", "remember": True},
+        ]
+    }
+    parsed = admin_changes.parse_changes(json.dumps(document))
+    # One plain reminder, three unremembered dates, then the remembered two.
+    assert parsed["series"] == [
+        {"rule": canonical_rule(weekly(end="2054-10-05")), "added": [4, 5]}
+    ]
+    added = [row for row in parsed["schedules"] if "id" not in row]
+    assert [added[index]["time"] for index in (4, 5)] == ["08:00", "08:00"]
+
+
+def test_an_empty_added_entry_cannot_shift_a_remembered_repeat():
+    """Refused at parse, so 08:00's reminders can never be remembered as 09:00's."""
+    rule = weekly(end="2054-10-05")
+    document = {
+        "schedules": [
+            {"comparison": False},
+            {"repeat": rule, "time": "08:00", "remember": True},
+            {"repeat": rule, "time": "09:00"},
+        ]
+    }
+    with pytest.raises(ValueError, match="A new schedule needs its fields."):
+        admin_changes.parse_changes(json.dumps(document))
+    # Without the empty entry, the 08:00 reminders are the remembered ones.
+    parsed = admin_changes.parse_changes(
+        json.dumps(document | {"schedules": document["schedules"][1:]})
+    )
+    [series] = parsed["series"]
+    added = [row for row in parsed["schedules"] if "id" not in row]
+    assert [added[index]["time"] for index in series["added"]] == ["08:00", "08:00"]
+
+
+@pytest.mark.parametrize("remember", [False, None, 1, "true"])
+def test_remember_is_only_true(remember):
+    """Leave ``remember`` out to not save the rule; any value but true is refused."""
+    entry = {"repeat": weekly(), "time": "09:00", "remember": remember}
     with pytest.raises(ValueError, match="A repeat takes only"):
         admin_changes.parse_changes(json.dumps({"schedules": [entry]}))
 

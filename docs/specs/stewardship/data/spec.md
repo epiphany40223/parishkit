@@ -499,6 +499,12 @@ signed intent (`series_schema.upkeep`):
 - a series left with no reminder is removed; and
 - a changed time or email keeps the reminder in its series.
 
+A series is created when a schedule change adds a repeat and asks to
+remember it: the same signed intent adds the series record, holding exactly
+the reminders that repeat adds (`schedule_changes.build_preview`'s
+`series`). So far only the command line asks
+([`schedule preview`](../admin-automation/spec.md#schedules-and-configuration)).
+
 ### Source snapshot
 
 `SourceSnapshot` records form an ordered history. Each stores type (`full` or
