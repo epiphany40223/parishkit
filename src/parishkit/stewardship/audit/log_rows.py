@@ -382,6 +382,7 @@ UNGROUPED_REASONS = {
     ),
     "Staff follow-up on Family requests, not a setting": (
         "admin_cmd_census_resolve",
+        "admin_cmd_census_review",
         "census_change_updated",
         "chair_review_decided",
         "information_updated",

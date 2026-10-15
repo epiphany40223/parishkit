@@ -2438,7 +2438,7 @@ file is regenerated from the retained capture, in its original format.
 | `family_timeline`, `family_timeline_export` | One Family's timeline, so export only: the page's new export form and `export family-timeline FAMILY_RECORD_ID` (PR 8g, migration 0063); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
 | `family_open_form` (new, #529) | Permanent: Open form signs this browser in to the Family form for a Family on the phone, a browser hand-off by nature; Families' responses are read through `report responses` and the directory exports with its Response filters |
 | `limitations_export` | `export limitations [--show S] [--format F] [--timezone Z]` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)): the page's download through the page's own writer (`limitation_views.export_body`), with #752's audit fields |
-| `census_changes`, `census_changes_export` | `report census`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export census` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command is `census resolve PROPOSAL_ID --action entered\|ignored\|reopened` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), through the same `census_resolution` service |
+| `census_changes`, `census_changes_export` | `report census`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export census` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command is `census resolve PROPOSAL_ID --action entered\|ignored\|reopened` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), through the same `census_resolution` service. An Automatic row's Review (Approve, Ignore, Back to To review; ADM-09) posts there too; its command is `census review PROPOSAL_ID --decision approved\|ignored\|unreviewed` ([#528](https://github.com/epiphany40223/parishkit/issues/528)), through the same `census_review` service |
 | `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_regenerate`, `report_export_download` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export regenerate`, `export download --stream` (PR 8b); an exact request's status, cancel and retry, which these pages also serve, are `export exact status --watch`, `export exact cancel` and `export exact retry` (PR 8h) |
 | `report_exact_create` | `export exact create` (PR 8h); the handed-off file through `export fetch` |
 | `daily_digest_snapshot` | `digest daily SNAPSHOT_ID` (PR 8d) |
@@ -2539,6 +2539,31 @@ ids, versions and times and the change's state (`version`, `decision`,
 download prints a change's id and version yet (they are only in the page's
 row form); `export census` (PR 8h) must print them. Taking them from the
 page until then is a default pending Administrator confirmation.
+
+`census review PROPOSAL_ID --decision approved|ignored|unreviewed
+--expected-version VERSION [--note TEXT|-] [--request-key KEY]`
+([#528](https://github.com/epiphany40223/parishkit/issues/528)) is an
+Automatic row's Review on the same page (Approve, Ignore, Back to To review;
+[Automatic census review](../reports/spec.md#automatic-census-review)): full
+scope, keyed, not fresh-gated, and never prompting, because every review can
+be changed again until publication of the change starts and the page asks
+nothing. It checks the Administrator's `PUBLISH_CENSUS` first
+([#1341](https://github.com/epiphany40223/parishkit/issues/1341)), so Staff
+are `denied` before the note is read, then runs exactly as `census resolve`
+does (the same admission, command scope, campaign check, Live-change lookup
+and key handling) but calls the page's
+`census_review.review_census_change`. Every rule is therefore the page's, in
+Python and in its SQL guard: an Automatic change only, open only (`pending`,
+`conflict` or `failed`; never `queued` for publication nor final), a
+decision different from the current one, and no Approve of a Conflict; any
+of them is `invalid`. The service records `census_change_updated`, and the
+command `admin_cmd_census_review` in the same transaction, only for a new
+key. A changed version or the racing second review is `stale_version`. It
+prints the review's ids, decision, version and time and the change's state,
+never the note, Family, Member or value. No preview token is used: the
+page's own protection is the version and the request key, which the command
+takes too. There is no command to edit a value until the page has Edit
+value (ADM-09.04).
 
 The digest commands (PR 8d) read a retained report an emailed digest
 links to from its stored snapshot, through its page's own functions
@@ -2685,12 +2710,13 @@ columns with the same text under fixed keys, plus `proposal_id` and
 (a recorded exception in
 [downloaded files](../ui-conventions/spec.md#downloaded-files)), and
 `actions`, the outcomes the reader may record on the row from its state and
-their capabilities, none while other campaign work holds the campaign (the
-page's own check, `admit_campaign(..., mutating=True)`, made once per
-export). It records the page's `census_changes_exported` with
-the rows in the file, and no `admin_cmd_*` event, as `logs export`. The
-`jsonl` format and its keys are defaults pending Administrator
-confirmation; the
+their capabilities, and `reviews`, the decisions `census review` may give
+it (an Administrator's, on an Automatic row only), both empty while other
+campaign work holds the campaign (the page's own check,
+`admit_campaign(..., mutating=True)`, made once per export). It records the
+page's `census_changes_exported` with the rows in the file, and no
+`admin_cmd_*` event, as `logs export`. The `jsonl` format and its keys are
+defaults pending Administrator confirmation; the
 [operator guide](../../../guides/stewardship-admin-automation.md#census-changes-download)
 lists them.
 
