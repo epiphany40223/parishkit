@@ -283,9 +283,12 @@ def detail(request, request_id):
                 report_url = reverse("admin:campaign_comparison")
             elif job.report == "family_test_names":
                 # Requested from the command line's chosen-Family review
-                # (#817); the trail returns to that page for the same email.
+                # (#817). The trail runs through that page for the same email:
+                # it and Preview and test email need the revision to link, so
+                # the crumb is the way back and no "Return to" repeats it.
                 title = _("Chosen-Family test names export")
                 source = "campaign_mail_families"
+                arguments = {"revision_id": job.parameters["revision"]}
                 report_url = reverse(
                     "admin:campaign_mail_families", args=[job.parameters["revision"]]
                 )
