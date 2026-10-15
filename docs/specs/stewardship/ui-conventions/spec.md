@@ -709,7 +709,8 @@ sits after the button it holds, never on its line
 all sit after the bulk action buttons ([Admin tables](#admin-tables)); a
 confirmation dialog shows a refusal below its buttons
 ([row actions](#row-actions-and-confirmation)); the theme always reserves the
-scrollbar's space ([page help](#page-help)); `data-complete-hint="reserve"`
+scrollbar's space and every "i" toggletip opens a floating bubble that moves
+nothing ([page help](#page-help)); `data-complete-hint="reserve"`
 on a complete-gate hint keeps its one line's height while empty instead of
 hiding it (#959); a field that a choice makes inapplicable stays in
 place, greyed, rather than disappearing, through `data-enabled-when` (#959)
@@ -1462,13 +1463,25 @@ address, "one per line", a key's paste rule), and a warning that blocks the
 field, such as having no emails to schedule, always stays visible. The field
 remains described by its full help, so screen readers announce it without
 opening the tip. Checkbox help is a toggletip beside the box. A toggletip in a
-table heading is described by its bubble alone, and its bubble floats over the
-page, so opening it never changes the size or scroll of the table's box;
-it closes when that box scrolls its button out of view. The export forms'
-shared format help (how CSV, XLSX and PDF write dates and money) follows the
-same rule where its menu sits in a filter-bar cell: it opens from the "i"
-beside the format label, so the narrow cell never wraps it into a tall column
-(the Active parishioner family directory, #1158).
+table heading is described by its bubble alone, and it closes when the table's
+box scrolls its button out of view. The export forms' shared format help (how
+CSV, XLSX and PDF write dates and money) opens from the "i" beside the format
+label where its menu sits in a filter-bar cell, so the narrow cell never wraps
+it into a tall column (the Active parishioner family directory, #1158).
+
+An "i" button always opens a floating toggletip, on Family and Admin pages
+alike and wherever the button sits: a label row, a filter bar, a table heading
+or beside a checkbox. A click or tap opens a small bubble anchored below the
+button, or above it when there is no room below, kept inside the browser
+window at every width. The bubble floats over the page, so opening it never
+moves a label or control, never changes the size or scroll of a table's box
+and never scrolls the page ([no layout shift](#no-layout-shift)). It may cover
+the field while open, since a second click on the button, Escape, a click
+elsewhere or a click or tap on the bubble itself closes it (unless the reader
+is selecting its text). Escape returns focus to the button; the other ways
+leave focus where it is. Help that expands inline and pushes
+the page down is reserved for text-labelled disclosures, such as About this
+page, never an "i" (#1289).
 
 Internal identifiers and bookkeeping fields that matter only for
 troubleshooting (delivery, refusal and test references, a retained
