@@ -387,11 +387,11 @@ LEDGER = {
     "ministry_roster": command("report roster"),
     "ministry_roster_export": pending("PR 8g", "export roster"),
     # Integrations and credentials.
-    "integrations": pending("PR 10", "integration show"),
-    "integration_settings": pending(
-        "PR 10", "integration show", "integration set", "integration key replace"
-    ),
-    "integration_status": pending("PR 10", "integration status"),
+    "integrations": command("integration list"),
+    # The settings page as it opens (#463); saving, removing, the backup
+    # folder check and the key replacement are still owed.
+    "integration_settings": command("integration show", owed="PR 10"),
+    "integration_status": command("integration status"),
     "refresh_schedule_check": pending("PR 10", "integration schedule-preview"),
     "credential_status": pending("PR 10", "integration key status"),
     "dismiss_credential_result": pending("PR 10", "integration dismiss"),

@@ -842,6 +842,23 @@ slot or revision, no current campaign, a held campaign `stale_version`, a
 Staff reader denied, an ended session) and the unchanged content page
 suites.
 
+Another part adds `integration list`, `integration show` and `integration
+status`, the Integrations pages' reads, in
+`parishkit.stewardship.admin_integrations`, through the pages' own helpers
+(the list's rows, the key change line and the backup status moved into
+`integration_views.integration_list`, `key_summary` and `backup_state`,
+which the pages now call), with no schema change; proven by
+`tests/stewardship/test_admin_integrations.py` (golden documents and their
+member allowlist, catalog flags, the ledger, usage errors),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_integrations_cli_postgresql.py` (the
+list and ParishSoft for a read-only session with no event, Slack not set
+up and a watch that stops at once, a staged key change equal to the page's
+line, the backup folder, its copy status and only this Administrator's
+check, Staff denied, an ended session) and the unchanged integration and
+backup page suites.
+
 ## ADM-12: Admin navigation overhaul
 
 Scope and dependencies: [ADM-12 work package](../../plans/stewardship/admin-portal.md#adm-12-admin-navigation-overhaul).

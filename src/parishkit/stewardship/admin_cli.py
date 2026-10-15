@@ -48,7 +48,8 @@ source-form`` (in ``admin_source_form``), ``report data-to-fix`` (in
 ``admin_data_to_fix``), ``files list``, ``files
 delete`` and ``files rename`` (PR 10, in ``admin_hosted_files``),
 ``content list``, ``content show`` and ``content history`` (PR 10, in
-``admin_content``),
+``admin_content``), ``integration list``, ``integration show`` and
+``integration status`` (PR 10, in ``admin_integrations``),
 ``parish show``, ``ministries list``, ``branding show`` and ``campaign
 shares`` (PR 10, in ``admin_settings``), ``parish preview`` and
 ``parish confirm`` (PR 10, in ``admin_parish``), and ``events list`` and
@@ -1186,6 +1187,27 @@ def content_history(args, preamble, runtime, context):
     from .admin_content import read_content_history
 
     return read_content_history(context["caller"], runtime, args.revision)
+
+
+def integration_list(args, preamble, runtime, context):
+    """The Integrations page: each integration and whether it is set up (PR 10)."""
+    from .admin_integrations import read_integration_list
+
+    return read_integration_list(context["caller"], runtime)
+
+
+def integration_show(args, preamble, runtime, context):
+    """One integration's settings page, as it opens (PR 10)."""
+    from .admin_integrations import read_integration_show
+
+    return read_integration_show(context["caller"], runtime, args.target)
+
+
+def integration_status(args, preamble, runtime, context):
+    """The status line an integration's settings page follows (PR 10)."""
+    from .admin_integrations import read_integration_status
+
+    return read_integration_status(context["caller"], runtime, args.target)
 
 
 def parish_show(args, preamble, runtime, context):
@@ -2697,6 +2719,29 @@ def _content_show_options(parser):
         action="store_true",
         help="print the slot's default text instead; nothing changes",
     )
+
+
+# The integration targets, spelled out because the parser is built before
+# Django is set up; a test keeps them equal to ``admin_integrations``'.
+INTEGRATION_SHOW_TARGETS = (
+    "parishsoft",
+    "google_workspace",
+    "email",
+    "slack",
+    "backup",
+)
+INTEGRATION_STATUS_TARGETS = ("parishsoft", "google_workspace", "slack", "backup")
+
+
+def _integration_show_options(parser):
+    """Options of ``integration show``: the integration, as ``integration list``."""
+    parser.add_argument("target", choices=INTEGRATION_SHOW_TARGETS, metavar="TARGET")
+
+
+def _integration_status_options(parser):
+    """Options of ``integration status``: the integration, and --watch."""
+    parser.add_argument("target", choices=INTEGRATION_STATUS_TARGETS, metavar="TARGET")
+    _watch_options(parser)
 
 
 def _content_history_options(parser):
@@ -4326,6 +4371,53 @@ def _artwork_specs():
     )
 
 
+def _integration_specs():
+    """The Integrations pages' reads (PR 10, ``admin_integrations``).
+
+    Like ``parish show``, any session runs them and they record nothing, as
+    the pages' GETs record nothing. ``integration status`` takes ``--watch``,
+    as the settings page follows its status line while a change runs.
+    Saving, removing and the key steps come later in PR 10.
+    """
+    from .admin_integrations import IntegrationList, IntegrationShow, IntegrationStatus
+
+    return (
+        CommandSpec(
+            "integration list",
+            "List the integrations and whether each is set up.",
+            integration_list,
+            "read_only",
+            False,
+            IntegrationList.field_names(),
+            10,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "integration show",
+            "Show one integration's settings and status.",
+            integration_show,
+            "read_only",
+            False,
+            IntegrationShow.field_names(),
+            10,
+            options=(_integration_show_options,),
+            audit_event=None,
+        ),
+        CommandSpec(
+            "integration status",
+            "Show whether an integration's key change or folder check is running.",
+            integration_status,
+            "read_only",
+            False,
+            IntegrationStatus.field_names(),
+            10,
+            options=(_integration_status_options,),
+            audit_event=None,
+            watch=True,
+        ),
+    )
+
+
 def _history_specs():
     """Past campaigns (#1018): the archive import, the page's actions.
 
@@ -5022,6 +5114,7 @@ COMMANDS = (
     + _events_specs()
     + _history_specs()
     + _artwork_specs()
+    + _integration_specs()
 )
 BY_NAME = {spec.name: spec for spec in COMMANDS}
 

@@ -1654,6 +1654,10 @@ signatures:
   into `branding_slots.current_assets`, which the page now calls.
   `parish preview` moved the parish page's review (after form validation)
   into `parish_views.review_change`, which the page's Review now calls.
+  `integration list`, `integration show` and `integration status` moved the
+  list's rows, the key change line and the backup status into
+  `integration_views.integration_list`, `key_summary` and `backup_state`,
+  which the pages now call.
 - **PR 11:** user, event and follow-up actions from their views (the users
   model of #952 replaces the rule actions; #922 retired the assignment and
   Chairperson actions). The event acknowledgements moved each view's
@@ -2905,7 +2909,7 @@ lists the fields.
 
 | URL names | Command or exemption |
 | --- | --- |
-| `integrations`, `integration_settings`, `integration_status`, `credential_status` | `integration show`, `integration status`, `integration set` for non-secret settings, `integration backup-probe` for the backup Drive folder check (PR 10); `integration set --target parishsoft` takes the [refresh schedule](../background-processing/spec.md#refresh-schedule) with the page's validation, and `integration schedule-preview` prints the page's [seven-day preview](../admin-portal/spec.md#seven-day-preview) and [cost and freshness summary](../admin-portal/spec.md#cost-and-freshness-summary), for a saved or a proposed schedule ([#632](https://github.com/epiphany40223/parishkit/issues/632)) |
+| `integrations`, `integration_settings`, `integration_status`, `credential_status` | `integration list`, `integration show TARGET` and `integration status TARGET [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the pages' reads (any session; no event, as the pages' reads record none; see below); `integration set` for non-secret settings, `integration backup-probe` for the backup Drive folder check (PR 10); `integration set --target parishsoft` takes the [refresh schedule](../background-processing/spec.md#refresh-schedule) with the page's validation, and `integration schedule-preview` prints the page's [seven-day preview](../admin-portal/spec.md#seven-day-preview) and [cost and freshness summary](../admin-portal/spec.md#cost-and-freshness-summary), for a saved or a proposed schedule ([#632](https://github.com/epiphany40223/parishkit/issues/632)) |
 | `refresh_schedule_check` | `integration schedule-preview` (PR 10): the ParishSoft page's no-save live check of the refresh schedule editor's rows answers the same validation, preview and cost summary ([#632](https://github.com/epiphany40223/parishkit/issues/632)) |
 | `dismiss_credential_result` | `integration dismiss` (PR 10) |
 | Key replacement through `integration_settings` | `integration key replace --target …`, `integration key status --watch` (PR 10; see [secret replacement](#secret-replacement)) |
@@ -2927,6 +2931,28 @@ takes the same option for a proposed schedule, or reads the applied one
 without it, and its JSON document carries the page's seven days, cost and
 freshness. Both follow the ParishSoft settings page's
 [live checks and saving](../admin-portal/spec.md#live-checks-and-saving).
+
+`integration list` is the Integrations page: the applied configuration's
+`version` and each integration's `target`, `name` (the page's label) and
+`configured`. `integration show TARGET` is one settings page as it opens,
+for `parishsoft`, `google_workspace`, `email`, `slack` or `backup` (the
+Backup encryption key has its own proof-of-possession commands above):
+`version`, `target`, `name`, `configured`, `removable` (the page's Remove),
+`settings` (the stored public settings, `{}` for an optional integration not
+set up), `key` (the latest key change line for a target with a key:
+`state`, `at`, `message`, `request_id`; null when the page shows none),
+`source` (ParishSoft only: `refresh status`'s refresh facts), and
+`offsite_backup` and `probe` (Off-site backups only: the copy status, and
+the session Administrator's latest Test access as the page shows it).
+`integration status TARGET` is the status line the page follows, for the
+targets with one (`parishsoft`, `google_workspace`, `slack`, `backup`):
+`target`, `pending` and the same `key`, or `offsite_backup` and `probe`;
+`--watch` stops once nothing is pending. All three are Administrators only
+(`CONFIGURE`), admitted passively so any session scope reads, read through
+the pages' own helpers and record no event, as the pages' GETs record none.
+No key, key file or fingerprint is printed. The
+[operator guide](../../../guides/stewardship-admin-automation.md#integrations)
+lists the fields.
 
 Secret values never pass through command output. The backup destination is an
 `integration` target; backups themselves already run as `pk-stewardship

@@ -1051,6 +1051,49 @@ no longer current, or an expired token, is exit 1 (`stale_version`): read
 in System logs with the request; repeating it with the same token returns
 the same request.
 
+## Integrations
+
+`integration list`, `integration show` and `integration status` are the
+reads of **Integrations** and each integration's settings page. Like the
+pages, they need an Administrator; a session of any scope may run them, and
+they record nothing in System logs, as opening the pages records nothing.
+No key, key file or fingerprint is ever printed. Saving settings, removing
+an integration, the backup folder check and every key step stay on the
+pages for now.
+
+```sh
+pk-admin integration list
+pk-admin integration show parishsoft
+pk-admin integration status slack --watch 5
+```
+
+`integration list` prints the configuration's `version` and, for each
+integration, its `target`, `name` and whether it is `configured`.
+
+`integration show TARGET` takes `parishsoft`, `google_workspace` (Google
+Workspace mail), `email` (Outgoing email addresses), `slack` or `backup`
+(Off-site backups); the Backup encryption key stays on its page. Google
+Workspace mail or Outgoing email addresses not set up is exit 1
+(`not_available`), as the page finds nothing to show.
+
+| Field | What it holds |
+| --- | --- |
+| `version` | The applied configuration |
+| `target`, `name` | The integration and the page's name for it |
+| `configured` | Whether it is set up; Slack and Off-site backups are optional |
+| `removable` | Whether the page offers Remove (Slack and Off-site backups, once set up) |
+| `settings` | The saved settings the page shows, such as the ParishSoft organization ID and refresh schedule, the mailbox and addresses, the Slack channel or the Drive folder link; empty when not set up |
+| `key` | For ParishSoft, Google Workspace mail and Slack, the latest key change line: `state` (`pending`, `updated`, `unselected` when Finish switching is needed, or `failed`), `at`, `message` and `request_id`; null when the page shows none |
+| `source` | For ParishSoft, the same refresh facts as `refresh status`'s `source`; null otherwise |
+| `offsite_backup` | For Off-site backups, the newest copy: `state`, `message`, `at`, `last_copy_at` and `set_name`; null otherwise |
+| `probe` | For Off-site backups, your latest Test access while the page still shows it: `state`, `message`, `at`, `folder_url`, `requested_at` and `saved_after`; null otherwise |
+
+`integration status TARGET` is the status line the page follows while a key
+change or a backup folder check runs, for `parishsoft`, `google_workspace`,
+`slack` and `backup`: `target`, `pending`, and `key` (or `offsite_backup` and
+`probe` for the backup), as `show` prints them. With `--watch SECONDS` it
+repeats until nothing is pending.
+
 ## Past campaigns
 
 The `history` commands import the archive workbooks of past campaigns for
@@ -2427,3 +2470,6 @@ print is exit 1 (`invalid`).
   ZONE]`, the Limitations report's download (full scope, Administrators and
   Staff, the page's `talents_report_exported`), streamed as `export census`
   is.
+- `pk-admin/1` (#463): additive. `integration list`, `integration show
+  TARGET` and `integration status TARGET [--watch SECONDS]`, the
+  Integrations pages' reads (any session, Administrators only, no event).
