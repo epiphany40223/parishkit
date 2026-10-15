@@ -283,9 +283,12 @@ def detail(request, request_id):
                 report_url = reverse("admin:campaign_comparison")
             elif job.report == "family_test_names":
                 # Requested from the command line's chosen-Family review
-                # (#817); the trail returns to that page for the same email.
+                # (#817). The trail runs through that page for the same email:
+                # it and Preview and test email need the revision to link, so
+                # the crumb is the way back and no "Return to" repeats it.
                 title = _("Chosen-Family test names export")
                 source = "campaign_mail_families"
+                arguments = {"revision_id": job.parameters["revision"]}
                 report_url = reverse(
                     "admin:campaign_mail_families", args=[job.parameters["revision"]]
                 )
@@ -300,8 +303,8 @@ def detail(request, request_id):
                 family_id = job.timeline_snapshot.family_id
                 arguments = {"family_id": family_id}
                 report_url = timeline_url(family_id, job.parameters["mode"])
-                # The crumb opens the timeline in the mode exported, as the
-                # "Return to" link does.
+                # The crumb opens the timeline in the mode exported, so the
+                # page draws no "Return to" link beside it (#1345).
                 if "?" in report_url:
                     queries = {source: report_url.split("?", 1)[1]}
             elif job.report in {"family_directory", "postal_outreach"}:
@@ -356,7 +359,10 @@ def detail(request, request_id):
                 # as the latest-data export's does (#520).
                 "breadcrumb_label": title,
                 "report_url": report_url,
-                # "Return to" names the report by its page name.
+                # "Return to" names the report by its page name. The page
+                # draws it only when ``report_url`` differs from the parent
+                # crumb's link, that is when it keeps the export's filters
+                # (#1345).
                 "report_name": admin_navigation.PAGES[source].label,
                 "can_cancel": state["state"] in {"queued", "running", "retry_wait"},
                 # A Testing timeline export is bound to its rehearsal: once

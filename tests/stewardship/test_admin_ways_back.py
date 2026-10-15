@@ -14,7 +14,7 @@ import pytest
 
 from parishkit.stewardship.accounts import admin_navigation as navigation
 
-from .test_admin_page_names import TEMPLATE_DIR, TEMPLATES
+from .test_admin_page_names import TEMPLATE_DIR, TEMPLATES, VARIABLE_RETURNS
 
 # Pages whose templates ``TEMPLATES`` leaves out (a review step, a template
 # shared by two views, a page whose heading the view supplies), each with the
@@ -79,6 +79,37 @@ def _repeats(page, template):
 
 PAIRS = sorted(set(TEMPLATES.items()) | EXTRA)
 
+# "Return to {{ … }}" links name their target with a variable, so the text
+# check above cannot see them (#1345). ``test_admin_page_names`` keeps the
+# reviewed list of them complete; here each says whether it can name the
+# trail's parent crumb. A link that can is drawn only when its URL differs
+# from the crumb's, as the export page's is, so a "Return to" link remains
+# only where it carries a report's filters (the directory and participation
+# exports). The others name a page outside the trail: Preview and test
+# email's opener, which its view offers only when the trail does not lead
+# there, and an integration's own settings page, of which its review is a
+# step.
+PARENT, ELSEWHERE = "parent", "elsewhere"
+VARIABLE_TARGETS = {
+    ("campaign-mail.html", "return_link.label"): ELSEWHERE,
+    ("configuration-request.html", "admin_chrome.back.label"): PARENT,
+    ("credential-status.html", "admin_chrome.back.label"): PARENT,
+    ("integration-preview.html", "label"): ELSEWHERE,
+    ("report-export.html", "report_name"): PARENT,
+}
+# Parent-crumb links drawn from the trail itself (``admin_chrome.back``), at
+# the end of a change's flow, so they cannot drift from it. Whether they stay
+# is #1346.
+TRAIL_DRAWN = {"configuration-request.html", "credential-status.html"}
+# A variable "Return to" link (its href and the variable it names its target
+# with), and the condition that draws it only when it is not the crumb's.
+VARIABLE_LINK = re.compile(
+    r"<a\b[^>]*?href=\"(?P<href>[^\"]*)\"[^>]*>"
+    r"{% blocktranslate(?: with (?P<alias>\w+)=(?P<value>[\w.]+))? %}"
+    r"Return to {{ (?P<used>\w+) }}"
+)
+UNLESS_CRUMB = "{%% if %s != admin_chrome.back.url %%}"
+
 
 @pytest.mark.parametrize(("page", "template"), PAIRS)
 def test_no_return_link_repeats_the_trail(page, template):
@@ -111,3 +142,38 @@ def test_dates_and_mail_schedules_does_not_return_to_campaign_settings(template)
     """
     source = (TEMPLATE_DIR / template).read_text()
     assert "Return to Campaign settings" not in source
+
+
+def test_variable_return_links_are_classified():
+    """Every "Return to {{ … }}" link the page-name check lists is classified
+    here, so a new one cannot escape the rule-3 check."""
+    assert set(VARIABLE_TARGETS) == VARIABLE_RETURNS
+    parents = {key[0] for key, target in VARIABLE_TARGETS.items() if target == PARENT}
+    assert parents >= TRAIL_DRAWN
+
+
+@pytest.mark.parametrize(
+    ("template", "variable"),
+    sorted(key for key, target in VARIABLE_TARGETS.items() if target == PARENT),
+)
+def test_variable_return_link_never_repeats_the_parent_crumb(template, variable):
+    """A "Return to {{ … }}" link that can name the parent crumb is drawn only
+    when its URL differs from the crumb's, unless the trail draws it (#1345).
+    """
+    source = (TEMPLATE_DIR / template).read_text()
+    links = [
+        link
+        for link in VARIABLE_LINK.finditer(source)
+        if (link["value"] if link["alias"] == link["used"] else link["used"])
+        == variable
+    ]
+    assert links, (template, variable)
+    if template in TRAIL_DRAWN:
+        return
+    for link in links:
+        href = link["href"].removeprefix("{{ ").removesuffix(" }}")
+        guard = UNLESS_CRUMB % href
+        # The guard opens just before the link, with only text between.
+        before = source[: link.start()]
+        assert guard in before, (template, link["href"])
+        assert "{%" not in before[before.rindex(guard) + len(guard) :]

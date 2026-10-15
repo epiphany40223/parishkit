@@ -296,8 +296,11 @@ def test_native_directory_exports_render_download_and_regenerate_retained_inputs
                 b'<span aria-current="page">'
                 b"Active parishioner family directory export</span>" in body
             )
-            # A code-list export with no reach filter returns to the plain page.
+            # A code-list export with no reach filter returns to the plain
+            # page, which the parent crumb links, so no "Return to" repeats
+            # it (#1345).
             assert f'href="{route}">'.encode() in body
+            assert b"Return to " not in body
             assert b"mail-merge export" not in body
         with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
             assert execute_hint(
@@ -648,7 +651,8 @@ def test_mail_merge_always_lists_by_postal_mail_only(
         b'<span aria-current="page">'
         b"Active parishioner family directory mail-merge export</span>" in body
     )
-    assert f'href="{route}?mailing=yes"'.encode() in body
+    # The crumb links the plain page, so "Return to" stays (#1345).
+    assert f'href="{route}?mailing=yes">Return to '.encode() in body
     with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
         assert execute_hint(
             request.task_id,
