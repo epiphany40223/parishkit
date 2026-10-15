@@ -1248,16 +1248,19 @@ def integration_confirm(args, preamble, runtime, context):
 
     The page's Apply needs a recent sign-in (#547), so this always prompts,
     naming the integration and the settings the review changes (never their
-    values), after checking the token's signature and before any
-    transaction.
+    values), after checking the Administrator role and then the token's
+    signature, and before any transaction.
     """
-    from .admin_changes import TOKEN_LIMIT
+    from .admin_changes import TOKEN_LIMIT, _admit_change
     from .admin_integration_changes import (
         applied_settings,
         confirm_integration,
         prompt_lines,
     )
 
+    # The role first (#1339): Staff is denied before any read or prompt
+    # could say whether the integration has a reviewed change.
+    _admit_change(context["caller"], runtime, read_only=True)
     token = _input(args.token, context, TOKEN_LIMIT)
     applied = applied_settings(runtime, args.target)
     confirm(context, prompt_lines(args.target, token, applied))
@@ -1317,12 +1320,15 @@ def integration_key_finish_switching(args, preamble, runtime, context):
 
     The page needs a recent sign-in (#547), so this always prompts, naming
     the integration and the settings the switch also changes (never their
-    values), after checking the token's signature and before any
-    transaction.
+    values), after checking the Administrator role and then the token's
+    signature, and before any transaction.
     """
-    from .admin_changes import TOKEN_LIMIT
+    from .admin_changes import TOKEN_LIMIT, _admit_change
     from .admin_integration_keys import confirm_finish, finish_prompt_lines
 
+    # The role first (#1339): Staff is denied before any read or prompt
+    # could say whether the integration has a key change.
+    _admit_change(context["caller"], runtime, read_only=True)
     token = _input(args.token, context, TOKEN_LIMIT)
     confirm(context, finish_prompt_lines(runtime, args.target, token))
     return confirm_finish(

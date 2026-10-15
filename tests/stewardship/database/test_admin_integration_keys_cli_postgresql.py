@@ -358,6 +358,16 @@ def test_refused_sessions(keys, monkeypatch):
     ):
         assert code == 1
         refused(document, "denied")
+    # The role comes before any lookup or prompt (#1339): a typed answer, an
+    # altered token or an integration with no key change is denied, unprompted.
+    for code, document, stderr in (
+        finish(keys, staff, token, answer=b"yes\n"),
+        finish(keys, staff, "altered"),
+        finish(keys, staff, token, answer=b"yes\n", target="slack"),
+    ):
+        assert code == 1
+        refused(document, "denied")
+        assert "This " not in stderr and "Type yes" not in stderr, stderr
     assert trail()[0] == 0
 
 

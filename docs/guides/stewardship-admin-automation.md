@@ -1142,7 +1142,9 @@ changed since `integration show` is `stale_version`. `integration confirm`
 takes the token (or one the page made: tokens belong to you, not to the
 browser or the command line), prompts with the integration and the names
 of the settings it changes (never their values), and records a configuration request, exactly
-as the page's Apply does. Follow it with `config request show`; the change
+as the page's Apply does. It checks the Administrator role first, so a
+session whose user is no longer an Administrator is exit 1 (`denied`)
+before anything is looked up or prompted. Follow it with `config request show`; the change
 applies when the request installs. System logs records
 `admin_cmd_integration_confirm` with the request. A Slack change or removal
 also alerts every Administrator by email and Slack, as other notification
@@ -1258,8 +1260,23 @@ progress does, even if the automatic switch to it is still queued; run
 
 ```sh
 pk-admin integration key status parishsoft --watch 5
-pk-admin integration key finish-switching-preview parishsoft > review.json
-jq -r .result.preview.token review.json \
+pk-admin integration key finish-switching-preview parishsoft
+pk-admin integration key finish-switching-preview parishsoft \
+    | jq -r .result.preview.token \
+    | pk-admin integration key finish-switching parishsoft --token - --yes
+```
+
+The first preview is the review to read; the pipeline takes a fresh
+token straight through, so no file holds a usable token until it expires.
+The pipeline confirms that fresh preview, not the one you read: if the key
+change or the settings may have changed in between, read the review again.
+To confirm exactly the token you read, keep the review in a shell variable
+instead of a file:
+
+```sh
+review="$(pk-admin integration key finish-switching-preview parishsoft)"
+printf '%s\n' "$review"
+printf '%s' "$review" | jq -r .result.preview.token \
     | pk-admin integration key finish-switching parishsoft --token - --yes
 ```
 
@@ -1290,7 +1307,10 @@ including a repeat of an applied token after a newer key change started;
 an expired one, or one whose key is no longer current, is `stale_version`:
 review again. If the loaded ParishSoft organization changed meanwhile, the
 confirmation is exit 1 (`invalid`) at `organization_id`, where the page
-shows its refusal page. Neither command prints a key.
+shows its refusal page. Neither command prints a key. Like `integration
+confirm`, `integration key finish-switching` checks the Administrator role
+first: a session whose user is no longer an Administrator is exit 1
+(`denied`) before any lookup or prompt.
 
 ## Past campaigns
 

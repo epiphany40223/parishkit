@@ -427,3 +427,33 @@ def test_the_schedule_review_shows_before_after_and_differences():
     assert any("Full refreshes added" in item for item in review["differences"])
     assert schedule_review(editor(read.shown), {}, "UTC") is None
     assert schedule_review(None, {}, "UTC") is None
+
+
+def test_confirm_checks_the_role_before_any_lookup_or_prompt(monkeypatch):
+    """``integration confirm`` checks the Administrator role (renewing
+    nothing) before it reads the token or the applied settings or prompts
+    (#1339)."""
+    from argparse import Namespace
+
+    from parishkit.stewardship import admin_changes, admin_integration_changes
+
+    calls = []
+
+    def denied(caller, service, *, read_only=False):
+        """Refuse as the page does for a user who is now Staff."""
+        calls.append(read_only)
+        raise PermissionError("This page requires the configure capability.")
+
+    def unexpected(*arguments, **options):
+        """Nothing after the role check may run."""
+        raise AssertionError("looked up or prompted before the role check")
+
+    monkeypatch.setattr(admin_changes, "_admit_change", denied)
+    for name in ("applied_settings", "prompt_lines"):
+        monkeypatch.setattr(admin_integration_changes, name, unexpected)
+    monkeypatch.setattr(admin_cli, "_input", unexpected)
+    monkeypatch.setattr(admin_cli, "confirm", unexpected)
+    args = Namespace(target="email", token="-")
+    with pytest.raises(PermissionError):
+        admin_cli.integration_confirm(args, None, None, {"caller": None})
+    assert calls == [True]
