@@ -541,6 +541,9 @@ def component_origin():
         "idle_at": NOW + timedelta(minutes=30),
         "absolute_at": NOW + timedelta(hours=12),
         "watchdog_at": None,
+        "source_task_id": None,
+        "source_task_state": None,
+        "source_loaded": False,
     }
     # A stepper with done, current, open and blocked steps for axe/layout checks.
     wizard = setup_wizard(
@@ -554,6 +557,10 @@ def component_origin():
                 }
             },
             source_task_id=None,
+            # No load yet, so Load parish data is not done (#1353): the
+            # stepper reads whether a still-valid staged load exists.
+            source_task_state=None,
+            source_loaded=False,
         ),
         "testing",
     )
