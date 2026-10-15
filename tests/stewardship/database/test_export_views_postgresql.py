@@ -133,6 +133,10 @@ def test_export_creation_requires_csrf_and_rejects_arbitrary_inputs(http_scenari
         response, body = read(browser, page(request))
     assert response.status_code == 200 and b"task_id" not in body
     assert response["Cache-Control"] == "no-store"
+    # "Return to" keeps the population and time zone the export used, which
+    # the parent crumb's plain link does not (#1345).
+    assert f'href="{reverse("admin:participation")}?scope='.encode() in body
+    assert b"Return to " in body
     cancel = export_action(page(request), "cancel")
     assert post(browser, cancel).status_code == 302
 

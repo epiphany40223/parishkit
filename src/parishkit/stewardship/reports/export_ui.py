@@ -300,8 +300,8 @@ def detail(request, request_id):
                 family_id = job.timeline_snapshot.family_id
                 arguments = {"family_id": family_id}
                 report_url = timeline_url(family_id, job.parameters["mode"])
-                # The crumb opens the timeline in the mode exported, as the
-                # "Return to" link does.
+                # The crumb opens the timeline in the mode exported, so the
+                # page draws no "Return to" link beside it (#1345).
                 if "?" in report_url:
                     queries = {source: report_url.split("?", 1)[1]}
             elif job.report in {"family_directory", "postal_outreach"}:
@@ -356,7 +356,10 @@ def detail(request, request_id):
                 # as the latest-data export's does (#520).
                 "breadcrumb_label": title,
                 "report_url": report_url,
-                # "Return to" names the report by its page name.
+                # "Return to" names the report by its page name. The page
+                # draws it only when ``report_url`` differs from the parent
+                # crumb's link, that is when it keeps the export's filters
+                # (#1345).
                 "report_name": admin_navigation.PAGES[source].label,
                 "can_cancel": state["state"] in {"queued", "running", "retry_wait"},
                 # A Testing timeline export is bound to its rehearsal: once

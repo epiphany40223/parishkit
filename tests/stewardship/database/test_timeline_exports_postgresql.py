@@ -136,7 +136,7 @@ def test_the_page_and_the_command_export_the_same_timeline(
         )
     by_page = ExportRequest.objects.get(request_key=fields["request_key"])
     # The export's trail runs through the Family's own timeline (#521), in
-    # the mode it was exported in, as its "Return to" link is.
+    # the mode it was exported in, so no "Return to" link repeats it (#1345).
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         _, status = get(browser, reverse("admin:report_export", args=[by_page.pk]))
     trail = status[status.index(b'aria-label="Breadcrumb"') :]
@@ -145,6 +145,7 @@ def test_the_page_and_the_command_export_the_same_timeline(
     assert f'<a href="{directory}">'.encode() in trail
     crumb = f'<li><a href="{page}?mode=testing">Family timeline</a></li>'
     assert crumb.encode() in trail
+    assert b"Return to " not in status
     argv = ("export", "family-timeline", str(family), "--mode", "testing")
     # The file can hold the Family's code, so the command is fresh-gated
     # (#547): it asks first, and unanswered nothing is made.
@@ -469,6 +470,7 @@ def test_a_production_export_matches_its_page_and_regenerates(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         _, status = get(browser, reverse("admin:report_export", args=[made.pk]))
     assert f'<li><a href="{page}">Family timeline</a></li>'.encode() in status
+    assert b"Return to " not in status
     capture = TimelineExportSnapshot.objects.get(pk=made.timeline_snapshot_id)
     # The file's lines are the page's, oldest first as the When heading sorts.
     assert [event["what"] for event in capture.document["events"]] == shown
