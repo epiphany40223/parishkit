@@ -5921,12 +5921,12 @@ The same problem never appears twice in ways that disagree.
   pixels tall, tables in the details scroll inside their own region,
   buttons follow [button labels](../ui-conventions/spec.md#button-labels),
   and the page never scrolls sideways.
-- **Themes.** The Admin portal has one light theme today; `ui-v1.css` has
-  no `prefers-color-scheme` rule. The dashboard uses only the
+- **Themes.** The dashboard uses only the
   [status indicators](../ui-conventions/spec.md#status-indicators) and
   the [shared design tokens](../ui-conventions/spec.md#shared-visual-style),
-  never a fixed colour, so a portal-wide dark theme, if one is added,
-  covers it by redefining the tokens ([decision 10](#administrator-decisions-2026-10-13)).
+  never a fixed colour, so the Admin portal's
+  [colour scheme](../ui-conventions/spec.md#colour-scheme) covers it by
+  redefining the tokens ([decision 10](#administrator-decisions-2026-10-13)).
   In forced-colours mode the borders, icon shapes and state words remain,
   so the state still reads.
 
