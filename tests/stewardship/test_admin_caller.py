@@ -259,6 +259,56 @@ def test_require_fresh_takes_a_web_caller(monkeypatch):
         sessions.require_fresh(caller)
 
 
+@pytest.mark.parametrize(
+    ("age", "default", "setup"),
+    [
+        (timedelta(minutes=4), True, True),
+        (timedelta(minutes=6), False, True),
+        (timedelta(minutes=59), False, True),
+        (timedelta(minutes=61), False, False),
+    ],
+)
+def test_only_the_setup_window_accepts_a_sign_in_up_to_an_hour_old(
+    monkeypatch, age, default, setup
+):
+    """Setup credential steps take an hour (#1402); every other action, five minutes."""
+    assert sessions.FRESH_SECONDS == 300
+    assert sessions.SETUP_FRESH_SECONDS == 3600
+    instant = timezone.now()
+    request = RequestFactory().get("/admin/")
+    request.portal_session = SimpleNamespace(authenticated_at=instant)
+    monkeypatch.setattr(sessions, "database_now", lambda: instant + age)
+    for within, admitted in ((None, default), (sessions.SETUP_FRESH_SECONDS, setup)):
+        assert sessions.freshness(request, within)[0] is admitted
+        if admitted:
+            assert sessions.require_fresh(request, within=within) == instant
+        else:
+            with pytest.raises(sessions.FreshAuthenticationRequired):
+                sessions.require_fresh(request, within=within)
+
+
+def test_only_setup_credential_steps_pass_the_setup_window():
+    """No action after setup can widen its step-up window (#1402)."""
+    users = sorted(
+        path.relative_to(SOURCE).as_posix()
+        for path in SOURCE.rglob("*.py")
+        if "SETUP_FRESH_SECONDS" in path.read_text(encoding="utf-8")
+    )
+    assert users == [
+        "stewardship/accounts/migrations/0023_setup_sign_in_hour.py",
+        "stewardship/accounts/sessions.py",
+        "stewardship/accounts/setup_credential_views.py",
+        "stewardship/accounts/setup_credentials.py",
+        "stewardship/accounts/templatetags/stewardship.py",
+    ]
+    assert not any(
+        "within=" in line and "SETUP_FRESH_SECONDS" not in line
+        for path in SOURCE.rglob("*.py")
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if "require_fresh(" in line and "def require_fresh(" not in line
+    )
+
+
 @pytest.mark.parametrize("scope", [FULL, READ_ONLY])
 def test_require_fresh_refuses_an_unadmitted_or_read_only_automation_caller(
     monkeypatch, scope

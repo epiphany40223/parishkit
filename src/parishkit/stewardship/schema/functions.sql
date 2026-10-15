@@ -8388,7 +8388,8 @@ BEGIN
             AND login.principal_id=attempt.owner_id AND login.revoked_at IS NULL
             AND login.expires_at>stamp
             AND login.last_activity_at>stamp-interval '60 minutes'
-            AND login.authenticated_at>stamp-interval '5 minutes'
+            -- Setup's credential steps accept a sign-in up to an hour old (#1402).
+            AND login.authenticated_at>stamp-interval '60 minutes'
         JOIN public.stewardship_portal_user owner ON owner.id=attempt.owner_id
             AND NOT owner.disabled
         JOIN public.stewardship_address_rule rule ON rule.email=owner.email

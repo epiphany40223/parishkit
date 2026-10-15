@@ -526,22 +526,33 @@ class FreshAuthenticationRequired(PermissionError):
 
 FRESH_SECONDS = 300
 
+# The setup wizard's credential steps (#1402) accept a sign-in up to an hour
+# old, the Admin idle timeout's length, so the Admin is not asked to confirm
+# again on each credential page. Only setup_credential_views and
+# setup_credentials pass it, for the original setup attempt while it is
+# collecting; the SQL guard stewardship_setup_secret_guard_v1 enforces the
+# same 60 minutes on the sealed credential row (migration 0097). Every other
+# action, and every action after setup, keeps FRESH_SECONDS.
+SETUP_FRESH_SECONDS = 3600
 
-def freshness(request):
+
+def freshness(request, within=None):
     """Say whether a gated action would be admitted now, for page notices only.
 
     Returns ``(fresh, minutes)``: ``minutes`` is how long ago this session last
-    signed in with Google (``None`` without a live session). It never admits
-    anything; every gated command still calls ``require_fresh`` itself.
+    signed in with Google (``None`` without a live session). ``within`` is the
+    action's window in seconds (``FRESH_SECONDS`` when omitted). It never
+    admits anything; every gated command still calls ``require_fresh`` itself.
     """
     row = getattr(request, "portal_session", None)
     if row is None:
         return False, None
     age = (database_now() - row.authenticated_at).total_seconds()
-    return 0 <= age <= FRESH_SECONDS, max(0, int(age // 60))
+    window = FRESH_SECONDS if within is None else within
+    return 0 <= age <= window, max(0, int(age // 60))
 
 
-def require_fresh(caller, *, irreversible=False, record=True):
+def require_fresh(caller, *, irreversible=False, record=True, within=None):
     """A fresh Google round trip, not a browser flag, admits privileged commands.
 
     ``caller`` is an ``AdminCaller`` (until the final ADM-11 PR, a Django
@@ -554,7 +565,10 @@ def require_fresh(caller, *, irreversible=False, record=True):
     confirmation and pre-start withdrawal); the web ignores it. A passive
     probe (a page showing whether a fresh sign-in is in place) passes
     ``record=False``: it is no action, so it records no fresh-gate event or
-    notice.
+    notice. ``within`` replaces the web's five-minute window, in seconds;
+    only the setup wizard's credential steps pass it
+    (``SETUP_FRESH_SECONDS``, #1402). It is resolved at call time, so tests
+    that patch ``FRESH_SECONDS`` still take effect.
     """
     caller = as_caller(caller)
     if caller.channel == AUTOMATION:
@@ -563,12 +577,11 @@ def require_fresh(caller, *, irreversible=False, record=True):
             _record_automation_fresh(caller, irreversible=irreversible)
         return instant
     row = caller.portal_session
+    window = FRESH_SECONDS if within is None else within
     if (
         caller.channel != WEB
         or row is None
-        or not 0
-        <= (database_now() - row.authenticated_at).total_seconds()
-        <= FRESH_SECONDS
+        or not 0 <= (database_now() - row.authenticated_at).total_seconds() <= window
     ):
         raise FreshAuthenticationRequired("Please authenticate with Google again.")
     return row.authenticated_at

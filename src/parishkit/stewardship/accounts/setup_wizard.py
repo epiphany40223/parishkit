@@ -35,8 +35,8 @@ class Page:
 # technical, that they are configuring their own parish. The Google Workspace
 # and Slack credential pages follow, each right after the public settings its
 # staging depends on (mail and Testing for Google Workspace, Slack for its
-# token). They no longer have to race the five-minute fresh sign-in window: a
-# stale sign-in is offered "Confirm with Google", which keeps this setup.
+# token). A credential step accepts a sign-in up to an hour old (#1402); an
+# older one is offered "Confirm with Google", which keeps this setup.
 # Logos and access come next. ParishSoft connection and Load parish data are
 # last before Review and next to each other (#1353): the load can take a few
 # minutes, so everything else is done before the wait, and a load that fails

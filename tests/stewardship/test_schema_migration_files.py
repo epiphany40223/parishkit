@@ -321,6 +321,9 @@ FROZEN = {
     "0096_proposal_review.sql": (
         "c64ebee3ace428eb7b6f9d22f2fcf78c1f754d254bea347ea36973163fbe855a"
     ),
+    "0097_setup_sign_in_hour.sql": (
+        "59d58980e4c069852f9e0ca55c2afa3d42a74c8d1068af1a2cc0fb37f8208023"
+    ),
 }
 
 
