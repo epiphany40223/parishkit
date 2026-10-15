@@ -6,7 +6,7 @@ real dispatcher (``execute_hint`` and ``recover_hint``), with migration
 0101's task-type maps admitting exactly those logins. The gateway is the
 in-memory fake from the worker's tests, so nothing calls ParishSoft. The
 file's own DO block is run against the maps it replaces. These tests also
-carry the #1245 review notes the dispatch must honour (notes 2 and 4;
+carry the #1245 review notes the dispatch must honour (notes 2, 4 and 5;
 notes 1 and 3 are the worker's, in test_publication_worker_postgresql).
 """
 
@@ -15,7 +15,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from django.db import DatabaseError, connection, transaction
+from django.db import DatabaseError, IntegrityError, connection, transaction
 
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
@@ -24,7 +24,10 @@ from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.storage import _status, enqueue
 from parishkit.stewardship.responses import publication_tasks as tasks
+from parishkit.stewardship.responses.census_resolution import resolve_census_change
 from parishkit.stewardship.responses.models import (
+    ProposalResolution,
+    ProposalReview,
     ProposedChange,
     PublicationConfirmation,
     PublicationEntity,
@@ -35,6 +38,8 @@ from parishkit.stewardship.responses.publication_plans import confirmation_count
 from parishkit.stewardship.responses.publication_worker import PublicationDisabled
 
 from .test_background_grants_postgresql import task_login
+from .test_census_review_postgresql import forge as forge_review
+from .test_census_review_postgresql import review
 from .test_publication_plans_postgresql import owner, ready  # noqa: F401
 from .test_publication_worker_postgresql import Crash, FakeGateway, as_owner, contact
 
@@ -392,6 +397,64 @@ def test_only_web_creates_and_only_the_worker_runs_the_types(world):
             worker_id=uuid4(),
             handlers=world.handlers(),
         )
+
+
+def queue_it(row):
+    """Put ``row`` in ``queued``, as a publish run would (triggers off)."""
+    owner(
+        "UPDATE stewardship_proposed_change SET execution='queued', "
+        "version=version+1 WHERE id=%s",
+        [row.pk],
+    )
+    return ProposedChange.objects.get(pk=row.pk)
+
+
+@pytest.mark.parametrize("decision", ["approved", "ignored", "unreviewed"])
+def test_no_review_touches_a_queued_change(world, decision):
+    """Review note 5: every review of a queued change is refused by the
+    service and, bypassing it, by the review guard."""
+    first = queue_it(world.first)
+    if decision != first.decision:
+        with pytest.raises(ValueError):
+            review(world.harness, world.admin, first, decision)
+    with pytest.raises((IntegrityError, DatabaseError), match="current authority"):
+        forge_review(first, world.admin, decision, update=False)
+    assert ProposalReview.objects.count() == 0
+    assert proposal(first) == "queued"
+
+
+@pytest.mark.parametrize("action", ["entered", "ignored"])
+def test_no_resolution_touches_a_queued_change(world, action):
+    """Review note 5: a queued change is never resolved by hand either, by
+    the service or, bypassing it, by the resolution guard."""
+    home = queue_it(world.home)
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(ValueError),
+    ):
+        resolve_census_change(
+            world.store,
+            world.staff,
+            home.pk,
+            expected_version=home.version,
+            request_key=uuid4(),
+            action=action,
+            note="",
+        )
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises((IntegrityError, DatabaseError)),
+        work_transaction(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(
+            "INSERT INTO stewardship_proposal_resolution (id,correlation_id,"
+            "actor_id,proposal_id,expected_version,request_key,action,note) "
+            "VALUES (gen_random_uuid(),gen_random_uuid(),%s,%s,%s,"
+            "gen_random_uuid(),%s,'')",
+            [world.staff, home.pk, home.version, action],
+        )
+    assert ProposalResolution.objects.count() == 0
 
 
 def _replaced(text, name):
