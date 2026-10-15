@@ -64,8 +64,8 @@ def test_apply_in_the_review_dialog_turns_next_into_continue(page, component_ori
     stepper = page.locator("#campaign-stepper")
     assert stepper.locator("[data-campaign-continue]").count() == 0
     page.locator("#id_options-0-label").fill("Renamed option")
-    page.get_by_role("button", name="Review changes").click()
-    dialog = page.get_by_role("dialog", name="Review Share options")
+    page.get_by_role("button", name="Save", exact=True).click()
+    dialog = page.get_by_role("dialog", name="Save the share options?")
     dialog.get_by_role("button", name="Apply").click()
     hidden(dialog)
     has_text(stepper.locator(".setup-stepper-count"), "2 of 7 steps completed")

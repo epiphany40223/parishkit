@@ -533,3 +533,57 @@ def test_the_compact_review_draws_one_line_per_changed_field():
         "&lt;b&gt;Stock&lt;/b&gt;</li>"
     ) in text
     assert text.count("<li>") == 2 and "<table" not in text
+
+
+def share_option(identity, label, free_text=False):
+    """One saved share option, as the campaign's values hold it."""
+    return {"id": identity, "label": label, "free_text": free_text}
+
+
+def test_share_options_mark_only_what_changed():
+    """Share options' compact review (#1356) has one line per real change,
+    in the new order then the removed options: an addition, a relabel, a
+    free-text change and a move, but no line for the options the move or
+    the removal only shifted."""
+    from parishkit.stewardship.accounts.option_editing import option_changes
+
+    before = [
+        share_option("a", "Check"),
+        share_option("b", "Online"),
+        share_option("c", "Stock"),
+        share_option("d", "IRA"),
+        share_option("e", "Other", True),
+        share_option("f", "Cash"),
+    ]
+    after = [
+        share_option("d", "IRA gift"),
+        share_option("a", "Check"),
+        share_option("c", "Stock"),
+        share_option("e", "Other"),
+        share_option("f", "Cash"),
+        share_option("n", "Envelopes", True),
+    ]
+    assert [
+        (str(line["label"]), line["before"], str(line["after"]))
+        for line in option_changes(before, after)
+    ] == [
+        ("Label", "IRA", "IRA gift"),
+        ("Position of “IRA gift”", "4", "1"),
+        ("Free-text response for “Other”", "Yes", "No"),
+        ("Added", None, "Envelopes (with a free-text response)"),
+        ("Removed", None, "Online"),
+    ]
+    assert option_changes(before, before) == []
+    # Deleting the first option shifts every other one, but moves none.
+    assert [str(line["label"]) for line in option_changes(before, before[1:])] == [
+        "Removed"
+    ]
+    text = render_to_string(
+        "stewardship/share-options-review.html",
+        {"review": {"changes": option_changes(before, after), "preview": "signed"}},
+    )
+    assert '<ul class="compact-review" id="share-review-summary">' in text
+    assert text.count("<li>") == 5 and "<ol>" not in text
+    assert 'name="preview" value="signed" data-review-preview' in text
+    page = (TEMPLATES / "share-settings.html").read_text()
+    assert 'describedby="share-review-summary" %}' in page

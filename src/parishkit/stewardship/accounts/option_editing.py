@@ -7,11 +7,12 @@ values key, the module, the page and its words; the Member talents editor
 that once shared it was removed with talents (#970).
 
 Review posts the form without a page load and is answered with the shared
-review dialog's fragment (UX conventions, "Review dialog", #750): the current
-and proposed order and labels and the signed preview, which the dialog's
-Apply posts back to the page. Apply is answered with the change's status,
-which the dialog follows; once the change is applied it redraws the form's
-region from the page's own address (the applied list and a fresh blank row).
+review dialog's fragment (UX conventions, "Review dialog", #750): a compact
+review (#1356) marking only what changed, one line each (``option_changes``),
+and the signed preview, which the dialog's Apply posts back to the page.
+Apply is answered with the change's status, which the dialog follows; once
+the change is applied it redraws the form's region from the page's own
+address (the applied list and a fresh blank row).
 A Review refused for a row's value (or the formset's own) is the page again
 with status 400, whose field errors and summary the page script marks on the
 form it shows; the dialog stays shut. Any other refusal (a stale page, an
@@ -100,6 +101,91 @@ def _page(request, editor, configuration, campaign, formset, *, status=200):
     return response
 
 
+def _stable(sequence):
+    """The positions in ``sequence`` of a longest increasing run within it.
+
+    ``sequence`` is each kept option's old index, in its new order. The
+    options of a longest increasing subsequence kept their order relative to
+    one another; every other kept option is one the reader moved. When runs
+    tie (two neighbours swapped), the first found is kept, so the review
+    names one of the two as moved, which is true either way. Lists hold at
+    most a hundred options, so the quadratic search is plenty.
+    """
+    best = [[index] for index in range(len(sequence))]
+    for index, value in enumerate(sequence):
+        for earlier in range(index):
+            if sequence[earlier] < value and len(best[earlier]) + 1 > len(best[index]):
+                best[index] = [*best[earlier], index]
+    return set(max(best, key=len, default=[]))
+
+
+def option_changes(before, after):
+    """The compact review's lines for one ordered-list change (#1356).
+
+    Each line is {label, before, after} for components/compact-review.html.
+    The review marks only what changed, never both whole lists: an option
+    added or removed, a relabelled option, a changed free-text response and
+    an option the reader moved, with its old and new position. Options that
+    only shift because another was added, removed or moved have no line.
+    Lines follow the new order, then the removed options in their old one.
+    """
+    old = {option["id"]: (index, option) for index, option in enumerate(before)}
+    kept = [option for option in after if option["id"] in old]
+    moved_from = _stable([old[option["id"]][0] for option in kept])
+    moved = {
+        option["id"] for index, option in enumerate(kept) if index not in moved_from
+    }
+
+    def shown(option):
+        """An option's label, with its free-text response when it has one."""
+        if option["free_text"]:
+            return _("%(label)s (with a free-text response)") % option
+        return option["label"]
+
+    def answer(free_text):
+        """Whether an option has a free-text response, in words."""
+        return str(_("Yes") if free_text else _("No"))
+
+    lines = []
+    for position, option in enumerate(after, start=1):
+        if option["id"] not in old:
+            lines.append({"label": _("Added"), "before": None, "after": shown(option)})
+            continue
+        index, previous = old[option["id"]]
+        named = {"label": option["label"]}
+        if previous["label"] != option["label"]:
+            lines.append(
+                {
+                    "label": _("Label"),
+                    "before": previous["label"],
+                    "after": option["label"],
+                }
+            )
+        if previous["free_text"] != option["free_text"]:
+            lines.append(
+                {
+                    "label": _("Free-text response for “%(label)s”") % named,
+                    "before": answer(previous["free_text"]),
+                    "after": answer(option["free_text"]),
+                }
+            )
+        if option["id"] in moved:
+            lines.append(
+                {
+                    "label": _("Position of “%(label)s”") % named,
+                    "before": str(index + 1),
+                    "after": str(position),
+                }
+            )
+    remaining = {option["id"] for option in after}
+    lines.extend(
+        {"label": _("Removed"), "before": None, "after": shown(option)}
+        for option in before
+        if option["id"] not in remaining
+    )
+    return lines
+
+
 def _preview(request, editor, service, actor, state, campaign, formset, salt):
     """The review dialog's fragment, the page refused (400), or a refusal raised."""
     configuration, fingerprint = state[0], state[-1]
@@ -129,8 +215,7 @@ def _preview(request, editor, service, actor, state, campaign, formset, salt):
         raise stale_page()
     build_candidate(base, patch, candidate_id=uuid4())
     review = {
-        "before": before,
-        "after": options,
+        "changes": option_changes(before, options),
         "preview": sign_preview(
             actor=actor,
             configuration=configuration,

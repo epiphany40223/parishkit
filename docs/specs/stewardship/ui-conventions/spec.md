@@ -626,8 +626,8 @@ never scrolls to show it (Administrator, pk-local review of
   window too short to show the whole region, focus may scroll the status
   into view. Share options reviews in the [review dialog](#review-dialog)
   (#750); its form, a region of its own, is redrawn after Apply with the
-  applied list and a fresh blank row, which is then the saved list Review
-  changes compares with ("Change an option to review it."). A live
+  applied list and a fresh blank row, which is then the saved list its Save
+  compares with ("Change an option to save it."). A live
   campaign's Ministry selections change on
   [Campaign settings](../admin-portal/spec.md#campaign-settings-page), in the
   review dialog (#1119). Parish settings' form is never redrawn; until the
@@ -1189,7 +1189,7 @@ Share options, Campaign images, Parish logos, Create the campaign and
 No-reminders WorkGroup use the dialog; Create the campaign, New user and
 No-reminders WorkGroup are confirmations under #1356, and so are a one-time
 New scheduled email, Import selected with nobody skipped and Campaign
-images' Remove this image. Edit user is a compact review under #1356. Parish
+images' Remove this image. Edit user and Share options are compact reviews under #1356. Parish
 settings shows the in-place
 review panel of #532 and #750
 ([in-place controls](#in-place-controls)); the other editors use separate

@@ -61,13 +61,16 @@ RESTORE = "window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: 
 HINT = "#settings-form-unchanged-hint"
 
 
-def expect_review(page, *, enabled, hint="Change a setting to review it."):
-    """Review changes is available exactly when the form differs from what is
-    saved (#921); otherwise its hint, which always keeps its space, is shown
-    and describes it."""
+def expect_review(
+    page, *, enabled, hint="Change a setting to review it.", name="Review changes"
+):
+    """Review changes (or a confirmation's own label, ``name``, such as Save,
+    #1356) is available exactly when the form differs from what is saved
+    (#921); otherwise its hint, which always keeps its space, is shown and
+    describes it."""
     from playwright.sync_api import expect
 
-    button = page.get_by_role("button", name="Review changes")
+    button = page.get_by_role("button", name=name, exact=True)
     line = page.locator(HINT)
     expect(line).to_have_text(hint)
     if enabled:

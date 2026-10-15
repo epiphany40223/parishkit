@@ -40,6 +40,7 @@ from parishkit.stewardship.accounts.admin_editing import (
     review_region,
     summary_errors,
 )
+from parishkit.stewardship.accounts.option_editing import option_changes
 from parishkit.stewardship.accounts.parish_views import TIMEZONE_NOTE, ParishForm
 from parishkit.stewardship.accounts.share_forms import (
     ShareOptions,
@@ -236,8 +237,7 @@ def components(context, admin):
                 "stewardship/share-options-review.html",
                 {
                     "review": {
-                        "before": options,
-                        "after": renamed,
+                        "changes": option_changes(options, renamed),
                         "preview": "synthetic-signed-intent",
                     }
                 },

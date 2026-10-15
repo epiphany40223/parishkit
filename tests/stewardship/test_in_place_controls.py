@@ -612,7 +612,7 @@ def test_review_button_hint_follows_it_and_keeps_its_space():
 
 def test_share_options_review_in_the_dialog():
     """Share options say "option", not "setting", in the hint after its
-    Review changes button (#921); its form opens the shared review dialog
+    Save button (#921); its form opens the shared review dialog
     (#750) from a region redrawn from the page's address once a change is
     applied, and the page draws no in-place review region."""
     text = (TEMPLATES / "share-settings.html").read_text()
@@ -623,8 +623,13 @@ def test_share_options_review_in_the_dialog():
     assert 'data-refresh-url="{{ refresh_url }}"' in text
     assert "settings-review" not in text
     assert 'dialog_id="share-review"' in text and "review=True" in text
-    assert 'translate "Change an option to review it." as option_hint' in text
-    assert "review-changes-button.html' with hint=option_hint" in text
+    # A compact review (#1356): the button says Save, the dialog asks the
+    # question and its lines describe it.
+    assert 'translate "Change an option to save it." as option_hint' in text
+    assert "review-changes-button.html' with hint=option_hint label=save_label" in text
+    assert 'translate "Save" as save_label' in text
+    assert 'translate "Save the share options?" as review_title' in text
+    assert 'describedby="share-review-summary" %}' in text
 
 
 def test_the_workgroup_confirms_in_the_dialog():

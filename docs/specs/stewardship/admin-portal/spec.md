@@ -2244,7 +2244,12 @@ The campaign editor includes:
 - financial period and explicit current/comparison fund multi-select;
 - campaign Ministry multi-select, initially all active Ministries;
 - Ministry leader roles (see [Ministry leader roles](#ministry-leader-roles));
-- editable/reorderable share options with stable IDs and placeholders;
+- editable/reorderable share options with stable IDs and placeholders, on
+  Share options, whose **Save** opens a
+  [compact review](../ui-conventions/spec.md#review-dialog) (#1356) that
+  marks only what changed, one line each (an option added, removed,
+  relabelled, given or losing its free-text response, or moved, with its old
+  and new position), never both whole lists;
 - initial and repeatable reminder date/time, subject, and templates;
 - daily/weekly digest local schedules;
 - additional-information toggle;
