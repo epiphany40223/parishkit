@@ -27,12 +27,10 @@ FROZEN_SQL = (
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("stewardship_campaigns", "0010_restore_holds_after_release"),
-        # The migration that installed the previous frozen file on this
-        # branch (0095, #1286), so the files apply in prefix order. 0096 to
-        # 0098 are assigned to other pull requests; the merger re-points this
-        # at whichever installs 0098.
-        ("stewardship_reports", "0027_canonical_timezone"),
+        ("stewardship_campaigns", "0011_resume_sender_check"),
+        # The migration that installed the previous frozen file (0098, the
+        # operator's debug clear), so the files apply in prefix order.
+        ("stewardship_jobs", "0032_debug_off_clear_subject"),
     ]
 
     operations = [migrations.RunSQL(FROZEN_SQL.read_text(encoding="utf-8"))]
