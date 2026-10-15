@@ -589,6 +589,29 @@ def test_share_options_mark_only_what_changed():
     assert 'describedby="share-review-summary" %}' in page
 
 
+def test_share_option_reorders_name_the_first_longest_run_as_kept():
+    """Ties between equally long kept runs go to the first found (#1356):
+    swapping two neighbours names only the later-listed one as moved, and
+    swapping two blocks names the block that now comes last."""
+    from parishkit.stewardship.accounts.option_editing import option_changes
+
+    def moves(order, new_order):
+        """The review's lines, as (label, before, after), for a reorder."""
+        options = {key: share_option(key, key.upper()) for key in order}
+        return [
+            (str(line["label"]), line["before"], str(line["after"]))
+            for line in option_changes(
+                [options[key] for key in order], [options[key] for key in new_order]
+            )
+        ]
+
+    assert moves("abc", "bac") == [("Position of “A”", "1", "2")]
+    assert moves("abcd", "cdab") == [
+        ("Position of “A”", "1", "3"),
+        ("Position of “B”", "2", "4"),
+    ]
+
+
 def test_a_small_campaign_settings_change_is_a_compact_review():
     """Campaign settings (#1356): one or two short settings changed is a
     compact review, which names its own question and description and keeps
