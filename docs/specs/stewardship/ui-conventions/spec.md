@@ -153,7 +153,7 @@ New and Edit scheduled email the third ([Admin
 portal](../admin-portal/spec.md#new-and-edit-scheduled-email)), and the
 submitted-date filters of the Additional information and Ministry reports the
 fourth ([Reports](../reports/spec.md#additional-information)), then the
-first-campaign Mail schedules step and the date-change review ([Admin
+date-change review ([Admin
 portal](../admin-portal/spec.md#dates-and-mail-schedules)). A schedule review
 shows each send only as a moment in the browser's zone, never as the saved
 campaign-local date and time with the campaign's zone.

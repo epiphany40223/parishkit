@@ -23,8 +23,7 @@ of the test link, #923). data-schedule-label names this saved schedule (on every
 lists schedules), so the summary can tell whether other schedules share the
 email. The script adds the summary's id to the list's aria-describedby.
 
-On the first-campaign step and the date-change review send times are
-browser-local (#558): an unbound
+On the date-change review send times are browser-local (#558): an unbound
 saved row carries its send moment (schedule_moment, a UTC instant) as
 data-schedule-local, and ui-v1.js fills its date, time and weekday in the
 browser's zone.

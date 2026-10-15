@@ -2,11 +2,10 @@
 
 A saved schedule keeps wall-clock values in the campaign's time zone (its
 ``date``, ``time`` and ``weekday``; ``configuration.schedule_values``), and
-the scheduler resolves them to instants. New and Edit scheduled email, the
-first-campaign step's Mail schedules and the date-change review
-(``schedule_forms.ScheduleSet`` with ``browser_times``) show and take those
-times in the browser's time zone instead, as every Admin date and time is
-(the global presentation rules):
+the scheduler resolves them to instants. New and Edit scheduled email and the
+date-change review (``schedule_forms.ScheduleSet`` with ``browser_times``)
+show and take those times in the browser's time zone instead, as every Admin
+date and time is (the global presentation rules):
 
 - :func:`instant` is the UTC moment a saved schedule's values stand for. The
   page carries it, and the page script fills the fields in the browser's zone.

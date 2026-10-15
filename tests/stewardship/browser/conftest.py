@@ -454,6 +454,46 @@ def table_schedules(owner, emails):
     ]
 
 
+# The date-change review shows and takes send times in the browser's zone
+# (#558), as its view draws it: browser mode, at a fixed current instant.
+REVIEW_BROWSER_TIMES = {
+    "browser_times": True,
+    "now": datetime(2054, 9, 1, 12, tzinfo=UTC),
+}
+
+
+# The /schedule-dates-dst page's campaign, saved schedules and emails, for
+# its browser test to post back through the same formset (#558).
+REVIEW_DST = {}
+
+
+def review_dst_schedules(owner, emails):
+    """An invitation and two reminders either side of London's DST change.
+
+    London leaves summer time on October 25, 2054, a week before New York,
+    so the 9:00 AM New York reminders show as 14:00 on the 24th and 13:00 on
+    the 26th in a London browser.
+    """
+    by_kind = {row["values"]["slot"]: row for row in emails}
+
+    def saved(kind, **values):
+        """A saved schedule of ``kind`` that sends that type's email."""
+        email = by_kind[kind]
+        return schedule(
+            owner["id"],
+            kind=kind,
+            template_version=email["id"],
+            subject=email["values"]["subject"],
+            **values,
+        )
+
+    return [
+        saved("initial"),
+        saved("reminder", date="2054-10-24"),
+        saved("reminder", date="2054-10-26"),
+    ]
+
+
 def refused_table_data(rows):
     """The table page's post with Reminder 2 moved outside the campaign."""
     data = data_for(sorted(rows, key=schedule_order))
@@ -474,6 +514,11 @@ def component_origin():
         for kind in ("initial", "reminder", "daily_digest", "weekly_digest")
     ]
     table_rows = table_schedules(mail_campaign, mail_emails)
+    REVIEW_DST.update(
+        owner=mail_campaign,
+        templates=mail_emails,
+        previous=review_dst_schedules(mail_campaign, mail_emails),
+    )
     context = {
         "server_now": NOW,
         "deadline": NOW + timedelta(hours=1),
@@ -848,9 +893,9 @@ def component_origin():
             "schedule-reconcile",
             schedule_page(
                 mail_campaign,
-                SETUP_DST["previous"],
+                REVIEW_DST["previous"],
                 templates=mail_emails,
-                now=SETUP_BROWSER_TIMES["now"],
+                now=REVIEW_BROWSER_TIMES["now"],
             ),
         ),
         (
@@ -909,7 +954,7 @@ def component_origin():
                     campaign_id=mail_campaign["id"],
                     campaign=mail_campaign["values"],
                     prefix="schedules",
-                    **SETUP_BROWSER_TIMES,
+                    **REVIEW_BROWSER_TIMES,
                 ),
                 "base_digest": "a" * 64,
                 "editable": False,

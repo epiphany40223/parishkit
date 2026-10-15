@@ -592,14 +592,14 @@ class ScheduleSet(BaseFormSet):
         (the campaign admits no test mail now) leaves out the test address
         and says why instead (#923).
 
-        ``browser_times`` (the first-campaign step and the date-change
-        review, #558) shows and takes send dates and times in the browser's
-        time zone: ``zone`` is the posted browser zone and ``now`` the
-        current instant, which places a digest's time at its next send
-        (``schedule_local``). Saved values stay campaign-local either way;
-        see ``_construct_form`` and ``_to_campaign``. ``saved_timezone`` is
-        the zone the saved rows are in: the date-change review may replace
-        ``campaign`` with a proposed time zone before validating.
+        ``browser_times`` (the date-change review, #558) shows and takes
+        send dates and times in the browser's time zone: ``zone`` is the
+        posted browser zone and ``now`` the current instant, which places a
+        digest's time at its next send (``schedule_local``). Saved values
+        stay campaign-local either way; see ``_construct_form`` and
+        ``_to_campaign``. ``saved_timezone`` is the zone the saved rows are
+        in: the date-change review may replace ``campaign`` with a proposed
+        time zone before validating.
         """
         if browser_times and now is None:
             raise ValueError("Browser-local schedule times need the current instant.")

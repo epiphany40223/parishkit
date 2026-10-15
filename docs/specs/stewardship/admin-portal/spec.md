@@ -2503,8 +2503,8 @@ again; a value restored into a read-only editor is put back to its saved value.
 
 The date-change review shows and takes send dates and times in the browser's
 time zone ([#558](https://github.com/epiphany40223/parishkit/issues/558)), as
-[New and Edit scheduled email](#new-and-edit-scheduled-email) and the
-first-campaign step do: each saved schedule's editor is filled from its moment
+[New and Edit scheduled email](#new-and-edit-scheduled-email) do: each saved
+schedule's editor is filled from its moment
 in the browser's zone, the page names that zone beside the dates, and the
 server converts each posted row back to the campaign's zone with the browser's
 zone the page sends. A row posted as it was shown keeps its saved values, and
@@ -2526,8 +2526,8 @@ time the browser's own clocks skip reads forward, as every browser-local time
 does, and no moment falls in an hour the campaign's clocks skip. A digest's
 row also posts the moment the page drew it from, so a page drawn before a
 daylight-saving change and posted after it still reads as unchanged. These
-rules are the shared conversion, so the first-campaign step and New and Edit
-scheduled email follow them too. The review dialog, like every schedule review, shows when each
+rules are the shared conversion, so New and Edit scheduled email follow them
+too. The review dialog, like every schedule review, shows when each
 schedule sends only as moments in the browser's zone (a digest also says it
 recurs), never the saved campaign-local date and time.
 

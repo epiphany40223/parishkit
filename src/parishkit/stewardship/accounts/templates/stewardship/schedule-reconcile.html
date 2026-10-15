@@ -20,7 +20,7 @@ opens with Review available and reverting the dates makes it unavailable
 again. A blank added schedule is no change. Its hint keeps its space, so it
 never moves the page.
 Send dates and times are shown and typed in the browser's time zone (#558),
-as on the first-campaign step: ui-v1.js fills the hidden zone field
+as on New and Edit scheduled email: ui-v1.js fills the hidden zone field
 (data-browser-zone), names the zone in the note, and fills each saved row
 from its data-schedule-local moment, making those values the fields'
 defaults, so the change gate compares with the saved schedules as this
@@ -29,7 +29,7 @@ changes stays unavailable. The campaign dates are calendar dates, and its
 time zone is a setting; neither is converted.
 {% endcomment %}
 <h1>{% translate "Dates and mail schedules" %}</h1>
-{% aboutpage "schedules" %}{% include 'stewardship/schedule-guide.html' with window_text=schedules.window_text browser_times=True %}
+{% aboutpage "schedules" %}{% include 'stewardship/schedule-guide.html' with window_text=schedules.window_text %}
 <p>{% translate "Review changes shows what would change and the work it affects; nothing takes effect until you choose Apply and it says Applied." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
 {% if window.proposed %}<p class="notice">{% translate "The proposed dates below have not been saved. Resolve the schedules and review the complete change before applying it." %}</p>{% endif %}

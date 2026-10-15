@@ -66,7 +66,7 @@ def test_saved_times_show_and_a_changed_time_posts_in_the_browser_zone(
     keep the unchanged schedules as saved and move the second reminder
     (shown as 13:00 on October 26) to 15:00 London, 11:00 AM in New York.
     """
-    from .conftest import SETUP_BROWSER_TIMES, SETUP_DST
+    from .conftest import REVIEW_BROWSER_TIMES, REVIEW_DST
 
     context = browser_engine.new_context(timezone_id="Europe/London")
     try:
@@ -95,20 +95,20 @@ def test_saved_times_show_and_a_changed_time_posts_in_the_browser_zone(
         assert not failures
     finally:
         context.close()
-    owner = SETUP_DST["owner"]
+    owner = REVIEW_DST["owner"]
     formset = Schedules(
         data,
         prefix="schedules",
-        previous=SETUP_DST["previous"],
-        templates=SETUP_DST["templates"],
+        previous=REVIEW_DST["previous"],
+        templates=REVIEW_DST["templates"],
         campaign_id=owner["id"],
         campaign=owner["values"],
         zone=data["zone"],
-        **SETUP_BROWSER_TIMES,
+        **REVIEW_BROWSER_TIMES,
     )
     assert formset.is_valid(), (formset.errors, formset.non_form_errors())
     [changed] = formset.patch()
-    assert changed["id"] == SETUP_DST["previous"][2]["id"]
+    assert changed["id"] == REVIEW_DST["previous"][2]["id"]
     assert (changed["values"]["date"], changed["values"]["time"]) == (
         "2054-10-26",
         "11:00:00",

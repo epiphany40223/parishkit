@@ -865,10 +865,9 @@
   // (data-require-change, below) compares the form with, so Review changes
   // stays unavailable until the reader changes one (#750). Without a zone
   // Review changes stays unavailable and [data-zone-missing] says why.
-  // The first-campaign step's and the date-change review's schedules
-  // (form[data-schedule-zoned]) work the same way, row by row: each unbound
-  // saved row carries its own data-schedule-local, and Save and continue (or
-  // Review changes) waits for a zone.
+  // The date-change review's schedules (form[data-schedule-zoned]) work the
+  // same way, row by row: each unbound saved row carries its own
+  // data-schedule-local, and Review changes waits for a zone.
   // localParts: a moment (ms) as this browser's {date, time, weekday}, the
   // time canonical as the time entry writes it and Monday 0.
   const localParts = (moment) => {
@@ -4341,8 +4340,7 @@
   // the calendar dates it produces. Dates are civil days, computed with UTC
   // dates so the browser's own zone never shifts them; the send time is
   // added later per date (the browser's wall-clock time on the date-change
-  // review, the first-campaign step and New scheduled email, #558; the
-  // campaign's on Copy campaign).
+  // review and New scheduled email, #558).
   // The rule: {frequency: "daily" | "weekly" | "monthly", start,
   // end (inclusive, "YYYY-MM-DD"), weekdays: [0 (Monday) … 6] for weekly,
   // and for monthly either {day: 1–31} or {ordinal: 1–4 or -1 (last),
@@ -4416,11 +4414,10 @@
   // inside the campaign dates, strictly after the initial invitation, not at
   // the instant of another Family mailing, at most REPEAT_LIMIT dates per
   // rule and the form's MAX_NUM_FORMS rows in all. Here every comparison is
-  // of date and time text in the zone the form's rows use: the browser's on
-  // the first-campaign step and the date-change review (#558), the
-  // campaign's on Copy campaign. The campaign-date check compares calendar
-  // days, so in the browser's zone the server decides a time near either
-  // edge (New scheduled email compares moments instead; see repeatDates).
+  // of date and time text in the browser's zone, which the date-change
+  // review's rows use (#558). The campaign-date check compares calendar
+  // days, so the server decides a time near either edge (New scheduled
+  // email compares moments instead; see repeatDates).
   const REPEAT_LIMIT = 30;
   const REPEAT_ERRORS = {
     dates: "Choose the first and last dates to repeat on.",
