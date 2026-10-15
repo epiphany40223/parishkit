@@ -910,7 +910,7 @@ Django-rendered ones included, through the shared page script.
 ### Review, Apply and Change status
 
 **Rule.** A change to configuration or data is made by editing, then
-**Review** (which shows each changed value, current and proposed), then
+**Review** (which shows what will change), then
 **Apply** (or **Save**), after which the change's status is followed until it
 is applied. Changes are saved by an explicit action, never
 autosaved as the reader types or ticks. A checkbox may refresh a *view* on
@@ -944,7 +944,8 @@ opens, applies, refuses and follows its change.
 
 **Rule.** Every Admin editor reviews and applies its change in one shared
 modal dialog over the page: **Review changes** opens the dialog with the
-change and its impact, the dialog offers **Apply** and **Cancel**, and Apply's
+change and its impact (or, when that would only repeat the page, a
+one-sentence confirmation), the dialog offers **Apply** and **Cancel**, and Apply's
 progress and outcome show inside it. Once the change is applied the dialog
 closes, the page refreshes in place (or a New or Edit page returns to its
 table) and a short status line says what was applied. Review changes is
@@ -1002,9 +1003,36 @@ section says how every Review behaves.
   names the change ("Review Parish settings") and labels the dialog
   (`aria-labelledby`); focus moves to that title, never to Apply, so the
   reader hears what is being reviewed before reaching the buttons. Its body
-  shows the review the feature specification describes: each changed value
-  with its current and proposed value, and the change's notes and impact
-  (affected Families, counts, a generated preview).
+  shows the review the feature specification describes: a full review (the
+  changed values with their current and proposed values, and the change's
+  notes and impact: affected Families, counts, a generated preview) or a
+  confirmation (below).
+- **A confirmation when Review would only repeat the page.** When a Review
+  would show nothing the reader can't already see on the page (a new item,
+  where nothing existed before; a change of one or two fields, where the new
+  values are the form itself; or a fixed explanation), the dialog does not
+  list the values again. It states the change's effect in one sentence
+  ("This creates the campaign as a draft in Testing mode; no email is
+  sent." / "Parish telephone changes from (212) 555-1234 to
+  (212) 555-9876."), adds only what the server worked out that the page
+  doesn't show (a warning, such as granting Administrator; an affected
+  count; a refusal), and offers **Apply** and **Cancel**; the sentence
+  describes the dialog (`aria-describedby`), and its title asks the
+  question ("Create the campaign?"). The form's button then carries the
+  action's own label ("Create the campaign", "Save") rather than **Review
+  changes**, since it opens a dialog that does not review, and the dialog's
+  button stays **Apply**. Review still posts the form, so field errors stay
+  on the form and the server still validates and signs the preview, which
+  Apply posts as before: the signed preview and its lifetime, concurrency,
+  the rechecks under the work lock, the audit and the command line's
+  `preview` and `confirm` are unchanged. A Review that changes many fields,
+  computes impact (affected Families, re-planned schedules, counts), or
+  renders what Families will see (an email sample, staged images) keeps its
+  full review. Each feature specification says which kind its Review is.
+  **Precedent.** Administrator decision, 2026-10-14, on
+  [#1356](https://github.com/epiphany40223/parishkit/issues/1356); the
+  [Delete dialogs](#row-actions-and-confirmation) already confirm over a
+  hidden server-signed preview.
 - **While the dialog is open** it is a native modal `<dialog>`: the rest of
   the page, the form included, is inert and cannot be edited, and Tab stays
   inside the dialog. So the review shown is always the review of the form as
