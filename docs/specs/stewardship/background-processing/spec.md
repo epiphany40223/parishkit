@@ -2540,18 +2540,35 @@ unavailability, not a retry conflict.
 
 ## ParishSoft publication
 
-Not built yet: publication is ADM-09
-([#528](https://github.com/epiphany40223/parishkit/issues/528)), and today
-census changes reach ParishSoft by hand from the
+Not in use yet: publication is ADM-09
+([#528](https://github.com/epiphany40223/parishkit/issues/528)), its Publish
+page is not built and it ships switched off, so today census changes reach
+ParishSoft by hand from the
 [Census changes](../reports/spec.md#pending-census-changes) page.
 
-Publication runs in a dedicated queue with lower concurrency and uses the same
-`SourceMutationLease` as refresh. Preflight and execution are separate task
-phases with one durable plan version. A changed decision/source after preflight
-invalidates the plan and requires a new confirmation. Execution owns and
-heartbeats the lease through final ParishSoft verification, releases it, and
-then queues the targeted reconciliation refresh, which claims the lease
-normally.
+Publication runs on the worker's source queue (the low-concurrency
+ParishSoft consumer refresh uses) and uses the same `SourceMutationLease` as
+refresh. Preflight and execution are separate task types with one durable
+plan version, and only the web login creates either:
+
+- `census_publication_preflight`, queued for an Administrator, reads each
+  affected Member without the lease and records the plan; its request key
+  makes a repeat the same task and plan. A read the gateway cannot make at
+  all fails it with no plan; one Member's failed read blocks that Member.
+- `census_publication` runs one confirmed plan. The Administrator's
+  confirmation queues it in the same transaction, and at most one run of a
+  plan is unfinished at a time.
+
+Both tasks, and the web calls that queue them, refuse while the deployment's
+`parishsoft_publication` setting is off. A run that ends with an error is
+abandoned and retried on the same plan, at most three runs; after that, or
+after a refusal, an Administrator may rerun that plan while it still has an
+unfinished entity. A rerun reads before each PUT and never repeats a write
+that landed. A changed decision/source after preflight invalidates the plan
+and requires a new confirmation. Execution owns and heartbeats the lease
+through final ParishSoft verification, releases it, and then queues the
+targeted reconciliation refresh, which claims the lease normally (not yet
+built).
 
 Writes use shared v2 `PUT` contact primitives, expected-tenant guard, current
 full payload merge, idempotent retry, and read-after-write verification as
