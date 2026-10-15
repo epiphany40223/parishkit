@@ -485,3 +485,30 @@ def test_apply_may_post_another_action_and_a_drawn_refusal_is_shown():
     # Redrawn from Apply's answer itself, without reading the page again.
     assert 'data-review-redraw="body"' in dialog(redraw_body=True)
     assert 'dialog.dataset.reviewRedraw === "body"' in script
+
+
+def test_the_compact_review_draws_one_line_per_changed_field():
+    """A compact review (#1356, class A2): "Field: old → new" per change, the
+    arrow hidden from screen readers, which hear "old, becomes new"; a line
+    with no old value draws the new one alone; values are escaped."""
+    text = render_to_string(
+        "stewardship/components/compact-review.html",
+        {
+            "summary_id": "thing-summary",
+            "changes": [
+                {"label": "Role", "before": "Staff", "after": "Ministry leader"},
+                {"label": "Added", "before": None, "after": "<b>Stock</b>"},
+            ],
+        },
+    )
+    assert text.startswith('<ul class="compact-review" id="thing-summary">')
+    assert (
+        '<li><span class="compact-review-field">Role:</span> Staff '
+        '<span aria-hidden="true">→</span><span class="visually-hidden">, '
+        "becomes</span> Ministry leader</li>"
+    ) in text
+    assert (
+        '<li><span class="compact-review-field">Added:</span> '
+        "&lt;b&gt;Stock&lt;/b&gt;</li>"
+    ) in text
+    assert text.count("<li>") == 2 and "<table" not in text
