@@ -792,6 +792,26 @@ DESCRIPTIONS = {
         "The server recorded whether a census change publication to "
         "ParishSoft was written, stopped because something changed, or failed."
     ),
+    "census_publication_preflight_requested": _(
+        "An Administrator asked the server to check approved census changes "
+        "against ParishSoft before publishing them."
+    ),
+    "census_publication_rerun_requested": _(
+        "An Administrator asked the server to run a failed census change "
+        "publication to ParishSoft again."
+    ),
+    "census_publication_switched_off": _(
+        "A census change publication task stopped without reading or writing "
+        "ParishSoft because publishing to ParishSoft is switched off."
+    ),
+    "census_publication_read_unconfirmed": _(
+        "A census change check stopped without a plan because reading "
+        "ParishSoft contact records is not confirmed yet."
+    ),
+    "census_publication_refused": _(
+        "A census change publication task stopped without writing ParishSoft "
+        "because what it needed had changed or was missing."
+    ),
     "response_dashboard_viewed": _("Someone opened the response dashboard."),
     "response_submitted_list_viewed": _(
         "Someone opened the list of Families that submitted."

@@ -483,6 +483,11 @@ UNGROUPED_REASONS = {
         "census_publication_planned",
         "census_publication_confirmed",
         "census_publication_recorded",
+        "census_publication_preflight_requested",
+        "census_publication_rerun_requested",
+        "census_publication_switched_off",
+        "census_publication_read_unconfirmed",
+        "census_publication_refused",
     ),
     "In the Action vocabulary, but nothing records it today": (
         "privileged_reauthentication",

@@ -123,6 +123,17 @@ class Action(StrEnum):
     CENSUS_PUBLICATION_PLANNED = "census_publication_planned"
     CENSUS_PUBLICATION_CONFIRMED = "census_publication_confirmed"
     CENSUS_PUBLICATION_RECORDED = "census_publication_recorded"
+    # Who asked for a preflight or a rerun of a plan's failed run, and when
+    # (the subject is the task run), and why a preflight or publish run was
+    # refused, failing it with nothing written (the subject is the refused
+    # run): the setting switched off, the contact read not confirmed yet, or
+    # any other refusal. One event type per reason, so the reason needs no
+    # new context field.
+    CENSUS_PUBLICATION_PREFLIGHT_REQUESTED = "census_publication_preflight_requested"
+    CENSUS_PUBLICATION_RERUN_REQUESTED = "census_publication_rerun_requested"
+    CENSUS_PUBLICATION_SWITCHED_OFF = "census_publication_switched_off"
+    CENSUS_PUBLICATION_READ_UNCONFIRMED = "census_publication_read_unconfirmed"
+    CENSUS_PUBLICATION_REFUSED = "census_publication_refused"
     ROSTER_CHANGES_VIEWED = "roster_changes_viewed"
     ROSTER_CHANGES_EXPORTED = "roster_changes_exported"
     RESPONSE_DASHBOARD_VIEWED = "response_dashboard_viewed"
