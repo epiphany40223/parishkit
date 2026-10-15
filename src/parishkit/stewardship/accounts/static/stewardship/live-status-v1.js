@@ -67,6 +67,36 @@
 // [data-live-stale-holds] button is disabled, marked data-live-stale-gated
 // so ui-v1.js's other gates never enable it again.
 //
+// A part outside the region can be about one thing the status names too
+// (System health's Accept this change once, which sits in its tile's details
+// outside the region, #1214): the region holds an element marked
+// [data-live-key="<name>"] whose data-live-key-value says which thing the
+// status shows now, and each [data-live-keep-for] part inside an element
+// marked [data-live-keyed="<name>"] elsewhere on the page is marked
+// data-live-stale, as a kept element's part is, once they differ.
+//
+// A region marked data-live-not-current says when it is no longer current
+// instead of saying "retrying" or "Still working" under itself (System
+// health, #1214): after three checks in a row have failed, or when watching
+// stops at its limit or is refused, it dispatches a parishkit:live-current
+// event (detail.current false) from the region, and on the next successful
+// check one with detail.current true, after which its data-live-announce
+// sentence is read out again even if it did not change. The page draws the
+// state (System health's Not current line and tiles). A button marked
+// [data-live-restart="<name>"] anywhere on the page checks that region again
+// at once, and starts watching it again if watching had stopped. Such a
+// region says nothing under itself even when a check is refused (signed
+// out or no longer allowed): the page's line says Not current, and the
+// Admin session's own dialog offers to sign in again.
+//
+// A mirror target marked data-live-mirror-hold waits, as a focused one does,
+// while the pointer is over its closest [data-live-hover-hold] ancestor:
+// its copy can change its height, which would move what the reader is
+// pointing at (System health's tile details, #1214). It catches up on the
+// first poll after the pointer leaves. Running times (time[data-live-since])
+// and coming times worded against today (time[data-time-day]) in mirror
+// targets outside the region are kept up to date as the region's are.
+//
 // An in-place refresh (ui-v1.js, #519) can replace the region itself, such
 // as when Dismiss on an integration's settings page swaps in the page's
 // fresh status. The old region's watcher then stops (its page-wide
@@ -85,6 +115,14 @@
   // region swapped in by an in-place Refresh is announced only when its
   // status changed.
   const spoken = new Map();
+  // The copy each mirror target last took (see mirror()), kept across a
+  // restart's new watcher, so a target that was held still catches up.
+  const mirrored = new WeakMap();
+  // Each region's way to check again at once (data-live-restart).
+  const restarts = new WeakMap();
+  // The regions that said they are not current (data-live-not-current),
+  // kept across a restart's new watcher so the next success is announced.
+  const notCurrent = new WeakSet();
   const announcerFor = (name) => [...document.querySelectorAll("[data-live-announcer]")]
     .find((node) => node.getAttribute("data-live-announcer") === name);
   // Read out ``region``'s coarse status when it differs from the last one.
@@ -96,7 +134,8 @@
     spoken.set(name, text);
     announcer.textContent = text;
   };
-  const watch = (region) => {
+  // Watch ``region``; ``now`` checks at once instead of after the first delay.
+  const watch = (region, now = false) => {
     if (!region || !region.hasAttribute("data-live-pending")) return;
     // This watcher's page-wide listeners, removed when it stops.
     const listening = new AbortController();
@@ -130,6 +169,10 @@
     let timer = 0;
     let inFlight = false;
     let stopped = false;
+    // Checks failed in a row, and whether the region says when it is not
+    // current rather than under itself (see the header).
+    let failures = 0;
+    const saysCurrent = region.hasAttribute("data-live-not-current");
 
     // One status line after the region reports checking problems.
     const problem = document.createElement("p");
@@ -165,9 +208,18 @@
       return `${count} ${unit}${count === 1 ? "" : "s"} ago`;
     }
 
+    function within(selector) {
+      // The matches of ``selector`` in the region and in the mirror targets
+      // outside it, which show this region's status elsewhere on the page.
+      const outside = [...document.querySelectorAll("[data-live-mirror-target]")]
+        .filter((target) => !region.contains(target))
+        .flatMap((target) => [...target.querySelectorAll(selector)]);
+      return [...region.querySelectorAll(selector), ...outside];
+    }
+
     function elapsed() {
       // "started 12 seconds ago" beside a running indicator, when one has a time.
-      region.querySelectorAll("time[data-live-since]").forEach((node) => {
+      within("time[data-live-since]").forEach((node) => {
         const date = new Date(node.dateTime);
         if (!Number.isFinite(date.getTime())) return;
         const seconds = Math.max(0, Math.floor((Date.now() + skew - date.getTime()) / 1000));
@@ -184,6 +236,21 @@
       if (message !== undefined) say(message);
     }
 
+    function current(value) {
+      // Tell the page whether the region is current (data-live-not-current
+      // regions only), once per change. Once current again, the region's
+      // sentence is read out again: it says what the page shows now.
+      if (!saysCurrent || value === !notCurrent.has(region)) return;
+      if (value) notCurrent.delete(region);
+      else notCurrent.add(region);
+      region.dispatchEvent(new CustomEvent("parishkit:live-current", {
+        bubbles: true, detail: { current: value }
+      }));
+      // check() forgot the last sentence before adopting the fresh region,
+      // so it is read out once: by adopt() when it changed, else here.
+      if (value) speak(region);
+    }
+
     // An in-place refresh (ui-v1.js) replaced the region: the fresh one has
     // its own watcher, so this one stops quietly and takes its status line.
     function gone() {
@@ -197,7 +264,12 @@
       window.clearTimeout(timer);
       if (stopped || gone() || document.visibilityState !== "visible") return;
       if (asked - started > giveUp) {
-        stop(`Still working. Use ${refreshLabel} to check again.`);
+        if (saysCurrent) {
+          stop();
+          current(false);
+        } else {
+          stop(`Still working. Use ${refreshLabel} to check again.`);
+        }
         return;
       }
       timer = window.setTimeout(check, fixed || DELAYS[Math.min(attempt, DELAYS.length - 1)]);
@@ -344,7 +416,7 @@
       // A coming time worded against today ("3:10 PM tomorrow") is worded
       // again on every check, so it stays right across midnight. Only its
       // text changes, which the markup comparison ignores.
-      region.querySelectorAll("time[data-time-day]").forEach((node) => {
+      within("time[data-time-day]").forEach((node) => {
         localize(node.parentNode);
       });
     }
@@ -354,9 +426,6 @@
       const caption = node.querySelector("caption");
       return caption ? `caption:${caption.textContent.trim()}` : `index:${index}`;
     }
-
-    // The copy each mirror target last took (see mirror()).
-    const mirrored = new WeakMap();
 
     function mirror() {
       // A region may carry copies of controls that live elsewhere on the page
@@ -385,12 +454,37 @@
           if (target.getAttribute("data-live-mirror-target") !== mirrorName) return;
           if (region.contains(target) && !target.closest("[data-live-keep]")) return;
           if (target.contains(document.activeElement)) return;
+          if (target.hasAttribute("data-live-mirror-hold")
+              && target.closest("[data-live-hover-hold]")?.matches(":hover")) return;
           if (mirrored.get(target) === html) return;
           const copy = source.content.cloneNode(true);
           fillToken(copy);
+          // A wide table keeps its sideways scroll, as in the region.
+          const sideways = new Map([...target.querySelectorAll(".table-scroll")]
+            .map((node, index) => [scrollKey(node, index), node.scrollLeft]));
           target.replaceChildren(copy);
           mirrored.set(target, html);
           localize(target);
+          target.querySelectorAll(".table-scroll").forEach((node, index) => {
+            const offset = sideways.get(scrollKey(node, index));
+            if (offset) node.scrollLeft = offset;
+          });
+        });
+      });
+      elapsed();
+    }
+
+    function rekey() {
+      // Mark each keyed part outside the region that is about something the
+      // status no longer shows (see the header).
+      region.querySelectorAll("[data-live-key]").forEach((source) => {
+        const keyName = source.getAttribute("data-live-key");
+        const value = source.getAttribute("data-live-key-value") || "";
+        document.querySelectorAll("[data-live-keyed]").forEach((keyed) => {
+          if (keyed.getAttribute("data-live-keyed") !== keyName || region.contains(keyed)) return;
+          keyed.querySelectorAll("[data-live-keep-for]").forEach((part) => {
+            if (part.getAttribute("data-live-keep-for") !== value) stale(part);
+          });
         });
       });
     }
@@ -398,11 +492,13 @@
     // Each target was rendered with the page, from the same state as the copy
     // the region carries now, so record that copy as already taken. Otherwise
     // the first poll would replace an unchanged button, and a click landing
-    // just then (WebKit) could be lost with the old button.
+    // just then (WebKit) could be lost with the old button. A target an
+    // earlier watcher of this page already filled keeps what it took.
     region.querySelectorAll("template[data-live-mirror]").forEach((source) => {
       const mirrorName = source.getAttribute("data-live-mirror");
       document.querySelectorAll("[data-live-mirror-target]").forEach((target) => {
-        if (target.getAttribute("data-live-mirror-target") === mirrorName) {
+        if (target.getAttribute("data-live-mirror-target") === mirrorName
+            && !mirrored.has(target)) {
           mirrored.set(target, source.innerHTML);
         }
       });
@@ -538,7 +634,8 @@
             stop("");
             return;
           }
-          stop("Couldn't check status. Refresh the page or sign in again.");
+          stop(saysCurrent ? undefined : "Couldn't check status. Refresh the page or sign in again.");
+          current(false);
           return;
         }
         if (!response.ok) throw new Error("status unavailable");
@@ -547,6 +644,7 @@
         const fresh = [...parsed.querySelectorAll("[data-live-status]")]
           .find((node) => node.getAttribute("data-live-status") === name);
         if (!fresh) throw new Error("status region missing");
+        failures = 0;
         say("");
         if (busy()) {
           // Wait for the Admin; check again later without replacing their
@@ -555,14 +653,21 @@
           schedule();
           return;
         }
+        // Back from not current: the sentence is read out again even if it
+        // did not change (see current()).
+        if (notCurrent.has(region)) spoken.delete(name);
         adopt(fresh);
         mirror();
+        rekey();
         checked();
+        current(true);
         if (region.hasAttribute("data-live-pending")) schedule();
         else finish();
       } catch {
         if (stopped) return;
-        say("Couldn't check status — retrying.");
+        failures += 1;
+        if (!saysCurrent) say("Couldn't check status — retrying.");
+        else if (failures >= 3) current(false);
         schedule();
       } finally {
         inFlight = false;
@@ -581,9 +686,29 @@
     // arrives after this (#562). A page kept in the back/forward cache
     // (persisted) resumes as before.
     window.addEventListener("pagehide", (event) => { if (!event.persisted) stop(); }, { signal });
-    schedule();
+    // Check again at once: a stopped watcher hands over to a fresh one.
+    restarts.set(region, () => {
+      if (gone()) return;
+      if (!stopped) {
+        window.clearTimeout(timer);
+        check();
+        return;
+      }
+      problem.remove();
+      watch(region, true);
+    });
+    if (now) check();
+    else schedule();
     watchers.add(gone);
   };
+  document.addEventListener("click", (event) => {
+    // A [data-live-restart="<name>"] button checks that region again now.
+    const button = event.target instanceof Element && event.target.closest("[data-live-restart]");
+    if (!button) return;
+    const region = [...document.querySelectorAll("[data-live-status]")]
+      .find((node) => node.getAttribute("data-live-status") === button.getAttribute("data-live-restart"));
+    if (region) restarts.get(region)?.();
+  });
   const first = document.querySelector("[data-live-status]");
   if (first) spoken.set(first.getAttribute("data-live-status"), first.getAttribute("data-live-announce") || "");
   watch(first);

@@ -33,6 +33,11 @@ COLORS = {
     "error-bg": "#fcebe8",
     "error-border": "#b42318",
     "error-ink": "#8f1d12",
+    # The log level icons that have no status colour of their own (#601);
+    # warnings and errors take the status borders above.
+    "level-info": "#1d5fbf",
+    "level-critical": "#7f0000",
+    "level-audit": "#5b3fa0",
 }
 
 # Corner radii: panels and cards, then controls, notices and buttons.

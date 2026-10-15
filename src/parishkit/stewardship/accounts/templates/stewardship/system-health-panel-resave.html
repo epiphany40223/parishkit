@@ -1,0 +1,5 @@
+{% load i18n stewardship %}{% comment %}
+  Saved pages and emails to re-save (#838), the Pages and emails to re-save
+  tile's details (#1214). Read on page load only, never by the poll, so it
+  has no polled copy. ``resave`` is resave_summary's answer.
+{% endcomment %}<div id="resave-summary"><p>{% if resave == "no_campaign" %}{% translate "There is no current campaign, so no saved page or email needs re-saving." %}{% elif resave is None %}{% translate "Whether any saved page or email needs re-saving could not be checked right now." %}{% elif resave %}{% blocktranslate count counter=resave|length %}{{ counter }} saved page or email should be re-saved, because sending now removes some of its markup.{% plural %}{{ counter }} saved pages or emails should be re-saved, because sending now removes some of their markup.{% endblocktranslate %}{% else %}{% translate "No saved page or email needs re-saving." %}{% endif %}{% if resave != "no_campaign" %} <a href="{% url 'admin:content_catalog' %}">{% translate "Pages and emails" %}</a>{% endif %}</p>{% if resave and resave != "no_campaign" %}{% include "stewardship/resave-list.html" with items=resave %}{% endif %}</div>

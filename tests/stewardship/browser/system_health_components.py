@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from uuid import UUID
 
 from django.template.loader import render_to_string
+from django.utils.http import urlencode
 
 from parishkit.stewardship.accounts.system_health_views import POLL_MILLISECONDS
 from parishkit.stewardship.source.data_age import Connection
@@ -19,10 +20,15 @@ from parishkit.stewardship.system_health import (
     DropAcceptanceStatus,
     DropCount,
     SystemHealth,
+    dashboard,
     find_problems,
     group_processes,
+    loaded_query,
+    loaded_states,
+    page_findings,
 )
 
+from .automation_components import canonical
 from .go_live_components import RESAVE
 
 PAGE = "/system-health"
@@ -77,6 +83,16 @@ ALLOW_CLEARED = "/system-health-allow-cleared"
 # A healthy page whose next poll changes only a time's datetime attribute.
 DATED = "/system-health-dated"
 DATED_STATUS = "/system-health-dated/status"
+# A healthy page whose status checks the browser test makes fail (Not
+# current, #1214), and the troubled state the same page's next good check
+# brings.
+STALE = "/system-health-stale"
+STALE_STATUS = "/system-health-stale/status"
+# The troubled page's page-load tiles (#1214): its re-save list has an item
+# that cannot be sent, so that tile is an Error tile, and the page passes
+# that to its polled status as ?loaded=, which the fragment counts.
+LOADED = loaded_states(0, list(RESAVE))
+TROUBLED_STATUS = canonical(f"{STATUS}?{urlencode({'loaded': loaded_query(LOADED)})}")
 
 
 def _row(now, service, process="main", *, age=0, **values):
@@ -125,6 +141,7 @@ def health(
     ``mode``: the global mode.
     """
     refused = refused or troubled
+    # A refusal is always an open incident too, so its tile is an Error tile.
     rows = [
         _row(now, "web", debug_logging=debug),
         _row(now, "web", debug_logging=debug),
@@ -147,7 +164,7 @@ def health(
     ]
     processes = group_processes(rows, now)
     incidents = (
-        {"source_destructive_change": now - timedelta(hours=3)} if troubled else {}
+        {"source_destructive_change": now - timedelta(hours=3)} if refused else {}
     )
     refresh = FullRefreshStatus(
         now - timedelta(hours=9),
@@ -202,7 +219,16 @@ def health(
         )
         if troubled or waiting
         else None,
-        offsite=None,
+        # Off-site copies are set up, except on the troubled page, where
+        # their absence in Production is a warning (decision 5).
+        offsite=None
+        if troubled
+        else SimpleNamespace(
+            kind="succeeded",
+            message="The last copy reached Google Drive.",
+            at=now - timedelta(hours=12),
+            last_copy_at=now - timedelta(hours=12),
+        ),
         debug_switch=DebugSwitchStatus(
             set_at=now - timedelta(minutes=2), cleared_at=None, cleared_by=None
         )
@@ -250,22 +276,33 @@ def components(context, admin):
         mode="production",
         **extra,
     ):
-        """Template context the view would build."""
+        """Template context the view would build.
+
+        The troubled page has page-load tiles to count (``LOADED``); its
+        polled fragments are rendered with the same ``loaded`` states, as
+        the view renders them from ``?loaded=``.
+        """
+        model = health(
+            now,
+            troubled=troubled,
+            backup_at=backup_at,
+            waiting=waiting,
+            debug=debug,
+            switch=switch,
+            refused=refused,
+            accepted=accepted,
+            mode=mode,
+        )
+        loaded = extra.pop("loaded", LOADED if troubled else {})
         return (
             context
             | {
                 "admin_chrome": chrome,
-                "health": health(
-                    now,
-                    troubled=troubled,
-                    backup_at=backup_at,
-                    waiting=waiting,
-                    debug=debug,
-                    switch=switch,
-                    refused=refused,
-                    accepted=accepted,
-                    mode=mode,
+                "health": model,
+                "dashboard": dashboard(
+                    model, findings=page_findings(model), loaded=loaded
                 ),
+                "source_form_count": 0,
                 "debug_actor": "other@example.org" if switch else None,
                 "accept_actor": "other@example.org" if accepted else None,
                 "refused_attempt": attempt if refused else None,
@@ -285,7 +322,21 @@ def components(context, admin):
         PAGE: (
             "text/html",
             render_to_string(
-                "stewardship/system-health.html", values(True, status_url=STATUS)
+                "stewardship/system-health.html",
+                values(True, status_url=TROUBLED_STATUS),
+            ),
+        ),
+        STALE: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(False, status_url=STALE_STATUS),
+            ),
+        ),
+        STALE_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html", values(True, loaded={})
             ),
         ),
         HEALTHY: (
@@ -595,9 +646,12 @@ def components(context, admin):
                 ),
             ),
         ),
-        # What the troubled page's next poll reads: every problem has ended.
-        STATUS: (
+        # What the troubled page's next poll reads: every problem has ended,
+        # except the page-load tile it passes as ?loaded=.
+        TROUBLED_STATUS: (
             "text/html",
-            render_to_string("stewardship/system-health-status.html", values(False)),
+            render_to_string(
+                "stewardship/system-health-status.html", values(False, loaded=LOADED)
+            ),
         ),
     }

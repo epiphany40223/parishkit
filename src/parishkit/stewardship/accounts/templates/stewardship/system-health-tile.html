@@ -1,0 +1,39 @@
+{% load i18n stewardship %}{% comment %}
+  One System health tile (admin-portal spec, "Health tiles", #1214), in two
+  parts so the tile grid can place them apart. First a section holding a
+  visually hidden h2 (heading navigation reaches each tile) and the summary
+  row, a disclosure button (aria-expanded, aria-controls) rather than a
+  native details element, whose content could not be laid out apart from
+  its summary. Then the details: a full-width band that the grid places
+  after the row holding the tile, so opening a tile moves nothing beside
+  it or above it (ui-conventions "No layout shift").
+
+  Working tiles start closed, Warning and Error tiles open
+  (``tile.open``); system-health-v1.js opens a tile the address's anchor
+  names, and the Administrator decides after that: a poll never opens or
+  closes a tile. The summary row's words, the problems and the panel
+  content are data-live-mirror-targets that follow the poll. The open state
+  and the action regions are not, so an open tile, an open preview and a
+  ticked box survive every poll. The problems and panel targets wait while
+  the pointer is over the grid (data-live-mirror-hold), because their
+  height can change. Details come in a fixed order: the problems, then the
+  tile's action region, then the panel content and its links. A page-load
+  tile (``tile.loaded``) has no polled parts.
+{% endcomment %}<section class="health-tile" id="{{ tile.anchor }}" aria-labelledby="{{ tile.anchor }}-name" data-health-tile="{{ tile.key }}">
+<h2 class="visually-hidden" id="{{ tile.anchor }}-name">{{ tile.name }}</h2>
+{% button type="button" class="health-toggle" aria-expanded=tile.open aria-controls=tile.details_id data-health-toggle %}<span class="health-summary"{% if not tile.loaded %} data-live-mirror-target="{{ tile.anchor }}-summary"{% endif %}>{% include "stewardship/system-health-tile-summary.html" %}</span>{% endbutton %}
+</section>
+<div class="health-band" id="{{ tile.details_id }}" role="region" aria-label="{{ tile.details_label }}" data-health-band data-label="{{ tile.details_label }}" data-label-not-current="{{ tile.details_label_not_current }}"{% if not tile.open %} hidden{% endif %}>
+{% if tile.loaded %}{% include tile.panel %}{% else %}<div data-live-mirror-target="{{ tile.anchor }}-problems" data-live-mirror-hold>{% include "stewardship/system-health-tile-problems.html" %}</div>
+{% if tile.key == "source" %}{# Accept this change once, right under the refused change's counts; an open preview is marked changed once a poll shows another refusal (data-live-keyed). #}<div data-live-keyed="accept-change">{% include "stewardship/system-health-accept.html" %}</div>
+{% elif tile.key == "backups" %}{% include "stewardship/system-health-backup-now.html" %}
+{% elif tile.key == "debug" %}{% include "stewardship/system-health-debug-off.html" %}{% endif %}
+<div data-live-mirror-target="{{ tile.anchor }}-panel" data-live-mirror-hold>{% include tile.panel %}</div>{% endif %}
+{% if tile.key == "version" %}<details class="technical-details"><summary>{% translate "Technical details" %}</summary>
+<dl>{% for line in health.processes %}<dt><code>{{ line.service }}/{{ line.process }}{% if line.target %}/{{ line.target }}{% endif %}</code></dt><dd><code>{% if line.running %}running{% else %}not_running{% endif %}{% if line.sender_state %} {{ line.sender_state }}{% endif %} {{ line.version }}{% if line.debug_logging %} debug{% endif %}</code></dd>{% endfor %}
+{% for kind in health.incidents %}<dt>{% translate "Open incident" %}</dt><dd><code>{{ kind }}</code></dd>{% endfor %}
+{% if health.backup_request %}<dt>{% translate "Requested backup" %}</dt><dd><code>{{ health.backup_request.state }}{% if health.backup_request.failure_kind %} {{ health.backup_request.failure_kind }}{% endif %}</code></dd>{% endif %}
+<dt>{% translate "Mode" %}</dt><dd><code>{{ health.mode }}</code></dd></dl>
+<p>{% translate "These values are as of when this page was opened." %}</p></details>
+<p><a href="{% url 'admin:logs' %}">{% translate "System logs" %}</a> · <a href="{% url 'admin:background' %}">{% translate "Background work" %}</a></p>{% endif %}
+</div>

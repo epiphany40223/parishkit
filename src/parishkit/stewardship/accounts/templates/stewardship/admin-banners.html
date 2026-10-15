@@ -13,7 +13,7 @@
   <strong id="debug-in-production-title">{% translate "Debug logging is on in Production" %}</strong>
   <p>{% translate "The server is recording extra detail in its logs that can include Families' personal information. That is only acceptable while testing with disposable data, so debug logging must be off in Production." %}</p>
   <p>{% translate "An Administrator can turn it off now with Turn off debug logging on System health." %} {% translate "To remove it for good, ask the server operator to set PARISHKIT_DEBUG_LOGGING to 0 (or leave it unset) and recreate every application container, as the deployment runbook describes." %} {% translate "This notice disappears once the web portal's debug logging is off." %}</p>
-  {% if admin_chrome.admin %}<p><a href="{% url 'admin:system_health' %}#health-debug-heading">{% translate "See debug logging in System health" %}</a></p>{% endif %}
+  {% if admin_chrome.admin %}<p><a href="{% url 'admin:system_health' %}#health-debug">{% translate "See debug logging in System health" %}</a></p>{% endif %}
 </aside>{% endif %}
 {% if admin_chrome.restored %}<aside class="notice notice-error">{% translate "Restore review is required. Normal campaign activity is unavailable." %}</aside>{% endif %}
 {% if admin_chrome.paused %}<aside class="notice">{% translate "Live campaign email delivery is paused." %}

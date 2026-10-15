@@ -1172,9 +1172,9 @@ Specification: [System health](../../specs/stewardship/admin-portal/spec.md#syst
 - [x] ADM-13.05 — PR 5: add Accept this change once, bound to every recorded count, with example Families (migration), with its commands or their pending exemption.
 - [x] ADM-13.06 — PR 6: add the debug-off switch, its in-process override, its host clear command and Allow debug logging again (Testing only, refused in Production) (migration), with its command or its pending exemption.
 - [x] ADM-13.07 — specify the System health dashboard (#1214): the overall status line, the tiles, the problem registry, opening and closing tiles, Home and the critical-problems banner, and the delivery slices.
-- [ ] ADM-13.08 — dashboard slice 1: the problem registry, its severities and tiles, and the new warning kinds.
-- [ ] ADM-13.09 — dashboard slice 2a: the overall status line, its Not current state, the status indicator icons and the contrast test.
-- [ ] ADM-13.10 — dashboard slice 2b: the tile frame, the tile grid and its bands, its mirror targets, the tiles' Not current state, and the moved, always-drawn controls.
+- [ ] ADM-13.08 — dashboard slice 1: the problem registry, its severities and tiles, and the new warning kinds. (The registry's tiles and severities for the existing kinds, the split of a grouped process problem and the document's `severity` and `tiles` came with ADM-13.09 and ADM-13.10; the new kinds, the backup key rule, Home's key fallback and the shared banner words remain.)
+- [x] ADM-13.09 — dashboard slice 2a: the overall status line, its Not current state, the status indicator icons and the contrast test.
+- [x] ADM-13.10 — dashboard slice 2b: the tile frame, the tile grid and its bands, its mirror targets, the tiles' Not current state, and the moved, always-drawn controls.
 - [ ] ADM-13.11 — dashboard slice 3: the Mail tile.
 - [ ] ADM-13.12 — dashboard slice 4: the ParishSoft refresh tile.
 - [ ] ADM-13.13 — dashboard slice 5: the Backups and Debug logging tiles.

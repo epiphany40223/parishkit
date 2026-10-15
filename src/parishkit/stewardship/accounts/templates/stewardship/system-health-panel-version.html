@@ -1,0 +1,16 @@
+{% load i18n stewardship %}{% comment %}
+  System health's dashboard (#1214) shows this in the Version and services
+  tile's details. The page draws it in a data-live-mirror-target, and the
+  polled status region carries a copy (template[data-live-mirror]) that
+  live-status-v1.js puts in its place on each update, unless the reader is
+  using it or pointing at the tile grid. ``health`` is
+  system_health.SystemHealth. Every time is shown in the browser's time
+  zone. The closed Technical details, as of page load, follow it in the
+  tile.
+{% endcomment %}{% if health.versions|length == 1 %}<p>{% blocktranslate with version=health.versions.0 trimmed %}All services run version {{ version }}.{% endblocktranslate %}</p>
+{% elif health.versions %}<p class="notice notice-error">{% translate "The services run different versions; an upgrade may be unfinished." %}</p>{% else %}<p>{% translate "No service has reported its version." %}</p>{% endif %}
+{% if health.processes %}<div class="table-scroll"><table><caption>{% translate "Services" %}</caption>
+<thead><tr><th scope="col">{% translate "Service" %}</th><th scope="col">{% translate "State" %}</th><th scope="col">{% translate "Version" %}</th><th scope="col">{% translate "Started" %}</th></tr></thead>
+<tbody>{% for line in health.processes %}<tr><th scope="row">{{ line.label }}</th><td>{% if not line.running %}{% translate "Not running" %}{% elif line.service == "web" and line.live > 1 %}{% blocktranslate with count=line.live trimmed %}Running ({{ count }} processes){% endblocktranslate %}{% else %}{% translate "Running" %}{% endif %}</td><td>{{ line.version }}</td><td><time datetime="{{ line.started_at|instant }}" data-local-instant data-compact>{{ line.started_at|instant }}</time></td></tr>{% endfor %}</tbody></table></div>{% endif %}
+<p>{% if health.schema_current %}{% translate "The database matches the version that is running." %}{% else %}<strong>{% translate "The database does not match the version that is running." %}</strong>{% endif %}</p>
+<p>{% translate "Mode:" %} {% if health.mode == "production" %}{% translate "Production" %}{% else %}{% translate "Testing" %}{% endif %}</p>

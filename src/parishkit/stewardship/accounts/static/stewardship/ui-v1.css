@@ -41,6 +41,10 @@
   --error-bg: #fcebe8;
   --error-border: #b42318;
   --error-ink: #8f1d12;
+  /* Log levels without a status colour of their own (#601) */
+  --level-info: #1d5fbf;
+  --level-critical: #7f0000;
+  --level-audit: #5b3fa0;
   /* Shape */
   --radius: .75rem;
   --radius-small: .5rem;
@@ -474,6 +478,77 @@ button.is-busy::after, .button.is-busy::after { content: ""; display: inline-blo
 /* System health's problems: one notice per problem, without list bullets. */
 .health-problems { list-style: none; padding: 0; }
 .health-problems > li { margin-block: .5rem; }
+
+/* System health's dashboard (#1214; admin-portal spec "Health dashboard").
+   Every state look comes from the .status-* classes above, never a fixed
+   colour. Nothing here changes size on a poll:
+   - The overall line keeps one height (room for a 44-pixel button): its
+     counted and Not current forms are both drawn and one is shown, and
+     Refresh System health keeps its space while hidden. Where the line is
+     too narrow for the Not current form and the button side by side (a
+     phone, or a narrow window beside the menu), the button needs a second
+     line, so that height is reserved too. The line's width decides this
+     (a container query), not the window's, because the menu takes part of
+     a wide window. Nothing is clipped, so a focus ring or enlarged text
+     still shows.
+   - Every tile's summary row is two fixed lines (the name and state, then
+     the summary, cut with an ellipsis by CSS only, so its accessible text
+     stays whole), so the grid's rows line up and a poll never changes one.
+   - The grid has as many columns at least 22rem wide as fit, at most three,
+     in the fixed tile order. An open tile's details are a full-width band
+     that dense placement puts after the row holding its tile (later tiles
+     of that row move up beside it), so opening a tile moves nothing beside
+     or above its toggle; only what follows the row moves. No script
+     computes rows. */
+.health-line-box { container-type: inline-size; margin-block: 1rem 0; }
+.health-line { display: flex; align-items: center; gap: 0 1rem; height: 3rem; }
+.health-overall { display: flex; align-items: center; height: 3rem; margin: 0; font-size: clamp(1.1rem, 4.6vw, 1.4rem); white-space: nowrap; }
+.health-overall > span { display: inline-flex; align-items: center; gap: .5rem; color: var(--status-ink); }
+.health-overall .level-icon { width: 1.5rem; height: 1.5rem; }
+.health-last { font-weight: 400; font-size: .85em; }
+.health-restart { flex: none; margin: 0; }
+.health-checked { margin-block: 0 1rem; }
+/* On a narrow line the Not current form wraps after its word, and the
+   button takes the next line; the line reserves that height in every
+   state. The longest form and the button need about 39rem side by side. */
+@container (max-width: 42rem) {
+  .health-line { flex-wrap: wrap; height: 7.25rem; align-content: flex-start; }
+  .health-overall { height: auto; min-height: 3rem; white-space: normal; line-height: 1.3; }
+  .health-overall > span { flex-wrap: wrap; row-gap: 0; }
+}
+[data-health-dashboard]:not([data-not-current]) .health-restart { visibility: hidden; }
+[data-health-dashboard]:not([data-not-current]) .health-unknown,
+[data-health-dashboard][data-not-current] .health-counted { display: none !important; }
+.health-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, max(22rem, calc((100% - 1.5rem) / 3))), 1fr)); grid-auto-flow: row dense; gap: .75rem; align-items: start; }
+.health-tile { position: relative; min-width: 0; }
+.health-band { grid-column: 1 / -1; min-width: 0; padding: 1rem 1.25rem; background: var(--paper); border: 1px solid var(--status-line, var(--border)); border-inline-start-width: calc(1px + var(--status-bar, 0rem)); border-radius: var(--radius-small); }
+.health-band > :first-child, .health-band > :first-child > :first-child { margin-top: 0; }
+.health-band > :last-child { margin-bottom: 0; }
+/* The toggle is the whole summary row; the box inside it carries the look. */
+button.health-toggle, button.health-toggle:not(:disabled):hover { display: block; width: 100%; margin: 0; padding: 0; min-height: 0; border: 0; border-radius: var(--radius-small); background: none; color: inherit; font-weight: 400; text-align: start; box-shadow: none; }
+.health-summary { display: block; }
+.health-box { display: grid; grid-template-rows: 1.5rem 1.5rem; row-gap: .25rem; height: 4.5rem; padding: .5rem .85rem; background: var(--status-bg); color: var(--status-ink); border: 1px solid var(--status-line); border-inline-start-width: calc(1px + var(--status-bar)); border-radius: var(--radius-small); }
+button.health-toggle:hover .health-box { box-shadow: 0 2px 6px rgb(16 24 40 / 16%); }
+.health-head, .health-line-two { display: flex; align-items: center; gap: .5rem; min-width: 0; white-space: nowrap; }
+.health-head .level-icon { width: 1.25rem; height: 1.25rem; }
+.health-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 650; }
+.health-head .status-word { flex: none; }
+.health-said { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: .925rem; }
+.health-cue { flex: none; color: var(--link); font-size: .875rem; text-decoration: underline; }
+[aria-expanded="true"] .health-cue-show, [aria-expanded="false"] .health-cue-hide { display: none; }
+/* A band takes its tile's look, and the open tile's row points at it.
+   While not current, the counted looks give way to the Not current one
+   (the counted words stay in the page, hidden, so :has still sees them). */
+:not([data-not-current]) > .health-grid > .health-tile:has(.health-counted.status-warning) + .health-band { --status-line: var(--warning-border); --status-bar: .35rem; }
+:not([data-not-current]) > .health-grid > .health-tile:has(.health-counted.status-error) + .health-band { --status-line: var(--error-border); --status-bar: .6rem; }
+:not([data-not-current]) > .health-grid > .health-tile:has(.health-counted.status-working) + .health-band { --status-line: var(--accent); }
+[data-not-current] .health-band { --status-line: var(--control-border); --status-bar: 0rem; background: var(--paper-soft); }
+.health-tile:has([aria-expanded="true"])::after { content: ""; position: absolute; inset-inline-start: 1.5rem; bottom: -.75rem; border: .45rem solid transparent; border-top-color: var(--status-line, var(--control-border)); }
+:not([data-not-current]) > .health-grid > .health-tile:has(.health-counted.status-warning) { --status-line: var(--warning-border); }
+:not([data-not-current]) > .health-grid > .health-tile:has(.health-counted.status-error) { --status-line: var(--error-border); }
+:not([data-not-current]) > .health-grid > .health-tile:has(.health-counted.status-working) { --status-line: var(--accent); }
+[data-not-current] .health-tile { --status-line: var(--control-border); }
+.health-band .table-scroll { max-width: 100%; }
 /* The LOCAL deployment's standing banner (#476): the "LOCAL" label and
    hatched edge make it recognizable without relying on color alone. */
 .local-environment { padding: .5rem var(--gutter); background: var(--warning-bg); color: var(--warning-ink); border-bottom: .35rem solid; border-image: repeating-linear-gradient(135deg, var(--warning-border) 0 .75rem, var(--warning-bg) .75rem 1.5rem) 1; text-align: center; font-size: .95rem; }
@@ -689,13 +764,31 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 .log-level .level-icon { width: 1.25rem; height: 1.25rem; }
 .level-icon { flex: none; width: 1rem; height: 1rem; vertical-align: -.15em; }
 .level-icon-debug { color: var(--muted); }
-.level-icon-info { color: #1d5fbf; }
-.level-icon-warning { color: #e3a008; }
-.level-icon-error { color: #c62828; }
-.level-icon-critical { color: #7f0000; }
-.level-icon-audit { color: #5b3fa0; }
+.level-icon-info { color: var(--level-info); }
+.level-icon-warning { color: var(--warning-border); }
+.level-icon-error { color: var(--error-border); }
+.level-icon-critical { color: var(--level-critical); }
+.level-icon-audit { color: var(--level-audit); }
+.level-icon-ok { color: var(--accent); }
+.level-icon-unknown { color: var(--control-border); }
 .log-row-critical > th, .log-row-critical > td { background: var(--error-bg); }
-.log-row-critical > th:first-child { box-shadow: inset .35rem 0 0 #7f0000; }
+.log-row-critical > th:first-child { box-shadow: inset .35rem 0 0 var(--level-critical); }
+
+/* Status indicators (ui-conventions "Status indicators", #1214): a status
+   that says whether something works shows a word, an icon whose shape
+   differs per state (components/level-icon.html: ok, warning, error,
+   unknown) and these colours, never colour alone. Each state class sets
+   the custom properties a component reads: text, icon and border, the
+   background, and the start bar's width, so an Error stands out more than a
+   Warning. test_design_tokens.py checks every pair's contrast. Not current
+   takes --control-border for its icon and border: --border is too faint
+   against --paper-soft for the 3:1 non-text minimum. */
+.status-working { --status-ink: var(--ink); --status-line: var(--accent); --status-bg: var(--accent-soft); --status-bar: 0rem; }
+.status-warning { --status-ink: var(--warning-ink); --status-line: var(--warning-border); --status-bg: var(--warning-bg); --status-bar: .35rem; }
+.status-error { --status-ink: var(--error-ink); --status-line: var(--error-border); --status-bg: var(--error-bg); --status-bar: .6rem; }
+.status-unknown { --status-ink: var(--muted); --status-line: var(--control-border); --status-bg: var(--paper-soft); --status-bar: 0rem; }
+.status-working .level-icon, .status-warning .level-icon, .status-error .level-icon, .status-unknown .level-icon { color: var(--status-line); }
+.status-error .status-word { font-weight: 700; }
 .log-table th, .log-table td { vertical-align: top; }
 .log-filters { margin-block: 1rem; }
 .log-level-choices { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; margin: 0; padding: 0; border: 0; }

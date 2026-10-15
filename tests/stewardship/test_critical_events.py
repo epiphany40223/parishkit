@@ -138,4 +138,4 @@ def test_standing_banners_are_labelled_not_announced_on_every_page():
         assert f'aria-labelledby="{name}"' in html and f'id="{name}"' in html
     # Both standing problem banners lead to System health (ADM-13).
     assert 'href="/admin/system/health/"' in html
-    assert 'href="/admin/system/health/#health-debug-heading"' in html
+    assert 'href="/admin/system/health/#health-debug"' in html

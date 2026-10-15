@@ -24,11 +24,14 @@ debug-off switch, has its own (``allow_debug``), since it updates the switch
 instead of recording a row.
 
 Pure helpers (``group_processes``, ``find_problems``) take every input as an
-argument, so they are unit tested without a database.
+argument, so they are unit tested without a database. So does the dashboard
+(#1214): ``REGISTRY`` gives each problem kind its home tile and severity,
+and ``dashboard`` turns a read into the overall status line and the seven
+tiles the page shows.
 """
 
 import logging
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field, fields, replace
 from datetime import datetime, timedelta
 from functools import cache
 
@@ -74,6 +77,44 @@ RUNBOOKS = {
 }
 # Family email purposes, whose waiting retries the page counts.
 FAMILY_PURPOSES = ("initial", "reminder")
+
+# The dashboard's tiles (admin-portal spec, "Health tiles", #1214), in their
+# fixed page order. Mail comes first: it is what an Administrator watches
+# during a send.
+TILES = ("mail", "source", "backups", "debug", "source-form", "resave", "version")
+# The two tiles read only when the page opens, never by the poll; the page
+# passes their states to the status fragment (``?loaded=``).
+LOADED_TILES = ("source-form", "resave")
+# Each problem kind's home tile and severity: the spec's "Health problem
+# registry". A not-running or not-reported problem has no single home; the
+# page splits its subjects between Mail and Version and services
+# (``tile_parts``). Its entry is the severity of the Version and services
+# part; an installer that stopped is only a warning there.
+REGISTRY = {
+    "sender_halted": ("mail", "error"),
+    "sender_outage": ("mail", "warning"),
+    "mail_provider_unavailable": ("mail", "error"),
+    # A CRITICAL entry: later emails still go to the refused address (#1201).
+    "refusal_unrecorded": ("mail", "error"),
+    "not_running": ("version", "error"),
+    "not_reported": ("version", "error"),
+    "source_failing": ("source", "warning"),
+    "source_failed": ("source", "warning"),
+    "source_late": ("source", "warning"),
+    "source_destructive_change": ("source", "error"),
+    "source_tenant_mismatch": ("source", "error"),
+    "source_retention_failing": ("source", "warning"),
+    "backup_rpo_breach": ("backups", "error"),
+    "backup_offsite_failed": ("backups", "warning"),
+    "backup_key_changed": ("backups", "warning"),
+    "debug_logging": ("debug", "warning"),
+    "versions_differ": ("version", "error"),
+    "schema_mismatch": ("version", "error"),
+}
+PROCESS_KINDS = frozenset({"not_running", "not_reported"})
+INSTALLERS = frozenset({"config-installer", "credential-installer"})
+# How bad each tile state is, for "worst of".
+RANK = {"working": 0, "warning": 1, "error": 2}
 
 
 def process_label(service, process, target=None):
@@ -273,8 +314,20 @@ class Problem:
         return len(self.subjects) > 1
 
     @property
+    def severity(self):
+        """The registry's severity: the worst of the parts the page shows."""
+        return max(
+            (severity for _, severity, _ in tile_parts(self)), key=RANK.__getitem__
+        )
+
+    @property
+    def tiles(self):
+        """The tiles that show this problem, in page order."""
+        return tuple(tile for tile, _, _ in tile_parts(self))
+
+    @property
     def summary(self):
-        """A few plain words naming the problem, for the announcement."""
+        """A few plain words naming the problem, for a tile and the announcement."""
         from django.utils.translation import gettext as _
 
         words = {
@@ -338,6 +391,47 @@ class DropCount:
             "active_head_families": _("Families with an active head of household"),
             "valid_email_contacts": _("Valid email addresses"),
         }.get(self.measure, self.measure)
+
+
+def tile_parts(problem, processes=()):
+    """The ``(tile, severity, problem)`` parts the page shows ``problem`` as.
+
+    One part, from the registry, for most kinds. A not-running or
+    not-reported problem names several services at once (#686); the page
+    splits it by subject, so the mail senders' part shows in the Mail tile
+    and the rest in Version and services, each part naming only its own
+    subjects. A stopped mail sender is an error; in Version and services a
+    part that names only installers is a warning, any other an error. Home
+    and the command keep the one grouped problem.
+
+    ``processes`` are the page's ``ProcessLine`` values: a split not-running
+    part's time is then its own subjects' most recent report rather than the
+    whole group's. Without them the group's time stays.
+    """
+    tile, severity = REGISTRY[problem.kind]
+    if problem.kind not in PROCESS_KINDS:
+        return ((tile, severity, problem),)
+    mail = tuple(s for s in problem.subjects if s.service == "mail-dispatch")
+    rest = tuple(s for s in problem.subjects if s.service != "mail-dispatch")
+    split = bool(mail and rest)
+    parts = []
+    for tile, subjects in (("mail", mail), ("version", rest)):
+        if not subjects:
+            continue
+        if tile == "version" and all(s.service in INSTALLERS for s in subjects):
+            severity = "warning"
+        else:
+            severity = "error"
+        at = problem.at
+        if split and problem.kind == "not_running":
+            times = [
+                line.reported_at
+                for line in processes
+                if Subject(line.service, line.process, line.target) in subjects
+            ]
+            at = max(times, default=at)
+        parts.append((tile, severity, replace(problem, subjects=subjects, at=at)))
+    return tuple(parts)
 
 
 def _order(line):
@@ -582,6 +676,8 @@ class SystemHealth(ReadModel):
                 value = [
                     {
                         "kind": problem.kind,
+                        "severity": problem.severity,
+                        "tiles": list(problem.tiles),
                         "subjects": [_members(subject) for subject in problem.subjects],
                         "at": problem.at,
                         "count": problem.count,
@@ -654,33 +750,319 @@ class SystemHealth(ReadModel):
         )
 
     @property
+    def mail_wait(self):
+        """The first running mail sender held at a limit (the daily limit or
+        Gmail's), which the Mail tile's summary names, or None."""
+        return next(
+            (
+                line
+                for line in self.senders
+                if line.running and line.sender_state in {"daily_limit", "gmail_held"}
+            ),
+            None,
+        )
+
+    @property
+    def live_request(self):
+        """Whether a requested backup is waiting, held or running."""
+        request = self.backup_request
+        return bool(request and request.status in LIVE_REQUEST)
+
+    @property
     def debug_lines(self):
         """The running processes with debug logging in effect."""
         return tuple(
             line for line in self.processes if line.running and line.debug_logging
         )
 
+
+# ------------------------------------------------------------ the dashboard
+
+# Page notices that are not yet in the shared problem list (the registry
+# slice of #1214 moves them there, so Home lists them too). On the page they
+# raise their tile to Warning, so a tile never stays closed and Working over
+# a notice that needs the Administrator.
+FINDINGS = {
+    "workgroup_missing": "source",
+    "backup_key_mismatch": "backups",
+    "backup_request_failed": "backups",
+    "offsite_missing": "backups",
+}
+# A requested backup in these page statuses ended without a backup.
+FAILED_REQUESTS = frozenset({"failed", "did_not_finish", "not_picked_up"})
+
+
+def page_findings(health, *, workgroup_missing=None):
+    """The page-only findings that hold now, in their tiles' order.
+
+    ``workgroup_missing`` is the page's unknown No-reminders WorkGroup name
+    (``read_health``'s ``page``), or None. Off-site copies that are not set
+    up are a finding in Production only (decision 5 of 2026-10-13).
+    """
+    request = health.backup_request
+    held = {
+        "workgroup_missing": bool(workgroup_missing),
+        "backup_key_mismatch": health.backup_key_matches is False,
+        "backup_request_failed": bool(request and request.status in FAILED_REQUESTS),
+        "offsite_missing": health.mode == "production" and health.offsite is None,
+    }
+    return tuple(kind for kind in FINDINGS if held[kind])
+
+
+def loaded_states(source_form, resave):
+    """The page-load tiles' states that are not Working, by tile.
+
+    ``source_form`` is ``source_form_summary``'s answer (a count, None when
+    the check could not run, or "no_data" / "no_campaign") and ``resave``
+    ``resave_summary``'s (the flagged items, None, or "no_campaign"). A
+    Family that cannot open the form, or a check that could not run, is a
+    warning; an item that cannot be sent until it is fixed (``blocked``) is
+    an error, any other item to re-save a warning.
+    """
+    states = {}
+    if source_form is None or (isinstance(source_form, int) and source_form > 0):
+        states["source-form"] = "warning"
+    if resave is None:
+        states["resave"] = "warning"
+    elif resave and resave != "no_campaign":
+        blocked = any(item["blocked"] for item in resave)
+        states["resave"] = "error" if blocked else "warning"
+    return states
+
+
+def parse_loaded(value):
+    """The page-load tiles' states the page passed the fragment (``?loaded=``).
+
+    ``value`` is "source-form:warning,resave:error" or empty. Anything
+    outside the two tiles and their two non-Working states is ignored: the
+    fragment records and changes nothing, so a forged value can only
+    mislabel the requester's own page.
+    """
+    states = {}
+    for item in (value or "").split(","):
+        tile, _, state = item.partition(":")
+        if tile in LOADED_TILES and state in {"warning", "error"}:
+            states[tile] = state
+    return states
+
+
+def loaded_query(states):
+    """``parse_loaded``'s input for ``states``, in tile order."""
+    return ",".join(f"{tile}:{states[tile]}" for tile in LOADED_TILES if tile in states)
+
+
+def tile_name(key):
+    """A tile's area name, as its heading and the announcement say it."""
+    from django.utils.translation import gettext as _
+
+    return {
+        "mail": _("Mail"),
+        "source": _("ParishSoft refresh"),
+        "backups": _("Backups"),
+        "debug": _("Debug logging"),
+        "source-form": _("Families the form cannot open"),
+        "resave": _("Pages and emails to re-save"),
+        "version": _("Version and services"),
+    }[key]
+
+
+@dataclass(frozen=True)
+class Tile:
+    """One dashboard tile: its area, its state, and what it shows.
+
+    ``problems`` are the problem parts the tile shows (``tile_parts``), in
+    page order; ``counted`` those that set its state (a refused change
+    already accepted once is shown but not counted, as ``attention``
+    says). ``findings`` are its page-only notices (``FINDINGS``). A
+    page-load tile (``loaded``) has none of these: its state comes from the
+    page's own read (``loaded_states``).
+    """
+
+    key: str
+    state: str = "working"
+    problems: tuple = ()
+    counted: tuple = ()
+    findings: tuple = ()
+    loaded: bool = False
+
+    @property
+    def name(self):
+        """The area's name."""
+        return tile_name(self.key)
+
+    @property
+    def anchor(self):
+        """The tile's fixed anchor ("health-mail"), which Home's links use."""
+        return f"health-{self.key}"
+
+    @property
+    def details_id(self):
+        """The id of the tile's details band."""
+        return f"health-{self.key}-details"
+
+    @property
+    def panel(self):
+        """The template of the tile's panel content."""
+        return f"stewardship/system-health-panel-{self.key}.html"
+
+    @property
+    def word(self):
+        """The state word the tile shows beside its icon."""
+        from django.utils.translation import gettext as _
+
+        return {
+            "working": _("Working"),
+            "warning": _("Warning"),
+            "error": _("Error"),
+        }[self.state]
+
+    @property
+    def details_label(self):
+        """The details band's accessible name."""
+        from django.utils.translation import gettext as _
+
+        return _("%(name)s details") % {"name": self.name}
+
+    @property
+    def details_label_not_current(self):
+        """The details band's accessible name while the page is not current."""
+        from django.utils.translation import gettext as _
+
+        return _("%(name)s details, not current") % {"name": self.name}
+
+    @property
+    def icon(self):
+        """The status indicator icon for its state."""
+        return {"working": "ok"}.get(self.state, self.state)
+
+    @property
+    def top(self):
+        """The counted part its summary names: the most severe (the first in
+        page order when several tie), or None when only findings count."""
+        return next(
+            (part for part in self.counted if part.severity == self.state), None
+        )
+
+    @property
+    def top_finding(self):
+        """The finding its summary names when no counted problem does."""
+        if self.top is not None or not self.findings:
+            return None
+        return self.findings[0]
+
+    @property
+    def more(self):
+        """How many more counted problems and findings the summary has."""
+        return max(len(self.counted) + len(self.findings) - 1, 0)
+
+    @property
+    def open(self):
+        """Whether the tile starts open: only Warning and Error tiles do."""
+        return self.state != "working"
+
+
+@dataclass(frozen=True)
+class TilePart:
+    """A problem as one tile shows it, with that tile's severity for it."""
+
+    problem: Problem
+    severity: str
+
+
+@dataclass(frozen=True)
+class Dashboard:
+    """The overall status line and the seven tiles (admin-portal spec,
+    "Health dashboard")."""
+
+    tiles: tuple
+
+    @property
+    def errors(self):
+        """The tiles in the Error state, in page order."""
+        return tuple(tile for tile in self.tiles if tile.state == "error")
+
+    @property
+    def warnings(self):
+        """The tiles in the Warning state, in page order."""
+        return tuple(tile for tile in self.tiles if tile.state == "warning")
+
+    @property
+    def state(self):
+        """The overall line's state: the worst tile's."""
+        return max((tile.state for tile in self.tiles), key=RANK.__getitem__)
+
+    @property
+    def icon(self):
+        """The status indicator icon for the overall state."""
+        return {"working": "ok"}.get(self.state, self.state)
+
     @property
     def announcement(self):
-        """The short sentence screen readers hear when the problems change."""
+        """The sentence screen readers hear when the line's tiles change.
+
+        "System health: 1 error (Backups) and 2 warnings (Mail, ParishSoft
+        refresh)." It names the tiles, so it changes whenever the set of
+        tiles it counts does, not only when the numbers do.
+        """
         from django.utils.translation import gettext, ngettext
 
-        attention = self.attention
-        if not self.problems:
-            return gettext("Everything is working.")
-        if not attention:
-            return gettext("Nothing needs attention.")
-        # The short names make the sentence change whenever the set of
-        # problems does, not only when their number does, so a problem that
-        # ends as another begins is still announced.
-        return ngettext(
-            "%(count)d problem needs attention: %(names)s.",
-            "%(count)d problems need attention: %(names)s.",
-            len(attention),
-        ) % {
-            "count": len(attention),
-            "names": "; ".join(problem.summary for problem in attention),
-        }
+        def counted(tiles, one, many):
+            """ "2 warnings (Mail, ParishSoft refresh)"."""
+            return ngettext(one, many, len(tiles)) % {
+                "count": len(tiles),
+                "names": ", ".join(str(tile.name) for tile in tiles),
+            }
+
+        errors = counted(
+            self.errors, "%(count)d error (%(names)s)", "%(count)d errors (%(names)s)"
+        )
+        warnings = counted(
+            self.warnings,
+            "%(count)d warning (%(names)s)",
+            "%(count)d warnings (%(names)s)",
+        )
+        if self.errors and self.warnings:
+            return gettext("System health: %(errors)s and %(warnings)s.") % {
+                "errors": errors,
+                "warnings": warnings,
+            }
+        if self.errors or self.warnings:
+            return gettext("System health: %(counted)s.") % {
+                "counted": errors if self.errors else warnings
+            }
+        return gettext("System health: all working.")
+
+
+def dashboard(health, *, findings=(), loaded=None):
+    """The dashboard for ``health``: every tile, in the fixed order.
+
+    ``findings`` are ``page_findings``'s kinds and ``loaded`` the page-load
+    tiles' states (``loaded_states`` on the page, ``parse_loaded`` in the
+    fragment). A tile's state is the worst of its counted problems'
+    severities, with each finding a warning; a tile with nothing to report
+    is Working.
+    """
+    loaded = loaded or {}
+    attention = set(health.attention)
+    shown = {key: [] for key in TILES}
+    counted = {key: [] for key in TILES}
+    for problem in health.problems:
+        for tile, severity, part in tile_parts(problem, health.processes):
+            entry = TilePart(part, severity)
+            shown[tile].append(entry)
+            if problem in attention:
+                counted[tile].append(entry)
+    tiles = []
+    for key in TILES:
+        if key in LOADED_TILES:
+            tiles.append(Tile(key, loaded.get(key, "working"), loaded=True))
+            continue
+        notes = tuple(kind for kind in findings if FINDINGS[kind] == key)
+        states = [entry.severity for entry in counted[key]]
+        states += ["warning"] * len(notes)
+        state = max(states, key=RANK.__getitem__, default="working")
+        tiles.append(Tile(key, state, tuple(shown[key]), tuple(counted[key]), notes))
+    return Dashboard(tuple(tiles))
 
 
 def _members(entry):
