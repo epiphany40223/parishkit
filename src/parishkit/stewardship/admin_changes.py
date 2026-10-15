@@ -487,22 +487,29 @@ def _target(service, campaign_id):
     return target
 
 
-def _admit_change(caller, service, *, read_only=False):
+def _admit_change(caller, service, *, read_only=False, capability=None):
     """The page's admission of a change, recording activity as its post does.
 
     A session that ended since the command was admitted is exit 5
     (``session_ended``), not the page's signed-out refusal. ``read_only``
-    checks the same Administrator capability but renews nothing: a
-    prompting command runs it before any lookup or prompt (#1339), so a
-    session whose user is no longer an Administrator is ``denied`` before
-    anything is read, and the action admits again as its post does.
+    checks the same capability but renews nothing: a prompting command runs
+    it before any lookup or prompt (#1339, #1341), so a session whose user
+    lacks the capability is ``denied`` before anything is read, and the
+    action admits again as its post does. ``capability`` is the one the
+    command's page needs (``CONFIGURE``, an Administrator's, by default).
     """
     from .accounts.admin_editing import principal
     from .accounts.automation_sessions import SessionUnusable
+    from .accounts.policy import Capability
     from .accounts.sessions import authenticated_admin
 
     try:
-        return principal(caller, service, read_only=read_only)
+        return principal(
+            caller,
+            service,
+            read_only=read_only,
+            capability=capability or Capability.CONFIGURE,
+        )
     except PermissionError:
         if authenticated_admin(caller, store=service.store, read_only=True) is None:
             raise SessionUnusable("session_ended") from None

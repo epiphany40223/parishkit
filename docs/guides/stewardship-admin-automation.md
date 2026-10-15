@@ -1421,6 +1421,12 @@ pass `--yes` in a script; `--yes` is required when the command also reads an
 input from standard input (`-`). Logs record whether the answer came from
 the prompt or from `--yes`.
 
+A prompting command checks your role first: if your user no longer may do
+the action (an Administrator who is now Staff, say), it exits 1 (`denied`)
+before it reads any input, looks anything up or prompts. A command Staff
+may run, such as `export financial` or `census resolve`, still prompts
+Staff.
+
 No command of this release does an action that needs a recent Google
 sign-in; they arrive in later releases. When a session stands in for one
 (pausing or resuming mail, a chosen-Family test, a financial export, the

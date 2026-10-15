@@ -861,6 +861,22 @@ def _input(value, context, limit):
         raise ValueError("The input is not UTF-8.") from None
 
 
+def _role_first(context, runtime, capability=None):
+    """Check the command's capability first, renewing nothing (#1339, #1341).
+
+    A prompting or confirming command calls this as its first step, before
+    it reads any input, looks anything up or prompts, so a session whose
+    user lacks the capability (an Administrator who is now Staff, say) is
+    ``denied`` and sees no prompt. ``capability`` is the one the action's
+    own admission checks (``CONFIGURE``, an Administrator's, by default), so
+    a command Staff may run stays Staff's; the action still admits as its
+    page's post does.
+    """
+    from .admin_changes import _admit_change
+
+    _admit_change(context["caller"], runtime, read_only=True, capability=capability)
+
+
 def schedule_preview(args, preamble, runtime, context):
     """Review a change to mail schedules or campaign dates (PR 4)."""
     from .admin_changes import CHANGES_LIMIT, preview_schedule
@@ -901,6 +917,9 @@ def config_request_cancel(args, preamble, runtime, context):
     the prompt comes before any transaction opens.
     """
     from .admin_changes import REASON_LIMIT, cancel_end_change
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
 
     reason = _input(args.reason, context, REASON_LIMIT * 4)
     confirm(
@@ -1066,6 +1085,9 @@ def sample_test(args, preamble, runtime, context):
     from .admin_changes import TOKEN_LIMIT
     from .admin_tests import UNKNOWN_ACKNOWLEDGEMENT, send_sample, unknown_outcome
 
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
+
     token = _input(args.token, context, TOKEN_LIMIT)
     unknown = unknown_outcome(context["caller"], runtime)
     if unknown:
@@ -1132,6 +1154,9 @@ def families_test(args, preamble, runtime, context):
     """
     from .admin_changes import TOKEN_LIMIT
     from .admin_tests import FAMILIES_ACKNOWLEDGEMENT, families_count, send_families
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
 
     token = _input(args.token, context, TOKEN_LIMIT)
     count = families_count(token)
@@ -1251,7 +1276,7 @@ def integration_confirm(args, preamble, runtime, context):
     values), after checking the Administrator role and then the token's
     signature, and before any transaction.
     """
-    from .admin_changes import TOKEN_LIMIT, _admit_change
+    from .admin_changes import TOKEN_LIMIT
     from .admin_integration_changes import (
         applied_settings,
         confirm_integration,
@@ -1260,7 +1285,7 @@ def integration_confirm(args, preamble, runtime, context):
 
     # The role first (#1339): Staff is denied before any read or prompt
     # could say whether the integration has a reviewed change.
-    _admit_change(context["caller"], runtime, read_only=True)
+    _role_first(context, runtime)
     token = _input(args.token, context, TOKEN_LIMIT)
     applied = applied_settings(runtime, args.target)
     confirm(context, prompt_lines(args.target, token, applied))
@@ -1323,12 +1348,12 @@ def integration_key_finish_switching(args, preamble, runtime, context):
     values), after checking the Administrator role and then the token's
     signature, and before any transaction.
     """
-    from .admin_changes import TOKEN_LIMIT, _admit_change
+    from .admin_changes import TOKEN_LIMIT
     from .admin_integration_keys import confirm_finish, finish_prompt_lines
 
     # The role first (#1339): Staff is denied before any read or prompt
     # could say whether the integration has a key change.
-    _admit_change(context["caller"], runtime, read_only=True)
+    _role_first(context, runtime)
     token = _input(args.token, context, TOKEN_LIMIT)
     confirm(context, finish_prompt_lines(runtime, args.target, token))
     return confirm_finish(
@@ -1550,6 +1575,9 @@ def history_remove(args, preamble, runtime, context):
     """Remove one year's imported figures, as the page's Remove does (#1018)."""
     from .admin_history import remove_archive
 
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
+
     confirm(
         context,
         (
@@ -1579,6 +1607,9 @@ def system_backup_now(args, preamble, runtime, context):
     """
     from .system_health import backup_now, backup_preview_lines
 
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
+
     # A repeat with the key of a request already recorded asks nothing and
     # returns that request, as the page's repeated confirmation does.
     lines = backup_preview_lines(runtime.store, key=args.request_key)
@@ -1603,6 +1634,9 @@ def system_debug_off(args, preamble, runtime, context):
     for the page's recent sign-in, as the switch's guard admits.
     """
     from .system_health import debug_off, debug_off_preview_lines
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
 
     lines = debug_off_preview_lines(runtime.store, key=args.request_key)
     if lines is not None:
@@ -1640,6 +1674,9 @@ def system_refresh_accept(args, preamble, runtime, context):
     from .admin_changes import TOKEN_LIMIT
     from .system_health import accept_prompt_lines, refresh_accept
 
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
+
     token = _input(args.token, context, TOKEN_LIMIT)
     confirm(context, accept_prompt_lines(runtime, token, context["caller"]))
     return refresh_accept(context["caller"], runtime, token=token, context=context)
@@ -1658,6 +1695,9 @@ def system_debug_allow(args, preamble, runtime, context):
     """
     from .system_health import debug_allow, debug_allow_preview_lines
 
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
+
     switch, lines = debug_allow_preview_lines(runtime.store, switch=args.switch)
     if lines is not None:
         confirm(context, lines)
@@ -1673,6 +1713,9 @@ def portal_maintenance_set(args, preamble, runtime, context):
     """
     from .accounts.family_maintenance import MESSAGE_LIMIT, clean_message
     from .admin_portal import set_maintenance
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
 
     closed = args.state == "closed"
     if args.message is not None and not closed:
@@ -1781,6 +1824,9 @@ def export_archive(args, preamble, runtime, context):
     """
     from .admin_family_exports import export_archive as request
 
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
+
     confirm(
         context,
         (
@@ -1804,7 +1850,11 @@ def export_financial(args, preamble, runtime, context):
     any transaction opens; the session then stands in for the page's recent
     sign-in (``admin_family_exports.export_financial``).
     """
+    from .accounts.policy import Capability
     from .admin_family_exports import export_financial as request
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime, Capability.FINANCIAL_DETAIL)
 
     confirm(
         context,
@@ -1879,7 +1929,11 @@ def export_directory(args, preamble, runtime, context):
     Fresh-gated (#547), so it asks at the confirmation prompt first, as
     ``export financial`` does.
     """
+    from .accounts.policy import Capability
     from .admin_family_exports import export_directory as request
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime, Capability.FAMILY_CODES)
 
     confirm(
         context,
@@ -1911,7 +1965,11 @@ def export_postal(args, preamble, runtime, context):
     Fresh-gated (#547), so it asks at the confirmation prompt first, as
     ``export financial`` does.
     """
+    from .accounts.policy import Capability
     from .admin_family_exports import export_directory as request
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime, Capability.FAMILY_CODES)
 
     for pair in args.filter or ():
         name, _, value = pair.partition("=")
@@ -1989,7 +2047,11 @@ def export_family_timeline(args, preamble, runtime, context):
     The file can hold the Family's live code, so it is fresh-gated (#547)
     and asks at the confirmation prompt first, as ``export directory`` does.
     """
+    from .accounts.policy import Capability
     from .admin_family_exports import export_family_timeline as request
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime, Capability.CAMPAIGN_REPORT)
 
     confirm(
         context,
@@ -2231,8 +2293,12 @@ def census_resolve(args, preamble, runtime, context):
     dialog does, it asks first (or takes ``--yes``); Ignore and Reopen can
     be undone and ask nothing, as on the page.
     """
+    from .accounts.policy import Capability
     from .admin_census import resolve_census
     from .responses.census_resolution import MAX_NOTE
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime, Capability.VIEW_CENSUS)
 
     key = _request_key(args, context)
     # The page strips the note it posts; so does a note read from standard
@@ -2305,7 +2371,11 @@ def digest_weekly_request(args, preamble, runtime, context):
     already reported; the command asks the same at the prompt (or takes
     ``--yes``), before a request key is made or any transaction opens.
     """
+    from .accounts.policy import Capability
     from .admin_digests import acknowledgement, request_weekly
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime, Capability.BACKGROUND_WORK)
 
     confirm(context, ("Queue a new manual weekly report.", acknowledgement()))
     return request_weekly(
@@ -2340,7 +2410,11 @@ def delivery_resend(args, preamble, runtime, context):
     has nothing left to read and the key is already on standard error; the
     prompt comes before any transaction opens.
     """
+    from .accounts.policy import Capability
     from .admin_operations import NOTE_LIMIT, resend_delivery_command
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime, Capability.BACKGROUND_WORK)
 
     key = _request_key(args, context)
     note = _input(args.note, context, NOTE_LIMIT * 4)
@@ -2364,7 +2438,11 @@ def delivery_resend(args, preamble, runtime, context):
 
 def delivery_refusal_clear(args, preamble, runtime, context):
     """Clear one verified refused address, as its page's form does (PR 9c)."""
+    from .accounts.policy import Capability
     from .admin_operations import NOTE_LIMIT, clear_refusal_command
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime, Capability.BACKGROUND_WORK)
 
     key = _request_key(args, context)
     note = _input(args.note, context, NOTE_LIMIT * 4)
@@ -2394,7 +2472,11 @@ def delivery_bounce_report(args, preamble, runtime, context):
     summary names the email, never the address or the note, and warns, as
     the page's notice does, when the address is the Family's only one left.
     """
+    from .accounts.policy import Capability
     from .admin_operations import NOTE_LIMIT, report_bounce_command
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime, Capability.BACKGROUND_WORK)
 
     key = _request_key(args, context)
     note = _input(args.note, context, NOTE_LIMIT * 4)

@@ -339,6 +339,10 @@ def test_the_manual_request_needs_the_acknowledgement(monkeypatch):
             return False
 
     monkeypatch.setattr(admin_cli, "ADMISSION", lambda configuration: Runtime())
+    # The role check that comes before the prompt (#1341) admits.
+    monkeypatch.setattr(
+        "parishkit.stewardship.admin_changes._admit_change", lambda *a, **k: None
+    )
     monkeypatch.setattr(
         admin_cli,
         "admit_session",

@@ -196,6 +196,11 @@ def test_staff_enter_and_ignore_but_never_reopen(
     assert code == 0, document
     with monkeypatch.context() as patch:
         staff(patch)
+        # The early role check is the page's own capability (#1341), which
+        # Staff hold: they still reach the prompt.
+        code, document = resolve(run, home, "entered")
+        assert code == 4, document
+        assert document["error"]["code"] == "confirmation_required"
         code, document = resolve(run, home, "entered", "--yes")
         assert code == 0, document
     assert document["result"]["proposal"]["execution"] == "resolved_external"

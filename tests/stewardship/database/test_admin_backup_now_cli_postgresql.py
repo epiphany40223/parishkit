@@ -19,7 +19,7 @@ from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.jobs.backup_models import BackupRequest
 
 from .auth_builders import unguarded
-from .automation_builders import paired
+from .automation_builders import as_staff, paired
 from .test_admin_test_sample_cli_postgresql import runner
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -90,3 +90,27 @@ def test_a_read_only_session_cannot_request_a_backup(admin):
     code, refused, _ = backup_now(admin, reader, "--yes")
     assert code != 0 and refused["error"]["code"] in {"denied", "scope_required"}
     assert not BackupRequest.objects.exists()
+
+
+def test_staff_is_denied_before_the_preview(admin, monkeypatch):
+    """The role comes first (#1341): a full-scope session whose user is now
+    Staff is denied, unprompted, whether or not a backup is waiting, so the
+    refusal says nothing of the preview's state."""
+    _, secret, _ = paired(admin.service)
+    with monkeypatch.context() as patch:
+        as_staff(patch)
+        for answer in (b"", b"yes\n"):
+            code, refused, errors = backup_now(admin, secret, answer=answer)
+            assert code == 1 and refused["error"]["code"] == "denied", refused
+            assert "Type yes" not in errors and "Off-site" not in errors, errors
+    assert not BackupRequest.objects.exists()
+    # A backup now waiting would be refused (stale_version) before the
+    # prompt; Staff is denied all the same.
+    code, document, _ = backup_now(admin, secret, "--yes")
+    assert code == 0, document
+    with monkeypatch.context() as patch:
+        as_staff(patch)
+        code, refused, errors = backup_now(admin, secret, answer=b"yes\n")
+        assert code == 1 and refused["error"]["code"] == "denied", refused
+        assert "Type yes" not in errors
+    assert BackupRequest.objects.count() == 1
