@@ -74,6 +74,7 @@ from .limiting import LimiterUnavailable
 from .policy import Capability, allows
 from .request_patch import build_candidate
 from .sessions import authenticated_admin
+from .timezone_field import browser_default
 
 # A salt of its own, so a creation preview can never be confirmed on Campaign
 # settings (whose confirmation refuses any added campaign) or the reverse.
@@ -203,6 +204,18 @@ def creation_form(configuration, source, data=None):
     )
     # Same plain-language field help as Campaign settings.
     setup_help.apply(form, setup_help.ADMIN_CAMPAIGN, replace=True)
+    return any_zone(form)
+
+
+def any_zone(form):
+    """Start the form's zone on the browser's; any zone may be chosen (#1330).
+
+    The menu starts on the browser's zone when it offers it, else on the
+    form's initial (parish) zone, and its help says so. The browser
+    component pages build their form with this too.
+    """
+    form.fields["timezone"].help_text = setup_help.CREATION_TIMEZONE
+    browser_default(form)
     return form
 
 
@@ -220,16 +233,10 @@ def creation_review(service, actor, state, form):
         return None
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
         raise stale_page()
+    # Any catalog zone is accepted (TimezoneField, campaign_values), not only
+    # the parish zone: the campaign's dates and schedules are resolved in its
+    # own zone (Administrator, 2026-10-15, #1330).
     values = form.values()
-    if values["timezone"] != configuration.active_configuration.parish.timezone:
-        form.add_error(
-            "timezone",
-            _(
-                "The campaign starts in the Parish timezone. "
-                "Edit the draft afterward to change it."
-            ),
-        )
-        return None
     target = str(uuid4())
     # The campaign starts with the default text for every page and email its
     # modules use, added in this same configuration change so it never exists
