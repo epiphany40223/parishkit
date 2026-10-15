@@ -102,6 +102,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "integration list",
         "integration show",
         "integration status",
+        "integration schedule-preview",
         "integration preview",
         "integration confirm",
         "integration backup-probe",

@@ -1191,7 +1191,9 @@ access and Dismiss (see
 [Checking the backup folder and dismissing a key change](#checking-the-backup-folder-and-dismissing-a-key-change)),
 and `integration key status` and the Finish switching commands follow a key
 change and finish switching to it (see
-[Following a key change and finishing the switch](#following-a-key-change-and-finishing-the-switch));
+[Following a key change and finishing the switch](#following-a-key-change-and-finishing-the-switch)),
+and `integration schedule-preview` previews the ParishSoft refresh schedule
+(see [Previewing the refresh schedule](#previewing-the-refresh-schedule));
 pasting a new key stays on the pages for now.
 
 ```sh
@@ -1329,6 +1331,38 @@ what changes in words; it is null when the schedule does not change. The
 preview changes nothing. `integration confirm` prompts with the stored
 setting names that change (such as `refresh_rules`) and records the
 request as above; the new schedule applies when the request installs.
+
+#### Previewing the refresh schedule
+
+`integration schedule-preview` is the ParishSoft page's live check of its
+schedule editor: the next seven days of refreshes, the cost and the
+freshness line, without saving anything. Without an option it previews the
+applied schedule. With `--refresh-schedule DOCUMENT` (or `-` for standard
+input) it previews a proposed one, in the same document
+`integration preview` takes:
+
+```sh
+pk-admin integration schedule-preview
+pk-admin integration schedule-preview --refresh-schedule - < schedule.json
+```
+
+It needs an Administrator, in a session of any scope, and records nothing
+in System logs, as the page's check records nothing. A document of another
+shape, or one that adds a quick update, is exit 1 (`invalid`) as for
+`integration preview`. The page's own problems are not refused: they are
+listed, and the command exits 0, so you can fix them and check again.
+
+| Field | What it holds |
+| --- | --- |
+| `version` | The applied configuration |
+| `timezone` | The zone the schedule's times are in |
+| `proposed` | Whether `--refresh-schedule` gave the schedule |
+| `changed` | Whether it differs from the applied schedule |
+| `schedule` | The checked schedule document; null while a row cannot be read |
+| `problems` | Each problem's `field` (`refresh_schedule.rules[N]`, `refresh_schedule.skips[N]` or `refresh_schedule`) and `message`, the page's words |
+| `blocking` | Whether the problems would stop this schedule from being saved; an unchanged schedule's never do |
+| `status` | The line beside the page's Save |
+| `preview` | The page's seven `days` (each `day`, `weekday`, `today`, `change` on a daylight-saving day, `counts`, and `times` with `text`, `struck`, `kind` and `due_at`), plus `line`, `summary`, `warning`, `freshness` and `estimated_windows`; null when there is nothing to preview |
 
 ### Checking the backup folder and dismissing a key change
 
@@ -2936,3 +2970,6 @@ print is exit 1 (`invalid`).
   (Administrators only; the read in any session, the others in a
   full-scope one); `campaign confirm` records `admin_cmd_campaign_confirm`
   and the page's own events.
+- `pk-admin/1` (#632): additive. `integration schedule-preview
+  [--refresh-schedule DOCUMENT|-]`, the ParishSoft page's live refresh
+  schedule check (any session, Administrators only, no event).
