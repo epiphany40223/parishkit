@@ -259,9 +259,7 @@ own renderer):
   the engine's two formats; how a report page offers the downloads above is
   specified in a later increment (the [response dashboard](#response-dashboard)
   does not offer them yet). The daily digest's participation chart is the
-  participation graph's renderer. The daily digest's
-  [response funnel](../background-processing/spec.md#daily-campaign-digest)
-  charts and its optional
+  participation graph's renderer. The daily digest's optional
   [Compared with past campaigns](../campaign-history/spec.md#digest-section)
   section's two charts are drawn by this renderer at the email's width (the
   axes and legend inside it) under the timeout name `digest_chart`, and
