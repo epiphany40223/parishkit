@@ -504,6 +504,10 @@ remember it: the same signed intent adds the series record, holding exactly
 the reminders that repeat adds (`schedule_changes.build_preview`'s
 `series`). So far only the command line asks
 ([`schedule preview`](../admin-automation/spec.md#schedules-and-configuration)).
+The same command's `series` entries edit a series "this and following" or
+as a whole, or delete it, in one signed intent that adds and removes
+ordinary reminders and updates, adds or removes series records
+(`accounts.series_edits.plan`); a reminder that has sent is never changed.
 
 ### Source snapshot
 

@@ -1865,7 +1865,7 @@ none.
 
 | URL names | Command or exemption |
 | --- | --- |
-| `schedule_settings`, `schedule_new`, `schedule_edit`, `schedule_delete` | `schedule show` (PR 3a); `schedule preview`, `schedule confirm` (PR 4): a change document adds, changes or deletes the same schedules |
+| `schedule_settings`, `schedule_new`, `schedule_edit`, `schedule_delete` | `schedule show` (PR 3a); `schedule preview`, `schedule confirm` (PR 4): a change document adds, changes or deletes the same schedules. Its `series` entries (#469) edit or delete a remembered reminder series, ahead of the New/Change page's series scopes (slice 2b-3) |
 | `schedule_calendar` | `schedule show` (PR 3a): the read-only Campaign calendar (#469) draws the saved schedules and campaign dates that `schedule show` lists |
 | `campaign_end_date_check` | `schedule preview` (PR 4): Campaign settings' no-save live check of a live campaign's end date answers what a preview of that end date would refuse |
 | `configuration_request` | `config request show --watch` (PR 4); `config request cancel` ([#944](https://github.com/epiphany40223/parishkit/pull/944)), an operator recovery with no page button |
@@ -1916,7 +1916,39 @@ exactly the reminders that repeat adds, which the preview lists as `series`
 and `schedule show` lists afterwards. Delivery never reads a series, so the
 reminders are planned and sent as they would be without it. Only a
 configuration in the users form can hold a series; elsewhere remembering is
-`invalid` with a plain `window` message. For a live campaign
+`invalid` with a plain `window` message. A `series` entry
+([#469](https://github.com/epiphany40223/parishkit/issues/469)) edits a
+remembered series: `"scope": "following"` with `from` (one of its
+reminders) is "this and following", and `"scope": "series"` is "the whole
+series", "this and following" from its first reminder that has not sent;
+either may give a new `repeat` rule, `time` and `template_version`.
+`{"series": ..., "delete": true}` removes the series' unsent reminders and
+the series record; reminders that sent stay as ordinary reminders. From the
+cut date (the `from` reminder's date) the series keeps its earlier
+reminders under a rule that ends the day before (it is replaced in place
+when none stay), and a new series holds the reminders from the cut date:
+the new rule's dates, or the members' own dates without one. A member whose
+date, time and email are unchanged stays as it is (same id, revision and
+prepared work); any other member from the cut date is removed and its date
+added again. The whole series may start at a reminder whose time has passed
+without any work yet (a "missed" one); if the edit changes its time or
+email it is added again on its past date, so it is due at once and may send
+right after confirm, exactly as editing that reminder alone on the page
+does. An edit that gives a `repeat` rule yielding the same reminders still
+saves the new rule; one with no `repeat` and the same reminders changes
+nothing. The planning is the pure `accounts.series_edits.plan`, which
+the New/Change page will share, and its reminders and series records go
+through the same `schedule_changes.build_preview`, forms, signed preview
+and confirmation, so an in-flight or unknown send still blocks. An unknown
+series, a `from` outside it, a reminder from the cut date that has sent or
+is being prepared, a new rule that starts before the cut date while earlier
+reminders stay, a rule a `repeat` entry would refuse, a series named twice,
+or a series whose reminders the same document also names one by one is
+`invalid` on the entry (`schedules.new<n>`). The preview lists each
+existing series it updates or removes as `series_changes` (`id`,
+`operation`, and an update's new `rule` and `schedules`). A series edit
+adds and removes ordinary reminders only; delivery never reads a series,
+and no Family code, link or credential changes. For a live campaign
 the document's `window` may change `end_date` alone, as the page allows
 ([#912](https://github.com/epiphany40223/parishkit/issues/912)), and
 `schedule confirm` binds its exceptional end-edit intent and records
