@@ -20,6 +20,7 @@ import pytest
 
 from .schedule_list_components import (
     APPLY,
+    APPLY_PASSED,
     BULK,
     DATE_REFUSAL,
     DATES,
@@ -32,6 +33,7 @@ from .schedule_list_components import (
     EDIT_DIGEST,
     EDIT_EMAIL_REFUSED,
     EDIT_INITIAL,
+    EDIT_PASSED,
     EDIT_SERIES,
     EDIT_SERIES_GATED,
     EMAIL_REFUSAL,
@@ -45,6 +47,7 @@ from .schedule_list_components import (
     NEW_REPEAT,
     NEW_STALE,
     NOT_OPEN,
+    PASSED_REFUSAL,
     REFUSAL,
     REFUSED,
     STALE_REFUSAL,
@@ -763,6 +766,51 @@ def test_apply_returns_to_the_list_with_the_status_line(page, component_origin):
     assert line.get_attribute("role") == "status"
     assert page.evaluate(FOCUSED) == "schedules-outcome"
     assert near(page.locator("#schedule-table-title").bounding_box()["y"], table)
+
+
+def test_an_apply_whose_reviewed_time_passed_is_refused_in_place(
+    page, component_origin
+):
+    """A reviewed send time that passed before Apply (#1464): the server's
+    refusal shows in the dialog, below its buttons, which do not move; the
+    page is neither reloaded nor redrawn, and Cancel returns to the form
+    with the typed time, ready to review again."""
+    # Tall enough that the review and its refusal stay below the dialog's
+    # 90% height limit: at that limit the shared dialog shrinks its
+    # scrolling body for the refusal and the buttons rise (a shared-dialog
+    # follow-up, #1482, not #1464's; drop this override when it lands).
+    # With CI's Linux fonts this review's body is about 1,040 px tall, so
+    # 1,400 px reached the limit in every engine; 1,800 px leaves room.
+    page.set_viewport_size({"width": 1280, "height": 1800})
+    page.goto(component_origin + EDIT_PASSED)
+    failures = watch(page)
+    time = page.locator('[name="schedule-time"]')
+    time.fill("10:30")
+    form = page.locator("#schedule-entry-form").element_handle()
+    shown = review(page, REVIEW)
+    cancel = shown.get_by_role("button", name="Cancel")
+    places = [cancel.bounding_box()]
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        shown.get_by_role("button", name="Apply").click()
+    assert sent.value.url.endswith(APPLY_PASSED)
+    error = shown.locator("[data-confirm-error]")
+    visible(error)
+    assert PASSED_REFUSAL["message"] in error.inner_text()
+    assert PASSED_REFUSAL["fix"] in error.inner_text()
+    assert shown.is_visible()
+    # The premise above: the body did not shrink to make room (#1482), so a
+    # move below is this page's, not the shared dialog's height limit.
+    body = shown.locator("[data-review-body]")
+    assert body.evaluate("node => node.scrollHeight <= node.clientHeight")
+    assert same_place([cancel.bounding_box()], places)
+    cancel.click()
+    hidden(shown)
+    # The very form the reader used is still there, with the typed time.
+    assert form.evaluate("node => node.isConnected")
+    assert time.input_value() == "10:30"
+    assert page.get_by_role("button", name=REVIEW).is_enabled()
+    assert page.evaluate("window.notReloaded === true")
+    assert not failures
 
 
 def test_once_applying_nothing_dismisses_the_dialog(page, component_origin):
