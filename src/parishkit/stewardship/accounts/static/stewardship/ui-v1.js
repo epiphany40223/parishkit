@@ -2196,6 +2196,28 @@
     return [...now].every(([key, {value, blank, disabled}]) => disabled
       || (saved.has(key) ? saved.get(key).value === value : blank));
   };
+  // A Campaign setup step's Continue (#1404, campaign-step-actions.html)
+  // records the step kept as is, so it waits while the page holds a change:
+  // a change-gated form that differs from its saved values, or an upload
+  // form (Campaign images) with a file chosen but not uploaded yet. The
+  // page's own Review stays the way on. Its hint after the row keeps its
+  // line (data-idle hides it with visibility), and names the button only
+  // while it is shown.
+  const gateStepContinue = () => {
+    const form = document.querySelector("form[data-campaign-continue]");
+    if (!form) return;
+    const held = Boolean(document.querySelector("form[data-require-change][data-holds-change]"))
+      || [...document.querySelectorAll('form input[type="file"]')]
+        .some((node) => !node.matches(":disabled") && node.files?.length > 0);
+    const hint = document.getElementById("campaign-continue-hint");
+    hint?.toggleAttribute("data-idle", !held);
+    form.querySelectorAll("button[type=submit]").forEach((node) => {
+      if (held) holdButton(node, "data-change-gated");
+      else releaseButton(node, "data-change-gated");
+      if (held && hint) node.setAttribute("aria-describedby", hint.id);
+      else node.removeAttribute("aria-describedby");
+    });
+  };
   const gateChange = (form) => {
     if (!(form instanceof HTMLFormElement) || !form.id || !form.hasAttribute("data-require-change")) {
       return;
@@ -2211,6 +2233,8 @@
       reviewApplied.delete(form.id);
     }
     const unchanged = matchesSaved(form, saved.state);
+    form.toggleAttribute("data-holds-change", !unchanged);
+    gateStepContinue();
     const hint = form.querySelector("[data-unchanged-hint]");
     // The hint's id comes from its form's, so two gated forms on one page
     // never describe their buttons with the same line.
@@ -2229,7 +2253,12 @@
       else node.removeAttribute("aria-describedby");
     });
   };
-  const gateChanges = () => document.querySelectorAll("form[data-require-change]").forEach(gateChange);
+  const gateChanges = () => {
+    document.querySelectorAll("form[data-require-change]").forEach(gateChange);
+    // A page without a change-gated form (Campaign images) still gates its
+    // Continue, and a redraw that empties its file inputs releases it.
+    gateStepContinue();
+  };
   // Note what each Review sends, and which Review an Apply applies: an Apply
   // sits in the review of its form (data-review-of names it). The in-place
   // handler (above) calls this only once a request really starts, so a
@@ -2250,6 +2279,7 @@
   // A removed new schedule row (schedules-changed) changes the form too.
   ["input", "change", "schedules-changed"].forEach((type) => document.addEventListener(type, (event) => {
     if (event.target instanceof Element) gateChange(event.target.closest("form"));
+    if (event.target instanceof HTMLInputElement && event.target.type === "file") gateStepContinue();
   }));
   window.addEventListener("pageshow", gateChanges);
   gateChanges();
@@ -4185,7 +4215,12 @@
     });
     dialog.querySelector("[data-confirm-accept]").hidden = !token;
     confirming = {dialog, opener, form, busy: false, done: false,
-      review: {apply, done: answer?.getAttribute("data-review-done") || ""}};
+      review: {apply, done: answer?.getAttribute("data-review-done") || "",
+        // An answer may name where Apply's applied change leads and that
+        // page's status line (Create the campaign opens the next Campaign
+        // setup step, #1404), in place of the dialog's own.
+        back: answer?.getAttribute("data-review-return") || "",
+        backOutcome: answer?.getAttribute("data-review-return-outcome") || ""}};
     dialog.showModal();
     if (refusal) refuseConfirm(confirming, refusal);
     // The title first, so the reader hears what is reviewed.
@@ -4288,8 +4323,9 @@
     dialog.querySelector("[data-confirm-status]").textContent = dialog.dataset.applied || "Applied.";
     const text = [review.done, fillIn(dialog.dataset.appliedAt || "Applied at {time}.",
       {time: clockTime()})].filter(Boolean).join(" ");
-    const outcome = state.form.dataset.reviewOutcome || dialog.dataset.reviewOutcome || "";
-    const back = dialog.dataset.reviewReturn;
+    const own = review.back && sameOrigin(review.back) ? review.back : "";
+    const back = own || dialog.dataset.reviewReturn;
+    const outcome = (own && review.backOutcome) || state.form.dataset.reviewOutcome || dialog.dataset.reviewOutcome || "";
     if (back) {
       const target = new URL(back, document.baseURI);
       try {

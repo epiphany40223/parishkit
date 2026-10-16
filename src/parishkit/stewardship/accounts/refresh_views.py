@@ -55,9 +55,30 @@ RUN_REGION = REFRESH_RUN
 
 
 class RefreshForm(forms.Form):
-    """Only the page's own request key comes in; the window is decided at admission."""
+    """Only the page's own request key comes in; the window is decided at admission.
+
+    ``return_step`` is the Campaign setup step whose Load the campaign's
+    ParishSoft data notice posted it (#1404), to return to instead of this
+    page.
+    """
 
     request_key = forms.UUIDField()
+    return_step = forms.CharField(required=False, max_length=16)
+
+
+def _return_url(step):
+    """The Campaign setup step page to return to after a load, or None.
+
+    Only a step of the stepper over the current campaign, while it applies,
+    from its own list, so a posted value can never name another address.
+    """
+    if not step:
+        return None
+    from . import campaign_wizard
+
+    wizard = campaign_wizard.current()
+    found = wizard.step(step) if wizard else None
+    return found.url if found else None
 
 
 def _pending():
@@ -145,6 +166,11 @@ def _request(request, service, actor):
         raise ValueError("Invalid refresh key.")
     receipt = request_manual_refresh(request, service, actor, key)
     request.session[RUN_KEY] = str(receipt.task_root_id)
+    # From a Campaign setup step's notice, back to that step, which then
+    # says the data is loading (#1404); the run's progress stays on this page.
+    back = _return_url(form.cleaned_data["return_step"])
+    if back:
+        return HttpResponseRedirect(back)
     return HttpResponseRedirect(reverse("admin:source_refresh") + f"#{RUN_REGION}")
 
 
@@ -199,7 +225,10 @@ def source_refresh(request):
         actor = principal(request, service, capability=Capability.CONFIGURE)
         filters(request.GET, allowed=set())
         if request.method == "POST":
-            filters(request.POST, allowed={"request_key", "csrfmiddlewaretoken"})
+            filters(
+                request.POST,
+                allowed={"request_key", "return_step", "csrfmiddlewaretoken"},
+            )
             if request.FILES:
                 raise ValueError("Unexpected upload.")
             response = _request(request, service, actor)

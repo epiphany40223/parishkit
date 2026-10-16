@@ -28,6 +28,7 @@ from uuid import UUID
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.template.loader import render_to_string
 
+from parishkit.stewardship.accounts import campaign_wizard
 from parishkit.stewardship.accounts.admin_editing import summary_errors
 from parishkit.stewardship.accounts.artwork_views import (
     NOT_STATIC_IMAGE,
@@ -47,6 +48,8 @@ REFUSED_IMAGE = f"{PAGE}welcome/"
 REMOVAL = "/artwork-removal-review"
 APPLIED = "/artwork-applied"
 SETTLED = "/artwork-settled"
+# Campaign images as a Campaign setup step (#1404), with its action row.
+STEP = "/artwork-step"
 # The answers the fixture server gives the page's POSTs; the upload's and
 # the refused upload's are added by ``components``.
 POSTS = {PAGE: (303, APPLIED, "")}
@@ -68,7 +71,7 @@ def components(context, admin):
         for index, label in enumerate(("Make changes", "Review", "Apply"))
     ]
 
-    def page(current, forms=None):
+    def page(current, forms=None, wizard=None):
         """Campaign images with ``current`` ({slot: asset}) set; ``forms``
         holds a refused upload's bound form."""
         forms = forms or {}
@@ -95,7 +98,8 @@ def components(context, admin):
             "stewardship/artwork-settings.html",
             context
             | {
-                "admin_chrome": admin | {"flow_steps": steps},
+                "admin_chrome": admin
+                | {"flow_steps": steps, "campaign_wizard": wizard},
                 "campaign": campaign,
                 "slots": slots,
                 "base_digest": "a" * 64,
@@ -144,6 +148,15 @@ def components(context, admin):
     )
     return {
         PAGE: ("text/html", page({"welcome": welcome})),
+        STEP: (
+            "text/html",
+            page(
+                {"welcome": welcome},
+                wizard=campaign_wizard.build(
+                    False, "images", done={"settings"}, mail_test_url=None
+                ),
+            ),
+        ),
         REMOVAL: ("text/html", review("welcome", None)),
         APPLIED: (
             "text/html",

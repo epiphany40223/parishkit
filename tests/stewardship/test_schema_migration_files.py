@@ -345,6 +345,9 @@ FROZEN = {
     "0104_setup_sign_in_hour.sql": (
         "7248a23e6fdf74141c68528d089b02ba4f112e5d9736f7f24fd0234306a1a378"
     ),
+    "0105_campaign_setup_review.sql": (
+        "c49eb82e252a0588ec584b530ed228011d134b7f29bc26650b5871993f80c0b5"
+    ),
 }
 
 

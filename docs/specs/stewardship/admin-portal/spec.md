@@ -155,7 +155,7 @@ segment whose tooltip gives the reason
 ([#1402](https://github.com/epiphany40223/parishkit/issues/1402)), with the
 full ordered list (each
 applicable step named as completed, current, not done, optional or not yet
-available with the reason) in a collapsed disclosure. Navigation is
+available with the reason), open on a wide screen and a collapsed disclosure on a narrow one ([step bars](../ui-conventions/spec.md#step-bars)). Navigation is
 conventional: completed steps and the first unfinished required step are
 links; later unfinished steps wait for every earlier required step, and
 optional steps never hold later ones back. A step counts as completed only
@@ -804,7 +804,7 @@ links chosen by the campaign's state and the viewer's role:
 
 | State | Administrator | Staff | Ministry leader |
 | --- | --- | --- | --- |
-| Draft in Testing | Campaign settings, Pages and emails, Dates and mail schedules, Preview and test email (for the initial invitation's current revision), Go-live readiness, Response dashboard | Response dashboard, Participation | Ministry requests |
+| Draft in Testing | Continue campaign setup (the Campaign setup stepper's first step not done yet, #1404), Campaign settings, Pages and emails, Dates and mail schedules, Preview and test email (for the initial invitation's current revision), Go-live readiness, Response dashboard | Response dashboard, Participation | Ministry requests |
 | Production being activated | Production activation, Outgoing mail (while the campaign is still a draft, Go-live readiness leads) | Response dashboard | Ministry requests |
 | Active | Response dashboard, Additional information and Ministry requests (with open counts), Family email progress, Outgoing mail problems (with count) | Response dashboard, Additional information, Ministry requests (with open counts) | Ministry requests (with open count) |
 | Mail paused | Pause and resume mail first, then the Active list | As Active | As Active |
@@ -3010,10 +3010,17 @@ database checks admission again at activation: a new campaign record becomes
 the current campaign only when the current-campaign pointer is empty in
 Testing mode and every earlier campaign is archived or purged, the rule every
 new draft follows, so of two creation requests confirmed at once one applies
-and the other fails. Once the request is applied, the status (on the page and
-on Change status alike) offers
+and the other fails. Once the request is applied, the dialog does not stay on
+the change's status: it opens the next Campaign setup step that is not done
+yet ([#1404](https://github.com/epiphany40223/parishkit/issues/1404)), Share
+options with Financial stewardship and Pages and emails without it, whose
+status line says the campaign was created and when. A reload of the address
+naming the request, and Change status, still offer
 **Load the campaign's ParishSoft data**, which requests a full ParishSoft
-refresh and opens that refresh's progress page. The refresh can only be
+refresh and opens that refresh's progress page. Every Campaign setup step and
+sub-page also offers it, at its top, until the campaign has its Families;
+pressed there, it returns to that step, which then says "ParishSoft data is
+loading; Go-live readiness waits for it." while the refresh is under way. The refresh can only be
 requested after activation, because a refresh reads the current campaign when
 it is requested. The offer disappears once the campaign has its Families. It
 reads the campaign's giving window and creates the campaign's Families and
@@ -3036,10 +3043,10 @@ Dates and mail schedules, Campaign images, Preview and test email (for the
 initial invitation's current revision), and Go-live readiness. Each step is
 named after the page it opens and is that existing page, not a separate
 staging page, so every save is that page's ordinary review, confirm and
-apply. Only those pages draw the stepper; Preview and test email draws it
-only for the revision its step opens. Campaign settings counts as completed
-when the campaign is created. Share options, Pages and emails, Dates and
-mail schedules and Campaign images count as completed once a change
+apply. Only those pages and their sub-pages draw the stepper; Preview and test
+email draws it only for the revision its step opens. Campaign settings counts
+as completed when the campaign is created. Share options, Pages and emails,
+Dates and mail schedules and Campaign images count as completed once a change
 confirmed on that page has been applied since the campaign was created: a
 change of the share options alone (not the default options Campaign
 settings writes when Financial stewardship is turned on or off); of the
@@ -3047,25 +3054,50 @@ campaign images alone; of a mail schedule (added, removed or edited, even
 with the new email it sends) or of only the campaign's dates and time zone
 (a change Campaign settings can also make, which counts too); or of the
 pages and emails (anything else that changes content, including the
-schedules re-pointed at an email's new revision). Preview and test email
-counts as completed once a test of the invitation's current revision was
-accepted. Defaults (the default text and share options that Create the
-campaign adds) never complete a step, and Go-live readiness completes only
-by going live. The completion is read from what was applied, never stored.
-Next and Back are plain links to the neighbouring step in the stepper's
-summary: they never save, discard or submit anything, so an Admin who
-leaves a page without confirming its review keeps the campaign as it was.
-Every step stays a link (Preview and test email only while there is an
-invitation to test; until then Back and Next skip it). Once the current
-step is completed, its Next reads **Continue to the next step**, naming
-that step. The stepper is an
-[in-place](../ui-conventions/spec.md#in-place-controls) region: after a
+schedules re-pointed at an email's new revision). They also count as
+completed once the Administrator pressed the step's Continue while its form
+held no change, keeping it as is
+([#1404](https://github.com/epiphany40223/parishkit/issues/1404)): that is
+stored ([`CampaignSetupReview`](../data/spec.md#campaign)), and a later change
+elsewhere never undoes it. Preview and test email counts as completed once a
+test of the invitation's current revision was accepted. Defaults (the default
+text and share options that Create the campaign adds) never complete a step
+by themselves, and Go-live readiness completes only by going live.
+
+The stepper's summary names the next step that is not done yet ("Next:
+Pages and emails"), as text, and offers **Leave campaign setup**, which opens
+Home; Home then leads its Next steps with **Continue campaign setup:** and the
+first step not done yet. On a screen 64rem wide or wider the full step list
+is shown open; narrower, it is the collapsed disclosure
+([step bars](../ui-conventions/spec.md#step-bars)). Each step page ends with
+one action row: **Back** (secondary, the previous step) and one primary
+control. On Campaign settings, Share options, Pages and emails, Dates and
+mail schedules and Campaign images it is **Continue to** the next step not
+done yet (on Dates and mail schedules with no schedule saved, **Continue
+without schedules for now**; Go-live readiness still lists the missing
+initial invitation schedule): it records the step kept as is and opens that
+step. While a form on the page holds a change (on Campaign images, a chosen
+image not uploaded yet), Continue is unavailable, with
+a hint after the row in a line that is always reserved, so the page's own
+Save (with its review dialog, for now) stays the way on. Preview and test
+email offers Continue to Go-live readiness only once its test is accepted,
+because the test is the step's purpose; Go-live readiness, the last step,
+has Back only. Back and Continue never save, discard or submit the page's
+form, so an Admin who leaves a page without confirming its review keeps the
+campaign as it was. Every step stays a link (Preview and test email only
+while there is an invitation to test; until then Back and Continue skip it).
+The pages a step opens are its sub-pages: Campaign settings' content
+history, Pages and emails' editor (with its preview), and Dates and mail
+schedules' New and Edit scheduled email and Campaign calendar. They draw the same stepper with their
+step current, and their action row is **Return to** that step. The stepper is
+an [in-place](../ui-conventions/spec.md#in-place-controls) region: after a
 [review dialog](../ui-conventions/spec.md#review-dialog)'s Apply (Share
 options, Campaign images) the page's redraw from its own address, or an
-in-place refresh, shows the new completion and that Continue without a
-reload, and a reload shows the same. Change status also offers Continue to
-the next step once a change that completes a step is applied; the change
-that created the campaign offers
+in-place refresh, shows the new completion without a reload, and a reload
+shows the same. Change status, once a change that completes a step is
+applied, offers Return to that step for a sub-page's change (an email's
+editor, a mail schedule) and Continue to the next step not done yet for any
+other; the change that created the campaign offers
 Load the campaign's ParishSoft data instead. The stepper is presentation
 only; each page still enforces its own prerequisites. Go-live readiness is
 the last step, so the go-live flow (and its redesign in #462) follows on

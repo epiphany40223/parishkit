@@ -694,6 +694,8 @@ NON_PAGES = frozenset(
         "branding_asset",
         # The Campaign comparison's download form (#1018), a POST.
         "campaign_comparison_export",
+        # A Campaign setup step's Continue (#1404), a POST that redirects.
+        "campaign_step_continue",
         "content_plain_text",
         "critical_events_acknowledge",
         "daily_digest_chart",

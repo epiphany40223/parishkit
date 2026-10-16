@@ -10,10 +10,12 @@ says what Apply does and describes the dialog (aria-describedby); the
 second is the one thing the server worked out that the page doesn't show:
 how many pages and emails the campaign starts with, in the default text.
 The signed preview (data-review-preview) is what the dialog's Apply posts
-to Create the campaign, and data-review-done starts the status line the
-page shows once the change is applied. A review lasts fifteen minutes, as
+to Create the campaign, and data-review-done starts the status line shown
+once the change is applied: on the next Campaign setup step
+(data-review-return, #1404), which the dialog then opens, in its reserved
+status line (data-review-return-outcome). A review lasts fifteen minutes, as
 every review does.
-{% endcomment %}<div data-review-answer data-review-done="{% translate 'Campaign created.' %}">
+{% endcomment %}<div data-review-answer data-review-done="{% translate 'Campaign created.' %}" data-review-return="{{ review.next_url }}" data-review-return-outcome="campaign-step-outcome">
 <p id="campaign-create-summary">{% translate "This creates the campaign as a draft in Testing mode; no email is sent." %}</p>
 {% if review.content %}<p>{% blocktranslate trimmed count count=review.content %}It starts with {{ count }} page or email in the default text.{% plural %}It starts with {{ count }} pages and emails in the default text.{% endblocktranslate %}</p>{% endif %}
 <input type="hidden" name="preview" value="{{ review.preview }}" data-review-preview>

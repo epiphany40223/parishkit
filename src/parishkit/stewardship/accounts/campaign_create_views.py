@@ -40,6 +40,7 @@ from uuid import uuid4
 from django.core import signing
 from django.db import DatabaseError
 from django.shortcuts import render
+from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
@@ -258,6 +259,14 @@ def creation_review(service, actor, state, form):
     return {
         # Worked out here, from the modules chosen: the page does not show it.
         "content": len(content),
+        # Once applied, the dialog opens the next Campaign setup step
+        # (#1404): Campaign settings is completed by the creation, so it is
+        # Share options with Financial stewardship, else Pages and emails.
+        "next_url": reverse(
+            "admin:share_settings"
+            if "financial" in values.get("modules", ())
+            else "admin:content_catalog"
+        ),
         "preview": sign_preview(
             actor=actor,
             configuration=configuration,

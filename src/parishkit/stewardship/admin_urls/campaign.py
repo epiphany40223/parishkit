@@ -21,6 +21,7 @@ from ..accounts import (
     campaign_family_test_views,
     campaign_mail_views,
     campaign_views,
+    campaign_wizard_views,
     clone_views,
     confirmation_views,
     content_delete_views,
@@ -59,6 +60,13 @@ patterns = [
         "campaign/first/",
         campaign_create_views.campaign_create,
         name="campaign_create",
+    ),
+    # A Campaign setup step's Continue (#1404), a POST that records the step
+    # kept as is and redirects to the next step.
+    path(
+        "campaign/setup/continuation/",
+        campaign_wizard_views.step_continue,
+        name="campaign_step_continue",
     ),
     _page("campaign/copy/", clone_views.campaign_clone, "campaign_clone"),
     _page("campaign/content/", content_views.content_settings, "content_catalog"),

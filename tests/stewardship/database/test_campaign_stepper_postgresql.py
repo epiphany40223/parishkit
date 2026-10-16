@@ -60,10 +60,10 @@ def test_stepper_follows_an_applied_change_and_offers_the_next_step(
     assert "1 of 7 steps completed" in region
     settings = reverse("admin:campaign_settings")
     content = reverse("admin:content_catalog")
-    assert f'href="{settings}" data-campaign-step-back' in region
-    assert f'href="{content}" data-campaign-step-next' in region
-    assert "Next: Pages and emails" in region
-    assert "Continue to the next step" not in region
+    # The summary names the next step as text; Back and Continue are the
+    # action row at the bottom of the page (#1404).
+    assert "<span data-campaign-step-next>Next: Pages and emails</span>" in region
+    assert "data-campaign-step-back" not in region
     # Apply a change on the page itself, as its review dialog does.
     data = data_for(previous) | {
         "base_digest": store.active().digest,
@@ -73,15 +73,11 @@ def test_stepper_follows_an_applied_change_and_offers_the_next_step(
     response = post(browser, path, {"action": "confirm", "preview": proposal})
     apply(store, response)
     # The dialog then redraws the page's regions from its own address: the
-    # stepper marks the step completed and its Next becomes Continue (as on
-    # a reload).
+    # stepper marks the step completed (as on a reload).
     region = stepper(browser.get(path).content)
     assert status_of(region, "Share options") == "Current step — Completed"
     assert "2 of 7 steps completed" in region
-    assert (
-        f'href="{content}" data-campaign-step-next data-campaign-continue>'
-        "Continue to the next step: Pages and emails</a>" in region
-    )
+    assert "Next: Pages and emails" in region
     # Change status, which the dialog follows, offers the same next step.
     status_url = reverse("admin:configuration_request", args=[requested(response)])
     assert (
@@ -89,8 +85,9 @@ def test_stepper_follows_an_applied_change_and_offers_the_next_step(
         in browser.get(status_url).content.decode()
     )
     # The other steps' pages draw it too, each as its own current step.
-    page = stepper(browser.get(settings).content)
-    assert "Step 1 of 7:" in page and "data-campaign-step-back" not in page
+    whole = browser.get(settings).content
+    page = stepper(whole)
+    assert "Step 1 of 7:" in page and b"data-campaign-step-back" not in whole
     assert "Step 7 of 7:" in stepper(browser.get(reverse("admin:go_live")).content)
     # Pages that are not steps, Home among them, draw none.
     assert stepper(browser.get("/admin/").content) is None

@@ -17,6 +17,7 @@ from .automation_models import (  # noqa: F401
 )
 from .branding_models import BrandingAsset, BrandingBundle  # noqa: F401
 from .campaign_mail_models import CampaignMailTest  # noqa: F401
+from .campaign_wizard_models import CampaignSetupReview  # noqa: F401
 from .chair_models import (  # noqa: F401
     ChairAssignmentReview,
     ChairReconciliation,

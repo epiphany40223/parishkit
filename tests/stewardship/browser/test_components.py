@@ -904,26 +904,45 @@ def axe_violations(page, axe_source):
     }))""")
 
 
+def shown_step_list(page, stepper, width):
+    """The stepper's one shown step list, opened from the keyboard if narrow.
+
+    At 64rem and wider the open copy is shown and the disclosure is not
+    (#1404); narrower, the disclosure is shown collapsed and opens with its
+    summary. Exactly one copy is ever shown, so it is met once.
+    """
+    wide = stepper.locator(".setup-stepper-wide .setup-steps")
+    narrow = stepper.locator(".setup-stepper-list .setup-steps")
+    if width >= 1024:
+        visible(wide)
+        assert stepper.locator(".setup-stepper-list").is_hidden()
+        return wide
+    assert wide.is_hidden() and narrow.is_hidden()
+    stepper.locator(".setup-stepper-list summary").focus()
+    page.keyboard.press("Enter")
+    visible(narrow)
+    return narrow
+
+
 @pytest.mark.parametrize("width", [320, 1280])
 def test_setup_stepper_is_compact_and_its_full_list_stays_accessible(
     page, component_origin, axe_source, width
 ):
-    """A short summary by default; the ordered list opens from the keyboard."""
+    """A short summary; the ordered list is open on a wide screen (#1404) and
+    opens from the keyboard on a narrow one."""
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/setup-testing")
     stepper = page.locator(".setup-stepper")
     assert "Step 3 of 12: Testing recipient" in stepper.inner_text()
     assert "1 of 12 steps completed" in stepper.inner_text()
-    # Far shorter than fifteen stacked cards, even at phone width.
-    assert stepper.bounding_box()["height"] < (260 if width == 320 else 160)
-    assert page.locator(".setup-steps").is_hidden()
-    page.locator(".setup-stepper-list summary").focus()
-    page.keyboard.press("Enter")
-    visible(page.locator(".setup-steps"))
-    current = page.locator('.setup-steps [aria-current="step"]')
+    # Far shorter than fifteen stacked cards, even at phone width (where the
+    # list is still collapsed), and with the list open in two columns.
+    assert stepper.bounding_box()["height"] < (260 if width == 320 else 480)
+    steps = shown_step_list(page, stepper, width)
+    current = steps.locator('[aria-current="step"]')
     assert "Current step" in current.inner_text()
-    assert "Completed" in page.locator(".setup-step-done").first.inner_text()
-    links = page.locator(".setup-steps a")
+    assert "Completed" in steps.locator(".setup-step-done").first.inner_text()
+    links = steps.locator("a")
     assert links.count() >= 2
     assert all(
         box["height"] >= 44
@@ -932,7 +951,10 @@ def test_setup_stepper_is_compact_and_its_full_list_stays_accessible(
         )
     )
     # The list holds only links, which Tab skips in macOS WebKit (#1043).
-    tab_to_next(page)
+    if width >= 1024:
+        links.first.focus()
+    else:
+        tab_to_next(page)
     assert page.evaluate("document.activeElement.closest('.setup-steps') !== null")
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
@@ -965,7 +987,7 @@ def test_setup_step_bar_links_open_steps_and_explains_the_rest(
     page.goto(component_origin + "/setup-testing")
     track = page.get_by_role("list", name="Setup steps")
     segments = track.locator("a")
-    steps = page.locator(".setup-steps li").evaluate_all(
+    steps = page.locator(".setup-stepper-list .setup-steps li").evaluate_all(
         "items => items.map(item => ["
         "item.querySelector('.setup-step-label').lastChild.textContent.trim(),"
         "item.querySelector('.setup-step-status').textContent.trim()])"

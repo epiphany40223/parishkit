@@ -11,7 +11,8 @@ import json
 
 import pytest
 
-from .campaign_create_components import APPLIED, PAGE, REFUSED, REVIEW, VALUES
+from .campaign_create_components import APPLIED, ONWARD, PAGE, REFUSED, REVIEW, VALUES
+from .stepper_components import PATH as STEPPER
 from .test_in_place import MARK, MARKED
 from .test_settings_in_place import answer_reviews
 from .waits import available, eventually, greyed, has_attribute, hidden, visible
@@ -180,6 +181,28 @@ def test_apply_creates_the_campaign_in_place(page, component_origin):
     assert page.locator("#settings-form").count() == 0
     assert page.url == component_origin + APPLIED
     assert page.evaluate(MARKED) == "kept"
+    assert not failures
+
+
+def test_apply_opens_the_next_campaign_setup_step(page, component_origin):
+    """Once applied, the dialog opens the step its confirmation names (#1404).
+
+    That step's reserved status line says the campaign was created and
+    when, and takes focus, so the Administrator hears where they are.
+    """
+    answer_reviews(page, component_origin, ONWARD, address=PAGE)
+    dialog = open_confirmation(page, component_origin)
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    dialog.get_by_role("button", name="Apply").click()
+    page.wait_for_url(component_origin + STEPPER)
+    eventually(
+        page, "document.getElementById('campaign-step-outcome').textContent !== ''"
+    )
+    line = page.locator("#campaign-step-outcome").inner_text()
+    assert line.startswith("Campaign created. Applied at "), line
+    assert page.evaluate(FOCUSED) == "campaign-step-outcome"
+    visible(page.locator("#campaign-stepper"))
     assert not failures
 
 
