@@ -21,9 +21,9 @@ from parishkit.stewardship import provider_check_worker, smoke
 from parishkit.stewardship.accounts.key_files import write_private
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.responses import contact_smoke
+from parishkit.stewardship.responses.contact_schema import DATE_FIELDS, PUT_SCHEMA
 from parishkit.stewardship.responses.contact_smoke import (
     MARKERS,
-    PUT_SCHEMA,
     RoundTripAborted,
     map_record,
     run,
@@ -126,7 +126,7 @@ def test_the_put_schema_is_the_recorded_one():
         item = schema[name]
         assert item["type"] == "string" and item["nullable"] is True
         assert (item.get("minLength", 0), item.get("maxLength")) == (minimum, maximum)
-        assert (item.get("format") == "date") == (name in contact_smoke.DATE_FIELDS)
+        assert (item.get("format") == "date") == (name in DATE_FIELDS)
 
 
 def test_the_probe_reports_names_types_shapes_and_encodings_but_no_values():

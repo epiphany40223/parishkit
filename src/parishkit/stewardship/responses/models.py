@@ -417,8 +417,9 @@ class ProposalReview(ImmutableRecord):
     one immutable row: who, when, the optional note, and the review state the
     proposal carries afterwards (its ``decision`` and edit fields), which SQL
     pairs with the proposal (schema/migrations/0096_proposal_review.sql). The
-    edit fields record the whole resulting state, so a later Edit value needs
-    only a wider review guard; today they must equal the proposal's own.
+    edit fields record the whole resulting state. A row is either a decision
+    (the edit fields stay the proposal's own) or, since 0107, an Edit value
+    or Clear edit (ADM-09.04: the decision stays and the edit fields change).
     """
 
     proposal = models.ForeignKey(

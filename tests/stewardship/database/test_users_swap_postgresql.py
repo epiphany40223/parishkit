@@ -585,6 +585,12 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_accounts", "0025_campaign_setup_review"),
     ),
+    # 0107 (#528, ADM-09.04) creates the edit guard on census changes; its
+    # file also replaces 0096's review guard (CLOSURE_REPLACED below).
+    "public.stewardship_proposal_edit_guard_v1()": (
+        "stewardship_responses",
+        "0008_proposal_review_edit",
+    ),
 }
 
 
@@ -649,6 +655,8 @@ CLOSURE_ALTERED = {
 # entry comes after 0094's: 0094's file, run again for the limitations
 # report, puts that selection back without the counts first.
 # 0101 (#528) replaces the task-type maps 0077's file brings back.
+# 0107 (#528, ADM-09.04) replaces the review guard 0096's file brings back
+# with the one that also admits an edited value.
 CLOSURE_REPLACED = {
     "public.stewardship_debug_off_switch_guard_v1()": (
         ("stewardship_jobs", "0031_debug_allow"),
@@ -680,6 +688,10 @@ CLOSURE_REPLACED = {
             "public.stewardship_task_type_creators_v1(text)",
         ),
         (("stewardship_responses", "0007_publication_tasks"), "census_publication"),
+    ),
+    "public.stewardship_proposal_review_guard_v1()": (
+        ("stewardship_responses", "0008_proposal_review_edit"),
+        "OR decided=edited",
     ),
 }
 
