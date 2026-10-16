@@ -121,9 +121,11 @@ contact changes to ParishSoft with the v2 Member contact PUT. It ships
    change is made.
 
 The switch is the deployment setting `parishsoft_publication: true` (or
-`PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION=1`) on the worker. While it is
-off the worker refuses before it takes the source lease or makes any
-ParishSoft call. In Testing mode publication stops after preflight whatever
-the switch says. The rules the worker follows are in the data spec's
+`PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION=1`), set on both the web and
+worker services. While it is off the web refuses to queue a preflight or to
+confirm a plan, and the worker fails both census publication tasks
+(`census_publication_preflight` and `census_publication`) before it takes the
+source lease or makes any ParishSoft call. In Testing mode publication stops
+after preflight whatever the switch says. The rules the worker follows are in the data spec's
 [Review and publication](../specs/stewardship/data/spec.md#review-and-publication)
 section.

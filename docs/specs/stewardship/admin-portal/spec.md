@@ -89,20 +89,21 @@ On the first Admin login, the wizard collects what the system needs to run
 and let Admins sign in, and nothing about a campaign, before making the system
 configured ([#142](https://github.com/epiphany40223/parishkit/issues/142)):
 
-1. Parish name, website URL, optional HTTPS online giving URL, IANA timezone,
-   US main phone, and logo.
-2. The [users](#portal-user-management) who may sign in, while preserving
+1. Parish name, website URL, optional HTTPS online giving URL, IANA timezone
+   and US main phone.
+2. Google Workspace email service-account/delegated mailbox, sender/reply
+   address, optional From name, Testing recipient, and test delivery.
+3. Optional Slack token/channel and test notification. The channel ID field
+   is shown, and required, only while Slack notifications are enabled.
+4. The parish logo.
+5. The [users](#portal-user-management) who may sign in, while preserving
    the bootstrap Administrator: email addresses listed under Administrator,
    Staff and Ministry leader. Each address becomes one user with the highest
    role it is listed under, Named by its local part until renamed on the
    Users page. Access is by address only; no list grants a whole domain.
-3. ParishSoft API key replacement, expected organization, connectivity check,
+6. ParishSoft API key replacement, expected organization, connectivity check,
    and a complete staged source load.
-4. Google Workspace email service-account/delegated mailbox, sender/reply
-   address, optional From name, Testing recipient, and test delivery.
-5. Optional Slack token/channel and test notification. The channel ID field
-   is shown, and required, only while Slack notifications are enabled.
-6. Exact preview/readiness summary and final confirmation.
+7. Exact preview/readiness summary and final confirmation.
 
 The campaign is created afterwards, from Home, by
 [Create the campaign](#create-the-campaign). The wizard has no campaign
@@ -117,20 +118,26 @@ afterwards in Parish settings.
 
 The wizard presents these as one ordered sequence of pages, defined once in
 code. The Parish profile comes first, so the administrator starts by
-describing their own parish. The credential pages follow, each immediately
-after the public settings its staging depends on (outgoing mail and Testing
-recipient for Google Workspace, Slack settings for the Slack token). Like
-[secret replacement](#parish-and-integration-configuration), they require
-fresh Google authentication (a sign-in less than five minutes old); an older
-sign-in is offered "Confirm with Google", which keeps the setup, so the order
-does not need to race that window. The pages mention that rule only when the
-sign-in is already older
-([page help](../ui-conventions/spec.md#page-help)). The source load, logos and administrative
-access follow, then review, the email and Slack tests and the final
-confirmation. Every page shows a compact progress stepper: the current step by
-number and name, the count of completed steps and a slim track (each segment
-names its step and status on hover; the track is hidden from assistive
-technology because the list says the same), with the full ordered list (each
+describing their own parish. The Google Workspace and Slack credential pages
+follow, each immediately after the public settings its staging depends on
+(outgoing mail and Testing recipient for Google Workspace, Slack settings for
+the Slack token), then Parish logos and Administrative access. ParishSoft
+connection and Load parish data come last before review, next to each other
+([#1353](https://github.com/epiphany40223/parishkit/issues/1353)): the load
+can take a few minutes, so the rest of setup is done before the wait, and a
+load that fails on a wrong key or organization is one step after the page
+that fixes it. No page before review needs the loaded data. Like
+[secret replacement](#parish-and-integration-configuration), the credential
+pages require fresh Google authentication (a sign-in less than five minutes
+old); an older sign-in is offered "Confirm with Google", which keeps the
+setup, so the order does not need to race that window. The pages mention that
+rule only when the sign-in is already older
+([page help](../ui-conventions/spec.md#page-help)). Review, the email and
+Slack tests and the final confirmation follow the load. Every page shows a
+compact progress stepper: the current step by number and name, the count of
+completed steps and a slim track (each segment names its step and status on
+hover; the track is hidden from assistive technology because the list says
+the same), with the full ordered list (each
 applicable step named as completed, current, not done, optional or not yet
 available with the reason) in a collapsed disclosure. Navigation is
 conventional: completed steps and the first unfinished required step are
@@ -143,7 +150,12 @@ steps keep their status but are not links. The stepper is presentation only;
 each page still enforces its own prerequisites. Each page has one identical
 row of Back (secondary) and Save-and-continue (primary) controls (Save and
 continue validates, saves and opens the next applicable page, or redisplays
-the page with its errors), a short introduction, and plain-language help for
+the page with its errors; on the Parish, Parish logos, Administrative access,
+Outgoing email, Slack and Testing pages it is unavailable until every shown
+required field is valid, with a short hint after the row saying what is
+missing, as [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)
+describe; a logo file over 5 MB is refused at its field as soon as it is
+chosen, as on Parish logos), a short introduction, and plain-language help for
 every field. Revisiting a page shows its saved values; a credential page never
 shows the secret but says that one is saved (with its public scope, such as
 the ParishSoft organization), lets it be kept by leaving the key empty
@@ -186,6 +198,29 @@ with sending another test kept as a secondary button. Finish setup's primary
 action is "Check readiness and finish setup", which still requires accepted
 tests of the exact reviewed revision.
 
+The setup wizard's status pages (Test email, Test Slack, Load parish data and
+Finishing setup) [update themselves](#background-indicators) like every other
+Admin page that follows background work
+([#1354](https://github.com/epiphany40223/parishkit/issues/1354)). Each draws
+one live status region that it re-reads from a passive status fragment of
+its own status address (`?format=status`). The fragment admits exactly the
+sign-in its page admits and never renews idle time. On a test page, Send test
+is answered in place, and the Recent tests list is watched while a test is
+queued or being sent. While it is, Send (or Send another test) is
+unavailable, named by a line after the action row saying a test is on its
+way, and, while the page cannot check the test's status, by that status line
+too ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates),
+[#1332](https://github.com/epiphany40223/parishkit/issues/1332)). Once the
+test settles, the page re-reads its panel in
+place, without moving focus, so Continue, Send another test or the
+unknown-delivery acknowledgement come from the server. No page offers a
+manual check or asks for a reload, and a page restored from the browser's
+history checks again by itself: a settled test page re-reads its panel in
+place on `pageshow`, so Continue never outlives a change to an earlier
+step's settings. A status read the server refuses (signed
+out, no longer allowed, or a bad request such as Slack being off) stops the
+watching instead of being retried.
+
 Acknowledgment checkboxes and incomplete forms hold their submit buttons as the
 [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates) describe.
 
@@ -197,8 +232,8 @@ each mail type is, that exactly one initial invitation is required before
 go-live, that reminders and the daily and weekly Admin digests are optional (at
 most one digest of each kind), that submission receipts and critical alerts are
 sent automatically and never scheduled, the time zone send times are entered in
-(this computer's on the list and the New and Edit scheduled email pages; the
-campaign's on the date-change review, see [time
+(this computer's on every schedule page, except the retired Copy campaign page,
+which keeps the campaign's; see [time
 entry](../ui-conventions/spec.md#time-entry)), and the current campaign dates. Wherever a schedule is
 edited (the date-change review and the
 New and Edit scheduled email pages below), its fields show only those its mail
@@ -255,8 +290,12 @@ it never silently reinterprets an existing source result.
 Wizard progress may be kept in the authenticated session and temporary staging
 tables/files, but no staged configuration is active until installer
 finalization. While the bootstrap Admin remains on the correlated source-load
-progress page, bounded authenticated polling renews only idle expiry under the
+progress page, a bounded authenticated renewal POST, sent every 15 seconds
+while the page is visible and the load is active, renews only idle expiry
+under the
 [session-policy exception](../architecture/spec.md#identity-and-session-security).
+It is separate from the page's passive live status reads, and stops at the
+nearest deadline or once a renewal says the load is no longer active.
 Wizard pages do not list the time limits. The shared
 [inactivity dialog](../architecture/spec.md#identity-and-session-security)
 warns five minutes before sign-out and lets the Admin stay signed in, which
@@ -266,8 +305,9 @@ as done, in progress (Ministry rosters as "N of M") or waiting, with its
 record count; the saved-record bar appears once saving starts. The worker
 encodes one step per finished collection in the task's two monotonic
 progress counters and the page decodes the task's append-only event history,
-so this needs no schema change. The page also shows the elapsed time and the
-loading worker's most recent heartbeat. On success it shows a prominent
+so this needs no schema change. The page also shows when the load started and the
+loading worker's most recent heartbeat, both counting forward between status
+reads; an open Technical details stays open as they update. On success it shows a prominent
 result with Continue to the next wizard page; on failure it says what to do
 next.
 
@@ -306,9 +346,10 @@ setup" page on the original login's cancellation route. It lists each step in
 plain language (each credential's installation, the server operator's
 acknowledgement with a count of acknowledged services, applying the
 configuration, the final parish data load, and completion) with the time since
-confirmation. It polls a passive status every 15 seconds while visible,
-reloading when a step changes and showing a Continue link to the Admin home once
-setup completes. A failed step explains what to do: a credential the provider
+confirmation. Each step changes in place while setup finishes. Once setup
+completes, the page shows a Continue link to the Admin home and drops Cancel
+setup. A failed step stops the updates. The step-up notice below appears or
+goes in place as it becomes needed. A failed step explains what to do: a credential the provider
 rejected repeats the integration page's per-provider advice on what to check,
 one that did not finish in time asks the operator to check the credential
 installers, and each says to cancel and start a new setup (#456). When a credential cannot
@@ -942,16 +983,16 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `error_page` | _error title_ | (outside the menu) | Administrator, Staff, Ministry leader | _error title_ (e.g. Check your entries, This information changed, Access unavailable, Page unavailable, Page not found, Confirm it's you) | (any Admin URL that fails) | (same) | Object-named (exception); offers a way back to the page or Home. |
 | `setup` | Initial setup | Setup stepper | Administrator | (same) | `/admin/setup` | `/admin/setup/` |  |
 | `setup_step_parish` | Parish profile | Setup stepper | Administrator | (same) | `/admin/setup/parish` | `/admin/setup/parish/` |  |
-| `setup_credential_parishsoft` | ParishSoft connection | Setup stepper | Administrator | Setup credential: ParishSoft (stepper: ParishSoft connection) | `/admin/setup/credentials/parishsoft` | `/admin/setup/credentials/parishsoft/` |  |
 | `setup_step_mail` | Outgoing email settings | Setup stepper | Administrator | (same) | `/admin/setup/mail` | `/admin/setup/mail/` |  |
 | `setup_step_testing` | Testing recipient | Setup stepper | Administrator | (same) | `/admin/setup/testing` | `/admin/setup/testing/` |  |
 | `setup_credential_google_workspace` | Google Workspace connection | Setup stepper | Administrator | Setup credential: Google Workspace mail (stepper: Google Workspace connection) | `/admin/setup/credentials/google_workspace` | `/admin/setup/credentials/google_workspace/` |  |
 | `setup_step_slack` | Slack notifications (optional) | Setup stepper | Administrator | (same) | `/admin/setup/slack` | `/admin/setup/slack/` |  |
 | `setup_credential_slack` | Slack connection | Setup stepper | Administrator | Setup credential: Slack (stepper: Slack connection) | `/admin/setup/credentials/slack` | `/admin/setup/credentials/slack/` |  |
-| `setup_source` | Load parish data | Setup stepper | Administrator | (same) | `/admin/setup/source` | `/admin/setup/source/` |  |
-| `setup_source_progress` | Loading parish data | Setup stepper | Administrator | (same) | `/admin/setup/source/<task>` | `/admin/setup/source/<task>/` |  |
 | `setup_branding` | Parish logos | Setup stepper | Administrator | Parish logo | `/admin/setup/branding` | `/admin/setup/branding/` |  |
 | `setup_step_access` | Administrative access | Setup stepper | Administrator | (same) | `/admin/setup/access` | `/admin/setup/access/` |  |
+| `setup_credential_parishsoft` | ParishSoft connection | Setup stepper | Administrator | Setup credential: ParishSoft (stepper: ParishSoft connection) | `/admin/setup/credentials/parishsoft` | `/admin/setup/credentials/parishsoft/` |  |
+| `setup_source` | Load parish data | Setup stepper | Administrator | (same) | `/admin/setup/source` | `/admin/setup/source/` |  |
+| `setup_source_progress` | Loading parish data | Setup stepper | Administrator | (same) | `/admin/setup/source/<task>` | `/admin/setup/source/<task>/` |  |
 | `setup_preview` | Review | Setup stepper | Administrator | Setup preview (stepper: Review) | `/admin/setup/preview` | `/admin/setup/preview/` |  |
 | `setup_mail` | Test email | Setup stepper | Administrator | Setup email test (stepper: Test email) | `/admin/setup/mail-test` | `/admin/setup/mail-test/` |  |
 | `setup_notification` | Test Slack | Setup stepper | Administrator | Setup Slack test (stepper: Test Slack) | `/admin/setup/slack-test` | `/admin/setup/slack-test/` |  |
@@ -1286,8 +1327,9 @@ not affect presence semantics or carry form answers.
 
 Every Admin page that follows background work (configuration changes,
 credential replacement, Testing cleanup, Family link preparation, chosen-Family
-tests, background task details, integration key changes, report exports and
-[Family email progress](#family-email-progress))
+tests, background task details, integration key changes, report exports,
+[Family email progress](#family-email-progress) and the
+[setup wizard's status pages](#bootstrap-and-first-admin-wizard))
 updates itself: while the work is queued or running it shows a worded running
 indicator and re-reads its passive status, backing off from 2 to 10 seconds
 (or at the fixed pace a page asks for, 2 to 60 seconds) and pausing while the
@@ -1330,9 +1372,10 @@ Saved while only PostgreSQL or only YAML has changed. The dedicated installer
 and fail-closed mismatch recovery are defined by the
 [configuration architecture](../architecture/spec.md#configuration-and-secrets).
 Every editor in this section reviews and applies through the
-[review dialog](../ui-conventions/spec.md#review-dialog). Parish settings, until #750 converts it, shows its review, Apply and
-that status [in place](../ui-conventions/spec.md#in-place-controls) under its
-form.
+[review dialog](../ui-conventions/spec.md#review-dialog), Parish settings
+included: its Review opens the dialog with each changed setting, Apply
+follows the change there, and the form is redrawn at the applied version.
+Parish settings' address takes no query.
 
 Outgoing email settings (the setup mail step and the post-setup outgoing
 email integration) include an optional From name: a single line of at most 100
@@ -2478,6 +2521,36 @@ read-only editors still post their saved values, so the posted form, its
 validation, the review and reminder planning are unchanged. When the browser
 restores a value into a closed editor (Back), `pageshow` opens that editor
 again; a value restored into a read-only editor is put back to its saved value.
+
+The date-change review shows and takes send dates and times in the browser's
+time zone ([#558](https://github.com/epiphany40223/parishkit/issues/558)), as
+[New and Edit scheduled email](#new-and-edit-scheduled-email) do: each saved
+schedule's editor is filled from its moment
+in the browser's zone, the page names that zone beside the dates, and the
+server converts each posted row back to the campaign's zone with the browser's
+zone the page sends. A row posted as it was shown keeps its saved values, and
+without a usable zone Review changes stays unavailable and the server refuses
+the post. The campaign dates are calendar dates and are not converted. A draft
+campaign's time zone may change in the same review. A schedule whose send date,
+time and day of the week are left as shown (even if its email changed) then
+keeps its campaign wall-clock time in the new zone, as a time zone change always
+has, so its send moves and the review lists the moved sends. A schedule whose
+send date or time changed converts from the typed browser time into the new
+zone, so it sends at the moment typed. Two rows that show the same time can
+therefore send an hour apart after a zone change: an untouched row moves with
+the new zone while a changed one keeps the moment typed, and the review shows
+each row's moment. A dated send typed at a moment the campaign's clocks show
+twice (the hour they repeat when they fall back) is refused on its send time,
+since a schedule keeps only a campaign wall-clock time and the scheduler reads
+it as the first of the two; the Admin chooses a time outside that hour. A typed
+time the browser's own clocks skip reads forward, as every browser-local time
+does, and no moment falls in an hour the campaign's clocks skip. A digest's
+row also posts the moment the page drew it from, so a page drawn before a
+daylight-saving change and posted after it still reads as unchanged. These
+rules are the shared conversion, so New and Edit scheduled email follow them
+too. The review dialog, like every schedule review, shows when each
+schedule sends only as moments in the browser's zone (a digest also says it
+recurs), never the saved campaign-local date and time.
 
 The date-change review reviews and applies in the
 [review dialog](../ui-conventions/spec.md#review-dialog). **Review changes**

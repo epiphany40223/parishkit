@@ -467,11 +467,14 @@ def test_an_unchanged_edit_keeps_its_send_when_clocks_fall_back(auth_service, go
     New York changes its clocks an hour before Chicago. The campaign's
     reminder at 2:30 AM New York time on November 1, 2054 (07:30 UTC) shows
     in Chicago as its second 1:30 AM. Reading that 1:30 again would be the
-    first (06:30 UTC, 1:30 AM in New York); an Edit that changes only the
-    email keeps 2:30 instead, while a New reminder typed at 1:30 in Chicago
-    is the first. (The unit tests cover the same case with the zones the
-    other way round. A save with nothing changed at all is refused as no
-    change, so this one changes the email.)
+    first (06:30 UTC); an Edit that changes only the email keeps 2:30
+    instead. A New reminder typed at 1:30 in Chicago (the first there) is
+    06:30 UTC, New York's second 1:30 AM: a schedule keeps only "01:30",
+    which would send at the first, an hour early, so it is refused on its
+    send time (#558). Typed at 12:30 AM in Chicago it is New York's first
+    1:30 and is kept exactly. (The unit tests cover the same case with the
+    zones the other way round. A save with nothing changed at all is refused
+    as no change, so this one changes the email.)
     """
     store = auth_service.store
     row = campaign_record(end_date="2054-11-05")
@@ -502,7 +505,13 @@ def test_an_unchanged_edit_keeps_its_send_when_clocks_fall_back(auth_service, go
     values = reminder.current_revision.values
     assert (values["date"], values["time"]) == ("2054-11-01", "02:30:00")
     assert values["template_version"] == other["id"]
-    review = post(browser, NEW, entry(store, CHICAGO, kind="reminder", **shown))
+    refused = post(browser, NEW, entry(store, CHICAGO, kind="reminder", **shown))
+    assert refused.status_code == 400
+    assert "hour that repeats when clocks fall back" in unescape(
+        refused.content.decode()
+    )
+    first = shown | {"time": "00:30"}
+    review = post(browser, NEW, entry(store, CHICAGO, kind="reminder", **first))
     assert review.status_code == 200, review.content
     apply(store, post(browser, LIST, {"action": "confirm", "preview": token(review)}))
     added = ScheduleDefinition.objects.exclude(pk=reminder.pk).get(

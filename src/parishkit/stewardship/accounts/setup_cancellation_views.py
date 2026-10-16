@@ -11,6 +11,7 @@ from django.shortcuts import render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
+from parishkit.stewardship.jobs.queue_wait import waited_words
 from parishkit.stewardship.storage import StaleRecordError
 
 from .admin_editing import error_response
@@ -22,18 +23,23 @@ from .setup_finalization_status import finalization_status
 from .setup_finishing import finishing
 from .setup_views import ERRORS, _closed
 
+# The page's live status region, which its poll (?format=status) reads.
+STATUS_TEMPLATE = "stewardship/setup-finishing-status.html"
 
-def _completed_redirect(request, service, *, polled=False):
+
+def _completed_redirect(request, service, *, polled=None):
     """Completion restores ordinary current-policy checks, never predecessor access.
 
     A page load goes to the admin home. The finishing page's status poll
-    instead learns that setup is complete, so the page can show its Continue
-    link without leaving.
+    (``polled`` names its format) instead learns that setup is complete, so
+    the page can show its Continue link without leaving.
     """
     actor = authenticated_admin(request, store=service.store)
     if not allows(actor, Capability.CONFIGURE):
         raise PermissionError("Setup progress requires an Administrator.")
-    if polled:
+    if polled == "status":
+        response = render(request, STATUS_TEMPLATE, {"overall": "completed"})
+    elif polled:
         response = JsonResponse(
             {"overall": "completed", "signature": "completed", "continue": "/admin/"}
         )
@@ -43,30 +49,40 @@ def _completed_redirect(request, service, *, polled=False):
     return response
 
 
-def _progress(request, service, *, polled=False):
+def _progress(request, service, *, polled=None):
     """Render the "Finishing setup" page, or its status for the page's poll.
 
-    Both are passive reads: neither renews the original login's deadlines.
-    A completion racing either read hands off through ordinary authorization.
+    ``polled`` is the poll's format: "status" for the page's live status
+    region (#1354), "json" for the short machine-readable status. All are
+    passive reads: none renews the original login's deadlines. A completion
+    racing any read hands off through ordinary authorization.
     """
     try:
         progress = finalization_status(request, service)
         steps = finishing(progress)
-        if polled:
+        context = (
+            progress
+            | steps
+            | {
+                "confirmed_ago": waited_words(
+                    progress["server_now"] - progress["confirmed_at"]
+                ),
+                # Return here after the step-up sign-in.
+                "next": reverse("admin:setup_cancel"),
+            }
+        )
+        if polled == "json":
             response = JsonResponse(
                 {"overall": steps["overall"], "signature": steps["signature"]}
             )
+        elif polled:
+            response = render(request, STATUS_TEMPLATE, context)
         else:
             response = render(
                 request,
                 "stewardship/setup-cancel.html",
-                progress
-                | steps
-                | {
-                    # Return here after the step-up sign-in.
-                    "next": reverse("admin:setup_cancel"),
-                    "status_url": reverse("admin:setup_cancel") + "?format=json",
-                },
+                context
+                | {"status_url": reverse("admin:setup_cancel") + "?format=status"},
             )
         if cancellation_status(request, service) != progress["attempt"]:
             raise StaleRecordError("Setup changed while rendering.")
@@ -82,13 +98,13 @@ def setup_cancellation(request):
     """No draft, credential or contact values are returned across this exception."""
     try:
         service = runtime()
-        polled = request.method != "POST" and bool(request.GET)
         _closed(
             request,
             {"attempt"},
             query={"format"} if request.method != "POST" else frozenset(),
         )
-        if polled and request.GET.get("format") != "json":
+        polled = request.GET.get("format") if request.method != "POST" else None
+        if polled is not None and polled not in {"json", "status"}:
             raise ValueError("Invalid progress format.")
         if request.method != "POST" and service.configured():
             return _completed_redirect(request, service, polled=polled)

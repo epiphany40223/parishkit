@@ -79,11 +79,30 @@ def test_explicit_send_redirects_and_passive_polling_does_not_renew_login(
             "created_at",
             "current",
         }
+        # The page polls its live status region instead (#1354): the same
+        # passive read, drawn as the region, with no form or CSRF token.
+        region = browser.get(PATH + "/status?format=status")
+        assert region.status_code == 200 and region["Cache-Control"] == "no-store"
+        body = region.content.decode()
+        assert 'data-live-status="setup-test"' in body and "data-live-pending" in body
+        assert data["items"][0]["id"] in body
+        assert "csrfmiddlewaretoken" not in body and "<form" not in body
+        assert browser.get(PATH + "/status?format=xml").status_code == 400
+        # Slack is off in this setup: its test page refuses, and so does its
+        # status, in either form, as the page does (#1354).
+        slack = "/admin/setup/slack-test"
+        assert browser.get(slack).status_code == 400
+        for status in ("/status", "/status?format=status"):
+            assert browser.get(slack + status).status_code == 400
         assert (
             PortalSession.objects.get(pk=request.portal_session.pk).last_activity_at
             == activity
         )
-        assert browser.get(PATH).status_code == 200
+        page = browser.get(PATH)
+        assert page.status_code == 200
+        assert b'data-live-url="/admin/setup/mail-test/status?format=status"' in (
+            page.content
+        )
         assert (
             PortalSession.objects.get(pk=request.portal_session.pk).last_activity_at
             == activity
@@ -159,7 +178,9 @@ def test_other_login_and_cancelled_attempt_cannot_view_original_mail_status(
         assert post(browser, PATH, values(browser.get(PATH))).status_code == 302
         other = Client()
         other.cookies["pk_admin"] = login(setup_http).session.session_key
-        assert other.get(PATH + "/status").status_code == 404
+        for status in ("/status", "/status?format=status"):
+            assert other.get(PATH + status).status_code == 404
         cancel_setup(request, setup_http, attempt.attempt_id)
-        assert browser.get(PATH + "/status").status_code == 404
+        for status in ("/status", "/status?format=status"):
+            assert browser.get(PATH + status).status_code == 404
         assert SetupMailDelivery.objects.get().mail == {}

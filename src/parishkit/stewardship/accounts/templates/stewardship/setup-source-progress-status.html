@@ -1,0 +1,46 @@
+{% load i18n stewardship %}{% comment %}
+  Load parish data's live status region (#1354): the result or failure, the
+  plain-language summary, the three parts of the load, each downloaded
+  collection, the saved-record bar and the load's start and last sign of
+  activity. The page and the passive status fragment it polls
+  (?format=status, which never renews idle time) both draw it, and
+  live-status-v1.js swaps in the fresh region while the load is active
+  (data-live-pending), then stops. Only the page passes status_url. The
+  region is not aria-live, since its counts change on every poll: the
+  summary (data-live-announce) is read out by the page's announcer only when
+  it changes. The two times tick forward between polls (time[data-live-since],
+  in the same words as jobs/queue_wait.py's waited_words). The polled copy
+  of the Technical details (template[data-live-mirror]) is put into the
+  page's details, so an open disclosure stays open. The source-load
+  idle renewal is a separate, visible-page POST (ui-v1.js), never this read.
+{% endcomment %}<div class="setup-load-region" data-live-status="setup-load"{% if status_url %} data-live-url="{{ status_url }}"{% endif %} data-live-announce="{{ summary_text }}" data-progress-state="{{ status_key }}"{% if progress.active %} data-live-pending{% endif %}>
+{% if status_key == 'done' %}<div class="setup-load-result" data-progress-done>
+<h2>{% translate "Parish data is loaded" %}</h2>
+<p>{% translate "The load finished successfully." %}</p>
+<div class="setup-actions"><a class="setup-continue" href="{% if wizard.next %}{{ wizard.next.href }}{% else %}{% url 'admin:setup' %}{% endif %}">{% translate "Continue to the next step" %}{% if wizard.next %}<span class="setup-sr-only">: {{ wizard.next.label }}</span>{% endif %}</a></div>
+</div>{% elif status_key == 'failed' %}<div class="notice notice-error" data-progress-failed>
+<p>{% translate "The load did not finish, and this setup attempt cannot resume or accept a replacement credential." %}</p>
+<p>{% translate "What to do: open the setup overview and cancel setup, then sign out. Ask the operator to check the service logs for the task reference under Technical details." %}</p>
+<p>{% translate "A wrong ParishSoft API key or organization ID is the most common cause. After the problem is corrected, sign in again to start a new setup attempt. Cancelling clears the temporary settings; it does not change any applied configuration." %}</p>
+<p><a href="{% url 'admin:setup' %}">{% translate "Setup overview and cancellation" %}</a></p>
+</div>{% endif %}
+<section class="panel" data-setup-progress>
+<h2>{% translate "Current status" %}</h2>
+<p class="setup-progress-summary" data-progress-summary>{{ summary_text }}</p>
+<ol class="setup-load-phases" aria-label="{% translate 'Parts of the load' %}">{% for phase in phases %}
+<li class="setup-load-{{ phase.state }}" data-load-phase="{{ phase.key }}"><span class="setup-load-label">{{ phase.label }}</span> <span class="setup-load-status" data-load-status>{{ phase.status }}</span></li>{% endfor %}
+</ol>
+<h3>{% translate "Downloaded from ParishSoft" %}</h3>
+<ul class="setup-load-collections" data-load-collections>{% for item in collections %}
+<li class="setup-load-{{ item.state }}" data-collection="{{ item.key }}"><span class="setup-load-label">{{ item.label }}</span> <span class="setup-load-status" data-load-status>{{ item.text }}</span></li>{% endfor %}
+</ul>
+<div class="setup-progress" data-load-records{% if progress.phase != 'staging' and progress.phase != 'validating' %} hidden{% endif %}>
+<label for="setup-load-bar">{% translate "Records saved for this setup" %}</label>
+<progress id="setup-load-bar" data-progress-bar{% if progress.total %} max="{{ progress.total }}" value="{{ progress.current }}"{% endif %}></progress>
+<span data-task-counts>{% blocktranslate trimmed with current=progress.current|number total=progress.total|number %}{{ current }} of {{ total }}{% endblocktranslate %} {% if progress.total %}({% widthratio progress.current progress.total 100 %}%){% else %}(0%){% endif %}</span>
+</div>
+<p>{% translate "The load started:" %} <span data-progress-elapsed>{% if started_ago %}<time{% if progress.active %} data-live-since{% endif %} datetime="{{ progress.started_at }}">{{ started_ago }}</time>{% else %}—{% endif %}</span></p>
+<p><span id="setup-load-quiet-label">{% translate "Last sign of activity from the loading service:" %}</span> {% translate "The loading service reports every few seconds while it works. A recent sign of activity means the load is healthy even while one item takes a long time." as tip %}{% include "stewardship/components/toggletip.html" with tip_id="setup-load-quiet-tip" tip_label_id="setup-load-quiet-label" tip_text=tip %} <span data-progress-quiet>{% if quiet_ago %}<time{% if progress.active %} data-live-since{% endif %} datetime="{{ progress.heartbeat_at }}">{{ quiet_ago }}</time>{% else %}{% translate "not started yet" %}{% endif %}</span></p>
+</section>
+<template data-live-mirror="setup-load-details">{% include 'stewardship/setup-source-progress-details.html' %}</template>
+</div>

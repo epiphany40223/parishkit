@@ -34,7 +34,7 @@ in every campaign state (navigation rule 1).
 <p>{% multi_campaign_control "copy-campaign" _("Copy campaign") %}</p>
 <p><a href="{% url 'admin:content_history' %}">{% translate "See Content history" %}</a></p>
 {% if family_test_url %}<p>{% button variant="secondary" href=family_test_url %}{% translate "Try the Family form as a chosen Family" %}{% endbutton %} <span class="help">{% translate "Sends chosen Families' invitations to the Testing recipient; their links work now." %}</span></p>{% endif %}
-<p class="notice">{% translate "These settings lock when the campaign goes live or is scheduled for Production. Dates and mail schedules use this campaign's time zone, not your computer's." %}</p>
+<p class="notice">{% translate "These settings lock when the campaign goes live or is scheduled for Production. The campaign's days are in its time zone; send times are shown and entered in your computer's." %}</p>
 <div id="settings-editor" data-in-place-region data-refresh-url="{{ refresh_url }}">
 <form id="settings-form" method="post" action="{{ page_url }}" class="panel" data-review-open="campaign-review" data-review-redirects data-require-change="base_digest" data-campaign-form data-require-complete{% if end_saved %} data-live-check="{% url 'admin:campaign_end_date_check' %}" data-live-check-field="end_date" data-live-check-saved="{{ end_saved }}" data-checking-hint="{{ end_check.checking }}" data-check-failed-hint="{{ end_check.failed }}" data-signed-out-hint="{{ end_check.signed_out }}"{% endif %}>
 {% csrf_token %}<input type="hidden" name="action" value="preview">
