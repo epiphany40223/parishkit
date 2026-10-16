@@ -294,6 +294,8 @@ class Action(StrEnum):
     ADMIN_CMD_EVENTS_ACKNOWLEDGE = "admin_cmd_events_acknowledge"
     # census resolve: a Census changes row's Record outcome (#528, #463).
     ADMIN_CMD_CENSUS_RESOLVE = "admin_cmd_census_resolve"
+    # census review: an Automatic row's Review (#528, ADM-09).
+    ADMIN_CMD_CENSUS_REVIEW = "admin_cmd_census_review"
 
 
 # Closed field identifiers are operational metadata, never census values.

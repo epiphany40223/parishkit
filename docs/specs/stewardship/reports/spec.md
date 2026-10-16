@@ -1849,8 +1849,9 @@ changed first is left as it is, and the notice says so. While other campaign
 work holds the campaign, no Review is offered. Bulk review of the selected
 rows with exact counts, an Administrator's edited value
 ([ADM-09](../../../plans/stewardship/admin-portal.md#adm-09-census-review-and-parishsoft-publication-ui))
-and `pk-admin` review commands come later; the command line keeps its
-*Reopen* of an ignored row meanwhile.
+come later. On the command line, `pk-admin census review` records the same
+review through the same service
+([admin automation](../admin-automation/spec.md#reports-and-exports)).
 
 Each review is one immutable review row (who, when, the note and the
 resulting decision and edit fields), added by forward migration 0096 under

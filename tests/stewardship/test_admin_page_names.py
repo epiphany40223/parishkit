@@ -489,6 +489,9 @@ ALLOWED = {
     # "Back to To review" is the Census changes review button that undoes an
     # Approve or Ignore (#528), not a link back to a page.
     ("accounts/templates/stewardship/census-changes.html", "Back to "),
+    # ``pk-admin census review`` (#528) words that button's decision
+    # (``unreviewed``) in its help, not a link back to a page.
+    ("admin_cli.py", "Back to "),
     # "Distinct Families with Testing submissions": a readiness count and
     # the Testing submissions table's caption, not the page's name.
     (

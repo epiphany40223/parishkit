@@ -621,7 +621,22 @@ outcome `invalid`, Reopen without a note, a stale version, an unknown or
 another campaign's change and a repeat after the campaign changed
 `not_available`, a read-only session denied, Staff entering and ignoring
 but denied Reopen, a Ministry leader denied, an ended session, no current
-campaign).
+campaign). A #528 follow-up adds `census review`, an Automatic row's Review
+(ADM-09), through the same command scope (`admin_census._census_write`,
+which `census resolve` now shares) and the page's `review_census_change`,
+recording `admin_cmd_census_review` once per request key, with no schema
+change and no prompt; `export census --format jsonl` gains `reviews`;
+proven by `tests/stewardship/test_admin_census.py` (the golden document,
+the decisions, the Administrator's role checked first, usage errors),
+`tests/stewardship/test_admin_census_export.py` (`reviews` per state and
+reader), `tests/stewardship/test_admin_cli.py` and
+`tests/stewardship/database/test_admin_census_review_cli_postgresql.py`
+(Approve, Ignore and Back to To review with both events, a repeat and a
+rebound key, an unchanged decision `invalid`, the open-state matrix with
+every queued review and a Conflict's Approve refused, By-hand `invalid`, a
+stale version, an unknown or another campaign's change `not_available`, a
+read-only session, Staff and a Ministry leader denied, an ended session, no
+current campaign).
 A follow-up (#682) lets `delivery resolve` retry Family emails too, loading
 the web's general and public token keyrings only for that, checked against
 the web's published receipts; proven by `tests/stewardship/test_admin_cli.py`,
