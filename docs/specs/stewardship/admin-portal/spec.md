@@ -1462,7 +1462,8 @@ reviewed and applied in the
 upload opens it with the image as it will appear, a removal with what
 Families will see instead, and Apply posts the signed preview, with the slot
 (and staged image) it names, to Campaign images; the page takes no query. A
-refused upload keeps its error on the slot's field. An upload that expired,
+refused upload marks the slot's field and says why in the slot's own status
+line, with no jump to the top (#1410). An upload that expired,
 or was staged against settings changed since, is refused in the dialog with
 a request to reload the page and upload it again (the slots keep the version
 the page was loaded at).

@@ -274,7 +274,7 @@ def test_upload_rejects_non_images(auth_service, google, media):
             },
         )
     assert result.status_code == 400
-    assert b"Choose a supported, bounded static image:" in result.content
+    assert b"at least twice as wide as it is tall." in result.content
     # The page again (the dialog stays shut), its summary linked to the
     # slot's field, which ui-v1.js marks on the form (#750).
     assert b'<form id="artwork-upload-banner"' in result.content

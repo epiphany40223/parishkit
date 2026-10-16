@@ -96,6 +96,16 @@ UNREVIEWABLE = {
         "choose Remove this image again if the slot still shows an image."
     ),
 }
+# Why an upload that is not a usable image is refused, at its field, by the
+# kind of image the slot takes. Each names only what its slot needs, so it
+# fits the slot's reserved status line (#1410); the browser tests check the
+# fit at phone and desktop width.
+NOT_STATIC_IMAGE = {
+    "banner": _(
+        "Choose a static PNG, JPEG or WebP image at least twice as wide as it is tall."
+    ),
+    "section": _("Choose a static PNG, JPEG or WebP image that is roughly square."),
+}
 SLOT_LABELS = {
     "banner": _("Banner (top of the Family emails only)"),
     "welcome": _("Welcome page icon"),
@@ -516,14 +526,7 @@ def artwork_upload(request, campaign_id, slot):
             try:
                 graphics = prepare_artwork(form.cleaned_data["image"], _kind(slot))
             except ValueError:
-                form.add_error(
-                    "image",
-                    _(
-                        "Choose a supported, bounded static image: a wide banner "
-                        "at least twice as wide as it is tall, or a roughly "
-                        "square icon."
-                    ),
-                )
+                form.add_error("image", NOT_STATIC_IMAGE[_kind(slot)])
             else:
                 try:
                     identifier = stage_branding(
