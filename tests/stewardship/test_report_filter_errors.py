@@ -1,12 +1,17 @@
 """Report filters refused at their field, not on an error page (#1332)."""
 
+import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
+from uuid import UUID
 
 import pytest
-from django.http import HttpResponse
+from django.http import HttpResponse, QueryDict
 from django.template import Context, Template
+from django.template.loader import render_to_string
+from django.test import RequestFactory
 
 from parishkit.stewardship.audit.log_rows import (
     AUDIT_ONLY_MESSAGE,
@@ -19,6 +24,7 @@ from parishkit.stewardship.audit.log_rows import FIELD_MESSAGES as LOG_MESSAGES
 from parishkit.stewardship.audit.log_views import FIELD_IDS as LOG_IDS
 from parishkit.stewardship.audit.log_views import FIELD_LINES as LOG_LINES
 from parishkit.stewardship.audit.log_views import field_ids, refusal_sizes
+from parishkit.stewardship.reports import information_views, ministry_export_views
 from parishkit.stewardship.reports.financial import FIELD_MESSAGES, FinancialQuery
 from parishkit.stewardship.reports.financial_views import FIELD_IDS, FIELD_LINES
 from parishkit.stewardship.reports.information import (
@@ -26,11 +32,25 @@ from parishkit.stewardship.reports.information import (
 )
 from parishkit.stewardship.reports.information import InformationQuery
 from parishkit.stewardship.reports.information_views import (
+    CONFIRM_MESSAGE,
+    unconfirmed_context,
+)
+from parishkit.stewardship.reports.information_views import (
     FIELD_IDS as INFORMATION_IDS,
 )
 from parishkit.stewardship.reports.information_views import (
     FIELD_LINES as INFORMATION_LINES,
 )
+from parishkit.stewardship.reports.ministry_export_views import (
+    PACKET_MESSAGE,
+    TOO_MANY,
+    TOO_MANY_FIX,
+    TooManyMinistries,
+    packet_selection,
+)
+from parishkit.stewardship.reports.ministry_exports import MAX_PACKET_MINISTRIES
+from parishkit.stewardship.reports.ministry_followup_views import packet_context
+from parishkit.stewardship.responses.information import ClearUnconfirmed
 from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.filter_errors import (
     FilterError,
@@ -491,3 +511,218 @@ def test_log_nothing_ticked_under_an_audit_only_activity_says_tick_audit():
             LogQuery.parse({"applied": "yes", "activity": activity})
         assert caught.value.message == message
         assert refusal_sizes(caught.value) == {"log-filters": message}
+
+
+# Ministry requests' Follow-up packet limit and an Additional information
+# item's confirmation (#1332, fourth slice): forms, not filters, refused at
+# their field with the same pieces.
+PACKET = (
+    Path(__file__).parents[2]
+    / "src/parishkit/stewardship/accounts/templates/stewardship/ministry-packet.html"
+).read_text()
+CHOICES = [{"duid": 4, "name": "Choir"}, {"duid": 9, "name": "Food pantry"}]
+
+
+def packet_form(count):
+    """The packet form's POST body with ``count`` Ministries ticked."""
+    values = QueryDict(mutable=True)
+    values.update({"format": "pdf", "browser_timezone": "UTC", "request_key": "k"})
+    values.setlist("ministries", [str(duid) for duid in range(1, count + 1)])
+    return values
+
+
+def boxes(html):
+    """The packet's checkbox tags, in order."""
+    return re.findall(r'<input type="checkbox" id="ministry-packet-[^>]*>', html)
+
+
+def test_packet_limit_keeps_the_selection_sent():
+    """Past the limit the refusal carries the selection, and is a ValueError."""
+    with pytest.raises(TooManyMinistries) as caught:
+        packet_selection(packet_form(MAX_PACKET_MINISTRIES + 1))
+    assert caught.value.chosen == tuple(
+        str(duid) for duid in range(1, MAX_PACKET_MINISTRIES + 2)
+    )
+    assert isinstance(caught.value, ValueError)
+    assert str(PACKET_MESSAGE) == f"{TOO_MANY} {TOO_MANY_FIX}"
+
+
+def test_packet_context_marks_every_box_and_links_the_first():
+    """The summary links to the first box; the row is sized to the message."""
+    error = FilterError("ministries", PACKET_MESSAGE, ("9", "77"))
+    context = packet_context(error, CHOICES)
+    assert context["filter_error"] == {
+        "fields": ("ministries",),
+        "line": "ministry-packet",
+        "message": PACKET_MESSAGE,
+    }
+    assert context["errors"] == [
+        {"field_id": "ministry-packet-4", "message": PACKET_MESSAGE}
+    ]
+    assert context["packet_ticked"] == {"9", "77"}
+    assert context["packet_sizes"] == {"ministry-packet": PACKET_MESSAGE}
+    # A reader who may include no Ministry has no box: the heading.
+    assert packet_context(error, [])["errors"][0]["field_id"] == (
+        "ministry-packet-heading"
+    )
+
+
+def test_refused_packet_keeps_offered_ticks_with_the_message_in_the_hint_row():
+    """Only offered boxes are ticked again; each is marked and described by
+    the one message line, which shares the hint row with the gate's hint."""
+    error = FilterError("ministries", "Tick <b>fewer</b>.", ("9", "77", '"><x'))
+    html = render_to_string(
+        "stewardship/ministry-packet.html",
+        {"packet_choices": CHOICES, "packet_limit": 200, "mutable": True}
+        | packet_context(error, CHOICES),
+    )
+    choir, pantry = boxes(html)
+    assert "checked" not in choir and " checked" in pantry
+    for tag in (choir, pantry):
+        assert 'aria-invalid="true"' in tag
+        assert 'aria-describedby="ministry-packet_error"' in tag
+    assert "77" not in html and "&quot;&gt;&lt;x" not in html
+    row = html[html.index('<div class="hint-row-messages">') :]
+    assert row.startswith(
+        '<div class="hint-row-messages"><p class="help" id="ministry-packet-hint"'
+        ' data-complete-hint="reserve"></p><div class="field-error-line">'
+    )
+    assert html.count("Tick &lt;b&gt;fewer&lt;/b&gt;.") == 2  # message and size
+    assert '<ul class="errorlist" id="ministry-packet_error"><li>' in html
+
+
+def test_unrefused_packet_draws_no_mark_and_an_empty_line():
+    """An ordinary page has no mark and a line that takes no room."""
+    html = render_to_string(
+        "stewardship/ministry-packet.html",
+        {"packet_choices": CHOICES, "packet_limit": 200, "mutable": True},
+    )
+    for tag in boxes(html):
+        assert "aria-invalid" not in tag and "aria-describedby" not in tag
+        assert "checked" not in tag
+    assert (
+        '<div class="field-error-line"><span class="field-error-size"'
+        ' aria-hidden="true"></span><ul class="errorlist" id="ministry-packet_error"'
+        " hidden><li></li></ul></div></div></form>"
+    ) in html
+
+
+class Stub:
+    """A stand-in runtime and principal for the views below."""
+
+    store = None
+    identity = UUID(int=5)
+
+
+@pytest.mark.parametrize("accept", ["text/html", "application/json"])
+def test_packet_limit_draws_the_queue_for_a_person_json_for_a_script(
+    monkeypatch, accept
+):
+    """A person gets Ministry requests again; a script, the typed refusal."""
+    drawn = []
+    monkeypatch.setattr(ministry_export_views, "runtime", Stub)
+    monkeypatch.setattr(ministry_export_views, "_principal", lambda *_: Stub)
+    monkeypatch.setattr(
+        ministry_export_views,
+        "queue_response",
+        lambda request, campaign, *, packet: (
+            drawn.append((campaign, packet)) or HttpResponse("queue", status=400)
+        ),
+    )
+    campaign = UUID(int=7)
+    body = dict(packet_form(MAX_PACKET_MINISTRIES + 1).lists())
+    request = RequestFactory().post("/packet", body, HTTP_ACCEPT=accept)
+    response = ministry_export_views.create_packet.__wrapped__(request, campaign)
+    assert response.status_code == 400
+    if accept == "text/html":
+        ((shown, error),) = drawn
+        assert shown == campaign and error.field == "ministries"
+        assert error.message == PACKET_MESSAGE and len(error.query) == 201
+    else:
+        assert not drawn
+        assert "at most 200" in json.loads(response.content)["refusal"]["message"]
+
+
+def test_confirm_refusal_draws_the_item_again_with_what_was_sent(monkeypatch):
+    """A Save refused for its confirmation shows the item, not an error page."""
+    drawn = []
+    monkeypatch.setattr(information_views, "runtime", Stub)
+    monkeypatch.setattr(information_views, "_principal", lambda *_: Stub)
+    monkeypatch.setattr(
+        information_views.AdditionalInformationItem.objects,
+        "filter",
+        lambda **_: SimpleNamespace(exists=lambda: True),
+    )
+
+    def refuse(*args, **kwargs):
+        """The service's refusal: completion cleared, not confirmed."""
+        raise ClearUnconfirmed("Confirm clearing the completed follow-up.")
+
+    monkeypatch.setattr(information_views, "update_information", refuse)
+    monkeypatch.setattr(
+        information_views,
+        "_page_response",
+        lambda request, campaign, *, item_id, sent: (
+            drawn.append((item_id, sent)) or HttpResponse("item", status=400)
+        ),
+    )
+    request = RequestFactory().post(
+        "/update",
+        {
+            "expected_version": "3",
+            "request_key": str(UUID(int=9)),
+            "notes": "Typed <note>",
+            "follow_up_needed": "yes",
+            "queue": "",
+        },
+    )
+    item = UUID(int=8)
+    response = information_views.update.__wrapped__(request, UUID(int=7), item)
+    assert response.status_code == 400
+    ((shown, sent),) = drawn
+    assert shown == item and sent["expected_version"] == 3
+    assert sent["followed_up"] is False and sent["confirm_clear"] is False
+    assert sent["follow_up_needed"] is True and sent["notes"] == "Typed <note>"
+    assert isinstance(ClearUnconfirmed("x"), ValueError)
+
+
+def test_unconfirmed_context_shows_what_was_sent_at_the_box():
+    """The box is marked, the Save hint row shows and is sized to the message."""
+    sent = {
+        "expected_version": 3,
+        "request_key": UUID(int=9),
+        "follow_up_needed": True,
+        "followed_up": False,
+        "confirm_clear": False,
+        "notes": "Typed",
+    }
+    context = unconfirmed_context(sent, {"submitted-dates": "Dates."})
+    assert context["sent"] == {
+        "expected_version": 3,
+        "follow_up_needed": True,
+        "followed_up": False,
+        "notes": "Typed",
+    }
+    assert context["filter_error"]["fields"] == ("confirm_clear",)
+    assert context["errors"] == [
+        {"field_id": "information-confirm-clear", "message": CONFIRM_MESSAGE}
+    ]
+    assert context["filter_sizes"] == {
+        "submitted-dates": "Dates.",
+        "information-save": CONFIRM_MESSAGE,
+    }
+
+
+def test_confirm_message_is_the_page_hint_and_the_box_is_marked():
+    """The server's words are the gate's hint; the box and line are wired."""
+    cell = re.search(r'<div data-show-when="followed_up!=yes".*?</div>', INFORMATION)
+    cell = cell.group(0)
+    assert f"data-missing-hint=\"{{% translate '{CONFIRM_MESSAGE}' %}}\"" in cell
+    assert (
+        '<input type="checkbox" id="information-confirm-clear" name="confirm_clear"'
+        ' value="yes"{% filter_mark filter_error "confirm_clear" %}>'
+    ) in cell
+    assert INFORMATION.count('{% filter_line filter_error "information-save" ') == 1
+    assert (
+        '<div class="hint-row-messages"><p class="help" id="information-save-hint"'
+    ) in INFORMATION

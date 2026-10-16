@@ -22,7 +22,11 @@ from parishkit.stewardship.reports.information import (
     PAGE_SIZES,
     InformationQuery,
 )
-from parishkit.stewardship.reports.information_views import FIELD_IDS, FIELD_LINES
+from parishkit.stewardship.reports.information_views import (
+    FIELD_IDS,
+    FIELD_LINES,
+    unconfirmed_context,
+)
 from parishkit.stewardship.web.filter_errors import (
     FilterError,
     error_context,
@@ -38,6 +42,8 @@ ITEM = reverse("admin:information_item", args=[ITEM_ID])
 UPDATE = reverse("admin:information_update", args=[ITEM_ID])
 SAVED = ITEM + "?saved=1"
 OLDER, NEWER = ITEM + "?page=2", ITEM + "?page=1"
+# The item drawn again for a Save refused at its confirmation (#1332).
+UNCONFIRMED = ITEM + "?unconfirmed=1"
 # Save and next (#534): an item whose save moves to the next item in the
 # remembered queue view, the next item's page, and the queue view itself.
 TOKEN = "cd" * 16
@@ -233,6 +239,23 @@ def components(context, admin):
             },
         ),
         "/information-item": ("information", values | {"item": item}),
+        # A Save the server refused for clearing the completed follow-up
+        # without its confirmation (#1332): the item drawn again with what
+        # was sent, the box marked and the message in the Save hint row.
+        UNCONFIRMED: (
+            "information",
+            values
+            | {"item": item}
+            | unconfirmed_context(
+                {
+                    "expected_version": 2,
+                    "follow_up_needed": True,
+                    "followed_up": False,
+                    "notes": "Reopen <this>",
+                },
+                values["filter_sizes"],
+            ),
+        ),
         "/information-unresolved": (
             "information",
             values | {"item": item | {"correction_resolved": False}},
