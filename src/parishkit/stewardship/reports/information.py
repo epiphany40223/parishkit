@@ -150,7 +150,8 @@ def information_page(campaign_id, query, *, item_id=None, page_size=PAGE_SIZE):
 
     The shared closed SQL query also owns complete export captures. Every private
     value is bound; one MVCC statement prevents mixed names, workflow versions,
-    counts and rows during concurrent Staff/Family edits.
+    counts and rows during concurrent Staff/Family edits. Its ``counts`` are
+    every matching request by follow-up state, beside ``total`` (#720).
     """
     with connection.cursor() as cursor:
         cursor.execute(
