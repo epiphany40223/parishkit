@@ -8,13 +8,15 @@
   {% comment %}
     The three gate blocks (document_class, gate_script, gate_panel) stay empty
     here, so Family pages work without JavaScript. admin-base.html fills them
-    to gate every Admin page on JavaScript (#565), and fills admin_script with
-    the Admin menu's script.
+    to gate every Admin page on JavaScript (#565), fills admin_script with
+    the Admin menu's script, and fills header_end with the Appearance switch
+    (#1264), which Family pages do not have.
   {% endcomment %}{% block gate_script %}{% endblock %}
   <script src="{% static 'stewardship/date-format-v1.js' %}" defer></script>
   <script src="{% static 'stewardship/ui-v1.js' %}" defer></script>
   {% block admin_script %}{% endblock %}
   {% if parish_branding.favicon %}<link rel="icon" type="image/png" href="{{ parish_branding.favicon }}">{% endif %}
+  {% if admin_chrome.campaign_wizard %}<link rel="stylesheet" href="{% static 'stewardship/stepper-v1.css' %}">{% endif %}
   {% block head %}{% endblock %}
 </head>
 <body{% if admin_chrome %} class="admin-body"{% endif %} data-date-format="{{ date_format|default:'us_long' }}">
@@ -25,10 +27,11 @@
     {% block branding %}<p class="brand">{% if parish_branding.menu %}<img src="{{ parish_branding.menu }}" alt=""{% if parish_branding.menu_width %} width="{{ parish_branding.menu_width }}" height="{{ parish_branding.menu_height }}"{% endif %}> {% endif %}{% if parish_branding.name %}{{ parish_branding.name }}{% elif admin_chrome.parish_name %}{{ admin_chrome.parish_name }}{% else %}{{ parish_name|default:_("Parish campaign") }}{% endif %}</p>{% endblock %}
     {% if admin_chrome.find_family %}{% include 'stewardship/find-family.html' %}{% endif %}
     {% block navigation %}{% if admin_chrome %}{% include 'stewardship/admin-status.html' %}{% endif %}{% endblock %}
+    {% block header_end %}{% endblock %}
   </header>
   {% if admin_chrome %}<div class="admin-shell">{% include 'stewardship/admin-navigation.html' %}{% endif %}
   <main id="main" tabindex="-1">
-    {% if admin_chrome %}{% include 'stewardship/admin-breadcrumbs.html' %}{% include 'stewardship/admin-flow-steps.html' %}{% include 'stewardship/admin-banners.html' %}{% endif %}
+    {% if admin_chrome %}{% include 'stewardship/admin-breadcrumbs.html' %}{% include 'stewardship/campaign-stepper.html' %}{% include 'stewardship/admin-flow-steps.html' %}{% include 'stewardship/admin-banners.html' %}{% endif %}
     {% block banners %}{% endblock %}
     {% include 'stewardship/components/errors.html' %}
     {% block content %}{% endblock %}

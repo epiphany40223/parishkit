@@ -174,6 +174,10 @@ def test_the_page_s_files_and_json_lines(response_service, google, cli):  # noqa
     # is publication's, so it offers nothing.
     assert records["Home address"]["actions"] == ["entered", "ignored"]
     assert records["First name"]["actions"] == []
+    # The automatic rename is the Administrator's to review (census
+    # review); the By-hand address has no Review.
+    assert records["First name"]["reviews"] == ["approved", "ignored"]
+    assert records["Home address"]["reviews"] == []
     assert records["First name"]["family_answer"] == "Requested"
     # The cells are the CSV's.
     assert sorted(
@@ -208,6 +212,7 @@ def test_the_page_s_files_and_json_lines(response_service, google, cli):  # noqa
         code, body, document = export(run, "--status", "all", "--format", "jsonl")
     assert code == 0, document
     assert [record["actions"] for record in lines(body)] == [[], []]
+    assert [record["reviews"] for record in lines(body)] == [[], []]
 
 
 def test_refusals_print_nothing_and_record_nothing(response_service, google, cli):  # noqa: F811
@@ -253,6 +258,8 @@ def test_staff_export_and_a_leader_is_denied(
         assert code == 0, document
         actions = {record["what"]: record["actions"] for record in lines(body)}
         assert actions == {"Home address": ["entered", "ignored"], "First name": []}
+        # Staff review nothing.
+        assert [record["reviews"] for record in lines(body)] == [[], []]
     before = AuditEvent.objects.filter(event_type=EVENT).count()
     with_roles(monkeypatch, {"ministry_leader"}, frozenset({4}))
     code, body, document = export(run)

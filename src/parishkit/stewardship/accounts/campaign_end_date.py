@@ -188,6 +188,8 @@ def end_review(service, actor, state, campaign, form, live_at, *, extra=None):
                 *describe_changes(_with_leader_roles(previous), extra or {}),
             ],
             "notes": [FAMILY_ACCESS, CAMPAIGN_END_TEXT],
+            # The ids of the schedules re-planned, for the command line (#463).
+            "replanned": [change["id"] for change in context["changes"]],
             "preview": context["preview"],
         }
     }

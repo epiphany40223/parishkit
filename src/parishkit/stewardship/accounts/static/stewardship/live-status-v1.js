@@ -38,7 +38,9 @@
 // read is refused (signed out, or no longer allowed, such as after a change
 // that removed the reader's own access), its content replaces the region as
 // a settled final status, so the page never looks as if it were still
-// waiting (#952). Without one, the refusal is said under the region.
+// waiting (#952). Without one, the refusal is said under the region; a
+// region's data-live-problem-id names that line, for the buttons marked
+// data-live-problem-named to name it while it shows (#1332, see watch()).
 //
 // A region may also set data-live-give-up="<ms>" (at most 3 hours) to
 // replace the one-hour limit; the limit then counts from the last poll that
@@ -88,6 +90,14 @@
 // region says nothing under itself even when a check is refused (signed
 // out or no longer allowed): the page's line says Not current, and the
 // Admin session's own dialog offers to sign in again.
+//
+// An in-place region marked [data-live-recheck="<name>"] (System health's
+// action regions, #1317) checks that region again at once when ui-v1.js
+// swaps in the answer to a form submitted inside it, as the restart button
+// does: the action's answer replaces only the page's in-place regions, so
+// the tile's summary and buttons elsewhere would otherwise keep their old
+// state until the next poll, up to 10 seconds later. Another region's
+// answer, which redraws this one too, does not check again.
 //
 // A mirror target marked data-live-mirror-hold waits, as a focused one does,
 // while the pointer is over its closest [data-live-hover-hold] ancestor:
@@ -174,16 +184,31 @@
     let failures = 0;
     const saysCurrent = region.hasAttribute("data-live-not-current");
 
-    // One status line after the region reports checking problems.
+    // One status line after the region reports checking problems. A region
+    // marked data-live-problem-id="<id>" gives the line that id, and while
+    // the line says something each [data-live-problem-named] button names
+    // it (aria-describedby) beside its own reason, so a Send held while a
+    // test is pending also says that its status could not be checked (the
+    // setup test pages, #1332).
     const problem = document.createElement("p");
     problem.className = "notice live-status-problem";
     problem.setAttribute("role", "status");
     problem.hidden = true;
+    const problemId = region.getAttribute("data-live-problem-id");
+    if (problemId) problem.id = problemId;
     region.after(problem);
 
     function say(text) {
       problem.textContent = text;
       problem.hidden = !text;
+      if (!problemId) return;
+      document.querySelectorAll("[data-live-problem-named]").forEach((button) => {
+        const ids = (button.getAttribute("aria-describedby") || "").split(/\s+/)
+          .filter((id) => id && id !== problemId);
+        if (text) ids.push(problemId);
+        if (ids.length) button.setAttribute("aria-describedby", ids.join(" "));
+        else button.removeAttribute("aria-describedby");
+      });
     }
 
     function localize(scope) {
@@ -624,8 +649,9 @@
         // an in-place refresh replaced the region, must not swap, finish or
         // navigate.
         if (stopped || gone()) return;
-        if ([401, 403, 404].includes(response.status) || response.redirected) {
-          // Signed out or no longer allowed: retrying cannot help.
+        if ([400, 401, 403, 404].includes(response.status) || response.redirected) {
+          // Signed out, no longer allowed, or refused as a bad request (such
+          // as Slack turned off): retrying cannot help.
           const settled = region.querySelector("template[data-live-refused]");
           if (settled) {
             region.replaceChildren(settled.content.cloneNode(true));
@@ -701,13 +727,26 @@
     else schedule();
     watchers.add(gone);
   };
+  // Check the region named ``name`` again now (see the header).
+  const recheck = (name) => {
+    const region = [...document.querySelectorAll("[data-live-status]")]
+      .find((node) => node.getAttribute("data-live-status") === name);
+    if (region) restarts.get(region)?.();
+  };
+  // The id of the [data-live-recheck] region whose form was last submitted,
+  // until its answer is swapped in.
+  let answering = null;
+  document.addEventListener("submit", (event) => {
+    // A review dialog's Apply (#1356) answers the action whose button opened
+    // it, inside the region, so it keeps that region as the one answering.
+    if (event.target instanceof Element && event.target.closest("dialog")) return;
+    const owner = event.target instanceof Element && event.target.closest("[data-live-recheck][id]");
+    answering = owner ? owner.id : null;
+  }, true);
   document.addEventListener("click", (event) => {
     // A [data-live-restart="<name>"] button checks that region again now.
     const button = event.target instanceof Element && event.target.closest("[data-live-restart]");
-    if (!button) return;
-    const region = [...document.querySelectorAll("[data-live-status]")]
-      .find((node) => node.getAttribute("data-live-status") === button.getAttribute("data-live-restart"));
-    if (region) restarts.get(region)?.();
+    if (button) recheck(button.getAttribute("data-live-restart"));
   });
   const first = document.querySelector("[data-live-status]");
   if (first) spoken.set(first.getAttribute("data-live-status"), first.getAttribute("data-live-announce") || "");
@@ -717,6 +756,11 @@
     [...watchers].forEach((gone) => gone());
     const fresh = event.target;
     if (!(fresh instanceof Element)) return;
+    // An action region's answer: bring the rest of the page up to date.
+    if (answering && fresh.id === answering && fresh.hasAttribute("data-live-recheck")) {
+      answering = null;
+      recheck(fresh.getAttribute("data-live-recheck"));
+    }
     const region = fresh.matches("[data-live-status]") ? fresh : fresh.querySelector("[data-live-status]");
     if (!region) return;
     // A manual Refresh reads out a changed coarse status, as a poll would.

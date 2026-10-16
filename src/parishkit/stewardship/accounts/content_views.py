@@ -31,7 +31,7 @@ from parishkit.stewardship.web.refusals import (
     stale_page,
 )
 
-from . import admin_navigation, setup_help
+from . import admin_navigation, schedule_local, setup_help
 from .admin_editing import confirm, error_response, form_action, principal, sign_preview
 from .artwork_views import artwork_patch
 from .authentication import runtime
@@ -564,10 +564,31 @@ def _preview(
             "breadcrumb_label": label,
             "before": before,
             "after": after,
-            "affected": affected,
+            "affected": _affected_rows(affected, campaign),
             "preview": token,
         },
     )
+
+
+def _affected_rows(affected, campaign):
+    """The schedules a content change switches, as the review lists them.
+
+    Each row is the saved schedule with its mail type's label and, for a
+    dated mailing, the UTC moment its campaign-local date and time stand
+    for, which the page shows in the browser's time zone (#558); a digest
+    has no one moment and is listed as recurring.
+    """
+    zone = campaign.active_configuration.values["timezone"]
+    return [
+        schedule
+        | {
+            "label": EMAIL_LABELS.get(schedule["values"]["kind"], ""),
+            "due_at": schedule_local.instant(schedule["values"], zone, None)
+            if schedule["values"].get("date")
+            else None,
+        }
+        for schedule in affected
+    ]
 
 
 @require_http_methods(["GET", "HEAD", "POST"])

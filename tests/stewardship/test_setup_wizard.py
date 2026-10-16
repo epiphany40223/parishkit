@@ -48,6 +48,30 @@ def test_every_page_has_a_unique_key_and_resolvable_url():
     assert PAGES[0].url == "/admin/setup/parish"
 
 
+def test_parishsoft_and_the_load_are_last_before_review():
+    """ParishSoft connection and Load parish data sit together before Review.
+
+    The load can take minutes, so every other data-entry page comes first, and
+    a failed load is one step after the page that fixes its key (#1353).
+    """
+    assert [page.key for page in PAGES] == [
+        "parish",
+        "mail",
+        "testing",
+        "google_workspace",
+        "slack",
+        "slack_credential",
+        "branding",
+        "access",
+        "parishsoft",
+        "source",
+        "preview",
+        "mail_test",
+        "slack_test",
+        "finish",
+    ]
+
+
 @pytest.mark.parametrize("state", [SetupState.FROZEN, SetupState.EXPIRED])
 def test_no_stepper_outside_editable_or_loading_attempts(state):
     """Frozen and ended attempts have their own progress pages."""
@@ -74,7 +98,7 @@ def test_prerequisites_block_later_pages_until_saved():
     assert wizard.step("mail").fix_url == "/admin/setup/parish"
     assert wizard.step("source").fix_url == "/admin/setup/parish"
     assert wizard.previous is None
-    assert wizard.next.key == "parishsoft"
+    assert wizard.next.key == "mail"
     assert wizard.step("parish").current
     assert wizard.completed == 0 and wizard.total == len(wizard.steps)
 
@@ -100,7 +124,9 @@ def test_done_state_next_and_previous_follow_saved_choices():
     assert wizard.next.key == "slack_credential"
     assert wizard.resume.key == "slack_credential"
     ordered = [step.key for step in wizard.steps]
-    assert ordered.index("access") < ordered.index("preview")
+    assert ordered.index("access") < ordered.index("parishsoft")
+    assert ordered.index("parishsoft") + 1 == ordered.index("source")
+    assert ordered.index("source") + 1 == ordered.index("preview")
 
 
 def test_review_opens_when_required_pages_are_complete():
@@ -112,13 +138,15 @@ def test_review_opens_when_required_pages_are_complete():
     }
     shared = {}
     wizard = build(
-        draft(sections, source=uuid4(), reviewed=shared), "access", **options
+        draft(sections, source=uuid4(), reviewed=shared), "source", **options
     )
     shown = states(wizard)
     # Review is open but not completed until the admin has actually opened it.
     assert shown["preview"] == "todo" and wizard.step("preview").url is not None
     assert shown["mail_test"] == "done"
     assert shown["finish"] == "locked"
+    # The load is the last data-entry step: its Continue opens Review.
+    assert wizard.previous.key == "parishsoft"
     assert wizard.next.key == "preview"
     assert wizard.resume.key == "preview"
     reviewed = build(
@@ -139,8 +167,14 @@ def test_review_opens_when_required_pages_are_complete():
 
 
 def test_loading_keeps_completed_steps_but_links_only_the_load():
-    """While the load runs other pages redirect, yet finished work still counts."""
-    sections = {key: VALUES[key] for key in ("parish", "mail", "testing", "slack")}
+    """While the load runs other pages redirect, yet finished work still counts.
+
+    The load is the last data-entry step, so every earlier page is complete
+    while it runs and only Review and the pages after it are still to come.
+    """
+    sections = {
+        key: VALUES[key] for key in ("parish", "mail", "testing", "slack", "access")
+    } | {"branding": {"bundle_id": str(uuid4())}}
     wizard = build(
         draft(sections, state=SetupState.LOADING, source=uuid4()),
         "source",
@@ -150,13 +184,14 @@ def test_loading_keeps_completed_steps_but_links_only_the_load():
     assert wizard.step("source").state == "todo"
     assert wizard.step("source").status == "In progress"
     assert wizard.step("source").url == "/admin/setup/source"
-    for key in ("parishsoft", "mail", "testing", "google_workspace", "slack"):
+    earlier = ("parish", "mail", "testing", "google_workspace", "slack")
+    for key in (*earlier, "branding", "access", "parishsoft"):
         assert shown[key] == "done", key
         assert wizard.step(key).status == "Completed"
-    assert wizard.completed == 6
-    assert {shown[key] for key in ("branding", "access")} == {"blocked"}
+    assert wizard.completed == 8
+    assert {shown[key] for key in ("preview", "mail_test", "finish")} == {"blocked"}
     assert all(step.url is None for step in wizard.steps if step.key != "source")
-    assert wizard.next.url is None
+    assert wizard.next.key == "preview" and wizard.next.url is None
 
 
 def test_a_failed_load_leaves_the_load_to_do_and_every_page_open():
@@ -196,7 +231,7 @@ def test_stepper_marks_current_step_with_text_not_color_alone():
     assert "Not available yet" in html
     assert 'href="/admin/setup/source"' not in html  # blocked: shown as text
     # Compact summary: the current step by number and name, and the count.
-    assert "Step 4 of 12:" in html and "<strong>Testing recipient</strong>" in html
+    assert "Step 3 of 12:" in html and "<strong>Testing recipient</strong>" in html
     assert "1 of 12 steps completed" in html
     # The full list is collapsed by default (and stays as the reader left it
     # across an in-place swap, #519); the decorative track is hidden.

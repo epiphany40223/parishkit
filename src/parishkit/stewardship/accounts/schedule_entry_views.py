@@ -84,6 +84,7 @@ from .schedule_changes import (
     preview_salt,
 )
 from .schedule_forms import (
+    REPEATED_HOUR,
     ZONE_MISSING,
     ScheduleForm,
     Schedules,
@@ -117,7 +118,16 @@ SCHEDULE_LIMIT = Schedules.max_num
 # fields are posted only so a refused page can show them again; the dates it
 # gave are posted as ``repeat-dates``.
 ENTRY = "schedule"
-ENTRY_FIELDS = ("kind", "date", "time", "weekday", "template_version", "comparison")
+ENTRY_FIELDS = (
+    "kind",
+    "date",
+    "time",
+    "weekday",
+    "template_version",
+    "comparison",
+    # The moment an Edit page drew its schedule from (#558, ScheduleForm).
+    "drawn_at",
+)
 REPEAT_FIELDS = (
     "repeat",
     "frequency",
@@ -353,7 +363,9 @@ def _carry_errors(entry, window, schedules, identifiers, targets):
         add(None, message)
 
 
-def entry_form(data, templates, saved, schedule=None, kept=None, test_mail=True):
+def entry_form(
+    data, templates, saved, schedule=None, kept=None, test_mail=True, drawn=None
+):
     """The page's one schedule form: blank for New, filled in for Edit.
 
     It offers the campaign's emails labelled by the schedules that send them,
@@ -367,7 +379,8 @@ def entry_form(data, templates, saved, schedule=None, kept=None, test_mail=True)
     schedules in sending order. ``test_mail`` false (the campaign admits no
     test mail, see ``campaign_mail.admits_test_mail``) replaces each test link
     with a note saying why, so the page never links a test that cannot work
-    (#923).
+    (#923). ``drawn`` is the moment Edit draws the schedule from (its
+    ``drawn_at`` field, posted back; ``schedule_local.instant``).
     """
     labels = dict(
         zip((row["id"] for row in saved), schedule_labels(saved), strict=True)
@@ -380,7 +393,9 @@ def entry_form(data, templates, saved, schedule=None, kept=None, test_mail=True)
         links=True,
         test_mail=test_mail,
         label=labels.get(schedule["id"]) if schedule else None,
-        initial=schedule["values"] | {"id": schedule["id"]} if schedule else None,
+        initial=schedule["values"] | {"id": schedule["id"], "drawn_at": drawn or ""}
+        if schedule
+        else None,
         browser_times=True,
     )
     # The address names the schedule; a posted ID is never read.
@@ -465,6 +480,7 @@ def _entries(entry, repeat, schedule, *, zone, campaign_zone, now):
             campaign_zone=campaign_zone,
             now=now,
             saved=schedule["values"] if schedule is not None else None,
+            drawn=data.get("drawn_at"),
         )
         fields = {
             "date": sent_on.isoformat() if sent_on else None,
@@ -558,7 +574,11 @@ def _kept(posted, schedule, values, now):
         return None
     try:
         return schedule_local.in_browser(
-            schedule["values"], posted.get(ZONE, ""), values["timezone"], now
+            schedule["values"],
+            posted.get(ZONE, ""),
+            values["timezone"],
+            now,
+            posted.get(f"{ENTRY}-drawn_at"),
         )
     except UnknownZone:
         return None
@@ -617,6 +637,11 @@ def _entry(request, campaign_id, schedule_id=None):
             schedule,
             kept=_kept(posted, schedule, values, now),
             test_mail=test_mail,
+            drawn=schedule_local.instant(
+                schedule["values"], values["timezone"], now
+            ).isoformat()
+            if schedule
+            else None,
         )
         repeat = RepeatRule(posted, prefix="repeat") if new else None
         # The schedule's own email (#446): on New, of the posted mail type.
@@ -666,6 +691,9 @@ def _entry(request, campaign_id, schedule_id=None):
             )
         except UnknownZone:
             entry.add_error(None, ZONE_MISSING)
+            return _entry_page(request, context, status=400)
+        except schedule_local.RepeatedHour:
+            entry.add_error("time", REPEATED_HOUR)
             return _entry_page(request, context, status=400)
         except ValueError:
             # Only a date far outside any campaign cannot be converted.
@@ -731,12 +759,41 @@ def _entry(request, campaign_id, schedule_id=None):
             reviewed = reviewed | {"email": _sample(service, campaign, added)}
         # The review dialog's fragment, never a page: its Apply confirms on
         # Dates and mail schedules (the form's dialog names it), and the
-        # dialog then returns there.
+        # dialog then returns there. A New schedule that sends once, with no
+        # email of its own, would only repeat the form: a confirmation.
         return render(
             request,
             "stewardship/schedule-review.html",
-            reviewed | {"new": new},
+            reviewed
+            | {
+                "new": new,
+                "confirmation": new and added is None and _sends_once(reviewed, repeat),
+            },
         )
+
+
+def _sends_once(reviewed, repeat):
+    """Whether a review only adds one schedule that sends once (#1356).
+
+    Such a review shows nothing the New page does not: no current schedule,
+    no sent or planned work (every count is 0), and a send time the reader
+    just typed. A recurring schedule or digest (its resolved send times), a
+    Repeat (its generated reminders), anything else the change touches, or
+    sends that block it keep the full review.
+    """
+    changes = reviewed["changes"]
+    # A Repeat keeps the full review even when its rule yields one date.
+    repeating = repeat is not None and repeat.cleaned_data["repeat"]
+    return (
+        not repeating
+        and len(changes) == 1
+        and changes[0]["operation"] == "add"
+        and bool(changes[0]["after"]["date"])
+        and not reviewed["window_changes"]
+        and not reviewed.get("series")
+        and not reviewed["blocking"]
+        and bool(reviewed["preview"])
+    )
 
 
 def _sample(service, campaign, added):

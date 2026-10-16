@@ -35,16 +35,28 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.responses.census_resolution import resolve_census_change
-from parishkit.stewardship.responses.census_review import review_census_change
+from parishkit.stewardship.responses.census_review import (
+    MAX_BULK,
+    BulkStale,
+    KeyRebound,
+    review_census_change,
+    review_census_changes,
+)
 from parishkit.stewardship.responses.models import ProposedChange
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 from parishkit.stewardship.web import dates
+from parishkit.stewardship.web.contracts import (
+    ErrorCode,
+    FieldError,
+    validation_response,
+)
 from parishkit.stewardship.web.exports import (
     DEFAULT_EXPORT_FORMAT,
     download_headers,
     page_download,
 )
+from parishkit.stewardship.web.refusals import Refusal
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
@@ -250,6 +262,66 @@ def _resolution(parameters):
     }
 
 
+# The fields the bulk review dialog adds to the page's own POST (#528,
+# ADM-09): the button's decision, the page's bulk key, the optional note and
+# the ticked rows, each "<proposal id>:<version shown>".
+BULK_FIELDS = ("bulk", "bulk_key", "bulk_note")
+BULK_TOO_MANY = Refusal(
+    f"Choose at most {MAX_BULK:,} changes at a time. Nothing was recorded.",
+    "Show fewer rows per page, then try again.",
+)
+REBOUND = Refusal(
+    "This page was already used to record different choices, so nothing was recorded.",
+    "Reload the page, then try again.",
+)
+
+
+def _bulk(parameters):
+    """Remove a bulk review's fields from the form; None when there are none.
+
+    Each ticked row carries the version it showed, so every change is
+    checked against its own version. No row twice; anything else is a
+    malformed form (a 400). More rows than one bulk review may cover raise
+    ``TooMany``, which the dialog explains.
+    """
+    found = {name: parameters.pop(name, None) for name in BULK_FIELDS}
+    rows = parameters.pop("change", None)
+    if rows is None and all(value is None for value in found.values()):
+        return None
+    if rows is None or any(
+        value is None or len(value) != 1 for value in found.values()
+    ):
+        raise ValueError("A bulk census review needs every field once.")
+    values = {name: value[0] for name, value in found.items()}
+    if values["bulk"] not in REVIEWS:
+        raise ValueError("Invalid bulk census review.")
+    if len(rows) > MAX_BULK:
+        raise TooMany
+    versions = {}
+    for row in rows:
+        identity, separator, version = row.partition(":")
+        if (
+            not separator
+            or len(row) > 64
+            or not version.isascii()
+            or not version.isdecimal()
+        ):
+            raise ValueError("Invalid census change selection.")
+        versions[UUID(identity)] = int(version)
+    if not versions or len(versions) != len(rows):
+        raise ValueError("A census change was chosen twice.")
+    return {
+        "action": values["bulk"],
+        "versions": versions,
+        "bulk_key": UUID(values["bulk_key"]),
+        "note": values["bulk_note"].strip(),
+    }
+
+
+class TooMany(Exception):
+    """More rows were ticked than one bulk review may cover."""
+
+
 def _row_name(proposal):
     """The changed row as the notice names it: what changed, and whose.
 
@@ -320,6 +392,83 @@ def _resolve(service, principal, campaign_id, resolution):
     return f"{name} {REVIEWED[action] if action in REVIEWS else RESOLVED[action]}"
 
 
+def _review_many(service, principal, campaign_id, bulk):
+    """Record a bulk review; the notice the page shows about it.
+
+    Every chosen change must belong to this page's campaign (otherwise the
+    whole request is denied, as an unknown change is). All or none: one
+    someone else updated first leaves every change as it is, and the notice
+    names it, as a single row's would; a racing second write the database
+    refuses reads the same, without a name. Any other refusal is a 400.
+    """
+    versions = bulk["versions"]
+    proposals = {
+        proposal.pk: proposal
+        for proposal in ProposedChange.objects.select_related("submission__family")
+        .filter(pk__in=list(versions), submission__campaign_id=campaign_id)
+        .filter(submission__mode="live")
+    }
+    if len(proposals) != len(versions):
+        raise PermissionError("A census change is unavailable.")
+    action = bulk["action"]
+    try:
+        review_census_changes(
+            service.store,
+            principal.identity,
+            versions,
+            decision=REVIEWS[action],
+            note=bulk["note"],
+            bulk_key=bulk["bulk_key"],
+        )
+    except BulkStale as error:
+        return f"{_row_name(proposals[error.proposal_id])} {STALE}"
+    except IntegrityError as error:
+        # As for one row (_resolve): only the expected race is the notice.
+        if getattr(error.__cause__, "sqlstate", None) == UNIQUE_VIOLATION:
+            return f"A chosen change {STALE}"
+        emit_failure(error, event=Event.TASK_FAILED)
+        raise
+    if len(versions) == 1:
+        return f"{_row_name(next(iter(proposals.values())))} {REVIEWED[action]}"
+    return f"{len(versions):,} changes {REVIEWED[action]}"
+
+
+def bulk_actions():
+    """The bulk bar's buttons, one per review decision, in the Review's order.
+
+    Each opens the page's one confirmation dialog, which takes its title
+    and announcement from the button and counts the ticked rows (ui-v1.js).
+    Its value is also its kind (data-confirm-kind), which makes it
+    available only while every ticked row allows that decision (each row's
+    box lists its Review's choices), so the dialog always acts on every
+    ticked row; the service checks each row again.
+    """
+    # The button, then the dialog's title for one row and for several.
+    words = {
+        "approve": ("Approve", "Approve {name}?", "Approve {count} changes?"),
+        "ignore_automatic": ("Ignore", "Ignore {name}?", "Ignore {count} changes?"),
+        "to_review": (
+            "Back to To review",
+            "Send {name} back to To review?",
+            "Send {count} changes back to To review?",
+        ),
+    }
+    actions = []
+    for action, _decision in REVIEW_CHOICES:
+        label, title_one, title_many = words[action]
+        actions.append(
+            {
+                "value": action,
+                "label": label,
+                "title_one": title_one,
+                "title_many": title_many,
+                "done_one": f"{{name}} {REVIEWED[action]}",
+                "done_many": f"{{count}} changes {REVIEWED[action]}",
+            }
+        )
+    return actions
+
+
 def row_controls(rows):
     """Give each shown row what its Record outcome form needs (#528).
 
@@ -356,13 +505,29 @@ def _respond(request, campaign_id, *, export, render):
                 raise ValueError("Census change filters require private POST state.")
             parameters = request.POST.copy()
             parameters.pop("csrfmiddlewaretoken", None)
+            bulk = None if export else _bulk(parameters)
             resolution = None if export else _resolution(parameters)
+            if bulk is not None and resolution is not None:
+                raise ValueError("One census change action at a time.")
             extra = _choices(parameters, export=export)
             query = CensusQuery.parse(parameters)
+            # Each is recorded in its own work transaction, before the
+            # page's read, so the page that answers shows the result.
             if resolution is not None:
-                # Recorded in its own work transaction, before the page's
-                # read, so the page that answers shows the result.
                 extra["notice"] = _resolve(service, principal, campaign_id, resolution)
+            elif bulk is not None:
+                extra["notice"] = _review_many(service, principal, campaign_id, bulk)
+        except TooMany:
+            return validation_response(
+                [FieldError(ErrorCode.INVALID)], refusal=BULK_TOO_MANY
+            )
+        except KeyRebound:
+            # The same drawn form was sent again with other choices (its
+            # first answer was lost): nothing was saved, and a reload draws
+            # fresh forms with fresh keys.
+            return validation_response(
+                [FieldError(ErrorCode.STALE)], status=409, refusal=REBOUND
+            )
         except ValueError:
             return _error(campaign_id, status=400)
         finalized, count = False, 0
@@ -468,6 +633,20 @@ def report(request, campaign_id):
                 "notice": extra.get("notice"),
                 "action": action,
                 "mutable": mutable,
+                # Bulk review is the Administrator's, on rows a Review is
+                # offered for, while the page shows no more rows than one
+                # bulk review covers (All rows can show more); one key per
+                # drawn page makes a repeated post a replay
+                # (census_review.bulk_key_for).
+                "bulk": mutable
+                and result["administrator"]
+                and len(table.rows) <= MAX_BULK,
+                "bulk_too_many": mutable
+                and result["administrator"]
+                and len(table.rows) > MAX_BULK,
+                "max_bulk": MAX_BULK,
+                "bulk_actions": bulk_actions(),
+                "bulk_key": uuid4(),
             },
             request=request,
         ).encode()

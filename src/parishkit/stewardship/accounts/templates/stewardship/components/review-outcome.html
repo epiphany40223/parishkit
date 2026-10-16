@@ -5,5 +5,10 @@
   and when ("User added. Applied at 3:42 PM.") and moves focus here. It is a
   polite live region whose one line of space is always kept, and a long line
   is cut short with an ellipsis, so it never moves a control (no layout
-  shift). It sits outside every in-place region, so a redraw keeps it.
+  shift). Campaign images' slot lines keep two lines (three on a phone) and wrap,
+  since they also say why an upload was refused (#1410, ui-v1.css). It sits next to the control that makes the change: under a
+  page's one form, or, where panes share one dialog, inside each pane, its
+  forms naming it with data-review-outcome (Campaign images' slots), so the
+  page never scrolls to a line elsewhere. A line inside a redrawn region is
+  written after the redraw.
 {% endcomment %}<p class="review-outcome" id="{{ outcome_id }}" role="status" tabindex="-1" data-review-outcome></p>

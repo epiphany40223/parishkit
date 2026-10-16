@@ -41,7 +41,8 @@ def test_the_list_follows_the_snapshot_and_never_shows_a_value(
     assert b"Every Family that can use the portal can open the form." in body
     _, body = get(browser, HEALTH)
     assert b"Every Family that can use the portal can open the Family form." in body
-    assert LIST.encode() in body
+    # With no Family listed the list would be empty, so it is not linked.
+    assert f'href="{LIST}"'.encode() not in body
     data = response_source()
     data.members[3].update(firstName="x" * 101, lastName="private\tvalue")
     snapshot, claim = prepare(data)
@@ -62,6 +63,7 @@ def test_the_list_follows_the_snapshot_and_never_shows_a_value(
     assert b"private" not in body and b"x" * 101 not in body
     _, body = get(browser, HEALTH)
     assert b"1 Family cannot open the Family form" in body
+    assert f'href="{LIST}"'.encode() in body
     assert get(browser, LIST + "?sort=value")[0].status_code == 400
     assert get(browser, LIST + "?other=1")[0].status_code == 400
     contexts = [

@@ -47,7 +47,9 @@ def test_system_health_list_stays_put_through_a_poll(page, component_origin):
     open from the start, and the line keeps counting it."""
     page.goto(component_origin + PAGE)
     summary = page.locator("#resave-summary")
-    visible(summary.get_by_text("2 saved pages or emails should be re-saved"))
+    visible(
+        summary.get_by_text("1 email cannot be sent until it is fixed", exact=False)
+    )
     visible(summary.get_by_role("link", name="Pages and emails"))
     _check_rows(page, "#resave-summary")
     page.evaluate("document.querySelector('#resave-summary').dataset.original = 'yes'")

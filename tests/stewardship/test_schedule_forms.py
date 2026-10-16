@@ -1,15 +1,17 @@
 """Civil schedule inputs, immutable mail identities and combined date validation."""
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import pytest
 from django.http import QueryDict
 
+from parishkit.stewardship.accounts import schedule_local
 from parishkit.stewardship.accounts.schedule_forms import (
     BROWSER_TIME_HELP,
+    REPEATED_HOUR,
     ZONE_MISSING,
     Schedules,
     ScheduleWindow,
@@ -702,13 +704,13 @@ def test_a_saved_daily_digest_posted_unchanged_keeps_its_comparison():
     assert formset.patch() == []
 
 
-# The first-campaign step's send times are the browser's (#558). The
+# The date-change review's send times are the browser's (#558). The
 # fixture campaign is in New York, October 1-31, 2054.
 BROWSER_NOW = datetime(2054, 9, 1, 12, tzinfo=UTC)
 
 
 def browser_schedules(data, owner, previous, templates=(), *, zone):
-    """A first-campaign formset that takes times typed in ``zone``."""
+    """A schedule formset that takes times typed in ``zone``."""
     return Schedules(
         None if data is None else data | {"zone": zone},
         prefix="schedules",
@@ -904,3 +906,267 @@ def test_a_kept_legacy_time_follows_the_posted_row_id():
     formset = browser_schedules(swapped, owner, rows, zone="America/Los_Angeles")
     assert 'data-time-kept="06:00:37"' in str(formset.forms[1]["time"])
     assert "data-time-kept" not in str(formset.forms[0]["time"])
+
+
+def proposed_zone_schedules(data, owner, previous, templates=(), *, zone):
+    """A date-change review formset whose campaign moves to Chicago.
+
+    The review replaces the formset's campaign with the proposed window
+    before validating (``schedule_changes.build_preview``); the page drew
+    the saved rows from the saved New York values.
+    """
+    formset = browser_schedules(data, owner, previous, templates, zone=zone)
+    formset.campaign = owner["values"] | {"timezone": "America/Chicago"}
+    return formset
+
+
+def test_a_row_shown_unchanged_keeps_its_wall_clock_in_a_proposed_zone():
+    """An invitation shown as 6:00 AM in Los Angeles is posted back as shown.
+
+    The page drew it from its New York moment (9:00 AM there), so it is an
+    unchanged row: it keeps its saved 9:00 AM, now in Chicago, as a time
+    zone change always has, rather than being read again in the new zone.
+    """
+    owner = campaign()
+    old = schedule(owner["id"])
+    data = data_for([old]) | {"schedules-0-time": "06:00"}
+    formset = proposed_zone_schedules(data, owner, [old], zone="America/Los_Angeles")
+    assert formset.is_valid(), (formset.errors, formset.non_form_errors())
+    assert formset.patch() == []
+
+
+def test_a_changed_row_converts_into_a_proposed_zone():
+    """8:00 AM typed in Los Angeles is 10:00 AM in the proposed Chicago zone."""
+    owner = campaign()
+    old = schedule(owner["id"])
+    data = data_for([old]) | {"schedules-0-time": "8:00 AM"}
+    formset = proposed_zone_schedules(data, owner, [old], zone="America/Los_Angeles")
+    assert formset.is_valid(), (formset.errors, formset.non_form_errors())
+    [changed] = formset.patch()
+    assert (changed["values"]["date"], changed["values"]["time"]) == (
+        "2054-10-01",
+        "10:00:00",
+    )
+
+
+def test_a_proposed_zone_keeps_the_saved_moment_and_kept_seconds():
+    """The page's moment and a legacy time's kept seconds use the saved zone."""
+    owner = campaign()
+    old = schedule(owner["id"], time="09:00:37")
+    unbound = browser_schedules(None, owner, [old], zone="")
+    unbound.campaign = owner["values"] | {"timezone": "America/Chicago"}
+    assert unbound.forms[0].schedule_moment == "2054-10-01T13:00:37+00:00"
+    data = data_for([old]) | {"schedules-0-time": "06:00:37"}
+    formset = proposed_zone_schedules(data, owner, [old], zone="America/Los_Angeles")
+    assert 'data-time-kept="06:00:37"' in str(formset.forms[0]["time"])
+    assert formset.is_valid(), (formset.errors, formset.non_form_errors())
+    assert formset.patch() == []
+
+
+# Daylight-saving edges of the shared conversion (#558 review of #1311).
+# New York falls back on November 1, 2026 (01:00-02:00 happens twice) and
+# springs forward on March 8, 2026 (02:00-03:00 never happens); London
+# changes on other dates.
+NY = "America/New_York"
+
+
+def convert(day, clock, *, zone, now=None, **saved):
+    """``schedule_local.to_campaign`` into New York for a typed send."""
+    return schedule_local.to_campaign(
+        day,
+        clock,
+        None,
+        zone=zone,
+        campaign_zone=NY,
+        now=now or datetime(2026, 9, 1, tzinfo=UTC),
+        **saved,
+    )
+
+
+def test_a_typed_send_in_the_campaign_repeated_hour_is_refused():
+    """6:30 AM London on November 1, 2026 is 1:30 AM EST, the second 1:30.
+
+    A schedule keeps only "01:30", which the scheduler reads as the first
+    1:30 (EDT), an hour early, so it is refused; 5:30 AM London is that first
+    1:30 and is kept exactly.
+    """
+    with pytest.raises(schedule_local.RepeatedHour):
+        convert(date(2026, 11, 1), time(6, 30), zone="Europe/London")
+    assert convert(date(2026, 11, 1), time(5, 30), zone="Europe/London") == (
+        date(2026, 11, 1),
+        time(1, 30),
+        None,
+    )
+
+
+@pytest.mark.parametrize(
+    ("zone", "typed", "stored"),
+    [
+        # 7:00 AM London is the first moment of New York daylight time.
+        ("Europe/London", time(7, 0), time(3, 0)),
+        ("Europe/London", time(6, 59), time(1, 59)),
+        # 2:30 AM never happens in Los Angeles that day either: it reads
+        # forward as 3:30 AM PDT, 6:30 AM in New York.
+        ("America/Los_Angeles", time(2, 30), time(6, 30)),
+    ],
+)
+def test_a_spring_forward_send_converts_to_a_real_campaign_time(zone, typed, stored):
+    """No real moment falls in New York's skipped hour, so nothing is refused."""
+    day, clock, _ = convert(date(2026, 3, 8), typed, zone=zone)
+    assert (day, clock) == (date(2026, 3, 8), stored)
+    assert time(2) > clock or clock >= time(3)
+
+
+def test_an_unchanged_digest_posted_across_a_dst_change_keeps_its_time():
+    """A daily 8:00 AM New York digest drawn on October 31 shows as 12:00 London.
+
+    Posted unchanged on November 1, its next send there would be 13:00
+    London, so only the moment the page drew (``drawn``) keeps it unchanged.
+    A drawn moment that is not one of the digest's own sends is ignored.
+    """
+    saved = {"date": None, "time": "08:00:00", "weekday": None}
+    drawn_on = datetime(2026, 10, 31, 20, tzinfo=UTC)
+    drawn = schedule_local.instant(saved, NY, drawn_on).isoformat()
+    assert drawn == "2026-10-31T12:00:00+00:00"
+    posted_on = datetime(2026, 11, 1, 12, tzinfo=UTC)
+    kept = schedule_local.to_campaign(
+        None,
+        time(12),
+        None,
+        zone="Europe/London",
+        campaign_zone=NY,
+        now=posted_on,
+        saved=saved,
+        drawn=drawn,
+    )
+    assert kept == (None, time(8), None)
+    for forged in (None, "2026-10-31T12:30:00+00:00", "2026-09-01T12:00:00+00:00"):
+        moved = schedule_local.to_campaign(
+            None,
+            time(12),
+            None,
+            zone="Europe/London",
+            campaign_zone=NY,
+            now=posted_on,
+            saved=saved,
+            drawn=forged,
+        )
+        assert moved == (None, time(7), None)
+
+
+def late_campaign():
+    """The fixture campaign running into November, past New York's fall-back."""
+    owner = campaign()
+    owner["values"] = owner["values"] | {"end_date": "2054-11-15"}
+    return owner
+
+
+def test_the_review_refuses_a_send_in_the_repeated_hour_on_its_field():
+    """6:30 AM London on November 1, 2054 is New York's second 1:30 AM."""
+    owner = late_campaign()
+    old = schedule(owner["id"])
+    template = content(owner["id"], kind="email", slot="reminder", subject="Later")
+    data = data_for([old]) | {
+        # The invitation as shown: 9:00 AM EDT is 2:00 PM BST.
+        "schedules-0-time": "14:00",
+        "schedules-1-kind": "reminder",
+        "schedules-1-date": "2054-11-01",
+        "schedules-1-time": "06:30",
+        "schedules-1-template_version": template["id"],
+    }
+    formset = browser_schedules(data, owner, [old], [template], zone="Europe/London")
+    assert not formset.is_valid()
+    assert formset.forms[1].errors["time"] == [str(REPEATED_HOUR)]
+    data["schedules-1-time"] = "05:30"
+    formset = browser_schedules(data, owner, [old], [template], zone="Europe/London")
+    assert formset.is_valid(), (formset.errors, formset.non_form_errors())
+    [added] = formset.patch()
+    assert (added["values"]["date"], added["values"]["time"]) == (
+        "2054-11-01",
+        "01:30:00",
+    )
+
+
+def test_the_review_reads_a_skipped_browser_time_forward():
+    """2:30 AM on March 8, 2054 never happens in Los Angeles: 6:30 AM New York."""
+    owner = campaign()
+    owner["values"] = owner["values"] | {
+        "start_date": "2054-03-01",
+        "end_date": "2054-03-31",
+    }
+    old = schedule(owner["id"], date="2054-03-02")
+    template = content(owner["id"], kind="email", slot="reminder", subject="Later")
+    data = data_for([old]) | {
+        "schedules-0-date": "2054-03-02",
+        "schedules-0-time": "06:00",
+        "schedules-1-kind": "reminder",
+        "schedules-1-date": "2054-03-08",
+        "schedules-1-time": "2:30 AM",
+        "schedules-1-template_version": template["id"],
+    }
+    formset = browser_schedules(
+        data, owner, [old], [template], zone="America/Los_Angeles"
+    )
+    assert formset.is_valid(), (formset.errors, formset.non_form_errors())
+    [added] = formset.patch()
+    assert (added["values"]["date"], added["values"]["time"]) == (
+        "2054-03-08",
+        "06:30:00",
+    )
+
+
+def test_a_digest_in_another_browser_zone_posted_across_a_dst_change():
+    """The formset posts back each row's drawn moment (``drawn_at``).
+
+    A daily 8:00 AM New York digest is drawn on October 31, 2054 as 12:00
+    London; posted unchanged on November 1 it is kept, and posted as 14:00
+    it is a change to 9:00 AM New York (London 14:00 that day is 09:00 EST).
+    """
+    owner = late_campaign()
+    template = content(owner["id"], kind="email", slot="daily_digest", subject="D")
+    digest = schedule(
+        owner["id"],
+        kind="daily_digest",
+        date=None,
+        time="08:00:00",
+        template_version=template["id"],
+        subject="D",
+    )
+    drawn_on = datetime(2054, 10, 31, 20, tzinfo=UTC)
+    page = Schedules(
+        prefix="schedules",
+        previous=[digest],
+        templates=[template],
+        campaign_id=owner["id"],
+        campaign=owner["values"],
+        browser_times=True,
+        now=drawn_on,
+    )
+    drawn = page.forms[0].schedule_moment
+    assert drawn == "2054-10-31T12:00:00+00:00"
+    assert f'name="schedules-0-drawn_at" value="{drawn}"' in str(page.forms[0])
+
+    def posted(clock):
+        """The page posted on November 1 with the digest's time as ``clock``."""
+        data = data_for([digest]) | {
+            "zone": "Europe/London",
+            "schedules-0-time": clock,
+            "schedules-0-drawn_at": drawn,
+        }
+        formset = Schedules(
+            data,
+            prefix="schedules",
+            previous=[digest],
+            templates=[template],
+            campaign_id=owner["id"],
+            campaign=owner["values"],
+            browser_times=True,
+            zone="Europe/London",
+            now=datetime(2054, 11, 1, 12, tzinfo=UTC),
+        )
+        assert formset.is_valid(), (formset.errors, formset.non_form_errors())
+        return formset.patch()
+
+    assert posted("12:00") == []
+    [changed] = posted("14:00")
+    assert changed["values"]["time"] == "09:00:00"

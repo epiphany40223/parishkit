@@ -57,7 +57,6 @@ from .test_admin_schedule_cli_postgresql import (  # noqa: F401
 )
 from .test_recovery_postgresql import arguments as recovery_arguments
 from .test_schedule_entry_postgresql import setup as with_saved_emails
-from .test_schedule_views_postgresql import setup as campaign_with_reminder
 from .test_users_upgrade_postgresql import arguments as upgrade_arguments
 from .user_builders import convert
 
@@ -101,7 +100,9 @@ def revisions():
     """Each reminder definition's current revision, by schedule id."""
     return {
         str(row.pk): row.current_revision_id
-        for row in ScheduleDefinition.objects.filter(kind="reminder")
+        for row in ScheduleDefinition.objects.filter(
+            kind="reminder", current_revision__isnull=False
+        )
     }
 
 
@@ -110,10 +111,17 @@ def series_deployment(store):
 
     Returns the campaign and the series record's id.
     """
-    campaign, _ = campaign_with_reminder(store)
+    # Saved emails, so a series edit's new reminders can send the members'.
+    campaign, emails = with_saved_emails(store)
     convert(store)
     assert active_schema() == "users-v10"
-    added = schedule(str(campaign.pk), kind="reminder", date=FIRST)
+    added = schedule(
+        str(campaign.pk),
+        kind="reminder",
+        date=FIRST,
+        template_version=emails["reminder"]["id"],
+        subject="reminder mail",
+    )
     assert (
         change(
             store,
@@ -384,6 +392,201 @@ def test_remembering_needs_the_users_form(admin, google):  # noqa: F811
     assert store.active().digest == digest
     code, shown = one(admin, "schedule", "show", secret=secret)
     assert code == 0 and shown["result"]["series"] == []
+
+
+def values_of(store, identifier):
+    """The applied values of one schedule."""
+    return next(
+        row["values"]
+        for row in store.active().document()["sections"]["schedules"]
+        if row["id"] == identifier
+    )
+
+
+def test_this_and_following_cuts_the_series(admin, google):  # noqa: F811
+    """A new time from the last reminder: the series keeps the earlier one.
+
+    The earlier reminder keeps its revision; the later one is replaced by a
+    reminder at the new time in a new series from its date, in one request.
+    """
+    store = admin.service.store
+    _, identifier = series_deployment(store)
+    _, secret, _ = paired(admin.service)
+    first, last = reminder(store, FIRST), reminder(store, LAST)
+    email = values_of(store, last)["template_version"]
+    before = revisions()
+    document = {
+        "schedules": [
+            {"series": identifier, "scope": "following", "from": last, "time": "10:30"}
+        ]
+    }
+    code, reviewed = preview(admin, secret, document)
+    assert code == 0, reviewed
+    result = reviewed["result"]
+    assert [(item["operation"], item["id"] == last) for item in result["changes"]] == [
+        ("remove", True),
+        ("add", False),
+    ]
+    added = result["changes"][1]["id"]
+    cut = RULE | {"end": "2054-10-24"}
+    assert result["series_changes"] == [
+        {"id": identifier, "operation": "update", "rule": cut, "schedules": [first]}
+    ]
+    [created] = result["series"]
+    assert created["rule"] == RULE | {"start": LAST}
+    assert created["schedules"] == [added]
+
+    # Confirming previews again, which mints the new ids afresh.
+    patch = apply_preview(admin, secret, document)
+    [added] = [
+        item["id"]
+        for item in patch
+        if item["section"] == "schedules" and item["operation"] == "add"
+    ]
+    rows = {row["id"]: row["values"] for row in remembered(store)}
+    kept = rows.pop(identifier)
+    assert kept["rule"] == cut and kept["schedules"] == [first]
+    [values] = rows.values()
+    assert values["rule"] == RULE | {"start": LAST}
+    assert values["schedules"] == [added]
+    values = values_of(store, added)
+    assert values["date"] == LAST and values["template_version"] == email
+    assert values["time"].startswith("10:30")
+    after = revisions()
+    assert after[first] == before[first] and last not in after
+
+
+def test_a_series_edit_beside_other_new_reminders(admin, google):  # noqa: F811
+    """A series edit, a plain new reminder and a remembered repeat in one change.
+
+    The edit's reminders come after the document's own, so each new series
+    must hold exactly its own reminders (the shared builder's positions).
+    """
+    store = admin.service.store
+    _, identifier = series_deployment(store)
+    _, secret, _ = paired(admin.service)
+    first, last = reminder(store, FIRST), reminder(store, LAST)
+    email = values_of(store, last)["template_version"]
+    alone = {"kind": "reminder", "date": "2054-10-14", "time": "10:00"}
+    # A one-day repeat on the 11th: a one-reminder series of its own.
+    remembered_repeat = remembering(store, remember=True)["schedules"][0]
+    remembered_repeat["repeat"] = RULE | {"start": "2054-10-10", "end": "2054-10-12"}
+    document = {
+        "schedules": [
+            alone | {"template_version": email},
+            remembered_repeat,
+            {"series": identifier, "scope": "following", "from": last, "time": "10:30"},
+        ]
+    }
+    patch = apply_preview(admin, secret, document)
+    adds = {
+        item["id"]: item["values"]
+        for item in patch
+        if item["section"] == "schedules" and item["operation"] == "add"
+    }
+    assert sorted(values["date"] for values in adds.values()) == [
+        "2054-10-11",
+        "2054-10-14",
+        LAST,
+    ]
+    by_date = {values["date"]: key for key, values in adds.items()}
+    rows = {row["id"]: row["values"] for row in remembered(store)}
+    kept = rows.pop(identifier)
+    assert kept["schedules"] == [first]
+    # Two new series: the remembered repeat's and the edit's, nothing else.
+    assert sorted(values["schedules"] for values in rows.values()) == sorted(
+        [[by_date["2054-10-11"]], [by_date[LAST]]]
+    )
+    assert by_date["2054-10-14"] not in {
+        member for values in rows.values() for member in values["schedules"]
+    }
+    assert values_of(store, by_date[LAST])["time"].startswith("10:30")
+
+
+def test_the_whole_series_keeps_unchanged_reminders(admin, google):  # noqa: F811
+    """A rule that ends sooner removes only the dropped date's reminder.
+
+    The series is replaced in place: same id, the new rule, and the kept
+    reminder with its own revision.
+    """
+    store = admin.service.store
+    _, identifier = series_deployment(store)
+    _, secret, _ = paired(admin.service)
+    first, last = reminder(store, FIRST), reminder(store, LAST)
+    before = revisions()
+    rule = RULE | {"start": FIRST, "end": "2054-10-20"}
+    document = {
+        "schedules": [{"series": identifier, "scope": "series", "repeat": rule}]
+    }
+    code, reviewed = preview(admin, secret, document)
+    assert code == 0, reviewed
+    result = reviewed["result"]
+    assert [(item["operation"], item["id"]) for item in result["changes"]] == [
+        ("remove", last)
+    ]
+    assert result["series"] == []
+    assert result["series_changes"] == [
+        {"id": identifier, "operation": "update", "rule": rule, "schedules": [first]}
+    ]
+    apply_preview(admin, secret, document)
+    [row] = remembered(store)
+    assert row["id"] == identifier and row["values"]["rule"] == rule
+    assert revisions() == {first: before[first]}
+
+
+def test_deleting_a_series_removes_its_unsent_reminders(admin, google):  # noqa: F811
+    """Both reminders and the series go; the schema stays."""
+    store = admin.service.store
+    _, identifier = series_deployment(store)
+    _, secret, _ = paired(admin.service)
+    first, last = reminder(store, FIRST), reminder(store, LAST)
+    document = {"schedules": [{"series": identifier, "delete": True}]}
+    code, reviewed = preview(admin, secret, document)
+    assert code == 0, reviewed
+    assert sorted(item["id"] for item in reviewed["result"]["changes"]) == sorted(
+        [first, last]
+    )
+    assert reviewed["result"]["series_changes"] == [
+        {"id": identifier, "operation": "remove"}
+    ]
+    apply_preview(admin, secret, document)
+    assert remembered(store) == [] and revisions() == {}
+    assert active_schema() == SCHEMA
+
+
+@pytest.mark.parametrize("problem", ["unknown", "named", "outside"])
+def test_a_series_edit_that_cannot_be_made_is_refused(
+    admin,  # noqa: F811
+    google,
+    problem,
+):
+    """An unknown series, a member also named alone, or a reminder outside it.
+
+    Each is ``invalid`` on the entry, and nothing changes.
+    """
+    store = admin.service.store
+    _, identifier = series_deployment(store)
+    _, secret, _ = paired(admin.service)
+    last = reminder(store, LAST)
+    entry = {"series": identifier, "scope": "series", "time": "10:30"}
+    rows = {
+        "unknown": [entry | {"series": str(uuid4())}],
+        "named": [{"id": last, "time": "11:00"}, entry],
+        "outside": [
+            {
+                "series": identifier,
+                "scope": "following",
+                "from": str(uuid4()),
+                "time": "10:30",
+            }
+        ],
+    }[problem]
+    digest = store.active().digest
+    code, document = preview(admin, secret, {"schedules": rows})
+    assert code == 1 and document["error"]["code"] == "invalid", document
+    [field] = document["error"]["fields"]
+    assert field["field"] == "schedules.new0" and field["code"] == "invalid"
+    assert store.active().digest == digest
 
 
 def test_recovery_keeps_the_series(admin, google):  # noqa: F811

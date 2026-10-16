@@ -2,8 +2,6 @@
 {% block title %}{% translate "Participation" %}{% endblock %}
 {% block head %}
 {% include 'stewardship/components/chart-scripts.html' %}
-<link rel="stylesheet" href="{% static 'stewardship/digest-v1.css' %}">
-<script src="{% static 'stewardship/digest-v1.js' %}" defer></script>
 <script src="{% static 'stewardship/report-v1.js' %}" defer></script>
 {% endblock %}
 {% block content %}
@@ -40,14 +38,13 @@
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "ParishSoft data load" %}</dt><dd>{% if statistics.source_generation %}{{ statistics.source_generation|number }}{% else %}{% translate "Unavailable" %}{% endif %}</dd>
 <dt>{% translate "Responses included up to number" %}</dt><dd>{{ statistics.submission_watermark|number }}</dd></dl></details>
 </section>
-<section class="panel" id="participation-chart" data-in-place-region data-digest-chart>
+<section class="panel" id="participation-chart" data-in-place-region>
 <h2>{% translate "Daily participation" %} — {% if query.scope == 'historical' %}{% translate "Historical as of day" %}{% else %}{% translate "Current population" %}{% endif %}</h2>
 {% if selection.updating %}<p class="notice" role="status">{% translate "Updating — the latest complete chart is shown below when available. It may not yet include the newest ParishSoft data or responses counted above. Refresh this page to check progress." %}</p>{% endif %}
 {% if chart %}
 {% if chart.days %}
-<div class="digest-figure"><img class="digest-chart" src="{{ chart_url }}" alt="{% translate 'Daily first submissions, cumulative participating Families, and annual pledges when enabled. Exact values are in the following table.' %}" width="1440" height="840"><div class="digest-tip" data-digest-tip aria-hidden="true" hidden></div></div>
-{{ chart_interaction|json_script:'digest-chart-data' }}
-<div data-digest-controls hidden><label for="digest-day">{% translate "Inspect campaign date" %}</label><input id="digest-day" type="range" min="0" max="{{ chart_last_index }}" value="{{ chart_last_index }}" step="1"><p class="visually-hidden" data-digest-values role="status" aria-live="polite"></p></div>
+{# The daily chart drawn in the browser (#720): stacked panels on one date axis, each date's figures in its tooltip. The daily table below is its exact values, so the chart adds no Exact values table of its own and does not show its summary, which would repeat the table (it stays the view's description). The exports and the daily email keep the static drawing. #}
+{% with chart=daily_chart %}{% include 'stewardship/components/chart.html' with no_table=True %}{% endwith %}
 <div id="{{ table.anchor }}" data-table-region>
 {% translate "Daily table pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="daily-table-caption"><table class="data-table"><caption id="daily-table-caption">{{ chart.scope_label }} — {% translate "exact daily values" %}</caption><thead><tr>{% for key, heading in columns %}{% sort_heading table key heading %}{% endfor %}</tr></thead><tbody>{% for day, row in table.rows %}<tr>{% for value in row %}<td>{{ value }}</td>{% endfor %}</tr>{% empty %}<tr><td colspan="4">{% translate "No campaign dates to show." %}</td></tr>{% endfor %}</tbody></table></div>
@@ -66,7 +63,9 @@
 <input type="hidden" name="fact_set_id" value="{{ chart.fact_set_id }}"><input type="hidden" name="browser_timezone" value="{{ query.timezone }}"><input type="hidden" name="request_key" value="{{ export_key }}">
 <label for="export-format">{% translate "Export format" %}</label><select id="export-format" name="format">{% export_format_options "csv" "xlsx" "png" "pdf" %}</select>{% include 'stewardship/export-dates-help.html' %}
 {% button type="submit" enabled=export_allowed aria-describedby=export_allowed|yesno:",participation-export-locked" %}{% translate "Generate export" %}{% endbutton %}</form>
-{% else %}<p>{% translate "Exports of the chart become available once a complete chart has been calculated." %}</p>{% endif %}
+{# Without a chart (or, below, without the data for a new export) the button is still drawn, unavailable and named by the sentence that says why (#563); the server refuses a forged request all the same. #}
+{% else %}<p id="participation-chart-export-unavailable">{% translate "Exports of the chart become available once a complete chart has been calculated." %}</p>
+{% button type="submit" enabled=False aria-describedby="participation-chart-export-unavailable" %}{% translate "Generate export" %}{% endbutton %}{% endif %}
 <h3>{% translate "Export with the latest data" %}</h3>
 {% if selection.expected %}
 <p>{% translate "Queue an export from the data as it is when you submit. It can differ from the chart above, and does not include responses that arrive after you submit." %}</p>
@@ -76,7 +75,8 @@
 <input type="hidden" name="population_scope" value="{{ query.scope }}"><input type="hidden" name="browser_timezone" value="{{ query.timezone }}"><input type="hidden" name="request_key" value="{{ exact_key }}">
 <label for="exact-format">{% translate "Latest-data export format" %}</label><select id="exact-format" name="format">{% export_format_options "csv" "xlsx" "png" "pdf" %}</select>{% include 'stewardship/export-dates-help.html' %}
 {% button type="submit" enabled=export_allowed aria-describedby=export_allowed|yesno:",participation-export-locked" %}{% translate "Queue export with the latest data" %}{% endbutton %}</form>
-{% else %}<p>{% translate "The data for a new export is not available right now, so no export can be queued yet." %}</p>{% endif %}
+{% else %}<p id="participation-exact-export-unavailable">{% translate "The data for a new export is not available right now, so no export can be queued yet." %}</p>
+{% button type="submit" enabled=False aria-describedby="participation-exact-export-unavailable" %}{% translate "Queue export with the latest data" %}{% endbutton %}{% endif %}
 <h3>{% translate "Your recent latest-data exports" %}</h3>
 <ul>{% for job in recent_exact_exports %}<li><a href="{% url 'admin:report_export' job.pk %}">{{ job.format|upper }} — <time datetime="{{ job.created_at|date:'c' }}" data-local-instant>{{ job.created_at|date:'c' }}</time></a></li>{% empty %}<li>{% translate "No latest-data exports yet. Queue one above." %}</li>{% endfor %}</ul>
 <h3>{% translate "Your recent chart exports" %}</h3>

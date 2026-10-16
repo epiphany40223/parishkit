@@ -1,6 +1,4 @@
-{% load i18n stewardship %}{# The response funnel panel of a saved daily or weekly report page (#477): reports/digest_funnel.py funnel_context builds funnel_stages, funnel_figures, funnel_testing_note and, on the daily page, funnel_charts (the email's two charts, before the table: visuals first, #720; only when that email had them). #}{% if funnel_stages %}<section class="panel" data-digest-funnel><h2 id="digest-funnel-heading">{% translate "Response funnel" %}</h2>
-{% for chart in funnel_charts %}<section aria-labelledby="{{ chart.key }}-heading"><h3 id="{{ chart.key }}-heading">{{ chart.title }}</h3>
-{% include 'stewardship/components/chart.html' %}</section>{% endfor %}
+{% load i18n stewardship %}{# The response funnel panel of a saved daily or weekly report page (#477): reports/digest_funnel.py funnel_context builds funnel_stages, funnel_figures, funnel_testing_note. It has no charts (#1370). #}{% if funnel_stages %}<section class="panel" data-digest-funnel><h2 id="digest-funnel-heading">{% translate "Response funnel" %}</h2>
 <div class="table-scroll"><table aria-labelledby="digest-funnel-heading">
 <thead><tr><th scope="col">{% translate "Stage" %}</th><th scope="col">{% translate "Families" %}</th><th scope="col">{% translate "Compared with email invites sent" %}</th></tr></thead>
 <tbody>{% for label, count, portion, note in funnel_stages %}<tr><th scope="row">{{ label }}{% if note %} <small>({{ note|lower }})</small>{% endif %}</th><td>{{ count|number }}</td><td>{{ portion }}</td></tr>{% endfor %}</tbody>

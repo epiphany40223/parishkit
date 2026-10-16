@@ -861,10 +861,13 @@ responsiveness, against risk.
 Issue #147 implemented it without a schema change. A full refresh of a
 1,100-Family parish used to take the lock about 190 times and hold it for
 21–24 s, about 85% of its database time. It now takes it about 40 times and
-holds it for 2–5 s. What remains is 24 task progress transitions at about
+holds it for 2–5 s. What remained was 24 task progress transitions at about
 15 ms each (20 staging reports, one per 500 staged rows, and the fetching,
 first staging, validating and promoting reports), the attempt start,
-snapshot completion and promotion.
+snapshot completion and promotion. Staging progress is now spaced by time
+too (below), so a full refresh makes about 6–10 progress transitions: the
+fetching, first staging, validating and promoting reports, plus a few
+staging reports in between.
 
 A fetch admission and a staging batch are each a source step: one short
 transaction outside the work lock. They publish nothing. A fetch admission
@@ -982,6 +985,17 @@ population evidence and the derived responses. A stored plan would be
 trusted no more than the worker's statuses are today. What remains is
 Python-side cost in the locked Family update and the effects' repeated
 attempt checks, each a few tens of milliseconds.
+
+Staging progress is spaced by time as well as rows (#895), with no schema
+change. Each report is a task transition under the work-order lock. Spaced
+only by rows (one per 500), a full refresh at 1,100 Families made about 20
+of them, one every 150–250 ms while it staged. A staging report now waits
+for 500 rows and 2 seconds since the last report, so a refresh makes only a
+few. The first staging report and the validating report, which carries the
+final count, are unchanged, and the same transitions take the same locks in
+the same order. Progress renews no lease, so a sparser report mainly
+changes how often the Admin page's count moves. The CLI `refresh status`
+count and the task's progress history get sparser in the same way.
 
 The guard's check was also slow for a reason of its own: it ran with planner
 statistics that predate the new snapshot. The completion trigger analyzes

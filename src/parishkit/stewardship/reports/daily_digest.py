@@ -22,15 +22,7 @@ from parishkit.stewardship.web.report_markup import BLUE, STYLES, TRACK, button
 
 from .charts import render_participation
 from .digest_comparison import render_images, section_html, section_text, withheld
-from .digest_funnel import (
-    TESTING_NOTE,
-    charts_html,
-    digest_charts,
-    figure_rows,
-    funnel_images,
-    funnel_text,
-    stage_rows,
-)
+from .digest_funnel import TESTING_NOTE, figure_rows, funnel_text, stage_rows
 from .links import report_url
 from .participation import ParticipationDocument
 from .response_metrics import ResponseMetrics
@@ -163,11 +155,13 @@ class DailyDigestContent:
     """Compiled body and bounded in-memory charts; no recipients or file paths.
 
     ``comparison`` holds the Compared with past campaigns section's chart
-    images (#1018 slice 7), none when the digest has no section; ``funnel``
-    the Response funnel section's two (#477 slice 2), none when the digest
-    has no funnel (a Testing digest) or ``charts_withheld``: the last
-    compile attempt could not draw a server chart, so the digest is sent
-    without them, its tables and text part carrying every number.
+    images (#1018 slice 7), none when the digest has no section or
+    ``charts_withheld``: the last compile attempt could not draw a server
+    chart, so the digest is sent without them, its tables and text part
+    carrying every number. ``funnel`` holds the Response funnel section's
+    two chart images (#477 slice 2) only when a ready row compiled before
+    #1370 removed them is sent again (``digest_fanout``); a new compile
+    never has them.
     """
 
     subject: str
@@ -404,12 +398,11 @@ def report_day_bars(document):
     return tuple(bars)
 
 
-def funnel_html(document, plain, charts=()):
+def funnel_html(document, plain):
     """The response funnel section of the email, or "" when there is none.
 
-    The section's two charts come first (``digest_funnel.charts_html``,
-    visuals first per #720), then one row per stage like the campaign
-    totals: the stage (with its note),
+    One row per stage like the campaign totals (no charts since #1370):
+    the stage (with its note),
     a bar of its share of email invites sent, and its count and share; then
     the figures reported beside it (``figure_rows``), drawn the same way
     against their own whole, which their share names. A Testing digest says
@@ -427,7 +420,6 @@ def funnel_html(document, plain, charts=()):
     ]
     figures = figure_rows(metrics)
     html = f"<h2{_style('heading')}>Response funnel</h2>"
-    html += charts_html(charts, _style)
     # The stages, then the side figures as their own table so they read as
     # a group; every row has the same three cells.
     for group in (rows, figures):
@@ -468,9 +460,9 @@ def render_daily_digest(document, *, public_origin, charts=True):
     current state. A later owner may prepend sanitized parish-authored prose
     and the mandatory Testing banner, but cannot replace these required facts.
 
-    ``charts`` False withholds every server-drawn chart (#477): the funnel's
-    two and, through ``digest_comparison.withheld``, the comparison
-    section's. The participation chart, drawn in process, always stays.
+    ``charts`` False withholds every server-drawn chart (#477): through
+    ``digest_comparison.withheld``, the comparison section's. The
+    participation chart, drawn in process, always stays.
     """
     if not isinstance(document, DailyDigestDocument):
         raise TypeError("Daily digest rendering requires an immutable document.")
@@ -544,10 +536,7 @@ def _render_daily_digest(document, *, public_origin, charts=True):
         for label, value, bar_html, note in totals
     )
     html += "</tbody></table>"
-    drawn = (
-        digest_charts(document.funnel) if charts and document.funnel is not None else ()
-    )
-    html += funnel_html(document, plain, drawn)
+    html += funnel_html(document, plain)
     html += f"<h2{_style('heading')}>Daily participation</h2>"
     html += (
         f'<img src="cid:{CHART_ID}" alt="{escape(alt, quote=True)}" '
@@ -585,13 +574,11 @@ def _render_daily_digest(document, *, public_origin, charts=True):
         images = tuple(InlineImage(data, name) for name, data in render_images(section))
     stream = BytesIO()
     render_participation(chart, stream, format="png", email=True)
-    funnel = tuple(InlineImage(data, name) for name, data in funnel_images(drawn))
     return DailyDigestContent(
         document.title,
         html,
         text,
         InlineImage(stream.getvalue(), CHART_ID),
         images,
-        funnel,
         charts_withheld=not charts,
     )

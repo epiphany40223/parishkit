@@ -22,7 +22,7 @@ from parishkit.stewardship.source.version_models import SnapshotMinistry
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
-from . import admin_navigation
+from . import admin_navigation, campaign_wizard
 from .admin_editing import (
     editable_configuration,
     error_response,
@@ -224,6 +224,8 @@ def configuration_request(request, request_id):
                     "receipt": receipt,
                     "follow_url": in_place_follow(request.GET, receipt.request_id),
                     "refresh_key": created_campaign_refresh(receipt),
+                    # The Campaign setup stepper's next page (#142).
+                    "continue_step": campaign_wizard.continue_for(receipt),
                 },
             )
             response["Cache-Control"] = "no-store"

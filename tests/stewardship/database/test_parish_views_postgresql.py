@@ -2,14 +2,13 @@
 
 import re
 from html import unescape
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 import pytest
 from django.urls import reverse
 
 from parishkit.stewardship.accounts.configuration_installation import install_request
-from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.models import Campaign, ScheduleRevision
@@ -22,8 +21,6 @@ from .test_background_grants_postgresql import task_login
 
 pytestmark = pytest.mark.django_db(transaction=True)
 URL = "/admin/parish/settings/"
-# The header ui-v1.js sends with every in-place request.
-IN_PLACE = {"HTTP_X_REQUESTED_WITH": "fetch"}
 
 
 def fields(store, **changes):
@@ -56,15 +53,16 @@ def token(response):
 
 
 def requested(response):
-    """The change a confirmation's in-place answer names (#532).
+    """The change a confirmation names: it answers with Change status (#750).
 
-    Confirmation answers with Parish settings again, naming the request and
-    the review region, not the separate Change status page.
+    The review dialog's Apply follows that page itself, so Parish settings
+    no longer answers its own confirmation.
     """
-    assert response.status_code == 302
+    assert response.status_code == 302, response.content
     location = urlsplit(response["Location"])
-    assert (location.path, location.fragment) == (URL, "settings-review")
-    return UUID(parse_qs(location.query)["request"][0])
+    request_id = UUID(location.path.rstrip("/").rsplit("/", 1)[-1])
+    assert location.path == reverse("admin:configuration_request", args=[request_id])
+    return request_id
 
 
 def test_profile_apply_is_durable_idempotent_and_does_not_change_campaign_timezone(
@@ -210,9 +208,10 @@ def test_unchanged_form_and_forged_confirmation_are_not_saved(auth_service, goog
     """No-op input is clear to the user and signatures cannot be bypassed."""
     browser, _ = signed_in()
     response = post(browser, fields(auth_service.store))
-    assert (
-        response.status_code == 400 and b"No settings have changed" in response.content
-    )
+    # A plain refusal for the review dialog (#750); the page's change gate
+    # keeps it out of reach, so only a request bypassing the script meets it.
+    assert response.status_code == 400
+    assert response.json()["refusal"]["message"] == "No settings have changed."
     assert post(browser, {"action": "confirm", "preview": "forged"}).status_code == 400
     assert not ConfigurationChangeRequest.objects.exists()
     assert SystemConfiguration.objects.get().mode == "testing"
@@ -226,10 +225,11 @@ def digest(response):
 
 
 def region(body):
-    """The in-place review region of a rendered settings page.
+    """The in-place review region of a rendered settings page (#532).
 
-    The region may carry more attributes after its marker, such as
-    data-keep-height (#768).
+    Parish settings reviews in the dialog now (#750); the No-reminders
+    WorkGroup's tests still read its panel with this. The region may carry
+    more attributes after its marker, such as data-keep-height (#768).
     """
     body = body.decode()
     start = re.search(
@@ -238,68 +238,60 @@ def region(body):
     return body[start : body.index("</div>", start)]
 
 
-def test_review_apply_and_status_stay_on_the_settings_page(auth_service, google):
-    """Review, apply and the change's status all render on Parish settings (#532).
+def test_review_opens_the_dialog_and_apply_follows_change_status(auth_service, google):
+    """Review answers the review dialog's fragment, never a page (#750).
 
-    The review keeps its exact content (each change, before and after, and
-    the timezone note) beside the form; the confirmed change's status polls
-    Change status's passive read, whose settled status carries the in-place
-    follow-up back to this page only.
+    It keeps the review's exact content (each change, before and after, and
+    the timezone note) and the signed preview; Apply answers with Change
+    status, which the dialog follows. The page draws the dialog, its status
+    line and the form's region, redrawn from the page's own address, and
+    takes no query: there are no legacy in-place addresses.
     """
     store = auth_service.store
     browser, _ = signed_in()
+    page = browser.get(URL)
+    html = page.content.decode()
+    assert page.status_code == 200 and page["Cache-Control"] == "no-store"
+    assert f'data-refresh-url="{URL}"' in html
+    assert 'data-review-open="parish-review"' in html
+    assert 'id="parish-outcome"' in html and 'id="settings-review"' not in html
     values = fields(store, name="Renamed Parish", timezone="America/Los_Angeles")
     review = post(browser, values)
-    shown = region(review.content)
-    assert b'id="settings-form"' in review.content
-    assert "Review your changes" in shown and "Apply changes" in shown
+    shown = review.content.decode()
+    assert "data-review-answer" in shown and "data-review-preview" in shown
+    assert 'id="settings-form"' not in shown and "settings-review" not in shown
     assert "Renamed Parish" in shown and "America/Los_Angeles" in shown
     assert "This timezone change is prospective." in shown
     response = post(browser, {"action": "confirm", "preview": token(review)})
     request_id = requested(response)
-    # Reading the change's status (the page's own quiet refresh once it is
-    # applied) is passive: it never renews idle time, as Change status.
-    activity = PortalSession.objects.get().last_activity_at
-    page = browser.get(response["Location"])
-    assert page.status_code == 200 and page["Cache-Control"] == "no-store"
-    assert PortalSession.objects.get().last_activity_at == activity
-    shown = region(page.content)
-    assert "Applying your change" in shown and "data-live-pending" in shown
-    status = reverse("admin:configuration_request", args=[request_id])
-    assert f'data-live-url="{status}?in_place=parish_settings"' in shown
+    status = browser.get(response["Location"]).content
+    assert b"Applying your change" in status
     install_request(store, request_id=request_id, correlation_id=uuid4())
-    assert "Applied: your change is saved" in region(
-        browser.get(response["Location"]).content
+    assert b"Applied: your change is saved" in browser.get(response["Location"]).content
+    # The page's own address, redrawn after Apply, is at the applied version.
+    assert digest(browser.get(URL)) == store.active().digest
+    # Change status no longer follows back to Parish settings.
+    status = reverse("admin:configuration_request", args=[request_id])
+    assert (
+        b"data-live-follow"
+        not in browser.get(f"{status}?in_place=parish_settings").content
     )
-    follow = (
-        f"<a hidden data-live-follow data-in-place data-in-place-quiet "
-        f'href="{URL}?request={request_id}#settings-review">'
-    )
-    assert follow.encode() in browser.get(f"{status}?in_place=parish_settings").content
-    # Only the in-place settings pages are followed; Change status itself
-    # still never leaves on its own.
-    for query in ("", "?in_place=configuration_request", "?in_place=//example.org"):
-        assert b"data-live-follow" not in browser.get(status + query).content
-    # A request that is not this Administrator's, or not a request id at all.
-    assert browser.get(f"{URL}?request={uuid4()}").status_code == 404
-    assert browser.get(f"{URL}?request=nonsense").status_code == 400
-    assert browser.get(f"{URL}?other=1").status_code == 400
+    for query in (f"?request={request_id}", f"?request={uuid4()}", "?other=1"):
+        assert browser.get(URL + query).status_code == 400
 
 
-def test_refusals_render_in_the_review_region(auth_service, google):
-    """A refused review or confirmation is the page again, explained in place.
-
-    Field errors are summarized with links to their fields, since the form
-    itself is not replaced in place; a stale page and an out-of-date preview
-    say how to recover.
+def test_refusals_are_for_the_dialog_or_the_field(auth_service, google):
+    """A field's refusal is the page again (400), its summary linked to the
+    field, so the dialog stays shut; a stale page and an out-of-date preview
+    are plain refusals shown in the dialog, which never redraw the form.
     """
     store = auth_service.store
     browser, _ = signed_in()
     refused = post(browser, fields(store, phone="123"))
     assert refused.status_code == 400
-    shown = region(refused.content)
-    assert "data-error-summary" in shown
-    assert '<a href="#id_phone">Parish telephone: Enter a ten-digit US' in shown
+    html = refused.content.decode()
+    assert 'id="settings-form"' in html and "data-error-summary" in html
+    assert '<a href="#id_phone">Parish telephone: Enter a ten-digit US' in html
     values = fields(store, name="First edit")
     proposal = token(post(browser, values))
     parish = store.active().document()["sections"]["parish"][0]
@@ -317,91 +309,16 @@ def test_refusals_render_in_the_review_region(auth_service, google):
         ],
     )
     requests = ConfigurationChangeRequest.objects.count()
-    current = store.active().digest
     stale = post(browser, values)
     assert stale.status_code == 409
-    assert "This page changed in another tab or session." in region(stale.content)
+    refusal = stale.json()["refusal"]
+    assert refusal["message"] == "This page changed in another tab or session."
+    assert "Reload the page" in refusal["fix"]
     expired = post(browser, {"action": "confirm", "preview": proposal})
     assert expired.status_code == 409
-    assert "This preview is out of date." in region(expired.content)
-    # Both refusals keep the form at the version the reader's values came
-    # from, never the current one: only the form's hidden fields are taken
-    # from an in-place answer, so the current version would let the next
-    # Review quietly propose undoing the other tab's change.
-    for refused in (stale, expired):
-        assert digest(refused) == values["base_digest"] != current
-    # So a second Review, as the refused page's form would send it, is still
-    # refused until the page is reloaded, which brings the current version.
-    again = post(browser, values | {"base_digest": digest(expired)})
-    assert again.status_code == 409
-    assert "This page changed in another tab or session." in region(again.content)
-    assert digest(browser.get(URL)) == current
+    assert expired.json()["refusal"]["message"] == "This preview is out of date."
+    assert digest(browser.get(URL)) == store.active().digest
     assert ConfigurationChangeRequest.objects.count() == requests
-
-
-def test_a_pending_change_keeps_the_form_at_its_reviewed_version(auth_service, google):
-    """Apply's answer and its status refreshes draw the form at the version
-    the change was reviewed at until it is applied (#751 review), never a
-    version committed elsewhere meanwhile, which would pair the reader's
-    values with settings they never saw; once applied, at its own version."""
-    store = auth_service.store
-    browser, _ = signed_in()
-    values = fields(store, name="Renamed Parish")
-    response = post(
-        browser, {"action": "confirm", "preview": token(post(browser, values))}
-    )
-    request_id = requested(response)
-    assert (
-        digest(browser.get(response["Location"], **IN_PLACE)) == values["base_digest"]
-    )
-    parish = store.active().document()["sections"]["parish"][0]
-    change(
-        store,
-        store.active(),
-        uuid4(),
-        [
-            {
-                "operation": "update",
-                "section": "parish",
-                "id": parish["id"],
-                "values": {"website": "https://elsewhere.example.org"},
-            }
-        ],
-    )
-    current = store.active().digest
-    assert (
-        digest(browser.get(response["Location"], **IN_PLACE))
-        == values["base_digest"]
-        != current
-    )
-    # The change, reviewed against the older settings, is then not applied,
-    # and the form stays at the version its values came from.
-    install_request(store, request_id=request_id, correlation_id=uuid4())
-    settled = browser.get(response["Location"], **IN_PLACE)
-    assert "Not applied" in region(settled.content)
-    assert digest(settled) == values["base_digest"]
-    # A full load of the same address (a reload) draws the current settings
-    # at the current version, so the next Review is accepted (#751 review).
-    reloaded = browser.get(response["Location"])
-    assert digest(reloaded) == current
-    again = post(
-        browser, fields(store, name="After reload") | {"base_digest": digest(reloaded)}
-    )
-    assert again.status_code == 200 and "Review your changes" in region(again.content)
-
-
-def test_an_applied_change_draws_the_form_at_its_applied_version(auth_service, google):
-    """Once applied, the status page's form is at the version the change made."""
-    store = auth_service.store
-    browser, _ = signed_in()
-    values = fields(store, name="Renamed Parish")
-    response = post(
-        browser, {"action": "confirm", "preview": token(post(browser, values))}
-    )
-    install_request(store, request_id=requested(response), correlation_id=uuid4())
-    applied = store.active().digest
-    assert applied != values["base_digest"]
-    assert digest(browser.get(response["Location"], **IN_PLACE)) == applied
 
 
 def test_a_stored_alias_is_kept_and_a_new_zone_is_stored_canonically(

@@ -144,7 +144,13 @@ def test_a_stale_sign_in_gets_the_step_up_in_place(under_review):
             authenticated_at=session.authenticated_at - timedelta(minutes=10)
         )
     with campaign_clock(NOW), task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        shown = browser.get(PAGE).content.decode()
         refused = post(browser, action="release-preview")
+    # The page knows: Release is unavailable, named by the step-up (#1331).
+    assert RELEASE_UNAVAILABLE.search(shown)
+    assert 'id="restore-fresh-reason"' in shown
+    assert 'aria-describedby="restore-release-reason restore-fresh-reason"' in shown
+    # A forged preview is still refused by the server.
     assert refused.status_code == 403
     assert b"Confirm with Google" in refused.content
     assert SystemConfiguration.objects.get().restore_review_required
@@ -347,6 +353,11 @@ def test_release_refusals_name_their_reason(under_review):
         )
         cursor.execute("SET LOCAL session_replication_role = origin")
     with campaign_clock(NOW), task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        # Found when the page opens: Release is unavailable with why (#1331).
+        shown = browser.get(PAGE).content.decode()
+        assert RELEASE_UNAVAILABLE.search(shown)
+        assert "a campaign change or a purge is still running" in shown
+        # The server still refuses a posted preview.
         preview = post(browser, action="release-preview")
         assert preview.status_code == 409
         assert b'data-restore-refused="blocked"' in preview.content

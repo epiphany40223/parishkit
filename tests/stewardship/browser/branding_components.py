@@ -1,25 +1,24 @@
-"""Parish logos reviewed and applied in place (#750), as fixture pages.
+"""Parish logos reviewed and applied in the review dialog (#750), as fixtures.
 
-The real Parish logos template is served at its real address, ``PAGE``, so
-the in-place answers (which must come from the page's own address) can be
-served by the fixture server:
+The real Parish logos template is served at its real address, ``PAGE``, and
+the answers its form and the dialog post for are served by the fixture
+server:
 
-- ``PAGE`` is the upload form with no current logos, at the edit step;
-- an upload's POST to ``PAGE`` answers, as the view does, with a redirect
-  to ``REVIEW``: the page naming the staged logos, with every size and
-  Apply in the review region;
-- Apply's POST from ``REVIEW`` answers with a redirect to ``PENDING``, the
-  page naming the change, whose status polls ``STATUS``; that answers
-  Applied and follows to ``SETTLED``, the page with the new current logos.
-
-``REFUSED`` is the page refusing an upload (400), the field error in the
-form and its summary in the review region; a browser test answers the
-upload's POST with it. ``REFUSED_SIZE`` refuses a favicon uploaded on its
-own (#1062), drawn in Advanced, the mode it was sent from.
-
-``PAGE`` draws current logos saved from Basic (one image); ``ADVANCED_PAGE``
-draws the same page for current logos saved from Advanced, which opens in
-Advanced and asks before Basic (#1062, #1121).
+- ``PAGE`` is the upload form with no current logos, saved from Basic; its
+  upload and the dialog's Apply both post to ``PAGE``, and once a change is
+  applied the form and the current logos are redrawn from ``SETTLED``;
+- the fixture server answers a POST to ``PAGE`` as Apply's (a redirect to
+  ``APPLIED``, the change's status, Applied); a test answers the upload's
+  POST (multipart, which the fixture server cannot tell apart) with
+  ``REVIEW``, the review dialog's fragment of every staged size, or with a
+  refusal (status 400): ``REFUSED``, the field error and its summary, or
+  ``REFUSED_SIZE``, a favicon uploaded on its own (#1062) refused, drawn in
+  Advanced, the mode it was sent from;
+- ``ADVANCED_PAGE`` draws current logos saved from Advanced, which opens in
+  Advanced and asks before Basic (#1062, #1121); it is redrawn from
+  ``SETTLED_ADVANCED``, the new logos saved from Advanced too;
+- ``BASIC_TO_ADVANCED`` is ``PAGE`` (no logos, opening in Basic) redrawn
+  from ``SETTLED_ADVANCED``: an Advanced upload applied from a Basic page.
 """
 
 from types import SimpleNamespace as Value
@@ -27,42 +26,25 @@ from uuid import UUID
 
 from django.template.loader import render_to_string
 
-from parishkit.stewardship.accounts.admin_editing import review_region
+from parishkit.stewardship.accounts.admin_editing import summary_errors
 from parishkit.stewardship.accounts.branding_views import LogoUploadForm
 
 PAGE = "/admin/parish/logos/"
 BUNDLE = UUID("75000000-0000-4000-8000-0000000000d1")
 REQUEST = UUID("75000000-0000-4000-8000-0000000000e1")
-REVIEW = f"{PAGE}?review={BUNDLE}"
-PENDING = f"{PAGE}?request={REQUEST}"
-SETTLED = f"{PAGE}?request={REQUEST}&settled=1"
-STATUS = "/branding-in-place-status"
-REFUSED = "/branding-in-place-refused"
-REFUSED_SIZE = "/branding-in-place-refused-size"
+REVIEW = "/branding-dialog-review"
+APPLIED = "/branding-dialog-applied"
+SETTLED = "/branding-dialog-settled"
+SETTLED_ADVANCED = "/branding-dialog-settled-advanced"
+REFUSED = "/branding-dialog-refused"
+REFUSED_SIZE = "/branding-dialog-refused-size"
 ADVANCED_PAGE = f"{PAGE}?stored=advanced"
+BASIC_TO_ADVANCED = f"{PAGE}?then=advanced"
 SIZE_ERROR = (
     "Favicon: the image is 400 × 120 pixels; a favicon must be square (within 10%)."
 )
-STEPS = ("Make changes", "Review", "Apply")
-POSTS = {
-    PAGE: (303, f"{REVIEW}#settings-review", ""),
-    REVIEW: (303, f"{PENDING}#settings-review", ""),
-}
-
-
-def _steps(current):
-    """The flow indicator with ``current`` (0-based) as the current step."""
-    return [
-        {
-            "label": label,
-            "state": "done"
-            if index < current
-            else "current"
-            if index == current
-            else "upcoming",
-        }
-        for index, label in enumerate(STEPS)
-    ]
+# The answer the fixture server gives the page's POSTs: Apply's.
+POSTS = {PAGE: (303, APPLIED, "")}
 
 
 def components(context, admin):
@@ -78,28 +60,30 @@ def components(context, admin):
         )
         for index, (label, size) in enumerate(sizes.items())
     ]
-    pending = Value(state="staged", request_id=REQUEST, failure_code="")
     applied = Value(state="applied", request_id=REQUEST, failure_code="")
+    steps = [
+        {"label": label, "state": "current" if index == 0 else "upcoming"}
+        for index, label in enumerate(("Make changes", "Review", "Apply"))
+    ]
 
-    def page(step, current, form=None, stored="basic", **region):
-        """Parish logos at ``step`` with ``current`` logos, saved from the
-        ``stored`` mode, and the region."""
-        form = form or LogoUploadForm(initial={"base_digest": "a" * 64})
-        form.stored_mode = stored
-        values = review_region("branding_settings", form, **region)
-        if region.get("receipt"):
-            values["status_url"] = STATUS
+    def page(current, form=None, stored="basic", refresh=SETTLED):
+        """Parish logos with ``current`` logos saved from the ``stored``
+        mode, redrawn from ``refresh``; ``form`` is a refused upload's."""
+        drawn = form or LogoUploadForm(initial={"base_digest": "a" * 64})
+        drawn.stored_mode = stored
         return (
             "text/html",
             render_to_string(
                 "stewardship/branding-settings.html",
                 context
                 | {
-                    "admin_chrome": admin | {"flow_steps": _steps(step)},
-                    "form": form,
+                    "admin_chrome": admin | {"flow_steps": steps},
+                    "form": drawn,
                     "assets": current,
-                }
-                | values,
+                    "page_url": PAGE,
+                    "refresh_url": refresh,
+                    "errors": summary_errors(drawn) if form is not None else [],
+                },
             ),
         )
 
@@ -114,28 +98,32 @@ def components(context, admin):
     refused_size.errors.clear()
     refused_size.add_error("favicon", SIZE_ERROR)
     return {
-        PAGE: page(0, []),
-        REVIEW: page(
-            1,
-            [],
-            review={
-                "template": "stewardship/branding-review.html",
-                "notes": [],
-                "assets": assets,
-                "preview": "synthetic-signed-intent",
-            },
+        PAGE: page([]),
+        REVIEW: (
+            "text/html",
+            render_to_string(
+                "stewardship/branding-review.html",
+                {
+                    "review": {
+                        "bundle": BUNDLE,
+                        "assets": assets,
+                        "preview": "synthetic-signed-intent",
+                    }
+                },
+            ),
         ),
-        PENDING: page(2, [], receipt=pending),
-        STATUS: (
+        APPLIED: (
             "text/html",
             render_to_string(
                 "stewardship/configuration-request.html",
                 context
-                | {"admin_chrome": admin, "receipt": applied, "follow_url": SETTLED},
+                | {"admin_chrome": admin, "receipt": applied, "follow_url": None},
             ),
         ),
-        SETTLED: page(2, assets, receipt=applied),
-        REFUSED: page(0, [], refused),
-        REFUSED_SIZE: page(0, [], refused_size),
-        ADVANCED_PAGE: page(0, assets, stored="advanced"),
+        SETTLED: page(assets),
+        SETTLED_ADVANCED: page(assets, stored="advanced", refresh=SETTLED_ADVANCED),
+        REFUSED: page([], refused),
+        REFUSED_SIZE: page([], refused_size),
+        ADVANCED_PAGE: page(assets, stored="advanced", refresh=SETTLED_ADVANCED),
+        BASIC_TO_ADVANCED: page([], refresh=SETTLED_ADVANCED),
     }

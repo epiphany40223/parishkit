@@ -18,10 +18,6 @@ from parishkit.stewardship.accounts.setup_candidate import (
     compile_candidate,
 )
 from parishkit.stewardship.accounts.setup_configuration import request_schema_for
-from parishkit.stewardship.accounts.setup_content_values import (
-    CONTENT_STEPS,
-    RETIRED_STEPS,
-)
 
 from .campaign_factory import campaign, schedule
 from .content_factory import content
@@ -33,11 +29,7 @@ def compilation():
     """All IDs and values are synthetic; no file, SQL or provider is touched."""
     base = bootstrap_version(uuid4(), "admin@example.org")
     attempt = uuid4()
-    sections = deepcopy(VALUES) | {
-        "branding": {"bundle_id": str(uuid4())},
-        "campaign": {"source_result": str(uuid4()), "campaign": campaign()["values"]},
-        "schedules": {"records": []},
-    }
+    sections = deepcopy(VALUES) | {"branding": {"bundle_id": str(uuid4())}}
     args = {
         "attempt_id": attempt,
         "candidate_id": uuid4(),
@@ -75,8 +67,6 @@ def test_compilation_is_stable_detached_and_preserves_bootstrap():
         "leader@example.net",
         "staff@example.net",
     ]
-    revision = content(str(args["attempt_id"]))
-    sections["page_welcome"] = revision
     before = deepcopy(args)
     result = compile_candidate(base, **args)
     assert result == compile_candidate(base, **args)
@@ -94,10 +84,6 @@ def test_compilation_is_stable_detached_and_preserves_bootstrap():
         "staff@example.net": "staff",
     }
     assert {row["values"]["name"] for row in rules} >= {"leader", "staff"}
-    assert document["campaigns"][0]["id"] == str(args["attempt_id"])
-    assert document["campaigns"][0]["values"]["content_versions"] == {
-        "welcome": revision["id"]
-    }
     sections["parish"]["name"] = "Changed after compilation"
     assert "Changed after compilation" not in str(result.candidate.document())
 
@@ -139,14 +125,10 @@ def test_setup_over_an_older_bootstrap_keeps_sign_in_rules():
         "mail",
         "testing",
         "slack",
-        "schedules",
     ],
 )
 def test_all_core_steps_require_explicit_completion(missing):
-    """An omitted optional choice differs from an explicitly completed empty step.
-
-    A staged first campaign (before #142) still needs its schedules step.
-    """
+    """An omitted optional choice differs from an explicitly completed empty step."""
     base, args = compilation()
     del args["sections"][missing]
     with pytest.raises(ConfigError, match="required setup"):
@@ -154,18 +136,36 @@ def test_all_core_steps_require_explicit_completion(missing):
 
 
 def test_system_setup_compiles_without_a_campaign():
-    """System setup (#142): no campaign, content or schedules in the candidate.
-
-    Content a draft saved before the upgrade, and an empty schedules step,
-    are ignored once there is no campaign section.
-    """
+    """System setup (#142): no campaign, content or schedules in the candidate."""
     base, args = compilation()
-    del args["sections"]["campaign"]
-    args["sections"]["email_initial"] = {"id": str(uuid4()), "values": {}}
     sections = compile_candidate(base, **args).candidate.document()["sections"]
     assert not sections.get("campaigns")
     assert not sections.get("content") and not sections.get("schedules")
     assert sections["parish"] and sections["integrations"]
+
+
+@pytest.mark.parametrize(
+    "step", ["campaign", "email_initial", "page_submission_confirmation", "schedules"]
+)
+def test_sections_outside_the_wizard_are_refused(step):
+    """A first-campaign or retired step a draft may hold is refused, not dropped.
+
+    The setup preview passes only the wizard's sections; a caller that passed
+    a whole draft must fail closed rather than compile without its campaign.
+    """
+    base, args = compilation()
+    attempt = str(args["attempt_id"])
+    revision = content(attempt, kind="email", slot="initial")
+    args["sections"][step] = {
+        "campaign": {"source_result": str(uuid4()), "campaign": campaign()["values"]},
+        "email_initial": revision,
+        "page_submission_confirmation": content(
+            attempt, slot="submission_confirmation"
+        ),
+        "schedules": {"records": [schedule(attempt, template_version=revision["id"])]},
+    }[step]
+    with pytest.raises(ConfigError, match="setup wizard's own sections"):
+        compile_candidate(base, **args)
 
 
 @pytest.mark.parametrize(
@@ -247,78 +247,13 @@ def test_invalid_credential_metadata_cannot_compile(invalid):
         compile_candidate(base, **args)
 
 
-def test_disabled_page_remains_in_staging_but_not_in_compiled_selection():
-    """Disabling a module must not accidentally publish its retained introduction."""
-    base, args = compilation()
-    args["sections"]["page_financial"] = content(
-        str(args["attempt_id"]), slot="financial"
-    )
-    result = compile_candidate(base, **args)
-    assert not result.candidate.document()["sections"].get("content")
-    assert args["sections"]["page_financial"]["values"]
-
-
-@pytest.mark.parametrize("step", sorted(RETIRED_STEPS))
-def test_retired_step_left_in_a_draft_is_not_compiled(step):
-    """A step retired after the draft saved it neither blocks nor joins setup."""
-    base, args = compilation()
-    kind, _, slot = step.partition("_")
-    args["sections"][step] = content(str(args["attempt_id"]), kind=kind, slot=slot)
-    result = compile_candidate(base, **args)
-    assert not result.candidate.document()["sections"].get("content")
-
-
-@pytest.mark.parametrize("invalid", ["content_owner", "schedule_owner", "template"])
-def test_child_ownership_and_template_resolution_are_required(invalid):
-    """Detached child records do not gain authority through configuration assembly."""
-    base, args = compilation()
-    revision = content(str(args["attempt_id"]), kind="email", slot="initial")
-    row = schedule(
-        str(args["attempt_id"]),
-        template_version=revision["id"],
-        subject=revision["values"]["subject"],
-    )
-    args["sections"].update(email_initial=revision, schedules={"records": [row]})
-    assert compile_candidate(base, **args)
-    if invalid == "content_owner":
-        revision["values"]["campaign_id"] = str(uuid4())
-    elif invalid == "schedule_owner":
-        row["values"]["campaign_id"] = str(uuid4())
-    else:
-        row["values"]["template_version"] = str(uuid4())
-    with pytest.raises(ConfigError):
-        compile_candidate(base, **args)
-
-
 def test_maximum_wizard_can_compile_without_artificial_combined_record_limit():
-    """Three fifty-row access lists plus 100 schedules fit the complete intent."""
-    from datetime import date, timedelta
-
+    """Three fifty-row access lists fit the complete intent."""
     base, args = compilation()
     sections = args["sections"]
     for key in sections["access"]:
         sections["access"][key] = sorted(
             f"{key}{index}@example.org" for index in range(50)
         )
-    for step in CONTENT_STEPS:
-        kind, _, slot = step.partition("_")
-        # Retired steps (#260, #913) can no longer be staged.
-        if step not in RETIRED_STEPS:
-            sections[step] = content(str(args["attempt_id"]), kind=kind, slot=slot)
-    sections["campaign"]["campaign"]["end_date"] = "2055-02-01"
-    rows = []
-    for index in range(100):
-        kind = "reminder" if index else "initial"
-        template = sections[f"email_{kind}"]
-        rows.append(
-            schedule(
-                str(args["attempt_id"]),
-                kind=kind,
-                date=(date(2054, 10, 1) + timedelta(days=index)).isoformat(),
-                template_version=template["id"],
-                subject=template["values"]["subject"],
-            )
-        )
-    sections["schedules"]["records"] = rows
     result = compile_candidate(base, **args)
-    assert 250 < len(result.patch()) < 400
+    assert 150 < len(result.patch()) < 200

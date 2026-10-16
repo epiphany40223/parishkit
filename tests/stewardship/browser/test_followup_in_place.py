@@ -587,7 +587,7 @@ def test_followup_conflict_is_shown_whole_and_sent_once(page, component_origin):
     answer_with(page, component_origin, FOLLOWUP_UPDATE, 409, "/followup-error-409")
     posts = count_requests(page, "POST", "/record/")
     page.locator(FOLLOWUP_SAVE).click()
-    has_text(page.locator("h1"), "Ministry follow-up unavailable")
+    has_text(page.locator("h1"), "Ministry requests unavailable")
     visible(page.get_by_text("This request changed. Nothing was saved.", exact=False))
     assert posts == [component_origin + FOLLOWUP_UPDATE]
 

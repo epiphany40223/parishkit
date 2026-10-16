@@ -47,7 +47,7 @@ ASKS = {
     ("ministry-followup.html", "admin:ministry_followup_export"): True,
     ("ministry-roster.html", "admin:ministry_roster_export"): True,
     ("family-timeline.html", "export.url"): True,
-    ("ministry-report.html", "admin:ministry_packet"): False,
+    ("ministry-packet.html", "admin:ministry_packet"): False,
     ("participation.html", "admin:report_export_create"): False,
     ("participation.html", "admin:report_exact_create"): False,
     # Campaign days and dates, no action times (#1161).

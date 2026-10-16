@@ -28,6 +28,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.campaigns import restore_review as review
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.web.refusals import refusal_text, unexpected_fields
 
 from .access_gate import status_page
 from .admin_editing import error_response
@@ -36,6 +37,7 @@ from .authentication import runtime
 from .sessions import (
     FreshAuthenticationRequired,
     authenticated_admin,
+    freshness,
     require_fresh,
 )
 
@@ -105,15 +107,22 @@ def restore_review(request):
         state = review.review_state()
         if state is None:
             return redirect("admin:index")
+    # Release is offered, unavailable with its reason, until no email still
+    # needs a hold and no purge or campaign change runs: the reasons
+    # ``release_refusal`` names, read now as the release itself reads them
+    # (the SQL refuses a release before that too, #1331).
+    refusal = "needs_holds" if state.needed else review.release_refusal()
     response = render(
         request,
         "stewardship/restore-review.html",
-        # Release is offered, unavailable with its reason, until no email
-        # still needs a hold (the SQL refuses a release before that too).
         {
             "review": state,
             "step": step,
-            "release_ready": not state.needed,
+            "release_ready": not refusal,
+            "release_refusal": refusal,
+            # Settling and releasing need a recent sign-in: until then their
+            # buttons are unavailable, named by the step-up notice (#1331).
+            "fresh": freshness(request)[0],
             "page_url": reverse("admin:maintenance"),
         },
         status=status,
@@ -158,8 +167,9 @@ def _answer(step):
         if not _fresh_or_refused(error):
             raise
         return {"refused": "reauthenticate"}
-    except (ValueError, TypeError, KeyError):
-        return {"refused": "invalid"}
+    except (ValueError, TypeError, KeyError) as error:
+        # A stale form's unexpected fields say so in the region (#1401).
+        return {"refused": "invalid", "refusal_text": refusal_text(error)}
 
 
 def _step(request, principal, state):
@@ -168,7 +178,7 @@ def _step(request, principal, state):
     if action not in _FIELDS or set(request.POST) - _FIELDS[action] - {
         "csrfmiddlewaretoken"
     }:
-        raise ValueError("Invalid restore review step.")
+        raise unexpected_fields()
     actor = principal.identity
     if action == "cancel":
         return {}
@@ -275,6 +285,9 @@ def held_emails(request):
         {
             "held": state,
             "step": step,
+            # Deciding needs a recent sign-in: until then the buttons are
+            # unavailable, named by the step-up notice (#1331).
+            "fresh": freshness(request)[0],
             "page_url": reverse("admin:held_emails"),
         },
         status=status,
@@ -292,7 +305,7 @@ def _held_step(request, actor, state):
     if action not in _HELD_FIELDS or set(request.POST) - _HELD_FIELDS[action] - {
         "csrfmiddlewaretoken"
     }:
-        raise ValueError("Invalid held-email step.")
+        raise unexpected_fields()
     if action == "cancel":
         return {}
     # A decision needs a fresh sign-in first, so the step-up comes before

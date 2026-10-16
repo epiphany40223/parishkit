@@ -1,0 +1,5 @@
+{% load i18n %}{% comment %}
+  Finishing setup's step-up notice, drawn by the page and carried by each
+  status update (setup-finishing-status.html). ``mirrored`` (the polled
+  copy) leaves the CSRF token empty; live-status-v1.js fills it.
+{% endcomment %}{% translate "installing credentials" as step_up_action %}{% translate "Your setup is kept." as step_up_outcome %}{% if local_environment %}{% translate "Sign in again with the same email address." as step_up_note %}{% else %}{% translate "Use the same Google account." as step_up_note %}{% endif %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action outcome=step_up_outcome note=step_up_note next=next role="alert" %}

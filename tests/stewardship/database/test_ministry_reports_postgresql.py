@@ -256,24 +256,30 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
         assert b"\xe2\x80\x94 DUID 9</td>" not in body
         # The retired lists' Contact details controls are gone (#1157).
         assert b"/admin/reports/ministries/joining/" not in body
-        assert b"Contact details" not in body
+        assert b"Contact details of" not in body
         # A hand-made activity filter is refused as unknown (#1267).
         for activity in ("any", "active", "inactive", "unavailable"):
             response, _ = search(browser, root, {"activity": activity})
             assert response.status_code == 400
-        # The summary sorts by Ministry name (#960), within the leader's
-        # scope; it offers no Ministry DUID heading (#1123).
-        response, body = search(browser, root, {"sort": "name_desc"})
+        # Ministry requests is the follow-up queue (#1133): it sorts by
+        # Ministry name within the leader's scope and offers no Ministry DUID
+        # heading (#1123); the retired summary's sorts are refused.
+        response, body = search(browser, root, {"sort": "ministry"})
         assert response.status_code == 200 and b"Food pantry" in body
-        assert b"Choir" not in body and b'aria-sort="descending"' in body
+        assert b"Choir" not in body and b'aria-sort="ascending"' in body
         assert b'name="sort" value="duid"' not in body
-        assert search(browser, root, {"sort": "newest"})[0].status_code == 400
+        for retired in ("name_desc", "duid"):
+            assert search(browser, root, {"sort": retired})[0].status_code == 400
+    # The page records the queue's view audit, not the summary's (#1133).
+    assert not AuditContext.objects.filter(
+        event__event_type="ministry_report_viewed"
+    ).exists()
     contexts = list(
         AuditContext.objects.filter(
-            event__event_type="ministry_report_viewed"
+            event__event_type="ministry_followup_viewed"
         ).values_list("context", flat=True)
     )
-    assert any(context.get("ministry_duid") == 9 for context in contexts)
+    assert contexts
     assert "Example" not in json.dumps(contexts) and "valid@" not in json.dumps(
         contexts
     )
@@ -332,13 +338,12 @@ def test_packet_choices_list_every_ministry_in_scope_beyond_the_table(
     """The packet offers every Ministry the reader leads, not just the
     table's rows, and never a Ministry outside their scope (#533).
 
-    A leader of Choir (4) and Food pantry (9) searches the summary down to
-    Food pantry; the packet still offers both, so a subset can be chosen
-    whatever the table shows. A leader of Food pantry alone is never offered
-    Choir, and a packet POST naming Choir anyway is refused. The
-    report-view audit records only the Ministry rows shown: the choices
-    carry names and DUIDs, no request data. Ticking more Ministries than
-    one packet may hold is refused with a message saying what to do.
+    A leader of Choir (4) and Food pantry (9) searches Ministry requests
+    down to Food pantry; By Ministry and the packet still offer both, so a
+    subset can be chosen whatever the table shows (#1133). A leader of Food
+    pantry alone is never offered Choir, and a packet POST naming Choir
+    anyway is refused. Ticking more Ministries than one packet may hold is
+    refused with a message saying what to do.
     """
     harness = setup(response_service)
     store = harness.service.store
@@ -356,22 +361,17 @@ def test_packet_choices_list_every_ministry_in_scope_beyond_the_table(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = search(browser, root, {"search": "Food"})
         assert response.status_code == 200
-        table = body.decode().split("Current Ministry request summary", 1)[1]
+        table = body.decode().split('id="followup-table"', 1)[1]
         table = table.split("</table>", 1)[0]
         assert "Food pantry" in table and "Choir" not in table
+        counts = body.decode().split('<section id="by-ministry"', 1)[1]
+        assert "Choir" in counts.split("</section>", 1)[0]
         boxes = packet_boxes(body)
         assert boxes.count('name="ministries"') == 2
         assert boxes.index('value="4"> Choir') < boxes.index('value="9"> Food pantry')
         # The whole summary on one page needs no second read; same choices.
         response, body = read(browser, root)
         assert response.status_code == 200 and packet_boxes(body) == boxes
-    shown = [
-        context.get("ministry_duid")
-        for context in AuditContext.objects.filter(
-            event__event_type="ministry_report_viewed", context__outcome="succeeded"
-        ).values_list("context", flat=True)
-    ]
-    assert shown.count(4) == 1 and shown.count(9) == 2
     google[0]["email"] = "leader@example.org"
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -483,7 +483,7 @@ def test_testing_hidden_proposed_and_resolved_intent(response_service):
     promote(snapshot, claim, harness.campaign, harness.rings)
     [summary] = [row for row in page(harness)["summaries"] if row["duid"] == 9]
     assert summary["completed"] == summary["unresolved"] == 1
-    assert summary["joining"] == 2 and "50" in summary["progress"]
+    assert summary["joining"] == 2
     resolved = page(harness, ministry=9, state="resolved")["rows"]
     assert len(resolved) == 1 and resolved[0]["outcome_label"] == "Joined the Ministry"
 
@@ -619,7 +619,7 @@ def test_only_the_current_campaign_is_reported_within_each_scope(
             response, body = read(admin, current)
             assert (
                 response.status_code == 200
-                and b"No matching authorized Ministries" in body
+                and b"No Ministries you may follow up are part of this campaign" in body
             )
     assert (
         change(

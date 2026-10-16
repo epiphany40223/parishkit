@@ -31,6 +31,7 @@ CAMPAIGN = UUID("00000000-0000-4000-8000-000000000001")
 SCHEDULE = "00000000-0000-4000-8000-000000000003"
 TEMPLATE = "00000000-0000-4000-8000-000000000004"
 REQUEST = UUID("00000000-0000-4000-8000-00000000000c")
+SERIES_CUT = "00000000-0000-4000-8000-0000000000a2"
 CANDIDATE = UUID("00000000-0000-4000-8000-00000000000d")
 # The factory campaign's own dates and zone, never restated here.
 FACTORY = campaign_record()["values"]
@@ -77,6 +78,7 @@ def preview_context(*, blocking=0):
         "after_window": values,
         "blocking": blocking,
         "series": [{"id": SERIES, "rule": SERIES_RULE, "schedules": [SCHEDULE]}],
+        "series_changes": [{"id": SERIES_CUT, "operation": "remove"}],
         "preview": None if blocking else "signed:preview",
     }
 
@@ -159,6 +161,7 @@ GOLDEN = {
             "blocking": 0,
             "preview": {"token": "signed:preview"},
             "series": [{"id": SERIES, "rule": SERIES_RULE, "schedules": [SCHEDULE]}],
+            "series_changes": [{"id": SERIES_CUT, "operation": "remove"}],
         },
     ),
     "schedule confirm": (
@@ -211,6 +214,8 @@ ALLOWED = {
         "end",
         "weekdays",
         "schedules",
+        # An existing series the change updates or removes (#469).
+        "series_changes",
         # The signed binding the specification has the preview print; the
         # page embeds the same value in its form.
         "token",
@@ -314,6 +319,7 @@ def test_an_empty_document_changes_nothing_and_is_well_formed():
         "window": {},
         "schedules": [],
         "series": [],
+        "edits": [],
     }
 
 
@@ -479,6 +485,81 @@ def test_remember_is_only_true(remember):
     entry = {"repeat": weekly(), "time": "09:00", "remember": remember}
     with pytest.raises(ValueError, match="A repeat takes only"):
         admin_changes.parse_changes(json.dumps({"schedules": [entry]}))
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {"series": SERIES},
+        {"series": SERIES, "scope": "other"},
+        {"series": SERIES, "scope": "following"},
+        {"series": SERIES, "scope": "following", "from": 7},
+        {"series": SERIES, "scope": "series", "from": SCHEDULE},
+        {"series": SERIES, "scope": "series", "time": 9},
+        {"series": SERIES, "scope": "series", "kind": "reminder"},
+        {"series": SERIES, "scope": "series", "remember": True},
+        {"series": SERIES, "delete": False},
+        {"series": SERIES, "delete": True, "scope": "series"},
+        {"series": 7, "scope": "series"},
+    ],
+)
+def test_a_series_entry_takes_only_its_own_members(entry):
+    """A scope, ``from`` only for "following", or delete alone (#469)."""
+    with pytest.raises(ValueError, match="series"):
+        admin_changes.parse_changes(json.dumps({"schedules": [entry]}))
+
+
+def test_a_series_entry_rule_is_checked_as_a_repeats_is():
+    """The same rule checks and messages as a ``repeat`` entry's."""
+    entry = {"series": SERIES, "scope": "series", "repeat": weekly(weekdays=[])}
+    with pytest.raises(ValueError, match="Choose at least one day of the week."):
+        admin_changes.parse_changes(json.dumps({"schedules": [entry]}))
+
+
+def test_a_series_is_named_once():
+    """Two edits of one series in one document are refused."""
+    entry = {"series": SERIES, "scope": "series", "time": "09:00"}
+    with pytest.raises(ValueError, match="A series is named twice."):
+        admin_changes.parse_changes(json.dumps({"schedules": [entry, entry]}))
+
+
+def test_series_entries_are_numbered_with_the_added_entries():
+    """A series entry is kept for planning, labelled as the n-th added entry."""
+    document = {
+        "schedules": [
+            {"kind": "reminder", "date": REMINDER_DAY, "time": "10:00"},
+            {
+                "series": SERIES,
+                "scope": "following",
+                "from": SCHEDULE,
+                "repeat": weekly(end="2054-10-08"),
+                "time": "09:00",
+            },
+            {"series": SERIES_CUT, "delete": True},
+        ]
+    }
+    parsed = admin_changes.parse_changes(json.dumps(document))
+    assert len(parsed["schedules"]) == 1
+    assert parsed["edits"] == [
+        {
+            "series": SERIES,
+            "scope": "following",
+            "start": SCHEDULE,
+            "rule": canonical_rule(weekly(end="2054-10-08")),
+            "time_of_day": "09:00",
+            "template_version": None,
+            admin_changes.LABEL: "new1",
+        },
+        {
+            "series": SERIES_CUT,
+            "scope": "delete",
+            "start": None,
+            "rule": None,
+            "time_of_day": None,
+            "template_version": None,
+            admin_changes.LABEL: "new2",
+        },
+    ]
 
 
 def test_expanded_repeats_still_fit_the_pages_form():

@@ -170,6 +170,10 @@ def test_disabling_financial_preview_warns_before_discarding_custom_sharing(
     response = post(browser, url(row), data)
     assert response.status_code == 200, response.content
     assert b"Re-enabling it starts with the default options" in response.content
+    # The financial periods and share options are long settings: the full
+    # review's table, under the dialog's own title (#1356).
+    assert b"<table" in response.content
+    assert b"data-review-title" not in response.content
     assert (
         row.active_configuration.values["share_options"][0]["label"]
         == "Our custom sharing label"
@@ -248,10 +252,10 @@ def test_live_lock_invalidates_preview_without_a_yaml_change(auth_service, googl
     assert response.status_code == 200
     body = response.content.decode()
     # One editor (#1119): no read-only copy, every setting once, and the one
-    # Review changes. Only the end date stays open once live (#912); every
+    # Save (#1356). Only the end date stays open once live (#912); every
     # other setting is disabled where it stands, its reason in its tip.
     assert "read-only" not in body and 'id="end-date"' not in body
-    assert body.count(">Review changes</button>") == 1
+    assert body.count(">Save</button>") == 1
     assert body.count('name="name"') == 1
     assert re.search(r'<input type="text" name="name"[^>]*disabled', body)
     assert re.search(r'<input type="date" name="end_date"[^>]*>', body)
@@ -531,13 +535,22 @@ def test_review_and_apply_in_the_review_dialog(auth_service, google):
     assert flow_steps(page.content) == (STEPS, "Make changes")
     assert 'data-review-open="campaign-review"' in body
     assert '<dialog id="campaign-review"' in body
-    assert body.count(">Review changes</button>") == 1
+    assert body.count(">Save</button>") == 1
     assert "data-in-place data-table-sync" not in body
+    requests = ConfigurationChangeRequest.objects.count()
     review = post(browser, url(row), fields(store, row, name="Renamed in dialog"))
     shown = review.content.decode()
     assert review.status_code == 200 and "data-review-answer" in shown
     assert "<html" not in shown and "Renamed in dialog" in shown
     assert 'data-review-done="Campaign settings changed."' in shown
+    # One short setting changed: a compact review (#1356), its one line
+    # naming the old name and the new, and nothing recorded by the Review.
+    assert 'data-review-title="Save this change?"' in shown
+    lines = re.findall(r"<li>(.*?)</li>", shown, flags=re.S)
+    assert len(lines) == 1
+    assert lines[0].startswith('<span class="compact-review-field">Campaign name:')
+    assert lines[0].endswith(" Renamed in dialog") and "<table" not in shown
+    assert ConfigurationChangeRequest.objects.count() == requests
     response = post(browser, url(row), {"action": "confirm", "preview": token(review)})
     request_id = requested(response)
     assert urlsplit(response["Location"]).path == f"/admin/changes/{request_id}/"
@@ -643,7 +656,7 @@ def test_a_live_campaign_changes_its_leader_roles_on_the_page(auth_service, goog
     # Review waits for a changed role, as on the other settings forms (#921),
     # and says why while it waits, with the shared hint (#924).
     assert 'data-require-change="base_digest"' in body
-    assert "Change a setting to review it." in body
+    assert "Change a setting to save it." in body
     assert body.count('id="id_ministry_leader_roles_0"') == 1
     assert "sees the reports and follow-up of each Ministry" in body
     for role in ("Chairperson", "Staff"):
@@ -680,6 +693,8 @@ def test_a_live_campaign_changes_its_leader_roles_on_the_page(auth_service, goog
     shown = review.content.decode()
     assert "data-review-answer" in shown
     assert "Ministry leader roles" in shown and "Chairperson, Staff" in shown
+    # A live campaign's leader roles alone: a compact review (#1356).
+    assert 'id="campaign-review-summary"' in shown and "<table" not in shown
     response = post(browser, url(row), {"action": "confirm", "preview": token(review)})
     apply(store, response)
     row.refresh_from_db()

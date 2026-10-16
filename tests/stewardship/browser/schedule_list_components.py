@@ -15,7 +15,9 @@ checks need no database:
 - ``NEW`` and ``EDIT``: New scheduled email, and Edit scheduled email for
   Reminder 1; Review changes answers with the review fragment for the
   shared review dialog (#750), whose Apply posts to ``APPLY`` (Applied at
-  once), then returns to ``LIST``. ``EDIT_DIGEST`` is Edit scheduled email
+  once), then returns to ``LIST``. New's answer adds one reminder that
+  sends once, so it is the confirmation (#1356); Edit's is a full review.
+  ``EDIT_DIGEST`` is Edit scheduled email
   for the weekly digest. The campaign is in New York's zone; the pages show
   and take times in the browser's (#558).
   Edit also offers the schedule's own email (#446), filled in from Reminder
@@ -72,6 +74,7 @@ from parishkit.stewardship.accounts.schedule_changes import (
 )
 from parishkit.stewardship.accounts.schedule_entry_views import (
     RepeatRule,
+    _sends_once,
     _summary,
     entry_form,
     entry_times,
@@ -431,17 +434,22 @@ def _dates_refused(values, owner, emails, rows):
 
 
 def _review(owner, changes, *, new=True, blocking=0):
-    """The review dialog's fragment for ``changes`` (schedule-review.html)."""
+    """The review dialog's fragment for ``changes`` (schedule-review.html).
+
+    A New review adding one schedule that sends once is the view's
+    confirmation (``_sends_once``, #1356), as the server draws it.
+    """
+    reviewed = {
+        "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
+        "changes": changes,
+        "window_changes": {},
+        "blocking": blocking,
+        "preview": None if blocking else "synthetic-preview",
+        "new": new,
+    }
     return render_to_string(
         "stewardship/schedule-review.html",
-        {
-            "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
-            "changes": changes,
-            "window_changes": {},
-            "blocking": blocking,
-            "preview": None if blocking else "synthetic-preview",
-            "new": new,
-        },
+        reviewed | {"confirmation": new and _sends_once(reviewed, None)},
     )
 
 
@@ -503,6 +511,11 @@ def components(context, admin):
         LIST: _list(values, owner, emails, rows, refresh_url=f"{LIST}-one-deleted"),
         f"{LIST}?sort=-when": _list(values, owner, emails, rows, sort="-when"),
         f"{LIST}?sort=when": _list(values, owner, emails, rows),
+        # Only the sent invitation, which is read-only: rows, none
+        # selectable, and no reason given for that (#1332).
+        f"{LIST}-sent-only": _list(
+            values, owner, emails, [initial], refresh_url=f"{LIST}-sent-only"
+        ),
         f"{LIST}-one-deleted": _list(
             values,
             owner,

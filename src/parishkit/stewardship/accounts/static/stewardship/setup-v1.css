@@ -1,61 +1,9 @@
-/* Initial-setup wizard: progress stepper, Back/Continue actions and field help.
-   Loaded only by the setup templates, after ui-v1.css, so it reads the shared
-   design tokens (#732) directly: no hex colours and no var() fallbacks. The
-   Back/Continue buttons take the shared button shape (--button-*). */
-.setup-sr-only {
-  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
-}
-/* Compact stepper: one summary line, a slim decorative track and the full
-   ordered list in a collapsed disclosure. Text carries every state. */
-/* The shared theme styles every "main nav" as a row of bordered buttons;
-   the stepper is a card with its own layout and plain links instead. */
-.setup-stepper {
-  display: block; color: var(--ink);
-  margin-block: 0 1.25rem; padding: .75rem 1rem .25rem; background: var(--paper);
-  border: 1px solid var(--border); border-radius: var(--radius);
-}
-.setup-stepper-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: .15rem 1rem; }
-.setup-stepper-summary p { margin: 0; }
-.setup-stepper-current { flex: 1 1 14rem; }
-.setup-stepper-count, .setup-overview-link { color: var(--muted); font-size: .925rem; }
-.setup-stepper .setup-overview-link a {
-  display: inline-block; min-height: 0; padding: .6rem 0; border: 0; background: none;
-  color: var(--link); font-weight: 500; text-decoration: underline;
-}
-.setup-track { display: flex; gap: 3px; margin-block: .6rem .15rem; }
-.setup-track span { position: relative; flex: 1 1 0; min-width: 0; height: .45rem; border-radius: 999px; background: var(--track); }
-/* A taller invisible hover target for each segment's title, without changing layout. */
-.setup-track span::before { content: ""; position: absolute; inset: -.4rem -1.5px; }
-.setup-track .setup-track-done { background: var(--accent); }
-.setup-track .setup-track-current { background: var(--gold); }
-.setup-stepper-list { margin: 0; padding: 0; border: 0; background: transparent; }
-.setup-stepper-list[open] { padding-bottom: .5rem; }
-.setup-steps { list-style: none; margin: 0; padding: 0; columns: 2 19rem; column-gap: 1.5rem; }
-.setup-steps li { margin: 0 0 2px; break-inside: avoid; }
-.setup-steps a, .setup-step-box {
-  border: 0; background: none; font-weight: inherit;
-  display: grid; grid-template-columns: 1.6rem minmax(0, 1fr); column-gap: .6rem; align-items: center;
-  min-height: 44px; padding: .3rem .5rem; border-radius: var(--radius-small);
-  color: var(--ink); text-decoration: none;
-}
-.setup-steps a:hover { background: var(--accent-soft); }
-.setup-steps a:hover .setup-step-label { text-decoration: underline; }
-.setup-step-number {
-  grid-row: span 2; display: inline-flex; align-items: center; justify-content: center;
-  width: 1.6rem; height: 1.6rem; border: 2px solid currentColor; border-radius: 50%;
-  font-weight: 700; font-size: .8rem;
-}
-.setup-step-label { font-weight: 600; line-height: 1.3; }
-.setup-step-status { font-size: .8125rem; line-height: 1.3; color: var(--muted); }
-.setup-step-done .setup-step-number {
-  background: var(--accent); border-color: var(--accent); color: var(--paper);
-}
-.setup-step-blocked .setup-step-box, .setup-step-locked .setup-step-box { color: var(--muted); }
-.setup-step-blocked .setup-step-number, .setup-step-locked .setup-step-number { border-style: dashed; }
-.setup-steps [aria-current="step"] {
-  background: var(--accent-soft); box-shadow: inset 4px 0 0 var(--accent);
-}
+/* Initial-setup wizard: Back/Continue actions, source-load progress and field
+   help. Its progress stepper is stepper-v1.css's, shared with the Campaign
+   setup pages (#142). Loaded only by the setup templates, after ui-v1.css
+   and stepper-v1.css, so it reads the shared design tokens (#732) directly:
+   no hex colours and no var() fallbacks. The Back/Continue buttons take the
+   shared button shape (--button-*). */
 /* Back/Continue: identical on every wizard page. Back is secondary and first;
    the primary action (button or link) is last and right-aligned. They share
    one row, and a long label wraps inside its own button; only on very narrow
@@ -117,8 +65,4 @@
 .setup-progress progress { flex: 1 1 12rem; }
 .helptext { display: block; max-width: 70ch; margin-block: .25rem .75rem; color: var(--muted); font-size: .925rem; }
 .setup-checklist li { margin-block: .25rem; }
-@media (forced-colors: active) {
-  .setup-steps [aria-current="step"] { outline: 3px solid CanvasText; }
-  .setup-step-done .setup-step-number { forced-color-adjust: none; background: Highlight; color: HighlightText; }
-}
-@media print { .setup-stepper, .setup-actions { display: none; } }
+@media print { .setup-actions { display: none; } }

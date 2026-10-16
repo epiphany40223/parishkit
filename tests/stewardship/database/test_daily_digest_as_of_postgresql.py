@@ -100,7 +100,6 @@ def test_the_production_saved_page_shows_the_emails_funnel(
         DailyDigestReady,
         DailyDigestRecipient,
     )
-    from parishkit.stewardship.web.digest_content import FUNNEL_CHART_IDS
 
     from .auth_builders import signed_in
     from .test_background_grants_postgresql import task_login
@@ -121,20 +120,16 @@ def test_the_production_saved_page_shows_the_emails_funnel(
             ready = retain_daily_content(claim, document, content)
         assert document.funnel.stage("submitted") == 1
         assert "Submitted: 1 (" in content.text
-        # The funnel's two chart images (#477 slice 2), drawn by the real
-        # server renderer, are retained with the ready row and allocated
-        # through the closed boundary with each Admin's mail.
+        # The funnel section has no charts (#1370): the ready row retains
+        # no funnel images, and the allocated mail references none.
         ready = DailyDigestReady.objects.get(pk=ready.pk)
-        assert ready.images() == tuple(
-            (image.content_id, image.data) for image in content.funnel
-        )
-        assert [name for name, _ in ready.images()] == list(FUNNEL_CHART_IDS)
+        assert content.funnel == () and ready.images() == ()
+        assert ready.funnel_chart is None and ready.activity_chart is None
         with task_login(ServiceRole.WORKER, exact=True), work_transaction():
             assert fanout_daily(claim).phase == "complete"
         recipient = DailyDigestRecipient.objects.select_related("outbox__render").get()
         assert recipient.outbox.render.html.endswith(ready.html)
-        for name in FUNNEL_CHART_IDS:
-            assert ready.html.count(f'src="cid:{name}"') == 1
+        assert "cid:response-" not in ready.html
         browser, _ = signed_in()
         path = f"/admin/reports/emailed/daily/{ready.snapshot_id}/"
         rows = re.compile(
@@ -158,17 +153,11 @@ def test_the_production_saved_page_shows_the_emails_funnel(
             ]
 
         before = page_funnel()
-        # The page draws the email's two charts in the browser, before the
-        # funnel's table (visuals first, #720).
+        # The page draws no funnel charts either (#1370).
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             _, body = read(browser, path)
-        panel = body[body.index(b"data-digest-funnel") :]
-        assert (
-            panel.index(b'id="response-funnel-spec"')
-            < panel.index(b'id="response-activity-spec"')
-            < panel.index(b'<table aria-labelledby="digest-funnel-heading">')
-        )
-        assert b"vega-lite" in body
+        assert b"response-funnel-spec" not in body
+        assert b"response-activity-spec" not in body
         # The digest's stages: "Link followed" is left out (#1016).
         assert [row[1] for row in before] == [
             f"{stage.count:,}"
@@ -204,9 +193,8 @@ def test_a_production_digest_sent_without_its_charts(
     """Charts withheld (#477): the funnel's table is sent and saved, no charts.
 
     The compile the last attempt makes when a chart cannot be drawn
-    (``digest_tasks._build``): the ready row keeps no funnel images, the
-    allocated mail references none, and the saved page shows the funnel's
-    table without the charts its email never had.
+    (``digest_tasks._build``): the funnel section, which has no charts
+    since #1370, is still sent and saved with its table.
     """
     from dataclasses import replace
     from functools import partial

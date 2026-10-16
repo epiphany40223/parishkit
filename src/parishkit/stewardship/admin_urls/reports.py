@@ -45,7 +45,6 @@ from ..reports import (
     weekly_views,
     workspace_views,
 )
-from ..reports import ministry_views as ministry_report_views
 from ..web.admin_routes import current_campaign
 
 
@@ -58,11 +57,6 @@ patterns = [
     path("reports/", workspace_views.index, name="reports"),
     _page("reports/responses/", response_dashboard.dashboard, "response_dashboard"),
     _page("reports/participation/", workspace_views.participation, "participation"),
-    _page(
-        "reports/participation/<uuid:fact_set_id>.png",
-        workspace_views.participation,
-        "participation_chart",
-    ),
     _page(
         "reports/participation/exports/",
         export_ui.create,
@@ -120,16 +114,16 @@ patterns = [
     # export form (exports/) were retired, with no redirect (#1157): a
     # request's contact details are on its follow-up page, and the export is
     # the follow-up queue's Export these requests.
-    _page("reports/ministries/", ministry_report_views.report, "ministry_report"),
+    # Ministry requests (#1133): the follow-up queue, with the totals, the
+    # By Ministry counts and the follow-up packet, is the one page for
+    # Ministry requests. The queue's own address (follow-up/) was retired
+    # with no redirect; its request pages, bulk outcomes, export and Roster
+    # changes to enter keep their addresses under it.
+    _page("reports/ministries/", ministry_followup_views.queue, "ministry_report"),
     _page(
         "reports/ministries/packets/",
         ministry_export_views.create_packet,
         "ministry_packet",
-    ),
-    _page(
-        "reports/ministries/follow-up/",
-        ministry_followup_views.queue,
-        "ministry_followup",
     ),
     # One outcome for the requests chosen on the queue (#1131), posted by
     # its confirmation dialog.
@@ -172,6 +166,13 @@ patterns = [
         "reports/ministries/follow-up/roster/exports/",
         ministry_roster_views.export,
         "ministry_roster_export",
+    ),
+    # The list's bulk Mark entered in ParishSoft (#879), posted by its
+    # confirmation dialog.
+    _page(
+        "reports/ministries/follow-up/roster/marks/",
+        ministry_roster_views.bulk,
+        "ministry_roster_bulk",
     ),
     # The directory's fixed actions before its Family pages; a Family is a
     # UUID, so "exports" or "search" can never be taken for one (a unit test

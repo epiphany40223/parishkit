@@ -58,7 +58,8 @@ from .clock import CLOCK_CONTROL_TARGET, CLOCK_MOUNT_TARGET, FakeClock
 from .synthetic_parish import MAXIMUM_FAMILIES, generate
 
 LOGGER = logging.getLogger(__name__)
-# The seed's own phases, then the BG-12 rehearsal's two steps (local/rehearsal.py).
+# The seed's own phases, the BG-12 rehearsal's two steps (local/rehearsal.py),
+# then the read-only lookup `finish-setup` uses after the browser wizard.
 STEPS = (
     "timeline",
     "wizard",
@@ -69,6 +70,7 @@ STEPS = (
     "finish",
     "reminder",
     "measure",
+    "credentials",
 )
 # The rehearsal steps that need --due-at.
 DUE_STEPS = frozenset({"reminder", "measure"})
@@ -1003,6 +1005,7 @@ def run_step(request, configuration):
     return {
         "wizard": wizard_step,
         "campaign": campaign_step,
+        "credentials": credentials_step,
         "prepare": prepare_step,
         "drive": drive_step,
         "check": check_step,
@@ -1105,7 +1108,21 @@ def wizard_step(request, configuration):
     # The freeze hands over to the credential installers; the operator script
     # then recreates the consumers from compose.json and acknowledges each
     # request inside them (runbook, first installation, step 5), which is
-    # what completes setup. The request ids are the sealed credentials' ids.
+    # what completes setup.
+    requests = frozen_credential_requests()
+    if requests is None:
+        raise SeedFailed("The setup attempt is not frozen after the wizard.")
+    return {"step": "wizard", "result": "frozen", "requests": requests}
+
+
+def frozen_credential_requests():
+    """The frozen setup attempt's credential request ids by target, or None.
+
+    The ids runbook step 5 acknowledges are the frozen attempt's unscrubbed
+    sealed credentials' ids (one per target). None means no attempt is
+    frozen: the wizard has not reached Finishing setup. Django must already
+    be configured.
+    """
     from parishkit.stewardship.accounts.setup_models import SetupAttempt
     from parishkit.stewardship.accounts.setup_secret_models import (
         SetupSealedCredential,
@@ -1115,14 +1132,32 @@ def wizard_step(request, configuration):
         SetupAttempt.objects.filter(state="frozen").order_by("-created_at").first()
     )
     if attempt is None:
-        raise SeedFailed("The setup attempt is not frozen after the wizard.")
-    requests = {
+        return None
+    return {
         row.target: str(row.pk)
         for row in SetupSealedCredential.objects.filter(
             attempt=attempt, scrubbed_at=None
         ).only("id", "target")
     }
-    return {"step": "wizard", "result": "frozen", "requests": requests}
+
+
+def credentials_step(request, configuration):
+    """Report the request ids `finish-setup` acknowledges; writes nothing.
+
+    The browser wizard's counterpart of wizard_step's answer: after the
+    Administrator's wizard freezes its attempt, the operator script looks the
+    ids up here and runs the same runbook step 5 that `wizard` runs.
+    """
+    configure_web_process(configuration)
+    # Model imports only after Django is configured.
+    from parishkit.stewardship.accounts.setup_completion import setup_is_complete
+
+    if setup_is_complete():
+        return {"step": "credentials", "result": "setup was already complete"}
+    requests = frozen_credential_requests()
+    if requests is None:
+        return {"step": "credentials", "result": "not frozen"}
+    return {"step": "credentials", "result": "frozen", "requests": requests}
 
 
 def campaign_step(request, configuration):

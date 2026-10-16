@@ -74,6 +74,7 @@ def test_each_record_is_the_csv_row_with_its_id_version_and_actions():
             "proposal_id",
             "version",
             "actions",
+            "reviews",
         }
         assert [record[key] for key in admin_census_export.JSONL_KEYS] == list(values)
         assert record["proposal_id"] == str(source["id"])
@@ -101,6 +102,37 @@ def test_actions_follow_the_reader_s_capabilities():
         [],
         [],
     ]
+
+
+@pytest.mark.parametrize(
+    ("values", "decisions"),
+    [
+        # To review: Approve or Ignore; an approved one Ignore or back.
+        ({}, ["approved", "ignored"]),
+        ({"decision": "approved"}, ["ignored", "unreviewed"]),
+        ({"execution": "failed", "decision": "approved"}, ["ignored", "unreviewed"]),
+        # A Conflict is never approved; it may be ignored or sent back.
+        ({"execution": "conflict", "decision": "approved"}, ["ignored", "unreviewed"]),
+        ({"execution": "conflict"}, ["ignored"]),
+        # Queued for publication (#1245 review note 5) or final: nothing.
+        ({"execution": "queued", "decision": "approved"}, []),
+        ({"execution": "published", "decision": "approved"}, []),
+    ],
+)
+def test_reviews_are_the_page_s_review_choices(values, decisions):
+    """An Administrator's Review choices on an Automatic row, as the
+    decisions ``census review`` takes."""
+    automatic = row(entity_kind="member", entity_key="3", handling="api", **values)
+    assert records([automatic], ADMIN)[0]["reviews"] == decisions
+
+
+def test_reviews_are_the_administrator_s_on_automatic_rows_only():
+    """Staff review nothing; a By-hand row has no Review; and nothing is
+    offered while other campaign work holds the campaign."""
+    automatic = row(entity_kind="member", entity_key="3", handling="api")
+    assert records([automatic], STAFF)[0]["reviews"] == []
+    assert records([row()], ADMIN)[0]["reviews"] == []
+    assert records([automatic], ADMIN, mutable=False)[0]["reviews"] == []
 
 
 def test_the_formats_are_the_page_s_and_json_lines():

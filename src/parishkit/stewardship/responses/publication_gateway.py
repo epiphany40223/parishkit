@@ -17,8 +17,14 @@ it refuses with ``read_unconfirmed``. The worker reads before every write,
 so the real gateway can never reach its PUT until a confirmed read replaces
 that refusal and the human-run smoke test has written one test Member and
 read it back (docs/guides/stewardship-member-requests.md#parishsoft-publication).
+
+That smoke test (``responses.contact_smoke``) is the one other user of this
+gateway. It opens it with ``open_operator`` (no task owns a human's run) and
+reads the candidate record with ``probe_member_record``, which returns the
+raw ``GET members/{id}`` answer; the worker never calls it.
 """
 
+from types import SimpleNamespace
 from typing import Protocol
 
 from django.db import connection
@@ -116,10 +122,44 @@ class ParishSoftContactGateway:
         session.headers["x-api-key"] = credential.api_key
         return cls(session, profile=profile)
 
+    @classmethod
+    def open_operator(cls, credential, *, profile, on_timeout):
+        """Build the gateway for the human-run contact smoke check.
+
+        No task owns that run, so there is no ownership to check; every call
+        is still refused inside a transaction, and a timeout recorder is
+        still required.
+        """
+        return cls.open(
+            SimpleNamespace(check=lambda: None),
+            credential,
+            profile=profile,
+            on_timeout=on_timeout,
+        )
+
     def read_member_contact(self, member_id, *, timeout):
         """Refused until a GET returning all fifteen contact fields is confirmed."""
         _member_id(member_id)
         raise ContactGatewayError("read_unconfirmed")
+
+    def probe_member_record(self, member_id, *, timeout):
+        """One Member's raw ``GET members/{id}`` record, or None when not found.
+
+        Only the contact smoke check calls this, to find out whether that
+        record carries the fifteen PUT fields; it is not the publication
+        read. Failures are fixed words, never provider text.
+        """
+        url = f"{self.base_url}/members/{_member_id(member_id)}"
+        try:
+            response = self.session.get(url, timeout=timeout)
+            if response.status_code == 404:
+                return None
+            body = response.json() if 200 <= response.status_code < 300 else None
+        except (SourceTransportError, ValueError):
+            raise ContactGatewayError("read_unavailable") from None
+        if type(body) is not dict:
+            raise ContactGatewayError("read_unavailable")
+        return body
 
     def write_member_contact(self, member_id, payload, *, timeout):
         """Send the one Member contact PUT; any non-2xx answer is a failure."""

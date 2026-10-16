@@ -126,10 +126,11 @@ class DailyDigestReady(ImmutableRecord):
 
     ``funnel_chart`` and ``activity_chart`` are the Response funnel
     section's two chart images (#477 slice 2), retained as PNG bytes for the
-    same reason: both on a Production digest, both null on a Testing digest
-    (which has no funnel), on a digest sent with its charts withheld (the
-    last compile attempt could not draw one) and on every digest compiled
-    before them.
+    same reason, by Production digests compiled while the section had them.
+    #1370 removed them: every digest compiled since leaves both null (as do
+    Testing digests, digests sent with their charts withheld and those
+    compiled before slice 2), and the columns stay so an older ready row is
+    still sent with its images.
     """
 
     snapshot = models.OneToOneField(DailyDigestSnapshot, on_delete=models.PROTECT)

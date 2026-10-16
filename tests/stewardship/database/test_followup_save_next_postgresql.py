@@ -81,24 +81,30 @@ def test_ministry_save_and_next_follows_the_remembered_view(response_service, go
     harness = setup(response_service)
     browser, actor, _, _ = leader(harness, google, roles=("staff",))
     join, leave = requests()
-    route = reverse("admin:ministry_followup")
+    route = reverse("admin:ministry_report")
+    # Request pages keep their addresses under follow-up/ (#1133).
+    items = route + "follow-up/"
     view = {"state": "any", "sort": "ministry", "size": "25"}
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = search(browser, route, view)
         assert response.status_code == 200
-        order, token = linked(body, route)
+        order, token = linked(body, items)
         assert set(order) == {str(join.pk), str(leave.pk)}
         # The filters stay private: only the opaque token is in any link.
-        assert b"?search=" not in body and b"state=any" not in body
+        # (By Ministry's counts carry their own closed filters, #1133.)
+        table = re.sub(
+            rb'<section id="by-ministry".*?</section>', b"", body, flags=re.S
+        )
+        assert b"?search=" not in body and b"state=any" not in table
         first, second = order
-        response, body = get(browser, f"{route}{first}/?queue={token}")
+        response, body = get(browser, f"{items}{first}/?queue={token}")
         assert response.status_code == 200 and following(body) == second
         assert b"Save and next" in body and b"data-in-place-moves" in body
         assert f'name="queue" value="{token}"'.encode() in body
-        assert f'follow-up/?queue={token}">Return to'.encode() in body
+        assert f'ministries/?queue={token}">Return to'.encode() in body
         # An in-place history page swaps only the history, so it skips the
         # scan; an ordinary load of the same address still scans.
-        paged = f"{route}{first}/?page=1&queue={token}"
+        paged = f"{items}{first}/?page=1&queue={token}"
         response, body = fetched(browser, paged)
         assert response.status_code == 200 and following(body) == ""
         assert following(get(browser, paged)[1]) == second
@@ -112,7 +118,7 @@ def test_ministry_save_and_next_follows_the_remembered_view(response_service, go
             "then": "next",
             "next": second,
         }
-        update = f"{route}{first}/record/"
+        update = f"{items}{first}/record/"
         # A correctable refusal stays on the request, in place, keeping the
         # view's token and the next request (#553).
         response, body = search(
@@ -128,23 +134,23 @@ def test_ministry_save_and_next_follows_the_remembered_view(response_service, go
         assert post(browser, update, stale).status_code == 409
         response = post(browser, update, form | {"request_key": str(uuid4())})
         assert response.status_code == 302
-        assert response["Location"] == f"{route}{second}/?queue={token}"
+        assert response["Location"] == f"{items}{second}/?queue={token}"
         # Plain Save stays on the request, keeping the view.
         response = post(
             browser,
-            f"{route}{second}/record/",
+            f"{items}{second}/record/",
             form | {"request_key": str(uuid4()), "then": "", "next": ""},
         )
-        assert response["Location"] == f"{route}{second}/?queue={token}"
+        assert response["Location"] == f"{items}{second}/?queue={token}"
         # The last request: nothing follows, so Save and next returns to the
         # remembered view, with its filters, sort and page size.
-        response, body = get(browser, f"{route}{second}/?queue={token}")
+        response, body = get(browser, f"{items}{second}/?queue={token}")
         assert following(body) == "" and b"returns to the list" in body
         # That button submits natively: the queue loads once (ui-v1.js).
         assert b"data-in-place-native" in body
         response = post(
             browser,
-            f"{route}{second}/record/",
+            f"{items}{second}/record/",
             form | {"request_key": str(uuid4()), "expected_version": "2", "next": ""},
         )
         assert response["Location"] == f"{route}?queue={token}"
@@ -152,7 +158,7 @@ def test_ministry_save_and_next_follows_the_remembered_view(response_service, go
         assert response.status_code == 200
         assert b'<option value="any" selected>Any status' in body
         assert b'aria-sort="ascending"' in body
-        assert linked(body, route) == (order, token)
+        assert linked(body, items) == (order, token)
         # An unknown token is the default view; anything else is refused.
         response, body = get(browser, f"{route}?queue={UNKNOWN}")
         assert response.status_code == 200
@@ -179,7 +185,7 @@ def test_ministry_save_and_next_follows_the_remembered_view(response_service, go
         outcome="no_response",
     )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response, body = get(browser, f"{route}{first}/?queue={token}")
+        response, body = get(browser, f"{items}{first}/?queue={token}")
         assert response.status_code == 200 and following(body) == ""
     # A token belongs to its own sign-in: another session of the same person
     # finds nothing under it and sees the default view.
@@ -204,12 +210,14 @@ def test_ministry_leader_next_stays_in_scope(response_service, google):
     harness = setup(response_service)
     browser, _, _, _ = leader(harness, google)
     join, leave = requests()
-    route = reverse("admin:ministry_followup")
+    route = reverse("admin:ministry_report")
+    # Request pages keep their addresses under follow-up/ (#1133).
+    items = route + "follow-up/"
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = search(browser, route, {"state": "any", "action": "leave"})
         assert response.status_code == 200 and str(leave.pk).encode() not in body
         token = viewed(body)
-        response, body = get(browser, f"{route}{join.pk}/?queue={token}")
+        response, body = get(browser, f"{items}{join.pk}/?queue={token}")
         assert response.status_code == 200 and following(body) == ""
         assert str(leave.pk).encode() not in body
 

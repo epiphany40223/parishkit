@@ -56,7 +56,8 @@
 {% if fresh %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="cleanup"><input type="hidden" name="preview_token" value="{{ cleanup_token }}">
 <label><input type="checkbox" name="acknowledge" value="yes" required data-acknowledgment> {% translate "I acknowledge that deleting the inventoried Testing data is irreversible." %}</label>
 {% button type="submit" %}{% translate "Start Testing cleanup" %}{% endbutton %}</form>
-{% else %}{% url 'admin:go_live' as here %}{% translate "starting cleanup" as step_up_action %}{% translate "When you come back, select Check readiness and public web address again." as step_up_note %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action note=step_up_note next=here marker="cleanup-step-up" %}{% endif %}
+{% else %}{% url 'admin:go_live' as here %}{% translate "starting cleanup" as step_up_action %}{% translate "When you come back, select Check readiness and public web address again." as step_up_note %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action note=step_up_note next=here marker="cleanup-step-up" id="cleanup-fresh-reason" %}
+{# Shown unavailable, named by the sign-in step, rather than left out (#563, #1331). #}<p>{% button type="button" disabled=True aria-describedby="cleanup-fresh-reason" %}{% translate "Start Testing cleanup" %}{% endbutton %}</p>{% endif %}
 </section>
 {% else %}
 {% comment %}Until a passing check signs a cleanup preview, Start Testing

@@ -10,4 +10,4 @@
   {% if offsite.at %}<time datetime="{{ offsite.at|date:'c' }}" data-local-instant>{{ offsite.at|date:'c' }}</time>{% endif %}
   {% if offsite.kind != 'uploaded' and offsite.last_copy_at %}{% translate "Last successful copy:" %} <time datetime="{{ offsite.last_copy_at|date:'c' }}" data-local-instant>{{ offsite.last_copy_at|date:'c' }}</time>{% endif %}
 </p>
-{% if not pending and follow_url %}<a hidden data-live-follow href="{{ follow_url }}">{% translate "Reload settings" %}</a>{% endif %}
+{# Once a check settles, the settings page re-reads its status line in place (data-in-place-quiet, #519), so a folder link typed but not yet saved is kept. #}{% if not pending and follow_url %}<a hidden data-live-follow data-in-place data-in-place-quiet href="{{ follow_url }}#integration-status">{% translate "Show the settled check" %}</a>{% endif %}

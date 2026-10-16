@@ -9,6 +9,7 @@ test_restore_review_postgresql.py, and what the planner does with a decision
 after release in test_restore_review_delivery_postgresql.py.
 """
 
+import re
 from datetime import timedelta
 from uuid import uuid4
 
@@ -330,12 +331,21 @@ def test_a_stale_sign_in_gets_the_step_up_in_place(released):
         )
     invitation = ScheduleDefinition.objects.get(kind="initial")
     with campaign_clock(NOW), task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        shown = browser.get(PAGE).content.decode()
         refused = post(
             browser,
             action="group-preview",
             definition=invitation.pk,
             group_action="assume",
         )
+    # The page knows: each decision is unavailable, named by the step-up
+    # notice (#1331); a forged preview is still refused.
+    assert shown.count('id="restore-fresh-reason"') == 1
+    assert re.search(
+        r'<button[^>]*disabled[^>]*aria-describedby="restore-fresh-reason"[^>]*>'
+        r"Assume these were sent",
+        shown,
+    )
     assert refused.status_code == 403
     assert b"Confirm with Google" in refused.content
     assert b'data-restore-preview="assume"' not in refused.content
