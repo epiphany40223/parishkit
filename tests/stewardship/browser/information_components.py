@@ -17,9 +17,16 @@ from django.urls import reverse
 
 from parishkit.stewardship.reports.chart_specs import information_followup
 from parishkit.stewardship.reports.information import (
+    FIELD_MESSAGES,
     INFORMATION_SORTING,
     PAGE_SIZES,
     InformationQuery,
+)
+from parishkit.stewardship.reports.information_views import FIELD_IDS, FIELD_LINES
+from parishkit.stewardship.web.filter_errors import (
+    FilterError,
+    error_context,
+    line_sizes,
 )
 from parishkit.stewardship.web.tables import report_table
 
@@ -47,6 +54,19 @@ POSTS = {
     ADVANCE_UPDATE: (303, NEXT_ITEM, ""),
     LAST_UPDATE: (303, QUEUE_VIEW, ""),
 }
+
+
+def refused(sent, field, pair=None):
+    """The view's context for ``sent`` refused at ``field`` (#1332).
+
+    The form shows what was sent; the results, panel count and export are
+    the unfiltered queue's, as the view draws them.
+    """
+    error = FilterError(field, FIELD_MESSAGES[field], sent, pair=pair)
+    shown = InformationQuery()
+    return error_context(error, FIELD_IDS, FIELD_LINES) | dict(
+        query=sent, applied=shown, query_fields=shown.form_values()
+    )
 
 
 def components(context, admin):
@@ -118,6 +138,8 @@ def components(context, admin):
         mutable=True,
         export_timezones=("UTC", "America/Detroit"),
         request_key=UUID(int=83),
+        # The dates' reserved message line (#1332), as the view sizes it.
+        filter_sizes=line_sizes(FIELD_MESSAGES, FIELD_LINES),
         history_page=1,
         history=[
             SimpleNamespace(
@@ -179,6 +201,26 @@ def components(context, admin):
             },
         ),
         "/information-queue-gated": ("information", values | {"mutable": False}),
+        # Dates the server refused out of order (#1332): drawn again with
+        # the values sent, both dates marked and the unfiltered results.
+        "/information-refused-dates": (
+            "information",
+            values
+            | refused(
+                replace(query, start="2026-11-05", end="2026-11-01", zone=DATED_ZONE),
+                "end",
+                pair="start",
+            ),
+        ),
+        # A hostile value sent back into a refused date stays text.
+        "/information-refused-hostile": (
+            "information",
+            values
+            | refused(
+                replace(query, start='"><script>window.__pwned = 1</script>'),
+                "start",
+            ),
+        ),
         # The queue as first opened, with its default filters: the Filters
         # panel starts closed (#227).
         "/information-unfiltered": (

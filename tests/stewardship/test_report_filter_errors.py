@@ -9,6 +9,17 @@ from django.template import Context, Template
 
 from parishkit.stewardship.reports.financial import FIELD_MESSAGES, FinancialQuery
 from parishkit.stewardship.reports.financial_views import FIELD_IDS, FIELD_LINES
+from parishkit.stewardship.reports.information import (
+    FIELD_MESSAGES as INFORMATION_MESSAGES,
+)
+from parishkit.stewardship.reports.information import InformationQuery
+from parishkit.stewardship.reports.information_views import (
+    FIELD_IDS as INFORMATION_IDS,
+)
+from parishkit.stewardship.reports.information_views import (
+    FIELD_LINES as INFORMATION_LINES,
+)
+from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.filter_errors import (
     FilterError,
     error_context,
@@ -176,3 +187,112 @@ def test_refused_answers_400_kept_and_logged_as_invalid():
     assert response.status_code == 400 and response.stewardship_safe_error is True
     assert response.stewardship_codes == ("invalid",)
     assert not hasattr(response, "stewardship_errors")
+
+
+# The Additional information queue's date filters (#1332, second slice).
+INFORMATION = (
+    Path(__file__).parents[2]
+    / "src/parishkit/stewardship/accounts/templates/stewardship/information.html"
+).read_text()
+ZONE = "America/New_York"
+
+
+@pytest.mark.parametrize(
+    ("values", "fields"),
+    [
+        ({"start": "2026-02-30"}, ("start",)),
+        ({"start": "20260101"}, ("start",)),
+        ({"end": "not-a-date"}, ("end",)),
+        ({"start": "2026-02-01", "end": "2026-01-01"}, ("end", "start")),
+        # A malformed date is refused at its field even without a zone.
+        ({"start": "soon", "zone": ""}, ("start",)),
+    ],
+)
+def test_information_date_rules_name_their_fields(values, fields):
+    """Each date rule names its field (out of order, both), words and query."""
+    with pytest.raises(FilterError) as caught:
+        InformationQuery.parse(
+            {"search": "Example", "sort": "oldest", "zone": ZONE} | values
+        )
+    error = caught.value
+    assert error.fields == fields and error.field == fields[0]
+    assert error.message == INFORMATION_MESSAGES[error.field]
+    assert error.query.search == "Example" and error.query.sort == "oldest"
+    assert getattr(error.query, error.field) == values[error.field]
+    assert isinstance(error, ValueError)
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"sort": "notes"},
+        {"disposition": "deleted"},
+        {"email": "private@example.org"},
+        {"search": "x" * 201},
+        {"page": "0"},
+    ],
+)
+def test_information_structural_refusals_keep_the_error_page(values):
+    """A refusal no field can show stays a plain ValueError."""
+    with pytest.raises(ValueError) as caught:
+        InformationQuery.parse(values)
+    assert not isinstance(caught.value, FilterError)
+
+
+def test_information_zone_refusal_keeps_its_own_page():
+    """Whole, ordered dates without a known zone are no field's to fix."""
+    with pytest.raises(UnknownZone) as caught:
+        InformationQuery.parse({"start": "2026-01-01", "zone": ""})
+    assert not isinstance(caught.value, FilterError)
+
+
+def test_information_messages_are_the_page_hints_and_fields_exist():
+    """The server's words are the hints the browser shows first, at real ids.
+
+    The start's hint is on its cell (the zone check replaces an input's
+    own hint); the end's own hint and its order hint, which the zone check
+    restores, are both the end's message. Each field passes its zone note
+    through the mark tag, and the dates' line is drawn once.
+    """
+    assert set(INFORMATION_IDS) == set(INFORMATION_MESSAGES) == set(INFORMATION_LINES)
+    hints = {}
+    for field, element in INFORMATION_IDS.items():
+        cell = re.search(
+            rf'<div(?: data-missing-hint="[^"]*")?><label for="{element}">.*?</div>',
+            INFORMATION,
+        ).group(0)
+        tag = re.search(rf'<input id="{element}" [^>]*>', cell).group(0)
+        assert f'name="{field}"' in tag and "aria-describedby" not in tag
+        assert (
+            f'{{% filter_mark filter_error "{field}" "information-zone-help" %}}' in tag
+        )
+        hints[field] = re.findall(
+            r"data-(?:missing|order)-hint=\"{% translate '([^']*)' %}\"", tag
+        ) or re.findall(r"data-missing-hint=\"{% translate '([^']*)' %}\"", cell)
+    assert hints["start"] == [str(INFORMATION_MESSAGES["start"])]
+    assert hints["end"] == [str(INFORMATION_MESSAGES["end"])] * 2
+    assert INFORMATION.count('{% filter_line filter_error "submitted-dates" ') == 1
+    assert "{% filterpanel applied|default:query %}" in INFORMATION
+
+
+def test_information_mark_keeps_the_zone_note():
+    """Both dates keep their zone note, then the line, in one attribute."""
+    error = FilterError("end", "Fix it.", InformationQuery(), pair="start")
+    context = error_context(error, INFORMATION_IDS, INFORMATION_LINES)
+    source = "".join(
+        f'<input id="{field}"'
+        f'{{% filter_mark filter_error "{field}" "information-zone-help" %}}>'
+        for field in ("start", "end")
+    )
+    marked = (
+        ' aria-invalid="true"'
+        ' aria-describedby="information-zone-help submitted-dates_error">'
+    )
+    assert render(source, **context) == (
+        '<input id="start"' + marked + '<input id="end"' + marked
+    )
+    assert render(source) == (
+        '<input id="start" aria-describedby="information-zone-help">'
+        '<input id="end" aria-describedby="information-zone-help">'
+    )
+    assert context["errors"] == [{"field_id": "end", "message": "Fix it."}]

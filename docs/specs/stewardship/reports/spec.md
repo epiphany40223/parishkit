@@ -1047,6 +1047,15 @@ zone, and its retry asks for exactly those filters; a capture made before
 schema migration 0064 has no zone, keeps its campaign-zone days and is retried
 unchanged.
 
+The page checks both dates before Apply (a whole date, and on or before no
+earlier than on or after). A request that reaches the server with one broken
+is refused at that field
+([field errors](../ui-conventions/spec.md#field-errors-and-live-checks),
+[#1332](https://github.com/epiphany40223/parishkit/issues/1332)): dates out
+of order at Submitted on or before, with both dates marked. Its access audit
+ends denied. A date without a known zone keeps the error page above, since
+no field can fix it.
+
 The page is visual first
 ([#720](https://github.com/epiphany40223/parishkit/issues/720)). After the
 matching-request count and before the export, one
