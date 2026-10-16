@@ -117,7 +117,9 @@ step: setup starts with the default US long style, and an Admin changes it
 afterwards in Parish settings.
 
 The wizard presents these as one ordered sequence of pages, defined once in
-code. The Parish profile comes first, so the administrator starts by
+code, and follows the general
+[wizard rules](../ui-conventions/spec.md#wizards), whose Status says which
+of them it meets. The Parish profile comes first, so the administrator starts by
 describing their own parish. The Google Workspace and Slack credential pages
 follow, each immediately after the public settings its staging depends on
 (outgoing mail and Testing recipient for Google Workspace, Slack settings for
@@ -2942,11 +2944,24 @@ is not a multi-campaign control: once any campaign exists it is not shown,
 and the server refuses it, as it refuses Copy campaign and successor drafts
 until #145 and the close-out wizard (#527).
 
+Create the campaign is step 1 of the campaign wizard, which follows the
+general [wizard rules](../ui-conventions/spec.md#wizards)
+([#1404](https://github.com/epiphany40223/parishkit/issues/1404)): before
+the campaign exists, step 1 is this page, and once it is created, step 1 is
+Campaign settings, so no question is asked twice (planned, #1404 PR 3).
+
 Status: the page (its admission, first page and what follows confirming) and
 its guided steps are built
-([#142](https://github.com/epiphany40223/parishkit/issues/142)). Setup ends
-without a campaign, so a newly set-up deployment reaches the page; a
-deployment set up before #142 already has its campaign and never does.
+([#142](https://github.com/epiphany40223/parishkit/issues/142)), with #1404's
+quick wins ([#1407](https://github.com/epiphany40223/parishkit/pull/1407)).
+The rest of #1404 is planned, and each part below marked "(planned, #1404
+PR n)" describes the design, not yet the pages: Create the campaign drawn
+as step 1 (PR 3); direct saves on draft steps and sub-pages (PR 4); Load
+ParishSoft data as a step (PR 5); the Pages and emails item states and the
+suggested schedules (PR 6); and Back asking before it discards, with
+Go-live readiness's summary lines (PR 7). Setup ends without a campaign, so
+a newly set-up deployment reaches the page; a deployment set up before #142
+already has its campaign and never does.
 
 **Admission.** Create the campaign follows the
 [draft-creation rules](#campaign-configuration) above, with three further
@@ -2967,7 +2982,14 @@ no-campaign text instead.
 **First page.** It collects the campaign's basics in the ordinary campaign
 form: name, modules, start and end dates, Ministries (from the loaded catalog,
 initially all active ones) and, for Financial stewardship, the financial
-period and current and comparison funds. The campaign time zone may be any
+period and current and comparison funds. As step 1 (planned, #1404 PR 3) it
+is the Campaign settings form itself, so it also asks the
+[Ministry leader roles](#ministry-leader-roles), starting on the configured
+list, and every Campaign settings question is asked here once. It draws the
+wizard's stepper, "Step 1 of N: Campaign settings", with every later step
+unavailable for the reason "Create the campaign first.", and its action row
+has no Back and the one primary **Create the campaign and continue**. The
+campaign time zone may be any
 catalog zone, not only the Parish zone (Administrator, 2026-10-15,
 [#1330](https://github.com/epiphany40223/parishkit/issues/1330)): the menu
 starts on the zone the browser reports when the list offers it (matched
@@ -3014,7 +3036,9 @@ and the other fails. Once the request is applied, the dialog does not stay on
 the change's status: it opens the next Campaign setup step that is not done
 yet ([#1404](https://github.com/epiphany40223/parishkit/issues/1404)), Share
 options with Financial stewardship and Pages and emails without it, whose
-status line says the campaign was created and when. A reload of the address
+status line says the campaign was created and when; once Load ParishSoft
+data is a step (planned, #1404 PR 5), that next step is Load ParishSoft
+data, and step 1 is never opened again after creation. A reload of the address
 naming the request, and Change status, still offer
 **Load the campaign's ParishSoft data**, which requests a full ParishSoft
 refresh and opens that refresh's progress page. Every Campaign setup step and
@@ -3031,13 +3055,17 @@ full refresh instead. Go-live readiness, which already requires the
 population to match the current ParishSoft data, stays incomplete until a
 full refresh has finished.
 
-**Guided steps.** While the current campaign is a draft in Testing mode, the
+**Guided steps.** While the current campaign is a draft in Testing mode
+with no go-live started, the
 Campaign setup pages show Administrators a stepper with the setup wizard's
 look, drawn by the same template for its
 [step bar](../ui-conventions/spec.md#step-bars) and list
-([#1402](https://github.com/epiphany40223/parishkit/issues/1402)): Campaign
+([#1402](https://github.com/epiphany40223/parishkit/issues/1402)), and follow
+the [wizard rules](../ui-conventions/spec.md#wizards): Campaign
 settings (its basics, Ministries and funds, one form since
-[#1119](https://github.com/epiphany40223/parishkit/issues/1119)), Share
+[#1119](https://github.com/epiphany40223/parishkit/issues/1119); Create the
+campaign before the campaign exists, planned, #1404 PR 3), Load ParishSoft data (planned, #1404
+PR 5), Share
 options (shown only when the campaign's modules use it), Pages and emails,
 Dates and mail schedules, Campaign images, Preview and test email (for the
 initial invitation's current revision), and Go-live readiness. Each step is
@@ -3060,9 +3088,67 @@ held no change, keeping it as is
 ([#1404](https://github.com/epiphany40223/parishkit/issues/1404)): that is
 stored ([`CampaignSetupReview`](../data/spec.md#campaign)), and a later change
 elsewhere never undoes it. Preview and test email counts as completed once a
-test of the invitation's current revision was accepted. Defaults (the default
-text and share options that Create the campaign adds) never complete a step
-by themselves, and Go-live readiness completes only by going live.
+test of the invitation's current revision was accepted, and Load ParishSoft
+data once the campaign has its Families (a Family campaign record exists,
+the read the load offer already uses), so it needs no stored review
+(planned, #1404 PR 5). Defaults
+(the default text and share options that Create the campaign adds) never
+complete a step by themselves, and Go-live readiness completes only by going
+live.
+
+**The steps, page by page.** What each step adds to the
+[wizard rules](../ui-conventions/spec.md#wizards):
+
+- **Campaign settings, after creation.** It shows every saved value once and
+  is already completed. A change of the dates alone, while the campaign has
+  schedules, still leads to Dates and mail schedules' combined review
+  ([Campaign settings page](#campaign-settings-page)); on a draft those
+  schedules have sent nothing.
+- **Load ParishSoft data** (planned, #1404 PR 5). It opens Refresh from
+  ParishSoft in wizard mode, saying "A full refresh adds the campaign's
+  Families, Family codes and giving. It usually takes a few minutes. You can
+  go on to the next steps while it runs; Go-live readiness waits for it." Its
+  primary is **Load the campaign's ParishSoft data**; once the load is
+  requested, its progress shows in place and the primary becomes Continue to
+  the next step while the load runs. A failed load shows its reason and
+  **Try again**, never the plain offer again, so it never looks as if no load
+  was started. The scheduled full refresh stays the fallback. The load is
+  started by that button, never automatically at creation.
+- **Share options** and **Campaign images.** The existing pages in wizard
+  mode. Removing an image keeps its confirmation, because it discards a file
+  ([wizard rule 5](../ui-conventions/spec.md#wizards)).
+- **Pages and emails** (item states planned, #1404 PR 6). The list keeps its
+  order (pages, then emails) and gives each item one state, as text: **Default
+  text**, **Edited**, **Kept as is** (reviewed in the wizard without a change)
+  or **Empty** (a slot of a module turned on later). Each row's name opens its
+  editor, a sub-page; the editor's **Keep as is and go back** marks the item
+  Kept as is, and **Save and go back** saves it. Either returns to the list
+  with focus on the row and a status line ("Welcome page saved.", "Welcome
+  page kept as is."). The editor's preview, Start from the default text and
+  Remove stay as they are. The list's Continue is always available and
+  accepts every item not yet edited as is; the per-item marks are optional,
+  and Go-live readiness still flags content that must be saved again.
+- **Dates and mail schedules** (suggested schedules planned, #1404 PR 6).
+  With no schedule saved, the page proposes a starting set under "Suggested
+  schedules", drawn as the list draws saved schedules and marked "Not saved
+  yet": the initial invitation on the campaign's start date at 9:00 AM in the
+  campaign's time zone, one reminder seven days before its end date at
+  9:00 AM, and the weekly digest at its configured default; like every
+  schedule, they are shown in the browser's time
+  ([dates and times](../ui-conventions/spec.md#dates-and-times)). Its primary is
+  **Add these schedules and continue**; **Continue without schedules for
+  now** (a link) keeps the step as is, and Go-live readiness then still asks
+  for exactly one initial invitation schedule. The schedules are proposed,
+  never created silently at creation, because they depend on dates the
+  Administrator may still change. New and Edit scheduled email and the
+  Campaign calendar are its sub-pages.
+- **Preview and test email.** Its primary is the page's own test until
+  that test is accepted (its Continue, below).
+- **Go-live readiness.** The last step; the go-live flow (#462)
+  follows from it unchanged. It gains one summary line per step (planned, #1404
+  PR 7), such as "Share options: kept the defaults" or "Pages and
+  emails: 3 changed, 14 default text", so no step needs a review dialog of
+  its own; the outward-facing review stays in Confirm Production.
 
 The stepper's summary names the next step that is not done yet ("Next:
 Pages and emails"), as text, and offers **Leave campaign setup**, which opens
@@ -3079,7 +3165,8 @@ initial invitation schedule): it records the step kept as is and opens that
 step. While a form on the page holds a change (on Campaign images, a chosen
 image not uploaded yet), Continue is unavailable, with
 a hint after the row in a line that is always reserved, so the page's own
-Save (with its review dialog, for now) stays the way on. Preview and test
+Save (with its review dialog, for now) stays the way on, until a
+direct save makes it Save and continue (planned, #1404 PR 4). Preview and test
 email offers Continue to Go-live readiness only once its test is accepted,
 because the test is the step's purpose; Go-live readiness, the last step,
 has Back only. Back and Continue never save, discard or submit the page's

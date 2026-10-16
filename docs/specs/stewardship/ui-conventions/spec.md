@@ -58,7 +58,7 @@ when it lands.
   [addresses and legacy URLs](#addresses-and-legacy-urls),
   [not-found pages](#not-found-pages),
   [unavailable menu pages](#unavailable-menu-pages),
-  [navigation rules](#navigation-rules).
+  [navigation rules](#navigation-rules), [wizards](#wizards).
 - Admin page layout: [page help](#page-help),
   [button labels](#button-labels), [shared visual style](#shared-visual-style),
   [colour scheme](#colour-scheme),
@@ -1063,7 +1063,9 @@ then, the separate Review and Change status pages); `data-review-of` in
 **Precedent.** #750 (review dialog, Administrator decision, 2026-10-11), #532
 (in-place review, retired by #1429), #523
 ([preview lifetimes](../admin-portal/spec.md#preview-lifetimes)), #882 (New and
-Edit pages follow it).
+Edit pages follow it). **Exception.** A [wizard](#wizards) step that edits a
+draft nobody can see yet saves directly, with no Review step (wizard rule 5;
+built in the setup wizard, planned for the campaign wizard in #1404 PR 4).
 
 A status that can no longer be read never looks as if it were still
 waiting. When the follow-up's status read is refused (the sign-in ended, or
@@ -1119,7 +1121,10 @@ An editor is an Admin page whose form changes configuration or saved data
 through Review and Apply: a settings page, a list editor, a New or Edit page,
 an upload editor, or a table's bulk action that is reviewed before it is
 applied. Each feature specification says what its own Review shows; this
-section says how every Review behaves.
+section says how every Review behaves. The exception is a
+[wizard](#wizards) step that edits a draft nobody can see yet: it saves
+directly, without the dialog (rule 5; built in the setup wizard, planned for
+the campaign wizard in #1404 PR 4).
 
 - **Review is available only for a real change.** Review changes is
   unavailable until the form differs from the saved values, and unavailable
@@ -1646,7 +1651,10 @@ registry and the rendered pages.
    (never in the URL); a manual ParishSoft refresh stays on Refresh from
    ParishSoft and shows its progress there; sending a weekly report now ends
    on Emailed reports with a link to the report; Cancel returns to the page it
-   was pressed on, never Home unless the flow started there.
+   was pressed on, never Home unless the flow started there. In a
+   [wizard](#wizards), a completed step opens the next step not done yet
+   instead (rule 8; in the campaign wizard built for Continue, and planned
+   for its saves in #1404 PR 4).
 6. **Messages link what they name.** A message that tells the reader to use
    another page links that page when the viewer may open it. A page is linked
    only when the viewer may open it now: an in-page link to a page the menu
@@ -1679,6 +1687,137 @@ registry and the rendered pages.
     chooser addresses are gone (404, #864). New campaign is removed outright ([decision
     11](../admin-portal/spec.md#navigation-decisions)), not greyed, and so are the "Choose a retained
     campaign" links once greyed on Participation and Ministry requests (#1125).
+
+### Wizards
+
+**Rule.** An Admin wizard is an ordered set of step pages that always says
+where the reader is and what comes next, has one way forward on every step,
+lets a step be kept as is, saves a draft directly, and never asks a question
+twice. The numbered rules below apply to the
+[setup wizard](../admin-portal/spec.md#bootstrap-and-first-admin-wizard), the
+[campaign wizard](../admin-portal/spec.md#create-the-campaign) and any later
+Admin wizard. **Why.** The Administrator found the campaign flow "very
+un-intuitive" (2026-10-15, on
+[#1404](https://github.com/epiphany40223/parishkit/issues/1404)): Create the
+campaign and its first step asked the same questions, a step whose defaults
+were acceptable had only an unavailable Save, defaults never completed a step,
+every save of an unseen draft opened a review dialog, and an editor opened from
+a step dropped the wizard. The setup wizard and the Family portal's steps did
+not have those faults, so one set of rules makes every wizard behave like
+them. **Shared code.** The step model (`setup_wizard.Step` and `Wizard`, which
+`campaign_wizard.py` reuses), the stepper (`stepper-steps.html`, see
+[step bars](#step-bars)) and the action rows (`setup-navigation.html`,
+`campaign-step-actions.html`, which #1404 makes one shared row).
+**Precedent.** #1404 (Administrator, 2026-10-15), #142 (the setup and
+campaign split), #1322 (the campaign stepper), #1402 (the shared stepper).
+The Family portal keeps its own [step rules](#family-portal), which already
+match.
+
+1. **Where you are and what's next.** Every step page starts with the
+   stepper: "Step N of M: *label*", "K of M steps completed", the
+   [step bar](#step-bars) and "Next: *label*" as text, naming the next step
+   that is not done yet, with the full step list as
+   [step bars](#step-bars) describes it.
+2. **One primary action per step**, at the bottom of the page in one action
+   row: **Back** (secondary, first) and one primary control (last). A step
+   never offers only an unavailable Save. Going on is never only in the
+   stepper's summary or its list.
+3. **Accept as is.** While the step's form holds no change, the primary
+   control reads **Continue to *next step***: it records the step as
+   reviewed and opens the next step. Once the form holds a change, the same
+   control reads **Save and continue**. The control's width is reserved for
+   the longer label, so the switch moves nothing
+   ([no layout shift](#no-layout-shift)). A list step with no form of its own
+   always offers Continue to *next step*; its items are edited on its
+   sub-pages (rule 10).
+4. **Save and continue saves and moves on.** It validates; on errors it stays
+   on the page, with the errors at the fields and in the summary
+   ([field errors](#field-errors-and-live-checks)). Otherwise it saves,
+   follows the change's status in place ("Saving…", then the result) and
+   opens the next step once the change is applied. A refusal after
+   validation, such as a stale page or held work, stays on the page with its
+   reason.
+5. **No modal for reversible draft edits.** While what the wizard edits is
+   not yet live (the setup draft, or a campaign that is a Testing draft with
+   no go-live started), Save and continue saves directly, without the
+   [review dialog](#review-dialog). The review dialog, or its
+   confirmation, stays where a change reaches people or cannot be undone:
+   creating the campaign (one campaign only, in the
+   [single-campaign interim](#single-campaign-interim)) and removing a file
+   (confirmations), going live, Confirm Production, and every change to a
+   scheduled, live or closed campaign. A direct save keeps every server
+   check of a confirmed Review except the signed preview, and records the
+   same audited configuration-change request; a request key drawn with the
+   page makes a repeated submit return the same receipt.
+6. **Back never saves.** Back is a link to the previous step. When the form
+   holds unsaved changes, Back first asks in the shared
+   [confirmation dialog](#row-actions-and-confirmation) "Discard your changes
+   and go back?", with **Discard and go back** and **Stay**. Following a
+   step in the bar or the list asks the same.
+7. **Completed means saved or reviewed.** A step is completed once its own
+   save has been applied or its Continue has been pressed (reviewed and kept
+   as is), or, on a step whose purpose is a check, once that check passes (a
+   load finished, a test accepted). The completion is stored, so a reload,
+   another browser or another Administrator sees the same. A step completed
+   by a save or by Continue stays completed: a later change elsewhere never
+   undoes it. A step whose purpose is a check (a final Review, a parish-data
+   load, a test email) is completed only while its check holds for the
+   current state, so it is required again when what it checked changes (a
+   later edit to the draft, a changed credential, a new revision of the
+   tested email). Defaults that another step or the creation wrote never
+   complete a step by themselves; pressing Continue on them does.
+8. **Never land on a completed step.** Once a step completes, the wizard
+   opens the next step that is not done yet (the next step when every later
+   one is done), and after the last step that step's own outcome. This is the
+   wizard's exception to "flows end where the reader started"
+   ([navigation rule 5](#navigation-rules)).
+9. **Every step can be accepted.** No step needs a change before the wizard
+   lets the reader go on. A step that may be left empty for now says so on
+   its Continue (**Continue without schedules for now**), and the wizard's
+   final readiness check names what is still missing. A step whose purpose is
+   a check (a test email) continues only once its check has passed.
+10. **Sub-pages stay in the wizard.** A page opened from a step (an editor, a
+    new or edited item, a calendar, a history) draws the same stepper with
+    its parent step current, and its action row starts with **Return to
+    *step*** where Back sits (every Admin way back is named "Return to",
+    [navigation rule 4](#navigation-rules)). Its primary control follows
+    rule 3 for the item: **Keep as is and go back** while unchanged, **Save
+    and go back** once it holds a change. Either returns to the step page
+    with the item's new state, focus on its row and a status line saying
+    what was saved or kept, without a reload unless the page needs one.
+11. **Leaving is explicit.** The stepper's summary offers **Leave campaign
+    setup** (or **Leave setup**), which opens Home; Home then offers
+    **Continue campaign setup:** and the next step not done yet while the
+    wizard applies. A wizard finishes at its last step (Finish setup, or
+    Go-live readiness). The Admin menu works as always, and a menu page that
+    is neither a step nor a sub-page draws no stepper.
+12. **Outside the wizard nothing changes.** The same page outside its wizard
+    (setup has finished, the campaign is no longer a Testing draft, a go-live
+    has started, or the deployment is in Production) has its ordinary Save,
+    unavailable until something changes, and its ordinary review dialog.
+
+Status: these rules are the target; the wizards reach them in steps, as #1404's
+plan lays out. The setup wizard meets rules 2, 4, 5, 7 and 12, and
+rule 1 except the "Next:" line: a saved page stays completed, while its
+Review is asked for again after any later edit of the draft and its parish
+data load goes stale when the ParishSoft credential changes. Its button
+keeps the single label Save and continue on an unchanged page (rule 3), and
+it has no Leave setup in its summary (rule 11) and no sub-pages. The
+campaign wizard meets rules 1, 7, 9, 11 and 12 and the Return to *step*
+link of rule 10 ([#1407](https://github.com/epiphany40223/parishkit/pull/1407)):
+an applied change or a Continue stays completed, while Preview and test
+email counts only for a test of the invitation's current revision. It meets
+rule 8 for Continue, which opens the next step not done yet; after a save,
+the page redraws in place and stays on the step it completed until the
+direct save (planned, #1404 PR 4). Until the later #1404 pull requests
+land, its Continue is unavailable while the form holds a change, so the
+page's own Save, with its review dialog, is the way on (rules 3 to 5);
+Create the campaign is a separate page before step 1;
+loading the campaign's ParishSoft data is a notice on every step rather than
+a step of its own; and Back asking before it discards (rule 6) and the
+sub-pages' Keep as is and go back and Save and go back (rule 10) are not
+built in either wizard. Each part's precedent moves into the rule above when
+it lands.
 
 ## Admin page layout and help
 
