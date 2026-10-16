@@ -8,10 +8,12 @@ counts, and times are the campaign's wall clock whatever zone renders them.
 import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import pytest
+import vl_convert
 
 from parishkit.stewardship.jobs.send_history import SendKey
 from parishkit.stewardship.reports.chart_assets import VEGA_LITE_SCHEMA
@@ -23,12 +25,16 @@ from parishkit.stewardship.reports.chart_specs import (
     funnel_chart,
     label_room,
     ministry_followup,
+    participation_chart,
     population_progress,
     quiet_slots,
+    round_ticks,
     share,
     stage_label,
+    whole_dollars,
 )
 from parishkit.stewardship.reports.money import MoneyAmount
+from parishkit.stewardship.reports.participation import ParticipationDay
 from parishkit.stewardship.reports.response_metrics import (
     ActivityBucket,
     ResponseMetrics,
@@ -42,6 +48,7 @@ from parishkit.stewardship.reports.statistics import PopulationStatistics
 from parishkit.stewardship.web.dates import using
 from parishkit.stewardship.web.report_markup import TRACK
 
+from .test_participation_rendering import document as participation
 from .test_response_metrics import ROWS, START
 
 NEW_YORK = "America/New_York"
@@ -572,3 +579,193 @@ def test_ministry_followup_without_progress_draws_zero_bars():
         assert chart.key == "ministry-followup"
         assert [row["count"] for row in chart.spec["data"]["values"]] == [0, 0]
         assert chart.spec["encoding"]["x"]["scale"]["domain"] == [0, 1]
+
+
+def test_participation_chart_is_panels_on_one_date_axis():
+    """The Participation page's daily chart (#720 slice 2c) is the static
+    drawing's design in the chart engine: titled panels on one shared date
+    axis, each with its own value axis from zero, no legend, no second
+    y-axis, and the dates labelled only under the last panel."""
+    chart = participation_chart(participation())
+    spec = chart.spec
+    assert spec["$schema"] == VEGA_LITE_SCHEMA
+    assert chart.key == "daily-participation"
+    assert chart.title == "Daily participation — Historical as of day"
+    assert spec["resolve"] == {"scale": {"x": "shared"}}
+    assert spec["autosize"] == {"type": "fit-x", "contains": "padding"}
+    panels = spec["vconcat"]
+    assert [panel["title"]["text"] for panel in panels] == [
+        "First submissions that day",
+        "Cumulative participating Families",
+        "Effective annual pledges",
+    ]
+    marks = [panel["layer"][0]["mark"] for panel in panels]
+    assert [mark["type"] for mark in marks] == ["bar", "line", "line"]
+    assert marks[2]["strokeDash"] == [6, 3] and "strokeDash" not in marks[1]
+    ys = [panel["layer"][0]["encoding"]["y"] for panel in panels]
+    assert [y["field"] for y in ys] == ["first", "families", "pledges"]
+    assert [y["title"] for y in ys] == ["Families", "Families", "USD"]
+    # Each panel is scaled to its own values plus 10%, with whole round ticks.
+    assert [y["scale"]["domain"][0] for y in ys] == [0, 0, 0]
+    assert ys[1]["scale"]["domain"][1] == pytest.approx(3.3)
+    assert ys[1]["axis"]["values"] == [0, 1, 2, 3]
+    assert ys[2]["axis"]["values"] == [0, 1000, 2000, 3000]
+    assert "format" not in ys[2]["axis"] and "$~s" in ys[2]["axis"]["labelExpr"]
+    # Never a second y-axis or a legend: no layer has its own y axis or a
+    # color or dash encoded by a field.
+    for panel in panels:
+        assert all(
+            "color" not in layer["encoding"] and "strokeDash" not in layer["encoding"]
+            for layer in panel["layer"]
+        )
+    xs = [panel["encoding"]["x"] for panel in panels]
+    assert all(x["field"] == "tick" and x["type"] == "ordinal" for x in xs)
+    # Dates in order, whatever their text order, by an explicit domain.
+    assert xs[0]["scale"]["domain"] == [row["tick"] for row in spec["data"]["values"]]
+    assert [x["axis"].get("labels", True) for x in xs] == [False, False, True]
+    assert xs[-1]["title"] == ["Campaign date", "(America/New_York)"]
+    # Room between the end date labels and the two-line title.
+    assert xs[-1]["axis"]["titlePadding"] == 8
+    assert xs[-1]["axis"]["labelOverlap"] and "labelExpr" not in xs[-1]["axis"]
+    # Vega's own accessible names would read raw fields (ISO dates,
+    # unrounded dollars), so the marks and axes are hidden; the view's name,
+    # summary and the daily table are the accessible path.
+    for panel in panels:
+        drawn = panel["layer"][0]
+        assert drawn["mark"]["aria"] is False
+        assert drawn["mark"].get("point", {"aria": False})["aria"] is False
+        assert drawn["encoding"]["y"]["axis"]["aria"] is False
+        assert panel["encoding"]["x"]["axis"]["aria"] is False
+    # The hover column per date, on top and hidden from assistive technology.
+    for panel in panels:
+        hover = panel["layer"][-1]
+        assert hover["mark"] == {"type": "bar", "opacity": 0, "aria": False}
+        assert hover["encoding"]["tooltip"] == {"field": "tip"}
+    assert json.loads(json.dumps(spec)) == spec
+
+
+@pytest.mark.parametrize(
+    ("style", "first", "heading"),
+    [
+        ("us_long", "Oct 31, 2026", "November 2, 2026"),
+        ("eu_dot", "31.10.26", "02.11.2026"),
+        ("iso", "2026-10-31", "2026-11-02"),
+    ],
+)
+def test_participation_chart_dates_follow_the_parish_style(style, first, heading):
+    """The date axis and the tooltips write dates in the parish's style, as
+    the static drawing, the daily table and the exports do."""
+    with using(style):
+        chart = participation_chart(participation())
+    rows = chart.spec["data"]["values"]
+    assert rows[0]["tick"] == first
+    assert rows[-1]["tip"]["title"] == heading
+    assert chart.spec["vconcat"][0]["encoding"]["x"]["scale"]["domain"][0] == first
+
+
+def test_participation_chart_rows_tooltips_and_summary():
+    """Each date's tooltip has its date as the heading and its figures in
+    whole dollars; the summary gives the range and the last date's figures."""
+    chart = participation_chart(participation())
+    rows = chart.spec["data"]["values"]
+    assert [row["day"] for row in rows] == ["2026-10-31", "2026-11-01", "2026-11-02"]
+    assert rows[-1]["tip"] == {
+        "title": "November 2, 2026",
+        "First submissions": "1",
+        "Families that have responded": "3 out of 1,234 (0.2%)",
+        "Effective annual pledges": "$3,235",
+    }
+    assert rows[0]["pledges"] == pytest.approx(1234.56)
+    assert chart.summary == (
+        "Daily participation, Historical as of day, from October 31, 2026 to "
+        "November 2, 2026; by the last date 3 out of 1,234 (0.2%) Families had "
+        "responded, 1 of them for the first time that day, with $3,235 in "
+        "effective annual pledges."
+    )
+    assert chart.spec["description"] == chart.summary
+    assert chart.table.headings[-1] == "Effective annual pledges"
+    assert chart.table.rows[0] == (
+        "October 31, 2026",
+        "1",
+        "1 out of 1,234 (0.1%)",
+        "$1,235",
+    )
+
+
+def test_participation_chart_gaps_and_without_financial():
+    """An unavailable date is a gap (None) with Unavailable in its tooltip,
+    never zero; without financial there is no pledges panel or figure."""
+    value = participation()
+    gap = ParticipationDay(
+        value.days[1].local_date, 0, 0, 0, None, None, False, False, None
+    )
+    chart = participation_chart(
+        replace(value, days=(value.days[0], gap, value.days[2]))
+    )
+    row = chart.spec["data"]["values"][1]
+    assert (row["first"], row["families"], row["pledges"]) == (None, None, None)
+    assert row["tip"]["Families that have responded"] == "Unavailable"
+    assert row["tip"]["Effective annual pledges"] == "Unavailable"
+    for panel in chart.spec["vconcat"][1:]:
+        assert panel["layer"][0]["mark"]["invalid"] == "break-paths-show-domains"
+    plain = participation_chart(replace(value, financial_enabled=False))
+    assert len(plain.spec["vconcat"]) == 2
+    assert "Effective annual pledges" not in plain.spec["data"]["values"][0]["tip"]
+    assert "pledges" not in plain.summary
+    assert len(plain.table.headings) == 3
+    assert plain.spec["vconcat"][-1]["encoding"]["x"]["axis"]["labelOverlap"]
+    last = replace(
+        value, days=(*value.days[:2], replace(gap, local_date=value.days[2].local_date))
+    )
+    assert participation_chart(last).summary.endswith(
+        "; the last date's figures are unavailable."
+    )
+
+
+def page_warnings(spec, capfd):
+    """Vega-Lite's compile warnings for ``spec`` as the page draws it.
+
+    chart-v1.js gives the spec (or each stacked panel) the container's
+    width, so that is compiled here; vl-convert prints the warnings, which
+    ``capfd`` reads from the process's output.
+    """
+    spec = json.loads(json.dumps(spec))
+    for part in spec.get("vconcat", [spec]):
+        part["width"] = "container"
+    capfd.readouterr()
+    vl_convert.vegalite_to_vega(spec, show_warnings=True)
+    captured = capfd.readouterr()
+    return [line for line in (captured.out + captured.err).splitlines() if line]
+
+
+def test_participation_page_charts_compile_without_warnings(capfd):
+    """Both Participation page charts compile, as the page draws them,
+    without a warning (a step height beside a container width drew one on
+    every draw); a step height still warns, so the check can fail."""
+    assert page_warnings(participation_chart(participation()).spec, capfd) == []
+    progress = population_progress(PopulationStatistics(4, 2, 1, 1, 0, MoneyAmount(0)))
+    assert page_warnings(progress.spec, capfd) == []
+    stepped = progress.spec | {"height": {"step": 36}}
+    assert any("fit-y" in line for line in page_warnings(stepped, capfd))
+
+
+@pytest.mark.parametrize(
+    ("top", "ticks"),
+    [
+        (1.1, [0, 1]),
+        (3.3, [0, 1, 2, 3]),
+        (9.9, [0, 2, 4, 6, 8]),
+        (55, [0, 20, 40]),
+        (3557.4, [0, 1000, 2000, 3000]),
+        (1_760_000, [0, 500_000, 1_000_000, 1_500_000]),
+    ],
+)
+def test_round_ticks(top, ticks):
+    """Whole 1, 2 or 5 steps from zero, at most five ticks up to the top."""
+    assert round_ticks(top) == ticks
+
+
+def test_whole_dollars_rounds_halves_up():
+    """Tooltip pledges are whole dollars, a half rounding up."""
+    assert whole_dollars(Decimal("760409.50")) == "$760,410"
+    assert whole_dollars(Decimal("0.49")) == "$0"

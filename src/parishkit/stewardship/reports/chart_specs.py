@@ -16,8 +16,10 @@ one tick, as they do on a wall clock; the table and the tooltips carry the
 parish-formatted label.
 """
 
+import math
 from dataclasses import dataclass
 from datetime import UTC, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.campaigns.domain import Percentage
@@ -26,6 +28,7 @@ from parishkit.stewardship.web.presentation import number, out_of, percentage
 from parishkit.stewardship.web.report_markup import TRACK
 
 from .chart_assets import VEGA_LITE_SCHEMA
+from .charts import axis_top
 from .response_metrics import STAGES, ActivityBucket
 
 # The email image's CSS width; the browser replaces it with the panel's width
@@ -443,6 +446,10 @@ def label_room(texts):
 TICK = " — "
 
 
+# Each count bar's band height in pixels (``count_bars``).
+BAR_STEP = 36
+
+
 def count_bars(key, title, bars, *, total, compared, noun="Families", progress=False):
     """A labelled horizontal bar per ``(label, count)`` pair, in the given order.
 
@@ -578,7 +585,11 @@ def count_bars(key, title, bars, *, total, compared, noun="Families", progress=F
         "$schema": VEGA_LITE_SCHEMA,
         "description": summary,
         "width": WIDTH,
-        "height": {"step": 36},
+        # 36 pixels a bar, as a fixed height rather than Vega-Lite's
+        # {"step": 36}: a step height beside the page's "container" width
+        # makes Vega-Lite warn on every draw that it drops fit-y.
+        "height": BAR_STEP * max(len(rows), 1),
+        "autosize": {"type": "fit-x", "contains": "padding"},
         "data": {"values": rows},
         "encoding": {"y": y, "x": x},
         "layer": layers,
@@ -689,3 +700,312 @@ def ministry_followup(totals):
         noun="Requests",
         progress=True,
     )
+
+
+# The Participation page's daily chart (#720 slice 2c): each panel's plot
+# height in CSS pixels, and the fixed width of every panel's value-axis
+# column (tick labels and title), so the stacked plots line up on the shared
+# date axis whatever their tick labels' widths ("$1.6M" against "12").
+PANEL_HEIGHT = 120
+AXIS_EXTENT = 64
+# The participation drawing's colors (charts.py), so the page matches the
+# exports and the daily email.
+PANEL_COLORS = {"bars": ("#9ecae1", "#26658b"), "line": "#173d70", "money": "#8a4f00"}
+# Short dollar ticks, as charts.short_dollars draws them ("$250K", "$1.6M"):
+# d3's SI format writes "k" and "G", which read "K" and "B" here.
+SHORT_DOLLARS = "replace(replace(format(datum.value, '$~s'), 'k', 'K'), 'G', 'B')"
+
+
+def whole_dollars(amount):
+    """An exact pledge total rounded to whole dollars, halves up: "$760,410"."""
+    return f"${amount.quantize(Decimal(1), rounding=ROUND_HALF_UP):,}"
+
+
+def participation_rows(document):
+    """One row per campaign date: the plotted values and the tooltip's text.
+
+    A value is ``None`` (a gap, never zero) where the day is unavailable; its
+    tooltip text says Unavailable. Pledges are whole dollars in the tooltip,
+    as the page's chart always showed them (#575); the table keeps cents.
+    """
+    rows = []
+    for day in document.days:
+        known = day.population_available
+        pledged = document.financial_enabled and day.pledge_available
+        row = {
+            # A campaign date, not an instant: one band on the date axis,
+            # so no time zone can shift it.
+            "day": day.local_date.isoformat(),
+            "label": format_date(day.local_date),
+            # The date axis's label, in the parish's compact date style, as
+            # the static drawing's ticks and the daily table write it.
+            "tick": format_date(day.local_date, compact=True),
+            "first": day.first_responses if known else None,
+            "families": day.cumulative_responses if known else None,
+            "pledges": float(day.pledge_total) if pledged else None,
+            "first_text": number(day.first_responses) if known else "Unavailable",
+            "participation": day.participation,
+            "pledge_text": whole_dollars(day.pledge_total)
+            if pledged
+            else "Unavailable",
+        }
+        # vega-tooltip shows ``title`` as the tooltip's heading and every
+        # other key as a row, in order, escaping each (as Campaign
+        # comparison's day-by-day tooltips do).
+        row["tip"] = {
+            "title": row["label"],
+            "First submissions": row["first_text"],
+            "Families that have responded": row["participation"],
+        }
+        if document.financial_enabled:
+            row["tip"]["Effective annual pledges"] = row["pledge_text"]
+        rows.append(row)
+    return rows
+
+
+def round_ticks(top):
+    """A panel's value ticks from zero: whole steps of 1, 2 or 5 times a power
+    of ten, the smallest giving at most five ticks up to ``top``.
+
+    Vega's own tick choice can land between whole numbers on a small axis
+    (0 to 1.1), which a whole-number label would show as "1" twice.
+    """
+    power = 10 ** max(0, math.floor(math.log10(max(top, 1))) - 1)
+    step = next(
+        factor * scale
+        for scale in (power, power * 10, power * 100)
+        for factor in (1, 2, 5)
+        if top // (factor * scale) <= 4
+    )
+    return [step * index for index in range(int(top // step) + 1)]
+
+
+def participation_panel(title, field, unit, values, mark, *, tooltip, x, axis=None):
+    """One panel of the daily chart: a hover column per date under one mark.
+
+    The panel's value axis starts at zero and tops out at its own largest
+    value plus 10% (``charts.axis_top``), as every participation drawing's
+    panels do; ``axis`` overrides its axis properties (``None`` removes
+    one), and its ticks step by round 1, 2 or 5 multiples (``round_ticks``).
+    An invisible full-height bar per date carries the tooltip, so a pointer
+    anywhere in a date's column, not only on its small mark, shows that
+    date's figures. A line's points sit in the middle of their date's
+    column, and an unavailable day breaks the line (a gap, never a joined or
+    zero point).
+
+    The marks are hidden from assistive technology: Vega would name each
+    one from its raw fields (an ISO date, an unrounded dollar float), which
+    differs from the page's daily table. The view's name and summary, and
+    that table, are the chart's accessible path (reports spec, "Chart
+    engine").
+    """
+    top = axis_top([value for value in values if value is not None])
+    settings = {
+        "values": round_ticks(top),
+        "format": ",d",
+        "minExtent": AXIS_EXTENT,
+        "maxExtent": AXIS_EXTENT,
+        # Its range and ticks would be read as raw numbers ("0 to 3.3").
+        "aria": False,
+    } | (axis or {})
+    y = {
+        "field": field,
+        "type": "quantitative",
+        "title": unit,
+        "scale": {"domain": [0, top], "nice": False},
+        "axis": {key: value for key, value in settings.items() if value is not None},
+    }
+    return {
+        "title": {"text": title, "anchor": "start", "fontSize": 12},
+        "width": WIDTH,
+        "height": PANEL_HEIGHT,
+        "encoding": {"x": x},
+        "layer": [
+            {"mark": mark | {"aria": False}, "encoding": {"y": y}},
+            # On top, so the pointer always reaches a whole date's column:
+            # a line's path would otherwise catch it, and Vega gives a path
+            # one tooltip, its first date's.
+            {
+                "mark": {"type": "bar", "opacity": 0, "aria": False},
+                "encoding": {
+                    "y": {"value": 0},
+                    "y2": {"value": PANEL_HEIGHT},
+                    "tooltip": tooltip,
+                },
+            },
+        ],
+    }
+
+
+def participation_chart(document):
+    """The Participation page's daily chart, drawn by the chart engine (#720).
+
+    It is the same design as the static drawing the exports and the daily
+    email keep (``charts._draw``): stacked panels on one shared date axis,
+    first submissions as bars, cumulative participating Families as a line
+    and, with financial, effective annual pledges as a dashed line with short
+    dollar ticks. Each panel is named by its own title, so there is no legend,
+    and there is never a second y-axis. Dates are labelled once, under the
+    last panel. The page's daily table is the chart's exact values, so the
+    page shows no table of its own here (``table`` is kept for completeness).
+    """
+    rows = participation_rows(document)
+    tooltip = {"field": "tip"}
+    # Each campaign date is one band, named by its compact parish-style
+    # label (unique, since it carries the year) and in date order (an
+    # explicit domain, whatever the style's text order): a bar fills most of
+    # it, a line's point sits in its middle and its hover column fills all
+    # of it. Only the last panel labels it.
+    x = {
+        "field": "tick",
+        "type": "ordinal",
+        "scale": {
+            "domain": [row["tick"] for row in rows],
+            "paddingInner": 0,
+            "paddingOuter": 0,
+        },
+        "title": None,
+        "axis": {"labels": False, "ticks": False, "domain": False, "aria": False},
+    }
+    fill, stroke = PANEL_COLORS["bars"]
+    # (title, field, unit, mark, axis overrides), top to bottom.
+    shown = [
+        (
+            "First submissions that day",
+            "first",
+            "Families",
+            {
+                "type": "bar",
+                "color": fill,
+                "stroke": stroke,
+                "strokeWidth": 0.5,
+                "width": {"band": 0.8},
+            },
+            None,
+        ),
+        (
+            "Cumulative participating Families",
+            "families",
+            "Families",
+            {
+                "type": "line",
+                "color": PANEL_COLORS["line"],
+                "invalid": "break-paths-show-domains",
+                "point": {
+                    "filled": True,
+                    "size": 12,
+                    "color": PANEL_COLORS["line"],
+                    "aria": False,
+                },
+            },
+            None,
+        ),
+    ]
+    if document.financial_enabled:
+        shown.append(
+            (
+                "Effective annual pledges",
+                "pledges",
+                "USD",
+                {
+                    "type": "line",
+                    "color": PANEL_COLORS["money"],
+                    "invalid": "break-paths-show-domains",
+                    "strokeDash": [6, 3],
+                    "point": {
+                        "filled": True,
+                        "shape": "square",
+                        "size": 12,
+                        "color": PANEL_COLORS["money"],
+                        "aria": False,
+                    },
+                },
+                {"format": None, "labelExpr": SHORT_DOLLARS},
+            )
+        )
+    # Only the last panel labels the dates, in the parish's compact date
+    # style, as many as fit without overlapping and none past the plot's
+    # ends. The title names the campaign's time zone, as the static page
+    # drawing did, on its own line so it fits a phone-width plot. The axis
+    # is hidden from assistive technology, which would otherwise read every
+    # date of the campaign; the daily table lists them. Vega's default
+    # 4-pixel title gap leaves Firefox's taller text boxes overlapping the
+    # end date labels at phone width, so the title gets more room, as the
+    # progress chart's does.
+    labelled = x | {
+        "title": ["Campaign date", f"({document.campaign_timezone})"],
+        "axis": {
+            "aria": False,
+            "ticks": False,
+            "labelAngle": 0,
+            "labelOverlap": True,
+            "labelBound": True,
+            "titlePadding": 8,
+        },
+    }
+    panels = [
+        participation_panel(
+            title,
+            field,
+            unit,
+            [row[field] for row in rows],
+            mark,
+            tooltip=tooltip,
+            x=labelled if index == len(shown) - 1 else x,
+            axis=axis,
+        )
+        for index, (title, field, unit, mark, axis) in enumerate(shown)
+    ]
+    summary = participation_summary(document)
+    spec = {
+        "$schema": VEGA_LITE_SCHEMA,
+        "description": summary,
+        "data": {"values": rows},
+        # The panels share one date scale, and the whole figure (the axis
+        # columns included) fits the panel's width (chart-v1.js gives each
+        # panel the container's width).
+        "autosize": {"type": "fit-x", "contains": "padding"},
+        "resolve": {"scale": {"x": "shared"}},
+        "spacing": 12,
+        "vconcat": panels,
+    }
+    headings = ["Campaign date", "First submissions", "Cumulative participation"]
+    cells = [(row["label"], row["first_text"], row["participation"]) for row in rows]
+    if document.financial_enabled:
+        headings.append("Effective annual pledges")
+        cells = [
+            (*cell, row["pledge_text"]) for cell, row in zip(cells, rows, strict=True)
+        ]
+    title = f"Daily participation — {document.scope_label}"
+    return ChartDocument(
+        "daily-participation",
+        title,
+        summary,
+        spec,
+        ChartTable(tuple(headings), tuple(cells)),
+    )
+
+
+def participation_summary(document):
+    """One sentence for the daily chart: its date range and the last day's figures.
+
+    It is the view's accessible description; the page does not show it, since
+    the daily table under the chart has every date's figures (#720).
+    """
+    days = document.days
+    if not days:
+        return f"Daily participation, {document.scope_label}: no campaign dates yet."
+    last = days[-1]
+    text = (
+        f"Daily participation, {document.scope_label}, from "
+        f"{format_date(days[0].local_date)} to {format_date(last.local_date)}"
+    )
+    if not last.population_available:
+        return text + "; the last date's figures are unavailable."
+    text += (
+        f"; by the last date {last.participation} Families had responded, "
+        f"{number(last.first_responses)} of them for the first time that day"
+    )
+    if document.financial_enabled and last.pledge_available:
+        text += f", with {whole_dollars(last.pledge_total)} in effective annual pledges"
+    return text + "."

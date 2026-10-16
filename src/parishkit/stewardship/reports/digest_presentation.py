@@ -1,11 +1,11 @@
 """Shared exact-value presentation for the digest's protected snapshot page."""
 
-from decimal import ROUND_HALF_UP, Decimal
 from io import BytesIO
 
 from django.urls import reverse
 from PIL import Image
 
+from .chart_specs import whole_dollars as tooltip_dollars
 from .charts import (
     DIGEST_PLOT_LAYOUTS,
     LEGACY_PLOT_LAYOUT,
@@ -47,11 +47,6 @@ def snapshot_context(document, *, mode, chart_url, download_url, plot=PLOT_LAYOU
 def comparison_path(section):
     """The Campaign comparison report on the section's day (``?day=N``)."""
     return f"{reverse('admin:campaign_comparison')}?day={int(section['day'])}"
-
-
-def tooltip_dollars(amount):
-    """Round an exact pledge total to whole dollars, halves up: $760,410."""
-    return f"${amount.quantize(Decimal(1), rounding=ROUND_HALF_UP):,}"
 
 
 def tooltip_point(day, row):
@@ -99,8 +94,12 @@ def chart_layout(chart):
     return DIGEST_PLOT_LAYOUTS.get(creator, LEGACY_PLOT_LAYOUT)
 
 
-def participation_context(chart, *, plot=PLOT_LAYOUT):
-    """Shared exact chart/table/hover presentation for live and pinned pages."""
+def participation_table_context(chart):
+    """The exact daily table's rows and headings, as every page shows them.
+
+    The live Participation page needs only these: its chart is drawn in the
+    browser (#720), so it has no image to hit-test.
+    """
     rows = [
         participation_row(day, financial_enabled=chart.financial_enabled)
         for day in chart.days
@@ -108,6 +107,16 @@ def participation_context(chart, *, plot=PLOT_LAYOUT):
     headings = ["Campaign date", "First submissions", "Cumulative participation"]
     if chart.financial_enabled:
         headings.append(PLEDGE_HEADING)
+    return {"chart": chart, "headings": headings, "rows": rows}
+
+
+def participation_context(chart, *, plot=PLOT_LAYOUT):
+    """The table plus a retained chart image's hover and slider data.
+
+    A saved digest's page hit-tests the PNG it holds (``digest-v1.js``).
+    """
+    table = participation_table_context(chart)
+    headings, rows = table["headings"], table["rows"]
     labels = [
         chart.scope_label
         + "; "
@@ -117,9 +126,7 @@ def participation_context(chart, *, plot=PLOT_LAYOUT):
         for row in rows
     ]
     return {
-        "chart": chart,
-        "headings": headings,
-        "rows": rows,
+        **table,
         "chart_interaction": {
             "labels": labels,
             "points": [
