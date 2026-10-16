@@ -321,6 +321,33 @@ FROZEN = {
     "0096_proposal_review.sql": (
         "c64ebee3ace428eb7b6f9d22f2fcf78c1f754d254bea347ea36973163fbe855a"
     ),
+    "0097_resume_sender_check.sql": (
+        "f2a0334f44759a9f87e7637282847a200f4cd9dcf2f5c217ffa564f94fde5285"
+    ),
+    "0098_debug_off_clear_subject.sql": (
+        "5e77e47bdb4c074839c5938fa739fd1b249c12a9c7d517ab4c9dd1d0ca512a3d"
+    ),
+    "0099_workgroup_rename_keep.sql": (
+        "d6c82585d1876698dcea878a3648f23a0633cf7775e85a31b0a0d73d1d9a7adb"
+    ),
+    "0100_information_status_counts.sql": (
+        "1c57a030f6130f596f6b5c1ee9fe2c9c540e5676ee69b2055faa401e5828c4f6"
+    ),
+    "0101_publication_tasks.sql": (
+        "6d1e92b1571c696103b9e72bf302ce67f4f161bb8ab86d44d95618a9bd9f4b2f"
+    ),
+    "0102_setup_load_void.sql": (
+        "ff6a6644235b6efc39d9a95622e86ee89b8e67b20f26e55b2d44a29840a88d34"
+    ),
+    "0103_any_creation_timezone.sql": (
+        "939867f48bd7966bf19fad3cf6b96339e806de9752625ec1532e40c30de106a1"
+    ),
+    "0104_setup_sign_in_hour.sql": (
+        "7248a23e6fdf74141c68528d089b02ba4f112e5d9736f7f24fd0234306a1a378"
+    ),
+    "0105_campaign_setup_review.sql": (
+        "c49eb82e252a0588ec584b530ed228011d134b7f29bc26650b5871993f80c0b5"
+    ),
 }
 
 
@@ -629,3 +656,21 @@ def test_the_pre_setup_users_fixture_is_unchanged():
     """The setup-users tests prove 0055's check on exactly the earlier bodies."""
     digest = hashlib.sha256(PRE_SETUP_USERS_FIXTURE.read_bytes()).hexdigest()
     assert digest == PRE_SETUP_USERS_DIGEST
+
+
+# The pre-0102 bodies the setup load void tests reinstall
+# (tests/stewardship/database/pre_setup_load_void_functions.sql), copied byte
+# for byte from the fresh-install baseline at 1a585debf, the head migration
+# 0102 (#1353) was written on. Pinned so an edit to the fixture fails here.
+PRE_SETUP_LOAD_VOID_FIXTURE = (
+    ROOT / "tests/stewardship/database/pre_setup_load_void_functions.sql"
+)
+PRE_SETUP_LOAD_VOID_DIGEST = (
+    "2ee01d4987ea6dd0a8343704090c27c18e574e616773806f737683adb5457a45"
+)
+
+
+def test_the_pre_setup_load_void_fixture_is_unchanged():
+    """The setup load void tests prove 0102's check on exactly the earlier bodies."""
+    digest = hashlib.sha256(PRE_SETUP_LOAD_VOID_FIXTURE.read_bytes()).hexdigest()
+    assert digest == PRE_SETUP_LOAD_VOID_DIGEST

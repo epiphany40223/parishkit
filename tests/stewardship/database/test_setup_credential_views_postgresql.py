@@ -108,7 +108,7 @@ def test_write_only_form_real_csrf_staging_and_cancellation(setup_http, google):
         kept = post(
             browser, URL, {"candidate": "", "organization_id": "1", "version": version}
         )
-        assert kept.status_code == 302 and kept["Location"] == "/admin/setup/mail"
+        assert kept.status_code == 302 and kept["Location"] == "/admin/setup/source"
         assert SetupSealedCredential.objects.get().version == staged
         moved = post(
             browser, URL, {"candidate": "", "organization_id": "2", "version": version}
@@ -239,11 +239,15 @@ def test_other_login_and_missing_handoff_fail_without_persisting(setup_http, goo
 
 
 def test_lapsed_freshness_offers_step_up_that_keeps_the_same_draft(setup_http, google):
-    """A page shows Confirm with Google; confirming returns to the same setup."""
+    """A page shows Confirm with Google; confirming returns to the same setup.
+
+    Setup's credential pages accept a sign-in up to an hour old (#1402), so
+    the lapsed sign-in here is 61 minutes old.
+    """
     import time
 
     publish("parishsoft")
-    google[0]["auth_time"] = int(time.time()) - 600
+    google[0]["auth_time"] = int(time.time()) - 61 * 60
     with web_login():
         browser = started()
         attempt = SetupAttempt.objects.get()
@@ -277,3 +281,30 @@ def test_lapsed_freshness_offers_step_up_that_keeps_the_same_draft(setup_http, g
     assert SetupAttempt.objects.get().pk == attempt.pk
     assert PortalSession.objects.count() == 1
     assert SetupSealedCredential.objects.get().attempt_id == attempt.pk
+
+
+def test_a_sign_in_from_the_last_hour_opens_and_saves_a_credential_page(
+    setup_http, google
+):
+    """A 30-minute-old sign-in needs no step-up during setup (#1402)."""
+    import time
+
+    publish("parishsoft")
+    google[0]["auth_time"] = int(time.time()) - 30 * 60
+    with web_login():
+        browser = started()
+        page = browser.get(URL)
+        assert page.status_code == 200
+        assert b"data-step-up-notice" not in page.content
+        response = post(
+            browser,
+            URL,
+            {
+                "candidate": CANDIDATE.decode(),
+                "organization_id": "1",
+                "version": str(SetupAttempt.objects.get().version),
+            },
+        )
+        assert response.status_code == 302, response.content
+    assert PortalSession.objects.count() == 1
+    assert SetupSealedCredential.objects.count() == 1

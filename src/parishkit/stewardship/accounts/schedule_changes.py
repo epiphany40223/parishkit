@@ -114,6 +114,7 @@ def build_preview(
     content=(),
     campaign_values=None,
     series=(),
+    series_changes=(),
 ):
     """Validate the complete candidate, including each stranded or reordered mailing.
 
@@ -136,8 +137,13 @@ def build_preview(
     each ``{"rule", "added"}``: its canonical rule and the positions of its
     reminders among the schedules this change adds, in form order. Each
     becomes one ``schedule_series`` record, holding exactly those reminders,
-    in the same signed intent; the review lists them as ``series``. Delivery
-    never reads a series, so remembering one changes no send.
+    in the same signed intent; the review lists them as ``series``. An item
+    may also ``keep`` saved reminder ids the series holds besides them, and
+    name the existing series ``id`` it replaces in place rather than adding
+    one (a series edit, ``series_edits.plan``). ``series_changes`` are other
+    operations on existing series records (a series cut short or deleted).
+    The review lists updated and removed series as ``series_changes``.
+    Delivery never reads a series, so no series operation changes a send.
     """
     configuration = state[0]
     digest = configuration.active_configuration.digest
@@ -176,17 +182,20 @@ def build_preview(
         return None
     remembered = [
         {
-            "operation": "add",
+            "operation": "update" if item.get("id") else "add",
             "section": SERIES,
-            "id": str(uuid4()),
+            "id": item.get("id") or str(uuid4()),
             "values": {
                 "campaign_id": str(campaign.pk),
                 "rule": item["rule"],
-                "schedules": sorted(added[index] for index in item["added"]),
+                "schedules": sorted(
+                    [*(added[index] for index in item["added"]), *item.get("keep", ())]
+                ),
             },
         }
         for item in series
     ]
+    remembered.extend(series_changes)
     # A new timezone or digest date window also replaces unchanged civil mail
     # fields. Include their existing work in the reviewed cancellation inventory.
     patch.extend(
@@ -212,10 +221,12 @@ def build_preview(
     base = service.store.active()
     if base is None or base.digest != digest:
         raise StaleRecordError("The applied configuration changed.")
-    if not patch:
+    if not patch and not remembered:
         window.add_error(None, NO_CHANGES)
         return None
-    if remembered and not uses_users(base.document()):
+    if any(row["operation"] == "add" for row in remembered) and not uses_users(
+        base.document()
+    ):
         window.add_error(None, SERIES_NEEDS_USERS)
         return None
     # An added email comes before the schedule that sends it, and a new
@@ -260,6 +271,22 @@ def build_preview(
                 **{name: row["values"][name] for name in ("rule", "schedules")},
             }
             for row in remembered
+            if row["operation"] == "add"
+        ],
+        # Existing series this change updates or removes, with an update's
+        # resulting rule and reminders (#469).
+        "series_changes": [
+            {
+                "id": row["id"],
+                "operation": row["operation"],
+                **{
+                    name: row["values"][name]
+                    for name in ("rule", "schedules")
+                    if name in row.get("values", {})
+                },
+            }
+            for row in remembered
+            if row["operation"] != "add"
         ],
         "preview": None
         if blocking

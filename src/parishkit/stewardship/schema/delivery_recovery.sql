@@ -5,16 +5,17 @@
 CREATE VIEW public.stewardship_delivery_family_recovery AS
 WITH scope AS (
     -- workgroup_duids: the campaign's Reminder WorkGroup members (#861, #866),
-    -- read as source.workgroups.excluded_duids reads them. The current
-    -- snapshot's recorded read counts only while its name is the campaign's
-    -- setting, so a changed or cleared name stops applying at once.
+    -- read as source.workgroups.excluded_duids reads them (#1305). A cleared
+    -- setting stops applying at once; while one is set, the current
+    -- snapshot's recorded read applies whichever name it was read for, so a
+    -- rename keeps the previous WorkGroup's Families until a refresh reads
+    -- the new name.
     SELECT c.id,c.production_cycle,p.ends_at,(
         SELECT s.cursor->'load'->'reminder_workgroup'->'family_duids'
         FROM public.stewardship_source_current sc
         JOIN public.stewardship_source_snapshot s ON s.id=sc.snapshot_id
         WHERE coalesce(p.values->>'reminder_workgroup','')<>''
             AND jsonb_typeof(s.cursor->'load'->'reminder_workgroup'->'name')='string'
-            AND s.cursor->'load'->'reminder_workgroup'->>'name'=p.values->>'reminder_workgroup'
             AND jsonb_typeof(s.cursor->'load'->'reminder_workgroup'->'family_duids')='array'
     ) AS workgroup_duids
     FROM public.stewardship_system_configuration r

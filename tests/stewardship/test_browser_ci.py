@@ -297,7 +297,7 @@ def test_collection_hook_keeps_exact_owner_and_reports(selection_config):
     selection_config.hook.pytest_deselected.assert_called_once_with(items=removed)
     reporter = selection_config.pluginmanager.get_plugin.return_value
     reporter.write_line.assert_called_once_with(
-        "CI_BROWSER_PARTITION chromium: 1 out of 3 (33.3%) cases, estimated 11 s"
+        "CI_BROWSER_PARTITION chromium: 1 out of 3 (33.3%) cases, estimated 8 s"
     )
 
 
@@ -766,12 +766,13 @@ def test_browser_estimate_sums_engine_costs_and_file_extras(engine):
 
 
 def test_browser_estimates_are_engine_scale():
-    """WebKit, measured about 1.6 times Chromium (#1151), is estimated so."""
+    """Chromium is the fastest engine and WebKit, about 1.6 times Chromium
+    (#1151), the slowest; Firefox, refitted in #1380, falls between them."""
     nodes = [f"tests/x/test_{n}.py::case[{c}]" for n in range(20) for c in range(8)]
     chromium, firefox, webkit = (
         browser_estimate(nodes, engine) for engine in BROWSER_ENGINES
     )
-    assert firefox < chromium < webkit
+    assert chromium < firefox < webkit
     assert 1.4 < webkit / chromium < 2
 
 

@@ -1,5 +1,6 @@
 """Completion races never leak predecessor-only progress or bypass current policy."""
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -14,6 +15,9 @@ def test_progress_completion_race_rechecks_current_admin(
 ):
     """Either protected read may lose setup ownership to the completed transaction."""
     status = object()
+    # The real context always carries both instants (setup_finalization_status).
+    moment = datetime(2054, 10, 1, tzinfo=UTC)
+    context = {"attempt": status, "server_now": moment, "confirmed_at": moment}
     service = SimpleNamespace(configured=lambda: True, store=object())
     request = object()
 
@@ -24,7 +28,7 @@ def test_progress_completion_race_rechecks_current_admin(
     monkeypatch.setattr(
         views,
         "finalization_status",
-        completed if boundary == "first" else lambda *args: {"attempt": status},
+        completed if boundary == "first" else lambda *args: context,
     )
     monkeypatch.setattr(views, "finishing", lambda progress: {})
     monkeypatch.setattr(views, "render", lambda *args: object())

@@ -38,16 +38,24 @@ def terminal_attempt(attempt_id):
 
 
 def owned_source_tasks(attempt_id):
-    """Resolve only original catalog and exact prepared-finalization retry roots."""
+    """Resolve the attempt's catalog loads and exact prepared-finalization roots.
+
+    Every setup_source_load root of the attempt counts, also a load discarded
+    before setup ended (#1353), not only the one still bound; SQL's
+    stewardship_setup_disposable_snapshot_v1 admits the same roots.
+    """
     attempt = terminal_attempt(attempt_id)
     prepared = SetupPreparationReceipt.objects.filter(
         readiness__intent__attempt=attempt
     ).values("id")
     return TaskRun.objects.filter(
         Q(
-            root_id=attempt.source_task_id,
             task_type="setup_source_load",
             domain_request_id=attempt.pk,
+            root__root_id=F("root_id"),
+            root__task_type="setup_source_load",
+            root__domain_request_id=attempt.pk,
+            root__initiated_by_id=attempt.owner_id,
         )
         | Q(
             task_type="setup_finalize",

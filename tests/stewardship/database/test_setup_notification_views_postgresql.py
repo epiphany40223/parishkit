@@ -64,6 +64,11 @@ def test_explicit_csrf_send_and_passive_status_do_not_extend_idle_expiry(
         assert data["pending"] and not data["unknown"]
         assert data["items"][0]["state"] == "queued"
         assert "synthetic-private" not in response.content.decode()
+        region = browser.get(PATH + "/status?format=status")
+        assert region.status_code == 200 and region["Cache-Control"] == "no-store"
+        assert b'data-live-status="setup-test"' in region.content
+        assert b"data-live-pending" in region.content
+        assert b"synthetic-private" not in region.content
         assert browser.get(PATH).status_code == 200
         assert (
             PortalSession.objects.get(pk=request.portal_session.pk).last_activity_at
@@ -122,6 +127,8 @@ def test_different_login_and_cancelled_setup_cannot_read_original_status(
     with web_login():
         other = Client()
         other.cookies["pk_admin"] = login(setup_http).session.session_key
-        assert other.get(PATH + "/status").status_code == 404
+        for status in ("/status", "/status?format=status"):
+            assert other.get(PATH + status).status_code == 404
         cancel_setup(request, setup_http, attempt.attempt_id)
-        assert browser.get(PATH + "/status").status_code == 404
+        for status in ("/status", "/status?format=status"):
+            assert browser.get(PATH + status).status_code == 404

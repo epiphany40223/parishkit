@@ -594,7 +594,9 @@ campaign, rather than creating a second one. Setup collects no campaign
 is created by [Create the campaign](../admin-portal/spec.md#create-the-campaign)
 and loaded by its full ParishSoft refresh. The seed,
 `families`, `--response-scale` and `now` fully determine the timeline (see
-[determinism](#seed-determinism)).
+[determinism](#seed-determinism)). A seeded campaign is live; the Testing-mode
+review state is built separately from the post-setup snapshot by the
+operator script's [`seed --testing`](#operator-script).
 
 **Design.** Every seeded row is written by production code at its fake
 instant: the real scheduler, worker, `mail-dispatch` and web code, under their
@@ -1125,7 +1127,11 @@ Because LOCAL has no Google sign-in, a local-only route signs an Admin in.
     ([#613](https://github.com/epiphany40223/parishkit/issues/613)). Each
     prompt records its return path in the browser's `localStorage` (the
     printed link is often opened in a new tab), replacing any earlier one,
-    for ten minutes. The sign-in page's script sends it as the form's `next`
+    for ten minutes. A prompt copy that CSS hides (a page that draws one
+    control with and without its step-up and shows one) records nothing
+    ([#1385](https://github.com/epiphany40223/parishkit/issues/1385)); a
+    prompt inside a closed section still records, since opening the section
+    shows it. The sign-in page's script sends it as the form's `next`
     and clears it when the form is submitted, so a link opened but not
     submitted keeps it. The POST passes it to the shared core, which honours
     it only when the sign-in is a step-up of this browser's live session for
@@ -1172,15 +1178,21 @@ section is the contract.
 | `up [--families N]` | First-time install (below), with a synthetic parish of `N` Families (default 100) |
 | `deploy [--schema-change] [--bulk on\|off] [--smtp-latency-ms N]` | Build the image from the checkout and upgrade the running deployment to it by the Production upgrade's steps (below); `--schema-change` is that upgrade's `STEWARDSHIP_SCHEMA_CHANGE=1`; `--bulk` renders the bulk Family send on or off and `--smtp-latency-ms` the [modeled latency](#mail-catcher), each carried over when not given |
 | `deploy --rollback` | That upgrade's image-only rollback to the image the last `deploy` replaced (below) |
-| `snapshot [--seeded]` | Stop the services and save the runtime root as the post-setup snapshot, or with `--seeded` as the seeded snapshot, preserving numeric ownership and modes, then restart |
-| `reset [--seeded]` | Restore the post-setup snapshot and restart in fake-clock mode, or with `--seeded` the seeded snapshot in normal mode (each snapshot carries its clock-mode marker); with no post-setup snapshot, delete the root and run `up` again |
+| `snapshot [--seeded]` | Stop the services and save the runtime root as the post-setup snapshot, or with `--seeded` as the seeded snapshot, preserving numeric ownership and modes, then restart; each replaces its earlier copy |
+| `snapshot save NAME [--replace]` | Save the runtime root as the named snapshot (below), after the [disk guard](#operator-script); an existing `NAME` needs `--replace` |
+| `snapshot list` | Every snapshot with its record and what a switch to it would do, then the VM's and the Mac's free space |
+| `snapshot delete NAME` | Delete one snapshot after the operator types its name, then trim the VM disk |
+| `snapshot restore NAME` / `switch NAME` | The data-only switch (below): keep the deployed code and change to `NAME`'s data, migrated forward when it is older |
+| `reset [--seeded \| NAME]` | Restore the post-setup snapshot and restart in fake-clock mode, or with `--seeded` the seeded snapshot in normal mode, or the named one, image and data together (each snapshot carries its clock-mode marker); with no post-setup snapshot, delete the root and run `up` again |
 | `reset --reinstall` | Delete the root and run `up` again from the checkout even when a snapshot exists (snapshots are kept) |
 | `wizard` | Complete the setup wizard unattended (below) |
+| `finish-setup` | After the browser wizard stops at Finishing setup, do the runbook's post-wizard step for its frozen attempt (below) |
 | `seed [--response-scale m]` | Seed the current deployment at the current time (below) |
+| `seed --testing` | Switch to the post-setup snapshot and move it to real time: a Testing-mode draft campaign to review (below) |
 | `reseed` | Restore the post-setup snapshot, then `seed` |
 | `rehearse [--due-in MIN] [--send-only] [--timeout MIN] [--label NAME]` | Measure one scheduled Family send on a seeded deployment ([bulk-send rehearsal](#operator-script)) |
 | `spike [--families N] [--sources S] [--during-send] [--wait MIN] [--label NAME]` | Measure Families opening their emailed links and submitting through Caddy on a seeded deployment ([launch-day spike check](#launch-day-spike-check)) |
-| `status` | Show the VM, service health, Docker disk use and VM disk use |
+| `status` | Show the VM, service health, Docker disk use and VM disk use, then the `snapshot list` summary |
 | `down` | Stop the services; never removes data |
 | `start` | Start a stopped deployment's services in the recorded clock mode |
 | `sign-in --email E` | Print a [test sign-in](#local-test-sign-in) link |
@@ -1246,13 +1258,39 @@ deployment set up in normal mode cannot be seeded: its rows are stamped at
 real time and the seed's clock would have to start before them; `seed`
 refuses when the clock-mode marker says `normal`.
 
+**`seed --testing`.** A seeded campaign is live, and no supported path
+returns a live campaign to Testing: Cancel go-live is offered only while the
+campaign is `scheduled`, and Return to Testing needs an archived campaign.
+Changing the global mode directly would bypass those guards. So the Testing
+review state (#1395) is built forward from the post-setup snapshot's Testing
+draft. `seed --testing` switches to the post-setup snapshot with the
+data-only switch, so the running code is kept (a post-setup snapshot from
+before #1395 on another image must first be recorded, as above). It then refuses (leaving the
+post-setup data in place) unless setup is complete, the clock is fake, the
+global mode is `testing`, the campaign is a `draft` and the Testing
+recipient is an `@example.test` address. A recorded `meta` that is not a
+Testing draft refuses before anything stops. It clears Mailpit, then moves
+the clock forward to normal mode (offset zero, a forward jump, as the
+seed's switch is) with every service stopped and recreated. The result is a
+draft campaign in Testing mode at real time, for the Testing banner and
+labels, schedules, chosen-Family Testing sends, Testing sign-in and
+submissions, the Go live page with readiness, Testing cleanup and link
+preparation, and the structural edits that only Testing allows. When the
+deployed image's seeder offers a `testing` step (the automated Testing sends
+and submissions, a follow-up), it runs last under the web identity. The
+command ends by suggesting `snapshot save testing`. A failure while the
+clock moves restarts the services and names `switch post-setup` as the way
+back. Mail safety is unchanged:
+every send goes through the mail-catcher transport to Mailpit.
+
 **`wizard`.** For an unattended install (and the documented VM seed runs),
 `wizard` completes the setup wizard through the wizard pages' own service
-layer (`pk-stewardship local-seed --step wizard` under `web`: the parish,
-access, mail, Slack and Testing-recipient settings, the fake ParishSoft key
-and organization, the source load, the mail-catcher document, a generated
-logo through the real branding staging, the review, the setup test mail and
-the final confirmation), then follows the deployment runbook's post-wizard
+layer, in the wizard's page order (`pk-stewardship local-seed --step wizard`
+under `web`: the parish, mail and Testing-recipient settings, the
+mail-catcher document, the Slack setting, a generated logo through the real
+branding staging, the access lists, the fake ParishSoft key and organization,
+the source load, the review, the setup test mail and the final
+confirmation), then follows the deployment runbook's post-wizard
 step: once the credential installers report `awaiting_ack`, it recreates
 `worker` and `mail-dispatch` from `compose.json` and acknowledges each
 request inside them, which lets the installer complete setup. Setup collects
@@ -1268,6 +1306,29 @@ the Reminders when the campaign has none. The browser wizard and Create the
 campaign remain the developer-facing path; `wizard` writes nothing those
 pages would not.
 
+**`finish-setup`.** The browser wizard stops at Finishing setup, "Waiting for
+the server operator", until the post-wizard step has run, as in Production.
+`finish-setup` is that step for the browser path, and `wizard` runs the same
+VM-half function, so LOCAL has one implementation of it. It looks up the
+frozen attempt's request ids (`pk-stewardship local-seed --step credentials`
+under `web`, which writes nothing: the ids of the attempt's unscrubbed
+`stewardship_setup_sealed_credential` rows for `parishsoft` and
+`google_workspace`, the lookup `--step wizard` reports with), waits until both
+`stewardship_secret_request` rows are `awaiting_ack`, recreates `worker` and
+`mail-dispatch` from `compose.json` (with the fake-clock override in fake
+mode), acknowledges each request inside them, waits for setup to complete and
+restarts every service under the configured topology. Unlike `wizard` it
+creates no campaign: setup collects none (#142), so Create the campaign
+follows in the browser. It is idempotent: when
+setup is already complete it says so and changes nothing, and a repeated
+acknowledgement is a no-op, so a rerun after an interruption is safe. It
+refuses, before any service is touched, when no attempt is frozen (the
+wizard's pages are not finished) or the frozen attempt lacks either
+credential. Like every long VM-half command it logs to `/var/log`. Production
+keeps its runbook step; nothing here changes the production tooling, and the
+web service never acknowledges a credential itself, so LOCAL exercises the
+same split between the wizard and the operator.
+
 **Snapshots and fast reset.** Snapshots are uncompressed copies of the runtime
 root inside the VM, under `/opt/parishkit-snapshots/<name>` together with the
 deployment YAML and record, so a restore is self-contained. `reset --seeded`
@@ -1278,6 +1339,89 @@ the seed is anchored to the time it was generated, a restored seeded snapshot
 keeps its original dates and grows older each day. Re-seed (`reseed`, then
 `snapshot --seeded`) only when fresh dates are needed; otherwise reset to the
 seeded snapshot.
+
+Snapshots are named (#1395). A name is 1 to 32 lowercase letters, digits or
+`-`, starting with a letter or digit; `post-setup` and `seeded` are ordinary
+names that `snapshot [--seeded]` and `reset [--seeded]` keep as aliases.
+`snapshot save NAME` reads, while the services still run, the applied
+migrations into the snapshot's `migrations` file and a `meta` record (taken
+time, image and commit, deployment UUID, global mode, campaign state, Family
+count, Testing recipient, clock mode, migration count, the seeded Ministry
+leader user, size). Both are data, read as `key=value` lines and never
+executed. A snapshot taken before #1395 has neither, and every command still
+accepts it.
+
+The disk guard: snapshots are full copies, the VM disk is a sparse file on
+the Mac that grows with them, and the Mac must keep 20 GB free. Before
+anything stops, a save refuses when the Mac's free space on the Lima home's
+volume would fall below 20 GiB plus twice the copy's size, when the VM's
+would fall below 5 GiB after the copy, or when there are already 8 other
+snapshots (`PARISHKIT_LOCAL_SNAPSHOT_LIMIT` changes the cap). A replacement
+counts the root's full size too, since its copy is written beside the old
+one. The laptop half refuses when it cannot read the Mac's free space. The
+refusal lists the snapshots by age and size and names `snapshot delete`;
+nothing is pruned automatically, since snapshots are deliberate return
+points. `snapshot delete` removes one snapshot after the operator types its
+name, then runs `fstrim` in the VM so the disk file can give the space back;
+a replacement trims after it removes the old copy.
+
+A save refuses, before anything stops, when it cannot read the applied
+migrations, since a switch relies on that record. It copies into a hidden
+`.NAME.partial` directory (unchanged files hard-linked from an earlier copy
+of the same name), writes `taken` last, and renames the result into place
+only once it is whole; a snapshot without `taken` is not a snapshot. A failed
+save therefore leaves no half copy and keeps a replaced snapshot whole, and
+its exit trap starts the services again.
+
+The data-only switch, `snapshot restore NAME` (alias `switch NAME`), keeps
+the deployed code. It never modifies the snapshot, so switching back
+migrates it again; `snapshot save NAME --replace` after a switch keeps the
+migrated copy. Before anything stops it refuses:
+
+- a snapshot of another install (another deployment UUID; `reset NAME`
+  restores one whole);
+- one whose recorded migrations include any the running database lacks,
+  naming the commit the snapshot was taken on;
+- one taken on another image with no migrations record (taken before
+  #1395), since newer code cannot be ruled out: `reset NAME` restores it
+  whole, and `snapshot save NAME --replace` then records it;
+- any snapshot when the running database's migrations cannot be read.
+
+Otherwise:
+
+- When the snapshot was taken on the running image, its schema, grants and
+  logins are the running code's. The switch stops the services and restores
+  everything in the root except what the running deployment keeps: the
+  rendered `config/services` and `config/deployment`, the `cache` static
+  trees, Caddy's data (so the CA the browser trusts stays valid) and the
+  provisioning records. The deployment YAML and record (`IMAGE`,
+  `PREVIOUS_IMAGE`, the debug setting) are untouched and the services are
+  recreated, with the fake-clock images built first for a fake-clock
+  snapshot. The stores, the clock marker, the fake configuration, the
+  installed configuration documents and the credentials the database pairs
+  with come from the snapshot, so Mailpit shows that snapshot's mail.
+- When it was taken on another image, matching migrations are not enough
+  (grants, logins and credential files change without a migration), and the
+  running image's required backup would refuse an older schema's pending
+  migrations. So the switch restores the snapshot whole except Caddy's data,
+  starts it on its own image (refusing beforehand if that image is gone from
+  the VM), and runs the scripted upgrade's host half in local mode to the
+  running image with `--schema-change`, as `deploy` does. That upgrade's
+  check covers migrations, grants and logins alike. The switch carries the
+  running bulk Family send and modeled-latency rendering and the debug
+  setting, and passes the users upgrade's `STEWARDSHIP_USERS_*` variables
+  (#952) when the operator sets them, as a `deploy` does. A snapshot from
+  before that conversion needs them; without them its upgrade stops at the
+  conversion with the maintenance page up. Afterwards the switch puts the
+  running deployment's image record back.
+
+A failure after the stop never starts services on mixed data. The switch's
+exit trap names the recovery, `reset NAME` (the snapshot whole, image and
+data together) or `reset` to another snapshot, and the deployment record
+stays truthful throughout. A switch ends by printing fresh sign-in links,
+since sessions live in the restored stores: one for the Administrator, one
+for the seeded Ministry leader user when the data records one (`seed` writes
+it to `run/local/leader-user`), and the Mailpit address.
 
 **Trusting Caddy's CA.** The browser sees a certificate from Caddy's internal
 CA. `ca` copies the root certificate from Caddy's data store in the runtime
@@ -1337,8 +1481,8 @@ tree refreshed in place with the replaced tree kept, web first and then
 everything else, and the checks. A deployment installed before `up` installed
 the backup recipient key gets one from `deploy` first, since the required
 backup needs it. A `deploy` refuses unless a snapshot exists
-to return to (it names the `reset` that restores each one before anything
-starts), records the new image and the one it replaced in the deployment
+to return to (it names the `reset` that restores each one, oldest first,
+before anything starts), records the new image and the one it replaced in the deployment
 record, and ends by naming both ways back: `deploy --rollback`, the
 upgrade's image-only rollback to the replaced image (refused, as in
 Production, when the schema or a grant changed in between), and
@@ -1378,7 +1522,9 @@ is the how-to. The contract:
   `--volumes`. Restoring a snapshot replaces the root only after the services
   are stopped.
 - `reset` without a snapshot, and any other deletion of the root, requires the
-  operator to type the instance name (`parishkit-local`) to confirm.
+  operator to type the instance name (`parishkit-local`) to confirm;
+  `snapshot delete` requires the snapshot's name.
+- A snapshot name is checked by both halves before it is used in a path.
 - The script never targets a host other than the Lima alias.
 
 ### Launch-day spike check
@@ -1484,7 +1630,16 @@ The local environment adds:
 - **fake-SMTP tests** for the mail-catcher transport, with the Gmail endpoint
   unchanged;
 - **absence tests** for the [local test sign-in](#local-test-sign-in);
-- `shellcheck` on `tools/stewardship-local.sh`.
+- `shellcheck` on `tools/stewardship-local.sh`;
+- **operator-script stand-in tests** (no VM) for the snapshot commands: name
+  validation and `--replace`, the `--seeded` and `post-setup` aliases, the
+  `meta` and `migrations` records, the cap and both disk refusals
+  (replacements included), the refusals before any service stops (newer
+  code, another install, no record, unreadable migrations, a missing image,
+  no fake-clock override), what a data switch keeps, the other-image path
+  through the host half with the schema change and the running image and
+  rendering, failed saves and switches, the sign-in lines, and
+  `seed --testing`'s checks and clock move.
 
 No Docker end-to-end run of the local environment belongs in CI, and neither
 do the [seed tests](#seeder-tests). A developer runs them and verifies the full

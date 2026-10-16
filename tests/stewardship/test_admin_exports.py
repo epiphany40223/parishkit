@@ -183,11 +183,14 @@ def test_every_export_command_has_a_golden_document():
         "export census",
         # The Limitations download (#463).
         "export limitations",
+        # The Roster changes to enter download (#463).
+        "export roster",
     }
     from parishkit.stewardship import (
         admin_census_export,
         admin_exact_exports,
         admin_limitations_export,
+        admin_roster_export,
     )
 
     models = {
@@ -199,6 +202,7 @@ def test_every_export_command_has_a_golden_document():
         "export exact retry": admin_exact_exports.ExactChange,
         "export census": admin_census_export.CensusExport,
         "export limitations": admin_limitations_export.LimitationsExport,
+        "export roster": admin_roster_export.RosterExport,
     }
     for name in exports:
         model = models.get(name, admin_exports.ExportChange)

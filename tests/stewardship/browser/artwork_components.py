@@ -1,30 +1,37 @@
-"""Campaign images (#248) reviewed and applied in place (#750), as fixture pages.
+"""Campaign images (#248) reviewed and applied in the review dialog (#750).
 
 The real Campaign images template is served at its real address, ``PAGE``,
-so the in-place answers (which must come from the page's own address) can
-be served by the fixture server:
+and the answers its forms post for are served by the fixture server:
 
-- ``PAGE`` lists the five slots, the welcome icon set, at the edit step,
-  for a campaign without Financial stewardship: the Financial page icon's
-  upload is unavailable with its reason (#563);
+- ``PAGE`` lists the five slots, the welcome icon set, for a campaign
+  without Financial stewardship: the Financial page icon's upload is
+  unavailable with its reason (#563). Its forms post to ``PAGE`` (Remove
+  this image and the dialog's Apply) and its slots are redrawn from
+  ``SETTLED`` once a change is applied;
 - an upload's POST to ``UPLOAD`` (the banner's upload address) answers, as
-  the view does, with a redirect to ``REVIEW``: the page naming the staged
-  banner, with its review in the review region;
+  the view does, with the review dialog's fragment of the staged banner;
 - ``REFUSED_UPLOAD`` (the member icon's upload address) answers 400 with the
-  page again, the slot's field error and its summary in the review region;
-- ``REMOVE`` is the page reviewing removing the welcome icon;
-- Apply's POST from either review answers with a redirect to ``PENDING``,
-  the page naming the change, whose status polls ``STATUS``; that answers
-  Applied and follows to ``SETTLED``, the page with the banner set.
+  page again, the slot's field error and its summary;
+- ``REFUSED_IMAGE`` (the welcome icon's upload address) answers 400 the same
+  way with the real refusal of a file that is not a usable image, the
+  longest common refusal a slot's status line shows;
+- a test answers Remove this image's Review with ``REMOVAL``, the review
+  dialog's fragment of removing the welcome icon (``PAGE`` takes both that
+  Review and Apply, which the fixture server cannot tell apart);
+- Apply's POST to ``PAGE`` answers with a redirect to ``APPLIED``, the
+  change's status, Applied; ``SETTLED`` is the page with the banner set too.
 """
 
 from types import SimpleNamespace as Value
 from uuid import UUID
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.template.loader import render_to_string
 
-from parishkit.stewardship.accounts.admin_editing import review_region
+from parishkit.stewardship.accounts import campaign_wizard
+from parishkit.stewardship.accounts.admin_editing import summary_errors
 from parishkit.stewardship.accounts.artwork_views import (
+    NOT_STATIC_IMAGE,
     SLOT_LABELS,
     UNAVAILABLE,
     ArtworkForm,
@@ -37,33 +44,15 @@ BUNDLE = UUID("75000000-0000-4000-8000-0000000000b1")
 REQUEST = UUID("75000000-0000-4000-8000-0000000000c1")
 UPLOAD = f"{PAGE}banner/"
 REFUSED_UPLOAD = f"{PAGE}member/"
-REVIEW = f"{PAGE}?review=banner&bundle={BUNDLE}"
-REMOVE = f"{PAGE}?remove=welcome"
-PENDING = f"{PAGE}?request={REQUEST}"
-SETTLED = f"{PAGE}?request={REQUEST}&settled=1"
-STATUS = "/artwork-in-place-status"
-STEPS = ("Make changes", "Review", "Apply")
-# The answers the fixture server gives the page's POSTs.
-POSTS = {
-    UPLOAD: (303, f"{REVIEW}#settings-review", ""),
-    REVIEW: (303, f"{PENDING}#settings-review", ""),
-    REMOVE: (303, f"{PENDING}#settings-review", ""),
-}
-
-
-def _steps(current):
-    """The flow indicator with ``current`` (0-based) as the current step."""
-    return [
-        {
-            "label": label,
-            "state": "done"
-            if index < current
-            else "current"
-            if index == current
-            else "upcoming",
-        }
-        for index, label in enumerate(STEPS)
-    ]
+REFUSED_IMAGE = f"{PAGE}welcome/"
+REMOVAL = "/artwork-removal-review"
+APPLIED = "/artwork-applied"
+SETTLED = "/artwork-settled"
+# Campaign images as a Campaign setup step (#1404), with its action row.
+STEP = "/artwork-step"
+# The answers the fixture server gives the page's POSTs; the upload's and
+# the refused upload's are added by ``components``.
+POSTS = {PAGE: (303, APPLIED, "")}
 
 
 def _asset(label, width, height, number):
@@ -72,21 +61,20 @@ def _asset(label, width, height, number):
 
 
 def components(context, admin):
-    """Every page above, keyed by the exact path and query it is fetched at."""
+    """Every page above, keyed by the exact path it is fetched at."""
     welcome = _asset("section", 256, 256, 1)
     banner = _asset("banner", 1024, 217, 2)
     campaign = Value(pk=UUID(int=86), active_configuration=Value(name="Annual"))
-    pending = Value(state="staged", request_id=REQUEST, failure_code="")
     applied = Value(state="applied", request_id=REQUEST, failure_code="")
+    steps = [
+        {"label": label, "state": "current" if index == 0 else "upcoming"}
+        for index, label in enumerate(("Make changes", "Review", "Apply"))
+    ]
 
-    def page(step, current, forms=None, **region):
-        """Campaign images at ``step`` with ``current`` ({slot: asset}) set."""
+    def page(current, forms=None, wizard=None):
+        """Campaign images with ``current`` ({slot: asset}) set; ``forms``
+        holds a refused upload's bound form."""
         forms = forms or {}
-        values = review_region(
-            "artwork_settings", next(iter(forms.values()), None), **region
-        )
-        if region.get("receipt"):
-            values["status_url"] = STATUS
 
         def form(slot):
             """The slot's upload form; the Financial one named as unavailable."""
@@ -105,68 +93,78 @@ def components(context, admin):
             }
             for slot in ARTWORK_SLOTS
         ]
+        refused = next(iter(forms.values()), None)
         return render_to_string(
             "stewardship/artwork-settings.html",
             context
             | {
-                "admin_chrome": admin | {"flow_steps": _steps(step)},
+                "admin_chrome": admin
+                | {"flow_steps": steps, "campaign_wizard": wizard},
                 "campaign": campaign,
                 "slots": slots,
-            }
-            | values,
+                "base_digest": "a" * 64,
+                "page_url": PAGE,
+                "refresh_url": SETTLED,
+                "errors": summary_errors(refused) if refused is not None else [],
+            },
+        )
+
+    def review(slot, asset):
+        """The review dialog's fragment of ``slot`` taking ``asset`` (or
+        losing its image, with None)."""
+        return render_to_string(
+            "stewardship/artwork-review.html",
+            {
+                "review": {
+                    "removing": asset is None,
+                    "slot": slot,
+                    "bundle": BUNDLE,
+                    "asset": asset,
+                    "label": SLOT_LABELS[slot],
+                    "preview": "synthetic-signed-intent",
+                }
+            },
         )
 
     refused = ArtworkForm(
         data={"base_digest": "a" * 64}, files={}, auto_id="id_member_%s"
     )
     refused.is_valid()
-    POSTS[REFUSED_UPLOAD] = (
+    POSTS[UPLOAD] = (200, None, review("banner", banner))
+    POSTS[REFUSED_UPLOAD] = (400, None, page({"welcome": welcome}, {"member": refused}))
+    # A file that reads as no usable image, refused at its field as the view
+    # refuses it.
+    unusable = ArtworkForm(
+        data={"base_digest": "a" * 64},
+        files={"image": SimpleUploadedFile("notes.png", b"not an image")},
+        auto_id="id_welcome_%s",
+    )
+    unusable.is_valid()
+    unusable.add_error("image", NOT_STATIC_IMAGE["section"])
+    POSTS[REFUSED_IMAGE] = (
         400,
         None,
-        page(0, {"welcome": welcome}, {"member": refused}),
+        page({"welcome": welcome}, {"welcome": unusable}),
     )
-    review = {"notes": [], "template": "stewardship/artwork-review.html"}
     return {
-        PAGE: ("text/html", page(0, {"welcome": welcome})),
-        REVIEW: (
+        PAGE: ("text/html", page({"welcome": welcome})),
+        STEP: (
             "text/html",
             page(
-                1,
                 {"welcome": welcome},
-                review=review
-                | {
-                    "removing": False,
-                    "asset": banner,
-                    "label": SLOT_LABELS["banner"],
-                    "preview": "synthetic-signed-intent",
-                },
+                wizard=campaign_wizard.build(
+                    False, "images", done={"settings"}, mail_test_url=None
+                ),
             ),
         ),
-        REMOVE: (
-            "text/html",
-            page(
-                1,
-                {"welcome": welcome},
-                review=review
-                | {
-                    "removing": True,
-                    "asset": None,
-                    "label": SLOT_LABELS["welcome"],
-                    "preview": "synthetic-signed-intent",
-                },
-            ),
-        ),
-        PENDING: ("text/html", page(2, {"welcome": welcome}, receipt=pending)),
-        STATUS: (
+        REMOVAL: ("text/html", review("welcome", None)),
+        APPLIED: (
             "text/html",
             render_to_string(
                 "stewardship/configuration-request.html",
                 context
-                | {"admin_chrome": admin, "receipt": applied, "follow_url": SETTLED},
+                | {"admin_chrome": admin, "receipt": applied, "follow_url": None},
             ),
         ),
-        SETTLED: (
-            "text/html",
-            page(2, {"welcome": welcome, "banner": banner}, receipt=applied),
-        ),
+        SETTLED: ("text/html", page({"welcome": welcome, "banner": banner})),
     }

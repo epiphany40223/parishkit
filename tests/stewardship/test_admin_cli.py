@@ -102,6 +102,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "integration list",
         "integration show",
         "integration status",
+        "integration schedule-preview",
         "integration preview",
         "integration confirm",
         "integration backup-probe",
@@ -109,6 +110,12 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "integration key status",
         "integration key finish-switching-preview",
         "integration key finish-switching",
+        "workgroup show",
+        "workgroup preview",
+        "workgroup confirm",
+        "campaign show",
+        "campaign preview",
+        "campaign confirm",
     }
     tests = {
         "test sample-preview",
@@ -158,8 +165,11 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "report census",
         # A Census changes row's Record outcome (#528).
         "census resolve",
+        # An Automatic row's Review (#528, ADM-09).
+        "census review",
         "export census",
         "export limitations",
+        "export roster",
         "report source-form",
         "report data-to-fix",
         "digest list",
@@ -260,7 +270,13 @@ def test_the_catalog_lists_every_command_with_its_flags():
         # Only the downloads stream a file to standard output.
         assert entry["streams"] == (
             name
-            in {"logs export", "export download", "export census", "export limitations"}
+            in {
+                "logs export",
+                "export download",
+                "export census",
+                "export limitations",
+                "export roster",
+            }
         ), name
         if name in acknowledged:
             assert entry["prompts"], name
@@ -572,6 +588,19 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert options["--show"]["choices"] == ["any", "cannot_serve", "cannot_attend"]
     assert "--search" not in options and "--campaign" not in options
     assert limitations["result_fields"] == census["result_fields"]
+    # The Roster changes to enter download (PR 8g): the same, with the
+    # page's own event and report roster's Show and Ministry choices.
+    roster = entries["export roster"]
+    assert roster["scope"] == "full" and not roster["changes_state"]
+    assert roster["audit_event"] == "roster_changes_exported"
+    assert roster["streams"] and not roster["prompts"]
+    assert not roster["fresh_gated"]
+    assert not roster["request_key"] and not roster["expected_version"]
+    options = {option["name"]: option for option in roster["options"]}
+    assert options["--format"]["choices"] == ["csv", "xlsx", "pdf"]
+    assert options["--show"]["choices"] == ["todo", "all"]
+    assert "--ministry" in options and "--campaign" not in options
+    assert roster["result_fields"] == census["result_fields"]
     # The export lifecycle: status is any session's passive read with
     # --watch and no view event; every other command needs a full-scope
     # session. The four changes are keyed (but cancel) and record their
@@ -707,6 +736,21 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert options["--action"]["choices"] == ["entered", "ignored", "reopened"]
     assert options["--action"]["required"] and options["--expected-version"]["required"]
     assert not options["--note"]["required"]
+    # census review: an Automatic row's Review, keyed and versioned, full
+    # scope, not fresh-gated; every review can be changed again until
+    # publication starts, so, as on its page, it never prompts.
+    review = entries["census review"]
+    assert review["scope"] == "full" and review["changes_state"]
+    assert review["request_key"] and review["expected_version"]
+    assert not review["prompts"] and not review["fresh_gated"]
+    assert review["audit_event"] == "admin_cmd_census_review"
+    assert review["arguments"] == ["PROPOSAL_ID"]
+    assert review["result_fields"] == ["created", "request_key", "review", "proposal"]
+    options = {option["name"]: option for option in review["options"]}
+    assert options["--decision"]["choices"] == ["approved", "ignored", "unreviewed"]
+    assert options["--decision"]["required"]
+    assert options["--expected-version"]["required"]
+    assert not options["--note"]["required"]
 
 
 def test_every_state_change_has_a_registered_described_event():
@@ -735,6 +779,8 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_files_delete",
         "admin_cmd_files_rename",
         "admin_cmd_parish_confirm",
+        "admin_cmd_workgroup_confirm",
+        "admin_cmd_campaign_confirm",
         "admin_cmd_task_retry",
         "admin_cmd_delivery_resolve",
         "admin_cmd_delivery_resend",
@@ -760,6 +806,8 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_digest_weekly_request",
         # census resolve: a Census changes row's Record outcome (#528).
         "admin_cmd_census_resolve",
+        # census review: an Automatic row's Review (#528, ADM-09).
+        "admin_cmd_census_review",
         "admin_cmd_users_confirm",
         "admin_cmd_users_import_leaders",
         "admin_cmd_events_acknowledge",

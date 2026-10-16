@@ -2,6 +2,7 @@
 
 # ruff: noqa: F811 -- imported pytest fixtures are injected by name.
 
+import json
 from datetime import timedelta
 from uuid import uuid4
 
@@ -9,6 +10,7 @@ import pytest
 from django.db import DatabaseError, connection, transaction
 from django.db.models import F
 
+from parishkit.stewardship.accounts import setup_credentials
 from parishkit.stewardship.accounts.handoff_discovery import publish_handoff
 from parishkit.stewardship.accounts.secret_models import SecretReplacementRequest
 from parishkit.stewardship.accounts.sessions import (
@@ -77,11 +79,16 @@ def publish(target, *, material=b"s" * 32):
     return private
 
 
-def staged(service, target="parishsoft"):
-    """Use real owner services and exact grants for the entire collecting path."""
+def staged(service, target="parishsoft", *, age_minutes=0):
+    """Use real owner services and exact grants for the entire collecting path.
+
+    ``age_minutes`` models a Google sign-in that long ago.
+    """
     private = publish(target)
     with web_login():
-        request = login(service)
+        request = login(
+            service, authenticated_at=database_now() - timedelta(minutes=age_minutes)
+        )
         attempt = begin_setup(request, service)
         for step in (
             ["mail", "testing"]
@@ -262,10 +269,20 @@ def test_original_attempt_terminal_transition_atomically_scrubs(
         "setup_credential_staged",
         "setup_credential_scrubbed",
     }
-    contexts = AuditContext.objects.filter(event_id__in=events).values_list(
-        "context", flat=True
-    )
-    assert all(set(context) == {"version", "outcome"} for context in contexts)
+    contexts = {
+        event: context
+        for event, context in AuditContext.objects.filter(
+            event_id__in=events
+        ).values_list("event__event_type", "context")
+    }
+    # Only the staging records the sign-in's age (#1402); the scrub cannot
+    # read the session and records none.
+    assert set(contexts["setup_credential_staged"]) == {
+        "version",
+        "outcome",
+        "sign_in_age_seconds",
+    }
+    assert set(contexts["setup_credential_scrubbed"]) == {"version", "outcome"}
     assert SetupAttempt.objects.get().state == "expired"
     with pytest.raises(DatabaseError), work_transaction():
         SetupSealedCredential.objects.update(
@@ -295,11 +312,15 @@ def test_new_login_cannot_adopt_or_retrieve_a_staged_credential(setup_service):
 
 
 def test_step_up_lets_the_original_login_save_after_freshness_lapses(setup_service):
-    """Confirming with Google again renews the same login instead of replacing it."""
+    """Confirming with Google again renews the same login instead of replacing it.
+
+    Setup's credential steps accept a sign-in up to an hour old (#1402), so
+    the lapsed sign-in here is 61 minutes old.
+    """
     publish("parishsoft")
     with web_login():
         request = login(
-            setup_service, authenticated_at=database_now() - timedelta(minutes=10)
+            setup_service, authenticated_at=database_now() - timedelta(minutes=61)
         )
         attempt = begin_setup(request, setup_service)
         intake = dict(
@@ -322,6 +343,47 @@ def test_step_up_lets_the_original_login_save_after_freshness_lapses(setup_servi
     row = SetupSealedCredential.objects.get()
     assert row.attempt_id == attempt.attempt_id
     assert SetupAttempt.objects.get().session_id == request.portal_session.pk
+
+
+@pytest.mark.parametrize("target", ["parishsoft", "google_workspace", "slack"])
+def test_a_sign_in_from_the_last_hour_saves_a_setup_credential(setup_service, target):
+    """A 50-minute-old sign-in passes both the web and the SQL guard (#1402).
+
+    The staged credential's audit context records how old the sign-in was
+    when it was sealed, in whole seconds.
+    """
+    request, attempt, receipt, _ = staged(setup_service, target, age_minutes=50)
+    assert receipt.target == target
+    row = SetupSealedCredential.objects.get()
+    assert row.attempt_id == attempt.attempt_id
+    assert row.actor_id == request.portal_session.principal_id
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT c.context FROM stewardship_audit_context c "
+            "JOIN stewardship_audit_event e ON e.id=c.event_id "
+            "WHERE e.event_type='setup_credential_staged' AND e.subject_id=%s",
+            [row.pk],
+        )
+        (context,) = cursor.fetchone()
+    if isinstance(context, str):
+        context = json.loads(context)
+    assert context["outcome"] == "changed"
+    assert 50 * 60 <= context["sign_in_age_seconds"] < 52 * 60
+
+
+@pytest.mark.parametrize(("minutes", "refused"), [(59, False), (61, True)])
+def test_sql_admits_a_setup_credential_only_within_the_hour(
+    setup_service, monkeypatch, minutes, refused
+):
+    """With Python's window widened, SQL alone keeps the one hour (#1402)."""
+    monkeypatch.setattr(setup_credentials, "SETUP_FRESH_SECONDS", 7200)
+    if refused:
+        with pytest.raises(DatabaseError, match="freshly signed-in Admin"):
+            staged(setup_service, age_minutes=minutes)
+        assert not SetupSealedCredential.objects.exists()
+    else:
+        staged(setup_service, age_minutes=minutes)
+        assert SetupSealedCredential.objects.count() == 1
 
 
 @pytest.mark.parametrize(

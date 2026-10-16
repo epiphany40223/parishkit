@@ -187,6 +187,14 @@ DESCRIPTIONS = {
         "An automation session finished switching an integration to its new "
         "key, which became a configuration request."
     ),
+    "admin_cmd_workgroup_confirm": _(
+        "An automation session confirmed a reviewed change to the campaign's "
+        "No-reminders WorkGroup, which became a configuration request."
+    ),
+    "admin_cmd_campaign_confirm": _(
+        "An automation session confirmed a reviewed change to the campaign's "
+        "settings, which became a configuration request."
+    ),
     "admin_cmd_users_import_leaders": _(
         "An automation session confirmed a reviewed import of ParishSoft "
         "Ministry leaders as users, which became a configuration request."
@@ -212,6 +220,11 @@ DESCRIPTIONS = {
         "An automation session recorded a census change's outcome (entered "
         "in ParishSoft, ignored or reopened), as the Census changes page's "
         "Record outcome does."
+    ),
+    "admin_cmd_census_review": _(
+        "An automation session reviewed an automatic census change "
+        "(approved, ignored or sent back to To review), as the Census "
+        "changes page's Review does."
     ),
     "admin_cmd_refresh_start": _(
         "An automation session asked for a full ParishSoft refresh, as the "
@@ -742,17 +755,23 @@ DESCRIPTIONS = {
     ),
     "setup_source_started": _("The first ParishSoft load during setup started."),
     "setup_source_completed": _("The first ParishSoft load during setup finished."),
+    "setup_source_voided": _(
+        "A finished ParishSoft load during setup was discarded, to load again."
+    ),
     "setup_frozen": _("Initial setup was completed and locked."),
     # Reports and pages (audit).
     "daily_digest_viewed": _("Someone opened a daily summary."),
     "weekly_digest_viewed": _("Someone opened a weekly report."),
     "information_viewed": _("Someone opened the information changes report."),
     "information_updated": _("Someone updated follow-up on an information change."),
-    "ministry_followup_viewed": _("Someone opened the Ministry follow-up report."),
+    "ministry_followup_viewed": _(
+        "Someone opened Ministry requests (formerly Ministry follow-up) or one "
+        "of its follow-up requests."
+    ),
     "ministry_request_updated": _("Someone updated follow-up on a Ministry request."),
     "ministry_followup_bulk_applied": _(
         "Someone recorded one outcome for several Ministry requests at once on "
-        "Ministry follow-up. Each request also has its own entry."
+        "Ministry requests. Each request also has its own entry."
     ),
     "financial_report_viewed": _("Someone opened the Financial stewardship page."),
     # The Limitations report keeps the actions it recorded as "Talents and
@@ -771,7 +790,7 @@ DESCRIPTIONS = {
     ),
     "roster_changes_viewed": _("Someone opened the Roster changes to enter list."),
     "ministry_followup_exported": _(
-        "Someone downloaded Ministry follow-up requests with their contact "
+        "Someone downloaded Ministry requests with their contact "
         "details (Export these requests)."
     ),
     "roster_changes_exported": _(
@@ -791,6 +810,26 @@ DESCRIPTIONS = {
     "census_publication_recorded": _(
         "The server recorded whether a census change publication to "
         "ParishSoft was written, stopped because something changed, or failed."
+    ),
+    "census_publication_preflight_requested": _(
+        "An Administrator asked the server to check approved census changes "
+        "against ParishSoft before publishing them."
+    ),
+    "census_publication_rerun_requested": _(
+        "An Administrator asked the server to run a failed census change "
+        "publication to ParishSoft again."
+    ),
+    "census_publication_switched_off": _(
+        "A census change publication task stopped without reading or writing "
+        "ParishSoft because publishing to ParishSoft is switched off."
+    ),
+    "census_publication_read_unconfirmed": _(
+        "A census change check stopped without a plan because reading "
+        "ParishSoft contact records is not confirmed yet."
+    ),
+    "census_publication_refused": _(
+        "A census change publication task stopped without writing ParishSoft "
+        "because what it needed had changed or was missing."
     ),
     "response_dashboard_viewed": _("Someone opened the response dashboard."),
     "response_submitted_list_viewed": _(
@@ -852,6 +891,9 @@ DESCRIPTIONS = {
     ),
     "campaign_end_date_requested": _(
         "An Administrator asked to change a live campaign's end date."
+    ),
+    "campaign_setup_step_reviewed": _(
+        "An Administrator kept a Campaign setup step as it was and continued."
     ),
     # Campaign schedule (audit, written by the database).
     "campaign_boundary_completed": _(

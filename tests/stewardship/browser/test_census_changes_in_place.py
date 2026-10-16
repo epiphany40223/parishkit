@@ -7,7 +7,15 @@ outside every region shows the page never reloaded.
 
 import pytest
 
-from .census_components import APPROVED, AUTOMATIC, PATH, RESOLVED, STALE
+from .census_components import (
+    APPROVED,
+    AUTOMATIC,
+    BULK,
+    BULK_APPROVED,
+    PATH,
+    RESOLVED,
+    STALE,
+)
 from .test_table_sorting import MARK, MARKED, fulfil_post_with, sort_heading
 from .waits import has_attribute, has_text
 
@@ -152,3 +160,64 @@ def test_an_administrators_review_is_recorded_in_place(page, component_origin):
     assert "resolve=approve" in sent and "note=Checked" in sent
     assert "status=open" in sent and "request_key=" in sent
     assert page.evaluate(MARKED) == "kept"
+
+
+def test_a_bulk_review_is_recorded_in_place(page, component_origin):
+    """Ticking Automatic rows enables the decisions they all allow; the
+    dialog names the count, posts the ticked rows with its note and the
+    page's filters, and the answer redraws the page in place with its
+    notice announced (#528, ADM-09). The script never fails meanwhile."""
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto(component_origin + BULK)
+    page.evaluate(MARK)
+    posts = []
+
+    def choose(request):
+        """Answer the bulk review with the page after it."""
+        posts.append(request.post_data)
+        return "/census-changes-bulk-approved"
+
+    fulfil_post_with(page, "**" + BULK, component_origin, choose)
+    table = page.locator("#table")
+    approve = table.get_by_role("button", name="Approve", exact=True)
+    back = table.get_by_role("button", name="Back to To review", exact=True)
+    hint = table.locator("[data-selection-hint]")
+    # Only the three Automatic rows have boxes; nothing is ticked yet.
+    boxes = table.locator("input[data-select-row]")
+    assert boxes.count() == 3
+    assert approve.is_disabled() and back.is_disabled()
+    has_text(hint, "Tick Automatic changes on this page to review them together.")
+    boxes.nth(0).check()
+    boxes.nth(1).check()
+    assert approve.is_enabled()
+    # They are To review already, so Back to To review does not apply, and
+    # the reserved line says why.
+    assert back.is_disabled()
+    assert hint.inner_text().startswith("Not every ticked change can take that")
+    approve.click()
+    dialog = page.locator("#census-bulk-dialog")
+    has_text(dialog.locator("h2"), "Approve 2 changes?")
+    dialog.get_by_label("Note (optional)").fill("Checked")
+    dialog.get_by_role("button", name="Record").click()
+    has_text(page.locator("#census-notice"), BULK_APPROVED)
+    has_text(
+        page.get_by_role("status").filter(has_text="changes approved"), BULK_APPROVED
+    )
+    assert not dialog.is_visible()
+    sent = posts[-1]
+    assert "bulk=approve" in sent and "bulk_note=Checked" in sent
+    assert sent.count("change=") == 2 and "status=open" in sent
+    assert "bulk_key=" in sent and "resolve=" not in sent
+    assert page.evaluate(MARKED) == "kept"
+    # The redrawn page carries its own fresh bulk key, so the next bulk
+    # review is a new request, not a replay of this one.
+    key = page.locator("#census-bulk input[name=bulk_key]").input_value()
+    assert key and f"bulk_key={key}" not in sent
+    # The note starts empty again the next time the dialog opens.
+    table.locator("input[data-select-row]").nth(2).check()
+    table.get_by_role("button", name="Ignore", exact=True).click()
+    has_text(dialog.locator("h2"), "Ignore Mobile phone for Member 02?")
+    assert dialog.get_by_label("Note (optional)").input_value() == ""
+    dialog.get_by_role("button", name="Cancel").click()
+    assert errors == []

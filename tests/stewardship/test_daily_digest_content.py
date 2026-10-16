@@ -10,12 +10,14 @@ from uuid import UUID
 
 import pytest
 from PIL import Image
+from PIL.PngImagePlugin import PngInfo
 
 from parishkit.email.base import Email, build_message
 from parishkit.stewardship.reports.charts import (
+    DIGEST_PLOT_LAYOUTS,
     EMAIL_PLOT_LAYOUT,
     EMAIL_RENDERER_VERSION,
-    PLOT_LAYOUT,
+    LEGACY_PLOT_LAYOUT,
     render_participation,
 )
 from parishkit.stewardship.reports.daily_digest import (
@@ -421,16 +423,32 @@ def test_recovery_range_states_its_last_covered_day():
 
 
 def test_saved_page_hit_tests_the_drawing_the_digest_retained():
-    """New digests carry the email drawing; earlier retained ones keep theirs."""
+    """New digests carry the email drawing; earlier retained ones keep theirs.
+
+    A digest from before the separate panels (#720) holds the email drawing
+    with a second dollar axis, and one from before #720 the page drawing;
+    each keeps the plot box it was drawn with.
+    """
     result = render(document())
     assert chart_layout(result.chart.data) == EMAIL_PLOT_LAYOUT
     with Image.open(BytesIO(result.chart.data)) as image:
         assert image.size == (1440, 840)
         assert image.text["Creator"] == EMAIL_RENDERER_VERSION
+    dual_axis = BytesIO()
+    info = PngInfo()
+    info.add_text("Creator", "participation-email-v1")
+    Image.new("RGB", (4, 4)).save(dual_axis, format="png", pnginfo=info)
+    assert chart_layout(dual_axis.getvalue()) == {
+        "left": 0.09,
+        "right": 0.89,
+        "top": 0.90,
+        "bottom": 0.17,
+    }
+    assert DIGEST_PLOT_LAYOUTS["participation-email-v1"] != EMAIL_PLOT_LAYOUT
     older = BytesIO()
     render_participation(document().participation, older, format="png")
-    assert chart_layout(older.getvalue()) == PLOT_LAYOUT
-    assert chart_layout(b"not a png") == PLOT_LAYOUT
+    assert chart_layout(older.getvalue()) == LEGACY_PLOT_LAYOUT
+    assert chart_layout(b"not a png") == LEGACY_PLOT_LAYOUT
 
 
 class _Visible(HTMLParser):
@@ -666,80 +684,83 @@ def charted_digest():
     return replace(document(), funnel=metrics(), mode="production")
 
 
-def test_a_production_digest_shows_the_funnel_charts_before_its_table():
-    """Two cid: PNGs open the funnel section (#477 slice 2, visuals first)."""
-    from parishkit.stewardship.web.digest_content import (
-        COMPARISON_PIXEL_WIDTH,
-        FUNNEL_CHART_IDS,
-    )
-
+def test_a_production_digest_has_no_funnel_charts():
+    """The funnel section is its rows only (#1370): no images, no captions."""
     result = render(charted_digest())
-    assert [image.content_id for image in result.funnel] == list(FUNNEL_CHART_IDS)
-    assert [name for name, _ in result.images] == list(FUNNEL_CHART_IDS)
-    for image in result.funnel:
-        with Image.open(BytesIO(image.data)) as png:
-            assert png.format == "PNG" and png.size[0] == COMPARISON_PIXEL_WIDTH
+    assert result.funnel == () and result.images == ()
     html = result.html
-    funnel_image = html.index(f'src="cid:{FUNNEL_CHART_IDS[0]}"')
-    activity_image = html.index(f'src="cid:{FUNNEL_CHART_IDS[1]}"')
+    assert "cid:response-" not in html and "Response activity" not in html
     assert (
         html.index(">Response funnel</h2>")
-        < funnel_image
-        < html.index(">Response activity by hour</p>")
-        < activity_image
         < html.index(">Email invites sent</td>")
         < html.index("Daily participation")
     )
-    # Each image's alt text carries its figures in the digest's words.
-    alts = re.findall(r'<img src="cid:response-[a-z]+@parishkit" alt="([^"]*)"', html)
-    assert alts[0] == (
-        "Families by stage: 4 were sent an email invite, 4 opened the form, "
-        "3 progressed past the first step, 3 submitted."
-    )
-    assert alts[1].startswith("Form opens and submissions per hour in ")
-    assert all("Link followed" not in alt and "link follows" not in alt for alt in alts)
-    # The text part already lists every funnel number; it gains no chart text.
+    assert html.count("<img ") == 1
     assert "Response activity" not in result.text
 
 
-def test_the_funnel_charts_travel_as_inline_parts_beside_a_text_part():
-    """Every cid: the HTML names is one image part of the delivered message."""
+def legacy_funnel_body(result):
+    """A body as a pre-#1370 compile wrote it: the two funnel images first."""
+    from parishkit.stewardship.web.digest_content import (
+        COMPARISON_PIXEL_WIDTH,
+        EMAIL_CHART_WIDTH,
+        FUNNEL_CHART_IDS,
+    )
+
+    stream = BytesIO()
+    Image.new("RGB", (COMPARISON_PIXEL_WIDTH, 400), "white").save(stream, "PNG")
+    images = tuple((name, stream.getvalue()) for name in FUNNEL_CHART_IDS)
+    tags = "".join(
+        f'<img src="cid:{name}" alt="Chart." width="{EMAIL_CHART_WIDTH}">'
+        for name in FUNNEL_CHART_IDS
+    )
+    heading = result.html.index("Response funnel</h2>") + len("Response funnel</h2>")
+    return result.html[:heading] + tags + result.html[heading:], images
+
+
+def test_a_retained_digest_with_funnel_charts_is_still_delivered():
+    """A ready row compiled before #1370 still sends its two funnel images."""
     import json
 
     from parishkit.stewardship.digest_delivery import DigestDeliveryMail
+    from parishkit.stewardship.web.digest_content import FUNNEL_CHART_IDS
 
     result = render(charted_digest())
+    html, images = legacy_funnel_body(result)
+    funnel, activity = images
+    body = (html, result.text, result.chart.data)
+    validate_digest_body(*body, images)
+    # The two still travel together, in order, each referenced once.
+    for wrong in ((funnel,), (activity, funnel), (funnel, funnel), ()):
+        with pytest.raises(ValueError):
+            validate_digest_body(*body, wrong)
+    swapped = html.replace(f"cid:{FUNNEL_CHART_IDS[1]}", f"cid:{FUNNEL_CHART_IDS[0]}")
+    with pytest.raises(ValueError):
+        validate_digest_body(swapped, *body[1:], images)
     mail = DigestDeliveryMail(
         UUID(int=9),
         "reports@example.org",
         "reports@example.org",
         ("admin@example.org",),
         result.subject,
-        result.html,
+        html,
         result.text,
         result.chart.data,
-        result.images,
+        images,
     )
     again = DigestDeliveryMail.from_payload(json.loads(json.dumps(mail.payload())))
-    assert again.images == mail.images == result.images
-    message = mail.message()
-    parts = list(message.walk())
-    assert message.get_content_type() == "multipart/alternative"
-    assert [part.get_content_type() for part in parts].count("text/plain") == 1
-    related = next(p for p in parts if p.get_content_type() == "multipart/related")
-    images = {
-        part["Content-ID"].strip("<>"): part.get_payload(decode=True)
+    assert again.images == mail.images == images
+    related = next(
+        part
+        for part in mail.message().walk()
+        if part.get_content_type() == "multipart/related"
+    )
+    names = {
+        part["Content-ID"].strip("<>")
         for part in related.walk()
         if part.get_content_type() == "image/png"
     }
-    html = next(p for p in parts if p.get_content_type() == "text/html")
-    sources = re.findall(r'src="cid:([^"]+)"', html.get_content())
-    assert sorted(sources) == sorted(images)
-    assert dict(result.images) == {
-        name: data for name, data in images.items() if name.startswith("response-")
-    }
-    # Never a data: URI, which Gmail does not show.
-    assert "data:" not in html.get_content()
+    assert set(FUNNEL_CHART_IDS) <= names
 
 
 def test_a_testing_digest_has_no_funnel_charts():
@@ -750,54 +771,14 @@ def test_a_testing_digest_has_no_funnel_charts():
         assert "cid:response-" not in result.html
 
 
-def test_the_validator_keeps_the_funnel_charts_together_and_in_order():
-    """A lone funnel chart, a repeated one or one after the others is refused."""
-    from parishkit.stewardship.web.digest_content import FUNNEL_CHART_IDS
-
-    result = render(charted_digest())
-    funnel, activity = result.images
-    body = (result.html, result.text, result.chart.data)
-    validate_digest_body(*body, (funnel, activity))
-    for images in ((funnel,), (activity, funnel), (funnel, funnel), ()):
-        with pytest.raises(ValueError):
-            validate_digest_body(*body, images)
-    # Neither image may be dropped from the body while still attached.
-    html = result.html.replace(
-        f"cid:{FUNNEL_CHART_IDS[1]}", f"cid:{FUNNEL_CHART_IDS[0]}"
-    )
-    with pytest.raises(ValueError):
-        validate_digest_body(html, result.text, result.chart.data, (funnel, activity))
-
-
-def test_the_saved_page_draws_the_same_funnel_charts():
-    """The daily page's panel has the email's two charts; the weekly one none yet."""
-    from parishkit.stewardship.reports.digest_funnel import funnel_context
+def test_the_saved_page_draws_no_funnel_charts():
+    """The daily page's funnel panel is its table and figure only (#1370)."""
     from parishkit.stewardship.reports.digest_presentation import snapshot_context
 
-    value = charted_digest()
     context = snapshot_context(
-        value,
+        charted_digest(),
         mode="production",
         chart_url="/chart",
         download_url="/download",
-        funnel_charts=True,
     )
-    charts = context["funnel_charts"]
-    assert [chart.key for chart in charts] == ["response-funnel", "response-activity"]
-    # Drawn without the title inside them: the panel's headings name them.
-    assert all("title" not in chart.spec for chart in charts)
-    assert charts[0].summary.startswith("Families by stage: 4 were sent")
-    assert funnel_context(value.funnel, "production")["funnel_charts"] == ()
-    # A digest whose email had no funnel charts (compiled before them, or
-    # sent with them withheld) shows none on its page either.
-    older = snapshot_context(
-        value, mode="production", chart_url="/chart", download_url="/download"
-    )
-    assert older["funnel_charts"] == () and older["funnel_stages"]
-    testing = snapshot_context(
-        replace(document(), mode="testing"),
-        mode="testing",
-        chart_url="/chart",
-        download_url="/download",
-    )
-    assert testing["funnel_charts"] == ()
+    assert "funnel_charts" not in context and context["funnel_stages"]

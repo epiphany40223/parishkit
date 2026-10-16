@@ -72,6 +72,9 @@ def sign_in(store, google, role):
         (
             "administrator",
             [
+                # The Campaign setup stepper's way back in (#1404): adding
+                # the invitation completed Pages and emails.
+                "Continue campaign setup: Dates and mail schedules",
                 "Campaign settings",
                 "Pages and emails",
                 "Dates and mail schedules",
@@ -81,7 +84,8 @@ def sign_in(store, google, role):
             ],
         ),
         ("staff", ["Response dashboard", "Participation"]),
-        ("ministry_leader", ["Ministry requests"]),
+        # Ministry requests carries the follow-up queue's open count (#1133).
+        ("ministry_leader", ["Ministry requests — 0 open"]),
     ],
 )
 def test_testing_draft_offers_each_roles_next_steps(
@@ -135,12 +139,12 @@ def test_active_campaign_steps_counts_and_today(response_service, google):
     assert [step.split(" — ")[0] for step in listed] == [
         "Response dashboard",
         "Additional information",
-        "Ministry follow-up",
+        "Ministry requests",
         "Family email progress",
         "Outgoing mail",
     ]
     # The follow-up request the harness made is open in the queue.
-    assert "Ministry follow-up — 2 open" in listed
+    assert "Ministry requests — 2 open" in listed
     assert 'href="/admin/mail/outgoing/"' in html
     since = database_now() - timedelta(hours=24)
     recent = (
@@ -169,10 +173,7 @@ def test_ministry_leader_today_line_counts_their_open_requests(
     html = panel(body)
     assert "Today: 1 open request in your Ministries." in html
     assert "Families responded" not in html
-    assert [step.split(" — ")[0] for step in steps(html)] == [
-        "Ministry requests",
-        "Ministry follow-up",
-    ]
+    assert [step.split(" — ")[0] for step in steps(html)] == ["Ministry requests"]
 
 
 def test_status_read_leaves_the_home_only_values_out(response_service):

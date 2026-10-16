@@ -155,6 +155,9 @@ def campaign_mail(request, campaign_id, revision_id):
                 "unknown": tests["unknown"],
                 "items": items,
                 "return_link": _return_link(request, revision_id),
+                # Where the settled test's quiet follow-up re-reads the form
+                # region in place (campaign-mail.html).
+                "page_url": reverse("admin:campaign_mail", args=[revision_id]),
             },
             status=400 if request.method == "POST" else 200,
         )

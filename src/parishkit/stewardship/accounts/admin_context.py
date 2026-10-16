@@ -23,9 +23,10 @@ from parishkit.stewardship.observability import (
     debug_logging_enabled,
     emit_failure,
 )
+from parishkit.stewardship.web.error_pages import ERROR_PAGE_ATTRIBUTE
 from parishkit.stewardship.web.refusals import unavailable_response
 
-from . import admin_navigation, family_maintenance
+from . import admin_navigation, campaign_wizard, family_maintenance
 from .authentication import runtime
 from .limiting import LimiterUnavailable
 from .policy import Capability, Principal, allows
@@ -120,6 +121,10 @@ def portal_chrome(request):
             "menu_state": state,
             # A multi-step flow's step indicator, and where "Return to" goes.
             "flow_steps": admin_navigation.steps(placed),
+            # The Campaign setup stepper on its own pages (#142).
+            "campaign_wizard": _campaign_wizard(
+                request, match, campaign, configuration, admin=admin, go_live=go_live
+            ),
             "back": admin_navigation.back(match, placed, items),
             "testing": configuration.mode == "testing",
             "testing_recipient": configuration.testing_recipient if admin else None,
@@ -164,6 +169,19 @@ def portal_chrome(request):
             ),
         }
     }
+
+
+def _campaign_wizard(request, match, campaign, configuration, *, admin, go_live):
+    """The Campaign setup stepper for this page, or None (``campaign_wizard``).
+
+    An error page never shows it: a view may fail its access recheck after
+    the route resolved, and the refusal must not look like a step.
+    """
+    if getattr(request, ERROR_PAGE_ATTRIBUTE, False) or not campaign_wizard.shown(
+        campaign, configuration.mode, admin=admin, go_live=go_live
+    ):
+        return None
+    return campaign_wizard.for_request(match, campaign, configuration)
 
 
 def _key_changes():
@@ -383,12 +401,13 @@ def _find_family(actor, items, campaign):
 
 
 # Menu entries that show how many open items their queue holds (#585).
-COUNTED = frozenset({"information_queue", "ministry_followup"})
+COUNTED = frozenset({"information_queue", "ministry_report"})
 # Both counts in one statement, each only when asked for (NULL otherwise).
 # Additional information counts current requests not yet marked "Follow-up
-# completed" (its default view lists completed ones too). Ministry follow-up
-# runs the page's own selection with its default (Unresolved) filters and no
-# rows, and takes its total, so the count applies every filter the page
+# completed" (its default view lists completed ones too). Ministry requests
+# (the follow-up queue, #1133) runs the page's own selection with its
+# default (Unresolved) filters and no rows, and takes its total, so the
+# count applies every filter the page
 # does: the Ministry module, a promoted and uncompacted source, the
 # campaign's Ministries (plus removed ones with a current request), the
 # viewer's scope and the latest revision. The selection derives that scope
@@ -473,7 +492,7 @@ def _read_open_counts(offered, actor, campaign):
             OPEN_COUNTS,
             {
                 "information": "information_queue" in offered,
-                "ministry": "ministry_followup" in offered,
+                "ministry": "ministry_report" in offered,
                 "campaign": campaign.pk,
                 "filters": selection_filters(FollowupQuery()),
                 "viewer": actor.identity,
@@ -490,7 +509,7 @@ def _read_open_counts(offered, actor, campaign):
         name: count
         for name, count in (
             ("information_queue", information),
-            ("ministry_followup", ministry),
+            ("ministry_report", ministry),
         )
         if count is not None
     }

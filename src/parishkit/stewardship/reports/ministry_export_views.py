@@ -35,7 +35,7 @@ BOUND = (
     "This export form was already used for a different export. Nothing new was"
     " queued. Reload the page and try again.\n"
 )
-# The packet form's help states the same limit (ministry-report.html).
+# The packet form's help states the same limit (ministry-packet.html).
 TOO_MANY = format_lazy(
     _(
         "A follow-up packet can include at most {limit} ticked Ministries, so "

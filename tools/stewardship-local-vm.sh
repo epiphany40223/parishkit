@@ -15,10 +15,19 @@
 #   up TAG FAMILIES ADMIN_EMAIL DEBUG   first-time install (builds TAG unless present)
 #   start                               start the services in the recorded clock mode
 #   down                                stop the services (data is never removed)
-#   status                              service health, Docker and VM disk use
-#   snapshot NAME                       stop, copy the root to SNAPSHOTS/NAME, restart
+#   status [MAC_FREE_KB]                service health, Docker and VM disk use, snapshots
+#   snapshot NAME [REPLACE MAC_FREE_KB LIMIT]
+#                                       check the space, stop, copy the root to
+#                                       SNAPSHOTS/NAME with its meta record, restart
+#   snapshot-list [MAC_FREE_KB]         the snapshots, what a switch to each would do,
+#                                       and the free space
+#   snapshot-delete NAME                remove SNAPSHOTS/NAME, then fstrim the VM disk
+#   snapshot-restore NAME HOST_SCRIPT   the data-only switch: keep the deployed code,
+#                                       restore NAME's data (migrated forward if older)
 #   has-snapshot NAME                   exit 0 when SNAPSHOTS/NAME exists
 #   reset NAME                          stop, restore SNAPSHOTS/NAME over the root, restart
+#   seed-testing HOST_SCRIPT            switch to the post-setup snapshot and move it to
+#                                       real time: a Testing-mode draft campaign
 #   wipe                                remove the containers and the root (marker required)
 #   deploy TAG SCHEMA_CHANGE HOST_SCRIPT [BULK LATENCY]
 #                                       upgrade the running deployment to TAG with the
@@ -40,6 +49,8 @@
 #   wizard                              complete the setup wizard unattended through
 #                                       its own service layer, then Create the
 #                                       campaign and its first load (LOCAL convenience)
+#   finish-setup                        after the browser wizard: acknowledge its frozen
+#                                       attempt's credentials (runbook step 5)
 #   sign-in EMAIL                       print a local test sign-in link (OPS-10.08)
 #   ca                                  print Caddy's local root certificate
 #
@@ -543,6 +554,8 @@ cmd_down() {
 }
 
 cmd_status() {
+    # status [MAC_FREE_KB]: the laptop half passes the Mac's free space so
+    # the snapshot summary can show both disks.
     echo "VM disk:"
     df -h / | tail -1
     echo "Docker disk use:"
@@ -553,45 +566,483 @@ cmd_status() {
         [ -z "${PREVIOUS_IMAGE-}" ] || echo "Previous image ('deploy --rollback' returns to it): $PREVIOUS_IMAGE"
         echo "Services (state, health):"
         service_states | awk '{ print "    " $1, $2, ($3 == "none" ? "-" : $3) }'
-        for name in post-setup seeded; do
-            if [ -f "$snapshots/$name/taken" ]; then
-                echo "snapshot $name: taken $(cat "$snapshots/$name/taken")"
-            fi
-        done
     elif [ -e "$installing" ]; then
         echo "A previous 'up' did not finish; 'reset --reinstall' removes its root and installs again."
     else
         echo "No local deployment at $root."
     fi
+    cmd_snapshot_list "${1-}"
+}
+
+# Named snapshots (specification, "Snapshots and fast reset"). Each one is
+# SNAPSHOTS/NAME/{root/,deployment.yaml,deployment.env,taken}, plus, since
+# #1395, `meta` (key=value lines, read with record_value and never sourced)
+# and `migrations` (the applied django_migrations rows, "app name" per
+# line). A snapshot taken before #1395 has neither; every command still
+# accepts it.
+# The disk guard (#1395): the Mac must keep 20 GiB free after twice the
+# copy's size (the VM's sparse disk file grows by the copy and does not
+# shrink until fstrim), and the VM 5 GiB after the copy.
+mac_reserve_kb=$((20 * 1024 * 1024))
+vm_reserve_kb=$((5 * 1024 * 1024))
+
+check_name() {
+    # Snapshot names are path components and command arguments: 1-32
+    # lowercase letters, digits or '-', never starting with '-'.
+    [[ $1 =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]] ||
+        refuse "A snapshot name is 1-32 lowercase letters, digits or '-', starting with a letter or digit: '$1'."
+}
+
+record_value() {
+    # record_value FILE KEY: the value of KEY=value in FILE, or nothing. A
+    # snapshot's records are read this way, never sourced.
+    [ -r "$1" ] || return 0
+    sed -n "s/^$2=//p" "$1" | tail -1
+}
+
+gib() {
+    # A size in KiB as GiB with one decimal.
+    awk -v kb="$1" 'BEGIN { printf "%.1f GiB", kb / 1048576 }'
+}
+
+free_kb() {
+    # Free KiB on the file system that holds the path.
+    df -Pk "$1" | awk 'NR == 2 { print $4 }'
+}
+
+image_commit() {
+    # The checkout commit a LOCAL image tag names (<commit>[-dirty]-<epoch>).
+    local tag=${1##*:}
+    printf '%s' "${tag%-*}"
+}
+
+operator_query() {
+    # operator_query SQL: one read-only query as the operator login against
+    # the running postgres; unaligned and tab-separated, empty on failure
+    # (a pre-wizard database, or postgres not running).
+    docker compose -f "$services/compose-initial.json" -p "$project" exec -T \
+        -e PGOPTIONS='-c default_transaction_read_only=on' postgres \
+        psql -X -U pk_stewardship_operator -d stewardship -At -F $'\t' -c "$1" </dev/null 2>/dev/null || true
+}
+
+applied_migrations() {
+    # The applied migrations, one sorted "app name" line each.
+    operator_query "SELECT app || ' ' || name FROM django_migrations" | LC_ALL=C sort -u
+}
+
+data_summary() {
+    # One tab-separated line: the global mode, the current campaign's state,
+    # its Family count and the Testing recipient (empty before the wizard).
+    # One line of SQL (the continuations join it), so a log shows it whole.
+    operator_query "SELECT s.mode, coalesce(c.state, 'none'), \
+(SELECT count(*) FROM stewardship_family_campaign f WHERE f.campaign_id = s.current_campaign_id), \
+s.testing_recipient FROM stewardship_system_configuration s \
+LEFT JOIN stewardship_campaign c ON c.id = s.current_campaign_id" | head -1
+}
+
+snapshot_rows() {
+    # One "TAKEN NAME" line per snapshot, oldest first.
+    local dir
+    [ -d "$snapshots" ] || return 0
+    for dir in "$snapshots"/*/; do
+        # Valid snapshots only (cmd_has_snapshot); hidden partial copies
+        # never match the glob.
+        [ -d "$dir/root" ] && [ -f "$dir/taken" ] || continue
+        printf '%s %s\n' "$(cat "$dir/taken")" "$(basename "$dir")"
+    done | LC_ALL=C sort
+}
+
+snapshot_kb() {
+    # A snapshot's size in KiB: its meta record's, or measured.
+    local kb
+    kb=$(record_value "$snapshots/$1/meta" size_kb)
+    [ -n "$kb" ] || kb=$(du -sk "$snapshots/$1" | cut -f1)
+    printf '%s' "$kb"
+}
+
+compare_migrations() {
+    # compare_migrations SNAPSHOT_FILE RUNNING_FILE: same, older (the
+    # running code has migrations the snapshot lacks) or newer (the
+    # snapshot has one the running code does not know).
+    if [ -n "$(LC_ALL=C comm -23 "$1" "$2")" ]; then
+        echo newer
+    elif [ -n "$(LC_ALL=C comm -13 "$1" "$2")" ]; then
+        echo older
+    else
+        echo same
+    fi
+}
+
+running_migrations=""
+plan_switch() {
+    # plan_switch NAME: what `snapshot-restore NAME` would do, as one word.
+    # data: the snapshot was taken on the running image, so its schema,
+    # grants and logins are the running code's and only the data changes.
+    # upgrade: another image with recorded migrations the running code all
+    # knows, migrated forward on the snapshot's own image by the upgrade's
+    # steps (which also check the grants and logins). Refusals: foreign
+    # (another install's UUID), newer (a migration the running code does
+    # not know), unrecorded (another image and no migrations record, so
+    # newer code cannot be ruled out), missing-image (the upgrade needs
+    # the snapshot's image, which is gone) and unknown (the running
+    # database's migrations could not be read). Needs load_env and
+    # $running_migrations.
+    local dir="$snapshots/$1" snap_image
+    [ "$(record_value "$dir/deployment.env" UUID)" = "$UUID" ] || { echo foreign; return 0; }
+    snap_image=$(record_value "$dir/deployment.env" IMAGE)
+    if [ "$snap_image" = "$IMAGE" ]; then
+        echo data
+        return 0
+    fi
+    [ -s "$dir/migrations" ] || { echo unrecorded; return 0; }
+    [ -s "${running_migrations:-/nonexistent}" ] || { echo unknown; return 0; }
+    if [ "$(compare_migrations "$dir/migrations" "$running_migrations")" = newer ]; then
+        echo newer
+    elif docker image inspect "$snap_image" >/dev/null 2>&1; then
+        echo upgrade
+    else
+        echo missing-image
+    fi
+}
+
+cmd_snapshot_list() {
+    # snapshot-list [MAC_FREE_KB]: every snapshot with its record and what
+    # a switch to it would do, then the free space on both disks.
+    local taken name dir mode campaign clock commit plan size
+    echo "Snapshots in $snapshots, oldest first ('switch' is what 'snapshot restore NAME' would do):"
+    if [ -f "$marker" ]; then
+        load_env
+        running_migrations=$(mktemp)
+        applied_migrations >"$running_migrations"
+    fi
+    printf '    %-24s %-21s %-18s %-7s %-12s %-22s %s\n' NAME TAKEN MODE/CAMPAIGN CLOCK COMMIT SWITCH SIZE
+    while read -r taken name; do
+        dir="$snapshots/$name"
+        mode=$(record_value "$dir/meta" mode)
+        campaign=$(record_value "$dir/meta" campaign)
+        clock=$(cat "$dir/root/run/local/clock/mode" 2>/dev/null || echo "?")
+        commit=$(image_commit "$(record_value "$dir/deployment.env" IMAGE)")
+        plan="-"
+        if [ -f "$marker" ]; then
+            case "$(plan_switch "$name")" in
+                data) plan="data only" ;;
+                upgrade) plan="migrates forward" ;;
+                newer) plan="refused: newer code" ;;
+                foreign) plan="refused: other install" ;;
+                unrecorded) plan="refused: no record" ;;
+                missing-image) plan="refused: image gone" ;;
+                unknown) plan="unknown: no migrations" ;;
+            esac
+        fi
+        size=$(gib "$(snapshot_kb "$name")")
+        printf '    %-24s %-21s %-18s %-7s %-12s %-22s %s\n' "$name" "$taken" \
+            "${mode:-?}/${campaign:-?}" "$clock" "${commit:0:7}${commit:40}" "$plan" "$size"
+    done < <(snapshot_rows)
+    [ -z "$running_migrations" ] || rm -f "$running_migrations"
+    running_migrations=""
+    if [ -d "$snapshots" ]; then
+        echo "VM free: $(gib "$(free_kb "$snapshots")") (a save keeps $(gib "$vm_reserve_kb"))"
+    fi
+    if [[ ${1-} =~ ^[0-9]+$ ]]; then
+        echo "Mac free: $(gib "$1") (a save keeps $(gib "$mac_reserve_kb") plus twice the copy)"
+    fi
+}
+
+check_space() {
+    # check_space NAME MAC_FREE_KB LIMIT: refuse a save, before anything
+    # stops, that would pass the snapshot cap or either disk reserve. The
+    # copy counts at the root's full size even for a replacement: it is
+    # written beside the old copy before the old one is removed, and the
+    # VM's sparse disk file keeps the space until the trim that follows.
+    # Nothing is pruned automatically: snapshots are deliberate return
+    # points, so the refusal lists them.
+    local name=$1 mac_free=$2 limit=$3 need vm_free count taken other
+    local -a problems=()
+    need=$(du -sk "$root" | cut -f1)
+    vm_free=$(free_kb "$snapshots")
+    count=$(snapshot_rows | awk -v n="$name" '$2 != n' | wc -l | tr -d ' ')
+    [ "$count" -lt "$limit" ] ||
+        problems+=("there are already $count other snapshots (the cap is $limit)")
+    [ $(( vm_free - need )) -ge "$vm_reserve_kb" ] ||
+        problems+=("the VM would have $(gib $(( vm_free - need ))) free, below its $(gib "$vm_reserve_kb") reserve")
+    if [ -n "$mac_free" ] && [ $(( mac_free - 2 * need )) -lt "$mac_reserve_kb" ]; then
+        problems+=("the Mac would have $(gib $(( mac_free - 2 * need ))) free, below its $(gib "$mac_reserve_kb") reserve")
+    fi
+    [ "${#problems[@]}" -gt 0 ] || return 0
+    {
+        echo "Not saving the $name snapshot (about $(gib "$need")):"
+        printf '    %s\n' "${problems[@]}"
+        echo "Snapshots, oldest first:"
+        while read -r taken other; do
+            echo "    $other  taken $taken  $(gib "$(snapshot_kb "$other")")"
+        done < <(snapshot_rows)
+    } >&2
+    refuse "Delete one you no longer need first: tools/stewardship-local.sh snapshot delete NAME"
+}
+
+write_meta() {
+    # write_meta DIR TAKEN SUMMARY: the snapshot's meta record. SUMMARY is
+    # data_summary's line, read before the services stopped.
+    local dir=$1 taken=$2 mode campaign families recipient
+    IFS=$'\t' read -r mode campaign families recipient <<<"$3" || true
+    {
+        echo "taken=$taken"
+        echo "image=$IMAGE"
+        echo "commit=$(image_commit "$IMAGE")"
+        echo "uuid=$UUID"
+        echo "mode=${mode:-unknown}"
+        echo "campaign=${campaign:-unknown}"
+        echo "families=${families:-unknown}"
+        echo "testing_recipient=${recipient-}"
+        echo "clock=$(cat "$clock_dir/mode" 2>/dev/null || echo unknown)"
+        echo "migrations=$(wc -l <"$dir/migrations" | tr -d ' ')"
+        echo "leader_user=$(cat "$root/run/local/leader-user" 2>/dev/null || true)"
+        echo "size_kb=$(du -sk "$dir/root" | cut -f1)"
+    } >"$dir/meta"
+}
+
+# The EXIT trap of a save, a switch and `seed --testing` (#1395). `phase`
+# says how far the command got: "stopped" (the services are down and the
+# root is untouched, so they are started again), "restoring" (the root is
+# part-way to a snapshot's, so nothing is started: the advice names the
+# whole restore that recovers), or empty (nothing to undo).
+phase="" phase_name="" phase_advice=""
+failure_note() {
+    # A trap's message: to the terminal (and through tee to the log) while
+    # the tee is there, and to the log file directly when it is gone.
+    printf '%s\n' "$*" >&2 2>/dev/null || trap_note "$*"
+}
+
+snapshot_failed() {
+    local rc=$1
+    [ "$rc" -ne 0 ] || return 0
+    [ -n "$phase" ] || return 0
+    # No errexit and SIGPIPE ignored, as in seed_failed: nothing may end
+    # this trap before the restart.
+    set +e
+    trap '' PIPE
+    if [ "$phase" = stopped ]; then
+        if (set -e; start_services) >>"${log:-/dev/null}" 2>&1; then
+            failure_note "FAILED: $phase_name (exit $rc); the root is unchanged and the services are running again."
+        else
+            failure_note "FAILED: $phase_name (exit $rc); the root is unchanged but the services did not start: run 'start'."
+        fi
+    else
+        failure_note "FAILED: $phase_name (exit $rc) after the services stopped; the deployment holds a mix of data and is not started."
+    fi
+    [ -z "$phase_advice" ] || failure_note "$phase_advice"
 }
 
 cmd_snapshot() {
-    local name=$1 completed
+    # snapshot NAME [REPLACE MAC_FREE_KB LIMIT]: REPLACE 0 refuses an
+    # existing NAME. The defaults (replace, no Mac check, cap 8) are what a
+    # laptop half from before #1395 gets. The copy is made in a hidden
+    # .NAME.partial directory (never listed) and renamed only once it is
+    # complete, so a failed save leaves no half copy and, for a
+    # replacement, keeps the earlier copy whole.
+    local name=$1 replace=${2:-1} mac_free=${3-} limit=${4:-8} completed migrations summary taken
+    local dir="$snapshots/$1" partial="$snapshots/.$1.partial" old="$snapshots/.$1.old" link=()
+    check_name "$name"
+    [[ $limit =~ ^[0-9]+$ ]] || refuse "The snapshot cap must be a whole number: '$limit'."
+    [ -z "$mac_free" ] || [[ $mac_free =~ ^[0-9]+$ ]] ||
+        refuse "The Mac's free space must be a number of KiB: '$mac_free'."
     require_marker
     load_env
+    if [ -d "$dir" ] && [ "$replace" != 1 ]; then
+        refuse "A snapshot named $name exists; 'snapshot save $name --replace' overwrites it."
+    fi
+    install -d -m 0700 "$snapshots"
+    check_space "$name" "$mac_free" "$limit"
     select_compose
     completed=$(setup_completed)
     [ "$completed" = t ] || echo "    note: the setup wizard has not completed; this is a pre-wizard snapshot"
+    # What the records describe is read while postgres still serves. The
+    # migrations record is what a later switch trusts to refuse newer
+    # code, so a save without it is refused rather than written empty.
+    migrations=$(applied_migrations)
+    [ -n "$migrations" ] || refuse "Could not read the applied migrations from postgres; refusing the save (nothing stopped)."
+    summary=$(data_summary)
+    phase_name="the $name snapshot" phase_advice="Run 'snapshot save $name' again once the cause is fixed."
+    trap 'snapshot_failed $?' EXIT
     step "Stopping the services for the $name snapshot"
+    phase=stopped
     stop_services
-    step "Copying $root to $snapshots/$name"
-    install -d -m 0700 "$snapshots" "$snapshots/$name"
+    step "Copying $root to $dir"
+    rm -rf "$partial" "$old"
+    install -d -m 0700 "$partial"
+    # Unchanged files of an earlier copy are hard-linked, not copied again.
+    [ ! -d "$dir/root" ] || link=(--link-dest="$dir/root")
     # Numeric ownership, modes and hard links preserved; the deployment YAML
     # and record travel with the root so a restore is self-contained.
-    rsync -aHAX --delete --numeric-ids "$root/" "$snapshots/$name/root/"
-    cp -p "$yaml" "$snapshots/$name/deployment.yaml"
-    cp -p "$envfile" "$snapshots/$name/deployment.env"
-    date -u +%FT%TZ >"$snapshots/$name/taken"
-    echo "    $(du -sh "$snapshots/$name" | cut -f1) copied"
+    rsync -aHAX --delete --numeric-ids "${link[@]+"${link[@]}"}" "$root/" "$partial/root/"
+    cp -p "$yaml" "$partial/deployment.yaml"
+    cp -p "$envfile" "$partial/deployment.env"
+    taken=$(date -u +%FT%TZ)
+    printf '%s\n' "$migrations" >"$partial/migrations"
+    write_meta "$partial" "$taken" "$summary"
+    # `taken` last: a snapshot is valid only with it (cmd_has_snapshot).
+    printf '%s\n' "$taken" >"$partial/taken"
+    [ ! -d "$dir" ] || mv "$dir" "$old"
+    mv "$partial" "$dir"
+    echo "    $(du -sh "$dir" | cut -f1) copied"
+    phase=""
+    trap - EXIT
     start_services
+    if [ -d "$old" ]; then
+        rm -rf "$old"
+        timed 600 "trimming the VM disk" fstrim -v / ||
+            echo "    the trim did not finish; the VM disk file keeps the replaced copy's space until one does"
+    fi
+}
+
+cmd_snapshot_delete() {
+    # snapshot-delete NAME: the laptop half has had the name typed. The VM
+    # disk is a sparse file on the Mac that does not shrink when files are
+    # deleted until the file system is trimmed.
+    local name=$1
+    check_name "$name"
+    [ -d "$snapshots/$name" ] || refuse "No $name snapshot at $snapshots/$name."
+    step "Deleting the $name snapshot ($(gib "$(snapshot_kb "$name")"))"
+    rm -rf "${snapshots:?}/$name"
+    step "Trimming the VM disk so the Mac gets the space back"
+    timed 600 "trimming the VM disk" fstrim -v / ||
+        echo "    the trim did not finish; the VM disk file keeps its size until one does"
 }
 
 cmd_has_snapshot() {
-    [ -d "$snapshots/$1/root" ]
+    # A snapshot is valid only with its root and its `taken` stamp, which
+    # a save writes last.
+    [ -d "$snapshots/$1/root" ] && [ -f "$snapshots/$1/taken" ]
+}
+
+# The data-only switch (#1395), taken only when the snapshot was saved on
+# the running image. What it keeps of the running deployment, as rsync
+# exclusions anchored at the root: the rendered service configuration and
+# deployment documents, the static trees, Caddy's data (so the CA the
+# browser trusts stays valid) and the provisioning records. Everything else
+# (the stores under run/persistent, the clock marker and fake configuration
+# under run/local, the installed configuration documents under
+# config/stewardship and the credentials the database pairs with) comes from
+# the snapshot. With one image on both sides those match each other.
+switch_keeps=(--exclude=/.parishkit-local --exclude=/.stewardship-provisioned.json
+    --exclude=/.stewardship-provisioning.json --exclude=/config/services/
+    --exclude=/config/deployment/ --exclude=/cache/ --exclude=/run/persistent/caddy/)
+
+sign_in_line() {
+    # A local sign-in link for EMAIL, as `sign-in --email` prints it. Needs
+    # `dc` (start_services selected it).
+    "${dc[@]}" exec -T web pk-stewardship local-sign-in --config "$services/web.yaml" --email "$1"
+}
+
+print_sign_in() {
+    # After a switch the sessions live in the other data: fresh links for
+    # the Administrator and, when the data records one, the seeded Ministry
+    # leader user, and where that data's mail is.
+    local leader
+    echo "Sign in again; sessions belong to the data that was switched out."
+    echo "  Administrator $ADMIN_EMAIL:"
+    sign_in_line "$ADMIN_EMAIL"
+    leader=$(cat "$root/run/local/leader-user" 2>/dev/null || true)
+    if [ -n "$leader" ]; then
+        echo "  Ministry leader user $leader:"
+        sign_in_line "$leader"
+    fi
+    echo "  Mail: http://localhost:8025 (Mailpit holds this snapshot's mail)"
+}
+
+switch_to() {
+    # switch_to NAME HOST_SCRIPT: the switch without the sign-in lines.
+    # Every refusal comes before anything stops. The snapshot itself is
+    # never changed, so switching back migrates it again. A failure after
+    # the stop is reported by the EXIT trap with the whole restore that
+    # recovers (the deployment record stays truthful throughout).
+    local name=$1 host_script=$2 dir="$snapshots/$1" plan snap_image clock
+    local run_image run_previous bulk latency
+    check_name "$name"
+    require_marker
+    load_env
+    cmd_has_snapshot "$name" || refuse "No $name snapshot at $dir; 'snapshot list' lists them."
+    select_compose
+    running_migrations=$(mktemp)
+    applied_migrations >"$running_migrations"
+    plan=$(plan_switch "$name")
+    rm -f "$running_migrations"
+    running_migrations=""
+    snap_image=$(record_value "$dir/deployment.env" IMAGE)
+    clock=$(cat "$dir/root/run/local/clock/mode" 2>/dev/null || true)
+    case "$plan" in
+        foreign) refuse "The $name snapshot belongs to another install (deployment $(record_value "$dir/deployment.env" UUID), not $UUID). A switch keeps this install's configuration, so it refuses; 'reset $name' restores it whole." ;;
+        newer) refuse "The $name snapshot has migrations the running code does not know: it was taken on commit $(image_commit "$snap_image"). Deploy that commit (or a later one) first, or 'reset $name' to restore it whole." ;;
+        unrecorded) refuse "The $name snapshot was taken on another image ($snap_image) before snapshots recorded their migrations, so newer code cannot be ruled out; refusing. Record it with 'reset $name' then 'snapshot save $name --replace', or use 'reset $name' alone." ;;
+        unknown) refuse "Could not read the running database's migrations, so the $name snapshot cannot be checked against the running code; refusing (nothing stopped)." ;;
+        missing-image) refuse "The $name snapshot's data is migrated forward on its own image $snap_image, which is no longer in the VM; refusing." ;;
+    esac
+    case "$clock" in fake|normal) ;; *) refuse "The $name snapshot has no clock-mode marker; refusing." ;; esac
+    if [ "$plan" = data ] && [ "$clock" = fake ] && [ ! -f "$services/compose.faketime.json" ]; then
+        refuse "The $name snapshot is in fake-clock mode but the running image renders no fake-clock override; refusing."
+    fi
+    if [ "$plan" = upgrade ]; then
+        [ -f "$host_script" ] || refuse "No uploaded upgrade host script at $host_script; refusing."
+    fi
+    run_image=$IMAGE run_previous=${PREVIOUS_IMAGE-}
+    phase_name="the switch to the $name snapshot"
+    phase_advice="Recover with 'reset $name' (the snapshot whole, image and data) or 'reset' to another snapshot."
+    trap 'snapshot_failed $?' EXIT
+    if [ "$plan" = data ]; then
+        step "Switching to the $name snapshot's data (taken on the running image $IMAGE)"
+        phase=stopped
+        stop_services
+        phase=restoring
+        # As cmd_reset restores, less what the running deployment keeps.
+        rsync -aHAX --checksum --inplace --delete --numeric-ids "${switch_keeps[@]}" "$dir/root/" "$root/"
+        [ "$clock" = normal ] || build_faketime_images
+        start_services --force-recreate
+    else
+        # Another image: its data is started on the image it was taken with
+        # and moved to the running image by the Production upgrade's steps,
+        # as `deploy --schema-change` would, keeping the running rendering
+        # choices. The upgrade check then covers migrations, grants and
+        # logins alike, and the running image's required backup never sees
+        # pending migrations. The users upgrade's inputs (#952), when the
+        # laptop half was given them, reach the host half from this
+        # environment as on a deploy.
+        bulk=$(jq -r '.deployment.bulk_family_send // false' "$services/worker.yaml")
+        if [ "$bulk" = true ]; then bulk=on; else bulk=off; fi
+        latency=$(jq -r '.deployment.local_smtp_latency_ms // 0' "$services/worker.yaml")
+        step "Switching to the $name snapshot (taken on $snap_image): restoring it whole, then upgrading it to $run_image"
+        phase=stopped
+        stop_services
+        phase=restoring
+        rsync -aHAX --checksum --inplace --delete --numeric-ids --exclude=/run/persistent/caddy/ "$dir/root/" "$root/"
+        # The running record (debug setting and all), naming the snapshot's
+        # image until the host half moves it on.
+        record_images "$snap_image" "$run_previous"
+        load_env
+        [ "$clock" = normal ] || build_faketime_images
+        start_services --force-recreate
+        export PARISHKIT_LOCAL_BULK_FAMILY_SEND=$bulk PARISHKIT_LOCAL_SMTP_LATENCY_MS=$latency
+        # The host half reports its own failures; the trap adds the recovery.
+        phase="" phase_advice=""
+        trap - EXIT
+        run_host_half "$host_script" "$run_image" 1 upgrade ||
+            refuse "The upgrade of the $name snapshot's data to $run_image did not finish (its log is above); the deployment holds that data on $(compose_image). Recover with 'reset $name' (the snapshot whole) or 'reset' to another snapshot."
+        record_images "$run_image" "$run_previous"
+        load_env
+    fi
+    phase=""
+    trap - EXIT
+    echo "Switched to the $name snapshot ($plan) in $(( $(date -u +%s) - began ))s; $IMAGE runs."
+}
+
+cmd_restore() {
+    # snapshot-restore NAME HOST_SCRIPT: the switch, then the sign-in lines.
+    switch_to "$1" "$2"
+    print_sign_in
 }
 
 cmd_reset() {
     local name=$1
+    check_name "$name"
     require_marker
     cmd_has_snapshot "$name" || refuse "No $name snapshot at $snapshots/$name."
     load_env
@@ -650,14 +1101,16 @@ return_points() {
     # Name the snapshots `reset` can restore after a deploy. A deploy
     # changes the root (documents, static tree) and may migrate the
     # database, so without any snapshot there is no return point: refuse.
-    local name option found=0
-    for name in seeded post-setup; do
-        cmd_has_snapshot "$name" || continue
-        option=""
-        [ "$name" = post-setup ] || option=" --$name"
-        echo "    return point: 'reset$option' restores the $name snapshot (taken $(cat "$snapshots/$name/taken" 2>/dev/null || echo unknown))"
+    local taken name option found=0
+    while read -r taken name; do
+        case "$name" in
+            post-setup) option="" ;;
+            seeded) option=" --seeded" ;;
+            *) option=" $name" ;;
+        esac
+        echo "    return point: 'reset$option' restores the $name snapshot (taken $taken)"
         found=1
-    done
+    done < <(snapshot_rows)
     [ "$found" = 1 ] || refuse "No snapshot to return to after a deploy; take one first: 'snapshot' (or 'snapshot --seeded' on a seeded deployment)."
 }
 
@@ -684,7 +1137,8 @@ cmd_deploy() {
     run_host_half "$host_script" "$tag" "$schema_change" upgrade
     echo "Deployed $tag in $(( $(date -u +%s) - began ))s; it replaced $previous."
     echo "  Back to the previous image only (as Production's --rollback): deploy --rollback"
-    echo "  Back to a snapshot, image and data together: reset --seeded (or reset)"
+    echo "  Back to a snapshot, image and data together: reset --seeded (or reset, or reset NAME)"
+    echo "  Another snapshot's data on this code: snapshot restore NAME"
 }
 
 cmd_rollback() {
@@ -934,6 +1388,11 @@ cmd_seed() {
     seed_step 900 finish web web.yaml
     # The Ministry leader user the finish step imported (#1150), if any.
     leader_user=$(jq -r '.leader_user // empty' <<<"$seed_result")
+    # Kept with the data, so a snapshot's meta record and a switch to it
+    # can name the user (#1395).
+    if [ -n "$leader_user" ]; then
+        printf '%s\n' "$leader_user" | private_file "$root/run/local/leader-user"
+    fi
     step "Tagging the seed's mail in the catcher"
     mailpit_tag_all seed-history
     trap - EXIT
@@ -941,6 +1400,69 @@ cmd_seed() {
     if [ -n "$leader_user" ]; then
         echo "Ministry leader user: $leader_user (sign-in --email $leader_user)"
     fi
+}
+
+cmd_seed_testing() {
+    # seed-testing HOST_SCRIPT (#1395): a Testing-mode review state. A
+    # seeded campaign is live, and no supported path takes a live campaign
+    # back to Testing, so the state is built forward from the post-setup
+    # snapshot's Testing draft: switch to it on the running code, check it
+    # is still a never-live Testing draft whose Testing recipient is a
+    # synthetic address, clear Mailpit, and move the clock forward to real
+    # time as the seed's finish does (a forward jump, so no row postdates
+    # the clock). The result is a draft campaign in Testing mode at real
+    # time. When the image's seeder offers a `testing` step (the automated
+    # Testing sends and submissions), it runs last, under the web identity.
+    local host_script=$1 dir="$snapshots/post-setup" mode campaign families recipient steps
+    require_marker
+    load_env
+    cmd_has_snapshot post-setup ||
+        refuse "No post-setup snapshot to build the Testing state from; take one on a set-up, unseeded deployment: 'snapshot'."
+    # The recorded state, when there is a record, refuses before anything stops.
+    mode=$(record_value "$dir/meta" mode) campaign=$(record_value "$dir/meta" campaign)
+    if [ -n "$mode" ] && { [ "$mode" != testing ] || [ "$campaign" != draft ]; }; then
+        refuse "The post-setup snapshot is in $mode mode with a $campaign campaign, not a Testing draft; refusing."
+    fi
+    switch_to post-setup "$host_script"
+    select_compose
+    [ "$(clock_mode)" = fake ] ||
+        refuse "The post-setup snapshot is in normal clock mode, so it is not the unseeded post-setup state; refusing (the deployment now holds its data)."
+    [ "$(setup_completed)" = t ] || refuse "The post-setup snapshot's setup wizard has not completed; refusing (the deployment now holds its data)."
+    IFS=$'\t' read -r mode campaign families recipient <<<"$(data_summary)" || true
+    if [ "$mode" != testing ] || [ "$campaign" != draft ]; then
+        refuse "The post-setup data is in ${mode:-unknown} mode with a ${campaign:-missing} campaign, not a Testing draft; refusing (the deployment now holds its data)."
+    fi
+    [[ ${recipient-} == *@example.test ]] ||
+        refuse "The Testing recipient '${recipient-}' is not an @example.test address; refusing (the deployment now holds its data)."
+    step "Clearing the mail catcher"
+    mailpit_clear
+    # A failure from here restarts the services in whatever mode the marker
+    # says, and names the way back.
+    phase_name="seed --testing's move to real time"
+    phase_advice="'switch post-setup' returns to the post-setup data; then run 'seed --testing' again."
+    trap 'snapshot_failed $?' EXIT
+    step "Stopping the services to move the clock forward to real time"
+    phase=stopped
+    stop_services
+    printf -- '+0\n' >"$clock_dir/offset"
+    printf 'normal\n' >"$clock_dir/mode"
+    chown 10001:10001 "$clock_dir/mode" "$clock_dir/offset"
+    start_services --force-recreate
+    phase=""
+    trap - EXIT
+    steps=$(image_constant parishkit.stewardship.local.seeder STEPS '[]')
+    if [[ $steps == *'"testing"'* ]]; then
+        seed_now=$(date -u +%FT%TZ)
+        seed_scale=1
+        seed_step 1800 testing web web.yaml ||
+            refuse "The seeder's testing step failed; the deployment is the post-setup data at real time. 'switch post-setup' returns to it; then run 'seed --testing' again."
+    else
+        echo "    this image's seeder has no 'testing' step: add the schedules, Testing sends and"
+        echo "    Testing submissions to review in the Admin portal and Mailpit"
+    fi
+    echo "A Testing-mode draft campaign of $families Families at real time (Testing recipient $recipient), in $(( $(date -u +%s) - began ))s."
+    print_sign_in
+    echo "Save it: tools/stewardship-local.sh snapshot save testing   (add --replace to overwrite)"
 }
 
 # The BG-12 rehearsal (developer guide, "Rehearsing a bulk send"; plan,
@@ -1203,10 +1725,11 @@ cmd_wizard() {
     # own service layer (seed_web.run_wizard), then the runbook's first-
     # installation step 5: once the installers report awaiting_ack, recreate
     # worker and mail-dispatch from compose.json and acknowledge each request
-    # inside them, which lets the installer finish setup. Setup collects no
-    # campaign (#142), so the seeder's campaign step then runs Create the
-    # campaign and loads its Families. The developer-facing path is still the
-    # real wizard; this is for unattended installs and tests.
+    # inside them, which lets the installer finish setup (finish_setup,
+    # shared with `finish-setup`). Setup collects no campaign (#142), so the
+    # seeder's campaign step then runs Create the campaign and loads its
+    # Families. The developer-facing path is still the real wizard, finished
+    # by `finish-setup`; this is for unattended installs and tests.
     require_marker
     load_env
     select_compose
@@ -1214,7 +1737,8 @@ cmd_wizard() {
     seed_scale=1
     seed_step 1800 wizard web web.yaml
     if [ "$(jq -r .result <<<"$seed_result")" = frozen ]; then
-        wizard_finish
+        finish_setup "$(jq -r '.requests.parishsoft // empty' <<<"$seed_result")" \
+            "$(jq -r '.requests.google_workspace // empty' <<<"$seed_result")"
     else
         echo "    setup needs no finishing"
     fi
@@ -1222,11 +1746,18 @@ cmd_wizard() {
     echo "Setup and the campaign complete in $(( $(date -u +%s) - began ))s."
 }
 
-wizard_finish() {
-    # The runbook's post-wizard step for the frozen attempt in $seed_result.
-    local parishsoft workspace
-    parishsoft=$(jq -r .requests.parishsoft <<<"$seed_result")
-    workspace=$(jq -r .requests.google_workspace <<<"$seed_result")
+finish_setup() {
+    # finish_setup PARISHSOFT WORKSPACE: the runbook's first-installation
+    # step 5 in LOCAL, the one implementation `wizard` and `finish-setup`
+    # share. Once the installers report awaiting_ack, recreate worker and
+    # mail-dispatch from compose.json (plus the fake-clock override) and
+    # acknowledge each request inside them, which lets the installer finish
+    # setup; then restart everything under the configured topology. A
+    # repeat acknowledgement is a no-op, so a rerun after an interruption
+    # is safe. The ids are the frozen attempt's sealed credentials' ids.
+    local parishsoft=$1 workspace=$2 uuid='^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$'
+    [[ $parishsoft =~ $uuid && $workspace =~ $uuid ]] ||
+        refuse "The frozen setup attempt lacks its ParishSoft or Google Workspace credential; refusing."
     step "Waiting for the credential installers to report awaiting_ack"
     wait_until 600 "the credential installers to report awaiting_ack" awaiting_ack
     step "Recreating worker and mail-dispatch from compose.json (runbook step 5)"
@@ -1243,6 +1774,33 @@ wizard_finish() {
     wait_until 900 "the configuration installer to complete setup" setup_is_complete
     step "Restarting every service under the configured topology"
     start_services --force-recreate
+}
+
+cmd_finish_setup() {
+    # After the browser wizard stops at Finishing setup ("Waiting for the
+    # server operator"): look up the frozen attempt's request ids (the
+    # seeder's read-only credentials step) and finish setup exactly as
+    # `wizard` does. Already-complete setup is reported and left alone.
+    require_marker
+    load_env
+    select_compose
+    if setup_is_complete; then
+        echo "Setup is already complete; nothing to finish."
+        return 0
+    fi
+    seed_now=$(date -u +%FT%TZ)
+    seed_scale=1
+    seed_step 300 credentials web web.yaml
+    case "$(jq -r .result <<<"$seed_result")" in
+        frozen) ;;
+        "setup was already complete")
+            echo "Setup is already complete; nothing to finish."
+            return 0 ;;
+        *) refuse "The setup wizard has not reached Finishing setup; complete its pages in the browser first, then run finish-setup again." ;;
+    esac
+    finish_setup "$(jq -r '.requests.parishsoft // empty' <<<"$seed_result")" \
+        "$(jq -r '.requests.google_workspace // empty' <<<"$seed_result")"
+    echo "Setup complete in $(( $(date -u +%s) - began ))s."
 }
 
 cmd_sign_in() {
@@ -1360,7 +1918,7 @@ cmd_spike() {
 # Long-running commands keep their whole log on the VM under /var/log, as
 # the upgrade script does; the short ones print only their answer.
 case "$command" in
-    build|up|snapshot|reset|wipe|seed|wizard|start|down|deploy|rollback|rehearse|spike)
+    build|up|snapshot|snapshot-delete|snapshot-restore|reset|wipe|seed|seed-testing|wizard|finish-setup|start|down|deploy|rollback|rehearse|spike)
         # STEWARDSHIP_LOG_DIR lets the tests run this half without /var/log.
         log=${STEWARDSHIP_LOG_DIR:-/var/log}/stewardship-local-$command-$(date -u +%Y%m%dT%H%M%SZ).log
         exec > >(tee -a "$log") 2>&1
@@ -1372,8 +1930,14 @@ case "$command" in
     up) [ $# -eq 4 ] || refuse "up needs TAG FAMILIES ADMIN_EMAIL DEBUG"; cmd_up "$@" ;;
     start) cmd_start ;;
     down) cmd_down ;;
-    status) cmd_status ;;
-    snapshot) cmd_snapshot "${1:?snapshot needs NAME}" ;;
+    status) cmd_status "${1-}" ;;
+    snapshot)
+        [ $# -eq 1 ] || [ $# -eq 4 ] || refuse "snapshot needs NAME [REPLACE MAC_FREE_KB LIMIT]"
+        cmd_snapshot "$@" ;;
+    snapshot-list) cmd_snapshot_list "${1-}" ;;
+    snapshot-delete) cmd_snapshot_delete "${1:?snapshot-delete needs NAME}" ;;
+    snapshot-restore) [ $# -eq 2 ] || refuse "snapshot-restore needs NAME HOST_SCRIPT"; cmd_restore "$@" ;;
+    seed-testing) cmd_seed_testing "${1:?seed-testing needs HOST_SCRIPT}" ;;
     has-snapshot) cmd_has_snapshot "${1:?has-snapshot needs NAME}" ;;
     reset) cmd_reset "${1:?reset needs NAME}" ;;
     wipe) cmd_wipe ;;
@@ -1385,6 +1949,7 @@ case "$command" in
     rollback) cmd_rollback "${1:?rollback needs HOST_SCRIPT}" ;;
     seed) cmd_seed "${1:-1}" ;;
     wizard) cmd_wizard ;;
+    finish-setup) cmd_finish_setup ;;
     sign-in) cmd_sign_in "${1:?sign-in needs EMAIL}" ;;
     ca) cmd_ca ;;
     *) refuse "unknown VM command: $command" ;;

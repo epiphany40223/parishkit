@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from itertools import batched
 from pathlib import Path
+from time import monotonic
 from zoneinfo import ZoneInfo
 
 from django.db import connection, connections
@@ -57,6 +58,7 @@ from .windows import RefreshWindow
 from .workgroups import (
     EVIDENCE_KEY,
     configured_name,
+    keep_when_missing,
     load_reminder_workgroup,
     recorded,
     warn_if_missing,
@@ -71,9 +73,14 @@ from .workgroups import (
 # short. stage_entities() refuses more than 500 rows, so this must stay at or
 # below that.
 STAGING_BATCH_ROWS = 125
-# Staging progress is reported about this often, as it was when batches
-# were 500 rows, so the smaller batches add no progress transitions.
+# Staging progress is reported no more often than every PROGRESS_ROWS rows
+# AND every PROGRESS_SECONDS. Each report is a task transition, which still
+# takes the work-order lock (#147), so mail and Family forms queue behind it.
+# Spaced by rows alone, a full refresh at 1,100 Families made about 20
+# reports, one every 150-250 ms; the time floor cuts that to a few (#895).
+# The rows floor keeps a slow staging run from reporting on every batch.
 PROGRESS_ROWS = 500
+PROGRESS_SECONDS = 2.0
 
 
 @dataclass(frozen=True)
@@ -462,7 +469,13 @@ def load_and_stage_attempt(execution, claim, credential, *, unchanged=None):
         # The Reminder WorkGroup (#861) is read on every refresh, full and
         # quick, after the corpus: one list call plus the one WorkGroup's
         # members, and nothing at all when the campaign names none.
-        workgroup = load_reminder_workgroup(client, inputs.workgroup_name)
+        # A name ParishSoft does not have keeps the set applied before it
+        # (#1305), so a misspelled rename skips the same Families until a
+        # refresh finds the WorkGroup.
+        workgroup = keep_when_missing(
+            load_reminder_workgroup(client, inputs.workgroup_name),
+            inputs.base_workgroup,
+        )
     finally:
         session.close()
     evidence = loaded.evidence
@@ -513,6 +526,7 @@ def load_and_stage_attempt(execution, claim, credential, *, unchanged=None):
     total, done = sum(loaded.counts.values()), 0
     reported = done
     execution.progress(done, total, phase=TaskPhase.STAGING)
+    reported_at = monotonic()
     for kind, rows in loaded.corpus.items():
         for batch in batched(rows.items(), STAGING_BATCH_ROWS):
             # A source step, outside the global work order (#147): a batch
@@ -528,12 +542,15 @@ def load_and_stage_attempt(execution, claim, credential, *, unchanged=None):
                 )
             done += len(batch)
             # Progress is its own task transition, which still takes the
-            # work-order lock (#147), so report it per PROGRESS_ROWS rather
-            # than per batch. The validating report below always carries the
-            # final count.
-            if done - reported >= PROGRESS_ROWS:
+            # work-order lock (#147), so report it only once both
+            # PROGRESS_ROWS and PROGRESS_SECONDS have passed, not per batch.
+            # The validating report below always carries the final count.
+            if (
+                done - reported >= PROGRESS_ROWS
+                and monotonic() - reported_at >= PROGRESS_SECONDS
+            ):
                 execution.progress(done, total, phase=TaskPhase.STAGING)
-                reported = done
+                reported, reported_at = done, monotonic()
     execution.progress(done, total, phase=TaskPhase.VALIDATING)
     # Refresh the membership tables' planner statistics now, in a source step
     # outside the global work order (#895, change 8). The ready transition's

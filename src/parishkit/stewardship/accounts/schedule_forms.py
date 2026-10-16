@@ -51,6 +51,13 @@ BROWSER_TIME_HELP = _(
     "The time of day it is sent, in this computer's time zone, for example "
     "9:00 AM, 9am or 21:00."
 )
+# A dated send typed in the browser's zone at a moment the campaign's clocks
+# show twice (they fall back): it can't be saved exactly (schedule_local).
+REPEATED_HOUR = _(
+    "This send time falls in the hour that repeats when clocks fall back in "
+    "the campaign's time zone, so it can't be saved exactly. Choose a time "
+    "outside that hour."
+)
 ZONE_MISSING = _(
     "Your browser didn't report a time zone, so this send time can't be "
     "read. Check your computer's time zone setting, then try again."
@@ -78,9 +85,11 @@ class ScheduleWindow(forms.Form):
 
     timezone = TimezoneField(
         label=_("Campaign timezone"),
+        # Send times on every page that draws this form are in the
+        # browser's zone (#558); this zone decides the campaign's days.
         help_text=_(
-            "Every send date and time on this page is in this time zone, not "
-            "your computer's."
+            "The time zone of the campaign's days. Send dates and times on "
+            "this page are in this computer's time zone."
         ),
     )
     start_date = forms.DateField(
@@ -395,6 +404,11 @@ class ScheduleForm(forms.Form):
     """
 
     id = forms.UUIDField(required=False, widget=forms.HiddenInput)
+    # The send moment a browser-local page drew a saved row from (#558),
+    # posted back so a digest drawn on one side of a daylight-saving change
+    # and posted on the other still reads as unchanged (schedule_local.instant
+    # checks it is one of the digest's own sends). Never saved.
+    drawn_at = forms.CharField(required=False, max_length=64, widget=forms.HiddenInput)
     kind = forms.ChoiceField(
         label=_("Mail type"),
         choices=[
@@ -578,16 +592,19 @@ class ScheduleSet(BaseFormSet):
         (the campaign admits no test mail now) leaves out the test address
         and says why instead (#923).
 
-        ``browser_times`` (the first-campaign step, #558) shows and takes
+        ``browser_times`` (the date-change review, #558) shows and takes
         send dates and times in the browser's time zone: ``zone`` is the
         posted browser zone and ``now`` the current instant, which places a
         digest's time at its next send (``schedule_local``). Saved values
         stay campaign-local either way; see ``_construct_form`` and
-        ``_to_campaign``.
+        ``_to_campaign``. ``saved_timezone`` is the zone the saved rows are
+        in: the date-change review may replace ``campaign`` with a proposed
+        time zone before validating.
         """
         if browser_times and now is None:
             raise ValueError("Browser-local schedule times need the current instant.")
         self.browser_times, self.zone, self.now = browser_times, zone, now
+        self.saved_timezone = campaign["timezone"]
         self.previous = sorted(previous, key=schedule_order)
         self.labels = schedule_labels(self.previous)
         self.usage = email_usage(self.previous)
@@ -595,7 +612,20 @@ class ScheduleSet(BaseFormSet):
         self.test_mail = test_mail
         self.templates = list(templates)
         self.campaign_id, self.campaign = str(campaign_id), campaign
-        initial = [row["values"] | {"id": row["id"]} for row in self.previous]
+        initial = [
+            row["values"]
+            | {"id": row["id"]}
+            | (
+                {
+                    "drawn_at": schedule_local.instant(
+                        row["values"], campaign["timezone"], now
+                    ).isoformat()
+                }
+                if browser_times
+                else {}
+            )
+            for row in self.previous
+        ]
         super().__init__(*args, initial=initial, **kwargs)
 
     def get_form_kwargs(self, index):
@@ -638,14 +668,18 @@ class ScheduleSet(BaseFormSet):
                 return form
             try:
                 kept = schedule_local.in_browser(
-                    saved, self.zone, self.timezone, self.now
+                    saved,
+                    self.zone,
+                    self.saved_timezone,
+                    self.now,
+                    form.data.get(form.add_prefix("drawn_at")),
                 )
             except UnknownZone:
                 kept = None  # Refused in clean, with ZONE_MISSING.
             form.fields["time"].keep(kept)
         else:
             form.schedule_moment = schedule_local.instant(
-                self.previous[i]["values"], self.timezone, self.now
+                self.previous[i]["values"], self.saved_timezone, self.now
             ).isoformat()
         return form
 
@@ -715,6 +749,10 @@ class ScheduleSet(BaseFormSet):
                     self._to_campaign(form, old.get(identifier))
                 except UnknownZone:
                     raise forms.ValidationError(ZONE_MISSING) from None
+                except schedule_local.RepeatedHour:
+                    form.add_error("time", REPEATED_HOUR)
+                    field_errors = True
+                    continue
                 except ValueError:
                     # Only a date far outside any campaign cannot convert.
                     form.add_error(
@@ -755,9 +793,12 @@ class ScheduleSet(BaseFormSet):
         (inside the campaign dates, after the initial invitation, never two
         mailings at once) and the saved record are campaign-local, as on New
         and Edit scheduled email (``schedule_local.to_campaign``). A saved
-        row posted exactly as it was shown keeps its saved values. Raises
-        ``UnknownZone`` for a blank or unknown zone and ``ValueError`` for a
-        date that cannot convert.
+        row posted exactly as it was shown (in the saved zone) keeps its
+        saved values, so with a proposed campaign time zone it keeps its
+        wall-clock time in the new zone; a changed row converts into the
+        proposed zone. Raises ``UnknownZone`` for a blank or unknown zone,
+        ``RepeatedHour`` for a send in the campaign's repeated fall-back hour
+        and ``ValueError`` for a date that cannot convert.
         """
         data = form.cleaned_data
         data["date"], data["time"], data["weekday"] = schedule_local.to_campaign(
@@ -768,6 +809,8 @@ class ScheduleSet(BaseFormSet):
             campaign_zone=self.timezone,
             now=self.now,
             saved=previous,
+            saved_zone=self.saved_timezone,
+            drawn=data.get("drawn_at"),
         )
 
     def _field_errors(self, form, previous):

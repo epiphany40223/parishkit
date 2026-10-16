@@ -141,6 +141,10 @@ def components(context, admin):
         "/financial-empty": values | dict(table=table([], total=0), total=0),
         # The campaign cannot accept work: the export controls are offered gated.
         "/financial-gated": values | dict(mutable=False),
+        # The report as first opened, with no filter applied: its Filters
+        # panel starts closed (#227).
+        "/financial-unfiltered": values
+        | dict(query=FinancialQuery(), query_fields=FinancialQuery().form_values()),
         "/financial-last": values | dict(table=table([row], number=2)),
         # The answer to an applied filter: a smaller summary, its charts
         # drawn again in place (#720).

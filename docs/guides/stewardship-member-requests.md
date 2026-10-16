@@ -114,12 +114,18 @@ contact changes to ParishSoft with the v2 Member contact PUT. It ships
    `responses/publication_gateway.py`. Until then the ParishSoft gateway's
    read refuses, so the worker cannot reach its PUT even when switched on.
 2. The human-run smoke test (outside CI, reading credentials at runtime)
-   has written one chosen test Member and read it back unchanged.
+   has written one chosen test Member and read it back unchanged. That is
+   `pk-stewardship smoke --target parishsoft_contact` in the worker; its
+   [Member contact round trip](stewardship-smoke-tools.md#member-contact-round-trip)
+   section says how a confirmed result is recorded on #528 before step 1's
+   change is made.
 
 The switch is the deployment setting `parishsoft_publication: true` (or
-`PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION=1`) on the worker. While it is
-off the worker refuses before it takes the source lease or makes any
-ParishSoft call. In Testing mode publication stops after preflight whatever
-the switch says. The rules the worker follows are in the data spec's
+`PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION=1`), set on both the web and
+worker services. While it is off the web refuses to queue a preflight or to
+confirm a plan, and the worker fails both census publication tasks
+(`census_publication_preflight` and `census_publication`) before it takes the
+source lease or makes any ParishSoft call. In Testing mode publication stops
+after preflight whatever the switch says. The rules the worker follows are in the data spec's
 [Review and publication](../specs/stewardship/data/spec.md#review-and-publication)
 section.

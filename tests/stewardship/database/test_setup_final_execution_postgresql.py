@@ -214,6 +214,16 @@ def test_real_finalization_producer_and_compiled_worker(
             assert response["Location"] == "/admin/"
             assert response["Cache-Control"] == "no-store"
             assert Client().get("/admin/setup/cancel").status_code == 403
+            # The open page's poll learns of completion in place (#1354): the
+            # settled region shows Continue and drops Cancel setup, and only a
+            # current Administrator may read it.
+            region = browser.get("/admin/setup/cancel?format=status")
+            assert region.status_code == 200, region.content
+            assert b'data-finishing-state="completed"' in region.content
+            assert b"data-live-pending" not in region.content
+            assert b'href="/admin/"' in region.content
+            assert b"Cancel initial setup" not in region.content
+            assert Client().get("/admin/setup/cancel?format=status").status_code == 403
         cleanup_completed_setup()
 
 

@@ -1,12 +1,15 @@
 {% load i18n stewardship %}{% comment %}
-  Accept this change once's button (ADM-13 PR 5b), or the same button greyed
-  with its reason (health.accept_state): the refusal shown was accepted
-  (who, when, and when it expires, in browser-local time), its acceptance
-  lapsed before a full refresh used it (a refusal is accepted only once, so
-  Refresh now gives a new one), it was a load with no Families or no
-  Members (never acceptable), or no refusal is shown any more. Shared by the
-  Accept this change once region and the copy the polled status region
-  carries (template[data-live-mirror]), which live-status-v1.js puts in
+  Accept this change once's button (ADM-13 PR 5b) while the refusal shown
+  can be accepted, or the same button greyed while it was accepted (who,
+  when, and when it expires, in browser-local time). Otherwise (only after
+  a step's result, since the section is left out then) there is no button:
+  a refusal that cannot be accepted (lapsed, or a load with no Families or
+  no Members) gets one line pointing at the refused change above, whose
+  problem line (or counts' notice) says why (Administrator, 2026-10-15),
+  and no refusal shown says so. Shared by
+  the section's offer (system-health-accept-offer.html), the region's
+  button after a step's result, and their copies in the polled status
+  region (template[data-live-mirror]), which live-status-v1.js puts in
   place on each update, so the button follows an acceptance another
   Administrator gives, a full refresh that settles the refusal and an
   acceptance that ends. ``health`` is system_health.SystemHealth and
@@ -14,9 +17,7 @@
   copy) leaves the CSRF token empty, so the polled markup does not change on
   every poll; live-status-v1.js fills it from the page's own token.
 {% endcomment %}{% with state=health.accept_state acceptance=health.drop_acceptance %}{% if state == "open" %}<form method="post" action="{% url 'admin:system_health' %}#accept-change" data-in-place="accept-preview" data-in-place-fallback="accept-confirm" data-in-place-message="{% translate 'Review accepting this change once.' %}"><input type="hidden" name="csrfmiddlewaretoken" value="{% if not mirrored %}{{ csrf_token }}{% endif %}"><input type="hidden" name="action" value="accept_preview">{% button type="submit" %}{% translate "Accept this change once" %}{% endbutton %}</form>
-{% else %}<p>{% button type="button" disabled aria-describedby="accept-change-reason" %}{% translate "Accept this change once" %}{% endbutton %}</p>
-<p class="help" id="accept-change-reason" data-accept-state="{{ state }}">{% if state == "accepted" %}{% if accept_actor %}{% blocktranslate with actor=accept_actor trimmed %}Accepted by {{ actor }} at{% endblocktranslate %}{% else %}{% translate "Accepted at" %}{% endif %} <time datetime="{{ acceptance.created_at|instant }}" data-local-instant>{{ acceptance.created_at|instant }}</time>; {% translate "expires at" %} <time datetime="{{ acceptance.expires_at|instant }}" data-local-instant>{{ acceptance.expires_at|instant }}</time>. {% translate "The next full refresh will use it, if no count falls further than the numbers reviewed." %}
-{% elif state == "lapsed" %}{% translate "This refusal was accepted at" %} <time datetime="{{ acceptance.created_at|instant }}" data-local-instant>{{ acceptance.created_at|instant }}</time>, {% translate "but the acceptance ended before a full refresh used it. A refusal can be accepted only once: Refresh now gets a new refusal to review and accept." %} <a href="{% url 'admin:source_refresh' %}">{% translate "Refresh from ParishSoft" %}</a>
-{% elif state == "empty" %}{% translate "A refresh that found no Families or no Members can never be accepted: it is refused by design, because it almost always means ParishSoft could not be read properly. Check the ParishSoft connection and settings, then use Refresh now." %}
-{% else %}{% translate "No refused ParishSoft refresh is waiting to be accepted." %}{% endif %}</p>
+{% elif state == "accepted" %}<p>{% button type="button" disabled aria-describedby="accept-change-reason" %}{% translate "Accept this change once" %}{% endbutton %}</p>
+<p class="help" id="accept-change-reason" data-accept-state="{{ state }}">{% if accept_actor %}{% blocktranslate with actor=accept_actor trimmed %}Accepted by {{ actor }} at{% endblocktranslate %}{% else %}{% translate "Accepted at" %}{% endif %} <time datetime="{{ acceptance.created_at|instant }}" data-local-instant>{{ acceptance.created_at|instant }}</time>; {% translate "expires at" %} <time datetime="{{ acceptance.expires_at|instant }}" data-local-instant>{{ acceptance.expires_at|instant }}</time>. {% translate "The next full refresh will use it, if no count falls further than the numbers reviewed." %}</p>
+{% else %}<p class="help" data-accept-state="{{ state }}">{% if state == "none" %}{% translate "No refused ParishSoft refresh is waiting to be accepted." %}{% else %}{% translate "This refusal cannot be accepted; the refused change above says why." %}{% endif %}</p>
 {% endif %}{% endwith %}

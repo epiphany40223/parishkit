@@ -21,7 +21,7 @@ from parishkit.stewardship.source.refresh_status import (
 )
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.refusals import UserFacingError
+from parishkit.stewardship.web.refusals import UserFacingError, unexpected_fields
 
 from . import admin_navigation
 from .admin_editing import (
@@ -307,8 +307,14 @@ def _saved_folder_id(link):
 
 
 def _backup_context(request, configuration):
-    """Off-site copy status and the viewer's latest access check."""
-    return backup_state(configuration, request.portal_session.principal_id)
+    """Off-site copy status, the viewer's latest access check, and LOCAL.
+
+    ``drive_in_local`` draws Test access unavailable, with why, in LOCAL
+    (#563), where the view would only refuse it (``_refuse_drive_in_local``).
+    """
+    return backup_state(configuration, request.portal_session.principal_id) | {
+        "drive_in_local": _drive_in_local()
+    }
 
 
 def backup_state(configuration, actor_id):
@@ -335,16 +341,22 @@ def backup_state(configuration, actor_id):
     }
 
 
+def _drive_in_local():
+    """Whether this is LOCAL (#476), which never reaches Google Drive."""
+    from parishkit.stewardship.deployment import DeploymentProfile, recorded_profile
+
+    return recorded_profile() is DeploymentProfile.LOCAL
+
+
 def _refuse_drive_in_local():
     """LOCAL (#476) never reaches Google Drive: no off-site folder is set or tested.
 
     The Workspace credential in LOCAL is the mail-catcher document, which the
     Drive session refuses anyway; this refusal says so before anything is
-    queued or saved.
+    queued or saved. The page draws Test access unavailable there already;
+    this is the server's own check.
     """
-    from parishkit.stewardship.deployment import DeploymentProfile, recorded_profile
-
-    if recorded_profile() is DeploymentProfile.LOCAL:
+    if _drive_in_local():
         raise UserFacingError(
             _(
                 "Off-site Google Drive copies are not available in the local "
@@ -368,7 +380,7 @@ def _test_access(request, configuration, actor):
         "target",
         "base_digest",
     } or any(len(values) != 1 for _, values in request.POST.lists()):
-        raise ValueError("Invalid configuration action or fields.")
+        raise unexpected_fields()
     queue_probe(configuration, actor, request.POST.get("target", ""))
     return HttpResponseRedirect(request.path)
 
@@ -720,7 +732,7 @@ def _remove(request, service, configuration, actor, target):
     if set(request.POST) - {"action", "csrfmiddlewaretoken"} or any(
         len(values) != 1 for _, values in request.POST.lists()
     ):
-        raise ValueError("Invalid configuration action or fields.")
+        raise unexpected_fields()
     preview = review_removal(service, actor, configuration, target)
     admin_navigation.place(request, flow="change", step="review")
     return render(
@@ -900,13 +912,13 @@ def refresh_schedule_check(request, target):
         if set(request.POST) - posted_names() - {"csrfmiddlewaretoken"} or any(
             len(values) != 1 for _, values in request.POST.lists()
         ):
-            raise ValueError("Invalid refresh schedule fields.")
+            raise unexpected_fields()
         with read_transaction():
             configuration = editable_configuration(service)
             record = _selected(configuration, target)
             editor = ScheduleEditor(request.POST, stored=record["values"]["settings"])
             if not editor.posted:
-                raise ValueError("Invalid refresh schedule fields.")
+                raise unexpected_fields()
             context = _schedule_context(configuration, editor)
         response = render(request, "stewardship/refresh-schedule-check.html", context)
         return _checked(request, service, response)

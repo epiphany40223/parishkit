@@ -34,6 +34,7 @@ READS = [
     ("integration", "list"),
     ("integration", "show", "parishsoft"),
     ("integration", "status", "parishsoft"),
+    ("integration", "schedule-preview"),
 ]
 
 
@@ -234,3 +235,84 @@ def test_an_ended_session_is_exit_5_before_not_available(admin):
     revoke(admin.service, secret)
     code, document, _ = admin("integration", "show", "email", secret=secret)
     assert code == 5 and document["error"]["code"] == "session_ended", document
+
+
+# ``integration schedule-preview`` (#632 slice 5a): the page's live check.
+PROPOSED = b'{"rules": [{"kind": "full", "at": "03:00"}], "skips": []}'
+
+
+def test_the_applied_schedule_previews_as_the_page_shows_it(admin):
+    """A read-only session previews the applied schedule: the document
+    ``integration show`` prints, seven days, no problems, nothing recorded."""
+    _, reader, _ = paired(admin.service, scope="read-only")
+    events = AuditEvent.objects.count()
+    result = read(admin, reader, "integration", "schedule-preview")
+    shown = read(admin, reader, "integration", "show", "parishsoft")
+    assert result["version"] == shown["version"]
+    assert not result["proposed"] and not result["changed"]
+    assert result["schedule"] == shown["refresh_schedule"]
+    assert result["problems"] == [] and not result["blocking"]
+    assert len(result["preview"]["days"]) == 7
+    assert result["preview"]["summary"] and result["preview"]["freshness"]
+    assert AuditEvent.objects.count() == events
+
+
+def test_a_proposed_schedule_from_standard_input_previews_its_days(admin):
+    """A changed schedule read from standard input: its own times, each day."""
+    _, reader, _ = paired(admin.service, scope="read-only")
+    events = AuditEvent.objects.count()
+    code, document, _ = admin(
+        "integration",
+        "schedule-preview",
+        "--refresh-schedule",
+        "-",
+        secret=reader,
+        answer=PROPOSED,
+    )
+    assert code == 0, document
+    result = document["result"]
+    assert result["proposed"] and result["changed"] and not result["blocking"]
+    assert result["schedule"]["rules"] == [{"kind": "full", "at": "03:00"}]
+    for day in result["preview"]["days"]:
+        assert [entry["text"][:5] for entry in day["times"]] == ["03:00"]
+    assert AuditEvent.objects.count() == events
+
+
+def test_the_pages_problems_are_reported_not_refused(admin):
+    """Full refreshes 5 minutes apart: exit 0 with the page's problem at its
+    row, blocking a save of this schedule."""
+    _, reader, _ = paired(admin.service, scope="read-only")
+    schedule = (
+        '{"rules": [{"kind": "full", "at": "02:00"},'
+        ' {"kind": "full", "at": "02:15"}, {"kind": "full", "at": "02:20"}]}'
+    )
+    result = read(
+        admin, reader, "integration", "schedule-preview", "--refresh-schedule", schedule
+    )
+    assert result["changed"] and result["blocking"] and result["problems"]
+    assert {p["field"] for p in result["problems"]} <= {
+        f"refresh_schedule.rules[{index}]" for index in range(3)
+    }
+
+
+@pytest.mark.parametrize(
+    "schedule",
+    [
+        '{"rules": [{"kind": "full", "at": "02:00", "secret-7"}]}',
+        '{"rules": [{"kind": "quick", "at": "05:00"}]}',
+        '{"rules": [{"kind": "full", "at": "secret-7"}]}',
+    ],
+)
+def test_a_document_the_page_cannot_post_is_invalid_without_echo(admin, schedule):
+    """Another shape, or an added quick update: exit 1, input not repeated."""
+    _, reader, _ = paired(admin.service, scope="read-only")
+    code, document, err = admin(
+        "integration",
+        "schedule-preview",
+        "--refresh-schedule",
+        schedule,
+        secret=reader,
+    )
+    assert code == 1 and document["error"]["code"] == "invalid", document
+    assert "result" not in document
+    assert "secret-7" not in str(document) + err

@@ -11,12 +11,27 @@ from parishkit.stewardship.accounts.setup_wizard import PAGES, build
 from .test_setup_forms import VALUES
 
 
-def draft(sections=None, *, state=SetupState.COLLECTING, source=None, reviewed=None):
-    """A detached stand-in carrying only what the stepper reads."""
+def draft(
+    sections=None,
+    *,
+    state=SetupState.COLLECTING,
+    source=None,
+    reviewed=None,
+    task_state=None,
+):
+    """A detached stand-in carrying only what the stepper reads.
+
+    A bound load (``source``) is running while loading and has succeeded
+    otherwise, unless ``task_state`` says how it ended.
+    """
+    if source is not None and task_state is None:
+        task_state = "running" if state == SetupState.LOADING else "succeeded"
     return SimpleNamespace(
         status=SimpleNamespace(state=state, attempt_id=uuid4(), version=3),
         sections=sections or {},
         source_task_id=source,
+        source_task_state=task_state,
+        source_loaded=task_state == "succeeded",
         reviewed=reviewed or {},
     )
 
@@ -31,6 +46,30 @@ def test_every_page_has_a_unique_key_and_resolvable_url():
     assert len({page.key for page in PAGES}) == len(PAGES)
     assert all(page.url.startswith("/admin/setup") for page in PAGES)
     assert PAGES[0].url == "/admin/setup/parish"
+
+
+def test_parishsoft_and_the_load_are_last_before_review():
+    """ParishSoft connection and Load parish data sit together before Review.
+
+    The load can take minutes, so every other data-entry page comes first, and
+    a failed load is one step after the page that fixes its key (#1353).
+    """
+    assert [page.key for page in PAGES] == [
+        "parish",
+        "mail",
+        "testing",
+        "google_workspace",
+        "slack",
+        "slack_credential",
+        "branding",
+        "access",
+        "parishsoft",
+        "source",
+        "preview",
+        "mail_test",
+        "slack_test",
+        "finish",
+    ]
 
 
 @pytest.mark.parametrize("state", [SetupState.FROZEN, SetupState.EXPIRED])
@@ -59,7 +98,7 @@ def test_prerequisites_block_later_pages_until_saved():
     assert wizard.step("mail").fix_url == "/admin/setup/parish"
     assert wizard.step("source").fix_url == "/admin/setup/parish"
     assert wizard.previous is None
-    assert wizard.next.key == "parishsoft"
+    assert wizard.next.key == "mail"
     assert wizard.step("parish").current
     assert wizard.completed == 0 and wizard.total == len(wizard.steps)
 
@@ -85,7 +124,9 @@ def test_done_state_next_and_previous_follow_saved_choices():
     assert wizard.next.key == "slack_credential"
     assert wizard.resume.key == "slack_credential"
     ordered = [step.key for step in wizard.steps]
-    assert ordered.index("access") < ordered.index("preview")
+    assert ordered.index("access") < ordered.index("parishsoft")
+    assert ordered.index("parishsoft") + 1 == ordered.index("source")
+    assert ordered.index("source") + 1 == ordered.index("preview")
 
 
 def test_review_opens_when_required_pages_are_complete():
@@ -97,13 +138,15 @@ def test_review_opens_when_required_pages_are_complete():
     }
     shared = {}
     wizard = build(
-        draft(sections, source=uuid4(), reviewed=shared), "access", **options
+        draft(sections, source=uuid4(), reviewed=shared), "source", **options
     )
     shown = states(wizard)
     # Review is open but not completed until the admin has actually opened it.
     assert shown["preview"] == "todo" and wizard.step("preview").url is not None
     assert shown["mail_test"] == "done"
     assert shown["finish"] == "locked"
+    # The load is the last data-entry step: its Continue opens Review.
+    assert wizard.previous.key == "parishsoft"
     assert wizard.next.key == "preview"
     assert wizard.resume.key == "preview"
     reviewed = build(
@@ -124,8 +167,14 @@ def test_review_opens_when_required_pages_are_complete():
 
 
 def test_loading_keeps_completed_steps_but_links_only_the_load():
-    """While the load runs other pages redirect, yet finished work still counts."""
-    sections = {key: VALUES[key] for key in ("parish", "mail", "testing", "slack")}
+    """While the load runs other pages redirect, yet finished work still counts.
+
+    The load is the last data-entry step, so every earlier page is complete
+    while it runs and only Review and the pages after it are still to come.
+    """
+    sections = {
+        key: VALUES[key] for key in ("parish", "mail", "testing", "slack", "access")
+    } | {"branding": {"bundle_id": str(uuid4())}}
     wizard = build(
         draft(sections, state=SetupState.LOADING, source=uuid4()),
         "source",
@@ -135,13 +184,42 @@ def test_loading_keeps_completed_steps_but_links_only_the_load():
     assert wizard.step("source").state == "todo"
     assert wizard.step("source").status == "In progress"
     assert wizard.step("source").url == "/admin/setup/source"
-    for key in ("parishsoft", "mail", "testing", "google_workspace", "slack"):
+    earlier = ("parish", "mail", "testing", "google_workspace", "slack")
+    for key in (*earlier, "branding", "access", "parishsoft"):
         assert shown[key] == "done", key
         assert wizard.step(key).status == "Completed"
-    assert wizard.completed == 6
-    assert {shown[key] for key in ("branding", "access")} == {"blocked"}
+    assert wizard.completed == 8
+    assert {shown[key] for key in ("preview", "mail_test", "finish")} == {"blocked"}
     assert all(step.url is None for step in wizard.steps if step.key != "source")
-    assert wizard.next.url is None
+    assert wizard.next.key == "preview" and wizard.next.url is None
+
+
+def test_a_failed_load_leaves_the_load_to_do_and_every_page_open():
+    """A failed load returns setup to collecting (#1353) but is not done."""
+    # Parish logos and Administrative access come before the load (#1389).
+    sections = {
+        key: VALUES[key] for key in ("parish", "mail", "testing", "slack", "access")
+    } | {"branding": {"bundle_id": str(uuid4())}}
+    wizard = build(
+        draft(sections, source=uuid4(), task_state="failed"),
+        "source",
+        credentials={"parishsoft": True, "google_workspace": True},
+    )
+    shown = states(wizard)
+    assert shown["source"] == "todo"
+    assert wizard.step("source").url == "/admin/setup/source"
+    assert shown["parishsoft"] == "done"
+    assert wizard.step("parishsoft").url == "/admin/setup/credentials/parishsoft"
+    # Unlike while loading, the earlier pages are links again.
+    for key in ("parish", "mail", "testing", "google_workspace", "slack"):
+        assert wizard.step(key).url is not None, key
+    # A discarded load (no binding) is not done either.
+    voided = build(
+        draft(sections),
+        "source",
+        credentials={"parishsoft": True, "google_workspace": True},
+    )
+    assert voided.step("source").state == "todo"
 
 
 def test_stepper_marks_current_step_with_text_not_color_alone():
@@ -150,22 +228,29 @@ def test_stepper_marks_current_step_with_text_not_color_alone():
 
     wizard = build(draft({"mail": VALUES["mail"]}), "testing")
     html = render_to_string("stewardship/setup-wizard.html", {"wizard": wizard})
-    assert html.count('aria-current="step"') == 1
+    # Once in the step bar and once in each copy of the list (#1402): the
+    # disclosure for narrow screens and the open copy for wide ones (#1404).
+    assert html.count('aria-current="step"') == 3
+    assert '<div class="setup-stepper-wide" role="group"' in html
     assert '<ol class="setup-steps">' in html
     assert "Current step" in html and "Completed" in html
     assert "Not available yet" in html
     assert 'href="/admin/setup/source"' not in html  # blocked: shown as text
     # Compact summary: the current step by number and name, and the count.
-    assert "Step 4 of 12:" in html and "<strong>Testing recipient</strong>" in html
+    assert "Step 3 of 12:" in html and "<strong>Testing recipient</strong>" in html
     assert "1 of 12 steps completed" in html
-    # The full list is collapsed by default (and stays as the reader left it
-    # across an in-place swap, #519); the decorative track is hidden.
+    # On a narrow screen the full list is collapsed by default (and stays as
+    # the reader left it across an in-place swap, #519); the step bar is a
+    # list of links.
     details = (
         '<details class="setup-stepper-list" id="setup-stepper-list" data-keep-open'
     )
     assert details + ">" in html
-    assert html.count('<span class="setup-track-') == len(wizard.steps)
-    assert 'class="setup-track" aria-hidden="true"' in html
+    assert '<ol class="setup-track" aria-label="Setup steps">' in html
+    assert html.count('class="setup-track-') == len(wizard.steps)
+    assert (
+        "aria-hidden" not in html.split('<ol class="setup-track"')[1].split("</ol>")[0]
+    )
     opened = render_to_string(
         "stewardship/setup-wizard.html", {"wizard": wizard, "stepper_open": True}
     )
@@ -176,6 +261,74 @@ def test_stepper_marks_current_step_with_text_not_color_alone():
     )
     assert 'href="/admin/setup/mail"' in buttons and "Back" in buttons
     assert '<button type="submit">Save and continue</button>' in buttons
+
+
+def track_segments(html):
+    """The step bar's ``<a ...>`` opening tags, in order."""
+    import re
+
+    track = html.split('<ol class="setup-track"')[1].split("</ol>")[0]
+    return re.findall(r"<a [^>]*>", track)
+
+
+def test_step_bar_links_each_open_step_and_explains_the_others():
+    """Open steps are links; a blocked one is focusable, disabled and says why."""
+    from django.template.loader import render_to_string
+
+    wizard = build(draft({"mail": VALUES["mail"]}), "testing")
+    html = render_to_string("stewardship/setup-wizard.html", {"wizard": wizard})
+    segments = track_segments(html)
+    assert len(segments) == len(wizard.steps) == 12
+    for step, segment in zip(wizard.steps, segments, strict=True):
+        if step.url:
+            assert f'href="{step.url}"' in segment, step.key
+            assert "aria-disabled" not in segment and "tabindex" not in segment
+        else:
+            assert "href=" not in segment, step.key
+            assert 'role="link" aria-disabled="true" tabindex="0"' in segment
+            assert "data-step-unavailable" in segment
+            assert "Not available yet: " in segment
+        assert ('aria-current="step"' in segment) is step.current
+    # Parish profile is the first unfinished required step, so this page,
+    # reached out of order, is listed but not linked, as in the list.
+    assert [step.key for step in wizard.steps if step.url] == ["parish", "mail"]
+    # The tooltip and the accessible name say the same; the current step
+    # says so, and Back/Next are untouched (the bar saves nothing).
+    current = segments[2]
+    assert 'data-tip="Step 3 of 12: Testing recipient — Current step — ' in current
+    assert (
+        '<span class="setup-sr-only">Step 3 of 12: Testing recipient — Current step'
+        in html
+    )
+    assert 'data-tip="Step 2 of 12: Outgoing email settings — Completed"' in html
+    assert " title=" not in html.split('<ol class="setup-track"')[1].split("</ol>")[0]
+
+
+def test_step_bar_tooltips_anchor_by_third_as_the_family_bar_does():
+    """First third starts, middle third centres, last third ends (#1402)."""
+    from parishkit.stewardship.accounts.templatetags.stewardship import (
+        step_tip_side,
+    )
+
+    assert [step_tip_side(number, 12) for number in range(1, 13)] == (
+        ["start"] * 4 + ["middle"] * 4 + ["end"] * 4
+    )
+    assert [step_tip_side(number, 7) for number in range(1, 8)] == (
+        ["start"] * 3 + ["middle"] * 2 + ["end"] * 2
+    )
+
+
+def test_both_admin_steppers_draw_the_shared_bar_and_list():
+    """The setup wizard and Campaign setup share stepper-steps.html (#1402)."""
+    from pathlib import Path
+
+    import parishkit.stewardship.accounts as accounts
+
+    folder = Path(accounts.__file__).parent / "templates" / "stewardship"
+    for name in ("setup-wizard.html", "campaign-stepper.html"):
+        text = (folder / name).read_text(encoding="utf-8")
+        assert "{% include 'stewardship/stepper-steps.html'" in text, name
+        assert "setup-track" not in text and "setup-steps" not in text, name
 
 
 def test_every_setup_template_compiles():

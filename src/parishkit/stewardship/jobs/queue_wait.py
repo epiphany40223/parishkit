@@ -37,6 +37,8 @@ TASK_QUEUES = {
     "automation_maintenance": WorkQueue.GENERAL,
     "branding_cleanup": WorkQueue.GENERAL,
     "campaign_boundary": WorkQueue.GENERAL,
+    "census_publication": WorkQueue.SOURCE,
+    "census_publication_preflight": WorkQueue.SOURCE,
     "daily_digest_finalize": WorkQueue.GENERAL,
     "daily_digest_prepare": WorkQueue.GENERAL,
     "family_mail_prepare": WorkQueue.GENERAL,
@@ -63,6 +65,8 @@ TASK_QUEUES = {
 # running task ahead gets the generic "other background work" reason.
 BLOCKER_NAMES = {
     "source_refresh": _("the ParishSoft update"),
+    "census_publication_preflight": _("the census check against ParishSoft"),
+    "census_publication": _("publishing census changes to ParishSoft"),
     "setup_source_load": _("the initial ParishSoft data load"),
     "setup_finalize": _("the final initial-setup step"),
     "setup_source_cleanup": _("the initial setup cleanup"),

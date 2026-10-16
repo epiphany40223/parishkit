@@ -31,12 +31,12 @@ _ACTIVE = {
     "administrator": (
         "response_dashboard",
         "information_queue",
-        "ministry_followup",
+        "ministry_report",
         "family_email_progress",
         "mail_problems",
     ),
-    "staff": ("response_dashboard", "information_queue", "ministry_followup"),
-    "ministry_leader": ("ministry_report", "ministry_followup"),
+    "staff": ("response_dashboard", "information_queue", "ministry_report"),
+    "ministry_leader": ("ministry_report",),
 }
 STEPS = {
     "testing": {
@@ -120,17 +120,32 @@ def role(roles):
     return None
 
 
-def next_steps(state, viewer_role, menu, *, test_email=None, mail_unknown=None):
+def next_steps(
+    state, viewer_role, menu, *, test_email=None, mail_unknown=None, setup_next=None
+):
     """Home's Next steps for ``state`` and ``viewer_role``, as ``Step`` rows.
 
     ``menu`` is the chrome's menu entries by name (dicts with ``url``,
     ``label``, ``reason`` and ``count``), already filtered by the viewer's
     role. A step whose entry the menu leaves out is left out here too, so a
     role never sees a step it may not open. ``test_email`` is the initial
-    invitation's current revision (or None), and ``mail_unknown`` the
-    chrome's count of emails that may not have arrived.
+    invitation's current revision (or None), ``mail_unknown`` the
+    chrome's count of emails that may not have arrived, and ``setup_next``
+    the Campaign setup stepper's first step not done yet (or None), which
+    leads an Administrator's Testing list as Continue campaign setup.
     """
     steps = []
+    if setup_next is not None and state == "testing" and viewer_role == "administrator":
+        # The Campaign setup stepper's way back in (#1404): Leave campaign
+        # setup opens Home, which offers the first step not done yet.
+        steps.append(
+            Step(
+                str(
+                    _("Continue campaign setup: %(step)s") % {"step": setup_next.label}
+                ),
+                setup_next.url,
+            )
+        )
     for name in STEPS.get(state, {}).get(viewer_role, ()):
         if name == "campaign_mail":
             step = _test_email(menu.get("content_catalog"), test_email)
@@ -237,6 +252,7 @@ def home(context):
             menu,
             test_email=dashboard.get("test_email"),
             mail_unknown=chrome.get("delivery_unknown"),
+            setup_next=dashboard.get("setup_next"),
         ),
         "today": today(dashboard),
     }

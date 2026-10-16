@@ -119,6 +119,7 @@ def test_the_guide_and_specification_are_cross_linked():
         "ca",
         "rehearse",
         "spike",
+        "finish-setup",
     ):
         assert f"`{command}" in GUIDE.read_text(), command
     # The spec's command table names every laptop command the script accepts.
@@ -132,6 +133,7 @@ def test_the_guide_and_specification_are_cross_linked():
         "`reset --reinstall`",
         "`down`",
         "`ca`",
+        "`finish-setup`",
     ):
         assert command in SPEC.read_text(), command
 
@@ -195,6 +197,14 @@ exit 0
 """
 
 
+# The Mac's free space as `df -Pk` reports it (FAKE_MAC_FREE_KB, default 100 GiB).
+FAKE_MAC_DF = r"""
+echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
+echo "fake 1 1 ${FAKE_MAC_FREE_KB-104857600} 1% /"
+"""
+MAC_FREE = "104857600"
+
+
 def run_local(tmp_path, *args, status="Running", env=None, stdin=""):
     """Run the laptop half with the stand-ins; return (result, calls, stdins)."""
     tmp_path.mkdir(parents=True, exist_ok=True)
@@ -210,6 +220,7 @@ def run_local(tmp_path, *args, status="Running", env=None, stdin=""):
     executable_stub(bin_dir, "limactl", FAKE_LIMACTL)
     executable_stub(bin_dir, "ssh", FAKE_SSH)
     executable_stub(bin_dir, "git", FAKE_GIT)
+    executable_stub(bin_dir, "df", FAKE_MAC_DF)
     home = tmp_path / "home"
     home.mkdir(exist_ok=True)
     base = {
@@ -281,7 +292,18 @@ def vm_commands(calls):
         ("deploy", "--rollback", "--smtp-latency-ms", "600"),
         ("rehearse", "--bogus"),
         ("rehearse", "--due-in"),
+        ("finish-setup", "x"),
         ("deploy", "--smtp-latency-ms", "123456"),
+        ("snapshot", "save"),
+        ("snapshot", "save", "a", "--force"),
+        ("snapshot", "list", "x"),
+        ("snapshot", "delete"),
+        ("snapshot", "restore"),
+        ("switch",),
+        ("switch", "a", "b"),
+        ("reset", "--bogus"),
+        ("reset", "a", "b"),
+        ("seed", "--testing", "x"),
     ],
 )
 def test_bad_usage_is_refused_before_the_vm(tmp_path, args):
@@ -538,9 +560,9 @@ def test_deploy_rollback_uploads_the_host_half_without_building(tmp_path):
 def test_snapshot_and_reset_name_the_right_snapshot(tmp_path):
     """Default post-setup; --seeded selects the seeded one; reset restores."""
     _, calls, _ = run_local(tmp_path / "a", "snapshot")
-    assert vm_commands(calls) == ["snapshot post-setup"]
+    assert vm_commands(calls) == [f"snapshot post-setup 1 {MAC_FREE} 8"]
     _, calls, _ = run_local(tmp_path / "b", "snapshot", "--seeded")
-    assert vm_commands(calls) == ["snapshot seeded"]
+    assert vm_commands(calls) == [f"snapshot seeded 1 {MAC_FREE} 8"]
     _, calls, _ = run_local(
         tmp_path / "c", "reset", "--seeded", env={"FAKE_HAS_SNAPSHOT": "1"}
     )
@@ -548,6 +570,137 @@ def test_snapshot_and_reset_name_the_right_snapshot(tmp_path):
     result, calls, _ = run_local(tmp_path / "d", "reset", "--seeded")
     assert result.returncode == 1 and "No seeded snapshot" in result.stderr
     assert vm_commands(calls) == ["has-snapshot seeded"]
+
+
+def test_named_snapshots_pass_the_name_the_mac_space_and_the_cap(tmp_path):
+    """save, --replace, list, the cap override and reset NAME (#1395)."""
+    _, calls, _ = run_local(tmp_path / "save", "snapshot", "save", "testing")
+    assert vm_commands(calls) == [f"snapshot testing 0 {MAC_FREE} 8"]
+    _, calls, _ = run_local(
+        tmp_path / "replace",
+        "snapshot",
+        "save",
+        "pr-1395",
+        "--replace",
+        env={"PARISHKIT_LOCAL_SNAPSHOT_LIMIT": "3", "FAKE_MAC_FREE_KB": "42"},
+    )
+    assert vm_commands(calls) == ["snapshot pr-1395 1 42 3"]
+    _, calls, _ = run_local(tmp_path / "list", "snapshot", "list")
+    assert vm_commands(calls) == [f"snapshot-list {MAC_FREE}"]
+    _, calls, _ = run_local(
+        tmp_path / "reset", "reset", "testing", env={"FAKE_HAS_SNAPSHOT": "1"}
+    )
+    assert vm_commands(calls) == ["has-snapshot testing", "reset testing"]
+    # A missing named snapshot is refused; only post-setup falls back to a
+    # reinstall, and a snapshot named "reinstall" is just a name.
+    for name in ("testing", "reinstall"):
+        result, calls, _ = run_local(tmp_path / f"none-{name}", "reset", name)
+        assert result.returncode == 1 and f"No {name} snapshot" in result.stderr
+        assert vm_commands(calls) == [f"has-snapshot {name}"]
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ("snapshot", "save", "Testing"),
+        ("snapshot", "save", "-x"),
+        ("snapshot", "save", "a" * 33),
+        ("snapshot", "save", "a/b"),
+        ("snapshot", "delete", "../x"),
+        ("snapshot", "restore", "a_b"),
+        ("switch", "UPPER"),
+        ("reset", "a.b"),
+    ],
+)
+def test_a_bad_snapshot_name_is_refused_before_ssh(tmp_path, args):
+    """Names are 1-32 of [a-z0-9-], not starting with '-'."""
+    result, calls, _ = run_local(tmp_path, *args)
+    assert result.returncode == 1, args
+    assert "1-32 lowercase letters" in result.stderr
+    assert ssh_calls(calls) == []
+
+
+def test_restore_and_switch_upload_the_host_half_then_switch(tmp_path):
+    """The switch's upgrade path runs the host half, so it is uploaded first."""
+    for args in (("snapshot", "restore", "seeded"), ("switch", "seeded")):
+        result, calls, stdins = run_local(tmp_path / args[0], *args)
+        assert result.returncode == 0, result.stderr
+        ssh = ssh_calls(calls)
+        assert ssh[0].endswith(f"sudo install -m 0644 /dev/stdin '{HOST_REMOTE}'")
+        assert stdins[0] == HOST_SCRIPT.read_bytes()
+        assert vm_commands(calls) == [f"snapshot-restore seeded {HOST_REMOTE}"]
+
+
+def test_snapshot_delete_needs_the_typed_snapshot_name(tmp_path):
+    """The wrong name deletes nothing; a missing snapshot is never asked about."""
+    result, calls, _ = run_local(tmp_path / "missing", "snapshot", "delete", "old")
+    assert result.returncode == 1 and "No old snapshot" in result.stderr
+    assert vm_commands(calls) == ["has-snapshot old"]
+    result, calls, _ = run_local(
+        tmp_path / "wrong",
+        "snapshot",
+        "delete",
+        "old",
+        stdin="seeded\n",
+        env={"FAKE_HAS_SNAPSHOT": "1"},
+    )
+    assert result.returncode == 1 and "Not confirmed" in result.stderr
+    assert "Type the snapshot name (old)" in result.stderr
+    assert vm_commands(calls) == ["has-snapshot old"]
+    result, calls, _ = run_local(
+        tmp_path / "right",
+        "snapshot",
+        "delete",
+        "old",
+        stdin="old\n",
+        env={"FAKE_HAS_SNAPSHOT": "1"},
+    )
+    assert result.returncode == 0, result.stderr
+    assert vm_commands(calls) == ["has-snapshot old", "snapshot-delete old"]
+
+
+def test_seed_testing_uploads_the_host_half_and_logs(tmp_path):
+    """seed --testing switches (so it needs the host half) and logs as seed does."""
+    result, calls, stdins = run_local(tmp_path, "seed", "--testing")
+    assert result.returncode == 0, result.stderr
+    assert stdins[0] == HOST_SCRIPT.read_bytes()
+    assert vm_commands(calls) == [f"seed-testing {HOST_REMOTE}"]
+    assert (tmp_path / "home" / ".parishkit-local" / "seed.log").exists()
+
+
+def test_an_unreadable_mac_free_space_is_refused_before_ssh(tmp_path):
+    """A df answer that is not a number never silently skips the Mac check."""
+    for args in (("snapshot", "save", "x"), ("snapshot", "--seeded"),
+                 ("snapshot", "list")):  # fmt: skip
+        result, calls, _ = run_local(
+            tmp_path / args[-1].strip("-"), *args, env={"FAKE_MAC_FREE_KB": ""}
+        )
+        assert result.returncode == 1, args
+        assert "Could not read the Mac's free space" in result.stderr
+        assert vm_commands(calls) == []
+    # status still reports, without the Mac's figure.
+    result, calls, _ = run_local(
+        tmp_path / "status", "status", env={"FAKE_MAC_FREE_KB": ""}
+    )
+    assert result.returncode == 0 and vm_commands(calls) == ["status ''"]
+
+
+def test_switch_and_seed_testing_pass_the_users_upgrade_inputs(tmp_path):
+    """A pre-#952 snapshot's upgrade path needs them, as a deploy does."""
+    users = {
+        "STEWARDSHIP_USERS_OPERATION": "11111111-2222-4333-8444-555555555555",
+        "STEWARDSHIP_USERS_OPERATOR": "Op",
+        "STEWARDSHIP_USERS_REASON": "Switch",
+        "STEWARDSHIP_USERS_ADMINISTRATORS": "admin@example.test",
+    }
+    for args in (("switch", "seeded"), ("seed", "--testing")):
+        _, calls, _ = run_local(tmp_path / args[0], *args, env=users)
+        last = ssh_calls(calls)[-1]
+        assert "sudo env STEWARDSHIP_USERS_OPERATION=11111111-" in last, args
+        assert "STEWARDSHIP_USERS_ADMINISTRATORS=admin@example.test bash " in last
+        assert not any("sudo env" in c for c in ssh_calls(calls)[:-1])
+    _, calls, _ = run_local(tmp_path / "plain", "switch", "seeded")
+    assert not any("sudo env" in c for c in ssh_calls(calls))
 
 
 def test_reset_without_a_snapshot_needs_the_typed_instance_name(tmp_path):
@@ -603,12 +756,14 @@ def test_the_simple_commands_reach_the_vm_half(tmp_path):
     assert vm_commands(calls) == ["down"]
     result, calls, _ = run_local(tmp_path / "status", "status")
     assert calls[0].startswith("limactl list parishkit-local")
-    assert vm_commands(calls) == ["status"]
+    assert vm_commands(calls) == [f"status {MAC_FREE}"]
     # A stopped VM is a status, not an error.
     result, calls, _ = run_local(tmp_path / "status2", "status", status="Stopped")
     assert result.returncode == 0 and ssh_calls(calls) == []
     _, calls, _ = run_local(tmp_path / "signin", "sign-in", "--email", "a@example.test")
     assert vm_commands(calls) == ["sign-in a@example.test"]
+    _, calls, _ = run_local(tmp_path / "finish", "finish-setup")
+    assert vm_commands(calls) == ["finish-setup"]
     result, calls, _ = run_local(tmp_path / "seed", "seed", "--response-scale", "4")
     assert vm_commands(calls) == ["seed 4"]
     assert (tmp_path / "seed" / "home" / ".parishkit-local" / "seed.log").exists()
@@ -662,6 +817,9 @@ def test_vm_create_uses_the_tracked_lima_configuration(tmp_path):
 # FAKE_IMAGE_EXISTS makes `image inspect` find the tag; FAKE_DEPS_FAIL makes
 # the postgres/valkey start fail; FAKE_LEFTOVER makes a container survive
 # `down`; FAKE_KILLED reports the worker as killed by the stop timeout.
+# The wizard and credentials seeder steps answer FAKE_SEED_RESULT (default:
+# a frozen attempt with PS_ID and GW_ID), and setup completes once both are
+# acknowledged.
 FAKE_DOCKER = r"""
 echo "$*" >>"$FAKE_LOG"
 last=${*: -1}
@@ -681,9 +839,30 @@ case "$*" in
             '"recipient_fingerprint": "SHA256:fake"}' ;;
     *"--entrypoint python"*)
         name=$(printf '%s' "$last" | sed -n 's/.*import \([A-Z_]*\) as value.*/\1/p')
+        if [ "$name" = STEPS ] && [ -n "$FAKE_STEPS" ]; then
+            printf '%s' "$FAKE_STEPS"
+            exit 0
+        fi
         printf "constant-%s" "$name" ;;
     *" local-seed") echo "invalid command; choose ..." >&2; exit 2 ;;
-    *"SELECT EXISTS"*) echo "${FAKE_COMPLETED:-f}" ;;
+    *"SELECT EXISTS"*)
+        # Acknowledging both credentials is what completes setup.
+        if [ "$(cat "$FAKE_ROOT/.fake-acked" 2>/dev/null | wc -l)" -ge 2 ]; then
+            echo t
+        else
+            echo "${FAKE_COMPLETED:-f}"
+        fi ;;
+    *" local-seed --step wizard "*|*" local-seed --step credentials "*)
+        frozen='{"result": "frozen", "requests": {"parishsoft": "'$PS_ID'",'
+        frozen+=' "google_workspace": "'$GW_ID'"}}'
+        echo "${FAKE_SEED_RESULT:-$frozen}" ;;
+    *"count(*) FROM stewardship_secret_request"*) echo "${FAKE_AWAITING:-2}" ;;
+    *" acknowledge-credential "*) echo "$last" >>"$FAKE_ROOT/.fake-acked" ;;
+    *"FROM django_migrations"*)
+        [ -z "$FAKE_MIGRATIONS" ] || tr ';' '\n' <<<"$FAKE_MIGRATIONS" ;;
+    *"FROM stewardship_system_configuration"*)
+        summary=${FAKE_SUMMARY:-$'testing\tdraft\t100\ttesting@example.test'}
+        printf '%s\n' "$summary" ;;
     "compose ls --all --format json") echo '[]' ;;
     *" up --detach --wait --wait-timeout 180 postgres valkey")
         [ -z "$FAKE_DEPS_FAIL" ] || { echo "postgres refused" >&2; exit 1; } ;;
@@ -727,6 +906,13 @@ exec /bin/date "${args[@]}"
 """
 
 
+FAKE_VM_DF = r"""
+if [ "$*" = "-h /" ]; then echo "fake 38G 12G 26G 30% /"; exit 0; fi
+echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
+echo "fake 1 1 ${FAKE_VM_FREE_KB:-31457280} 1% /"
+"""
+
+
 def run_vm(tmp_path, *args, status=0, prepare=None, env=None):
     """Run the VM half against the stand-ins; return (docker calls, output, root)."""
     if shutil.which("jq") is None:
@@ -751,6 +937,9 @@ def run_vm(tmp_path, *args, status=0, prepare=None, env=None):
     executable_stub(bin_dir, "date", FAKE_DATE)
     executable_stub(bin_dir, "chown", "exit 0")
     executable_stub(bin_dir, "sleep", "exit 0")
+    # The VM's free space (FAKE_VM_FREE_KB, default 30 GiB) and its trim.
+    executable_stub(bin_dir, "df", FAKE_VM_DF)
+    executable_stub(bin_dir, "fstrim", 'echo "fstrim $*" >>"$FAKE_LOG"')
     # coreutils timeout is Linux-only here; the stand-in just runs the command.
     executable_stub(bin_dir, "timeout", 'shift; exec "$@"')
     # The application's pre-wizard answer through Caddy: a 503 from gunicorn.
@@ -762,8 +951,8 @@ def run_vm(tmp_path, *args, status=0, prepare=None, env=None):
     executable_stub(
         bin_dir,
         "rsync",
-        'echo "rsync $*" >>"$FAKE_LOG"; mkdir -p "${@: -1}"; '
-        'cp -R "${@: -2:1}". "${@: -1}"',
+        'echo "rsync $*" >>"$FAKE_LOG"; [ -z "$FAKE_RSYNC_FAIL" ] || exit 23; '
+        'mkdir -p "${@: -1}"; cp -R "${@: -2:1}". "${@: -1}"',
     )
     if prepare is not None:
         prepare(root, etc, snapshots)
@@ -785,6 +974,11 @@ def run_vm(tmp_path, *args, status=0, prepare=None, env=None):
             "FAKE_LOG": str(log),
             "FAKE_ROOT": str(root),
             "STEWARDSHIP_LOG_DIR": str(logs),
+            "PS_ID": PS_ID,
+            "GW_ID": GW_ID,
+            # What the running database's django_migrations answers; a test
+            # sets it empty for a database that cannot be read.
+            "FAKE_MIGRATIONS": MIGRATIONS,
             **(env or {}),
         },
         text=True,
@@ -819,6 +1013,9 @@ def installed(root, etc, snapshots, *, mode="normal", completed=False):
 
 
 UP = ("up", IMAGE, "100", "a@example.test", "1")
+# The frozen setup attempt's sealed credential ids the seeder stand-in reports.
+PS_ID = "11111111-1111-4111-8111-111111111111"
+GW_ID = "22222222-2222-4222-8222-222222222222"
 
 
 def test_up_follows_the_runbook_first_installation_order(tmp_path):
@@ -975,6 +1172,11 @@ def test_a_failed_dependency_start_is_reported_with_its_limit(tmp_path):
         ("start",),
         ("deploy", IMAGE, "0", "/x/host.sh"),
         ("rollback", "/x/host.sh"),
+        ("wizard",),
+        ("finish-setup",),
+        ("snapshot", "testing", "0", "1", "8"),
+        ("snapshot-restore", "seeded", "/x/host.sh"),
+        ("seed-testing", "/x/host.sh"),
     ],
 )
 def test_every_destructive_or_deployment_command_needs_the_marker(tmp_path, args):
@@ -1075,14 +1277,22 @@ def test_sign_in_needs_the_clock_mode_marker_too(tmp_path):
 
 
 def test_snapshot_stops_copies_with_numeric_ids_and_restarts(tmp_path):
-    """Stop first, rsync --delete --numeric-ids the root with its YAML, restart."""
-    calls, output, root = run_vm(tmp_path, "snapshot", "post-setup", prepare=installed)
+    """Stop first, rsync --delete --numeric-ids the root with its YAML, restart.
+
+    The copy is made beside the snapshot and renamed into place once whole.
+    """
+    calls, output, root = run_vm(
+        tmp_path, "snapshot", "post-setup", prepare=installed,
+        env={"FAKE_MIGRATIONS": MIGRATIONS},
+    )  # fmt: skip
     stop = first(calls, "compose -p parishkit-local stop")
     copy = first(calls, "rsync ")
     start = first(calls, " up --detach web")
     assert stop < copy < start
     snapshot = tmp_path / "snapshots" / "post-setup"
-    assert calls[copy] == f"rsync -aHAX --delete --numeric-ids {root}/ {snapshot}/root/"
+    partial = tmp_path / "snapshots" / ".post-setup.partial"
+    assert calls[copy] == f"rsync -aHAX --delete --numeric-ids {root}/ {partial}/root/"
+    assert not partial.exists()
     assert (snapshot / "deployment.yaml").exists() and (
         snapshot / "deployment.env"
     ).exists()
@@ -1100,6 +1310,7 @@ def test_reset_restores_only_an_existing_snapshot_after_stopping(tmp_path):
     def with_snapshot(root, etc, snapshots):
         installed(root, etc, snapshots)
         (snapshots / "seeded" / "root").mkdir(parents=True)
+        (snapshots / "seeded" / "taken").write_text("2026-10-04T07:49:38Z\n")
         shutil.copy(etc / "deployment.yaml", snapshots / "seeded" / "deployment.yaml")
         shutil.copy(etc / "local.env", snapshots / "seeded" / "deployment.env")
 
@@ -1597,3 +1808,767 @@ def test_spike_refuses_without_postgres_or_the_certificate(tmp_path):
     )  # fmt: skip
     assert "local root certificate" in output
     assert not any("local-spike" in call for call in calls)
+
+
+# ---------------------------------------------------------------------------
+# Finishing setup (runbook first installation, step 5; #1355).
+
+
+def frozen_wizard(root, etc, snapshots):
+    """An installed fake-clock root whose wizard froze its attempt.
+
+    compose.json carries web's rendered environment, mounts and tmpfs, which
+    the seeder's one-off web container copies.
+    """
+    installed(root, etc, snapshots, mode="fake")
+    web = {
+        "image": IMAGE,
+        "environment": {"PARISHKIT_STEWARDSHIP_PROFILE": "local"},
+        "volumes": [{"source": "/x", "target": "/y", "read_only": True}],
+        "tmpfs": ["/tmp"],
+    }
+    services = root / "config" / "services"
+    (services / "compose.json").write_text(json.dumps({"services": {"web": web}}))
+    (services / "compose.faketime.json").write_text(
+        json.dumps({"services": {"web": {**web, "volumes": []}}})
+    )
+
+
+def test_finish_setup_acknowledges_the_frozen_attempts_credentials(tmp_path):
+    """Look up, wait, recreate from compose.json, acknowledge, complete, restart."""
+    calls, output, _ = run_vm(tmp_path, "finish-setup", prepare=frozen_wizard)
+    configured = "-f {0}/compose.json -f {0}/compose.faketime.json -p parishkit-local"
+    configured = configured.format(tmp_path / "root" / "config" / "services")
+    order = [
+        first(calls, "local-seed --step credentials "),
+        first(calls, "count(*) FROM stewardship_secret_request"),
+        first(calls, f"{configured} up --detach --force-recreate worker mail-dispatch"),
+        first(
+            calls, f"{configured} exec -T worker pk-stewardship acknowledge-credential"
+        ),
+        first(calls, " exec -T mail-dispatch pk-stewardship acknowledge-credential"),
+        first(calls, " up --detach --force-recreate web"),
+    ]
+    assert order == sorted(order), calls
+    assert f"--request-id {PS_ID}" in calls[order[3]]
+    assert f"--request-id {GW_ID}" in calls[order[4]]
+    # Read-only lookup: the one-off web container takes the clock directory.
+    assert "--network parishkit-local_backend" in calls[order[0]]
+    assert "Setup complete in" in output
+    assert "Log: " in output
+
+
+def test_finish_setup_is_idempotent_and_refuses_before_finishing_setup(tmp_path):
+    """Complete setup changes nothing; an unfrozen or partial attempt is refused."""
+    for name, env in (
+        ("done", {"FAKE_COMPLETED": "t"}),
+        ("done-late", {"FAKE_SEED_RESULT": '{"result": "setup was already complete"}'}),
+    ):
+        calls, output, _ = run_vm(
+            tmp_path / name, "finish-setup", prepare=frozen_wizard, env=env
+        )
+        assert "already complete; nothing to finish" in output
+        assert not any("acknowledge-credential" in call for call in calls)
+        assert not any("--force-recreate" in call for call in calls)
+    calls, output, _ = run_vm(
+        tmp_path / "early",
+        "finish-setup",
+        status=1,
+        prepare=frozen_wizard,
+        env={"FAKE_SEED_RESULT": '{"result": "not frozen"}'},
+    )
+    assert "has not reached Finishing setup" in output
+    assert not any("--force-recreate" in call for call in calls)
+    partial = json.dumps({"result": "frozen", "requests": {"parishsoft": PS_ID}})
+    calls, output, _ = run_vm(
+        tmp_path / "partial",
+        "finish-setup",
+        status=1,
+        prepare=frozen_wizard,
+        env={"FAKE_SEED_RESULT": partial},
+    )
+    assert "lacks its ParishSoft or Google Workspace credential" in output
+    assert not any("--force-recreate" in call for call in calls)
+
+
+def test_wizard_finishes_setup_through_the_same_step(tmp_path):
+    """`wizard` and `finish-setup` share one runbook step 5 implementation."""
+    calls, output, _ = run_vm(tmp_path, "wizard", prepare=frozen_wizard)
+    assert any("local-seed --step wizard " in call for call in calls)
+    acknowledged = [c for c in calls if "acknowledge-credential" in c]
+    assert [c.split("--request-id ")[1] for c in acknowledged] == [PS_ID, GW_ID]
+    # Setup creates no campaign (#142): wizard creates it afterwards.
+    assert first(calls, "local-seed --step campaign ") > first(
+        calls, " exec -T mail-dispatch pk-stewardship acknowledge-credential"
+    )
+    assert "Setup and the campaign complete in" in output
+    text = VM_SCRIPT.read_text()
+    assert text.count("acknowledge-credential") == 2
+    for command in ("cmd_wizard() {", "cmd_finish_setup() {"):
+        start = text.index(command)
+        assert "finish_setup " in text[start : text.index("\n}\n", start)], command
+
+
+# ---------------------------------------------------------------------------
+# Named snapshots, the data-only switch and the Testing state (#1395).
+
+OLD_IMAGE = f"parishkit-stewardship-local:{'a' * 40}-1690000000"
+MIGRATIONS = "stewardship_accounts 0001_initial;stewardship_accounts 0002_more"
+
+
+def snapshot_of(
+    snapshots,
+    name,
+    *,
+    image=IMAGE,
+    uuid="u",
+    clock="normal",
+    migrations=None,
+    meta=None,
+    leader=None,
+):
+    """A saved snapshot as cmd_snapshot leaves it (meta and migrations optional)."""
+    dir = snapshots / name
+    # Each snapshot is a day younger than the one made before it.
+    day = len(list(snapshots.iterdir())) + 1 if snapshots.exists() else 1
+    (dir / "root" / "run" / "local" / "clock").mkdir(parents=True)
+    (dir / "root" / "run" / "local" / "clock" / "mode").write_text(clock + "\n")
+    (dir / "root" / "config" / "services").mkdir(parents=True)
+    (dir / "root" / "config" / "services" / "compose.json").write_text(
+        json.dumps(
+            {
+                "services": {
+                    "web": {
+                        "image": image,
+                        "environment": {"A": "1"},
+                        "volumes": [],
+                        "tmpfs": ["/tmp"],
+                    }
+                }
+            }
+        )
+    )
+    (dir / "taken").write_text(f"2026-10-0{day}T00:00:00Z\n")
+    (dir / "deployment.yaml").write_text("deployment: {}\n")
+    (dir / "deployment.env").write_text(
+        f"UUID={uuid}\nADMIN_EMAIL=a@example.test\nIMAGE={image}\nDEBUG=0\n"
+    )
+    if migrations is not None:
+        (dir / "migrations").write_text(migrations.replace(";", "\n") + "\n")
+    if meta is not None:
+        (dir / "meta").write_text(meta)
+    if leader is not None:
+        (dir / "root" / "run" / "local" / "leader-user").write_text(leader + "\n")
+
+
+def running(root, etc, snapshots):
+    """An installed, normal-clock root whose files name the running image."""
+    installed(root, etc, snapshots)
+    services = root / "config" / "services"
+    (services / "compose.json").write_text(
+        json.dumps(
+            {
+                "services": {
+                    "web": {
+                        "image": IMAGE,
+                        "environment": {"A": "1"},
+                        "volumes": [],
+                        "tmpfs": ["/tmp"],
+                    }
+                }
+            }
+        )
+    )
+    (services / "worker.yaml").write_text(
+        json.dumps(
+            {"deployment": {"bulk_family_send": True, "local_smtp_latency_ms": 600}}
+        )
+    )
+    with (etc / "local.env").open("a") as env:
+        env.write(f"PREVIOUS_IMAGE={OLD_IMAGE}\n")
+
+
+def test_snapshot_save_writes_the_meta_record_read_before_the_stop(tmp_path):
+    """meta and migrations come from the running database, then the copy."""
+
+    def prepare(root, etc, snapshots):
+        running(root, etc, snapshots)
+        (root / "run" / "local" / "leader-user").write_text("leader@example.test\n")
+
+    calls, output, _ = run_vm(
+        tmp_path,
+        "snapshot",
+        "testing",
+        "0",
+        MAC_FREE,
+        "8",
+        prepare=prepare,
+        env={"FAKE_MIGRATIONS": MIGRATIONS},
+    )
+    stop = first(calls, " stop --timeout 90")
+    assert first(calls, "FROM django_migrations") < stop
+    assert first(calls, "FROM stewardship_system_configuration") < stop
+    # The record's queries are read-only.
+    for call in calls:
+        if "FROM django_migrations" in call or "FROM stewardship_system" in call:
+            assert "default_transaction_read_only=on" in call
+    assert stop < first(calls, "rsync -aHAX --delete --numeric-ids")
+    dir = tmp_path / "snapshots" / "testing"
+    assert (dir / "migrations").read_text() == (
+        "stewardship_accounts 0001_initial\nstewardship_accounts 0002_more\n"
+    )
+    meta = dict(line.split("=", 1) for line in (dir / "meta").read_text().splitlines())
+    assert meta["image"] == IMAGE and meta["commit"] == COMMIT
+    assert meta["uuid"] == "u" and meta["clock"] == "normal"
+    assert (meta["mode"], meta["campaign"], meta["families"]) == (
+        "testing",
+        "draft",
+        "100",
+    )
+    assert meta["testing_recipient"] == "testing@example.test"
+    assert meta["migrations"] == "2" and meta["leader_user"] == "leader@example.test"
+    assert (
+        meta["size_kb"].isdigit()
+        and meta["taken"] == (dir / "taken").read_text().strip()
+    )
+
+
+def test_snapshot_save_refuses_an_existing_name_unless_replacing(tmp_path):
+    """REPLACE 0 refuses before anything stops; 1 and the alias form overwrite."""
+
+    def prepare(root, etc, snapshots):
+        running(root, etc, snapshots)
+        snapshot_of(snapshots, "testing")
+
+    calls, output, _ = run_vm(
+        tmp_path / "keep", "snapshot", "testing", "0", MAC_FREE, "8",
+        status=1, prepare=prepare,
+    )  # fmt: skip
+    assert "'snapshot save testing --replace'" in output
+    assert calls == []
+    calls, _, _ = run_vm(
+        tmp_path / "replace", "snapshot", "testing", "1", MAC_FREE, "8",
+        prepare=prepare,
+    )  # fmt: skip
+    assert any(c.startswith("rsync ") for c in calls)
+    # The one-argument form (an older laptop half) replaces, as before #1395.
+    calls, _, _ = run_vm(tmp_path / "alias", "snapshot", "testing", prepare=prepare)
+    assert any(c.startswith("rsync ") for c in calls)
+
+
+@pytest.mark.parametrize(
+    "args, env, reason",
+    [
+        (("1", "2"), {}, "already 2 other snapshots (the cap is 2)"),
+        (("1", "8"), {"FAKE_VM_FREE_KB": "1000"}, "below its 5.0 GiB reserve"),
+        (("20971520", "8"), {}, "the Mac would have"),
+    ],
+)
+def test_snapshot_save_refuses_past_the_cap_or_a_disk_reserve(
+    tmp_path, args, env, reason
+):
+    """The refusal comes before anything stops and lists the snapshots by age."""
+
+    def prepare(root, etc, snapshots):
+        running(root, etc, snapshots)
+        (root / "run" / "persistent").mkdir(parents=True)
+        (root / "run" / "persistent" / "data").write_bytes(b"x" * 200_000)
+        snapshot_of(snapshots, "seeded")
+        snapshot_of(snapshots, "post-setup")
+
+    mac_free = MAC_FREE if args[0] == "1" else args[0]
+    calls, output, _ = run_vm(
+        tmp_path, "snapshot", "testing", "0", mac_free, args[1],
+        status=1, prepare=prepare, env=env,
+    )  # fmt: skip
+    assert "Not saving the testing snapshot" in output and reason in output
+    assert output.index("seeded  taken 2026-10-01") < output.index("post-setup  taken")
+    assert "snapshot delete NAME" in output
+    assert not any(" stop" in c or c.startswith("rsync") for c in calls)
+
+
+def test_snapshot_save_counts_a_replacement_against_the_others_only(tmp_path):
+    """Replacing one of two snapshots under a cap of 2 is allowed."""
+
+    def prepare(root, etc, snapshots):
+        running(root, etc, snapshots)
+        snapshot_of(snapshots, "seeded")
+        snapshot_of(snapshots, "post-setup")
+
+    calls, _, _ = run_vm(
+        tmp_path, "snapshot", "seeded", "1", MAC_FREE, "2", prepare=prepare
+    )
+    assert any(c.startswith("rsync ") for c in calls)
+
+
+@pytest.mark.parametrize("name", ["Bad", "-x", "a" * 33, "../x", "a/b"])
+def test_every_snapshot_command_refuses_a_bad_name_first(tmp_path, name):
+    """The VM half checks the name itself, before the marker or any call."""
+    for args in (
+        ("snapshot", name),
+        ("snapshot-delete", name),
+        ("snapshot-restore", name, "/x/h.sh"),
+        ("reset", name),
+    ):
+        calls, output, _ = run_vm(tmp_path / args[0], *args, status=1, prepare=running)
+        assert "1-32 lowercase letters" in output, args
+        assert calls == [], args
+
+
+def test_snapshot_list_shows_each_record_and_what_a_switch_would_do(tmp_path):
+    """Same image, same or older or newer schema, another install, a gone image."""
+
+    def prepare(root, etc, snapshots):
+        running(root, etc, snapshots)
+        snapshot_of(
+            snapshots, "seeded",
+            meta="mode=production\ncampaign=active\nsize_kb=1048576\n",
+        )  # fmt: skip
+        snapshot_of(snapshots, "same-schema", image=OLD_IMAGE, migrations=MIGRATIONS)
+        snapshot_of(
+            snapshots, "older", image=OLD_IMAGE,
+            migrations="stewardship_accounts 0001_initial",
+        )  # fmt: skip
+        snapshot_of(
+            snapshots, "newer", image=OLD_IMAGE,
+            migrations=MIGRATIONS + ";stewardship_accounts 0003_new",
+        )  # fmt: skip
+        snapshot_of(snapshots, "elsewhere", uuid="other")
+        snapshot_of(snapshots, "legacy", image=OLD_IMAGE, clock="fake")
+
+    def row(output, name):
+        return next(line for line in output.splitlines() if line.split()[:1] == [name])
+
+    _, output, _ = run_vm(
+        tmp_path / "a", "snapshot-list", MAC_FREE, prepare=prepare,
+        env={"FAKE_MIGRATIONS": MIGRATIONS, "FAKE_IMAGE_EXISTS": "1"},
+    )  # fmt: skip
+    assert "production/active" in row(output, "seeded")
+    assert "data only" in row(output, "seeded") and "1.0 GiB" in row(output, "seeded")
+    assert COMMIT[:7] in row(output, "seeded")
+    # Another image always migrates forward, even with the same migrations:
+    # the upgrade check also covers grants and logins.
+    assert "migrates forward" in row(output, "same-schema")
+    assert "migrates forward" in row(output, "older")
+    assert "refused: newer code" in row(output, "newer")
+    assert "refused: other install" in row(output, "elsewhere")
+    # No record and another image: newer code cannot be ruled out.
+    assert "refused: no record" in row(output, "legacy")
+    assert " fake " in row(output, "legacy")
+    assert "?/?" in row(output, "legacy")
+    assert "VM free: 30.0 GiB" in output and "Mac free: 100.0 GiB" in output
+    # Without the snapshot's image the upgrade path is refused.
+    _, output, _ = run_vm(
+        tmp_path / "b", "snapshot-list", prepare=prepare,
+        env={"FAKE_MIGRATIONS": MIGRATIONS},
+    )  # fmt: skip
+    assert "refused: image gone" in row(output, "older")
+    assert "Mac free" not in output
+    # status ends with the same summary.
+    _, output, _ = run_vm(tmp_path / "c", "status", MAC_FREE, prepare=prepare)
+    assert "Snapshots in " in output and "Mac free: 100.0 GiB" in output
+
+
+def test_snapshot_delete_removes_only_that_snapshot_then_trims(tmp_path):
+    """Delete, then fstrim so the sparse VM disk file can shrink on the Mac."""
+
+    def prepare(root, etc, snapshots):
+        running(root, etc, snapshots)
+        snapshot_of(snapshots, "old")
+        snapshot_of(snapshots, "seeded")
+
+    calls, output, root = run_vm(tmp_path, "snapshot-delete", "old", prepare=prepare)
+    snapshots = tmp_path / "snapshots"
+    assert not (snapshots / "old").exists() and (snapshots / "seeded").exists()
+    assert calls == ["fstrim -v /"]
+    assert root.exists()
+    calls, output, _ = run_vm(
+        tmp_path / "none", "snapshot-delete", "old", status=1, prepare=running
+    )
+    assert "No old snapshot" in output and calls == []
+
+
+def test_a_data_switch_keeps_the_code_and_restores_only_the_data(tmp_path):
+    """Same schema: stop, restore with the kept paths excluded, recreate, sign in."""
+    host = tmp_path / "host.sh"
+
+    def prepare(root, etc, snapshots):
+        running(root, etc, snapshots)
+        snapshot_of(
+            snapshots, "testing", migrations=MIGRATIONS,
+            leader="leader@example.test",
+        )  # fmt: skip
+
+    before = None
+
+    def capture(root, etc, snapshots):
+        nonlocal before
+        prepare(root, etc, snapshots)
+        before = (etc / "local.env").read_text()
+
+    calls, output, root = run_vm(
+        tmp_path, "snapshot-restore", "testing", str(host), prepare=capture,
+        env={"FAKE_MIGRATIONS": MIGRATIONS},
+    )  # fmt: skip
+    stop = first(calls, " stop --timeout 90")
+    copy = first(calls, "rsync ")
+    assert first(calls, "FROM django_migrations") < stop < copy
+    snapshot = tmp_path / "snapshots" / "testing"
+    assert calls[copy] == (
+        "rsync -aHAX --checksum --inplace --delete --numeric-ids "
+        "--exclude=/.parishkit-local --exclude=/.stewardship-provisioned.json "
+        "--exclude=/.stewardship-provisioning.json --exclude=/config/services/ "
+        "--exclude=/config/deployment/ --exclude=/cache/ "
+        f"--exclude=/run/persistent/caddy/ {snapshot}/root/ {root}/"
+    )
+    assert any(" up --detach --force-recreate web" in c for c in calls[copy:])
+    assert not any(c.startswith("host ") for c in calls)
+    # The deployment record (image, previous image, debug) is untouched.
+    assert (tmp_path / "etc" / "local.env").read_text() == before
+    signins = [c for c in calls if "local-sign-in" in c]
+    assert [c.split("--email ")[1] for c in signins] == [
+        "a@example.test",
+        "leader@example.test",
+    ]
+    assert "Switched to the testing snapshot (data)" in output
+    assert "http://localhost:8025" in output
+
+
+@pytest.mark.parametrize(
+    "snapshot, env, reason",
+    [
+        (
+            {"image": OLD_IMAGE, "migrations": MIGRATIONS + ";stewardship_x 0009_new"},
+            {"FAKE_MIGRATIONS": MIGRATIONS},
+            f"taken on commit {'a' * 40}",
+        ),
+        ({"uuid": "other"}, {}, "belongs to another install"),
+        ({"image": OLD_IMAGE}, {}, "before snapshots recorded their migrations"),
+        (
+            {"image": OLD_IMAGE, "migrations": MIGRATIONS},
+            {"FAKE_MIGRATIONS": "", "FAKE_IMAGE_EXISTS": "1"},
+            "Could not read the running database's migrations",
+        ),
+        (
+            {"image": OLD_IMAGE, "migrations": "stewardship_accounts 0001_initial"},
+            {"FAKE_MIGRATIONS": MIGRATIONS},
+            "which is no longer in the VM",
+        ),
+    ],
+)
+def test_a_switch_refuses_before_any_service_stops(tmp_path, snapshot, env, reason):
+    """Newer code, another install, or a missing image: nothing stops or changes."""
+
+    def prepare(root, etc, snapshots):
+        running(root, etc, snapshots)
+        snapshot_of(snapshots, "x", **snapshot)
+
+    calls, output, _ = run_vm(
+        tmp_path, "snapshot-restore", "x", str(tmp_path / "host.sh"),
+        status=1, prepare=prepare, env=env,
+    )  # fmt: skip
+    assert reason in output
+    assert not any(" stop" in c or c.startswith("rsync") for c in calls)
+
+
+def test_an_older_snapshot_is_migrated_forward_by_the_host_half(tmp_path):
+    """Restore whole on its image, then the upgrade to the running image."""
+    host = tmp_path / "host.sh"
+
+    def prepare(root, etc, snapshots):
+        running(root, etc, snapshots)
+        host.write_text(f"#!/usr/bin/env bash\n{FAKE_HOST}\n")
+        snapshot_of(
+            snapshots, "older", image=OLD_IMAGE,
+            migrations="stewardship_accounts 0001_initial",
+        )  # fmt: skip
+
+    calls, output, root = run_vm(
+        tmp_path, "snapshot-restore", "older", str(host), prepare=prepare,
+        env={
+            "FAKE_MIGRATIONS": MIGRATIONS, "FAKE_IMAGE_EXISTS": "1",
+            "FAKE_HOST_ENV": "1",
+        },
+    )  # fmt: skip
+    copy = first(calls, "rsync ")
+    snapshot = tmp_path / "snapshots" / "older"
+    assert first(calls, " stop --timeout 90") < copy
+    # Only Caddy's data is kept: the rest is the snapshot's, on its image.
+    assert calls[copy] == (
+        "rsync -aHAX --checksum --inplace --delete --numeric-ids "
+        f"--exclude=/run/persistent/caddy/ {snapshot}/root/ {root}/"
+    )
+    started = first(calls, " up --detach --force-recreate web")
+    upgrade = first(calls, "host - ")
+    assert copy < started < upgrade
+    etc = tmp_path / "etc"
+    # The running image, with the schema change, keeping the debug setting.
+    assert calls[upgrade] == (
+        f"host - {IMAGE} {root} parishkit-local {etc / 'deployment.yaml'} u 1 "
+        f"upgrade local {tmp_path / 'build'} debug=1"
+    )
+    # The running rendering choices travel to the host half.
+    assert calls[upgrade + 1] == "host bulk=on latency=600"
+    # The record is the running deployment's again.
+    assert record(tmp_path)["IMAGE"] == IMAGE
+    assert record(tmp_path)["PREVIOUS_IMAGE"] == OLD_IMAGE
+    assert record(tmp_path)["DEBUG"] == "1"
+    assert "Switched to the older snapshot (upgrade)" in output
+    assert any("local-sign-in" in c for c in calls[upgrade:])
+
+
+def post_setup_ready(root, etc, snapshots):
+    """A running deployment with a post-setup snapshot of a Testing draft."""
+    running(root, etc, snapshots)
+    snapshot_of(snapshots, "post-setup", clock="fake", migrations=MIGRATIONS)
+    (root / "config" / "services" / "compose.faketime.json").write_text(
+        json.dumps(
+            {"services": {"web": {"image": IMAGE, "environment": {}, "volumes": []}}}
+        )
+    )
+    (root / "run" / "local" / "clock" / "offset").write_text("-1468800\n")
+    faketime = root.parent / "build" / "deploy" / "stewardship" / "Dockerfile.faketime"
+    faketime.write_text("FROM x\n")
+
+
+def test_seed_testing_switches_to_post_setup_and_moves_the_clock_forward(tmp_path):
+    """A Testing draft at real time; the mail catcher is cleared first."""
+    calls, output, root = run_vm(
+        tmp_path, "seed-testing", str(tmp_path / "host.sh"), prepare=post_setup_ready,
+        env={
+            "FAKE_MIGRATIONS": MIGRATIONS, "FAKE_COMPLETED": "t",
+            "FAKE_IMAGE_EXISTS": "1",
+        },
+    )  # fmt: skip
+    clock = root / "run" / "local" / "clock"
+    assert (clock / "mode").read_text() == "normal\n"
+    assert (clock / "offset").read_text() == "+0\n"
+    clear = first(
+        calls, "-X DELETE --max-time 20 http://127.0.0.1:8025/api/v1/messages"
+    )
+    assert first(calls, "rsync ") < clear
+    # The clock moves only with every service stopped, then all are recreated.
+    stops = [i for i, c in enumerate(calls) if " stop --timeout 90" in c]
+    assert len(stops) == 2 and clear < stops[1]
+    assert any(" up --detach --force-recreate web" in c for c in calls[stops[1] :])
+    assert "has no 'testing' step" in output
+    assert "A Testing-mode draft campaign of 100 Families" in output
+    assert "snapshot save testing" in output
+    assert any("local-sign-in" in c for c in calls)
+
+
+def test_seed_testing_runs_the_seeder_step_when_the_image_has_it(tmp_path):
+    """An image whose seeder offers `testing` gets it, under the web identity."""
+    calls, output, _ = run_vm(
+        tmp_path, "seed-testing", str(tmp_path / "host.sh"), prepare=post_setup_ready,
+        env={
+            "FAKE_MIGRATIONS": MIGRATIONS, "FAKE_COMPLETED": "t",
+            "FAKE_IMAGE_EXISTS": "1", "FAKE_STEPS": '["prepare", "testing"]',
+        },
+    )  # fmt: skip
+    step = first(calls, "local-seed --step testing")
+    assert "--user 10001:10001" in calls[step]
+    assert first(calls, "-X DELETE") < step
+
+
+@pytest.mark.parametrize(
+    "summary, reason",
+    [
+        ("production\tactive\t100\ttesting@example.test", "not a Testing draft"),
+        ("testing\tscheduled\t100\ttesting@example.test", "not a Testing draft"),
+        ("testing\tdraft\t100\treal@parish.example", "not an @example.test address"),
+    ],
+)
+def test_seed_testing_refuses_anything_but_a_synthetic_testing_draft(
+    tmp_path, summary, reason
+):
+    """The clock never moves and no mail is cleared for a refused state."""
+    calls, output, root = run_vm(
+        tmp_path, "seed-testing", str(tmp_path / "host.sh"), status=1,
+        prepare=post_setup_ready,
+        env={
+            "FAKE_MIGRATIONS": MIGRATIONS, "FAKE_COMPLETED": "t",
+            "FAKE_IMAGE_EXISTS": "1", "FAKE_SUMMARY": summary,
+        },
+    )  # fmt: skip
+    assert reason in output
+    assert (root / "run" / "local" / "clock" / "mode").read_text() == "fake\n"
+    assert not any("-X DELETE" in c for c in calls)
+
+
+def test_seed_testing_refuses_a_recorded_live_post_setup_before_switching(tmp_path):
+    """A meta record that is not a Testing draft refuses before anything stops."""
+
+    def prepare(root, etc, snapshots):
+        running(root, etc, snapshots)
+        snapshot_of(
+            snapshots, "post-setup", clock="fake",
+            meta="mode=production\ncampaign=active\n",
+        )  # fmt: skip
+
+    calls, output, _ = run_vm(
+        tmp_path, "seed-testing", str(tmp_path / "host.sh"), status=1, prepare=prepare
+    )
+    assert "not a Testing draft" in output and calls == []
+    calls, output, _ = run_vm(
+        tmp_path / "none", "seed-testing", str(tmp_path / "host.sh"), status=1,
+        prepare=running,
+    )  # fmt: skip
+    assert "No post-setup snapshot" in output and calls == []
+
+
+def test_a_failed_upgrade_of_an_older_snapshot_says_where_it_stopped(tmp_path):
+    """The host half's failure ends the switch with what the deployment holds."""
+    host = tmp_path / "host.sh"
+
+    def prepare(root, etc, snapshots):
+        running(root, etc, snapshots)
+        host.write_text(f"#!/usr/bin/env bash\n{FAKE_HOST}\n")
+        snapshot_of(
+            snapshots, "older", image=OLD_IMAGE,
+            migrations="stewardship_accounts 0001_initial",
+        )  # fmt: skip
+
+    calls, output, _ = run_vm(
+        tmp_path, "snapshot-restore", "older", str(host), status=1, prepare=prepare,
+        env={
+            "FAKE_MIGRATIONS": MIGRATIONS, "FAKE_IMAGE_EXISTS": "1",
+            "FAKE_HOST_FAIL": "1",
+        },
+    )  # fmt: skip
+    assert "did not finish" in output and f"holds that data on {OLD_IMAGE}" in output
+    assert not any("local-sign-in" in c for c in calls)
+
+
+def test_snapshot_save_refuses_unreadable_migrations_before_the_stop(tmp_path):
+    """No empty migrations record: the save refuses with nothing stopped."""
+    calls, output, _ = run_vm(
+        tmp_path, "snapshot", "testing", "0", MAC_FREE, "8", status=1,
+        prepare=running, env={"FAKE_MIGRATIONS": ""},
+    )  # fmt: skip
+    assert "Could not read the applied migrations" in output
+    assert not any(" stop" in c or c.startswith("rsync") for c in calls)
+    assert not (tmp_path / "snapshots" / "testing").exists()
+
+
+def test_a_failed_save_restarts_the_services_and_keeps_the_earlier_copy(tmp_path):
+    """The half copy is never a snapshot; a replaced one stays whole."""
+
+    def prepare(root, etc, snapshots):
+        running(root, etc, snapshots)
+        snapshot_of(snapshots, "testing", meta="mode=testing\n")
+
+    calls, output, _ = run_vm(
+        tmp_path, "snapshot", "testing", "1", MAC_FREE, "8", status=23,
+        prepare=prepare, env={"FAKE_RSYNC_FAIL": "1"},
+    )  # fmt: skip
+    stop = first(calls, " stop --timeout 90")
+    assert any(" up --detach" in c for c in calls[stop:])
+    assert "FAILED: the testing snapshot (exit 23)" in output
+    assert "services are running again" in output
+    snapshot = tmp_path / "snapshots" / "testing"
+    assert (snapshot / "taken").read_text() == "2026-10-01T00:00:00Z\n"
+    assert (snapshot / "meta").read_text() == "mode=testing\n"
+    # A directory without `taken` (what a half copy would be) is no snapshot.
+    (tmp_path / "snapshots" / "half" / "root").mkdir(parents=True)
+    run_vm(tmp_path / "probe", "has-snapshot", "half", status=1)
+    _, output, _ = run_vm(tmp_path, "snapshot-list", prepare=None)
+    assert "half" not in output and ".testing.partial" not in output
+
+
+def test_a_replacement_counts_the_whole_copy_against_the_vm_reserve(tmp_path):
+    """It is written beside the old copy, so only the full size is safe."""
+
+    def prepare(root, etc, snapshots):
+        running(root, etc, snapshots)
+        (root / "run" / "persistent").mkdir(parents=True)
+        (root / "run" / "persistent" / "data").write_bytes(b"x" * 400_000)
+        snapshot_of(snapshots, "testing")
+        shutil.copytree(root, snapshots / "testing" / "root", dirs_exist_ok=True)
+
+    calls, output, _ = run_vm(
+        tmp_path, "snapshot", "testing", "1", MAC_FREE, "8", status=1,
+        prepare=prepare, env={"FAKE_VM_FREE_KB": str(5 * 1024 * 1024 + 100)},
+    )  # fmt: skip
+    assert "below its 5.0 GiB reserve" in output
+    assert calls == []
+
+
+def test_a_successful_replacement_links_the_old_copy_then_trims(tmp_path):
+    """--link-dest the earlier copy, swap it out once whole, then fstrim."""
+
+    def prepare(root, etc, snapshots):
+        running(root, etc, snapshots)
+        snapshot_of(snapshots, "testing")
+
+    calls, _, root = run_vm(
+        tmp_path, "snapshot", "testing", "1", MAC_FREE, "8", prepare=prepare
+    )
+    snapshots = tmp_path / "snapshots"
+    copy = first(calls, "rsync ")
+    assert f"--link-dest={snapshots}/testing/root" in calls[copy]
+    assert calls[-1] == "fstrim -v /"
+    assert not (snapshots / ".testing.old").exists()
+    assert (snapshots / "testing" / "meta").exists()
+
+
+def test_the_one_argument_save_keeps_the_old_defaults(tmp_path):
+    """An older laptop half's `snapshot NAME`: replace, no Mac check, cap 8."""
+
+    def with_others(count):
+        def prepare(root, etc, snapshots):
+            running(root, etc, snapshots)
+            snapshot_of(snapshots, "post-setup")
+            for n in range(count):
+                snapshot_of(snapshots, f"other-{n}")
+
+        return prepare
+
+    calls, _, _ = run_vm(tmp_path / "seven", "snapshot", "post-setup",
+                         prepare=with_others(7))  # fmt: skip
+    assert any(c.startswith("rsync ") for c in calls)
+    calls, output, _ = run_vm(tmp_path / "eight", "snapshot", "post-setup",
+                              status=1, prepare=with_others(8))  # fmt: skip
+    assert "(the cap is 8)" in output and "Mac would" not in output
+
+
+def test_a_fake_clock_data_switch_builds_the_fake_clock_images(tmp_path):
+    """The running image's derived images; refused without its override."""
+
+    def prepare(root, etc, snapshots):
+        post_setup_ready(root, etc, snapshots)
+
+    _, output, _ = run_vm(
+        tmp_path / "ok", "snapshot-restore", "post-setup", str(tmp_path / "h.sh"),
+        prepare=prepare, env={"FAKE_IMAGE_EXISTS": "1"},
+    )  # fmt: skip
+    assert "Building the fake-clock images" in output
+    assert "Starting web (fake clock mode)" in output
+
+    def no_override(root, etc, snapshots):
+        post_setup_ready(root, etc, snapshots)
+        (root / "config" / "services" / "compose.faketime.json").unlink()
+
+    calls, output, _ = run_vm(
+        tmp_path / "none", "snapshot-restore", "post-setup", str(tmp_path / "h.sh"),
+        status=1, prepare=no_override,
+    )  # fmt: skip
+    assert "renders no fake-clock override" in output
+    assert not any(" stop" in c for c in calls)
+
+
+def test_a_failed_data_switch_names_the_whole_restore_that_recovers(tmp_path):
+    """After the stop nothing is started on mixed data; the advice names it."""
+
+    def prepare(root, etc, snapshots):
+        running(root, etc, snapshots)
+        snapshot_of(snapshots, "testing", migrations=MIGRATIONS)
+
+    calls, output, _ = run_vm(
+        tmp_path, "snapshot-restore", "testing", str(tmp_path / "h.sh"),
+        status=23, prepare=prepare, env={"FAKE_RSYNC_FAIL": "1"},
+    )  # fmt: skip
+    stop = first(calls, " stop --timeout 90")
+    assert not any(" up --detach" in c for c in calls[stop:])
+    assert "FAILED: the switch to the testing snapshot (exit 23)" in output
+    assert "'reset testing'" in output and "reset NAME" not in output

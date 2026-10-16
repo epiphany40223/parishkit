@@ -103,8 +103,8 @@ TEMPLATES = {
     "weekly_digest_manual": "weekly-manual.html",
     "weekly_digest_snapshot": "weekly-digest.html",
     "weekly_digest_item": "weekly-digest.html",
-    "ministry_report": "ministry-report.html",
-    "ministry_followup": "ministry-followup.html",
+    # Ministry requests is the follow-up queue's page (#1133).
+    "ministry_report": "ministry-followup.html",
     "ministry_followup_item": "ministry-followup.html",
     "ministry_roster": "ministry-roster.html",
     "family_directory": "directory.html",
@@ -246,11 +246,14 @@ def test_title_and_heading_use_the_page_name(name):
 
 
 # "Return to" links whose target has no fixed name (navigation rule 4): the
-# shared error page returns to whatever page the reader came from, and the
-# export error page, which reads nothing from the database, cannot name the
-# export it returns to.
+# shared error page returns to whatever page the reader came from, as does
+# the delivery error page for a refused form (#1401: the outgoing mail list,
+# a message, a refused address or a background task), and the export error
+# page, which reads nothing from the database, cannot name the export it
+# returns to.
 UNNAMED_RETURNS = {
     ("error.html", "the previous page"),
+    ("delivery-error.html", "the previous page"),
     ("report-export-error.html", "the export status page"),
 }
 # "Return to {{ … }}" links, by template, and the variable each names its
@@ -402,7 +405,7 @@ def test_former_names_are_read_from_the_spec():
     assert {"Key change details", "Family-directory export"} <= former
     assert not any(name.startswith("_") for name in former)
     # Current names, a non-page row, quoted wording and single words are not.
-    assert not former & {"Ministry follow-up", "Every Admin page", "Message"}
+    assert not former & {"Ministry requests", "Every Admin page", "Message"}
     assert not any('"' in name or "'" in name for name in former)
 
 
@@ -489,6 +492,9 @@ ALLOWED = {
     # "Back to To review" is the Census changes review button that undoes an
     # Approve or Ignore (#528), not a link back to a page.
     ("accounts/templates/stewardship/census-changes.html", "Back to "),
+    # ``pk-admin census review`` (#528) words that button's decision
+    # (``unreviewed``) in its help, not a link back to a page.
+    ("admin_cli.py", "Back to "),
     # "Distinct Families with Testing submissions": a readiness count and
     # the Testing submissions table's caption, not the page's name.
     (
@@ -698,7 +704,7 @@ def test_pending_names_match_the_spec_later():
         # Ministry requests with no current campaign, as the retired
         # /admin/ministry-reports/ root showed (NAV-11). The reports root
         # opens Participation instead, whose greyed page says why (#522).
-        ("parishkit.stewardship.reports.ministry_views", "ministry_report"),
+        ("parishkit.stewardship.reports.ministry_followup_views", "ministry_report"),
     ],
 )
 def test_empty_report_page_is_named_after_its_report(view, name):
@@ -725,7 +731,7 @@ def _title(template, context):
     [
         ("information_queue", {}),
         ("information_item", {"item": {"pk": 1}}),
-        ("ministry_followup", {}),
+        ("ministry_report", {}),
         ("ministry_followup_item", {"item": {"pk": 1}}),
         ("weekly_digest_snapshot", {}),
         ("weekly_digest_item", {"detail": True}),

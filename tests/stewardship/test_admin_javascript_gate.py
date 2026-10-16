@@ -101,7 +101,7 @@ def test_family_templates_are_not_gated():
 def _gated(html):
     """Whether rendered HTML carries every part of the JavaScript gate."""
     parts = (
-        '<html lang="en" class="js-required">' in html,
+        '<html lang="en" class="admin-document js-required">' in html,
         '<script src="/static/stewardship/admin-gate-v1.js"></script>' in html,
         # hidden keeps the panel out of a page whose stylesheet failed.
         '<div class="js-required-panel" hidden>' in html,
@@ -165,3 +165,13 @@ def test_gate_script_and_stylesheet_rules():
     # !important outranks the stylesheet's [hidden] rule while the class is on.
     assert "[hidden] { display: none !important; }" in css
     assert "html.js-required .js-required-panel { display: block !important;" in css
+
+
+def test_gate_script_stays_small():
+    """admin-gate-v1.js blocks rendering while it loads, so it has a budget.
+
+    It removes the gate class and applies the Appearance choice (#1264)
+    before the body is parsed; anything that can wait belongs in a deferred
+    script instead.
+    """
+    assert (STATIC / "admin-gate-v1.js").stat().st_size <= 4096

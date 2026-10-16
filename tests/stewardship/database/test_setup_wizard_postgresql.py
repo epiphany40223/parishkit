@@ -79,8 +79,12 @@ def test_save_and_continue_follows_the_one_ordered_list(setup_http, google):
             "/admin/setup/credentials/slack"
         )
         disabled = {"channel_id": ""}
-        assert save(browser, "slack", disabled)["Location"] == "/admin/setup/source"
+        assert save(browser, "slack", disabled)["Location"] == "/admin/setup/branding"
         assert save(browser, "parish", VALUES["parish"])["Location"] == (
+            "/admin/setup/mail"
+        )
+        # ParishSoft connection and its load come last before Review (#1353).
+        assert save(browser, "access", VALUES["access"])["Location"] == (
             "/admin/setup/credentials/parishsoft"
         )
 
@@ -93,7 +97,9 @@ def test_stepper_marks_current_done_and_unavailable_steps(setup_http, google):
         page = browser.get("/admin/setup/testing")
         assert page.status_code == 200
         body = page.content
-        assert body.count(b'aria-current="step"') == 1
+        # Once in the step bar and once in each copy of the list (#1402): the
+        # disclosure for narrow screens and the open copy for wide ones (#1404).
+        assert body.count(b'aria-current="step"') == 3
         assert b'<ol class="setup-steps">' in body
         assert b"Completed" in body and b"Not available yet" in body
         assert b'href="/admin/setup/source"' not in body
@@ -139,7 +145,8 @@ def test_source_step_offers_the_load_only_after_its_prerequisites(setup_http, go
                 "version": str(SetupAttempt.objects.get().version),
             },
         )
-        assert staged["Location"] == "/admin/setup/mail"
+        # The load is the page right after ParishSoft connection (#1353).
+        assert staged["Location"] == "/admin/setup/source"
         ready = browser.get("/admin/setup/source")
         assert b'value="load"' in ready.content
 
@@ -182,7 +189,8 @@ def test_stepper_links_completed_steps_and_the_next_one_only(setup_http, google)
         browser = started()
         body = browser.get("/admin/setup").content
         assert b'href="/admin/setup/parish"' in body
-        assert b'href="/admin/setup/credentials/parishsoft"' not in body
+        # The next page waits for the Parish profile, the first unfinished one.
+        assert b'href="/admin/setup/mail"' not in body
         save(browser, "mail", VALUES["mail"])
         body = browser.get("/admin/setup").content
         assert b'href="/admin/setup/mail"' in body  # completed stays reachable

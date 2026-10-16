@@ -70,9 +70,21 @@ RUNBOOKS = {
         "https://github.com/epiphany40223/parishkit/blob/main/docs/guides/"
         "stewardship-deployment-runbook.md"
     ),
+    "backup_checking": (
+        "https://github.com/epiphany40223/parishkit/blob/main/docs/guides/"
+        "stewardship-backup-runbook.md#checking"
+    ),
     "backup_schedule": (
         "https://github.com/epiphany40223/parishkit/blob/main/docs/guides/"
         "stewardship-backup-runbook.md#the-nightly-backup"
+    ),
+    "mail_outage": (
+        "https://github.com/epiphany40223/parishkit/blob/main/docs/guides/"
+        "stewardship-launch-runbooks.md#mail-provider-outage"
+    ),
+    "source_outage": (
+        "https://github.com/epiphany40223/parishkit/blob/main/docs/guides/"
+        "stewardship-launch-runbooks.md#parishsoft-outage"
     ),
 }
 # Family email purposes, whose waiting retries the page counts.
@@ -113,6 +125,32 @@ REGISTRY = {
 }
 PROCESS_KINDS = frozenset({"not_running", "not_reported"})
 INSTALLERS = frozenset({"config-installer", "credential-installer"})
+# The CRITICAL banner event each problem kind accounts for (the spec's
+# "Health problems on Home and in the banner"). The other CRITICAL events
+# have no problem kind, so their banner groups keep only the System logs
+# link; ``web_unhealthy`` is left out on purpose (while it is current the
+# page cannot be shown at all).
+BANNER_PROBLEMS = {
+    "source_destructive_change": "source_destructive_change",
+    "source_tenant_mismatch": "source_tenant_mismatch",
+    # Event.SOURCE_INVALID; the spec calls it `source_invalid`.
+    "source_refresh_invalid": "source_failed",
+    "source_provider_failed": "source_failing",
+    "source_credential_failed": "source_failing",
+    "mail_provider_failed": "sender_halted",
+    "retry_refusal_unrecorded": "refusal_unrecorded",
+}
+# Mapped events whose banner group links no tile yet. "Email sending failed"
+# is also recorded for failures that halt nothing, so it should link the
+# Mail tile only while a halt is current; the banner's one query cannot tell
+# that until ADM-13 PR 4 adds halt identities.
+UNLINKED_EVENTS = frozenset({"mail_provider_failed"})
+# Kinds whose sentence on Home already links its own tile ("See Mail
+# sender", "See the counts", "See Version"), so Home's line adds no second
+# link to it (system-health-home-line.html).
+SENTENCE_LINKS_TILE = frozenset(
+    {"mail_provider_unavailable", "source_destructive_change", "versions_differ"}
+)
 # How bad each tile state is, for "worst of".
 RANK = {"working": 0, "warning": 1, "error": 2}
 
@@ -326,6 +364,28 @@ class Problem:
         return tuple(tile for tile, _, _ in tile_parts(self))
 
     @property
+    def tile(self):
+        """The tile Home's line links: the first that shows the problem."""
+        return self.tiles[0]
+
+    @property
+    def tile_name(self):
+        """That tile's area name."""
+        return tile_name(self.tile)
+
+    @property
+    def word(self):
+        """The state word Home's line shows beside its icon."""
+        from django.utils.translation import gettext as _
+
+        return {"warning": _("Warning"), "error": _("Error")}[self.severity]
+
+    @property
+    def links_tile(self):
+        """Whether Home's sentence already links the problem's tile."""
+        return self.kind in SENTENCE_LINKS_TILE
+
+    @property
     def summary(self):
         """A few plain words naming the problem, for a tile and the announcement."""
         from django.utils.translation import gettext as _
@@ -336,11 +396,13 @@ class Problem:
             "mail_provider_unavailable": _("email provider unavailable"),
             "not_running": _("%(name)s not running"),
             "not_reported": _("%(name)s not reporting"),
-            "source_failing": _("ParishSoft not answering"),
+            "source_failing": _("ParishSoft could not be reached"),
             "source_failed": _("ParishSoft refresh failed"),
             "source_late": _("ParishSoft refresh late"),
-            "source_destructive_change": _("ParishSoft refresh refused"),
-            "source_tenant_mismatch": _("ParishSoft organization changed"),
+            "source_destructive_change": _(
+                "ParishSoft refresh refused: too large a change"
+            ),
+            "source_tenant_mismatch": _("ParishSoft organization does not match"),
             "source_retention_failing": _("old ParishSoft copies kept"),
             "backup_rpo_breach": _("backup overdue"),
             "backup_offsite_failed": _("off-site copy failed"),
@@ -354,6 +416,199 @@ class Problem:
             return words
         name = self.names if words.startswith("%(name)s") else self.names_inline
         return words % {"name": name}
+
+
+def _sender_shown(line):
+    """What a mail consumer's panel line shows, so equal lines can be one.
+
+    A running consumer shows its state and the one time that state names
+    (when a halt began; until when an outage pause or Gmail's limit holds).
+    A stopped one shows when it last reported, and is always its own line,
+    so its key names it.
+    """
+    if not line.running:
+        return (False, line.process)
+    when = {
+        "halted": line.sender_since,
+        "outage_paused": line.sender_until,
+        "gmail_held": line.sender_until,
+    }.get(line.sender_state)
+    return (True, line.sender_state, when)
+
+
+@dataclass(frozen=True)
+class SenderGroup:
+    """One line of the Mail tile: a mail consumer, or both when they agree.
+
+    The mail sender panel gives each consumer its own line only when the
+    two differ (admin-portal spec, "Mail sender panel"); two consumers in
+    the same state read as one "Both mail senders" line, and "Why sends are
+    waiting" names their reason once.
+    """
+
+    lines: tuple
+
+    @property
+    def line(self):
+        """The line whose state the group shows (they all show the same)."""
+        return self.lines[0]
+
+    @property
+    def label(self):
+        """The group's name at the start of its line."""
+        from django.utils.translation import gettext as _
+
+        return _("Both mail senders") if len(self.lines) > 1 else self.line.label
+
+    @property
+    def key(self):
+        """The consumers' process names ("main", or "main-mail" for both),
+        for the line's data attribute and its toggletips' ids."""
+        return "-".join(line.process for line in self.lines)
+
+
+@dataclass(frozen=True)
+class MailSummary:
+    """What the Mail tile's Working summary names (``SystemHealth.mail_summary``).
+
+    ``kind`` is one of ``MAIL_SUMMARIES``; ``at`` is the time it states
+    (since when mail is paused, until when a limit holds), and ``count`` the
+    emails waiting to retry.
+    """
+
+    kind: str
+    at: datetime | None = None
+    count: int = 0
+
+
+# The Mail tile's Working summaries, in the order the first that holds is
+# named (admin-portal spec, "Why sends are waiting"): a deliberate wait
+# says why nothing is sent before Sending does, an Administrator's pause
+# first because it holds everything else back.
+MAIL_SUMMARIES = (
+    "paused",
+    "daily_limit",
+    "gmail_held",
+    "planning_held",
+    "retry",
+    "sending",
+    "idle",
+)
+
+
+@dataclass(frozen=True)
+class SourceSummary:
+    """What the ParishSoft refresh tile's Working summary names
+    (``SystemHealth.source_summary``).
+
+    ``kind`` is one of ``SOURCE_SUMMARIES``; ``at`` is the time it states
+    (until when refreshes are held, or what "data as of" is), and
+    ``connection`` the refresh status's ``Connection`` (or None) for the
+    ``data`` kind.
+    """
+
+    kind: str
+    at: datetime | None = None
+    connection: object = None
+
+
+# The ParishSoft refresh tile's Working summaries, in the order the first
+# that holds is named (admin-portal spec, "ParishSoft refresh panel"): a
+# refusal the Administrator already accepted is what the tile is waiting
+# on, a held refresh catching up once its send ended (its resume time
+# passed, so it is not named), then a hold during a send says why the data
+# is not moving, and a running refresh says it is about to; otherwise the
+# data's age and the connection.
+SOURCE_SUMMARIES = ("accepted", "catching_up", "held", "running", "data", "none")
+
+
+@dataclass(frozen=True)
+class BackupSummary:
+    """What the Backups tile's Working summary names
+    (``SystemHealth.backup_summary``).
+
+    ``kind`` is one of ``BACKUP_SUMMARIES``; ``at`` is the time it states
+    (when a live request was made, or when the newest backup finished), and
+    ``offsite`` the off-site part of the ``backup`` kind: ``copied`` (with
+    ``offsite_at``), ``not_yet`` (set up, no copy made yet) or
+    ``not_set_up``.
+    """
+
+    kind: str
+    at: datetime | None = None
+    offsite: str | None = None
+    offsite_at: datetime | None = None
+
+
+# The Backups tile's Working summaries, in the order the first that holds
+# is named (admin-portal spec, "Backups panel"): a live request is what the
+# Administrator is waiting on, and a running one outranks one held or still
+# waiting; otherwise the newest backup's age with its off-site copy.
+BACKUP_SUMMARIES = ("running", "held", "waiting", "backup", "none")
+
+
+@dataclass(frozen=True)
+class DebugSummary:
+    """What the Debug logging tile's Working summary names
+    (``SystemHealth.debug_summary``): ``kind`` is one of
+    ``DEBUG_SUMMARIES``, ``at`` when the debug-off switch was set, and
+    ``count`` the services with debug logging in effect."""
+
+    kind: str
+    at: datetime | None = None
+    count: int = 0
+
+
+# The Debug logging tile's Working summaries, in the order the first that
+# holds is named (admin-portal spec, "Debug logging panel"): a set switch
+# says debug logging was turned off from the page, then Testing's deliberate
+# debug logging, then Off.
+DEBUG_SUMMARIES = ("switch", "testing", "off")
+
+
+@dataclass(frozen=True)
+class VersionSummary:
+    """What the Version and services tile's Working summary names
+    (``SystemHealth.version_summary``): ``kind`` is one of
+    ``VERSION_SUMMARIES``, ``version`` the one version every running service
+    reports, and ``mode`` the deployment mode."""
+
+    kind: str
+    version: str | None = None
+    mode: str | None = None
+
+
+# The Version and services tile's Working summaries, in the order the first
+# that holds is named (admin-portal spec, "Version panel"): the one version
+# with the mode, else that no service has reported one. A stopped core
+# service or different versions are errors, so they never reach it.
+VERSION_SUMMARIES = ("version", "none")
+
+
+@dataclass(frozen=True)
+class LoadedSummary:
+    """A page-load tile's summary and state (``source_form_tile`` and
+    ``resave_tile``), chosen in one place so the words and the state agree.
+
+    ``kind`` is one of the tile's summaries (``SOURCE_FORM_SUMMARIES`` or
+    ``RESAVE_SUMMARIES``), ``state`` the tile's state, ``count`` the number
+    the words state, and ``more`` how many other items to re-save follow
+    the blocked ones ("and 2 more").
+    """
+
+    kind: str
+    state: str = "working"
+    count: int = 0
+    more: int = 0
+
+
+# Families the form cannot open's summaries, in the order the first that
+# holds is named: a check that could not run and Families listed are
+# warnings; then the Working reasons the list has nothing to show.
+SOURCE_FORM_SUMMARIES = ("unchecked", "families", "no_data", "no_campaign", "none")
+# Pages and emails to re-save's summaries, likewise: a blocked email (an
+# error) outranks items only recommended for re-saving (a warning).
+RESAVE_SUMMARIES = ("unchecked", "blocked", "recommended", "no_campaign", "none")
 
 
 @dataclass(frozen=True)
@@ -734,6 +989,17 @@ class SystemHealth(ReadModel):
         return accept_state(self.refused_counts, self.drop_acceptance)
 
     @property
+    def accept_unavailable(self):
+        """Whether a refusal is shown that can never be accepted now.
+
+        True for ``lapsed`` and ``empty``. System health then draws no
+        Accept this change once section, and the refusal's problem line
+        says why instead (Administrator, 2026-10-15, the conditional-fields
+        rule: a control is drawn only while it is relevant).
+        """
+        return self.accept_state in {"lapsed", "empty"}
+
+    @property
     def attention(self):
         """The problems that need the Administrator, which the page counts.
 
@@ -750,17 +1016,133 @@ class SystemHealth(ReadModel):
         )
 
     @property
-    def mail_wait(self):
-        """The first running mail sender held at a limit (the daily limit or
-        Gmail's), which the Mail tile's summary names, or None."""
-        return next(
-            (
+    def sender_groups(self):
+        """The mail consumers' lines, as the Mail tile shows them: one line
+        for both while they show the same (``_sender_shown``), otherwise one
+        line each."""
+        senders = self.senders
+        if len(senders) == 2 and len({_sender_shown(line) for line in senders}) == 1:
+            return (SenderGroup(senders),)
+        return tuple(SenderGroup((line,)) for line in senders)
+
+    @property
+    def mail_summary(self):
+        """The Mail tile's Working summary: the first of ``MAIL_SUMMARIES``
+        that holds.
+
+        A deliberate wait is named, not counted as a warning (decision 3 of
+        2026-10-13). A limit is named only while a running consumer is held
+        at it; the daily limit's time is when the 24-hour count falls below
+        it again, Gmail's the earliest time a held consumer waits until,
+        when sending resumes.
+        """
+        held = {
+            state: [
                 line
                 for line in self.senders
-                if line.running and line.sender_state in {"daily_limit", "gmail_held"}
-            ),
-            None,
+                if line.running and line.sender_state == state
+            ]
+            for state in ("daily_limit", "gmail_held")
+        }
+        if self.delivery_paused:
+            return MailSummary("paused", self.paused_at)
+        if held["daily_limit"]:
+            return MailSummary("daily_limit", self.daily_resume_at)
+        if held["gmail_held"]:
+            times = [
+                line.sender_until for line in held["gmail_held"] if line.sender_until
+            ]
+            return MailSummary("gmail_held", min(times, default=None))
+        if self.planning_held:
+            return MailSummary("planning_held")
+        if self.retry_waiting:
+            return MailSummary("retry", count=self.retry_waiting)
+        return MailSummary("sending" if self.send_active else "idle")
+
+    @property
+    def source_summary(self):
+        """The ParishSoft refresh tile's Working summary: the first of
+        ``SOURCE_SUMMARIES`` that holds.
+
+        Only shown while the tile is Working, so a failing connection or a
+        late refresh (each a problem) never reaches it in practice; the
+        ``data`` kind still carries the connection whatever its state, so
+        the words stay true if it does.
+        """
+        status = self.refresh
+        refused = any(
+            problem.kind == "source_destructive_change" for problem in self.problems
         )
+        if refused and self.accept_state == "accepted":
+            return SourceSummary("accepted")
+        if status is None:
+            return SourceSummary("none")
+        if status.held_for_send and status.catching_up:
+            return SourceSummary("catching_up")
+        if status.held_for_send:
+            return SourceSummary("held", status.resume_at)
+        if status.running:
+            return SourceSummary("running")
+        if status.data_as_of is not None:
+            return SourceSummary("data", status.data_as_of, status.connection)
+        return SourceSummary("none")
+
+    @property
+    def failed_listed(self):
+        """Whether a failed full refresh is among the problems.
+
+        A failing connection is listed instead of the failure
+        (``find_problems``), so the ParishSoft refresh tile's panel keeps
+        the failure's own notice then (``failed_listed`` in
+        full-refresh-status.html).
+        """
+        return any(problem.kind == "source_failed" for problem in self.problems)
+
+    @property
+    def backup_summary(self):
+        """The Backups tile's Working summary: the first of
+        ``BACKUP_SUMMARIES`` that holds.
+
+        A request that failed, did not finish or was not picked up is a
+        page finding (``page_findings``), so it never reaches this; nor, in
+        Production, do off-site copies that are not set up (decision 5 of
+        2026-10-13), but the words stay true if they do.
+        """
+        request = self.backup_request
+        if request is not None and request.status in LIVE_REQUEST:
+            return BackupSummary(request.status, request.created_at)
+        if self.backup_at is None:
+            return BackupSummary("none")
+        offsite = self.offsite
+        if offsite is None:
+            return BackupSummary("backup", self.backup_at, "not_set_up")
+        if offsite.last_copy_at is None:
+            return BackupSummary("backup", self.backup_at, "not_yet")
+        return BackupSummary("backup", self.backup_at, "copied", offsite.last_copy_at)
+
+    @property
+    def debug_summary(self):
+        """The Debug logging tile's Working summary: the first of
+        ``DEBUG_SUMMARIES`` that holds.
+
+        In Production, debug logging in effect is the ``debug_logging``
+        problem, whose words the tile shows instead; a set switch keeps it
+        out of effect (``debug_lines``).
+        """
+        switch = self.debug_switch
+        if switch is not None and switch.active:
+            return DebugSummary("switch", switch.set_at)
+        if self.debug_lines:
+            return DebugSummary("testing", count=len(self.debug_lines))
+        return DebugSummary("off")
+
+    @property
+    def version_summary(self):
+        """The Version and services tile's Working summary: the first of
+        ``VERSION_SUMMARIES`` that holds."""
+        if len(self.versions) == 1:
+            return VersionSummary("version", self.versions[0], self.mode)
+        return VersionSummary("none", mode=self.mode)
 
     @property
     def live_request(self):
@@ -809,25 +1191,59 @@ def page_findings(health, *, workgroup_missing=None):
     return tuple(kind for kind in FINDINGS if held[kind])
 
 
+def source_form_tile(answer):
+    """Families the form cannot open's summary: the first of
+    ``SOURCE_FORM_SUMMARIES`` that holds.
+
+    ``answer`` is ``source_form_summary``'s: a count, None when the check
+    could not run, or "no_data" / "no_campaign". A Family that cannot open
+    the form, or a check that could not run, is a warning.
+    """
+    if answer is None:
+        return LoadedSummary("unchecked", "warning")
+    if answer in {"no_data", "no_campaign"}:
+        return LoadedSummary(answer)
+    if answer:
+        return LoadedSummary("families", "warning", count=answer)
+    return LoadedSummary("none")
+
+
+def resave_tile(answer):
+    """Pages and emails to re-save's summary: the first of
+    ``RESAVE_SUMMARIES`` that holds.
+
+    ``answer`` is ``resave_summary``'s: the flagged items, None when the
+    read could not run, or "no_campaign". An email that cannot be sent
+    until it is fixed (``blocked``) is an error, named with how many other
+    items follow it; any other item to re-save, or a read that could not
+    run, is a warning.
+    """
+    if answer is None:
+        return LoadedSummary("unchecked", "warning")
+    if answer == "no_campaign":
+        return LoadedSummary("no_campaign")
+    if not answer:
+        return LoadedSummary("none")
+    blocked = sum(1 for item in answer if item["blocked"])
+    if blocked:
+        return LoadedSummary("blocked", "error", blocked, len(answer) - blocked)
+    return LoadedSummary("recommended", "warning", len(answer))
+
+
 def loaded_states(source_form, resave):
     """The page-load tiles' states that are not Working, by tile.
 
-    ``source_form`` is ``source_form_summary``'s answer (a count, None when
-    the check could not run, or "no_data" / "no_campaign") and ``resave``
-    ``resave_summary``'s (the flagged items, None, or "no_campaign"). A
-    Family that cannot open the form, or a check that could not run, is a
-    warning; an item that cannot be sent until it is fixed (``blocked``) is
-    an error, any other item to re-save a warning.
+    ``source_form`` and ``resave`` are the page's reads, as
+    ``source_form_tile`` and ``resave_tile`` take them, so a tile's state
+    always matches its summary.
     """
-    states = {}
-    if source_form is None or (isinstance(source_form, int) and source_form > 0):
-        states["source-form"] = "warning"
-    if resave is None:
-        states["resave"] = "warning"
-    elif resave and resave != "no_campaign":
-        blocked = any(item["blocked"] for item in resave)
-        states["resave"] = "error" if blocked else "warning"
-    return states
+    summaries = {"source-form": source_form_tile(source_form)}
+    summaries["resave"] = resave_tile(resave)
+    return {
+        tile: summary.state
+        for tile, summary in summaries.items()
+        if summary.state != "working"
+    }
 
 
 def parse_loaded(value):
@@ -864,6 +1280,33 @@ def tile_name(key):
         "resave": _("Pages and emails to re-save"),
         "version": _("Version and services"),
     }[key]
+
+
+def banner_tile(event, ended):
+    """The tile a critical-problems banner group links, or None.
+
+    A group links its mapped problem's tile while that problem is current.
+    "Current" is read as the banner already reads it (#633): the group has
+    not ended. That keeps the banner at its one query, and once the group
+    has ended it reads "ended" instead. Unmapped events, and the mapped ones
+    in ``UNLINKED_EVENTS``, keep only the System logs link.
+
+    The tile is the registry's (``REGISTRY[kind][0]``), not a
+    ``Problem.tiles[0]`` as Home's line uses: the banner has only the
+    event, no problem with subjects to split. The two agree for every
+    mapped kind, because none is a process kind (``PROCESS_KINDS``), the
+    only kinds ``tile_parts`` splits across tiles; a test holds that.
+    """
+    kind = BANNER_PROBLEMS.get(event)
+    if kind is None or ended or event in UNLINKED_EVENTS:
+        return None
+    return REGISTRY[kind][0]
+
+
+def banner_events(kind):
+    """The banner events problem ``kind`` accounts for, so an action that
+    resolves the problem acknowledges those events' entries."""
+    return tuple(event for event, mapped in BANNER_PROBLEMS.items() if mapped == kind)
 
 
 @dataclass(frozen=True)
@@ -954,6 +1397,34 @@ class Tile:
     def more(self):
         """How many more counted problems and findings the summary has."""
         return max(len(self.counted) + len(self.findings) - 1, 0)
+
+    @property
+    def listed(self):
+        """Its problem parts that its details list first, in registry order:
+        every part but a refused large change (``refusal``)."""
+        return tuple(
+            part
+            for part in self.problems
+            if part.problem.kind != "source_destructive_change"
+        )
+
+    @property
+    def refusal(self):
+        """A refused large change's part, which ends the tile's problems.
+
+        Its block holds the refused counts, and Accept this change once,
+        which follows the problems, must sit directly under them
+        (admin-portal spec, "Health tiles"), so it is listed after the
+        other problems and the page findings; None when there is none.
+        """
+        return next(
+            (
+                part
+                for part in self.problems
+                if part.problem.kind == "source_destructive_change"
+            ),
+            None,
+        )
 
     @property
     def open(self):
@@ -1104,11 +1575,24 @@ def _image_migrations():
 # this row into the statement Home already runs, and the page runs it alone.
 # Every column is read whatever the data, so Home's query count never
 # depends on which problems are open. Times travel as JSON and are parsed.
+#
+# A record's ``debug_logging`` is the process's effective state, except that
+# a record written before the debug-off switch now set no longer counts as
+# debug logging in effect: the process applies the switch before its next
+# record (``service_status``), so only a record written after the switch
+# can say whether it did. Without this, the Debug logging tile and Home
+# kept naming every service for up to a minute after Turn off debug logging
+# (an idle web worker until it stopped counting as running), although the
+# switch had been set. A process that cannot apply the switch reports debug
+# logging again in its next record, and is named again.
 HEALTH_SQL = (
     "SELECT (SELECT coalesce(json_agg(json_build_object("
     "'service',service,'process',process,'target',target,"
     "'started_at',started_at,'reported_at',reported_at,"
-    "'application_version',application_version,'debug_logging',debug_logging,"
+    "'application_version',application_version,"
+    "'debug_logging',debug_logging AND NOT EXISTS(SELECT 1 "
+    "FROM public.stewardship_debug_off_switch d "
+    "WHERE d.cleared_at IS NULL AND d.set_at>reported_at),"
     "'sender_state',sender_state,'sender_since',sender_since,"
     "'sender_until',sender_until)),'[]'::json) "
     "FROM public.stewardship_service_status),"
@@ -2393,13 +2877,15 @@ def _request_refresh(caller, service, key):
 
 
 def _refusal_events(attempt_id):
-    """The CRITICAL ``source_destructive_change`` log entries the refusal of
-    ``attempt_id`` recorded: the worker writes one, naming the refused
-    task, in the refusal's own transaction (``source.failures``). Ids only;
-    whether each is still inside the banner's window and unacknowledged is
-    ``critical_events.acknowledge``'s to check."""
+    """The CRITICAL log entries the refusal of ``attempt_id`` recorded for
+    its problem: the events the registry maps to
+    ``source_destructive_change`` (``banner_events``). The worker writes one,
+    naming the refused task, in the refusal's own transaction
+    (``source.failures``), so they are exactly the entries any preview of
+    that refusal could show. Ids only; whether each is still inside the
+    banner's window and unacknowledged is ``critical_events.acknowledge``'s
+    to check."""
     from .audit.models import OperationalLog
-    from .observability import Event
     from .source.refresh_models import SourceRefreshAttempt
 
     task = (
@@ -2412,7 +2898,7 @@ def _refusal_events(attempt_id):
     return list(
         OperationalLog.objects.filter(
             level="CRITICAL",
-            event=Event.SOURCE_DESTRUCTIVE_CHANGE.value,
+            event__in=banner_events("source_destructive_change"),
             context__task_id=str(task),
         ).values_list("id", flat=True)
     )

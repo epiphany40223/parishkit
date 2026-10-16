@@ -54,8 +54,8 @@ def test_about_panel_clears_the_old_closed_marker(page, component_origin):
 
 # Converted Admin pages with a data table, rendered with the Admin chrome
 # (sidebar, breadcrumbs, the Testing banner and the delivery warning) by the
-# component fixtures. The report pages with long filter and export forms join
-# this list when their filters are collapsed (#227 follow-up).
+# component fixtures. Report pages whose filters and export are collapsed
+# are checked in test_filter_panel.py, measured from their heading.
 LAPTOP_PAGES = ["/background", "/deliveries", "/delivery-refusals", "/presence"]
 # A typical laptop browser viewport: a 1366x768 screen less the browser's
 # own toolbars. Fonts differ between platforms (Linux CI's are wider), so the

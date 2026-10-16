@@ -1,6 +1,8 @@
 """Synthetic exact observations rendered by the production reporting templates."""
 
 from dataclasses import replace
+from datetime import timedelta
+from decimal import Decimal
 from types import SimpleNamespace
 from urllib.parse import urlencode
 from uuid import UUID
@@ -9,8 +11,12 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 
 from parishkit.stewardship.jobs.queue_wait import QueueWait
-from parishkit.stewardship.reports.digest_presentation import participation_context
+from parishkit.stewardship.reports.chart_specs import participation_chart
+from parishkit.stewardship.reports.digest_presentation import (
+    participation_table_context,
+)
 from parishkit.stewardship.reports.money import MoneyAmount
+from parishkit.stewardship.reports.participation import ParticipationDay
 from parishkit.stewardship.reports.workspace import ReportQuery
 from parishkit.stewardship.reports.workspace_views import daily_table, statistics_panel
 
@@ -27,6 +33,34 @@ REAL = reverse("admin:participation")
 SLOW_GETS = {canonical(REAL + "?scope=historical&timezone=America%2FLos_Angeles")}
 
 
+def long_campaign(chart):
+    """``chart`` over 75 campaign dates, pledges past a million dollars, and
+    one unavailable date (the 20th), so the daily chart thins its date labels,
+    shortens its dollar ticks and breaks its lines at the gap (#720)."""
+    days, total = [], 0
+    for index in range(75):
+        when = chart.first_date + timedelta(days=index)
+        if index == 19:
+            days.append(ParticipationDay(when, 0, 0, 0, None, None, False, False, None))
+            continue
+        first = (index * 7) % 40
+        total += first
+        days.append(
+            ParticipationDay(
+                when,
+                first,
+                total,
+                2000,
+                3,
+                chart.source_as_of,
+                True,
+                True,
+                Decimal(total * 2311),
+            )
+        )
+    return replace(chart, last_date=days[-1].local_date, days=tuple(days))
+
+
 def options(query):
     """The query string Apply report options sends for ``query``."""
     fields = {"scope": query.scope, "timezone": query.timezone}
@@ -35,7 +69,7 @@ def options(query):
 
 
 def components(context, admin):
-    """Reuse the existing digest image; production chart/table values stay shared."""
+    """The production reporting templates over the digest test document's values."""
     value = document()
     chart = value.participation
     campaign = SimpleNamespace(
@@ -44,7 +78,7 @@ def components(context, admin):
         state="active",
     )
     page = {
-        **participation_context(chart),
+        **participation_table_context(chart),
         "campaign": campaign,
         "campaigns": [
             {"id": campaign.pk, "name": chart.campaign_name, "url": "/participation"}
@@ -61,10 +95,10 @@ def components(context, admin):
         "row_count": len(chart.days),
         **daily_table(
             chart,
-            participation_context(chart),
+            participation_table_context(chart),
             ReportQuery(timezone="America/Los_Angeles"),
         ),
-        "chart_url": "/digest-chart.png",
+        "daily_chart": participation_chart(chart),
     }
     job = SimpleNamespace(
         pk=UUID(int=20),
@@ -77,6 +111,10 @@ def components(context, admin):
     )
     pages = {
         "/participation": ("participation", page),
+        "/participation-long": (
+            "participation",
+            page | {"daily_chart": participation_chart(long_campaign(chart))},
+        ),
         "/report-export": (
             "report-export",
             {
@@ -177,7 +215,7 @@ def components(context, admin):
     implicit = ReportQuery(timezone_explicit=False)
     fallback = page | {
         "query": implicit,
-        **daily_table(chart, participation_context(chart), implicit),
+        **daily_table(chart, participation_table_context(chart), implicit),
     }
     los_angeles = ReportQuery(timezone="America/Los_Angeles")
     current = ReportQuery(scope="current", timezone="America/Los_Angeles")
@@ -201,7 +239,7 @@ def components(context, admin):
         | {
             "query": current,
             **statistics_panel(refreshed),
-            **daily_table(chart, participation_context(chart), current),
+            **daily_table(chart, participation_table_context(chart), current),
         },
     )
     return {

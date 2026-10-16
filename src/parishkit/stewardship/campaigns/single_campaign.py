@@ -3,12 +3,12 @@
 The system moves to a single campaign after this one (#145). Until that change
 removes multi-campaign support, every control whose only purpose is working
 with more than one campaign is greyed out with ``TIP`` and the server refuses
-its action (admin-portal spec, navigation rule 10 and decisions 11, 18 and
-19). The refusals live here, in campaign service code rather than in the
-views. ``accounts.admin_editing.confirm`` and ``campaign_views._target`` call
-them, so any caller that goes through those functions (or calls
-``refuse_campaign_creation`` itself), as the ADM-11 host commands are
-planned to, will get the same refusal as the pages. Note that
+its action (UX conventions spec, navigation rule 10; admin-portal spec,
+decisions 11, 18 and 19). The refusals live here, in campaign service code
+rather than in the views. ``accounts.admin_editing.confirm`` and
+``campaign_views._target`` call them, so any caller that goes through those
+functions (or calls ``refuse_campaign_creation`` itself), as the ADM-11 host
+commands are planned to, will get the same refusal as the pages. Note that
 ``accounts.privileged_actions.configuration_request`` records a patch without
 this check; a command built on it must call ``refuse_campaign_creation``.
 

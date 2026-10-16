@@ -188,3 +188,23 @@ def test_local_never_mentions_google():
         " minutes. Nothing was changed.</p>"
     ) in html
     assert 'data-local-step-up="/admin/"' in html
+
+
+@pytest.mark.parametrize("local", [False, True])
+def test_the_setup_credential_steps_name_the_hour(local):
+    """Setup's credential steps accept a sign-in from the last hour (#1402)."""
+    html = notice(local=local, hour=True)
+    google = "" if local else "Google "
+    assert f"closing the portal needs a {google}sign-in from the last hour." in html
+    assert "five minutes" not in html
+    assert "five minutes" in notice(local=local)
+
+
+def test_only_the_setup_credential_notices_say_the_hour():
+    """No page after setup claims the hour (#1402)."""
+    users = sorted(
+        str(path.relative_to(TEMPLATES))
+        for path in TEMPLATES.rglob("*.html")
+        if "hour=True" in path.read_text() and path.parent == TEMPLATES
+    )
+    assert users == ["setup-credential.html", "setup.html"]

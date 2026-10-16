@@ -258,6 +258,36 @@ def test_a_family_no_longer_admitted_is_not_signed_in(live_response_service, goo
     assert not AuditEvent.objects.filter(event_type="family_assisted_login")
 
 
+def test_a_family_no_longer_eligible_sees_open_form_unavailable(
+    live_response_service, google
+):
+    """The timeline shows Open form unavailable, with why, for a Family that
+    may no longer use the Family form; a posted hand-off is still refused
+    (#1331)."""
+    harness = live_response_service
+    family = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=1)
+    admin, _ = signed_in()
+    timeline = f"/admin/reports/families/{family.pk}/"
+
+    def page():
+        """The timeline's whole body, read through the real read guard."""
+        response, content = as_web(get, admin, timeline)
+        assert response.status_code == 200
+        return content.decode()
+
+    assert "data-open-form" in page()
+    with unguarded():
+        FamilyCampaign.objects.filter(pk=family.pk).update(
+            portal_eligible=False, version=family.version + 1
+        )
+    body = page()
+    assert "data-open-form" not in body
+    assert '<button type="button" disabled aria-describedby="open-form-reason">' in body
+    assert "no longer lists this Family as active and registered" in body
+    response, secret = open_form(admin, family.pk)
+    assert response.status_code == 403 and secret is None
+
+
 def test_back_returns_to_the_page_open_form_was_clicked_on(
     live_response_service, google
 ):

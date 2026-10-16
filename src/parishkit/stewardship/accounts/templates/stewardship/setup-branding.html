@@ -11,9 +11,9 @@
 <section class="panel"><h2>{% translate "Generated display sizes" %}</h2>
 <div class="branding-preview">{% for asset in assets %}<figure><img src="{% url 'admin:setup_branding_asset' asset.pk %}" alt="{{ asset.label|capfirst }}"><figcaption>{{ asset.label|capfirst }} — {{ asset.width }} × {{ asset.height }}</figcaption></figure>{% endfor %}</div>
 </section>{% endif %}
-<form method="post" enctype="multipart/form-data" class="panel">
+{% comment %}Save and continue waits for a logo that fits (data-require-complete, data-max-bytes, #1332): a file over 5 MB is refused at the field as soon as it is chosen, and, until a logo is saved, a file must be chosen. The hint follows the action row, so it never moves the buttons.{% endcomment %}<form method="post" enctype="multipart/form-data" class="panel" data-require-complete data-missing-hint="{% translate 'Choose the parish logo image to save.' %}">
 {% csrf_token %}<input type="hidden" name="version" value="{{ draft.status.version }}">
 {{ form.as_div }}
-{% translate "Save and continue" as submit %}{% include 'stewardship/setup-navigation.html' %}
+{% translate "Save and continue" as submit %}{% include 'stewardship/setup-navigation.html' with complete_hint="setup-complete-hint" %}
 </form>
 {% endblock %}

@@ -100,9 +100,10 @@ def test_chart_pointer_and_keyboard_preserve_exact_values(
 def test_chart_hit_testing_follows_the_email_drawing(page, component_origin):
     """The email drawing's plot fills the image, so its upper part takes a pointer.
 
-    At 15% of the image height the plot of the email drawing (#720) begins;
-    the older Participation drawing's plot starts lower, at 26%, so a hover
-    there only shows a tooltip when the page uses the retained drawing's layout.
+    The email drawing's panels (#720) begin at 8% of the image height; the
+    older Participation drawing's plot starts lower, at 26%, so a hover at
+    15% only shows a tooltip when the page uses the retained drawing's
+    layout.
     """
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + "/daily-digest")
@@ -211,10 +212,9 @@ def test_missing_controls_keeps_static_report_usable(page, component_origin):
 def test_the_saved_report_shows_the_response_funnel(
     page, component_origin, axe_source, width
 ):
-    """The funnel charts, table and figures are readable, accessible and fit (#477).
+    """The funnel table and figures are readable, accessible and fit (#477).
 
-    Slice 2: the email's two charts draw first under the real CSP, each with
-    its heading, then the funnel's own table.
+    The panel draws no charts (#1370), only the funnel's own table.
     """
     from playwright.sync_api import expect
 
@@ -226,11 +226,8 @@ def test_the_saved_report_shows_the_response_funnel(
     page.goto(component_origin + "/daily-digest-funnel")
     funnel = page.locator("[data-digest-funnel]")
     visible(funnel.get_by_role("heading", name="Response funnel", level=2))
-    expect(funnel.locator("[data-chart][data-chart-state=rendered]")).to_have_count(2)
-    assert funnel.get_by_role("heading", level=3).all_inner_texts() == [
-        "Response funnel",
-        "Response activity by hour",
-    ]
+    expect(funnel.locator("[data-chart]")).to_have_count(0)
+    expect(funnel.get_by_role("heading", level=3)).to_have_count(0)
     # Four stages: "Link followed" is left out (#1016).
     table = funnel.locator('table[aria-labelledby="digest-funnel-heading"]')
     assert table.locator("tbody tr").count() == 4

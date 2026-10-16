@@ -2,8 +2,9 @@
 
 # ruff: noqa: F811 -- pytest injects imported fixture dependencies by name.
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import pytest
 from django.db import DatabaseError, connection, transaction
@@ -12,7 +13,6 @@ from django.urls import reverse
 from parishkit.stewardship.accounts import delivery_control_commands as commands
 from parishkit.stewardship.accounts.campaign_mail_models import CampaignMailTest
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.accounts.setup_drafts import save_section
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.delivery_control_models import (
     DeliveryControlCommand,
@@ -40,6 +40,7 @@ from .test_campaign_mail_postgresql import deliver
 from .test_digest_schedule_planning_postgresql import add_digest
 from .test_outbox_postgresql import claim
 from .test_setup_mail_views_postgresql import web_login
+from .test_setup_preparation_postgresql import stage
 from .test_setup_views_postgresql import post
 from .test_withdrawal_postgresql import (  # noqa: F401
     bootstrapped,
@@ -64,14 +65,6 @@ def delivery_scheduled(request, monkeypatch):
         login, status, initial, row = original(service, patch)
         reminder = content(str(status.attempt_id), kind="email", slot="reminder")
         with web_login():
-            status = save_section(
-                login,
-                service,
-                status.attempt_id,
-                step="email_reminder",
-                values=reminder,
-                expected_version=status.version,
-            )
             records = [row] + [
                 schedule(
                     str(status.attempt_id),
@@ -83,13 +76,10 @@ def delivery_scheduled(request, monkeypatch):
                 )
                 for hour in (10, 11, 12)
             ]
-            status = save_section(
+            status = stage(
                 login,
-                service,
                 status.attempt_id,
-                step="schedules",
-                values={"records": records},
-                expected_version=status.version,
+                {"email_reminder": reminder, "schedules": {"records": records}},
             )
         return login, status, initial, row
 
@@ -233,8 +223,9 @@ def test_pause_is_atomic_exact_and_keeps_delivery_payload(
         assert receipt.inventory["queued"] == 1
         assert commands.confirm(*item.arguments, token=token).pk == receipt.pk
         status = commands.page(*item.arguments)
-        # The successful go-live test predates this pause and cannot release it.
-        assert not status["health"]["ready"]
+        # An ordinary pause, with no sender trouble, needs no sender check
+        # (#1288); the tests below make one required.
+        assert status["health"]["ready"] and not status["health"]["required"]
         assert status["inventory"]["held"] == 1
         assert status["campaign"].delivery_paused
         page = item.browser.get(path)
@@ -276,7 +267,9 @@ def test_pause_is_atomic_exact_and_keeps_delivery_payload(
             )
             assert not commands.health(item.campaign.pk)["ready"]
             if resume_token:
-                with pytest.raises(StaleRecordError, match="inputs changed"):
+                # A test in progress makes the earlier check not current; the
+                # refusal is the in-place sender check one (#1288).
+                with pytest.raises(commands.SenderCheckRequired):
                     commands.confirm(*item.arguments, token=resume_token)
         monkeypatch.setattr(
             "parishkit.stewardship.accounts.campaign_mail_tasks.submit_sample",
@@ -468,7 +461,17 @@ def test_failed_initial_defers_only_its_family_not_campaign_resume(
 
 
 def accepted_sender_check(item, monkeypatch, tmp_path):
-    """Exercise the real explicit-test owner; only the provider result is fake."""
+    """A test email the mail service accepts: a sender check that passes."""
+    sender_check(item, monkeypatch, tmp_path, DeliveryOutcome.ACCEPTED)
+
+
+def sender_check(item, monkeypatch, tmp_path, outcome):
+    """Exercise the real explicit-test owner; only the provider result is fake.
+
+    A ``NOT_SENT`` or ``UNKNOWN`` outcome is sender trouble since the pause,
+    so a sender check becomes required (#1288). With ``outcome`` None the
+    test is only queued, so it is still in progress.
+    """
     with web_login():
         status = commands.page(*item.arguments)
         path = reverse("admin:campaign_mail", args=[status["test_template"]])
@@ -483,9 +486,11 @@ def accepted_sender_check(item, monkeypatch, tmp_path):
             ).status_code
             == 302
         )
+    if outcome is None:
+        return
     monkeypatch.setattr(
         "parishkit.stewardship.accounts.campaign_mail_tasks.submit_sample",
-        lambda *args, **kwargs: DeliveryOutcome.ACCEPTED,
+        lambda *args, **kwargs: outcome,
     )
     assert (
         deliver(
@@ -496,7 +501,7 @@ def accepted_sender_check(item, monkeypatch, tmp_path):
                 tmp_path / "google_workspace" / "credential",
             )
         ).state
-        == "accepted"
+        == outcome.value
     )
 
 
@@ -507,7 +512,16 @@ def test_resume_materializes_every_due_digest_day(scheduled, monkeypatch, tmp_pa
         add_digest(item.arguments[1].store, item.campaign),
         add_digest(item.arguments[1].store, item.campaign, weekly=True),
     }
-    due = item.campaign.active_configuration.starts_at + timedelta(days=15, minutes=14)
+    # One minute before the 00:15 local digests on campaign day 15. Step in
+    # local wall time: the campaign starts two days from the real clock, so
+    # a UTC offset would slip an hour whenever the span crosses DST (#1416).
+    configuration = item.campaign.active_configuration
+    zone = ZoneInfo(configuration.values["timezone"])
+    due = datetime.combine(
+        configuration.starts_at.astimezone(zone).date() + timedelta(days=15),
+        time(0, 14),
+        tzinfo=zone,
+    ).astimezone(UTC)
     definitions = list(
         ScheduleDefinition.objects.select_related("current_revision").filter(
             pk__in=identifiers

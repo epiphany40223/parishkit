@@ -1,13 +1,15 @@
 """The Reminder WorkGroup setting (#861), rendered from its real templates.
 
-Each path shows one state of the page (what the newest refresh found) or the
-review step, so the browser checks need no database or ParishSoft. Review,
-apply and the change's status happen in place (#750): ``EDITOR`` is the
-page with no WorkGroup set, ``REVIEW`` its review of setting ``NAME`` (the
-browser tests answer the form's Review POST with it), and ``POSTS`` sends
-Apply's POST to ``PENDING``, the page naming the change, whose status polls
-``STATUS``; that answers Applied and follows to ``SETTLED``, the page with
-``NAME`` saved, awaiting the next refresh.
+Each path shows one state of the page (what the newest refresh found), so
+the browser checks need no database or ParishSoft. Save confirms in the
+shared review dialog (#750, #1356): ``EDITOR`` is the page with no WorkGroup
+set, at version ``"a" * 64``, posting to itself; a test answers its Review
+with ``CONFIRM`` (the real confirmation of setting ``NAME``) or ``REFUSED``
+(the page drawn again with the name's error, status 400). Its Apply is
+redirected by the fixture server (``POSTS``) to ``APPLIED``, the change's
+status page, Applied; the page's regions are then redrawn from ``SETTLED``,
+the page with ``NAME`` saved at version ``"b" * 64``, awaiting the next
+refresh.
 """
 
 from types import SimpleNamespace as Value
@@ -15,38 +17,25 @@ from uuid import UUID
 
 from django.template.loader import render_to_string
 
-from parishkit.stewardship.accounts.admin_editing import review_region
+from parishkit.stewardship.accounts.admin_editing import summary_errors
 from parishkit.stewardship.accounts.reminder_workgroup_views import WorkGroupForm
 
 NAME = "Active: Stewardship 2027"
 DIGEST = "a" * 64
 EDITOR = "/reminder-workgroup-off"
-REVIEW = "/reminder-workgroup-preview"
-STATUS = "/reminder-workgroup-status"
+CONFIRM = "/reminder-workgroup-confirm"
+REFUSED = "/reminder-workgroup-refused"
+APPLIED = "/reminder-workgroup-applied"
+SETTLED = "/reminder-workgroup-settled"
 REQUEST = UUID("75000000-0000-4000-8000-000000000750")
-PENDING = f"{EDITOR}?request={REQUEST}"
-SETTLED = f"{EDITOR}?request={REQUEST}&settled=1"
-POSTS = {EDITOR: (303, PENDING, "")}
-STEPS = ("Make changes", "Review", "Apply")
-
-
-def _steps(current):
-    """The flow indicator with ``current`` (0-based) as the current step."""
-    return [
-        {
-            "label": label,
-            "state": "done"
-            if index < current
-            else "current"
-            if index == current
-            else "upcoming",
-        }
-        for index, label in enumerate(STEPS)
-    ]
+POSTS = {EDITOR: (303, APPLIED, "")}
+# The name the refused Review sent, and its error, as the form refuses it.
+TOO_LONG = "x" * 300
 
 
 def components(context, admin):
-    """The page with the WorkGroup found, missing and unset, and its review."""
+    """The page with the WorkGroup found, missing and unset, and Save's
+    answers."""
     campaign = Value(
         pk=UUID(int=86), active_configuration=Value(name="Annual campaign")
     )
@@ -56,28 +45,30 @@ def components(context, admin):
         "missing": (NAME, {"name": NAME, "found": False, "family_duids": []}),
         "off": (None, None),
     }
-    pending = Value(state="staged", request_id=REQUEST, failure_code="")
-    applied = Value(state="applied", request_id=REQUEST, failure_code="")
 
-    def page(current, evidence, step=0, digest=DIGEST, **region):
-        """The page at ``step`` with ``region``'s review context (#750)."""
-        form = WorkGroupForm(initial={"name": current or "", "base_digest": digest})
-        extra = review_region("reminder_workgroup", None, **region)
-        if region.get("receipt"):
-            # The fixture server serves Change status here.
-            extra["status_url"] = STATUS
+    def page(current, evidence, digest=DIGEST, data=None):
+        """The page for ``current`` at ``digest``; with ``data``, the page a
+        refused Review draws again (status 400), with its errors' summary.
+        Save and Apply post to ``EDITOR``; the page's regions are redrawn
+        from ``SETTLED``."""
+        form = WorkGroupForm(
+            data, initial={"name": current or "", "base_digest": digest}
+        )
+        if data is not None:
+            assert not form.is_valid()
         return (
             "text/html",
             render_to_string(
                 "stewardship/reminder-workgroup.html",
                 values
                 | {
-                    "admin_chrome": admin | {"flow_steps": _steps(step)},
                     "form": form,
                     "current": current,
                     "evidence": evidence,
-                }
-                | extra,
+                    "page_url": EDITOR,
+                    "refresh_url": SETTLED,
+                    "errors": summary_errors(form) if data is not None else [],
+                },
             ),
         )
 
@@ -85,26 +76,27 @@ def components(context, admin):
         f"/reminder-workgroup-{state}": page(current, evidence)
         for state, (current, evidence) in states.items()
     }
-    responses[REVIEW] = page(
-        None,
-        None,
-        1,
-        review={
-            "template": "stewardship/reminder-workgroup-review.html",
-            "notes": [],
-            "before": None,
-            "after": NAME,
-            "preview": "synthetic",
-        },
+    responses[CONFIRM] = (
+        "text/html",
+        render_to_string(
+            "stewardship/reminder-workgroup-review.html",
+            {"review": {"clears": False, "preview": "synthetic"}},
+        ),
     )
-    responses[PENDING] = page(None, None, 2, receipt=pending)
-    responses[STATUS] = (
+    responses[REFUSED] = page(
+        None, None, data={"name": TOO_LONG, "base_digest": DIGEST}
+    )
+    responses[APPLIED] = (
         "text/html",
         render_to_string(
             "stewardship/configuration-request.html",
             context
-            | {"admin_chrome": admin, "receipt": applied, "follow_url": SETTLED},
+            | {
+                "admin_chrome": admin,
+                "receipt": Value(state="applied", request_id=REQUEST, failure_code=""),
+                "follow_url": None,
+            },
         ),
     )
-    responses[SETTLED] = page(NAME, None, 2, digest="b" * 64, receipt=applied)
+    responses[SETTLED] = page(NAME, None, digest="b" * 64)
     return responses
