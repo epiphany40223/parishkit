@@ -44,6 +44,10 @@ PAGES = (
     "/logs-dated",
     "/logs-error-zone",
     "/logs-detail",
+    # Filters refused at a field (#1332): marked fields and the summary.
+    "/logs-refused-dates",
+    "/logs-refused-none",
+    "/logs-refused-subject",
 )
 # The hint Apply shows while a browser without a known zone has a date.
 ZONE_HINT = (

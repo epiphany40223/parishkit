@@ -206,14 +206,16 @@ def test_administrator_reads_both_sources_and_filters_privately(auth_service, go
             {"start": today.isoformat(), "end": today.isoformat(), "zone": "UTC"},
         )
         assert b"task_failed" in during.content
+        # A part identifier or a malformed date is refused at its field
+        # instead (test_filters_refused_at_their_field, #1332).
         for invalid in (
-            {"actor": "not-a-uuid"},
             {"event": "drop table"},
             # Search text never holds an address (#536).
             {"text": "admin@example.org"},
             {"ministry": "042"},
-            {"start": "2026-02-30"},
-            # The last representable day: refused, never an unhandled overflow.
+            # A day before the log's first year, which no hint names, and the
+            # last representable day: refused, never an unhandled overflow.
+            {"start": "2019-12-31", "zone": "UTC"},
             {"end": "9999-12-31"},
             # The retired keyset cursor and malformed paging values.
             {"before": "2026-09-20T12:00:00.123456+00:00"},
@@ -226,8 +228,8 @@ def test_administrator_reads_both_sources_and_filters_privately(auth_service, go
             assert refused.status_code == 400
             assert b"Identifiers must be complete" in refused.content
             # The error explains itself and never echoes what was submitted.
-            assert b"not-a-uuid" not in refused.content
             assert b"drop table" not in refused.content
+            assert b'id="table-filters"' not in refused.content
     contexts = views()
     # One audit row per successful view, counting entries and naming nothing.
     # Eight successful views above; the refused ones are not views.
@@ -236,6 +238,98 @@ def test_administrator_reads_both_sources_and_filters_privately(auth_service, go
         for context in contexts
     )
     assert "@" not in str(contexts) and str(correlation) not in str(contexts)
+
+
+def test_filters_refused_at_their_field(auth_service, google):
+    """A filter the reader can fix at one field draws the page again (#1332).
+
+    400 with the ``invalid`` code, the values sent in the form, the error at
+    the field and in the summary, and the entries for no filters (the
+    default kinds); the link, the export and the table's forms carry none
+    of what was sent, and the view is audited denied.
+    """
+    browser, _ = signed_in()
+    diagnostics()
+    actor = str(uuid4())
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        before = len(views())
+        refused = post(
+            browser,
+            {
+                "applied": "yes",
+                "debug": "yes",
+                "text": "lag",
+                "actor": actor,
+                "start": "2026-09-20",
+                "end": "2026-09-19",
+                "zone": "UTC",
+                "sort": "oldest",
+                "size": "50",
+            },
+        )
+        assert refused.status_code == 400 and refused["Cache-Control"] == "no-store"
+        assert refused.stewardship_codes == ("invalid",)
+        body = refused.content.decode()
+        # Both dates are marked, keep their zone note and share one message.
+        described = 'aria-describedby="log-zone-help log-filters_error"'
+        assert f'value="2026-09-20" aria-invalid="true" {described}' in body
+        assert f'value="2026-09-19" aria-invalid="true" {described}' in body
+        assert body.count('aria-invalid="true"') == 2
+        assert '<ul class="errorlist" id="log-filters_error"><li>Enter a whole' in body
+        # The message is in the gate's hint row, which keeps its size.
+        assert (
+            '<div class="log-filter-messages"><p class="help" id="log-filter-hint"'
+            ' data-complete-hint="reserve"></p><div class="field-error-line">'
+            '<span class="field-error-size" aria-hidden="true">Enter a whole Through'
+        ) in body
+        assert '<a href="#log-end">Enter a whole Through date' in body
+        # The form shows what was sent: Debug ticked, the search and actor.
+        assert 'name="debug" value="yes" checked' in body
+        assert body.count('value="lag"') == 1 and body.count(actor) == 1
+        assert (
+            '<details id="log-identifier-filters" class="log-more-filters" open>'
+            in (body)
+        )
+        # The entries are the default kinds, in the sort sent; the table's
+        # forms, the link and the export carry no refused value.
+        assert "debug" not in levels(refused)
+        assert set(levels(refused)) == {"info", "warning", "error", "critical"}
+        assert 'aria-sort="ascending"' in body
+        assert "2026-09-19" not in body.replace('value="2026-09-19"', "", 1)
+        assert "start=" not in body and "(search and identifier" not in body
+        # A part identifier is refused at its own field, the others unmarked.
+        part = post(browser, {"correlation": actor[:-1]})
+        assert part.status_code == 400 and part.stewardship_codes == ("invalid",)
+        text = part.content.decode()
+        assert (
+            f'value="{actor[:-1]}" autocomplete="off" spellcheck="false"'
+            ' aria-invalid="true" aria-describedby="log-filters_error"'
+        ) in text
+        assert '<a href="#log-correlation">Paste a whole identifier' in text
+        assert text.count('aria-invalid="true"') == 1
+        # A followed link with a malformed day is the same refusal.
+        linked = browser.get(URL + "?start=2026-02-30&zone=UTC")
+        assert linked.status_code == 400
+        assert b'<a href="#log-start">Enter a whole From date' in linked.content
+        # A hostile value sent back into its field stays text.
+        hostile = post(browser, {"subject": '"><script>x'})
+        assert hostile.status_code == 400 and b"<script>x" not in hostile.content
+        assert b'value="&quot;&gt;&lt;script&gt;x"' in hostile.content
+        # Whole, ordered dates without a known zone keep the error page.
+        zoneless = post(browser, {"start": "2026-09-01", "zone": ""})
+        assert zoneless.status_code == 400
+        assert b'id="table-filters"' not in zoneless.content
+        assert b"time zone" in zoneless.content
+        # The download refuses the same filters on its error page, as before.
+        assert (
+            export(browser, {"start": "2026-02-30", "zone": "UTC"}).status_code == 400
+        )
+    # Each refused page was shown, but not for the filters sent; the zone
+    # refusal and the download were not views.
+    contexts = views()[before:]
+    assert [context["outcome"] for context in contexts] == ["denied"] * 4
+    assert all(set(context) == {"outcome", "count"} for context in contexts)
+    assert actor not in str(contexts)
 
 
 def test_pages_read_one_snapshot_while_the_log_grows(auth_service, google):
@@ -810,14 +904,37 @@ def test_show_choices_select_kinds_of_entry(auth_service, google):
         assert audit_entries(operational_only) == 0
         both = post(browser, {"applied": "yes", "debug": "yes", "audit": "yes"})
         assert levels(both) == ["debug"] and audit_entries(both) >= 3
-        # Nothing ticked is refused with its own message, not the identifier
-        # guidance: no value was mistyped, every choice was left unticked.
+        # An unrefused page reserves no size for a message (#1474).
+        assert b'<span class="field-error-size" aria-hidden="true"></span>' in (
+            both.content
+        )
+        # Nothing ticked is refused at the Show choices (#1332), not with the
+        # identifier guidance: no value was mistyped, every choice was left
+        # unticked. A download says so on its own page.
         for none in ({"applied": "yes"}, {"applied": "yes", "source": "operational"}):
             refused = post(browser, none)
             assert refused.status_code == 400
-            assert b"Choose at least one kind of entry to show." in refused.content
-            assert b"Identifiers must be complete" not in refused.content
-            assert export(browser, none).status_code == 400
+            body = refused.content.decode()
+            assert body.count('aria-invalid="true"') == 6
+            assert body.count('aria-describedby="log-filters_error"') == 6
+            assert '<a href="#log-show-debug">Tick at least one kind' in body
+            assert "Identifiers must be complete" not in body
+            downloaded = export(browser, none)
+            assert downloaded.status_code == 400
+            assert b"Choose at least one kind of entry to show." in downloaded.content
+        # Under an audit-only Activity only Audit record is marked, and the
+        # refusal says what Audit record's hint says.
+        audit_hint = "This activity is made of audit records only; tick Audit record."
+        refused = post(browser, {"applied": "yes", "activity": "sign_in"})
+        assert refused.status_code == 400
+        assert refused.stewardship_codes == ("invalid",)
+        body = refused.content.decode()
+        assert body.count('aria-invalid="true"') == 1
+        assert f'<a href="#log-show-audit">{audit_hint}</a>' in body
+        assert f'id="log-filters_error"><li>{audit_hint}</li>' in body
+        assert "Tick at least one kind" not in body.replace(
+            'data-missing-hint="Tick at least one kind of entry to show."', "", 1
+        )
         # A campaign filter with Audit record unticked says why it is empty.
         unticked = post(
             browser, {"applied": "yes", "info": "yes", "campaign": str(campaign)}
