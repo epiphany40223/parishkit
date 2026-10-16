@@ -33,7 +33,7 @@ from parishkit.stewardship.accounts.integration_forms import (
     IntegrationForm,
 )
 from parishkit.stewardship.accounts.ministry_views import CATALOG_SORTING
-from parishkit.stewardship.accounts.parish_views import TIMEZONE_NOTE, ParishForm
+from parishkit.stewardship.accounts.parish_views import ParishForm
 from parishkit.stewardship.accounts.presence import PRESENCE_SORTING
 from parishkit.stewardship.accounts.schedule_changes import describe as _describe
 from parishkit.stewardship.accounts.schedule_forms import (
@@ -1868,6 +1868,8 @@ def component_origin():
             "/parish-settings",
             "parish-settings",
             {
+                "page_url": "/parish-settings",
+                "refresh_url": "/parish-settings",
                 "configuration": {
                     "mode": "testing",
                     "testing_recipient": "testing@example.org",
@@ -1890,6 +1892,8 @@ def component_origin():
             "/parish-settings-invalid",
             "parish-settings",
             {
+                "page_url": "/parish-settings",
+                "refresh_url": "/parish-settings",
                 "configuration": {
                     "mode": "testing",
                     "testing_recipient": "testing@example.org",
@@ -1904,37 +1908,6 @@ def component_origin():
                         "base_digest": "a" * 64,
                     }
                 ),
-            },
-        ),
-        # Parish settings with its review shown in place (#532).
-        (
-            "/parish-preview",
-            "parish-settings",
-            {
-                "configuration": {
-                    "mode": "testing",
-                    "testing_recipient": "testing@example.org",
-                },
-                "form": ParishForm(
-                    initial={
-                        "name": "Sample Parish",
-                        "website": "https://example.org",
-                        "timezone": "America/Los_Angeles",
-                        "phone": "+12125551234",
-                        "base_digest": "a" * 64,
-                    }
-                ),
-                "review": {
-                    "changes": [
-                        {
-                            "label": "Parish timezone",
-                            "before": "America/New_York",
-                            "after": "America/Los_Angeles",
-                        }
-                    ],
-                    "notes": [TIMEZONE_NOTE],
-                    "preview": "synthetic-signed-intent",
-                },
             },
         ),
         (

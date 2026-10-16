@@ -567,7 +567,7 @@ never scrolls to show it (Administrator, pk-local review of
 - **In-place review (#532, #750).** This panel is being replaced by the
   [review dialog](#review-dialog) (Administrator decision, 2026-10-11); it
   describes the pages that still use it until #750 converts them.
-  Parish settings
+  The No-reminders WorkGroup editor
   reviews, applies and follows a change on the page itself, not on
   separate Review and Change status pages. The settings form is a
   `form[data-in-place]` marked
@@ -630,8 +630,9 @@ never scrolls to show it (Administrator, pk-local review of
   changes compares with ("Change an option to review it."). A live
   campaign's Ministry selections change on
   [Campaign settings](../admin-portal/spec.md#campaign-settings-page), in the
-  review dialog (#1119). Parish settings' form is never redrawn; until the
-  change is applied, Apply's answer hands it the version it was reviewed at.
+  review dialog (#1119). The No-reminders WorkGroup's form is never
+  redrawn; until the change is applied, Apply's answer hands it the version
+  it was reviewed at.
   [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142)
   confirms in the review dialog (#1356). The other
   editors keep their review and Change status pages until issue 750 reaches
@@ -647,7 +648,7 @@ never scrolls to show it (Administrator, pk-local review of
   no longer listed; a re-sort, page or filter they chose says nothing.
   Select all / Clear selection withdraws a review on any page that has one.
 - **In-place review: No-reminders WorkGroup (#750).** The No-reminders WorkGroup
-  editor works as Parish settings does: its one name field is a
+  editor is the last page on this panel: its one name field is a
   `data-table-sync` form whose Review changes waits for a change (hint
   "Change the WorkGroup name to review it."), and its review (the WorkGroup
   now and the one proposed), refusals and the change's status fill the
@@ -681,6 +682,14 @@ never scrolls to show it (Administrator, pk-local review of
   logos are a region of their own below the status line, so logos appearing
   never move the form or the status line. The form has an id, so a file
   chosen while it is redrawn is said not to be kept.
+- **Review dialog: Parish settings (#750).** Parish settings reviews in the
+  [review dialog](#review-dialog), titled "Review Parish settings": each
+  changed setting with its current and proposed value, and a new
+  timezone's note. Its form is an in-place region, redrawn after Apply at
+  the applied version, with the status line under it. A field's refusal
+  (the Parish website's included) stays on the form; a stale page or an
+  out-of-date preview is refused in the dialog, and the form is not
+  redrawn, so it is refused again until the page is reloaded.
 
 ### No layout shift
 
@@ -1145,9 +1154,9 @@ dialog is decided on [#750](https://github.com/epiphany40223/parishkit/issues/75
 Current state, to be converted: Users' New user, Edit user and Import
 Ministry leaders, New and Edit scheduled email,
 [Campaign settings](../admin-portal/spec.md#campaign-settings-page) (#1119),
-Share options, Campaign images, Parish logos and Create the campaign (a
-confirmation under #1356) use the dialog. Parish settings and No-reminders
-WorkGroup show the in-place
+Share options, Campaign images, Parish logos, Parish settings and Create the
+campaign (a confirmation under #1356) use the dialog. No-reminders WorkGroup
+shows the in-place
 review panel of #532 and #750
 ([in-place controls](#in-place-controls)); the other editors use separate
 Review and Change status pages.
