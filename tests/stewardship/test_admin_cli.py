@@ -97,6 +97,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "content list",
         "content show",
         "content history",
+        "content preview",
+        "content confirm",
         "parish show",
         "parish preview",
         "parish confirm",
@@ -822,6 +824,7 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_portal_maintenance_set",
         # send confirm: Pause and resume mail's Confirm (PR 7b, #463).
         "admin_cmd_send_confirm",
+        "admin_cmd_content_confirm",
         "admin_cmd_files_delete",
         "admin_cmd_files_rename",
         "admin_cmd_parish_confirm",

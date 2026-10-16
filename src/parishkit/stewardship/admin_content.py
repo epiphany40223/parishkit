@@ -27,6 +27,32 @@ text state and re-save notice, or with ``--default`` the slot's default
 text as an editor save would store it (the page's "?start=default", which
 only pre-fills the editor). It admits, reads and rechecks as ``content
 list`` does, and records nothing, as the editor's GET records nothing.
+
+``content preview`` and ``content confirm`` are the email tables' **Delete**
+(``admin:content_delete``, #879) split into a preview verb and a confirm
+verb, as ``schedule preview`` and ``schedule confirm`` split a schedule's
+Delete, plus the editors' live plain-text preview
+(``admin:content_plain_text``):
+
+- ``content preview --delete ID ... --expected-version V`` admits as the
+  page's Delete post does (recording activity, so it needs a full-scope
+  session) and builds and signs the page's own removal
+  (``content_delete_views.review_deletion``) in the page's work
+  transaction, printing the emails it removes and ``preview.token``. It
+  changes nothing and records no event.
+- ``content preview --html HTML`` runs the page's own conversion
+  (``content_views.plain_text``): the sanitized HTML, its plain text and
+  the markup the sanitizer drops. It reads and records nothing.
+- ``content confirm --token T`` records the configuration request exactly
+  as the page's Delete does, through ``admin_editing.confirm_intent`` with
+  the page's delete salt and scope, with one ``admin_cmd_content_confirm``
+  event in the request's own durable transaction. A repeat returns the
+  original request and records nothing.
+
+Neither is fresh-gated or prompts: the page asks for no recent sign-in, and
+the reviewed token stands in for the page's confirmation dialog, as for
+``schedule confirm``. Each checks the role first (#1341), before any input
+is read. The editor's own Review and Apply are still owed.
 """
 
 from dataclasses import dataclass
@@ -368,3 +394,237 @@ def read_content_show(caller, service, kind, slot, revision_id=None, default=Fal
         return model
 
     return _held(step)
+
+
+@dataclass(frozen=True)
+class ContentPreview(ReadModel):
+    """``content preview``: a Delete to confirm, or the plain-text preview.
+
+    ``action`` says which: ``delete`` (the email tables' Delete) or
+    ``plain_text`` (the editors' live preview of typed HTML). For
+    ``delete``, ``version`` is the applied configuration's version the
+    removal was built against, ``campaign_id`` the current campaign,
+    ``deleting`` each chosen email (``id``, ``slot``, ``subject``) and
+    ``preview.token`` the signed binding ``content confirm`` takes, valid
+    for fifteen minutes; ``plain_text`` is None. For ``plain_text``, only
+    ``plain_text`` is set: ``html`` (the sanitized HTML), ``text`` (the
+    plain text generated from it) and ``removed`` (the markup the sanitizer
+    drops, in plain words).
+    """
+
+    action: str
+    version: str | None
+    campaign_id: UUID | None
+    deleting: list | None
+    plain_text: dict | None
+    preview: dict | None
+
+
+@dataclass(frozen=True)
+class ContentConfirm(ReadModel):
+    """The configuration request a confirmation recorded, as its status reads.
+
+    ``created`` is false when this token's request already existed (a
+    repeated confirm), which then returns the original request unchanged.
+    """
+
+    created: bool
+    request: dict
+
+
+def admit_preview(caller, service, *, delete):
+    """The role first (#1341): ``content preview``'s admission, before any input.
+
+    The Delete mode admits as the page's Delete post does (``CONFIGURE``,
+    recording activity); the plain-text mode passively, as the editors'
+    preview post checks a read-only authorization that renews nothing.
+    Either way Staff are ``denied`` before an input is read.
+    """
+    from .accounts.policy import Capability
+    from .admin_changes import _admit_change
+
+    if delete:
+        return _admit_change(caller, service)
+    return _admit(caller, service.store, Capability.CONFIGURE)
+
+
+def plain_text_preview(source):
+    """``content preview --html``: the editors' live preview of ``source``.
+
+    Through the page's own ``content_views.plain_text``, so the two answer
+    alike. Nothing is read or recorded. Source the sanitizer refuses (too
+    long) is ``invalid``.
+    """
+    from .accounts.content_views import plain_text
+
+    return ContentPreview(
+        action="plain_text",
+        version=None,
+        campaign_id=None,
+        deleting=None,
+        plain_text=plain_text(source),
+        preview=None,
+    )
+
+
+def _delete_refusal(error):
+    """A page refusal (``UserFacingError``) as an ``invalid`` problem at ``delete``."""
+    from .admin_changes import InvalidChange
+
+    refusal = error.refusal
+    text = " ".join(str(item) for item in (refusal.message, refusal.fix) if item)
+    return InvalidChange([{"field": "delete", "code": "invalid", "message": text}])
+
+
+def preview_deletion(caller, service, actor, identifiers, *, expected_version):
+    """``content preview --delete``: the email tables' Delete, built and signed.
+
+    ``actor`` is ``admit_preview``'s. In the page's work transaction it
+    reads the page's pinned state and campaign check
+    (``content_views._content_campaign``: the current campaign only, not
+    archived, not while background work holds it), checks the version
+    (another is ``stale_version``) and builds the page's own removal
+    (``content_delete_views.review_deletion``). The page's refusals of the
+    choice (an email that can't be deleted, one a schedule still sends, a
+    repeat, a configuration made invalid) are ``invalid`` at ``delete``;
+    held or not current is ``stale_version``; archived or no current
+    campaign ``not_available``. Rechecks access afterwards. Changes nothing
+    and records no event, as building the page's change records none.
+    """
+    from .accounts.campaign_views import _state
+    from .accounts.content_delete_views import chosen_ids, review_deletion
+    from .accounts.content_views import _content_campaign, _records
+    from .accounts.policy import Capability
+    from .admin_changes import _ended_or_raise
+    from .campaigns.work_locks import work_transaction
+    from .storage import StaleRecordError
+    from .web.refusals import UserFacingError, UserFacingUnavailable
+
+    try:
+        chosen = chosen_ids([str(value) for value in identifiers])
+    except UserFacingError as error:
+        raise _delete_refusal(error) from None
+
+    def step():
+        """Check, build and sign in one work transaction, as the page's post does."""
+        with work_transaction():
+            target = _current(service)
+            state = _state(service)
+            try:
+                campaign = _content_campaign(state, target)
+            except LookupError:
+                raise NotAvailable("There is no current campaign.") from None
+            except UserFacingUnavailable as error:
+                # Archived: the menu's own reason, permanent (not stale).
+                raise NotAvailable(str(error)) from None
+            configuration = state[0]
+            if configuration.active_configuration.digest != expected_version:
+                raise StaleRecordError("The configuration changed since then.")
+            try:
+                token = review_deletion(service, actor, state, campaign, chosen)
+            except UserFacingError as error:
+                raise _delete_refusal(error) from None
+            by_id = {row["id"]: row for row in _records(configuration, campaign.pk)}
+            return ContentPreview(
+                action="delete",
+                version=expected_version,
+                campaign_id=campaign.pk,
+                deleting=[
+                    {
+                        "id": identifier,
+                        "slot": by_id[identifier]["values"]["slot"],
+                        "subject": by_id[identifier]["values"].get("subject", ""),
+                    }
+                    for identifier in chosen
+                ],
+                plain_text=None,
+                preview={"token": token},
+            )
+
+    try:
+        model = _held(step)
+    except (PermissionError, NotAvailable, StaleRecordError, ValueError) as error:
+        # Each refusal after the session recheck, so an ended session is
+        # exit 5 rather than the refusal.
+        _ended_or_raise(caller, service, actor, error)
+    _recheck(caller, service.store, actor, Capability.CONFIGURE)
+    return model
+
+
+def confirm_content(caller, service, actor, *, token, context):
+    """``content confirm``: the Delete dialog's confirmation of a built removal.
+
+    ``actor`` is the role-first admission (``admin_changes._admit_change``,
+    as the page's post). ``confirm_intent`` checks the token with the page's
+    delete salt for the current campaign and the page's scope
+    (``campaign_views._scope``): expired or out of date is
+    ``stale_version``; altered or another campaign's ``invalid``; another
+    Administrator's ``denied``. It records the request with
+    ``admin_cmd_content_confirm`` in its own durable transaction; a repeat
+    returns the original request and records nothing.
+    ``context["committed"]`` and ``context["request_id"]`` follow ``schedule
+    confirm``'s rules, so a later error is ``outcome_unknown`` naming the
+    request.
+    """
+    from django.core import signing
+    from django.db import DatabaseError
+
+    from .accounts.admin_editing import confirm_intent
+    from .accounts.campaign_views import _scope
+    from .accounts.configuration_requests import policy_operation_id
+    from .accounts.content_delete_views import delete_salt
+    from .admin_changes import _ended_or_raise
+    from .admin_reads import config_request
+    from .audit.schemas import Action, ActorKind, Outcome
+    from .audit.services import record_action
+    from .observability import _guard_refusal
+
+    try:
+        salt = delete_salt(_held(lambda: _current(service)))
+    except NotAvailable as error:
+        _ended_or_raise(caller, service, actor, error)
+    try:
+        # The request's id is derived from the signed key, before intake;
+        # confirm_intent verifies the token properly (expiry included).
+        key = UUID(signing.loads(token, salt=salt)["key"])
+    except (signing.BadSignature, KeyError, TypeError, ValueError):
+        key = None
+    if key is not None:
+        context["request_id"] = str(policy_operation_id(actor.identity, key))
+    created = []
+
+    def attach(request, extra):
+        """Record the command's event with the request it created."""
+        record_action(
+            Action.ADMIN_CMD_CONTENT_CONFIRM,
+            actor_kind=ActorKind.PORTAL_USER,
+            actor_id=actor.identity,
+            subject_id=caller.automation_session_id,
+            context={"outcome": Outcome.SUCCEEDED},
+        )
+        created.append(request.pk)
+
+    try:
+        receipt = confirm_intent(
+            caller,
+            service,
+            actor,
+            token=token,
+            salt=salt,
+            link=None,
+            current_scope=_scope,
+            attach=attach,
+        )
+    except signing.BadSignature:
+        # Altered, or signed for another campaign (an expired one is stale).
+        raise ValueError("The preview token is not valid.") from None
+    except PermissionError as error:
+        _ended_or_raise(caller, service, actor, error)
+    except DatabaseError as error:
+        if created and not _guard_refusal(error):
+            context["committed"] = True
+        raise
+    context["committed"] = True
+    return ContentConfirm(
+        created=bool(created), request=config_request(receipt).to_document()
+    )

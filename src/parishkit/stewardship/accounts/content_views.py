@@ -726,6 +726,23 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
         return error_response(error)
 
 
+def plain_text(source):
+    """What the server makes of HTML source: cleaned HTML, plain text, removals.
+
+    Request-free, so the editors' live preview (``plain_text_preview``) and
+    ``pk-admin content preview --html`` (#463) answer alike: ``html`` is the
+    sanitized HTML, ``text`` the plain text generated from it and
+    ``removed`` the markup the sanitizer drops, in plain words. Nothing
+    saves. Source the sanitizer cannot read raises ``ValueError``.
+    """
+    prepared = prepare_content(source)
+    return {
+        "html": prepared.html,
+        "text": prepared.text,
+        "removed": removed_markup(source),
+    }
+
+
 @require_POST
 def plain_text_preview(request):
     """Return what the server makes of posted HTML source; nothing saves.
@@ -750,9 +767,7 @@ def plain_text_preview(request):
             Capability.CONFIGURE,
         ):
             raise PermissionError("Content access was revoked.")
-        source = request.POST["html"]
-        prepared = prepare_content(source)
-        removed = removed_markup(source)
+        answer = plain_text(request.POST["html"])
     except (
         ConfigError,
         DatabaseError,
@@ -761,8 +776,6 @@ def plain_text_preview(request):
         ValueError,
     ) as error:
         return error_response(error)
-    response = JsonResponse(
-        {"html": prepared.html, "text": prepared.text, "removed": removed}
-    )
+    response = JsonResponse(answer)
     response["Cache-Control"] = "no-store"
     return response
