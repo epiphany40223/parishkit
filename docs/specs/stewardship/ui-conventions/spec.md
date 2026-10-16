@@ -654,15 +654,16 @@ never scrolls to show it (Administrator, pk-local review of
   quiet refresh once a change is applied) drops a ticked row because it is
   no longer listed; a re-sort, page or filter they chose says nothing.
   Select all / Clear selection withdraws a review on any page that has one.
-- **In-place review: No-reminders WorkGroup (#750).** The No-reminders WorkGroup
-  editor is the last page on this panel: its one name field is a
-  `data-table-sync` form whose Review changes waits for a change (hint
-  "Change the WorkGroup name to review it."), and its review (the WorkGroup
-  now and the one proposed), refusals and the change's status fill the
-  review region under it. What the newest ParishSoft refresh found is an
-  in-place region of its own, so the quiet refresh once a change is applied
-  brings it up to date; it sits below the review region, so a status whose
-  length changes never moves the form or the review.
+- **Review dialog: No-reminders WorkGroup (#750, #1356).** The No-reminders
+  WorkGroup editor confirms in the [review dialog](#review-dialog): its one
+  name field is in a form, a region of its own, whose **Save** waits for a
+  change (hint "Change the WorkGroup name to save it.") and opens a
+  confirmation, since the new name is the form's and the current one is on
+  the page under "Now": one sentence says what Apply does, from the next
+  ParishSoft refresh. What the newest ParishSoft refresh found is an
+  in-place region of its own, so the redraw once a change is applied brings
+  it up to date; it sits below the form and its status line, so a status
+  whose length changes never moves the form.
 - **Review dialog: Campaign images (#750).** Campaign images reviews in the
   [review dialog](#review-dialog). It has no settings form: each slot's
   upload form (multipart, sent as
@@ -1076,6 +1077,12 @@ section says how every Review behaves.
   computes impact (affected Families, re-planned schedules, counts), or
   renders what Families will see (an email sample, staged images) keeps its
   full review. Each feature specification says which kind its Review is.
+  An editor whose Review is a confirmation for some changes and a full
+  review for others (a one-time scheduled email against a repeat; leaders
+  ticked on the page against Import all) answers with whichever the change
+  needs, and the answer sets the dialog's question and description; its
+  form's button carries the action's own label ("Add the scheduled email",
+  "Import selected") either way.
   **Precedent.** Administrator decision, 2026-10-14, on
   [#1356](https://github.com/epiphany40223/parishkit/issues/1356); the
   [Delete dialogs](#row-actions-and-confirmation) already confirm over a
@@ -1161,9 +1168,11 @@ dialog is decided on [#750](https://github.com/epiphany40223/parishkit/issues/75
 Current state, to be converted: Users' New user, Edit user and Import
 Ministry leaders, New and Edit scheduled email,
 [Campaign settings](../admin-portal/spec.md#campaign-settings-page) (#1119),
-Share options, Campaign images, Parish logos, Parish settings and Create the
-campaign (a confirmation under #1356) use the dialog. No-reminders WorkGroup
-shows the in-place
+Share options, Campaign images, Parish logos, Parish settings, Create the
+campaign and No-reminders WorkGroup use the dialog; Create the campaign, New
+user and No-reminders WorkGroup are confirmations under #1356, and so are a
+one-time New scheduled email and Import selected with nobody skipped. No
+settings editor shows the in-place
 review panel of #532 and #750
 ([in-place controls](#in-place-controls)); the other editors use separate
 Review and Change status pages.

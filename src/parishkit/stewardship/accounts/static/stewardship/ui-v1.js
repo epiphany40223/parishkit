@@ -3970,6 +3970,18 @@
     const token = carried.find((field) => field.hasAttribute("data-review-preview"))?.value || "";
     dialog.querySelector("[data-review-body]").replaceChildren(
       ...(answer ? [...answer.childNodes].map((node) => document.importNode(node, true)) : []));
+    // An editor whose Review is a confirmation only for some changes (#1356:
+    // New scheduled email, Import Ministry leaders) has its answer name the
+    // confirmation's question (data-review-title) and the sentence that
+    // describes the dialog (data-review-describedby). Any other answer, or a
+    // refusal, gets the dialog's own title and description back.
+    const title = dialog.querySelector("[data-review-title]");
+    title.dataset.reviewDefault ??= title.textContent;
+    title.textContent = answer?.getAttribute("data-review-title") || title.dataset.reviewDefault;
+    dialog.dataset.reviewDescribed ??= dialog.getAttribute("aria-describedby") || "";
+    const described = answer?.getAttribute("data-review-describedby") || dialog.dataset.reviewDescribed;
+    if (described) dialog.setAttribute("aria-describedby", described);
+    else dialog.removeAttribute("aria-describedby");
     const error = dialog.querySelector("[data-confirm-error]");
     error.hidden = true;
     error.replaceChildren();

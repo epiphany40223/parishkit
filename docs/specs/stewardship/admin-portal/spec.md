@@ -897,7 +897,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `schedule_calendar` | Campaign calendar | Dates and mail schedules | Administrator | (new, #469) | `/admin/campaign/schedules/calendar/` | (same) | Read-only; every send by date. |
 | `schedule_delete` | Delete scheduled emails | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/deletion/` (POST only) | (same) | The table's confirmation dialog posts here. |
 | `share_settings` | Share options | Menu: Share options | Administrator | How Families will share | `/admin/campaign/share-options/` | (same) | Gains a Return link and About panel. |
-| `reminder_workgroup` | No-reminders WorkGroup | Menu: No-reminders WorkGroup | Administrator | (new, #861) | `/admin/campaign/no-reminders-workgroup/` | (same) | Edit, review, apply; stays editable while live. |
+| `reminder_workgroup` | No-reminders WorkGroup | Menu: No-reminders WorkGroup | Administrator | (new, #861) | `/admin/campaign/no-reminders-workgroup/` | (same) | Edit, confirm, apply; stays editable while live. |
 | `go_live` | Go-live readiness | Menu: Go-live readiness | Administrator | (same) | `/admin/campaign/go-live/` | (same) |  |
 | `go_live_families` | Testing submissions | Go-live readiness | Administrator | Families with Testing submissions; Testing Families | `/admin/campaign/go-live/families/` | (same) |  |
 | `go_live_cleanup` | Testing cleanup | Go-live readiness | Administrator | Testing cleanup progress | `/admin/campaign/go-live/cleanup/<request>/` | (same) |  |
@@ -1525,9 +1525,12 @@ title, menu entry, URL, counts and notices are drawn. It is the
 campaign's optional `reminder_workgroup` setting (the stored key and the
 `reminder_workgroup_missing` log event keep their names): one plain-language text
 field (the WorkGroup's name as ParishSoft shows it; empty turns it off),
-reviewed, applied and followed
-[in place](../ui-conventions/spec.md#in-place-controls) under its form
-(#750), and editable while the campaign is live because staff mark Families
+saved through the [review dialog](../ui-conventions/spec.md#review-dialog)
+(#750) as a confirmation (#1356): **Save** opens "Save the No-reminders
+WorkGroup?", which repeats neither the typed name nor the current one shown
+under "Now" and says only that, from the next ParishSoft refresh, Families
+in this WorkGroup get no Reminder emails (or, when it is cleared, that every
+eligible Family that has not responded gets them again). It is editable while the campaign is live because staff mark Families
 in ParishSoft during the campaign. Below that, the page says what the
 newest refresh found: no WorkGroup set, the name not read yet (it takes
 effect at the next refresh; meanwhile the page says how many Families of
@@ -2607,8 +2610,9 @@ Edit page posted with the date, time and weekday it showed keeps the saved
 values exactly, so saving it unchanged never moves the send, even when the two
 zones change their clocks at different instants. A page posted without a
 usable zone is refused with a hint to check the computer's time zone setting;
-while the browser reports none, Review changes stays unavailable and says why.
-**Review changes** is unavailable until the form differs from what it was
+while the browser reports none, the button stays unavailable and says why.
+The button reads **Review changes** on Edit and **Add the scheduled email**
+on New. It is unavailable until the form differs from what it was
 drawn with (on Edit, the saved schedule as shown in the browser's zone, so a
 time typed another way that reads the same, such as "6am" for 06:00, is no
 change; on New, the blank form), with a short hint after it; there is no
@@ -2622,7 +2626,15 @@ for a rule between schedules, in the error summary); any other refusal (a
 stale page, a schedule that has run meanwhile) shows in the dialog. The
 dialog lists the change and its affected work (the same review the
 date-change review shows; a repeat lists every reminder it adds, and the
-dialog's body scrolls). While sends block the change it says so and offers
+dialog's body scrolls). A New that adds one schedule that sends once,
+without an edited email, is a
+[confirmation](../ui-conventions/spec.md#review-dialog) instead (#1356):
+nothing exists yet, so the dialog, "Add this scheduled email?", repeats none
+of the form's values and no counts (all zero for an add) and says only
+"This schedules the email to send once, at the date and time chosen;
+nothing is sent now." A recurring schedule, a digest, a repeat or an edited
+email keeps the full review, since its send times, generated reminders or
+email sample are not on the page. While sends block the change it says so and offers
 no Apply. **Apply** records the change, with the same signed preview,
 blocking-work recheck and audit as before; reminder planning and emailed
 Family codes and links are unaffected by how the review is shown.
@@ -4499,9 +4511,14 @@ fields:
   the reason in a line under the roles that is reserved while empty (#563);
   the server refuses that change anyway.
 
-**Review** shows each changed value, before and after, and **Apply** records
-one configuration change. Review and Apply follow the [review dialog](../ui-conventions/spec.md#review-dialog):
-Review is unavailable until a value changes, and once the change is applied
+On Edit, **Review** shows each changed value, before and after. On New, the
+button reads **Add the user** and its dialog, "Add this user?", is a
+[confirmation](../ui-conventions/spec.md#review-dialog) (#1356), since every
+value is on the form behind it: one sentence says the user is added and can
+then sign in with the account of that address, and the dialog adds only the
+warning when the new user is an Administrator. **Apply** records one
+configuration change. Review and Apply follow the [review dialog](../ui-conventions/spec.md#review-dialog):
+Edit's Review is unavailable until a value changes, and once the change is applied
 the reader returns to Users, whose status line says what was applied. An unknown
 `<user>` (for example, one deleted meanwhile) is refused, even from an old
 link.
@@ -4643,7 +4660,14 @@ something to import (and Import selected only while a row is selected). The
 **Import Ministry leaders** review, shown in the
 [review dialog](../ui-conventions/spec.md#review-dialog), lists each chosen person as a new user
 with the role Ministry leader and their default Name, and lists separately
-anyone skipped because they became a user meanwhile. **Apply** records one
+anyone skipped because they became a user meanwhile. When Import selected
+imports every ticked row, with nobody skipped and none left over for the
+per-change limit, the dialog is a
+[confirmation](../ui-conventions/spec.md#review-dialog) instead (#1356),
+"Import the selected leaders?": the ticked rows are on the page behind it,
+so it says only "This adds the 2 chosen leaders as users with the role
+Ministry leader." Import all (which takes rows on other pages), a skipped
+row or the limit keeps the full review. **Apply** records one
 configuration change for the whole batch, with one audit entry naming the
 count and one audit row per new user, and both tables then refresh in place.
 Import never changes an existing user, never grants more than Ministry

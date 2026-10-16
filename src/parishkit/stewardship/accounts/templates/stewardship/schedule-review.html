@@ -13,10 +13,21 @@ schedules; while sends block the change there is none, so the dialog offers
 only Cancel, with the reason. data-review-done starts the status line Dates
 and mail schedules shows once the change is applied. A review lasts fifteen
 minutes, as every review does.
-{% endcomment %}{% if dates %}{% translate "Dates and mail schedules changed." as done %}{% elif new %}{% blocktranslate count count=changes|length asvar done %}Scheduled email added.{% plural %}{{ count }} reminders added.{% endblocktranslate %}{% else %}{% translate "Scheduled email changed." as done %}{% endif %}<div data-review-answer data-review-done="{{ done }}">
+With ``confirmation`` (New scheduled email adding one schedule that sends
+once, with no edited email: schedule_entry_views._sends_once) it is instead
+a confirmation (UX conventions, "A confirmation when Review would only
+repeat the page", #1356): the subject, date and time are on the form behind
+the dialog, nothing has been sent by a schedule that does not exist yet, so
+it lists none of them. It names its own question (data-review-title) and the
+sentence that describes the dialog (data-review-describedby), which replace
+the dialog's for this answer only.
+{% endcomment %}{% if dates %}{% translate "Dates and mail schedules changed." as done %}{% elif new %}{% blocktranslate count count=changes|length asvar done %}Scheduled email added.{% plural %}{{ count }} reminders added.{% endblocktranslate %}{% else %}{% translate "Scheduled email changed." as done %}{% endif %}{% if confirmation %}<div data-review-answer data-review-done="{{ done }}" data-review-title="{% translate 'Add this scheduled email?' %}" data-review-describedby="schedule-review-summary">
+<p id="schedule-review-summary">{% translate "This schedules the email to send once, at the date and time chosen; nothing is sent now." %}</p>
+<input type="hidden" name="preview" value="{{ preview }}" data-review-preview>
+</div>{% else %}<div data-review-answer data-review-done="{{ done }}">
 <p class="help">{% translate "A schedule that already sent still counts as sent after this change. Unsent or failed email from the old schedule is replaced by the new one. All of these changes apply together, or none do." %}</p>
 {% include 'stewardship/schedule-changes.html' with level=3 sublevel=4 %}
 {% comment %}A New or Edit that also changes the schedule's own email (#446, schedule_email) shows the new email's sample here, in the same review.{% endcomment %}{% if email %}<section class="panel"><h3>{% translate "New email for this schedule" %}</h3><p>{% if new %}{% translate "Saved as a new email that only this scheduled email sends; with Repeat, every reminder it adds shares it. The email chosen in Email to send is not changed." %}{% else %}{% translate "Saved as a new email that only this schedule sends. The email it sent before is not changed, and any other schedule that sends it keeps it." %}{% endif %}</p><p class="notice">{% translate "Fictional sample preview — not a live Family or an email delivery. Placeholders are filled in with sample values, and any markup that is not allowed has been removed." %}</p>{% include 'stewardship/content-sample.html' with sample=email %}</section>{% endif %}
 {% if preview and not blocking %}<p>{% translate "Nothing changes until you choose Apply. Applying saves these schedules; it does not send any email." %}</p>
 <input type="hidden" name="preview" value="{{ preview }}" data-review-preview>{% endif %}
-</div>
+</div>{% endif %}

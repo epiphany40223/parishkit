@@ -69,6 +69,11 @@
   - describedby, for a confirmation (UX conventions, "A confirmation when
     Review would only repeat the page"), is the id of the review
     fragment's one-sentence summary, which then describes the dialog.
+    An editor whose Review is a confirmation only for some changes (New
+    scheduled email, Import Ministry leaders) instead marks the answer
+    itself: data-review-title on the fragment replaces the title for that
+    answer, and data-review-describedby names its sentence; any other
+    answer gets the dialog's own title and description back.
   - redraw_answer=True redraws the page's regions from the address Apply's
     answer ended on (the page naming its change, ?request=), not from the
     page's own address, and makes it the page's address: Create the
