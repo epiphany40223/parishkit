@@ -75,6 +75,8 @@ def test_each_record_is_the_csv_row_with_its_id_version_and_actions():
             "version",
             "actions",
             "reviews",
+            "editable",
+            "resolvable",
         }
         assert [record[key] for key in admin_census_export.JSONL_KEYS] == list(values)
         assert record["proposal_id"] == str(source["id"])
@@ -133,6 +135,60 @@ def test_reviews_are_the_administrator_s_on_automatic_rows_only():
     assert records([automatic], STAFF)[0]["reviews"] == []
     assert records([row()], ADMIN)[0]["reviews"] == []
     assert records([automatic], ADMIN, mutable=False)[0]["reviews"] == []
+
+
+def name_change(**values):
+    """An Automatic Member first-name change, To review by default."""
+    return row(
+        entity_kind="member",
+        entity_key="3",
+        handling="api",
+        field="first_name",
+        submitted_value="Pat",
+        **values,
+    )
+
+
+@pytest.mark.parametrize(
+    ("values", "editable", "resolvable"),
+    [
+        # Open: editable; a Conflict with ParishSoft's value known is also
+        # resolvable, one whose value is unknown is not.
+        ({}, True, False),
+        ({"decision": "approved"}, True, False),
+        ({"execution": "failed"}, True, False),
+        (
+            {"execution": "conflict", "current_available": True, "current_value": "P"},
+            True,
+            True,
+        ),
+        ({"execution": "conflict"}, True, False),
+        # Queued for publication or final: neither.
+        ({"execution": "queued", "decision": "approved"}, False, False),
+        ({"execution": "published", "decision": "approved"}, False, False),
+    ],
+)
+def test_editable_and_resolvable_are_the_page_s_controls(values, editable, resolvable):
+    """An Administrator's Edit value and Use the Family's value anyway on an
+    Automatic row, as ``census edit`` and ``census resolve-conflict`` take
+    them (#1434); a resolution is not one of the ``reviews``."""
+    (record,) = records([name_change(**values)], ADMIN)
+    assert (record["editable"], record["resolvable"]) == (editable, resolvable)
+    assert "resolve_conflict" not in record["reviews"]
+
+
+def test_editable_and_resolvable_are_the_administrator_s_only():
+    """Staff edit and resolve nothing; a By-hand row has neither; and neither
+    is offered while other campaign work holds the campaign."""
+    conflict = name_change(
+        execution="conflict", current_available=True, current_value="P"
+    )
+    for found in (
+        records([conflict], STAFF),
+        records([row()], ADMIN),
+        records([conflict], ADMIN, mutable=False),
+    ):
+        assert (found[0]["editable"], found[0]["resolvable"]) == (False, False)
 
 
 def test_the_formats_are_the_page_s_and_json_lines():

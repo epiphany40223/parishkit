@@ -238,6 +238,16 @@ DESCRIPTIONS = {
         "An automation session resolved several Ministry requests with one "
         "outcome, as the Ministry requests queue's bulk outcome does."
     ),
+    "admin_cmd_census_edit": _(
+        "An automation session edited the value publication writes for an "
+        "automatic census change, or cleared that edit, as the Census "
+        "changes page's Edit value does."
+    ),
+    "admin_cmd_census_resolve_conflict": _(
+        "An automation session approved an automatic census change over "
+        "ParishSoft's current value, as the Census changes page's Use the "
+        "Family's value anyway does."
+    ),
     "admin_cmd_refresh_start": _(
         "An automation session asked for a full ParishSoft refresh, as the "
         "Refresh from ParishSoft page's confirmation does."
