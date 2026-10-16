@@ -1967,8 +1967,9 @@ with an optional note
 Each is offered only while it would change the decision, and only while the
 change is open: *pending*, *conflict* or *failed*, never while it is
 *queued* for publication or once it has a final outcome. A *Conflict* row
-may be ignored or sent back, but not approved, since publication blocks an
-approved conflict until it is resolved. A review can be changed again until
+may be ignored or sent back, but not approved directly, since publication
+blocks an approved conflict until it is resolved (Use the Family's value
+anyway, below). A review can be changed again until
 publication of the change starts, and each one changes the proposal's
 version, so a publication plan that included it no longer matches. Staff
 see Automatic rows but never review them.
@@ -1979,11 +1980,40 @@ buttons the row allows. A review is reversible, so none asks first. The form
 posts with the page's filters and table choices, and the answer is the same
 page, refreshed in place, with the notice naming the row; a row someone else
 changed first is left as it is, and the notice says so. While other campaign
-work holds the campaign, no Review is offered. Conflict resolution
-([ADM-09](../../../plans/stewardship/admin-portal.md#adm-09-census-review-and-parishsoft-publication-ui))
-comes later. On the command line, `pk-admin census review` records the same
-review through the same service
+work holds the campaign, no Review is offered. On the command line,
+`pk-admin census review` records the same review through the same service
 ([admin automation](../admin-automation/spec.md#reports-and-exports)).
+
+A *Conflict* means ParishSoft changed after the Family answered: *ParishSoft
+now* differs from what they saw. Besides Ignore (keep ParishSoft's value),
+the row's *Review* offers **Use the Family's value anyway**
+([#528](https://github.com/epiphany40223/parishkit/issues/528), ADM-09.03),
+worded **Use the edited value anyway** while an Edit value is set. It
+approves the change over ParishSoft's current value: the review records that
+value, and the ParishSoft snapshot it came from, as the *accepted base*,
+and the change becomes *pending* (*To do*). Publication then merges against
+the accepted base instead of the Family's baseline
+([data workflow](../data/spec.md#review-and-publication)), so it writes the
+Family's answer (or the edited value) only while ParishSoft still has the
+value the Administrator saw. The Family's baseline is never changed. A help
+line above the button, which describes it, says this, and the button shares
+the Review form's optional note. It is offered only to an Administrator, on
+an Automatic *Conflict* whose ParishSoft value is known (a change ParishSoft
+could not be read for waits for a refresh), whatever its decision. It asks
+nothing, since it can be undone: a later **Back to To review** or **Ignore**
+(one by one or in bulk) puts the change back to *Conflict*, and the accepted
+base no longer counts, so no later Approve, one by one or in bulk, can
+publish over ParishSoft's value until Use the Family's value anyway is
+chosen again. A later Edit value keeps the resolution. The answer is the
+page, refreshed in place, with the notice ("… approved over ParishSoft's
+current value."). If a refresh brings a new ParishSoft value first, the
+accepted base no longer counts either: an open change's approval goes back
+to *To review* and the change is compared with the Family's baseline again
+(a change already queued for publication keeps its approval, and its
+publication then meets a conflict). A Family's later same answer does not
+carry the accepted base, so its approval goes back to *To review* too. It is
+per change only, never part of bulk review, and has no command-line
+counterpart yet ([#1434](https://github.com/epiphany40223/parishkit/issues/1434)).
 
 The same *Review* disclosure has **Edit value**
 ([#528](https://github.com/epiphany40223/parishkit/issues/528), ADM-09.04):

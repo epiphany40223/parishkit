@@ -47,6 +47,15 @@ BULK_APPROVED = "2 changes approved."
 EDITED = "Mobile phone for Member DUID 100 in Family DUID 1000 now has an edited value."
 EDITED_VALUE = "(317) 555-0199"
 EDITED_PAGE = "/census-changes-edited"
+# The page whose first (Automatic) row is a Conflict, the notice the view
+# answers its Use the Family's value anyway with, and the page after it,
+# where that row is approved and pending (ADM-09.03).
+CONFLICT = "/census-changes-conflict"
+CONFLICT_RESOLVED = (
+    "Mobile phone for Member DUID 100 in Family DUID 1000 approved over "
+    "ParishSoft's current value."
+)
+CONFLICT_PAGE = "/census-changes-conflict-resolved"
 STALE = (
     "Mobile phone for Member DUID 100 in Family DUID 1000 was updated by "
     "someone else, so nothing was recorded. The list shows its current status."
@@ -57,11 +66,13 @@ def components(context, admin):
     """The page at each table choice the test steps through."""
     when = datetime(2054, 10, 5, 12, tzinfo=UTC)
 
-    def shaped(index, automatic, approved=0, edited=False):
+    def shaped(index, automatic, approved=0, edited=False, conflict=False):
         """One shaped row; the first ``automatic`` rows are Automatic, and the
         first ``approved`` of them approved (one version on); with ``edited``,
-        the first has an Administrator's edited value (one version on)."""
+        the first has an Administrator's edited value (one version on); with
+        ``conflict``, the first is a Conflict (ParishSoft changed since)."""
         edit = edited and index == 0
+        clash = conflict and index == 0
         return shape(
             {
                 "id": str(index),
@@ -73,12 +84,12 @@ def components(context, admin):
                 # Stored as the Family form stores a phone: a record.
                 "submitted_value": phone_record(f"555-{index:04d}"),
                 "current_available": True,
-                "current_value": "555-0100",
+                "current_value": "555-0177" if clash else "555-0100",
                 "admin_value_set": edit,
                 "admin_value": phone_record(EDITED_VALUE) if edit else None,
                 "handling": "api" if index < automatic else "manual",
                 "decision": "approved" if index < approved else "unreviewed",
-                "execution": "pending",
+                "execution": "conflict" if clash else "pending",
                 # Later Families answered later, so newest first reverses.
                 "submitted_at": when + timedelta(minutes=index),
                 "family_duid": 1000 + index,
@@ -91,17 +102,28 @@ def components(context, admin):
     query = CensusQuery()
 
     def page(
-        paging, notice=None, *, automatic=False, bulk=False, approved=0, edited=False
+        paging,
+        notice=None,
+        *,
+        automatic=False,
+        bulk=False,
+        approved=0,
+        edited=False,
+        conflict=False,
+        path=None,
     ):
         """Render the page with the table paged and sorted as ``paging`` says,
         and ``notice`` (a resolution's answer) above it; with ``automatic``,
         its first row is an Automatic change an Administrator reviews, and
         its forms post to ``AUTOMATIC``; with ``bulk``, its first three rows
         are, it offers bulk review, and its forms post to ``BULK``; with
-        ``edited``, its first (Automatic) row has an edited value."""
-        path = BULK if bulk else AUTOMATIC if automatic else PATH
+        ``edited``, its first (Automatic) row has an edited value; with
+        ``conflict``, it is a Conflict; ``path`` is where its forms post."""
+        path = path or (BULK if bulk else AUTOMATIC if automatic else PATH)
         count = 3 if bulk else int(automatic)
-        rows = [shaped(index, count, approved, edited) for index in range(ROWS)]
+        rows = [
+            shaped(index, count, approved, edited, conflict) for index in range(ROWS)
+        ]
         result = select(rows, query, administrator=True)
         table = paginate(
             result["rows"],
@@ -156,6 +178,16 @@ def components(context, admin):
         ),
         # The answer to Save value on the first (Automatic) row.
         EDITED_PAGE: page({"size": "25"}, notice=EDITED, automatic=True, edited=True),
+        # The first row an Automatic Conflict; and the answer to its Use the
+        # Family's value anyway, where it is approved and pending.
+        CONFLICT: page({"size": "25"}, automatic=True, conflict=True, path=CONFLICT),
+        CONFLICT_PAGE: page(
+            {"size": "25"},
+            notice=CONFLICT_RESOLVED,
+            automatic=True,
+            approved=1,
+            path=CONFLICT,
+        ),
         # Three Automatic rows with bulk review; and the answer to Approve.
         BULK: page({"size": "25"}, bulk=True),
         "/census-changes-bulk-approved": page(

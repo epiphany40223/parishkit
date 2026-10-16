@@ -9,9 +9,10 @@ audited as a count only.
 
 A row's Entered in ParishSoft, Ignore or Reopen (#528), and an
 Administrator's Approve, Ignore or Back to To review on an Automatic row
-(ADM-09), and Edit value or Clear edit on one (ADM-09.04), post to the page
-itself with the page's filters and table choices, so the answer is the same
-page, refreshed in place, with a notice naming the row.
+(ADM-09), Edit value or Clear edit on one (ADM-09.04), and Use the Family's
+value anyway on a Conflict (ADM-09.03), post to the page itself with the
+page's filters and table choices, so the answer is the same page, refreshed
+in place, with a notice naming the row.
 """
 
 from dataclasses import replace
@@ -43,6 +44,7 @@ from parishkit.stewardship.responses.census_review import (
     Unchanged,
     campaign_today,
     edit_census_change,
+    resolve_census_conflict,
     review_census_change,
     review_census_changes,
 )
@@ -246,6 +248,10 @@ EDITS = {
 }
 EDIT_MATCHED = "no longer has an edited value: it matched the Family's answer."
 EDIT_UNCHANGED = "already has that value to publish, so nothing was recorded."
+# An Administrator's Use the Family's value anyway on a Conflict (#528,
+# ADM-09.03): the Review form's button value, and how the notice words it.
+RESOLVE_CONFLICT = "use_family"
+CONFLICT_RESOLVED = "approved over ParishSoft's current value."
 # PostgreSQL's SQLSTATE for a unique violation.
 UNIQUE_VIOLATION = "23505"
 STALE = (
@@ -398,6 +404,11 @@ def _resolve(service, principal, campaign_id, resolution):
             if action == "edit" and not review.admin_value_set:
                 return f"{name} {EDIT_MATCHED}"
             return f"{name} {EDITS[action]}"
+        if action == RESOLVE_CONFLICT:
+            resolve_census_conflict(
+                service.store, principal.identity, proposal_id, **resolution
+            )
+            return f"{name} {CONFLICT_RESOLVED}"
         if action in REVIEWS:
             review_census_change(
                 service.store,
@@ -522,6 +533,8 @@ def row_controls(rows):
         row["edit_key"] = uuid4()
         row["describedby"] = f"who-{row['id']} what-{row['id']}"
         row["final_describedby"] = f"{row['describedby']} final-{row['id']}"
+        # Use the Family's value anyway is also described by its help line.
+        row["conflict_describedby"] = f"{row['describedby']} conflict-{row['id']}"
         # Save value is also described by its complete-gate hint.
         row["edit_describedby"] = f"{row['describedby']} edit-complete-{row['id']}"
         # How the confirmation dialog names the row: what changed, and whose.

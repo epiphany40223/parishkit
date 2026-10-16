@@ -180,6 +180,20 @@ _MERGE_OUTCOMES = {
 }
 
 
+def _base(row):
+    """The value ParishSoft must still hold for the proposal to be written.
+
+    Normally the Family's baseline (what they saw). After an Administrator
+    resolved a conflict (#528, ADM-09.03), the ParishSoft value they
+    accepted, which is the row's current value while the base is active
+    (``accepted_base``; the caller annotates ``conflict_accepted``). A row
+    without the annotation uses the baseline and so plans a conflict.
+    """
+    if getattr(row, "conflict_accepted", False):
+        return KnownValue(True, row.current_value)
+    return KnownValue(row.baseline_available, row.baseline_value)
+
+
 def _evaluate(row, provider, payload):
     """Classify one approved, API-writable Member proposal against ``payload``."""
     if row.execution == "conflict":
@@ -193,9 +207,7 @@ def _evaluate(row, provider, payload):
         merge = merge_value(
             _DEFINITIONS[row.field].kind,
             current,
-            PriorChange(
-                KnownValue(row.baseline_available, row.baseline_value), _proposed(row)
-            ),
+            PriorChange(_base(row), _proposed(row)),
         )
     except ValueError:
         return Outcome.CANNOT_CHECK
@@ -205,8 +217,10 @@ def _evaluate(row, provider, payload):
 def plan_entity(entity_kind, entity_key, rows, payload=None):
     """Build one entity's dry-run plan from its proposals and a fresh read.
 
-    ``rows`` are the entity's proposals (ProposedChange rows or equivalents);
-    rows no publication may act on are left out. ``payload`` is the entity's
+    ``rows`` are the entity's proposals (ProposedChange rows or equivalents,
+    annotated by ``accepted_base.with_accepted_base`` so a resolved conflict
+    merges against its accepted value); rows no publication may act on are
+    left out. ``payload`` is the entity's
     freshly read Member contact record, keyed by request-schema field, or
     None when it could not be read. A caller mapping a read onto those keys
     must leave a field out, never fill it with None, when the read lacks it:
