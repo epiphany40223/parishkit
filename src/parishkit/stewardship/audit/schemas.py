@@ -233,6 +233,8 @@ class Action(StrEnum):
     ADMIN_CMD_INTEGRATION_KEY_FINISH_SWITCHING = (
         "admin_cmd_integration_key_finish_switching"
     )
+    # workgroup confirm: the No-reminders WorkGroup page's Apply (ADM-11 PR 10).
+    ADMIN_CMD_WORKGROUP_CONFIRM = "admin_cmd_workgroup_confirm"
     ADMIN_CMD_USERS_IMPORT_LEADERS = "admin_cmd_users_import_leaders"
     # The operator's cancellation of a stuck live end-date change (#944).
     ADMIN_CMD_CONFIG_REQUEST_CANCEL = "admin_cmd_config_request_cancel"

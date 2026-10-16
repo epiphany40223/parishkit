@@ -805,7 +805,25 @@ removed, a stale version, an empty slot, an altered, another slot's or
 another page's token, another Administrator's token denied, a token
 reviewed before the settings changed, no current campaign,
 a read-only session and Staff denied, an ended session) and the unchanged
-Campaign images page suite.
+Campaign images page suite. Another part adds `workgroup show`,
+`workgroup preview` and `workgroup confirm`, the No-reminders WorkGroup
+page's read, Review and Apply, in `parishkit.stewardship.admin_workgroup`,
+through the page's own campaign check, form, review (moved into
+`reminder_workgroup_views.review_change`, which the page's Review now
+calls) and `admin_editing.confirm_intent`, with no schema change; proven
+by `tests/stewardship/test_admin_workgroup.py` (the Now states, the
+catalog entries, the described event, the documents' names, the ledger,
+usage errors), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_workgroup_cli_postgresql.py` (each
+Now state for a read-only session with no event, a preview and confirm
+recording the request and event with the name applied once installed,
+clearing it, a repeated confirm, a command token confirmed on the page and
+a page token by the command, a stale version, no change, a name too long,
+an altered, another page's or another Administrator's token, a token
+reviewed before the settings changed, no current campaign, a read-only
+session and Staff denied, an ended session) and the unchanged
+No-reminders WorkGroup page suite.
 
 ADM-11.12 lands in parts. The first adds `events list` and `events
 acknowledge`, the Admin home page's security events and critical-problem
