@@ -1,7 +1,9 @@
 """Real installer/SQL campaign isolation, immutable history and concurrent intent."""
 
+import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+from pathlib import Path
 from threading import Barrier
 from uuid import UUID, uuid4
 
@@ -515,6 +517,26 @@ def test_sql_resolver_matches_canonical_gap_fold_policy(zone, local):
     with connection.cursor() as cursor:
         cursor.execute("SELECT stewardship_resolve_local_v1(%s, %s)", [wall, zone])
         assert cursor.fetchone()[0] == resolve_local(wall, zone)
+
+
+DST_CASES = json.loads(
+    (Path(__file__).parents[1] / "fixtures" / "dst_cases.json").read_text()
+)["cases"]
+
+
+def test_sql_resolver_gives_the_shared_dst_instants():
+    """The database's resolver follows the one daylight-saving rule (#1129).
+
+    Every shared case (also pinned for ``browser_instant``, ``resolve_local``
+    and the page script) resolves to exactly its fixture instant.
+    """
+    with connection.cursor() as cursor:
+        for case in DST_CASES:
+            wall = datetime.fromisoformat(f"{case['date']}T{case['time']}")
+            cursor.execute(
+                "SELECT stewardship_resolve_local_v1(%s, %s)", [wall, case["zone"]]
+            )
+            assert cursor.fetchone()[0] == datetime.fromisoformat(case["utc"]), case
 
 
 def test_direct_concurrent_schedule_identity_is_serialized(tmp_path):

@@ -917,14 +917,38 @@
     };
   };
   // localMoment: the moment (ms) a date ("YYYY-MM-DD") and canonical time
-  // stand for in this browser's zone. Like the server, a time skipped when
-  // clocks spring forward reads with the offset before the change, and one
-  // that occurs twice is the first.
+  // stand for in this browser's zone, by the server's one daylight-saving
+  // rule (ui-conventions#schedules, resolve_local): a time that occurs twice
+  // is the first, and a time skipped when clocks spring forward is the first
+  // moment after the gap, so 2:30 AM reads as 3:00 AM. Date alone reads a
+  // skipped time with the offset before the change (3:30 AM), so a moment
+  // that does not show the typed wall time is searched back to the gap's end.
   const localMoment = (day, clock) => {
     const [year, month, date] = day.split("-").map(Number);
     const [hour, minute, second = 0] = clock.split(":").map(Number);
-    return new Date(year, month - 1, date, hour, minute, second).getTime();
+    const wall = Date.UTC(year, month - 1, date, hour, minute, second);
+    // The wall time a moment shows in this browser, counted as if it were
+    // UTC, so two wall times compare as numbers.
+    const shown = (moment) => {
+      const at = new Date(moment);
+      return Date.UTC(at.getFullYear(), at.getMonth(), at.getDate(), at.getHours(),
+        at.getMinutes(), at.getSeconds(), at.getMilliseconds());
+    };
+    let high = new Date(year, month - 1, date, hour, minute, second).getTime();
+    if (shown(high) === wall) return high;
+    // Skipped: ``high`` shows a later wall time. Two days earlier shows an
+    // earlier one even after a whole skipped day; the first millisecond
+    // showing ``wall`` or later is the end of the gap.
+    let low = high - 2 * 86400000;
+    while (high - low > 1) {
+      const middle = Math.floor((low + high) / 2);
+      if (shown(middle) < wall) low = middle;
+      else high = middle;
+    }
+    return high;
   };
+  // Shared with the browser tests, which pin it to the server's reading.
+  window.ParishLocalTime = Object.freeze({moment: localMoment});
   document.querySelectorAll("form[data-schedule-entry], form[data-schedule-zoned]").forEach((form) => {
     const zone = form.querySelector("input[data-browser-zone]");
     if (zone && !zone.value) {
@@ -2993,7 +3017,7 @@
         // time (its own refusal holds Save).
         const clock = time && time.value ? parseTime(time.value) : null;
         const future = !date.disabled && Boolean(date.value) && (clock && clock.value
-          ? new Date(`${date.value}T${canonicalTime(clock.value)}`).getTime() > Date.now()
+          ? localMoment(date.value, canonicalTime(clock.value)) > Date.now()
           : date.value > localToday());
         if (future) {
           fields.forEach((node) => {

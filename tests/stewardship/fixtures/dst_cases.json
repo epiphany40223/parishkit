@@ -1,0 +1,126 @@
+{
+  "description": "Typed local times at daylight-saving changes and the exact UTC instant each stands for, by the one rule in ui-conventions#schedules (#1129): a repeated time is its first occurrence; a skipped time is the first instant after the gap. tests/stewardship/test_browser_local_times.py pins web.dates.browser_instant and campaigns.intervals.resolve_local to them; tests/stewardship/browser/test_schedule_fields.py pins the page script's ParishLocalTime.moment.",
+  "cases": [
+    {
+      "date": "2026-03-08",
+      "time": "01:59",
+      "zone": "America/New_York",
+      "utc": "2026-03-08T06:59:00Z",
+      "why": "New York springs forward on March 8, 2026: 2:00 EST becomes 3:00 EDT."
+    },
+    {
+      "date": "2026-03-08",
+      "time": "02:00",
+      "zone": "America/New_York",
+      "utc": "2026-03-08T07:00:00Z"
+    },
+    {
+      "date": "2026-03-08",
+      "time": "02:30",
+      "zone": "America/New_York",
+      "utc": "2026-03-08T07:00:00Z"
+    },
+    {
+      "date": "2026-03-08",
+      "time": "02:59:59",
+      "zone": "America/New_York",
+      "utc": "2026-03-08T07:00:00Z"
+    },
+    {
+      "date": "2026-03-08",
+      "time": "03:00",
+      "zone": "America/New_York",
+      "utc": "2026-03-08T07:00:00Z"
+    },
+    {
+      "date": "2026-03-08",
+      "time": "03:30",
+      "zone": "America/New_York",
+      "utc": "2026-03-08T07:30:00Z"
+    },
+    {
+      "date": "2026-11-01",
+      "time": "00:59",
+      "zone": "America/New_York",
+      "utc": "2026-11-01T04:59:00Z",
+      "why": "New York falls back on November 1, 2026: 1:00-2:00 happens twice; the first (EDT) is used, and 2:00 is EST."
+    },
+    {
+      "date": "2026-11-01",
+      "time": "01:00",
+      "zone": "America/New_York",
+      "utc": "2026-11-01T05:00:00Z"
+    },
+    {
+      "date": "2026-11-01",
+      "time": "01:30",
+      "zone": "America/New_York",
+      "utc": "2026-11-01T05:30:00Z"
+    },
+    {
+      "date": "2026-11-01",
+      "time": "01:59",
+      "zone": "America/New_York",
+      "utc": "2026-11-01T05:59:00Z"
+    },
+    {
+      "date": "2026-11-01",
+      "time": "02:00",
+      "zone": "America/New_York",
+      "utc": "2026-11-01T07:00:00Z"
+    },
+    {
+      "date": "2026-10-04",
+      "time": "01:59",
+      "zone": "Australia/Sydney",
+      "utc": "2026-10-03T15:59:00Z",
+      "why": "Sydney springs forward on October 4, 2026: 2:00 AEST becomes 3:00 AEDT."
+    },
+    {
+      "date": "2026-10-04",
+      "time": "02:30",
+      "zone": "Australia/Sydney",
+      "utc": "2026-10-03T16:00:00Z"
+    },
+    {
+      "date": "2026-10-04",
+      "time": "03:00",
+      "zone": "Australia/Sydney",
+      "utc": "2026-10-03T16:00:00Z"
+    },
+    {
+      "date": "2026-04-05",
+      "time": "02:30",
+      "zone": "Australia/Sydney",
+      "utc": "2026-04-04T15:30:00Z",
+      "why": "Sydney falls back on April 5, 2026: 2:00-3:00 happens twice; the first (AEDT, UTC+11) is used, and 3:00 is AEST."
+    },
+    {
+      "date": "2026-04-05",
+      "time": "03:00",
+      "zone": "Australia/Sydney",
+      "utc": "2026-04-04T17:00:00Z"
+    },
+    {
+      "date": "2026-10-04",
+      "time": "02:15",
+      "zone": "Australia/Lord_Howe",
+      "utc": "2026-10-03T15:30:00Z",
+      "why": "Lord Howe springs forward 30 minutes on October 4, 2026 (+10:30 to +11): 2:15 is the first instant after the half-hour gap."
+    },
+    {
+      "date": "2026-04-05",
+      "time": "01:45",
+      "zone": "Australia/Lord_Howe",
+      "utc": "2026-04-04T14:45:00Z",
+      "why": "It falls back 30 minutes on April 5, 2026: the first 1:45 (+11)."
+    },
+    {
+      "date": "2026-09-06",
+      "time": "00:30",
+      "zone": "America/Santiago",
+      "utc": "2026-09-06T04:00:00Z",
+      "why": "Santiago springs forward at midnight on September 6, 2026 (00:00 -04 becomes 01:00 -03): 00:30 is the first instant after the gap."
+    }
+  ]
+}
