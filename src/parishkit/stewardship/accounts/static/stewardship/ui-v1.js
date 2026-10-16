@@ -3030,8 +3030,15 @@
       const ordered = !start.value || !end.value || start.validity.patternMismatch
         || end.validity.patternMismatch || Number(end.value) >= Number(start.value);
       end.setCustomValidity(ordered ? "" : (end.dataset.missingHint || "Out of order."));
-    } else if (start.value) end.min = start.value;
-    else end.removeAttribute("min");
+    } else if (end.min !== start.value) {
+      // Written only when it changes (#1419). Rewriting min, even to the
+      // same value, makes Chromium rebuild the date's fields; the end's own
+      // input event fires once its first year digit makes a whole date, so
+      // a rewrite there dropped the year being typed and the next digit
+      // cleared the field.
+      if (start.value) end.min = start.value;
+      else end.removeAttribute("min");
+    }
   };
   const wireNotBefore = (root) => within(root, "input[data-not-before]").forEach(checkNotBefore);
   // One listener for every page, in the capture phase, so the order is set
