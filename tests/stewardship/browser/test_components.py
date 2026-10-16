@@ -912,7 +912,7 @@ def test_setup_stepper_is_compact_and_its_full_list_stays_accessible(
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/setup-testing")
     stepper = page.locator(".setup-stepper")
-    assert "Step 4 of 12: Testing recipient" in stepper.inner_text()
+    assert "Step 3 of 12: Testing recipient" in stepper.inner_text()
     assert "1 of 12 steps completed" in stepper.inner_text()
     # Far shorter than fifteen stacked cards, even at phone width.
     assert stepper.bounding_box()["height"] < (260 if width == 320 else 160)
@@ -957,9 +957,9 @@ def test_setup_track_segments_name_their_step_on_hover(page, component_origin, w
     ):
         assert title == f"Step {number} of 12: {label} — {status}", title
     assert any(title.endswith(" — Completed") for title in titles)
-    assert "— Current step — " in titles[3]
+    assert "— Current step — " in titles[2]
     # The larger hover target is invisible: the track keeps its size.
-    segment = track.locator("span").nth(3)
+    segment = track.locator("span").nth(2)
     segment.hover()
     assert page.evaluate("document.querySelector('.setup-track span:hover') !== null")
     assert track.bounding_box() == before

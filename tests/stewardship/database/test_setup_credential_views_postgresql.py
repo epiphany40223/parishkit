@@ -108,7 +108,7 @@ def test_write_only_form_real_csrf_staging_and_cancellation(setup_http, google):
         kept = post(
             browser, URL, {"candidate": "", "organization_id": "1", "version": version}
         )
-        assert kept.status_code == 302 and kept["Location"] == "/admin/setup/mail"
+        assert kept.status_code == 302 and kept["Location"] == "/admin/setup/source"
         assert SetupSealedCredential.objects.get().version == staged
         moved = post(
             browser, URL, {"candidate": "", "organization_id": "2", "version": version}

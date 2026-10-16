@@ -32,22 +32,20 @@ class Page:
 
 
 # The Parish profile comes first: it tells the administrator, before anything
-# technical, that they are configuring their own parish. The credential pages
-# follow, each right after the public settings its staging depends on (mail
-# and Testing for Google Workspace, Slack for its token). They no longer have
-# to race the five-minute fresh sign-in window: a stale sign-in is offered
-# "Confirm with Google", which keeps this setup. The source load then needs
-# the Parish profile and ParishSoft connection. Setup collects nothing about
-# a campaign (#142): an Administrator creates it afterwards from Home, with
+# technical, that they are configuring their own parish. The Google Workspace
+# and Slack credential pages follow, each right after the public settings its
+# staging depends on (mail and Testing for Google Workspace, Slack for its
+# token). They no longer have to race the five-minute fresh sign-in window: a
+# stale sign-in is offered "Confirm with Google", which keeps this setup.
+# Logos and access come next. ParishSoft connection and Load parish data are
+# last before Review and next to each other (#1353): the load can take a few
+# minutes, so everything else is done before the wait, and a load that fails
+# on a wrong key or organization is one step after the page that fixes it.
+# Nothing before Review needs the loaded data. Setup collects nothing about a
+# campaign (#142): an Administrator creates it afterwards from Home, with
 # Create the campaign.
 PAGES = (
     Page("parish", _("Parish profile"), "admin:setup_step", ("parish",)),
-    Page(
-        "parishsoft",
-        _("ParishSoft connection"),
-        "admin:setup_credential",
-        ("parishsoft",),
-    ),
     Page("mail", _("Outgoing email settings"), "admin:setup_step", ("mail",)),
     Page("testing", _("Testing recipient"), "admin:setup_step", ("testing",)),
     Page(
@@ -60,9 +58,15 @@ PAGES = (
     Page(
         "slack_credential", _("Slack connection"), "admin:setup_credential", ("slack",)
     ),
-    Page("source", _("Load parish data"), "admin:setup_source"),
     Page("branding", _("Parish logos"), "admin:setup_branding"),
     Page("access", _("Administrative access"), "admin:setup_step", ("access",)),
+    Page(
+        "parishsoft",
+        _("ParishSoft connection"),
+        "admin:setup_credential",
+        ("parishsoft",),
+    ),
+    Page("source", _("Load parish data"), "admin:setup_source"),
     Page("preview", _("Review"), "admin:setup_preview"),
     Page("mail_test", _("Test email"), "admin:setup_mail"),
     Page("slack_test", _("Test Slack"), "admin:setup_notification"),
