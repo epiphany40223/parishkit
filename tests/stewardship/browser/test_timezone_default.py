@@ -9,19 +9,23 @@ server side is tested in ``database/test_campaign_create_postgresql.py``
 and ``test_canonical_timezone.py``.
 """
 
+import json
+
 import pytest
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
 
-# A browser that reports no time zone.
-NO_ZONE = (
+# A browser that reports ZONE (a JavaScript literal) as its time zone.
+REPORTS = (
     "const options = Intl.DateTimeFormat.prototype.resolvedOptions;"
     "Intl.DateTimeFormat.prototype.resolvedOptions = function () {"
-    "  return {...options.call(this), timeZone: undefined};"
+    "  return {...options.call(this), timeZone: ZONE};"
     "};"
 )
+# A browser that reports no time zone.
+NO_ZONE = REPORTS.replace("ZONE", "undefined")
 MENU = "select[name=timezone]"
 
 
@@ -91,16 +95,19 @@ def test_setup_parish_without_a_browser_zone_asks_for_one(page, component_origin
 
 
 @pytest.mark.parametrize("utc", ["UTC", "Etc/UTC"])
-def test_a_utc_browser_counts_as_no_zone(browser_engine, component_origin, utc):
+def test_a_utc_browser_counts_as_no_zone(page, component_origin, utc):
     """A browser reporting UTC (a server, VM or privacy setting, rarely the
     parish's clock) is treated like one reporting no zone: Create the
     campaign keeps the parish zone, and the setup Parish step a blank
-    required choice."""
-    context, page = zone_page(browser_engine, utc)
-    try:
-        page.goto(component_origin + "/campaign-create")
-        assert page.locator(MENU).input_value() == "America/New_York"
-        page.goto(component_origin + "/setup-parish")
-        assert page.locator(MENU).input_value() == ""
-    finally:
-        context.close()
+    required choice.
+
+    The report is replaced, as for NO_ZONE, rather than set as the
+    context's zone: Firefox's Playwright refuses Etc/UTC as a zone ID
+    ("Invalid timezone ID"), and this way every engine reports exactly
+    the name under test.
+    """
+    page.add_init_script(REPORTS.replace("ZONE", json.dumps(utc)))
+    page.goto(component_origin + "/campaign-create")
+    assert page.locator(MENU).input_value() == "America/New_York"
+    page.goto(component_origin + "/setup-parish")
+    assert page.locator(MENU).input_value() == ""
