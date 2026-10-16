@@ -309,7 +309,7 @@ Specification: [Admin automation interface](../../specs/stewardship/admin-automa
 - [x] ADM-11.05 — PR 4: add schedule preview and confirm and configuration request status.
 - [x] ADM-11.06 — PR 5: let fresh-gated SQL guards and checks accept full-scope automation sessions (migration) and add the confirmation prompt.
 - [x] ADM-11.07 — PR 6: add refresh and Testing send commands.
-- [ ] ADM-11.08 — PR 7: add delivery control (7b) and Family portal maintenance (7a) commands.
+- [x] ADM-11.08 — PR 7: add delivery control (7b) and Family portal maintenance (7a) commands.
 - [ ] ADM-11.09 — PR 8: add report, export, digest and log commands.
 - [x] ADM-11.10 — PR 9: add task retry, delivery and refusal commands.
 - [ ] ADM-11.11 — PR 10: add the remaining configuration commands, including secret replacement.
@@ -749,7 +749,26 @@ holds a queued email, its recovery counts against the page's SQL reads, a
 paused, closed campaign's resolution choices with held receipts and weekly
 reports, no event, no current campaign `not_available`, a Staff reader
 denied, an ended session) and the unchanged
-`test_delivery_control_postgresql.py`.
+`test_delivery_control_postgresql.py`. Its second part (#463) adds
+`send pause-preview`, `send resume-preview`, `send resolve-preview` and
+`send confirm` (fresh-gated, always prompts) in the same module, through
+the page's own previews and `confirm` (which gains an optional `record`
+hook for the command event), with no schema change and no new send path;
+proven by `tests/stewardship/test_admin_send_controls.py` (the preview
+documents without fingerprints, the prompt's lines, the catalog entries,
+the parser's types against the page's, usage errors),
+`tests/stewardship/test_admin_cli.py`, `tests/stewardship/test_pk_admin.py`
+(the `PROMPTING` list), `tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_send_controls_cli_postgresql.py`
+(previews equal to the page's for a pause, a resume before the start and a
+closed campaign's cancellation; refused prompts change nothing; the
+control, the command event, the fresh-gate event and notice; an exact
+repeat recording nothing; a page token confirmed by the command and a
+command token by the page; a resume refused by the page's preview while a
+delivery is unknown and, for a token that skipped it, by the SQL guard,
+with nothing recorded; bad reasons, an altered or expired token, a
+read-only session, a Testing draft, no current campaign, Staff denied
+before the prompt and an ended session).
 ADM-11.11 lands in parts. The first adds `files list`, the Hosted files
 page's library, in `parishkit.stewardship.admin_hosted_files`, through the
 page's own capability, order and row builder, with no schema change;
