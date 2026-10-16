@@ -1,6 +1,7 @@
 """The resolved runtime never turns broad host trees into container authority."""
 
 import json
+import re
 from dataclasses import replace
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from parishkit.stewardship.deployment import (
 from parishkit.stewardship.runtime_ingress import MAINTENANCE_PAGE, render_caddy
 from parishkit.stewardship.runtime_paths import RuntimeLayout
 from parishkit.stewardship.runtime_topology import CADDY_IMAGE, render_runtime
+from parishkit.stewardship.web import design_tokens as tokens
 
 IMAGE = "ghcr.io/example/parishkit/stewardship@sha256:" + "a" * 64
 
@@ -335,6 +337,20 @@ def test_ingress_serves_a_self_contained_maintenance_page_only_when_web_is_down(
     assert "/static/" not in MAINTENANCE_PAGE
     assert "{" not in MAINTENANCE_PAGE and "}" not in MAINTENANCE_PAGE
     assert "We&rsquo;re updating the site" in MAINTENANCE_PAGE
+
+
+def test_maintenance_page_draws_in_the_design_tokens():
+    """The maintenance page looks like a portal panel (#732): every colour on
+    it is a light design token, with the panel's corners and shadow, and the
+    portal's sans font stack."""
+    colors = set(re.findall(r"#[0-9a-fA-F]{3,6}\b", MAINTENANCE_PAGE))
+    assert colors == {
+        tokens.COLORS[name] for name in ("page", "ink", "paper", "border", "muted")
+    }
+    assert "rgba(" not in MAINTENANCE_PAGE
+    assert f"border-radius:{tokens.RADII['radius']}" in MAINTENANCE_PAGE
+    assert f"box-shadow:{tokens.SHADOW['shadow']}" in MAINTENANCE_PAGE
+    assert tokens.SANS.replace('"', "'") in MAINTENANCE_PAGE
 
 
 def test_ingress_keeps_running_through_offline_work(tmp_path):

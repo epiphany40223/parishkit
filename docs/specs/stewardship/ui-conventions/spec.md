@@ -2003,7 +2003,10 @@ The portal and the emails share one visual style
   fallback; only the vendored chart tooltip rules are exempt. The setup
   wizard's Back and Continue buttons take the shared button shape. Email
   components read the same module and inline the values, because mail
-  programs cannot load the stylesheet.
+  programs cannot load the stylesheet. So does the maintenance page shown
+  while the site is updating, which loads no stylesheet: it inlines the
+  light page, panel, ink and muted colours, the panel's corners and shadow,
+  and the sans font stack.
 - **Buttons:** templates draw every button, and every link styled as one,
   with the `{% button %}` tag. Its variants are primary (the default),
   secondary, large and link. It renders the stylesheet's classes and keeps

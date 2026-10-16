@@ -196,9 +196,11 @@ network.
 When no web replica answers, for example while an upgrade has web stopped,
 Caddy answers every request with its own self-contained maintenance page ("We're
 updating the site"): HTTP 503 with `Retry-After: 120` and `Cache-Control:
-no-store`, inline styles only, no scripts or application assets, and a strict
-Content-Security-Policy. Only the proxy's own upstream failures (502 or 503)
-select it: a refused dial or no available upstream, as during an upgrade, but
+no-store`, inline styles only (drawn in the
+[shared design tokens](../ui-conventions/spec.md#shared-visual-style)), no
+scripts or application assets, and a strict Content-Security-Policy. Only
+the proxy's own upstream failures (502 or 503) select it: a refused dial or
+no available upstream, as during an upgrade, but
 also an upstream connection reset mid-request (a worker killed or out of
 memory), whose 502 is shown as this 503 page and recorded as 503 in the access
 log. An application response, including an application 500, passes through
