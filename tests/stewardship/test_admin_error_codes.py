@@ -17,6 +17,11 @@ import pytest
 from parishkit.stewardship.audit.refusal_context import IDENTIFIER
 
 PACKAGE = Path(__file__).resolve().parents[2] / "src/parishkit/stewardship"
+# The tests draw Admin forms and formsets with errors too (browser
+# fixtures, a monkeypatched check), under the same strict test settings,
+# but only the browser or PostgreSQL jobs run many of them. Reading their
+# source here lets the unit job catch a code-less error there (#1437).
+TESTS = Path(__file__).resolve().parent
 # Calls that may stay code-less, by file and exact source, each with why.
 ALLOWED = {
     # ScheduleSet._check_collection: the rules between schedules.
@@ -24,6 +29,19 @@ ALLOWED = {
     # AdminForm.add_error passes every caller's error on to Django, then
     # checks its code at run time (strict test settings).
     ("web/admin_forms.py", "super().add_error(field, error)"),
+}
+# The same for the tests, by path under tests/stewardship.
+TEST_ALLOWED = {
+    # Code-less on purpose: production's record of one, and the strict
+    # check refusing one.
+    ("test_admin_forms.py", 'form.add_error("note", f"Not {SECRET}.")'),
+    ("test_admin_forms.py", 'form.add_error("note", "Not coded.")'),
+    # Model validation rolling a write back: no form draws it.
+    ("database/test_storage_postgresql.py", 'ValidationError("Rejected")'),
+    (
+        "database/test_storage_postgresql.py",
+        'ValidationError("synthetic rollback")',
+    ),
 }
 
 
@@ -173,10 +191,28 @@ def test_every_validation_error_in_the_package_has_a_code():
     assert found == []
 
 
+def test_every_validation_error_the_tests_draw_has_a_code():
+    """Browser fixtures and tests draw each refused form or formset as its
+    view does: coded, except the few ``TEST_ALLOWED`` keeps on purpose."""
+    found = []
+    for path in sorted(TESTS.rglob("*.py")):
+        if "node_modules" in path.parts:
+            continue
+        relative = str(path.relative_to(TESTS))
+        allowed = {text for where, text in TEST_ALLOWED if where == relative}
+        found += [
+            f"{relative}:{line}: {what}"
+            for line, what in problems(path.read_text(), str(path), allowed)
+        ]
+    assert found == []
+
+
 def test_each_allowed_exception_still_exists():
     """An allow-list entry whose call is gone is removed, not kept."""
     for where, text in ALLOWED:
         assert text in (PACKAGE / where).read_text(), (where, text)
+    for where, text in TEST_ALLOWED:
+        assert text in (TESTS / where).read_text(), (where, text)
 
 
 @pytest.mark.parametrize(
@@ -194,6 +230,8 @@ def test_each_allowed_exception_still_exists():
         "raise forms.ValidationError('x', code=a if y else (b if z else None))",
         "form.add_error(field='a', error='msg')",
         "form.add_error('a', error='msg')",
+        # A formset's own clean, or a test's stand-in for it.
+        "def clean(self):\n    raise forms.ValidationError('clash')",
         "from django.core.exceptions import ValidationError as VE\nraise VE('x')",
         "VE = forms.ValidationError\nraise VE('x')",
         # A caught error is allowed only where it was caught...
