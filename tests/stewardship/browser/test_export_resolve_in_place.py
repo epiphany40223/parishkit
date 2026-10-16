@@ -152,7 +152,7 @@ def announced(page, text):
             EXACT_CANCEL,
             "Cancel export",
             "Export cancel requested.",
-            "This export was cancelled. It stays in your list",
+            "This export was cancelled.",
         ),
     ],
 )

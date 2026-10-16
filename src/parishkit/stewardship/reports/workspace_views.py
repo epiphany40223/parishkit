@@ -30,8 +30,6 @@ from parishkit.stewardship.web.tables import paginate
 from .chart_specs import PROGRESS, participation_chart, population_progress
 from .daily_digest import statistics_cards
 from .digest_presentation import participation_table_context
-from .exact_models import ExactExportRequest
-from .export_models import ExportRequest
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES, _principal
 from .facts import FactUnavailable
@@ -299,17 +297,8 @@ def _page_context(campaign_id, query, selected, principal):
         )
         if selected.expected is not None
         else None,
+        # No list of earlier exports: exports are point-in-time (#1398).
         "export_allowed": mutable,
-        "recent_exports": list(
-            ExportRequest.objects.filter(
-                campaign_id=campaign_id, requester_id=principal.identity
-            ).order_by("-created_at", "id")[:10]
-        ),
-        "recent_exact_exports": list(
-            ExactExportRequest.objects.filter(
-                campaign_id=campaign_id, requester_id=principal.identity
-            ).order_by("-created_at", "id")[:10]
-        ),
     }
     if selected.document is not None:
         context.update(participation_table_context(selected.document))
