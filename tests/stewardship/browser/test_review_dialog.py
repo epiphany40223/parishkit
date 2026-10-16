@@ -3,7 +3,8 @@ and Edit user and the Import Ministry leaders review, in real browsers.
 
 Review posts the form without a page load, the form inert and busy until
 the answer; an accepted review opens a modal dialog, focus on its title;
-Escape and Cancel close it before Apply, focus back on Review; once Apply is
+Escape and Cancel close it before Apply, focus back on the button that
+opened it; once Apply is
 pressed nothing dismisses it until the answer, and Apply goes once the
 change is recorded; once applied, New user returns to Users and the import
 redraws Users in place, each with the reserved status line. A field's error
@@ -54,9 +55,9 @@ def fill_new(page, origin, path=NEW):
     page.get_by_label("Name", exact=True).fill("Smith, Ann")
 
 
-def review(page):
-    """Choose Review and wait for the dialog."""
-    page.get_by_role("button", name="Review").click()
+def review(page, name="Add the user"):
+    """Choose New user's Add the user (or Edit's Review); wait for the dialog."""
+    page.get_by_role("button", name=name).click()
     dialog = page.locator("dialog[data-review-dialog]")
     visible(dialog)
     return dialog
@@ -80,9 +81,14 @@ def test_the_dialog_opens_on_its_title_and_fits(
     failures = watch(page)
     dialog = review(page)
     assert page.evaluate(FOCUSED) == "user-review-title"
-    visible(page.get_by_role("dialog", name="Review new user"))
-    assert "new@example.org" in dialog.inner_text()
-    assert "This adds a new user." in dialog.inner_text()
+    visible(page.get_by_role("dialog", name="Add this user?"))
+    # A confirmation (#1356): one sentence, which describes the dialog, and
+    # none of the values the form behind it already shows.
+    summary = dialog.locator("#user-review-summary")
+    assert summary.inner_text().startswith("This adds the user")
+    assert dialog.get_attribute("aria-describedby") == "user-review-summary"
+    assert "new@example.org" not in dialog.inner_text()
+    assert "Smith, Ann" not in dialog.inner_text()
     # The page behind is inert: the form cannot be edited.
     assert page.evaluate("document.querySelector('#user-review').matches(':modal')")
     box = dialog.bounding_box()
@@ -106,11 +112,11 @@ def test_the_form_is_inert_and_busy_while_the_review_is_prepared(
     fill_new(page, component_origin)
     held = []
     page.route("**" + REVIEW_POST, lambda route: held.append(route))
-    page.get_by_role("button", name="Review").click()
+    page.get_by_role("button", name="Add the user").click()
     eventually(page, "document.getElementById('user-entry-form').inert")
     form = page.locator("#user-entry-form")
     assert form.get_attribute("aria-busy") == "true"
-    button = form.get_by_role("button", name="Review")
+    button = form.get_by_role("button", name="Add the user")
     assert button.get_attribute("aria-disabled") == "true"
     assert "is-busy" in (button.get_attribute("class") or "")
     eventually(page, "true")
@@ -122,19 +128,19 @@ def test_the_form_is_inert_and_busy_while_the_review_is_prepared(
 
 
 def test_escape_and_cancel_close_it_and_return_to_review(page, component_origin):
-    """Before Apply, the dialog closes, nothing changes, focus is on Review."""
+    """Before Apply, the dialog closes, nothing changes, focus is on Add the user."""
     fill_new(page, component_origin)
     failures = watch(page)
     dialog = review(page)
     page.keyboard.press("Escape")
     hidden(dialog)
-    eventually(page, "document.activeElement.textContent.trim() === 'Review'")
+    eventually(page, "document.activeElement.textContent.trim() === 'Add the user'")
     assert page.get_by_label("Name", exact=True).input_value() == "Smith, Ann"
     dialog = review(page)
     dialog.get_by_role("button", name="Cancel").click()
     hidden(dialog)
     # The dialog's close event, which returns focus, follows its closing.
-    eventually(page, "document.activeElement.textContent.trim() === 'Review'")
+    eventually(page, "document.activeElement.textContent.trim() === 'Add the user'")
     assert page.evaluate("window.notReloaded === true")
     assert not failures
 
@@ -195,7 +201,7 @@ def test_a_field_error_stays_on_the_form(page, component_origin):
     """The dialog stays shut; the Name is marked; the summary has focus."""
     fill_new(page, component_origin, NEW_INVALID)
     failures = watch(page)
-    page.get_by_role("button", name="Review").click()
+    page.get_by_role("button", name="Add the user").click()
     summary = page.locator("[data-error-summary]")
     visible(summary)
     eventually(page, "document.activeElement?.matches('[data-error-summary]')")
@@ -245,8 +251,10 @@ def test_edit_review_waits_for_a_change_and_greys_again_on_revert(
     assert button.is_disabled()
     visible(page.get_by_text("Change the Name or role to review it."))
     roles.get_by_label("Staff").check()
-    dialog = review(page)
+    dialog = review(page, "Review")
     visible(page.get_by_role("dialog", name="Review user change"))
+    # Edit keeps its review (class A2), with no confirmation sentence.
+    assert dialog.get_attribute("aria-describedby") is None
     assert "Ministry leader" in dialog.inner_text() and "Staff" in dialog.inner_text()
 
 

@@ -225,7 +225,8 @@ def test_a_command_preview_confirms_on_the_page(admin, current):
     with task_login(ServiceRole.WEB):
         response = post(browser, URL, {"action": "confirm", "preview": signed})
     assert response.status_code == 302, response.content
-    assert response["Location"].startswith(f"{URL}?request=")
+    # The review dialog's Apply follows the change's own status page (#1356).
+    assert response["Location"].startswith("/admin/changes/")
     assert ConfigurationChangeRequest.objects.count() == requests + 1
     assert events() == 0
 

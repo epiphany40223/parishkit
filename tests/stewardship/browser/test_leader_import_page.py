@@ -8,7 +8,9 @@ Import selected and hides the reason without moving anything. With nobody
 to import, both buttons are unavailable and the same line gives the
 empty-table reason. Import selected posts only the
 ticked addresses, and the answer, the Import Ministry leaders review, opens
-in the shared review dialog (#750; its Apply is in test_review_dialog).
+in the shared review dialog (#750; its Apply is in test_review_dialog). An
+Import selected that imports every ticked row is a confirmation instead
+(#1356), and the same dialog shows a full review again afterwards.
 Pages and POST answers are user_components'.
 """
 
@@ -17,8 +19,8 @@ from urllib.parse import parse_qs
 import pytest
 
 from .test_components import axe_violations
-from .user_components import LEADERS, LIST, SINGLE
-from .waits import eventually, visible
+from .user_components import IMPORT, LEADERS, LIST, LIST_CONFIRM, SINGLE
+from .waits import eventually, hidden, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -211,3 +213,44 @@ def test_header_checkbox_selects_every_leader(page, component_origin):
     visible(region(page).get_by_text(f"{len(LEADERS)} selected"))
     assert page.get_by_role("button", name="Import selected").is_enabled()
     assert boxes(page) == before
+
+
+def test_importing_every_ticked_leader_is_a_confirmation(
+    page, component_origin, axe_source
+):
+    """Nobody skipped or left over (#1356): the dialog asks "Import the
+    selected leaders?" with one sentence, its description, and lists none of
+    the ticked rows; a full review after it has the dialog's own title back
+    and no description."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + LIST_CONFIRM)
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.get_by_role(
+        "checkbox", name="Select Smith, Bob (bob.smith@example.org)"
+    ).check()
+    page.get_by_role("button", name="Import selected").click()
+    dialog = page.get_by_role("dialog", name="Import the selected leaders?")
+    visible(dialog)
+    assert page.evaluate("document.activeElement.id") == "leader-review-title"
+    assert dialog.get_attribute("aria-describedby") == "leader-import-summary"
+    summary = dialog.locator("#leader-import-summary")
+    assert summary.inner_text() == (
+        "This adds the chosen leader as a user with the role Ministry leader."
+    )
+    assert dialog.locator("table").count() == 0
+    assert LEADERS[0]["email"] not in dialog.inner_text()
+    visible(dialog.get_by_role("button", name="Apply"))
+    assert axe_violations(page, axe_source) == []
+    dialog.get_by_role("button", name="Cancel").click()
+    hidden(dialog)
+    # The same form answered with the full review (a skipped row).
+    page.evaluate(
+        f"document.getElementById('leader-import').setAttribute('action', '{IMPORT}')"
+    )
+    page.get_by_role("button", name="Import all").click()
+    full = page.get_by_role("dialog", name="Review Ministry leader import")
+    visible(full)
+    visible(full.get_by_role("heading", name="Skipped"))
+    assert full.get_attribute("aria-describedby") is None
+    assert not failures

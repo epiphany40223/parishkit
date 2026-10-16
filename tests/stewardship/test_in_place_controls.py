@@ -126,11 +126,11 @@ def test_presence_refresh_refreshes_the_list_in_place():
 # reads, whose answer never holds the page's regions.
 # The in-place settings pages (#532) draw their review region around
 # settings-review.html, whose Apply names it, and around the change status a
-# confirmed change shows, whose follow-up link names it too. No-reminders
-# WorkGroup is the last of them.
-SETTINGS_PAGES = ("reminder-workgroup.html",)
-# Share options, Campaign images, Parish logos and Parish settings review in
-# the review dialog (#750).
+# confirmed change shows, whose follow-up link names it too. None is left in
+# this build: Share options, Campaign images, Parish logos, Parish settings
+# (#750) and No-reminders WorkGroup (#750, #1356) review in the review
+# dialog; Create the campaign draws the panel but names no in_place page.
+SETTINGS_PAGES = ()
 # Ministries changes nothing any more (#1267).
 REVIEW_PAGES = SETTINGS_PAGES
 HOSTED = {
@@ -638,6 +638,43 @@ def test_share_options_review_in_the_dialog():
     assert 'dialog_id="share-review"' in text and "review=True" in text
     assert 'translate "Change an option to review it." as option_hint' in text
     assert "review-changes-button.html' with hint=option_hint" in text
+
+
+def test_the_workgroup_confirms_in_the_dialog():
+    """No-reminders WorkGroup's form carries the action's own label, Save,
+    and its hint (#1356); it opens the shared review dialog, described by
+    its confirmation's sentence, from a region redrawn from the page's
+    address once a change is applied, and the page draws no in-place review
+    region."""
+    text = (TEMPLATES / "reminder-workgroup.html").read_text()
+    form = re.search(r'<form id="settings-form"[^>]*>', text).group(0)
+    assert 'data-require-change="base_digest"' in form
+    assert 'data-review-open="workgroup-review"' in form
+    assert "data-in-place" not in form
+    assert 'data-refresh-url="{{ refresh_url }}"' in text
+    assert "settings-review" not in text
+    assert 'dialog_id="workgroup-review"' in text and "review=True" in text
+    assert 'describedby="workgroup-review-summary"' in text
+    assert "with hint=name_hint label=save_label" in text
+    button = render_to_string(
+        "stewardship/components/review-changes-button.html", {"label": "Save"}
+    )
+    assert ">Save</button>" in button and "Review changes" not in button
+    fragment = render_to_string(
+        "stewardship/reminder-workgroup-review.html",
+        {"review": {"clears": False, "preview": "signed"}},
+    )
+    assert 'data-review-done="No-reminders WorkGroup changed."' in fragment
+    assert '<p id="workgroup-review-summary">From the next ParishSoft refresh' in (
+        fragment
+    )
+    assert 'name="preview" value="signed" data-review-preview' in fragment
+    assert "Current" not in fragment and "New WorkGroup" not in fragment
+    cleared = render_to_string(
+        "stewardship/reminder-workgroup-review.html",
+        {"review": {"clears": True, "preview": "signed"}},
+    )
+    assert "gets the Reminders again" in cleared
 
 
 def test_campaign_settings_reviews_in_the_dialog_once():

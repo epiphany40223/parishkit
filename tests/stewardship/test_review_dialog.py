@@ -158,7 +158,42 @@ def test_the_user_review_is_a_fragment_for_the_dialog():
     assert re.search(r'name="preview" value="signed" data-review-preview', text)
     assert "<form" not in text and "<h1" not in text and "<html" not in text
     assert "Return to" not in text and "Cancel" not in text
-    assert "new@example.org" in text and "Smith, Ann" in text
+
+
+def test_new_user_confirms_without_repeating_the_form():
+    """New user's Review is a confirmation (#1356): one sentence the dialog
+    names as its description, and none of the form's values; making the
+    person an Administrator keeps its warning."""
+    text = review_fragment()
+    assert '<p id="user-review-summary">This adds the user' in text
+    assert "new@example.org" not in text and "Smith, Ann" not in text
+    assert "Staff" not in text and "(none)" not in text and "<table" not in text
+    records = [user("admin@example.org", "administrator", "Admin, Ada")]
+    (change,), _patch = plan_changes(
+        records,
+        [{"email": "new@example.org", "name": "Smith, Ann", "role": "administrator"}],
+    )
+    granted = render_to_string(
+        "stewardship/user-review.html", {"change": change, "preview": "signed"}
+    )
+    assert "This makes the person an Administrator" in granted
+    source = (TEMPLATES / "user-entry.html").read_text(encoding="utf-8")
+    assert 'translate "Add the user" %}{% endbutton %}' in source
+    assert 'translate "Add this user?" as review_title' in source
+    assert 'describedby=new|yesno:"user-review-summary,"' in source
+
+
+def test_edit_user_still_reviews_each_changed_value():
+    """Edit user (class A2, a later part of #1356) keeps Now and After."""
+    records = [user(), user("ann@example.org", "staff", "Smith, Ann")]
+    (change,), _patch = plan_changes(
+        records, [{"id": records[1]["id"], "name": "Jones, Ann", "role": "staff"}]
+    )
+    text = render_to_string(
+        "stewardship/user-review.html", {"change": change, "preview": "signed"}
+    )
+    assert "Smith, Ann" in text and "Jones, Ann" in text
+    assert "user-review-summary" not in text
 
 
 def test_the_leader_review_offers_apply_only_with_someone_to_import():
@@ -180,6 +215,34 @@ def test_the_leader_review_offers_apply_only_with_someone_to_import():
         {"added": [], "skipped": [], "preview": None, "limit": 100},
     )
     assert "Nobody to import" in none and "data-review-preview" not in none
+
+
+def test_importing_every_ticked_leader_is_a_confirmation():
+    """Import selected with nobody skipped or left over (#1356): the
+    question and sentence the dialog takes, the signed preview, and none of
+    the ticked rows."""
+    leaders = [
+        {"email": f"{name}@example.org", "name": name, "member_duid": 900 + number}
+        for number, name in enumerate(("ann", "bob"))
+    ]
+    text = render_to_string(
+        "stewardship/user-leader-import.html",
+        {
+            "added": leaders,
+            "skipped": [],
+            "preview": "signed",
+            "limit": 100,
+            "confirmation": True,
+        },
+    )
+    assert 'data-review-title="Import the selected leaders?"' in text
+    assert 'data-review-describedby="leader-import-summary"' in text
+    assert (
+        '<p id="leader-import-summary">This adds the 2 chosen leaders as users '
+        "with the role Ministry leader.</p>" in text
+    )
+    assert 'name="preview" value="signed" data-review-preview' in text
+    assert "ann@example.org" not in text and "<table" not in text
 
 
 def test_new_and_edit_user_review_in_the_dialog_and_return_to_users():
@@ -249,6 +312,47 @@ def test_the_schedule_review_is_a_fragment_for_the_dialog():
     assert 'data-review-done="30 reminders added."' in repeated
     edited = schedule_fragment([scheduled("update")], new=False)
     assert 'data-review-done="Scheduled email changed."' in edited
+
+
+def test_a_one_time_new_schedule_confirms_without_repeating_the_form():
+    """New scheduled email adding one schedule that sends once is a
+    confirmation (#1356): it names its own question and sentence, which the
+    dialog takes for this answer, and lists no schedule or counts. A Repeat,
+    a recurring schedule or an Edit is not."""
+    from parishkit.stewardship.accounts.schedule_entry_views import _sends_once
+
+    once = scheduled() | {"after": {"date": "2054-10-15"}}
+    reviewed = {
+        "changes": [once],
+        "window_changes": {},
+        "series": [],
+        "blocking": 0,
+        "preview": "signed",
+    }
+    assert _sends_once(reviewed, None)
+    assert not _sends_once(reviewed | {"changes": [once, once]}, None)
+    recurring = scheduled() | {"after": {"date": None}}
+    assert not _sends_once(reviewed | {"changes": [recurring]}, None)
+    assert not _sends_once(
+        reviewed | {"changes": [once | {"operation": "update"}]}, None
+    )
+    assert not _sends_once(reviewed | {"window_changes": {"end_date": 1}}, None)
+    assert not _sends_once(reviewed | {"series": [{"id": "x"}]}, None)
+    text = render_to_string(
+        "stewardship/schedule-review.html",
+        {"changes": [once], "preview": "signed", "new": True, "confirmation": True},
+    )
+    assert re.search(
+        r'<div data-review-answer data-review-done="Scheduled email added." '
+        r'data-review-title="Add this scheduled email\?" '
+        r'data-review-describedby="schedule-review-summary">',
+        text,
+    )
+    assert '<p id="schedule-review-summary">This schedules the email' in text
+    assert 'name="preview" value="signed" data-review-preview' in text
+    assert "Current schedule" not in text and "Reminder — Add" not in text
+    source = (TEMPLATES / "schedule-entry.html").read_text(encoding="utf-8")
+    assert 'translate "Add the scheduled email" %}' in source
 
 
 def test_a_blocked_schedule_review_offers_no_apply():

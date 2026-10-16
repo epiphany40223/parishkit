@@ -307,10 +307,10 @@ def test_new_user_fills_the_name_from_parishsoft(page, component_origin):
     # Review posts the form as the page draws it; the review opens in the
     # shared review dialog (#750, test_review_dialog).
     with page.expect_request(lambda request: request.method == "POST") as review:
-        page.get_by_role("button", name="Review").click()
+        page.get_by_role("button", name="Add the user").click()
     fields = parse_qs(review.value.post_data)
     assert fields["action"] == ["preview"] and fields["role"] == ["ministry_leader"]
-    dialog = page.get_by_role("dialog", name="Review new user")
+    dialog = page.get_by_role("dialog", name="Add this user?")
     visible(dialog)
     visible(dialog.get_by_role("button", name="Apply"))
     assert not failures
