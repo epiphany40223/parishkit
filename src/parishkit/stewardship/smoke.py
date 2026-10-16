@@ -162,7 +162,24 @@ def _contact_timeout(limit, elapsed):
 
 
 def check_workspace(configuration, *, delegated_email, send_to=None):
-    """Authenticate the mailbox; with an address, send one fixed message."""
+    """Authenticate the mailbox; with an address, send one fixed message.
+
+    The message goes over Gmail, so its one recipient is routed by the same
+    rule as every other submission (``mail_catcher.envelope``, #1399), and
+    first: a LOCAL ``mail_redirect`` replaces it, and LOCAL without one is
+    refused before the key is read or any provider is contacted.
+    """
+    from .mail_catcher import MailTransport, envelope
+
+    route = dict(
+        profile=configuration.profile,
+        transport=MailTransport.GMAIL,
+        redirect=configuration.mail_redirect,
+    )
+    if send_to is not None:
+        # The route alone, before the key is read: an empty envelope raises
+        # exactly when a real one would, and checks no address yet.
+        envelope((), **route)
     # The installer's mailbox check reads only the delegated address; the
     # sender, reply-to and recipient fields belong to its later delivery check.
     settings = {"delegated_email": normalized_email(delegated_email)}
@@ -175,11 +192,12 @@ def check_workspace(configuration, *, delegated_email, send_to=None):
 
         from .provider_check_worker import CheckSession
 
+        (recipient,) = envelope((normalized_email(send_to),), **route)
         credentials = workspace_candidate(value, delegated_email=delegated_email)
         credentials.refresh(_google_transport(CheckSession(configuration.profile)))
         message = EmailMessage()
         message["From"] = delegated_email
-        message["To"] = normalized_email(send_to)
+        message["To"] = recipient
         message["Subject"] = SUBJECT
         message.set_content(_text())
         with smtplib.SMTP_SSL(
@@ -191,6 +209,7 @@ def check_workspace(configuration, *, delegated_email, send_to=None):
             )
             if code != 235:
                 raise ConfigError("The mailbox refused the smoke message.")
+            # The To header is the routed recipient, so it is the envelope.
             smtp.send_message(message)
         result["sent"] = True
     return result

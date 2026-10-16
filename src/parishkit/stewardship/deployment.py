@@ -94,6 +94,30 @@ def recorded_parishsoft_base_url():
         raise ConfigError("The ParishSoft base URL is not admitted.") from None
 
 
+def recorded_mail_redirect():
+    """The mail redirect this process's deployment set (#1399), or None.
+
+    ``profile_settings`` records ``mail_redirect`` only when it is set, which
+    the loader admits only in the local profile. It is checked against the
+    recorded profile again here, so a redirect can never reach a helper
+    request from any other profile whatever the settings say: the parent
+    refuses to send instead (a ConfigError).
+    """
+    from django.conf import settings
+
+    value = getattr(settings, "STEWARDSHIP_MAIL_REDIRECT", None)
+    if value is None:
+        return None
+    from .mail_catcher import redirect_address
+
+    try:
+        if recorded_profile() is not DeploymentProfile.LOCAL:
+            raise ValueError
+        return redirect_address(value)
+    except ValueError:
+        raise ConfigError("The mail redirect is not admitted.") from None
+
+
 class ServiceRole(StrEnum):
     """Least-privilege process identity, not a human portal role."""
 
@@ -233,6 +257,11 @@ PARISHSOFT_PUBLICATION_VARIABLE = "PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION"
 # the profile's default, the fake in LOCAL and the real API elsewhere, so
 # only a LOCAL deployment that chose the real API ever records a value.
 PARISHSOFT_BASE_URL_VARIABLE = "PARISHKIT_STEWARDSHIP_PARISHSOFT_BASE_URL"
+# The forced mail redirect (#1399): one address, the developer's Testing
+# recipient, that replaces every envelope recipient of every message a LOCAL
+# deployment sends (``mail_catcher.envelope``). Unset (the default) sends to
+# the routed recipients; any value is refused outside the local profile.
+MAIL_REDIRECT_VARIABLE = "PARISHKIT_STEWARDSHIP_MAIL_REDIRECT"
 
 
 @dataclass(frozen=True)
@@ -263,6 +292,8 @@ class DeploymentConfiguration:
     parishsoft_publication: bool = False
     # None is the profile's default; see PARISHSOFT_BASE_URL_VARIABLE.
     parishsoft_base_url: str | None = None
+    # None sends to the routed recipients; see MAIL_REDIRECT_VARIABLE.
+    mail_redirect: str | None = None
 
 
 def _mapping(value: object, keys: set[str] | frozenset[str], label: str) -> dict:
@@ -450,6 +481,7 @@ def load_deployment(
             "local_smtp_latency_ms",
             "parishsoft_publication",
             "parishsoft_base_url",
+            "mail_redirect",
         },
         "deployment",
     )
@@ -760,6 +792,21 @@ def load_deployment(
         if base_url == default_base_url(profile.value):
             # The default is recorded as unset, so naming it renders nothing.
             base_url = None
+    redirect = select("MAIL_REDIRECT", None)
+    if redirect in (None, ""):
+        # Empty means unset, as for the switches above.
+        redirect = deployment.get("mail_redirect")
+    if redirect is not None:
+        from .mail_catcher import redirect_address
+
+        try:
+            redirect = redirect_address(redirect)
+        except ValueError:
+            raise ConfigError("mail_redirect must be one email address") from None
+        if profile is not DeploymentProfile.LOCAL:
+            # Redirecting a real deployment's mail would silently withhold it
+            # from every Family; only the laptop environment may redirect.
+            raise ConfigError("mail_redirect is admitted only in the local profile")
     supplied_keys = set(explicit) | {
         key for key in env if key.startswith("PARISHKIT_STEWARDSHIP_")
     }
@@ -791,4 +838,5 @@ def load_deployment(
         latency,
         publication,
         base_url,
+        redirect,
     )

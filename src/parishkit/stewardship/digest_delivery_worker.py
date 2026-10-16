@@ -18,10 +18,12 @@ def main():
     """Emit only the closed delivery outcome; malformed invocation emits nothing."""
     logging.disable(logging.CRITICAL)
     try:
-        candidate, settings, mail, profile = decode_request(
+        candidate, settings, mail, profile, redirect = decode_request(
             sys.stdin.buffer.read(MAX_DIGEST_INPUT + 1)
         )
-        result = deliver_digest(candidate, settings, mail, profile=profile)
+        result = deliver_digest(
+            candidate, settings, mail, profile=profile, redirect=redirect
+        )
         sys.stdout.write(
             json.dumps(result.wire_payload(), separators=(",", ":")) + "\n"
         )

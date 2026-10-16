@@ -66,7 +66,7 @@ def request(mail=None):
 def test_real_compiler_decoder_and_mime_have_no_attachment_or_other_recipients():
     """Message identity survives retries and private values stay out of repr."""
     mail = sample()
-    candidate, settings, decoded, _ = decode_request(request(mail))
+    candidate, settings, decoded, _, _ = decode_request(request(mail))
     assert candidate == b"synthetic" and settings == SETTINGS and decoded == mail
     mime = decoded.message()
     assert mime["To"] == "admin@example.org"
@@ -328,7 +328,7 @@ def test_larger_weekly_budget_preserves_valid_json_escape_expansion():
     from parishkit.stewardship.web.weekly_digest_content import MAX_WEEKLY_BODY_BYTES
 
     mail = replace(sample(), text="\x01" * MAX_WEEKLY_BODY_BYTES)
-    _, _, decoded, _ = decode_request(request(mail))
+    _, _, decoded, _, _ = decode_request(request(mail))
     assert decoded == mail
 
 
