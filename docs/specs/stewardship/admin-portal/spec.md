@@ -7684,7 +7684,9 @@ download whose rows hold exact action times asks
 ([time zone question](../ui-conventions/spec.md#downloaded-files)); the
 file's timestamps carry their UTC offset. Logins/logouts, configuration, polls/tasks, each email and
 reason/recipient routing, report execution/export, errors, Family access,
-submission changes, workflow changes, publication, and purge are recorded.
+submission changes, workflow changes, publication, purge and
+[refused Admin input](../operations/spec.md#admin-input-refusals) are
+recorded.
 
 ### Sign-in activity
 
@@ -7758,8 +7760,9 @@ one out.
 
 ### Activity groups
 
-The Activity choice offers six more groups after Sign-in activity, in this
-order ([#953](https://github.com/epiphany40223/parishkit/issues/953)). Each
+The Activity choice offers seven more groups after Sign-in activity, in this
+order ([#953](https://github.com/epiphany40223/parishkit/issues/953),
+[#1403](https://github.com/epiphany40223/parishkit/issues/1403)). Each
 group is a closed list of types kept in one place, `audit.log_rows.ACTIVITY_TYPES`,
 which `pk-admin logs --activity` shares. Every member is a type the system
 writes: an audit `Action`, a directly written audit type, a trigger-built type
@@ -7852,6 +7855,21 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   links prepared or replaced (`family_tokens_*`, `family_link_rotated`,
   `family_link_population_extended`) and the portal closed for maintenance
   (`family_maintenance_started`, `family_maintenance_ended`).
+- **Refused input** (`refused_input`, operational entries only): every
+  refused Admin page request and `pk-admin` command (`admin_input_refused`;
+  see [Admin input refusals](../operations/spec.md#admin-input-refusals)).
+  Its explanation is read from the entry's closed reason code through
+  `log_descriptions` and `log_details`, never from stored message text: the
+  page or command, the refused fields and the reason in words, followed by
+  the expected and actual values when the entry has them, such as "Create
+  the campaign: Time zone refused (the campaign must use the parish's time
+  zone; expected Africa/Abidjan, got America/New_York)". An entry marked
+  `capped` also says that the person's further refusals at that level were
+  not kept here for the rest of the window (see the
+  [cap](../operations/spec.md#admin-input-refusals)). The Actor column
+  names the refused user by address, read from the entry's `PortalUser` id
+  like any other actor, and the same-actor icon lists that person's
+  refusals.
 
 Time limits are not in ParishSoft refreshes: `task_timed_out` and the other
 timeout types are shared by every kind of background work, so a type list
@@ -7861,9 +7879,14 @@ not the task it retried. Types written only to
 the process log, such as `go_live_refresh_held` and
 `refresh_lead_window_conflict`, never reach this page and are in no group.
 
-Every group but Family mail and ParishSoft refreshes is audit records only,
-and behaves as [Sign-in activity](#sign-in-activity) describes: the level
-boxes are greyed and Apply waits for Audit record. Which groups hold
+Every group but Family mail, ParishSoft refreshes and Refused input is
+audit records only, and behaves as [Sign-in activity](#sign-in-activity)
+describes: the level boxes are greyed and Apply waits for Audit record.
+Refused input is the reverse: it holds operational entries only, so while
+it is chosen the Audit record box is greyed out and not sent, and Apply
+waits until a level is ticked, by the same `data-enabled-when` and
+`data-required-when` markup; a request that bypasses the page with no level
+ticked gets an empty table that says to tick one. Which groups hold
 operational entries is named in `audit.log_rows.OPERATIONAL_ACTIVITIES`, and a
 unit test compares it with the groups' members on the log-writer manifest.
 Family mail and ParishSoft refreshes hold operational entries too, so the level boxes stay available and the Show
