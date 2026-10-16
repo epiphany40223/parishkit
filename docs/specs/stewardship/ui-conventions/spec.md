@@ -494,10 +494,8 @@ never scrolls to show it (Administrator, pk-local review of
   the item's panel, and paging them must not replace the Save follow-up form
   above or discard notes typed but not yet saved; a save still replaces the
   whole panel, history included. The attribute's value may list further
-  region ids to replace as well: a settings page's Apply
-  (`data-in-place-only="flow-steps"`) also moves the step indicator. A
-  region the answer itself marks `data-in-place-always` is replaced even
-  then. A region marked `data-in-place-own` is replaced only by the answer
+  region ids to replace as well: a Mail delivery resolution also redraws
+  the email's state and history. A region marked `data-in-place-own` is replaced only by the answer
   to a control that names it (or lists it in `data-in-place-only`), never by
   another control's answer or a redraw: Hosted files' Upload panel keeps a
   chosen file and a typed name across a sort, a page or a deletion, and a
@@ -651,79 +649,31 @@ never scrolls to show it (Administrator, pk-local review of
   status line: if it brings back a new key change in progress (another
   Administrator started one), the settings form and notes below it keep the
   state the page was loaded with until the next load.
-- **In-place review (#532, #750).** This panel is being replaced by the
-  [review dialog](#review-dialog) (Administrator decision, 2026-10-11); it
-  describes the pages that still use it until #750 converts them.
-  The No-reminders WorkGroup editor
-  reviews, applies and follows a change on the page itself, not on
-  separate Review and Change status pages. The settings form is a
-  `form[data-in-place]` marked
-  `data-table-sync`: its answer fills the review region under it, while the
-  form keeps the reader's typing and every script bound to it and takes only
-  its hidden fields (the version it edits) from the answer. The review shows
-  what the review page showed (each changed setting with its current and
-  proposed value, and the change's notes) and Apply, which posts the same
-  signed preview; its heading (`data-in-place-focus`) takes focus. Editing
-  the form after a review, or while its Review is in flight, withdraws the
-  review (`data-review-of`), so Apply never applies values other than those
-  shown: Apply is removed, the rest stays in place greyed out at no less
-  than its height (so nothing moves under the pointer), and its last line
-  says to review again. Confirmation answers with the
-  page again, naming the request (`?request=<id>#settings-review`), and the
-  region shows the change's live status, polled from Change status's passive
-  read (named with `in_place`, which only the in-place pages may be). Once the
-  change is applied, that read carries a hidden follow-up link marked
-  `data-in-place` and `data-in-place-quiet`, which the status script clicks,
-  so the page refreshes in place without moving focus and the form starts
-  from the applied version; reading a change's status this way never renews
-  idle time. A change that was not applied leaves the page alone. A Review
-  made while an earlier change is still being applied is checked against the
-  settings that change replaces, so once the earlier change applies, Apply
-  of the later one is refused when it runs (`stale_base`) and its status
-  says to start again from the current settings; nothing is changed. A
-  refused review (invalid values, nothing changed, a page changed elsewhere)
-  or a refused Apply (an out-of-date preview) is the page again with an
-  error summary in the review region, each field error linked to its field,
-  since the form itself is not replaced. A refusal keeps the form at the
-  version the reader's values came from (the one posted, or the one the
-  refused preview was reviewed at), never the current one, so a page whose
-  settings changed elsewhere is refused again until it is reloaded and can
-  never quietly propose undoing that change. For the same reason, Apply's
-  answer and the status refreshes after it draw the form at the version the
-  change was reviewed at until the change is applied, and then at the
-  version the change made; a full load of that address (a reload) draws the
-  current settings at the current version. A Review the server redirects to
-  another page loads it without this
-  page's region fragment. The step indicator is a region too, so it follows
-  Make changes, Review and Apply. The signed preview, optimistic
-  concurrency, capability and session rechecks, the durable request and its
-  audit are unchanged; a refusal that needs a fresh sign-in still shows its
-  page whole. Apply is marked `data-in-place-only="flow-steps"`: its answer
-  replaces only the review region and the step indicator. Whenever the
-  review region (`data-keep-height`) changes (its own swaps, a withdrawn
-  review and Change status's live updates alike), it is held at just the
-  height that keeps the page's foot at or below the bottom of the window
-  where the reader is: a reader scrolled down to it at the foot of the
-  page would otherwise see the form pulled down under the pointer when a
-  shorter status (Applied) replaces a longer one. The trade-off is blank
-  space below a shorter status for a reader at the foot, which stays until
-  the next change to the region (or a reload); a reader higher up the page
-  needs little or no hold, so a long review followed by Applied leaves no
-  large gap. Apply still moves focus to Change status's heading, so on a
-  window too short to show the whole region, focus may scroll the status
-  into view. Share options reviews in the [review dialog](#review-dialog)
-  (#750); its form, a region of its own, is redrawn after Apply with the
+- **Withdrawn reviews and held heights (#532, #736).** The in-place
+  settings review panel of #532 is retired
+  ([#1429](https://github.com/epiphany40223/parishkit/issues/1429)): every
+  settings editor reviews in the [review dialog](#review-dialog) (#750), and
+  Change status never follows back to a settings page. Two of its rules stay
+  for the in-place reviews that remain (Outgoing mail's bulk review and Past
+  campaigns' import). Editing the form after a review, or while its Review is
+  in flight, withdraws the review (`data-review-of`), so Apply never applies
+  values other than those shown: Apply is removed, the rest stays in place
+  greyed out at no less than its height (so nothing moves under the pointer),
+  and its last line says to review again (in the review's own words when it
+  has them, `data-stale-note`). Whenever a review or status region marked
+  `data-keep-height` changes (its own swaps, a withdrawn review and live
+  status updates alike: Restore review, Past campaigns, Held emails and
+  Refresh from ParishSoft's latest run), it is held at just the height that
+  keeps the page's foot at or below the bottom of the window where the
+  reader is: a reader scrolled down to it at the foot of the page would
+  otherwise see the page pulled down under the pointer when a shorter status
+  (Applied) replaces a longer one. The trade-off is blank space below a
+  shorter status for a reader at the foot, which stays until the next change
+  to the region (or a reload); a reader higher up the page needs little or
+  no hold, so a long review followed by a short status leaves no large gap.
+  Share options' form, a region of its own, is redrawn after Apply with the
   applied list and a fresh blank row, which is then the saved list its Save
-  compares with ("Change an option to save it."). A live
-  campaign's Ministry selections change on
-  [Campaign settings](../admin-portal/spec.md#campaign-settings-page), in the
-  review dialog (#1119). The No-reminders WorkGroup's form is never
-  redrawn; until the change is applied, Apply's answer hands it the version
-  it was reviewed at.
-  [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142)
-  confirms in the review dialog (#1356). The other
-  editors keep their review and Change status pages until issue 750 reaches
-  them.
+  compares with ("Change an option to save it.").
 - **Selection tables keep their ticks (#750).** Ministries once reviewed an
   activity change of its row selection in place; it lists the catalog and
   changes nothing now (#1267), so no page reviews a table selection in
@@ -928,7 +878,7 @@ refusal pages use this gate, as does the typed "Production" confirmation
 (which, like the server, ignores spaces around the word). The Admin portal
 requires JavaScript ([#565](https://github.com/epiphany40223/parishkit/issues/565));
 server validation is unchanged and still refuses an incomplete submission.
-Likewise, an in-place settings form's Review changes button is unavailable
+Likewise, a settings form's Review changes button is unavailable
 until the form differs from the saved settings, with the short hint "Change
 a setting to review it." after it; undoing the edit makes it unavailable
 again (`data-require-change`, naming the form's version field,
@@ -1096,11 +1046,11 @@ record, one signed preview and one concurrency check; autosave hides
 mistakes and needs its own conflict handling. **Shared code.** The
 configuration-change request path and Change status's passive read; the
 [review dialog](#review-dialog), which every editor moves to under #750 (until
-then, the #532 in-place review, `data-table-sync` and `data-review-of` in
-`ui-v1.js`, [in-place controls](#in-place-controls), and the separate Review
-and Change status pages); `data-submit-on-change` for view filters only.
+then, the separate Review and Change status pages); `data-review-of` in
+`ui-v1.js` for the [in-place reviews](#in-place-controls) that remain;
+`data-submit-on-change` for view filters only.
 **Precedent.** #750 (review dialog, Administrator decision, 2026-10-11), #532
-(in-place review, being replaced), #523
+(in-place review, retired by #1429), #523
 ([preview lifetimes](../admin-portal/spec.md#preview-lifetimes)), #882 (New and
 Edit pages follow it).
 
@@ -1342,9 +1292,9 @@ one-time New scheduled email, Import selected with nobody skipped and
 Campaign images' Remove this image. Edit user, Share options and a small
 Campaign settings change are compact reviews under #1356; Parish settings
 becomes one under #1356 later, and an Integration settings edit when #750
-reaches it. No settings editor shows the in-place
-review panel of #532 and #750
-([in-place controls](#in-place-controls)); the other editors use separate
+reaches it. The in-place review panel of #532 is retired
+([#1429](https://github.com/epiphany40223/parishkit/issues/1429),
+[in-place controls](#in-place-controls)); the other editors use separate
 Review and Change status pages.
 [#750](https://github.com/epiphany40223/parishkit/issues/750) tracks the
 conversion.

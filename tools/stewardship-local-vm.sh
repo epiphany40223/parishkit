@@ -647,7 +647,8 @@ snapshot_rows() {
     for dir in "$snapshots"/*/; do
         # Valid snapshots only (cmd_has_snapshot); hidden partial copies
         # never match the glob.
-        [ -d "$dir/root" ] && [ -f "$dir/taken" ] || continue
+        [ -d "$dir/root" ] || continue
+        [ -f "$dir/taken" ] || continue
         printf '%s %s\n' "$(cat "$dir/taken")" "$(basename "$dir")"
     done | LC_ALL=C sort
 }

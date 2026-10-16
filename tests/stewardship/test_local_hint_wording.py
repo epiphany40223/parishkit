@@ -50,12 +50,12 @@ def pages():
             {"draft": None},
             (
                 "For security, saving a credential needs a Google sign-in from"
-                " the last five minutes. That step asks you to confirm it's you"
+                " the last hour. That step asks you to confirm it's you"
                 " with Google if you need to then. Your setup is kept.",
             ),
             (
                 "For security, saving a credential needs a sign-in from the last"
-                " five minutes. That step asks you to confirm your sign-in if you"
+                " hour. That step asks you to confirm your sign-in if you"
                 " need to then. Your setup is kept.",
             ),
         ),
@@ -69,12 +69,12 @@ def pages():
             },
             (
                 "For security, saving a credential needs a Google sign-in from"
-                " the last five minutes. When you continue, you are asked to"
+                " the last hour. When you continue, you are asked to"
                 " confirm it's you with Google first. This setup is kept.",
             ),
             (
                 "For security, saving a credential needs a sign-in from the last"
-                " five minutes. When you continue, you are asked to confirm your"
+                " hour. When you continue, you are asked to confirm your"
                 " sign-in first. This setup is kept.",
             ),
         ),
@@ -292,6 +292,8 @@ def test_the_view_renders_local_wording_through_the_request(monkeypatch, setting
 # The pages whose "needs a sign-in from the last five minutes" hint shows only
 # when the step-up would be asked for now (#1159). Family portal availability
 # takes ``fresh`` from its view; the others ask the ``fresh_sign_in`` tag.
+# Setup's credential steps accept a sign-in from the last hour (#1402), so
+# their hint shows only once the sign-in is over an hour old.
 STEP_UP_HINTS = (
     "setup",
     "setup-credential",
@@ -300,6 +302,7 @@ STEP_UP_HINTS = (
     "credential-selection",
     "family-portal-maintenance",
 )
+HOUR_WINDOW = {"setup", "setup-credential"}
 
 
 def render_signed_in(name, local, age, monkeypatch):
@@ -319,11 +322,13 @@ def render_signed_in(name, local, age, monkeypatch):
 @pytest.mark.parametrize("local", [False, True])
 @pytest.mark.parametrize("name", STEP_UP_HINTS)
 def test_step_up_hint_shows_only_when_the_sign_in_is_stale(name, local, monkeypatch):
-    """A fresh sign-in hides the hint; one over five minutes old shows it."""
+    """A fresh sign-in hides the hint; one older than the page's window (five
+    minutes, or an hour on setup's credential steps) shows it."""
     _, _, production, local_sentences = pages()[name]
     sentences = local_sentences if local else production
+    window = timedelta(hours=1) if name in HOUR_WINDOW else timedelta(minutes=5)
     fresh = render_signed_in(name, local, timedelta(minutes=1), monkeypatch)
-    stale = render_signed_in(name, local, timedelta(minutes=6), monkeypatch)
+    stale = render_signed_in(name, local, window + timedelta(minutes=1), monkeypatch)
     for sentence in sentences:
         assert sentence not in fresh
         assert sentence in stale

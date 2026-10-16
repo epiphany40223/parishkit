@@ -177,5 +177,7 @@ def test_opening_an_editor_moves_nothing_in_its_row(page, component_origin):
     button.click()
     visible(rows(page).nth(1).locator("[data-schedule-editing]"))
     after = [button.evaluate(where), rows(page).nth(1).evaluate(where)]
+    # Within 0.1px, not rounded to it: Firefox measured 1681.55005 before
+    # and 1681.54999 after, which round apart although nothing moved.
     for old, new in zip(before, after, strict=True):
-        assert [round(value, 1) for value in old] == [round(value, 1) for value in new]
+        assert new == pytest.approx(old, abs=0.1)

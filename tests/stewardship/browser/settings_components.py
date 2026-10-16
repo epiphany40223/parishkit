@@ -1,31 +1,14 @@
-"""Settings pages reviewed and applied, as fixture pages.
+"""Settings pages reviewed in the review dialog (#750), as fixture pages.
 
-The shared in-place review panel (#532) is served with the real No-reminders
-WorkGroup template, the last page that uses it (#750), at ``SETTINGS`` with
-the context each step of the view renders:
-
-- the editor (``SETTINGS``), at version ``"a" * 64``;
-- the review (``REVIEW``) and a refused review (``REFUSED``), which the
-  browser tests serve as the answer to the form's POST (a page route reads
-  the POST body: Review or Apply);
-- Apply's answer: ``POSTS`` redirects the form's POST to
-  ``SETTINGS?request=…`` (Post/Redirect/Get), the page with the change's
-  pending status, whose live region polls ``STATUS`` (Change status read
-  with in_place);
-- ``STATUS`` answers that the change was applied, with the hidden in-place
-  follow-up, which leads to ``SETTLED``: the page again, now at version
-  ``"b" * 64``.
-
-Every page draws the Make changes / Review / Apply indicator at its step, so
-a test can see the indicator follow along. Parish settings reviews in the
-review dialog (#750): ``PARISH`` is the page at version ``"a" * 64``,
+Every page draws the Make changes / Review / Apply indicator at its step.
+Parish settings: ``PARISH`` is the page at version ``"a" * 64``,
 posting to itself; a test answers its Review with ``PARISH_REVIEW`` (the
 real review fragment of a renamed parish with a new timezone) or
 ``PARISH_REFUSED`` (the page drawn again with a telephone's error, status
 400). Its Apply is redirected by the fixture server to ``PARISH_APPLIED``,
 the change's status page, Applied; the form's region is then redrawn from
 ``PARISH_SETTLED``, the renamed parish at version ``"b" * 64``. Share
-options reviews in the review dialog too: ``SHARE`` is the page at
+options: ``SHARE`` is the page at
 version ``"a" * 64``, posting to itself; a test answers its Review with
 ``SHARE_REVIEW`` (the real review fragment of a renamed first option) or
 ``SHARE_REFUSED`` (the page drawn again with a row's error, status 400).
@@ -44,34 +27,21 @@ from uuid import UUID
 
 from django.template.loader import render_to_string
 
-from parishkit.stewardship.accounts.admin_editing import (
-    review_region,
-    summary_errors,
-)
+from parishkit.stewardship.accounts.admin_editing import summary_errors
 from parishkit.stewardship.accounts.option_editing import option_changes
 from parishkit.stewardship.accounts.parish_views import TIMEZONE_NOTE, ParishForm
-from parishkit.stewardship.accounts.reminder_workgroup_views import WorkGroupForm
 from parishkit.stewardship.accounts.share_forms import (
     ShareOptions,
     default_share_options,
 )
 
-SETTINGS = "/settings-in-place"
-REVIEW = "/settings-in-place-review"
-REFUSED = "/settings-in-place-refused"
-STATUS = "/settings-in-place-status"
+# The sample campaign's id.
 REQUEST = UUID("53200000-0000-4000-8000-000000000532")
-PENDING = f"{SETTINGS}?request={REQUEST}"
-SETTLED = f"{SETTINGS}?request={REQUEST}&settled=1"
 PARISH = "/parish-dialog"
 PARISH_REVIEW = "/parish-dialog-review"
 PARISH_REFUSED = "/parish-dialog-refused"
 PARISH_APPLIED = "/parish-dialog-applied"
 PARISH_SETTLED = "/parish-dialog-settled"
-# The panel page's WorkGroup field, its saved name and the name a test types.
-FIELD = "ParishSoft Family WorkGroup"
-SAVED = "Sample WorkGroup"
-RENAMED = "Renamed WorkGroup"
 SHARE = "/share-in-place"
 SHARE_REVIEW = "/share-in-place-review"
 SHARE_REFUSED = "/share-in-place-refused"
@@ -91,12 +61,8 @@ END_CHECKS = {
 COMBINED_REVIEW = "/admin/campaign/schedules/?end_date=2054-10-20"
 # The confirmation's answer: back to this page, naming the change.
 POSTS = {
-    SETTINGS: (303, PENDING, ""),
     PARISH: (303, PARISH_APPLIED, ""),
     SHARE: (303, SHARE_APPLIED, ""),
-    # A Review answered with a redirect to another page, which does not draw
-    # the review region (Campaign settings' dates-only change, #532).
-    "/settings-in-place-elsewhere": (303, "/in-place-other", ""),
 }
 STEPS = ("Make changes", "Review", "Apply")
 VALUES = {
@@ -124,41 +90,6 @@ def _steps(current):
 
 def components(context, admin):
     """Every page above, keyed by the exact path and query it is fetched at."""
-
-    def page(form, step, **region):
-        """The WorkGroup page at ``step`` with ``region``'s panel context."""
-        values = review_region("reminder_workgroup", form, **region)
-        if region.get("receipt"):
-            # The fixture server serves Change status at STATUS.
-            values["status_url"] = STATUS
-        return (
-            "text/html",
-            render_to_string(
-                "stewardship/reminder-workgroup.html",
-                context
-                | {
-                    "admin_chrome": admin | {"flow_steps": _steps(step)},
-                    "campaign": SimpleNamespace(
-                        pk=REQUEST,
-                        active_configuration=SimpleNamespace(name="Sample campaign"),
-                    ),
-                    "form": form,
-                    "current": SAVED,
-                    "evidence": None,
-                }
-                | values,
-            ),
-        )
-
-    def editor(digest):
-        """The unbound WorkGroup editor at version ``digest``."""
-        return WorkGroupForm(initial={"name": SAVED, "base_digest": digest})
-
-    reviewed = WorkGroupForm(data={"name": RENAMED, "base_digest": "a" * 64})
-    reviewed.is_valid()
-    # Longer than a WorkGroup name may be: refused at the field.
-    refused = WorkGroupForm(data={"name": "x" * 201, "base_digest": "a" * 64})
-    refused.is_valid()
 
     def parish(form):
         """Parish settings (#750) with ``form``, at its ``base_digest``.
@@ -247,37 +178,8 @@ def components(context, admin):
             ),
         )
 
-    pending = SimpleNamespace(state="staged", request_id=REQUEST, failure_code="")
     applied = SimpleNamespace(state="applied", request_id=REQUEST, failure_code="")
     return {
-        SETTINGS: page(editor("a" * 64), 0),
-        REVIEW: page(
-            reviewed,
-            1,
-            review={
-                "template": "stewardship/reminder-workgroup-review.html",
-                "before": SAVED,
-                "after": RENAMED,
-                # The panel draws a review's notes above it.
-                "notes": ["A sample note, drawn above the review."],
-                "preview": "synthetic-signed-intent",
-            },
-        ),
-        REFUSED: page(refused, 0),
-        PENDING: page(editor("a" * 64), 2, receipt=pending),
-        STATUS: (
-            "text/html",
-            render_to_string(
-                "stewardship/configuration-request.html",
-                context
-                | {
-                    "admin_chrome": admin,
-                    "receipt": applied,
-                    "follow_url": SETTLED,
-                },
-            ),
-        ),
-        SETTLED: page(editor("b" * 64), 2, receipt=applied),
         PARISH: parish(ParishForm(initial=VALUES | {"base_digest": "a" * 64})),
         PARISH_REVIEW: (
             "text/html",
@@ -308,8 +210,7 @@ def components(context, admin):
             "text/html",
             render_to_string(
                 "stewardship/configuration-request.html",
-                context
-                | {"admin_chrome": admin, "receipt": applied, "follow_url": None},
+                context | {"admin_chrome": admin, "receipt": applied},
             ),
         ),
         PARISH_SETTLED: parish(
@@ -339,7 +240,6 @@ def components(context, admin):
                 | {
                     "admin_chrome": admin,
                     "receipt": applied,
-                    "follow_url": None,
                 },
             ),
         ),

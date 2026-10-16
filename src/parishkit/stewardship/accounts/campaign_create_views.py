@@ -62,8 +62,8 @@ from .admin_editing import (
     error_response,
     form_action,
     principal,
+    receipt_status,
     requested_status,
-    review_region,
     sign_preview,
     summary_errors,
 )
@@ -169,9 +169,9 @@ def _page(request, configuration, form, *, status=200, receipt=None):
             "form": form,
             "created": receipt is not None
             and configuration.current_campaign_id is not None,
-            # The status polls Change status naming no in-place page: nothing
-            # follows up on this page once it is applied.
-            **review_region(None, receipt=receipt),
+            # The status polls Change status; nothing follows up on this
+            # page once it is applied.
+            **receipt_status(receipt),
             "refresh_key": created_campaign_refresh(receipt) if receipt else None,
             "errors": summary_errors(form) if status == 400 else [],
             # Review and the dialog's Apply post here.
@@ -325,7 +325,7 @@ def campaign_create(request):
                     salt=SALT,
                     current_scope=_scope,
                     first_campaign=True,
-                    in_place=REGION,
+                    region=REGION,
                 )
                 response["Cache-Control"] = "no-store"
                 return response

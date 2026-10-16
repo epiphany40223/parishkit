@@ -26,7 +26,6 @@ from . import admin_navigation, campaign_wizard
 from .admin_editing import (
     editable_configuration,
     error_response,
-    in_place_follow,
 )
 from .admin_editing import (
     principal as admin_principal,
@@ -188,12 +187,7 @@ def ministries(request):
 
 @require_safe
 def configuration_request(request, request_id):
-    """Passive status reads show Applied only for a committed activation receipt.
-
-    An in-place settings page (#532) polls this read for its own live status,
-    naming itself with ``in_place``; the status it reads then carries the
-    follow-up that refreshes that page once the change settles.
-    """
+    """Passive status reads show Applied only for a committed activation receipt."""
     try:
         service = runtime()
         principal = admin_principal(request, service, passive=True)
@@ -222,7 +216,6 @@ def configuration_request(request, request_id):
                 "stewardship/configuration-request.html",
                 {
                     "receipt": receipt,
-                    "follow_url": in_place_follow(request.GET, receipt.request_id),
                     "refresh_key": created_campaign_refresh(receipt),
                     # The Campaign setup stepper's next page (#142).
                     "continue_step": campaign_wizard.continue_for(receipt),

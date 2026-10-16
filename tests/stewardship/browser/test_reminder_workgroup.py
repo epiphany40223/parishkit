@@ -13,12 +13,11 @@ import json
 import re
 
 import pytest
-from playwright.sync_api import expect
 
 from .reminder_workgroup_components import CONFIRM, EDITOR, NAME, REFUSED
+from .review_helpers import answer_reviews
 from .test_components import axe_violations
 from .test_in_place import MARK, MARKED
-from .test_settings_in_place import answer_reviews
 from .waits import eventually, has_attribute, hidden, same_place, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -54,6 +53,8 @@ def watch(page):
 def expect_save(page, *, enabled):
     """Save is available exactly when the name differs from the saved one
     (#921); otherwise its hint, which always keeps its space, says why."""
+    from playwright.sync_api import expect
+
     button = page.get_by_role("button", name="Save")
     line = page.locator("#settings-form-unchanged-hint")
     expect(line).to_have_text(HINT)

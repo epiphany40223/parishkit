@@ -12,7 +12,6 @@ answers each Review POST.
 import re
 
 import pytest
-from playwright.sync_api import expect
 
 from parishkit.stewardship.accounts.campaign_views import (
     LOCKED_CLOSED,
@@ -33,9 +32,9 @@ from .campaign_settings_components import (
     LIVE_REVIEW,
     LOCKED,
 )
+from .review_helpers import RESTORE, answer_reviews, expect_review
 from .test_in_place import MARK, MARKED
 from .test_live_end_date import answer_checks, enabled
-from .test_settings_in_place import answer_reviews, expect_review
 from .waits import eventually, has_attribute, hidden, same_place, visible
 
 
@@ -53,7 +52,6 @@ FOCUSED = "document.activeElement && document.activeElement.id"
 APPLIED_LINE = re.compile(
     r"^Campaign settings changed\. Applied at \d{1,2}:\d{2}\s?[AP]M\.$"
 )
-RESTORE = "window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))"
 # The settings' names, in page order, each once.
 NAMES = """() => [...new Set([...document.querySelectorAll(
     '#settings-form :is(input, select, textarea):not([type=hidden])')]
@@ -109,6 +107,8 @@ def test_a_draft_change_is_reviewed_and_applied_in_the_dialog(page, component_or
     status line and leaves Review waiting for the next change. The redrawn
     form's module scripts work, nothing reloads, the status line does not
     move, and no line claims that typing was lost (it was reviewed)."""
+    from playwright.sync_api import expect
+
     reviews = answer_reviews(page, component_origin, DRAFT_REVIEW, address=DRAFT)
     page.goto(component_origin + DRAFT)
     failures = watch(page)

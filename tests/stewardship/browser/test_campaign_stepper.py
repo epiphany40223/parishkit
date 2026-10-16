@@ -4,11 +4,11 @@ import pytest
 from django.urls import reverse
 
 from .artwork_components import STEP as ARTWORK_STEP
+from .review_helpers import answer_reviews
 from .stepper_components import CONTENT, EDITOR, PATH, REVIEW
 from .test_artwork_dialog import png, slot
 from .test_components import axe_violations, shown_step_list
 from .test_in_place import MARK, MARKED
-from .test_settings_in_place import answer_reviews
 from .waits import available, greyed, has_text, hidden, visible
 
 pytestmark = pytest.mark.parametrize(

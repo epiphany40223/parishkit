@@ -936,8 +936,11 @@ def test_setup_stepper_is_compact_and_its_full_list_stays_accessible(
     assert "Step 3 of 12: Testing recipient" in stepper.inner_text()
     assert "1 of 12 steps completed" in stepper.inner_text()
     # Far shorter than fifteen stacked cards, even at phone width (where the
-    # list is still collapsed), and with the list open in two columns.
-    assert stepper.bounding_box()["height"] < (260 if width == 320 else 480)
+    # list is still collapsed), and with the list open in two columns. At
+    # 320px the step bar's twelve 44px segments wrap into two rows of eight
+    # (#1406, ui-conventions "Step bars"), so the summary measures 278-302px
+    # in CI's Linux engines.
+    assert stepper.bounding_box()["height"] < (320 if width == 320 else 480)
     steps = shown_step_list(page, stepper, width)
     current = steps.locator('[aria-current="step"]')
     assert "Current step" in current.inner_text()

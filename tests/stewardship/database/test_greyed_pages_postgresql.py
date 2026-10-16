@@ -112,7 +112,12 @@ def test_no_parishsoft_data_leads_to_the_refresh(auth_service, google):
     assert f'<a href="/admin/{_path("source_refresh")}">Go to Refresh from' in body
     health = browser.get(f"/admin/{_path('system_health')}", **PAGE)
     assert health.status_code == 200
-    _greyed_link(health.content.decode(), "source_form", reason)
+    # System health draws the list's link only while it has something to
+    # show (#1382): with no data it says why and links nowhere, greyed or not.
+    shown = health.content.decode()
+    assert "ParishSoft data has not been downloaded yet, so no Family" in shown
+    assert f'href="/admin/{_path("source_form")}"' not in shown
+    assert 'id="source-form-link-tip"' not in shown
     # Participation greys the directory for the data, and Limitations
     # because this draft has no Ministry stewardship.
     # A streamed report: read through an abortable transport.

@@ -178,7 +178,7 @@ def components(context, admin):
             "text/html",
             render_to_string(
                 "stewardship/configuration-request.html",
-                values | {"receipt": receipt, "follow_url": None},
+                values | {"receipt": receipt},
             ),
         )
 

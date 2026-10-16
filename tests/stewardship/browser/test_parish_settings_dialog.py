@@ -15,9 +15,9 @@ import re
 
 import pytest
 
+from .review_helpers import RESTORE, answer_reviews, expect_review
 from .settings_components import PARISH, PARISH_REFUSED, PARISH_REVIEW
 from .test_in_place import MARK, MARKED, count_requests
-from .test_settings_in_place import RESTORE, answer_reviews, expect_review
 from .waits import eventually, has_attribute, hidden, same_place, visible
 
 pytestmark = pytest.mark.parametrize(

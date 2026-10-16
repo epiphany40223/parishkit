@@ -47,7 +47,6 @@ BROWSER_FILE_EXTRA_SECONDS = {
     "test_family_pledge_walks.py": 53,
     "test_live_status_in_place.py": 35,
     "test_refresh_schedule_editor.py": 29,
-    "test_settings_in_place.py": 22,
     "test_send_progress.py": 20,
     "test_campaign_comparison.py": 19,
     "test_family_acceptance.py": 18,

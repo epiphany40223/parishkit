@@ -224,20 +224,6 @@ def digest(response):
     ).group(1)
 
 
-def region(body):
-    """The in-place review region of a rendered settings page (#532).
-
-    Parish settings reviews in the dialog now (#750); the No-reminders
-    WorkGroup's tests still read its panel with this. The region may carry
-    more attributes after its marker, such as data-keep-height (#768).
-    """
-    body = body.decode()
-    start = re.search(
-        r'<div id="settings-review" data-in-place-region[ >]', body
-    ).start()
-    return body[start : body.index("</div>", start)]
-
-
 def test_review_opens_the_dialog_and_apply_follows_change_status(auth_service, google):
     """Review answers the review dialog's fragment, never a page (#750).
 
@@ -270,12 +256,6 @@ def test_review_opens_the_dialog_and_apply_follows_change_status(auth_service, g
     assert b"Applied: your change is saved" in browser.get(response["Location"]).content
     # The page's own address, redrawn after Apply, is at the applied version.
     assert digest(browser.get(URL)) == store.active().digest
-    # Change status no longer follows back to Parish settings.
-    status = reverse("admin:configuration_request", args=[request_id])
-    assert (
-        b"data-live-follow"
-        not in browser.get(f"{status}?in_place=parish_settings").content
-    )
     for query in (f"?request={request_id}", f"?request={uuid4()}", "?other=1"):
         assert browser.get(URL + query).status_code == 400
 
