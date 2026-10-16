@@ -6,6 +6,7 @@ counts, and times are the campaign's wall clock whatever zone renders them.
 """
 
 import json
+import re
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -784,6 +785,117 @@ def test_every_page_chart_compiles_without_warnings(capfd):
     for document in (documents[0], finals):
         stepped = document.spec | {"height": {"step": 36}}
         assert any("fit-y" in line for line in page_warnings(stepped, capfd))
+
+
+def empty_activity_charts():
+    """The activity charts of a campaign with no activity, with and without
+    sends, as the dashboard draws them (by hour and by day)."""
+    return [
+        activity_chart(found)
+        for sends in (False, True)
+        for found in (metrics((), sends=sends), metrics((), grain="day", sends=sends))
+    ]
+
+
+def data_domains(spec):
+    """The scales of ``spec``'s compiled Vega whose domain reads a dataset.
+
+    A literal domain compiles to a list, or for a temporal scale to a
+    ``fields`` list of constant signals; a data-derived one names its
+    dataset (``{"data": ..., "field": ...}``, alone or in ``fields``).
+    """
+    found = set()
+    for scale in vl_convert.vegalite_to_vega(spec)["scales"]:
+        domain = scale["domain"]
+        if isinstance(domain, dict):
+            refs = domain.get("fields", [domain])
+            if any(isinstance(ref, dict) and "data" in ref for ref in refs):
+                found.add(scale["name"])
+    return found
+
+
+def axis_labels(spec):
+    """The tick labels of each axis of ``spec``'s drawn SVG (x, then y)."""
+    svg = vl_convert.vegalite_to_svg(spec)
+    groups = re.findall(r'<g class="mark-text role-axis-label"[^>]*>(.*?)</g>', svg)
+    return [re.findall(r">([^<]*)</text>", group) for group in groups]
+
+
+def test_empty_activity_charts_draw_without_warnings(capfd):
+    """An empty activity chart compiles without a warning, no scale of its
+    compiled Vega takes its domain from data (an empty layer's extent is
+    infinite, which Vega warns about on every draw, #1327), and both of its
+    axes draw tick labels (the y axis only its "0" baseline: a "1" would
+    read as a real count). A chart with
+    activity still takes its domains from its rows, so the check can fail.
+    (Vega's runtime warnings are caught by the browser tests' console
+    watch: vl-convert does not report them, and an epoch-number x domain,
+    which warned in the browser, drew here.)"""
+    for document in empty_activity_charts():
+        assert page_warnings(document.spec, capfd) == []
+        assert data_domains(document.spec) == set(), document.summary
+        x, y = axis_labels(document.spec)
+        assert x and y == ["0"], (document.summary, x, y)
+    assert data_domains(activity_chart(metrics()).spec) == {"x", "y"}
+
+
+def test_empty_activity_scales_span_the_sends_or_a_trailing_window():
+    """The x axis spans the sends as their markers drew it, or with fewer
+    than two a day (by hour) or a week (by day) up to ``as_of``; the y axis
+    is 0 to 1, so its axis keeps the ticks of a count (#1327)."""
+
+    def domains(found):
+        spec = activity_chart(found).spec
+        x = spec["encoding"]["x"]["scale"]["domain"]
+        return [
+            datetime(
+                at["year"],
+                at["month"],
+                at["date"],
+                at["hours"],
+                at["minutes"],
+                tzinfo=UTC,
+            )
+            for at in x
+        ], spec["layer"][0]["encoding"]["y"]["scale"]["domain"]
+
+    wall = START.astimezone(ZoneInfo(NEW_YORK)).replace(tzinfo=UTC)
+    x, y = domains(metrics(()))
+    assert x == [wall - timedelta(minutes=5), wall + timedelta(hours=20)]
+    assert y == [0, 1]
+    as_of = wall + timedelta(days=1)
+    assert domains(metrics((), sends=False))[0] == [as_of - timedelta(days=1), as_of]
+    week = domains(metrics((), grain="day", sends=False))[0]
+    assert week == [as_of - timedelta(days=7), as_of]
+    assert "domain" not in activity_chart(metrics()).spec["encoding"]["x"]["scale"]
+
+
+def test_activity_counts_are_labelled_once_each():
+    """The activity chart's Families axis labels whole numbers, each once:
+    Vega's own ticks step by halves up to a peak of 2, which the whole-number
+    format showed as "0, 1, 1" (#1327). Up to a peak of 5 every whole number
+    is labelled; above it Vega's own whole steps stay."""
+    for peak in (1, 2, 3, 4, 5, 7, 12, 37):
+        activity = (
+            ActivityBucket(START, peak, 0, 0),
+            ActivityBucket(START + timedelta(hours=1), 0, 1, 0),
+        )
+        document = activity_chart(replace(metrics(), activity=activity))
+        _x, y = axis_labels(document.spec)
+        assert len(set(y)) == len(y), (peak, y)
+        if peak <= 5:
+            assert y == [str(count) for count in range(peak + 1)], (peak, y)
+        assert y[0] == "0" and int(y[-1]) >= peak, (peak, y)
+
+
+def test_empty_activity_window_is_campaign_wall_time():
+    """The trailing window is a day of the campaign's wall clock, so across
+    the autumn change it is 24 axis hours, not the 25 an absolute day spans."""
+    as_of = datetime(2026, 11, 1, 12, tzinfo=UTC)  # 7 AM EST, after the change
+    found = replace(metrics((), sends=False), as_of=as_of)
+    start, end = activity_chart(found).spec["encoding"]["x"]["scale"]["domain"]
+    assert (start["date"], start["hours"]) == (31, 7)
+    assert (end["date"], end["hours"]) == (1, 7)
 
 
 def test_bar_chart_heights_match_their_old_step_heights():

@@ -18,7 +18,7 @@ parish-formatted label.
 
 import math
 from dataclasses import dataclass
-from datetime import UTC, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from zoneinfo import ZoneInfo
 
@@ -280,6 +280,59 @@ def activity_summary(metrics, labels, series=SERIES):
     return text + "."
 
 
+# Up to this peak the activity chart's y axis lists every whole number.
+# Vega draws about one tick per 40 pixels, so on a 0-to-1 or 0-to-2 domain
+# it steps by halves, which the whole-number format shows as "1, 1" (and
+# tickMinStep does not stop it); from 3 up its own ticks are whole, and up
+# to 5 they are exactly these (#1327).
+SMALL_PEAK = 5
+
+
+def empty_scales(spec, metrics, markers):
+    """Give an activity chart with no activity explicit scale domains.
+
+    A scale's domain is otherwise the union of every layer's extent, and
+    Vega warns "Infinite extent" for each empty one (#1327). The x axis spans
+    the send markers, as their own extent drew it, or with none (or one) a
+    day (by hour) or a week (by day) of campaign wall time up to ``as_of``.
+    The y axis is 0 to 1, so its 0 baseline sits at the bottom, and labels
+    only that 0 (``activity_chart``): a "1" would read as a real count.
+    """
+    zone = ZoneInfo(metrics.timezone)
+    instants = [datetime.fromisoformat(row["time"]) for row in markers]
+    if len(set(instants)) < 2:
+        # A single instant is no span to draw: add the trailing window. The
+        # axis is the campaign's wall clock, so the window is subtracted
+        # there and is a whole day or week across a daylight-saving change.
+        window = timedelta(days=1 if metrics.grain == "hour" else 7)
+        end = datetime.fromisoformat(wall_time(metrics.as_of, zone))
+        instants += [end - window, end]
+    spec["encoding"]["x"]["scale"]["domain"] = [
+        date_time(min(instants)),
+        date_time(max(instants)),
+    ]
+    spec["layer"][0]["encoding"]["y"]["scale"] = {"domain": [0, 1]}
+
+
+def date_time(instant):
+    """A UTC ``instant`` as a Vega-Lite DateTime object, to the minute.
+
+    Vega-Lite compiles a number in a temporal domain to a one-argument
+    ``datetime(...)``, which Vega reads as a year (an invalid date, so an
+    infinite extent again); a DateTime object compiles to a full ``utc(...)``.
+    Dropping the seconds moves a domain end by under a minute, which no
+    axis shows.
+    """
+    return {
+        "year": instant.year,
+        "month": instant.month,
+        "date": instant.day,
+        "hours": instant.hour,
+        "minutes": instant.minute,
+        "utc": True,
+    }
+
+
 def activity_chart(metrics, *, series=SERIES):
     """The response activity series: one line per series, with send markers.
 
@@ -412,6 +465,12 @@ def activity_chart(metrics, *, series=SERIES):
             },
         ],
     }
+    if not rows:
+        empty_scales(spec, metrics, markers)
+    peak = max((row["families"] for row in rows), default=0)
+    if peak <= SMALL_PEAK:
+        y = spec["layer"][0]["encoding"]["y"]
+        y["axis"]["values"] = list(range(peak + 1))
     # Vega leaves an empty layer's mark container in the accessibility tree
     # with a graphics role and no name, which assistive technology announces
     # as an unnamed image. A layer with no data shows nothing (the summary
