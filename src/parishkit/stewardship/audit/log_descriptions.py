@@ -755,6 +755,9 @@ DESCRIPTIONS = {
     ),
     "setup_source_started": _("The first ParishSoft load during setup started."),
     "setup_source_completed": _("The first ParishSoft load during setup finished."),
+    "setup_source_voided": _(
+        "A finished ParishSoft load during setup was discarded, to load again."
+    ),
     "setup_frozen": _("Initial setup was completed and locked."),
     # Reports and pages (audit).
     "daily_digest_viewed": _("Someone opened a daily summary."),

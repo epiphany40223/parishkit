@@ -13,7 +13,7 @@ from parishkit.stewardship.jobs.dispatch import Handler
 from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.storage import _status, change_run
-from parishkit.stewardship.observability import correlation
+from parishkit.stewardship.observability import correlation, current_correlation
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .failures import classify_read_failure, failure_context, record_load_budget
@@ -40,7 +40,47 @@ def setup_source_handler():
         execute=_execute,
         recover=recovery_plan,
         scope=work_transaction,
+        after_transition=_after_transition,
     )
+
+
+def _return_failed(attempt, correlation_id):
+    """Return a live loading attempt to collecting after its load failed (#1353).
+
+    The failed load stays bound: every page is editable again, the loading
+    watchdog stops, and the Admin can correct the ParishSoft connection or
+    load again. Only the worker login may make this change (SQL guard).
+    """
+    changed = SetupAttempt.objects.filter(
+        pk=attempt.pk, version=attempt.version, state="loading"
+    ).update(
+        state="collecting",
+        actor_id=attempt.owner_id,
+        correlation_id=correlation_id,
+        version=F("version") + 1,
+    )
+    if changed != 1:
+        raise StorageInvariantError("Setup changed before source failure.")
+
+
+def _after_transition(action, status):
+    """A crashed load that recovery fails for good returns setup too (#1353).
+
+    The dispatcher calls this in the transition's own transaction. Only
+    ``recovery_fail`` matters here: a worker that died on its last allowed
+    attempt leaves an abandoned Task that recovery ends as failed, with no
+    ``_failed`` to run. Without this, setup would stay loading until the
+    two-hour watchdog expired it and its whole draft. A setup that is no
+    longer live is left for expiry, as ``_failed`` leaves it.
+    """
+    if action != "recovery_fail":
+        return
+    attempt = bound_attempt(status)
+    try:
+        require_live_setup(attempt)
+    except PermissionError:
+        return
+    _return_failed(attempt, current_correlation())
 
 
 def _receive(execution, claim):
@@ -76,7 +116,11 @@ def _receive(execution, claim):
 
 
 def _failed(execution, error, claim):
-    """Known drained reads may fail/retry; invariant and lost-fence errors propagate."""
+    """Known drained reads may fail/retry; invariant and lost-fence errors propagate.
+
+    A permanent failure also returns the live attempt to collecting with its
+    failed load still bound (#1353); a retry leaves it loading.
+    """
     decision = classify_read_failure(error, has_source_claim=claim is not None)
     if decision is None:
         raise error
@@ -125,6 +169,11 @@ def _failed(execution, error, claim):
                     else {}
                 ),
             )
+            if action == "permanent_failure":
+                # A load that will not retry returns setup to collecting in
+                # the same transaction (#1353). A cancelled (expired) setup
+                # is left as it is.
+                _return_failed(attempt, execution.correlation_id)
             operational(
                 decision.event,
                 level="CRITICAL" if action == "permanent_failure" else "INFO",

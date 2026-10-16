@@ -311,6 +311,28 @@ reads; an open Technical details stays open as they update. On success it shows 
 result with Continue to the next wizard page; on failure it says what to do
 next.
 
+A load that fails for good (for example, a wrong ParishSoft key or
+organization ID, which never retries, or a load whose worker stopped on its
+last allowed attempt, which recovery then fails) returns setup to collecting
+with the failed load still bound, so every page is editable again and the
+watchdog, which runs only while loading, stops (#1353). The test email and
+test Slack message still require a load that succeeded. A load that has
+finished, succeeded or failed, can be discarded, and only then (never one
+running, waiting to retry or abandoned): saving a different ParishSoft key
+or organization ID discards it, saving the same key and
+organization keeps it, and Load again discards the load and queues a new
+one. Load again is offered for a load that failed and for one that succeeded
+but whose staged data is no longer valid by the check review uses (its
+credential version or fingerprint changed, its exchange was scrubbed, or its
+snapshot or fences no longer match); the Load parish data page then says the
+data needs loading again, and the step is not done. Only a still-valid load
+shows as loaded. Each discard is audited as
+`setup_source_voided` with why (`key_changed`, `organization_changed` or
+`reload`) and how the load had ended, never the key. A discarded load's
+staging is never used again: finalization and campaign staging bind only to
+the current load. It is disposed of with the attempt's other source staging
+when setup ends, and the time zone the load fixed can change again.
+
 The two-hour watchdog is an intentional hard, non-extendable fail-safe. A normal
 complete ParishSoft load is expected to take several minutes (about ten for a
 parish of a few thousand Families and 200 Ministries);
@@ -7732,7 +7754,8 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   changes who leads; see [Ministry
   leaders](../data/spec.md#ministry-leader-changes)), `chair_reconciled`,
   `admin_cmd_refresh_start`
-  and the setup load (`setup_source_started`, `setup_source_completed`), and
+  and the setup load (`setup_source_started`, `setup_source_completed`,
+  `setup_source_voided`), and
   the operational failures and holds (`source_refresh_invalid`,
   `source_provider_failed`, `source_credential_failed`,
   `source_tenant_mismatch`, `source_destructive_change`,
