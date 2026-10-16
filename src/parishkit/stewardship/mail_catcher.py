@@ -13,11 +13,18 @@ credential is installed and again where it is used:
   cannot reach Gmail and a Production deployment cannot be pointed at a mail
   catcher.
 
+Below both, ``envelope`` is the forced mail redirect (#1399): a LOCAL-only
+``mail_redirect`` address replaces every envelope recipient of every SMTP
+submission, and LOCAL without one may submit only to the mail catcher. It
+is what keeps a real address from being reached once LOCAL admits a real
+mailbox; unset, every other profile's envelopes are unchanged.
+
 Helper subprocesses run with ``python -I`` and an empty environment, so they
 cannot read the profile themselves: every mail helper request carries an
 explicit ``profile`` field (``deployment.recorded_profile`` supplies the
-parent's), and the helper applies the same rule to it. Nothing here imports
-Django, because the helpers import this module too.
+parent's), and the helper applies the same rule to it; a LOCAL parent with
+a redirect adds ``mail_redirect`` beside it. Nothing here imports Django at
+module level, because the helpers import this module too.
 """
 
 import json
@@ -108,3 +115,84 @@ def open_mail_catcher(*, smtp_factory=smtplib.SMTP):
     """
     host, port = LOCAL_SMTP_ENDPOINT
     return smtp_factory(host, port, timeout=10)
+
+
+def redirect_address(value):
+    """Validate a ``mail_redirect`` address: one bare mailbox, else ValueError.
+
+    The deployment setting (#1399) is one address, the developer's Testing
+    recipient. It is checked with the same bare-mailbox rule every routed
+    recipient meets, so it cannot carry a display name, a second address or
+    an injected header.
+    """
+    from .jobs.outbox_validation import mailbox
+
+    return mailbox(value)
+
+
+def request_redirect(request, profile):
+    """The ``mail_redirect`` a helper request names, or None; else ValueError.
+
+    Mail parents add the field only when the deployment sets a redirect, so
+    every other request is exactly what it was before (#1399). The field is
+    admitted only beside a ``local`` profile: a helper refuses any other
+    request that carries it, so no Production send can ever be redirected.
+    """
+    if "mail_redirect" not in request:
+        return None
+    if profile is not DeploymentProfile.LOCAL:
+        raise ValueError("A mail redirect is admitted only in the local profile.")
+    return redirect_address(request["mail_redirect"])
+
+
+def redirect_field(redirect):
+    """The helper request field that carries ``redirect``: empty when unset."""
+    return {} if redirect is None else {"mail_redirect": redirect}
+
+
+def envelope(recipients, *, profile, transport, redirect):
+    """The SMTP envelope recipients one submission may use (#1399).
+
+    This is the forced redirect, applied by every SMTP submission in
+    Stewardship (``family_delivery._submit``, ``readiness_delivery._submit``
+    and ``smoke --send-to``) just before RCPT, whatever the message's routing
+    class or campaign mode:
+
+    - with a redirect, every recipient is replaced by the redirect address,
+      index for index, so per-recipient outcomes keep their positions. Only
+      LOCAL may name one; any other profile is refused;
+    - without one, LOCAL may submit only to the mail catcher: any other
+      transport is refused before a connection is opened, so a real mailbox
+      can never be reached from LOCAL without the redirect;
+    - every other profile gets ``recipients`` back unchanged.
+
+    A refusal is a ConfigError, which each caller reports as "not sent".
+    """
+    if not isinstance(profile, DeploymentProfile) or not isinstance(
+        transport, MailTransport
+    ):
+        raise ConfigError("Mail routing requires a profile and a transport.")
+    if redirect is not None:
+        if profile is not DeploymentProfile.LOCAL:
+            raise ConfigError("A mail redirect is admitted only in the local profile.")
+        return (redirect,) * len(recipients)
+    local = profile is DeploymentProfile.LOCAL
+    if local and transport is not MailTransport.MAIL_CATCHER:
+        raise ConfigError(
+            "The local profile sends beyond the mail catcher only with a mail redirect."
+        )
+    return tuple(recipients)
+
+
+def redirected_message(message, redirect):
+    """Show only the redirect address in ``message``'s recipient headers.
+
+    The envelope decides delivery; the headers are rewritten too, so a
+    redirected copy neither shows the original addresses nor lets reply-all
+    reach them. Without a redirect the message is returned untouched.
+    """
+    if redirect is not None:
+        del message["To"]
+        del message["Cc"]
+        message["To"] = redirect
+    return message

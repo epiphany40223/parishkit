@@ -27,7 +27,8 @@ It is:
   the real ParishSoft instead (Administrator decision, 2026-10-15, on
   [#1399](https://github.com/epiphany40223/parishkit/issues/1399)); that
   real parish data may stay on the laptop but is never committed or copied
-  off it. Either way it can never email a real Family or write to
+  off it, except as mail to the one [mail redirect](#safety-guarantees)
+  address once a later #1399 change admits a real mailbox. Either way it can never email a real Family or write to
   ParishSoft, even after its campaign goes to Production (see
   [safety guarantees](#safety-guarantees));
 - **not CI.** Nothing here runs Docker in CI. CI covers the local profile with
@@ -196,7 +197,8 @@ The LOCAL rendering differs from Production only as follows:
   LOCAL banner. It names the data: synthetic with no real ParishSoft by
   default, or real ParishSoft data, read only, when the deployment chose the
   real API ([ParishSoft](#safety-guarantees)). Emails are not altered, so
-  what Mailpit shows is what a Family would receive.
+  what Mailpit shows is what a Family would receive, unless the
+  [mail redirect](#safety-guarantees) is set.
 
 ### Production invariants
 
@@ -217,7 +219,10 @@ LOCAL MUST NOT change Production. Specifically:
   `local-rehearsal-report` command reads only the files it is given and
   opens no connection;
 - the [modeled SMTP latency](#mail-catcher) is refused outside LOCAL, so a
-  Production mail parent never waits on purpose.
+  Production mail parent never waits on purpose;
+- the [mail redirect](#safety-guarantees) is refused outside LOCAL, and
+  unset it changes no rendered document, helper request, envelope or
+  message.
 
 ## Safety guarantees
 
@@ -273,21 +278,65 @@ Production in either direction.
   These two code checks are the whole argument. Testing mode is not a
   third guard: it is off after activation, and operational and security
   alerts are exempt from it even before (see
-  [mode routing](../background-processing/spec.md#mode-routing)). Before a
-  later #1399 change admits real mail in LOCAL, a forced mail redirect MUST
-  replace them, with the scope the
-  [#1399 plan](https://github.com/epiphany40223/parishkit/issues/1399)
-  gives it: every routing class, in both modes, and the separate
-  `pk-stewardship smoke --send-to` connection.
+  [mode routing](../background-processing/spec.md#mode-routing)). The
+  forced mail redirect (below) is in place for the later #1399 change that
+  admits real mail in LOCAL: from then on it, not the two checks above, is
+  what keeps a real address from being reached.
 
   A test MUST show that, after LOCAL activation, every Family and
   administrative message is sent only through the mail-catcher transport.
+- **Mail redirect** (#1399). The deployment setting `mail_redirect`
+  (`PARISHKIT_STEWARDSHIP_MAIL_REDIRECT`) is one bare address, the
+  developer's Testing recipient. When it is set, every SMTP submission
+  replaces each envelope recipient with it, index for index (one RCPT,
+  whose acceptance stands for every recipient; a refusal of the redirect
+  address is a SYSTEMIC configuration fault, never a refusal recorded
+  against the real addresses), and rewrites the `To` header to
+  it with no `Cc`, so a copy neither shows nor lets reply-all reach the
+  original addresses. It applies whatever the message's routing class
+  (`normal`, `testing_override`, `operational`) or campaign mode, because
+  it sits below them: one rule, `mail_catcher.envelope`, used by the only
+  SMTP submission code in Stewardship (`family_delivery._submit` through
+  `SmtpSession`, for Family, digest, weekly, operational and security mail;
+  `readiness_delivery._submit` for readiness, setup test and campaign
+  samples) and by `pk-stewardship smoke --send-to`, which sends over its
+  own connection. It reuses Testing mode's rule (one configured address on
+  the envelope) instead of forcing Testing mode, which is decided in SQL
+  with no LOCAL branch and does not cover operational and security alerts.
+  It fails closed: the loader and the recorded settings reader refuse it
+  outside LOCAL; mail parents add `mail_redirect` to a helper request
+  beside `profile` only when it is set, and a helper refuses a request that
+  carries it with any other profile (the Family helper exits 1 with no
+  outcome, the readiness helper answers `not_sent`); and in LOCAL, any
+  transport other than the mail catcher without a redirect is refused
+  before a connection is opened (a SYSTEMIC Family result, a `not_sent`
+  sample, `smoke` exit status 2). The mail catcher alone needs no redirect,
+  so by default Mailpit still shows the application's routing. The setting
+  is an operational switch like the [modeled latency](#mail-catcher):
+  rendered into the service documents only when set and never into the
+  provisioning record.
+
+  The redirect keeps real addresses from being reached; it does not keep
+  real content on the laptop. Once a real mailbox is admitted, every
+  redirected message (names, giving details, access codes and links) goes
+  through Google to the developer's inbox. The later #1399 change that
+  admits a real Workspace key in LOCAL MUST implement this Administrator
+  decision (2026-10-17), which says what may leave the laptop and how a
+  deployment that chose the real ParishSoft is handled: when LOCAL holds
+  real ParishSoft data, redirected mail MAY
+  go out through the real mail provider, but only to the one redirect
+  address, which the Administrator chooses. Every other recipient is still
+  refused, and the redirect stays mandatory for any transport other than
+  the mail catcher. Until that later change lands, LOCAL still refuses a
+  real Workspace key, so nothing leaves the laptop.
 - **Smoke tools.** `pk-stewardship smoke` (see the
   [smoke tools guide](../../../guides/stewardship-smoke-tools.md)) runs in
   LOCAL exactly as in Production, against whatever is installed: the fake
   ParishSoft, the mail catcher, the sentinel or a real OAuth client and a
-  test Slack token. It sends no mail: a `--send-to` needs a Google service
-  account, which LOCAL still refuses. A Slack `--channel-id ... --send` posts the one
+  test Slack token. It sends no mail: a `--send-to` goes over Gmail, so
+  without a [mail redirect](#safety-guarantees) it is refused before the key
+  is read or any provider is contacted, and with one it needs a Google
+  service account, which LOCAL still refuses. A Slack `--channel-id ... --send` posts the one
   fixed smoke message to the named channel, as in Production.
 - **Google sign-in.** `up` installs a sentinel `google_oauth` client
   document (`runtime_web.LOCAL_OAUTH_SENTINEL`) that holds no real client ID
@@ -414,7 +463,9 @@ deployment sends:
   samples, Admin digests and operational and security alerts. Messages go to
   whatever address the application chooses, so
   [mode routing](../background-processing/spec.md#mode-routing) is visible
-  unchanged. Synthetic recipients are all at `@example.test`.
+  unchanged, unless the [mail redirect](#safety-guarantees) is set: then
+  every message goes to the redirect alone. Synthetic recipients are all at
+  `@example.test`.
 - **UI.** The Mailpit web UI is at `http://localhost:8025` on the laptop,
   forwarded from the VM's loopback. It needs no sign-in; it is reachable only
   from the laptop.
@@ -1877,7 +1928,11 @@ The local environment adds:
   clock mount, and is absent from normal mode and from every non-LOCAL
   rendering;
 - **fake-SMTP tests** for the mail-catcher transport, with the Gmail endpoint
-  unchanged;
+  unchanged, and for the [mail redirect](#safety-guarantees): every typed
+  mail, the batched session, readiness samples and `smoke --send-to` reach
+  only the redirect; LOCAL beyond the mail catcher without one, and a
+  redirect with any other profile, send nothing; and unset, requests,
+  envelopes and messages are unchanged;
 - **absence tests** for the [local test sign-in](#local-test-sign-in);
 - `shellcheck` on `tools/stewardship-local.sh`;
 - **operator-script stand-in tests** (no VM) for the snapshot commands: name
