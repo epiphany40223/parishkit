@@ -379,6 +379,7 @@ def _act(request):
         service = runtime()
         try:
             if action not in _ACTION_FIELDS:
+                # No sources: an unknown action value, not an unexpected field.
                 raise unexpected_fields()
             _closed(request, _ACTION_FIELDS[action])
             result = _step(action, request, service)

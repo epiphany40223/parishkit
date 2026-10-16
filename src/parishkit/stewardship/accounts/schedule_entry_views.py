@@ -628,7 +628,7 @@ def _entry(request, campaign_id, schedule_id=None):
     actor = principal(request, service)
     filters(request.GET, allowed=set())
     if request.FILES:
-        raise unexpected_fields()
+        raise unexpected_fields(request.FILES, allowed=())
     new = schedule_id is None
     # The page posts only a preview; its review confirms on the list.
     if (
@@ -640,6 +640,7 @@ def _entry(request, campaign_id, schedule_id=None):
         )
         != "preview"
     ):
+        # No sources: an unknown action value, not an unexpected field.
         raise unexpected_fields()
     posted = request.POST if request.method == "POST" else None
     now = timezone.now()
@@ -904,10 +905,11 @@ def _chosen(parameters):
     what happened: nothing chosen, one schedule twice (a stale or crafted
     page), or more than a campaign can hold.
     """
-    if set(parameters) - {"csrfmiddlewaretoken", "base_digest", "schedule_id"} or any(
+    allowed = {"csrfmiddlewaretoken", "base_digest", "schedule_id"}
+    if set(parameters) - allowed or any(
         len(values) != 1 for name, values in parameters.lists() if name != "schedule_id"
     ):
-        raise unexpected_fields()
+        raise unexpected_fields(parameters, allowed=allowed, multiple={"schedule_id"})
     values = parameters.getlist("schedule_id")
     if not values:
         raise UserFacingError(
@@ -962,7 +964,7 @@ def schedule_delete(request, campaign_id):
         actor = principal(request, service)
         filters(request.GET, allowed=set())
         if request.FILES:
-            raise unexpected_fields()
+            raise unexpected_fields(request.FILES, allowed=())
         identifiers = _chosen(request.POST)
         listing = reverse("admin:schedule_settings")
         with work_transaction():

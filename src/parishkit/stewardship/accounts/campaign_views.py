@@ -1116,7 +1116,9 @@ def campaign_end_date_check(request, campaign_id):
                 for name, values in request.POST.lists()
             )
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(
+                request.GET, request.POST, allowed=allowed, multiple=MULTIPLE_FIELDS
+            )
         with read_transaction():
             state = _state(service)
             configuration, campaigns, _source, held = state[:4]

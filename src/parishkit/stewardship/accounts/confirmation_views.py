@@ -78,6 +78,7 @@ def confirmation(request, campaign_id, request_id, preparation_id):
             preview, verified, token = confirmation_commands.verify_preview(*arguments)
             state = preview.readiness
         elif request.method == "POST":
+            # No sources: an unknown action value, not an unexpected field.
             raise unexpected_fields()
         else:
             with work_transaction():

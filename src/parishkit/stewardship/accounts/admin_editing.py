@@ -117,15 +117,14 @@ def form_action(
         "confirm": {"action", "csrfmiddlewaretoken", "preview", *confirm_fields},
     }
     action = parameters.get("action")
-    if (
-        action not in fields
-        or set(parameters) - fields[action]
-        or any(
-            len(values) != 1 and not (action == "preview" and name in multiple_fields)
-            for name, values in parameters.lists()
-        )
-    ):
+    if action not in fields:
+        # No sources: an unknown action value, not an unexpected field.
         raise unexpected_fields()
+    multiple = multiple_fields if action == "preview" else ()
+    if set(parameters) - fields[action] or any(
+        len(values) != 1 and name not in multiple for name, values in parameters.lists()
+    ):
+        raise unexpected_fields(parameters, allowed=fields[action], multiple=multiple)
     return action
 
 

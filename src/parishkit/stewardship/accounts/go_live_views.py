@@ -128,6 +128,7 @@ def readiness(request, campaign_id):
                     ),
                 )
             if action != "verify":
+                # No sources: an unknown action value, not an unexpected field.
                 raise unexpected_fields()
             preview, verified, token = verify_preview(request, service, campaign_id)
         else:

@@ -320,7 +320,11 @@ def upload(request):
             or any(len(values) != 1 for _, values in request.POST.lists())
             or any(len(values) != 1 for _, values in request.FILES.lists())
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(
+                request.POST,
+                request.FILES,
+                allowed={"slug", "csrfmiddlewaretoken", "file"},
+            )
         form = UploadForm(request.POST, request.FILES)
         if form.is_valid():
             value = form.cleaned_data["file"]
@@ -400,8 +404,11 @@ def delete(request):
     try:
         actor = principal(request, runtime())
         filters(request.GET, allowed=set())
-        if request.FILES or set(request.POST) - {"file_id", "csrfmiddlewaretoken"}:
-            raise unexpected_fields()
+        allowed = {"file_id", "csrfmiddlewaretoken"}
+        if request.FILES or set(request.POST) - allowed:
+            raise unexpected_fields(
+                request.POST, request.FILES, allowed=allowed, multiple={"file_id"}
+            )
         ids = _selected(request)
         try:
             hosted_file_uses.delete_many(actor, ids)
@@ -428,8 +435,9 @@ def rename(request, file_id):
         uses = hosted_file_uses.file_uses([row.pk]).get(row.pk, [])
         status, codes = 200, ()
         if request.method == "POST":
-            if set(request.POST) - {"slug", "csrfmiddlewaretoken"}:
-                raise unexpected_fields()
+            allowed = {"slug", "csrfmiddlewaretoken"}
+            if set(request.POST) - allowed:
+                raise unexpected_fields(request.POST, allowed=allowed)
             form = RenameForm(request.POST)
             if form.is_valid():
                 try:

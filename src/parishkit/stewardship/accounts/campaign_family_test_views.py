@@ -97,7 +97,7 @@ def _action(request):
     """Reject hidden, repeated and cross-action fields before reading any value."""
     filters(request.GET, allowed=set())
     if request.FILES:
-        raise unexpected_fields()
+        raise unexpected_fields(request.FILES, allowed=())
     return form_action(
         request.POST, preview_fields={"families"}, confirm_fields={"acknowledge"}
     )

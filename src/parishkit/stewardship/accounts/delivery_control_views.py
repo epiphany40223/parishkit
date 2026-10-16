@@ -65,6 +65,7 @@ def control(request, campaign_id):
                 types=types,
             )
         elif request.method == "POST":
+            # No sources: an unknown action value, not an unexpected field.
             raise unexpected_fields()
         return _checked(
             request,

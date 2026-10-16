@@ -312,6 +312,13 @@ BULK_REFUSALS = {
         "sent, confirm that you checked the mail service's records."
     ),
 }
+# The fields each bulk action posts besides the CSRF token, as (required,
+# optional): the checks below refuse any other, and the refusal log counts
+# them (#1444).
+_BULK_FIELDS = {
+    "preview": ({"action", "kind", "purpose", "note"}, {"checked"}),
+    "confirm": ({"action", "preview", "note"}, set()),
+}
 
 
 def _bulk(request):
@@ -331,13 +338,20 @@ def _bulk(request):
         service = runtime()
         actor = _principal(request, service.store, activity=True)
         supplied = set(request.POST) - {"csrfmiddlewaretoken"}
-        if any(len(request.POST.getlist(key)) != 1 for key in request.POST):
-            raise unexpected_fields()
         action = request.POST.get("action")
+        if action not in _BULK_FIELDS:
+            # No sources: an unknown action value, not an unexpected field.
+            raise unexpected_fields()
+        required, optional = _BULK_FIELDS[action]
+        if (
+            any(len(request.POST.getlist(key)) != 1 for key in request.POST)
+            or not required <= supplied
+            or supplied - required - optional
+        ):
+            raise unexpected_fields(
+                request.POST, allowed=required | optional | {"csrfmiddlewaretoken"}
+            )
         if action == "preview":
-            fields = {"action", "kind", "purpose", "note"}
-            if not fields <= supplied or supplied - fields - {"checked"}:
-                raise unexpected_fields()
             with transaction.atomic():
                 _available()
                 review = delivery_bulk.preview(
@@ -348,8 +362,6 @@ def _bulk(request):
                     checked=request.POST.get("checked") == "yes",
                 )
             return dict(bulk_review=review | {"form": f"bulk-{review['kind']}"}), 200
-        if action != "confirm" or supplied != {"action", "preview", "note"}:
-            raise unexpected_fields()
         # The signed preview carries only the note's digest; the note is
         # posted again beside it and must match.
         binding = delivery_bulk.load_preview(
@@ -528,7 +540,9 @@ def clear_refusal(request, refusal_id):
             or supplied != names
             or any(len(request.POST.getlist(key)) != 1 for key in request.POST)
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(
+                request.GET, request.POST, allowed=names | {"csrfmiddlewaretoken"}
+            )
         with _command_scope(request, service, actor):
             clear_recipient_refusal(
                 service.store,
@@ -584,7 +598,9 @@ def bounce_report(request, message_id):
             or supplied != names
             or any(len(request.POST.getlist(key)) != 1 for key in request.POST)
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(
+                request.GET, request.POST, allowed=names | {"csrfmiddlewaretoken"}
+            )
         with _command_scope(request, service, actor):
             report_recipient_bounce(
                 service.store,
@@ -632,7 +648,11 @@ def resolution_command(request, message_id):
             or supplied - required - {"duplicate_acknowledged"}
             or any(len(request.POST.getlist(key)) != 1 for key in request.POST)
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(
+                request.GET,
+                request.POST,
+                allowed=required | {"duplicate_acknowledged", "csrfmiddlewaretoken"},
+            )
         with _command_scope(request, service, actor):
             resolve_delivery(
                 service.store,
@@ -682,7 +702,11 @@ def preparation_retry(request, task_id, *, daily=False, weekly=False):
             or supplied != {"command_id"}
             or any(len(request.POST.getlist(key)) != 1 for key in request.POST)
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(
+                request.GET,
+                request.POST,
+                allowed={"command_id", "csrfmiddlewaretoken"},
+            )
         command_id = UUID(request.POST["command_id"])
         with _command_scope(caller, service, actor):
             result = retry_preparation_task(

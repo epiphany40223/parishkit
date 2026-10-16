@@ -404,8 +404,9 @@ def backup_key_page(request, service, actor):
             current_scope=lambda service: (editable_configuration(service), None),
         )
     if action == "challenge":
-        if set(request.POST) - {"action", "csrfmiddlewaretoken", "public_key"}:
-            raise unexpected_fields()
+        allowed = {"action", "csrfmiddlewaretoken", "public_key"}
+        if set(request.POST) - allowed:
+            raise unexpected_fields(request.POST, allowed=allowed)
         require_fresh(request)
         status = key_status(configuration)
         try:
