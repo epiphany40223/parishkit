@@ -154,6 +154,13 @@ LEDGER = {
     # ``refuse_campaign_creation(first=True)``), as this page does.
     "campaign_create": pending("PR 10", "campaign create-preview", "campaign create"),
     "campaign_clone": pending("PR 10", "campaign clone"),
+    # A Campaign setup step's Continue (#1404) only records the browser
+    # stepper's "kept as is" and opens the next step page; the command line
+    # applies settings directly and has no stepper to complete.
+    "campaign_step_continue": permanent(
+        "the browser Campaign setup stepper's own progress; the command line "
+        "has no stepper"
+    ),
     "share_settings": command("campaign shares", owed="PR 10"),
     # The page's read, Review and Apply (#750), all on the page itself.
     "reminder_workgroup": command(

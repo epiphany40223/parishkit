@@ -366,6 +366,24 @@ and never reroutes a `production` OutboxMessage. Outbox rows held by it remain
 in their ordinary nonterminal state with a structured pause-hold reference;
 the dispatch claim must check both state and current pause version.
 
+`CampaignSetupReview` (`stewardship_campaign_setup_review`, frozen migration
+0105, [#1404](https://github.com/epiphany40223/parishkit/issues/1404)) records a
+[Campaign setup step](../admin-portal/spec.md#create-the-campaign) an
+Administrator kept as is: campaign, step key (`settings`, `share_options`,
+`content`, `schedules` or `images`), item key (empty for the whole step, or
+one Pages and emails slot such as `page:welcome`), actor and time, unique on
+campaign, step and item. It is insert-only: the web role holds SELECT and
+INSERT only, and its guard admits an INSERT only from a current Administrator,
+for the current campaign while the system is in Testing mode, the campaign is
+a draft and no go-live has started, and requires the
+`campaign_setup_step_reviewed` audit event in the same transaction. Rows are
+retained with their campaign; the campaign purge, when it lands, must
+inventory and delete them as campaign-owned setup detail. Because the guard
+refuses every DELETE and the campaign foreign key blocks deleting the
+campaign while rows remain, that purge needs a forward migration that gives
+the guard a purge path (for example, admitting DELETE from the purge
+worker under its own lock); until then a purge attempt fails closed.
+
 Deleting a Campaign through ordinary CRUD is impossible. Closing and archiving
 retain all relationships. Exceptional purge is defined by the
 [Admin portal](../admin-portal/spec.md#campaign-purge).

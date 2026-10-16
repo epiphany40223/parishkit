@@ -18,6 +18,7 @@ from parishkit.stewardship.source.refresh_status import (
 )
 from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSnapshot
 
+from . import campaign_wizard
 from .campaign_wizard import invitation_revision
 from .policy import Capability, allows
 
@@ -159,6 +160,10 @@ def summary(actor, configuration, now, *, home=False):
             # admits test mail (NAV-18); the same row Pause and resume mail
             # links. One small indexed query, for Administrators only.
             result["test_email"] = invitation_revision(configuration, campaign.pk)
+            # Home's Continue campaign setup (#1404): the first step of the
+            # Campaign setup stepper not done yet, while the stepper applies.
+            wizard = campaign_wizard.current_wizard(configuration)
+            result["setup_next"] = campaign_wizard.resume(wizard) if wizard else None
         if campaign.state in {"draft", "scheduled", "active"} and allows(
             actor, Capability.FAMILY_CODES
         ):

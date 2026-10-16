@@ -8,14 +8,21 @@ review dialog flow (``settings_components``' Share options pages, #750):
 ``APPLIED`` (Change status, applied, offering Continue), and the dialog then
 redraws the page's regions from ``SETTLED``: the page again, with Share
 options completed, so the stepper's Next reads Continue to the next step.
+
+Continue (#1404) posts to its real address, answered with a redirect to
+``CONTENT``, Pages and emails with that step current;
+``EDITOR`` is its editor, a sub-page whose action row is Return to Pages and
+emails.
 """
 
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from parishkit.stewardship.accounts import campaign_wizard
+from parishkit.stewardship.accounts.content_forms import ContentForm
 from parishkit.stewardship.accounts.option_editing import option_changes
 from parishkit.stewardship.accounts.share_forms import (
     ShareOptions,
@@ -28,7 +35,14 @@ APPLIED = "/campaign-stepper-applied"
 SETTLED = "/campaign-stepper-settled"
 REQUEST = UUID("14200000-0000-4000-8000-000000000142")
 TEST_URL = "/admin/campaign/content/test/00000000-0000-0000-0000-000000001522/"
-POSTS = {PATH: (303, APPLIED, "")}
+# Not Pages and emails' real address, which other component tests follow
+# from the menu to a page of their own.
+CONTENT = "/campaign-stepper-content"
+EDITOR = "/campaign-stepper-editor"
+POSTS = {
+    PATH: (303, APPLIED, ""),
+    reverse("admin:campaign_step_continue"): (303, CONTENT, ""),
+}
 
 
 def components(context, admin):
@@ -36,10 +50,31 @@ def components(context, admin):
     options = default_share_options()
     renamed = [dict(options[0], label="Renamed option"), *options[1:]]
 
-    def stepper(done):
-        """The stepper on Share options with ``done`` completed."""
+    def stepper(done, current="share_options", sub=False):
+        """The stepper on ``current`` with ``done`` completed."""
         return campaign_wizard.build(
-            True, "share_options", done=done, mail_test_url=TEST_URL
+            True, current, done=done, mail_test_url=TEST_URL, sub=sub
+        )
+
+    def content(template, values, sub=False):
+        """A Pages and emails page (``sub``: its editor), Share options kept."""
+        chrome = admin | {
+            "campaign_wizard": stepper({"settings", "share_options"}, "content", sub)
+        }
+        return (
+            "text/html",
+            render_to_string(
+                f"stewardship/{template}",
+                context
+                | values
+                | {
+                    "admin_chrome": chrome,
+                    "campaign": {
+                        "pk": uuid4(),
+                        "active_configuration": {"name": "Sample campaign"},
+                    },
+                },
+            ),
         )
 
     def share(done, previous=options, digest="a" * 64):
@@ -66,6 +101,30 @@ def components(context, admin):
     applied = SimpleNamespace(state="applied", request_id=REQUEST, failure_code="")
     return {
         PATH: share({"settings"}),
+        CONTENT: content(
+            "content-catalog.html",
+            {
+                "pages": [],
+                "emails": [],
+                "base_digest": "a" * 64,
+                "refresh_url": CONTENT,
+            },
+        ),
+        EDITOR: content(
+            "content-settings.html",
+            {
+                "label": "Welcome page",
+                "visual": "<p>Welcome</p>",
+                "placeholders": ["family_name"],
+                "form": ContentForm(
+                    kind="page",
+                    slot="welcome",
+                    initial={"base_digest": "a" * 64, "html": "<p>Welcome</p>"},
+                ),
+                "post_url": EDITOR,
+            },
+            sub=True,
+        ),
         REVIEW: (
             "text/html",
             render_to_string(

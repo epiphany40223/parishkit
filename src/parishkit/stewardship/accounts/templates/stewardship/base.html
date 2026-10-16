@@ -35,6 +35,7 @@
     {% block banners %}{% endblock %}
     {% include 'stewardship/components/errors.html' %}
     {% block content %}{% endblock %}
+    {% if admin_chrome %}{% include 'stewardship/campaign-step-actions.html' %}{% endif %}
   </main>
   {% if admin_chrome %}</div>{% endif %}
 </body>

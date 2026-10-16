@@ -228,8 +228,10 @@ def test_stepper_marks_current_step_with_text_not_color_alone():
 
     wizard = build(draft({"mail": VALUES["mail"]}), "testing")
     html = render_to_string("stewardship/setup-wizard.html", {"wizard": wizard})
-    # Once in the step bar and once in the list (#1402).
-    assert html.count('aria-current="step"') == 2
+    # Once in the step bar and once in each copy of the list (#1402): the
+    # disclosure for narrow screens and the open copy for wide ones (#1404).
+    assert html.count('aria-current="step"') == 3
+    assert '<div class="setup-stepper-wide" role="group"' in html
     assert '<ol class="setup-steps">' in html
     assert "Current step" in html and "Completed" in html
     assert "Not available yet" in html
@@ -237,8 +239,9 @@ def test_stepper_marks_current_step_with_text_not_color_alone():
     # Compact summary: the current step by number and name, and the count.
     assert "Step 3 of 12:" in html and "<strong>Testing recipient</strong>" in html
     assert "1 of 12 steps completed" in html
-    # The full list is collapsed by default (and stays as the reader left it
-    # across an in-place swap, #519); the step bar is a list of links.
+    # On a narrow screen the full list is collapsed by default (and stays as
+    # the reader left it across an in-place swap, #519); the step bar is a
+    # list of links.
     details = (
         '<details class="setup-stepper-list" id="setup-stepper-list" data-keep-open'
     )

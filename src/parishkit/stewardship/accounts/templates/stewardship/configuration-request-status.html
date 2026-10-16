@@ -22,8 +22,10 @@
   when the status turns Applied, it offers the campaign's first full
   ParishSoft refresh, posted to Refresh from ParishSoft's own action.
   A change that completed a Campaign setup step (#142) is given
-  continue_step once applied, the stepper's next page, linked as "Continue
-  to the next step" (campaign_wizard.continue_for).
+  continue_step once applied (campaign_wizard.continue_for): a change made
+  on a step's sub-page (an email's editor, a mail schedule) links "Return to"
+  that step (#1404); any other links "Continue to the next step", the next
+  step not done yet.
 {% endcomment %}<section class="panel" role="status" aria-live="polite" data-live-status="configuration"{% if status_url %} data-live-url="{{ status_url }}"{% endif %} data-live-state="{{ receipt.state }}"{% if receipt.state != 'applied' and receipt.state != 'failed' and receipt.state != 'cancelled' %} data-live-pending{% endif %}>
 {% if receipt.state == 'applied' %}
   <h2 class="live-done">{% translate "Applied: your change is saved" %}</h2><p>{% translate "The change has been applied and is now in effect." %}</p>
@@ -42,6 +44,6 @@
   <p>{% translate "Request:" %} {{ receipt.request_id }}</p>
 {% if refresh_key %}<div class="next-step" data-campaign-refresh><p><strong>{% translate "Next: load the campaign's ParishSoft data." %}</strong> {% translate "A full refresh adds the campaign's Families, Family codes and giving. It usually takes a few minutes." %}</p>
 <form method="post" action="{% url 'admin:source_refresh' %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ refresh_key }}">{% button type="submit" data-submit-waits %}{% translate "Load the campaign's ParishSoft data" %}{% endbutton %}</form></div>{% endif %}
-{% if continue_step and receipt.state == 'applied' %}<p class="next-step" data-campaign-continue><a href="{{ continue_step.url }}">{% blocktranslate trimmed with label=continue_step.label %}Continue to the next step: {{ label }}{% endblocktranslate %}</a></p>{% endif %}
+{% if continue_step and receipt.state == 'applied' %}<p class="next-step" data-campaign-continue><a href="{{ continue_step.url }}">{% if continue_step.back %}{% blocktranslate trimmed with label=continue_step.label %}Return to {{ label }}{% endblocktranslate %}{% else %}{% blocktranslate trimmed with label=continue_step.label %}Continue to the next step: {{ label }}{% endblocktranslate %}{% endif %}</a></p>{% endif %}
 {% if follow_url %}{% if receipt.state == 'applied' %}<a hidden data-live-follow data-in-place data-in-place-quiet href="{{ follow_url }}#settings-review">{% translate "Reload settings" %}</a>{% endif %}{% endif %}
 </section>

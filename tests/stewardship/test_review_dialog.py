@@ -444,9 +444,14 @@ def test_create_the_campaign_confirms_without_repeating_the_form():
     assert 'translate "Create the campaign" %}{% endbutton %}' in page
     fragment = render_to_string(
         "stewardship/campaign-create-review.html",
-        {"review": {"content": 1, "preview": "signed"}},
+        {"review": {"content": 1, "preview": "signed", "next_url": "/next/"}},
     )
-    assert re.search(r'<div data-review-answer data-review-done="[^"]+">', fragment)
+    assert re.search(r'<div data-review-answer data-review-done="[^"]+"', fragment)
+    # Once applied, the dialog opens the next Campaign setup step (#1404).
+    assert (
+        'data-review-return="/next/" data-review-return-outcome="campaign-step-outcome"'
+        in fragment
+    )
     assert '<p id="campaign-create-summary">' in fragment
     assert "It starts with 1 page or email in the default text." in fragment
     assert 'name="preview" value="signed" data-review-preview' in fragment

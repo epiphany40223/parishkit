@@ -188,6 +188,7 @@ ACTIVITY_TYPES = {
         "admin_cmd_config_request_cancel",
         "campaign_ministries_requested",
         "campaign_end_date_requested",
+        "campaign_setup_step_reviewed",
         "roles_applied",
         "user_change_requested",
         "admin_cmd_users_confirm",
