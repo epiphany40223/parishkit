@@ -29,6 +29,7 @@ from .automation_builders import paired
 from .campaign_builders import change
 from .test_admin_test_sample_cli_postgresql import runner
 from .test_background_grants_postgresql import task_login
+from .test_debug_production_banner_postgresql import force_mode
 from .test_system_health_records_postgresql import raw
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -123,6 +124,30 @@ def test_preview_then_confirm_sets_one_switch_and_its_audit(auth_service, google
     assert 'disabled aria-describedby="debug-off-reason"' in body
     assert "Debug logging was turned off by admin@example.org at" in body
     assert 'data-debug-switch="set"' in body
+
+
+def test_the_page_follows_the_switch_before_the_services_report(auth_service, google):
+    """In Production, a record written before the switch no longer names a
+    service, so the tile turns Working as soon as the switch is set; one
+    written after it, still with debug logging, names the service again."""
+    debug_service()
+    force_mode("production")
+    browser, _ = signed_in()
+    assert 'data-problem="debug_logging"' in page(browser)
+    preview = post(browser, action="debug_off_preview")
+    confirmed = post(browser, action="debug_off_confirm", key=key_of(preview))
+    assert confirmed.status_code == 200
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        status = browser.get(PAGE + "status").content.decode()
+    for body in (confirmed.content.decode(), page(browser), status):
+        assert 'data-problem="debug_logging"' not in body
+        assert "Turned off from this page by admin@example.org at" in body
+        assert "Debug logging was turned off by admin@example.org at" in body
+    # A process that could not apply the switch says so in its next record.
+    debug_service()
+    body = page(browser)
+    assert 'data-problem="debug_logging"' in body
+    assert "Debug logging is on in Production in" in body
 
 
 def test_a_stale_sign_in_gets_the_google_step_up(auth_service, google, monkeypatch):

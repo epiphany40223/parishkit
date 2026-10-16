@@ -5,9 +5,14 @@
   live-status-v1.js puts in its place on each update, unless the reader is
   using it or pointing at the tile grid. ``health`` is
   system_health.SystemHealth. Every time is shown in the browser's time
-  zone.
-{% endcomment %}{% if health.debug_lines %}<ul>{% for line in health.debug_lines %}<li>{% blocktranslate with name=line.label trimmed %}Debug logging is on in {{ name }}.{% endblocktranslate %}</li>{% endfor %}</ul>
-{% if health.mode == "production" %}<p class="notice notice-error">{% translate "Debug logging must be off in Production. Use Turn off debug logging on this page, or ask the server operator to remove the setting, as the deployment runbook describes." %}</p>{% else %}<p>{% translate "That is expected in Testing, where the deployment tool can turn it on on purpose. Turn off debug logging works here too." %}</p>{% endif %}
-{% else %}<p>{% translate "Debug logging is off in every service that reports." %}</p>{% endif %}
-{% with switch=health.debug_switch %}{% if switch.active %}<p data-debug-switch="set">{% if debug_actor %}{% blocktranslate with actor=debug_actor trimmed %}Debug logging was turned off by {{ actor }} at{% endblocktranslate %}{% else %}{% translate "Debug logging was turned off at" %}{% endif %} <time datetime="{{ switch.set_at|instant }}" data-local-instant>{{ switch.set_at|instant }}</time>. {% translate "The setting on the server still says “on”." %} {% if health.mode == "testing" %}{% translate "Allow debug logging again, above, clears the switch in Testing; the server operator can also clear it, offline, with pk-stewardship debug-off-clear." %}{% else %}{% translate "Only the server operator can clear the switch, offline, with pk-stewardship debug-off-clear." %}{% endif %}</p>
+  zone. Nothing here repeats what the tile already says (#1214): in
+  Production the ``debug_logging`` problem names every service with debug
+  logging in effect and what to do, so only Testing lists them here; who
+  set the debug-off switch and when, and that debug logging is off
+  everywhere, are Turn off debug logging's greyed reason; how to clear the
+  switch is that region's toggletip. The Testing note about Turn off debug
+  logging is left out while the switch is set and that button is greyed.
+{% endcomment %}{% if health.debug_lines and health.mode != "production" %}<ul>{% for line in health.debug_lines %}<li>{% blocktranslate with name=line.label trimmed %}Debug logging is on in {{ name }}.{% endblocktranslate %}</li>{% endfor %}</ul>
+{% if not health.debug_switch.active %}<p>{% translate "That is expected in Testing, where the deployment tool can turn it on on purpose. Turn off debug logging works here too." %}</p>{% endif %}{% endif %}
+{% with switch=health.debug_switch %}{% if switch.active %}<p data-debug-switch="set">{% translate "The setting on the server still says “on”." %}</p>
 {% elif switch and health.debug_lines %}<p data-debug-switch="cleared">{% if switch.cleared_by == "operator" %}{% translate "The server operator cleared the debug-off switch at" %}{% else %}{% translate "An Administrator cleared the debug-off switch at" %}{% endif %} <time datetime="{{ switch.cleared_at|instant }}" data-local-instant>{{ switch.cleared_at|instant }}</time>.</p>{% endif %}{% endwith %}

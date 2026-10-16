@@ -400,6 +400,13 @@ input[data-time-entry=list] { max-width: 24rem; }
    emptying then never moves the buttons below it. */
 .reserve-lines-wrap { min-height: 3.2em; min-height: 2lh; }
 @media (max-width: 40rem) { .reserve-lines-wrap { min-height: 4.8em; min-height: 3lh; } }
+/* Take a backup now's offered form has the bottom margin the disabled
+   button's paragraph has, so the button and the line under it keep their
+   places as a request starts and ends. */
+.backup-offer { margin-block: 0 1rem; }
+/* Its held line (with the toggletip and the link) takes a fourth line on a
+   phone, so every state of the line keeps four there. */
+@media (max-width: 40rem) { .backup-line { min-height: 6.4em; min-height: 4lh; } }
 select:not([multiple]):not([size]) { max-width: 26rem; }
 select[multiple], select[size] { max-width: 40rem; }
 textarea { max-width: 56rem; }

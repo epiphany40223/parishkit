@@ -16,6 +16,8 @@ from django.template.loader import render_to_string
 from parishkit.stewardship.source.data_age import Connection
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.system_health import (
+    BACKUP_SUMMARIES,
+    DEBUG_SUMMARIES,
     INCIDENTS,
     LOADED_TILES,
     MAIL_SUMMARIES,
@@ -23,6 +25,7 @@ from parishkit.stewardship.system_health import (
     SOURCE_SUMMARIES,
     TILES,
     AcceptPreview,
+    BackupRequestStatus,
     DebugAllowPreview,
     DebugOffPreview,
     DebugSwitchStatus,
@@ -602,8 +605,11 @@ def test_the_status_region_states_problems_and_panels_in_words():
             "pause": {"actor": "admin@example.org", "reason": "Fixing a typo"},
         }
     )
-    # Each problem in its one tile: the line counts the tiles.
-    assert body.count("data-problem=") == len(codes)
+    # Each problem in its one tile, and the Production finding that off-site
+    # copies are not set up as the Backups tile's item: the line counts the
+    # tiles.
+    assert body.count("data-problem=") == len(codes) + 1
+    assert 'data-problem="offsite_missing"' in body
     line = region[: region.index("</h2>")]
     assert "4 errors" in line and "and 1 warning" in line
     assert "Mail sender 1 has stopped all Family email" in body
@@ -1062,12 +1068,12 @@ def test_a_requested_backup_reads_as_the_page_words_it():
     assert status("expired", age=40, done=40) == "restored"
     for code, words in (
         ("waiting", "is waiting for the server"),
-        ("held", "was held while a Family email send was in progress"),
+        ("held", "is held while a Family email send is in progress"),
         ("not_picked_up", "The server did not pick up the backup requested at"),
-        ("running", "is running; it started at"),
+        ("running", "and is running; it started at"),
         ("did_not_finish", "did not finish."),
         ("failed", "failed. Ask the server operator"),
-        ("finished", "finished at"),
+        ("finished", "The backup requested at"),
         ("restored", "was never run: the system was restored"),
     ):
         request = BackupRequestStatus(
@@ -1116,7 +1122,9 @@ def test_turn_off_debug_logging_is_offered_while_a_service_has_it_on():
     assert '<template data-live-mirror="debug-off-button">' in body
     assert "pk-stewardship debug-off-clear" in body
     assert "those whose server setting is still on log in debug form again" in body
-    assert "Use Turn off debug logging on this page" in body
+    # In Production the debug_logging problem says what to do; the panel
+    # does not say it again.
+    assert "Debug logging must be off in Production" not in body
 
 
 def test_a_set_switch_greys_the_button_and_says_who_and_when():
@@ -1131,7 +1139,7 @@ def test_a_set_switch_greys_the_button_and_says_who_and_when():
     assert "The setting on the server still says “on”." in body
     # Once no service reports debug logging, the button stays greyed with why.
     quiet = debug_page(switch=switch, debug=False)
-    assert "Debug logging is off in every service that reports." in quiet
+    assert "Debug logging was turned off by admin@example.org at" in quiet
     assert 'data-debug-switch="set"' in quiet
     unset = debug_page(debug=False)
     assert 'value="debug_off_preview"' not in unset
@@ -1646,7 +1654,7 @@ def test_allow_debug_logging_again_is_offered_only_in_testing_while_set():
     assert 'value="debug_allow_preview"' in body
     assert 'data-in-place="debug-allow-preview"' in body
     assert body.count('value="debug_allow_preview"') == 2  # region and mirror
-    assert "Allow debug logging again, above, clears the switch in Testing" in body
+    assert "In Testing, Allow debug logging again on this page clears" in body
     production = debug_page(switch=SET, debug=False)
     assert 'value="debug_allow_preview"' not in production
     assert 'disabled aria-describedby="debug-allow-reason"' in production
@@ -1998,3 +2006,405 @@ def test_a_failed_refresh_stays_in_the_tile_while_parishsoft_is_not_answering():
     assert failed.count("did not finish") == 1
     assert 'class="notice notice-error" role="status"' not in failed
     assert f"/admin/system/background/{task}/" in failed
+
+
+# ------------------------------ the Backups and Debug logging tiles (slice 5)
+
+
+def said(tile_id, model, **context):
+    """A tile's counted summary row text, without markup."""
+    tile = section(whole({"health": model} | context), f'id="{tile_id}"')
+    counted = tile.split('class="health-said">', 1)[1].split("</span>", 1)[0]
+    return re.sub(r"<[^>]+>", "", counted).strip()
+
+
+def backup_request(status, *, at=NOW):
+    """A Take a backup now request made at ``at``, in page status ``status``."""
+    return BackupRequestStatus(
+        state="waiting",
+        status=status,
+        created_at=at,
+        held_at=None,
+        claimed_at=at,
+        finished_at=at,
+        failure_kind=None,
+    )
+
+
+def offsite(last_copy_at=NOW, kind="uploaded"):
+    """An off-site copy status, as Home shows it."""
+    return SimpleNamespace(
+        kind=kind,
+        message="The newest copy finished.",
+        at=NOW,
+        last_copy_at=last_copy_at,
+    )
+
+
+def test_the_backup_summary_names_the_first_that_holds():
+    """Each Working summary in BACKUP_SUMMARIES's order: a live request,
+    running before held before waiting, then the newest backup's age with
+    its off-site copy, and finally no backup at all."""
+    before = NOW - timedelta(hours=3)
+    stamp = NOW.isoformat()
+    cases = [
+        (
+            health(backup_request=backup_request("running"), offsite=offsite()),
+            "running",
+            f"Backup requested at {stamp} is running",
+        ),
+        (
+            health(backup_request=backup_request("held"), offsite=offsite()),
+            "held",
+            f"Backup requested at {stamp} is held during the email send",
+        ),
+        (
+            health(backup_request=backup_request("waiting"), offsite=offsite()),
+            "waiting",
+            f"Backup requested at {stamp} is waiting",
+        ),
+        (
+            health(backup_at=before, offsite=offsite(before)),
+            "backup",
+            f"Last backup {before.isoformat()}; off-site copy {before.isoformat()}",
+        ),
+        (
+            health(backup_at=None, offsite=offsite()),
+            "none",
+            "No backup recorded yet",
+        ),
+    ]
+    assert {kind for _, kind, _ in cases} == set(BACKUP_SUMMARIES)
+    for model, kind, words in cases:
+        assert model.backup_summary.kind == kind
+        found = dashboard(model, findings=page_findings(model))
+        assert found.tiles[2].state == "working", kind
+        assert said("health-backups", model) == words, kind
+    # A finished, restored or failed request is no longer what the tile
+    # waits on; a failed one is the tile's finding instead.
+    for status in ("finished", "restored", "failed"):
+        model = health(backup_request=backup_request(status), offsite=offsite())
+        assert model.backup_summary.kind == "backup", status
+    # The off-site part: set up but not copied yet, or (Testing only, as
+    # Production makes it a finding) not set up.
+    assert said("health-backups", health(offsite=offsite(None))) == (
+        f"Last backup {stamp}; no off-site copy yet"
+    )
+    testing = health(mode="testing")
+    assert page_findings(testing) == ()
+    assert said("health-backups", testing) == (
+        f"Last backup {stamp}; off-site copies not set up"
+    )
+
+
+def test_backup_summary_times_are_browser_local():
+    """A request's time is a browser-local clock time (the full date on
+    another day); the last backup's age is counted in the browser."""
+    model = health(backup_request=backup_request("running"), offsite=offsite())
+    tile = section(whole({"health": model}), 'id="health-backups"')
+    assert (
+        f'<time datetime="{NOW.isoformat()}" data-local-instant data-time-only '
+        "data-time-day>" in tile
+    )
+    tile = section(whole({"health": health(offsite=offsite())}), 'id="health-backups"')
+    assert f'<time datetime="{NOW.isoformat()}" data-live-since>' in tile
+    assert "UTC" not in tile
+
+
+def backups_details(body):
+    """The Backups tile's details band, up to the next tile."""
+    start = body.index('id="health-backups-details"')
+    return body[start : body.index('id="health-debug"', start)]
+
+
+def test_the_backup_findings_are_warning_items_after_the_problems():
+    """A backup sealed to another key, a requested backup that ended without
+    one and, in Production, no off-site copies follow the shared problems
+    as Warning items, each with its sentence and link; Take a backup now
+    follows them."""
+    model = health(
+        backup_key_matches=False,
+        backup_request=backup_request("not_picked_up"),
+        problems=(Problem("backup_rpo_breach", at=NOW),),
+    )
+    details = backups_details(tiles({"health": model}))
+    assert re.findall(r'data-problem="([a-z_]+)"', details) == [
+        "backup_rpo_breach",
+        "backup_key_mismatch",
+        "backup_request_failed",
+        "offsite_missing",
+    ]
+    for kind, link in (
+        ("backup_key_mismatch", "/admin/system/integrations/backup_key/"),
+        ("backup_request_failed", "stewardship-backup-runbook.md#the-nightly-backup"),
+        ("offsite_missing", "/admin/system/integrations/backup/"),
+    ):
+        item = details[details.index(f'data-problem="{kind}"') :]
+        item = item[: item.index("</li>")]
+        assert 'data-severity="warning"' in item and link in item, kind
+    assert '<li class="notice" data-problem="backup_key_mismatch"' in details
+    assert 'data-backup-request="not_picked_up"' in details
+    problems_end = details.index("</ul>")
+    assert details.index('id="backup-now"') > problems_end
+    # Each failed request's own sentence.
+    for status, words in (
+        ("did_not_finish", "did not finish. Ask the server operator"),
+        ("failed", "failed. Ask the server operator"),
+    ):
+        model = health(backup_request=backup_request(status))
+        details = backups_details(tiles({"health": model}))
+        assert details.count(words) == 1, status
+        assert f'data-backup-request="{status}"' in details
+        assert "stewardship-backup-runbook.md#checking" in details, status
+
+
+def test_the_backups_panel_repeats_no_problem_sentence():
+    """An overdue backup, a failed off-site copy, a changed key and each
+    finding are said once, by the tile's problems; the panel keeps the
+    facts and their links."""
+    incidents = {"backup_offsite_failed": NOW, "backup_key_changed": NOW}
+    model = health(
+        backup_key_matches=False,
+        backup_request=backup_request("failed"),
+        offsite=offsite(kind="failed"),
+        incidents=incidents,
+        problems=(
+            Problem("backup_rpo_breach", at=NOW),
+            Problem("backup_offsite_failed", at=NOW),
+            Problem("backup_key_changed", at=NOW),
+        ),
+    )
+    details = backups_details(tiles({"health": model}))
+    for words in (
+        "No backup has finished since",
+        "Copying backups off-site has failed since",
+        "different encryption key than the backup before it",
+        "sealed to a different key than the backup encryption key",
+        "failed. Ask the server operator",
+    ):
+        assert details.count(words) == 1, words
+    for gone in (
+        "A required backup is overdue.",
+        "An off-site backup copy failed.",
+        "A recent backup used a different encryption key",
+    ):
+        assert gone not in details
+    assert "Off-site copy: The newest copy finished." in details
+    # The problem's link and the panel's, each to the off-site settings.
+    assert details.count("/admin/system/integrations/backup/") == 2
+    # Without the incident, a failed copy is still a notice in the panel.
+    quiet = backups_details(tiles({"health": health(offsite=offsite(kind="failed"))}))
+    assert '<p class="notice">Off-site copy:' in quiet
+    # Testing: no off-site copies is a panel fact with its setup link.
+    testing = backups_details(tiles({"health": health(mode="testing")}))
+    assert "data-problem" not in testing
+    assert "Off-site copies are not set up." in testing
+    assert "Set up off-site backups" in testing
+
+
+def test_a_held_request_explains_itself_in_a_toggletip():
+    """Why a held request can outlast the send is one click away."""
+    model = health(backup_request=backup_request("held"), offsite=offsite())
+    details = backups_details(tiles({"health": model}))
+    assert "is held while a Family email send is in progress." in details
+    tip = " ".join(tip_texts(details))
+    assert "can still show for a few minutes after the send ends" in tip
+    assert details.count("can still show for a few minutes") == 1
+    assert 'aria-describedby="backup-held"' in details
+
+
+def test_every_backup_request_line_keeps_its_room():
+    """No layout shift: the line under Take a backup now has reserved room
+    in every state, including none, and its mirror target waits for the
+    pointer (data-live-mirror-hold); the held and did_not_finish lines
+    render (#1317)."""
+    for status, words in (
+        ("held", "is held while a Family email send is in progress."),
+        ("did_not_finish", "did not complete; the Backups problems above"),
+        ("waiting", "is waiting for the server"),
+        ("finished", "finished at"),
+    ):
+        details = backups_details(
+            tiles({"health": health(backup_request=backup_request(status))})
+        )
+        region = details[details.index('id="backup-now"') :]
+        region = region[: region.index("</section>")]
+        assert words in region, status
+        line = re.search(r'<p class="help reserve-lines-wrap backup-line"', region)
+        assert line, status
+    none = backups_details(tiles({"health": health(backup_request=None)}))
+    assert (
+        'class="help reserve-lines-wrap backup-line" data-backup-request-none' in none
+    )
+    assert 'data-live-mirror-target="backup-now-button" data-live-mirror-hold' in none
+
+
+def test_the_debug_summary_names_the_first_that_holds():
+    """Each Working summary in DEBUG_SUMMARIES's order: a set switch with who
+    set it, then Testing's debug logging, then Off."""
+    stamp = NOW.isoformat()
+    on = group_processes(
+        [row(debug_logging=True), row("worker", debug_logging=True)], NOW
+    )
+    cases = [
+        (
+            health(debug_switch=SET, processes=on, mode="testing"),
+            {"debug_actor": "admin@example.org"},
+            "switch",
+            f"Turned off from this page by admin@example.org at {stamp}",
+        ),
+        (
+            health(processes=on, mode="testing"),
+            {},
+            "testing",
+            "On in 2 services, as expected in Testing",
+        ),
+        (health(mode="testing"), {}, "off", "Off"),
+    ]
+    assert {kind for _, _, kind, _ in cases} == set(DEBUG_SUMMARIES)
+    for model, context, kind, words in cases:
+        assert model.debug_summary.kind == kind
+        assert dashboard(model).tiles[3].state == "working", kind
+        assert said("health-debug", model, **context) == words, kind
+    # Without the address (it could not be read), only the time.
+    assert said("health-debug", health(debug_switch=SET)) == (
+        f"Turned off from this page at {stamp}"
+    )
+    tile = section(whole({"health": health(debug_switch=SET)}), 'id="health-debug"')
+    assert f'datetime="{stamp}" data-local-instant data-time-only data-time-day' in tile
+    # In Production debug logging in effect is the problem's words instead.
+    production = health(
+        processes=on, problems=(Problem("debug_logging", (Subject("web"),)),)
+    )
+    assert dashboard(production).tiles[3].state == "warning"
+
+
+def debug_details(body):
+    """The Debug logging tile's details band, up to the next tile."""
+    start = body.index('id="health-debug-details"')
+    return body[start : body.index('id="health-source-form"', start)]
+
+
+def test_the_debug_panel_repeats_no_sentence():
+    """In Production the problem names the services; who set the switch and
+    when, and that it is off everywhere, are said once, by the greyed
+    button's reason."""
+    on = group_processes([row(debug_logging=True)], NOW)
+    problem = Problem("debug_logging", (Subject("web"),))
+    details = debug_details(
+        tiles({"health": health(processes=on, problems=(problem,))})
+    )
+    assert details.count("Debug logging is on in Production in") == 1
+    assert "Debug logging is on in Web portal." not in details
+    assert "Debug logging must be off in Production" not in details
+    # Testing lists the services, which no problem names there.
+    testing = debug_details(tiles({"health": health(processes=on, mode="testing")}))
+    assert "Debug logging is on in Web portal." in testing
+    assert "That is expected in Testing" in testing
+    # A set switch: who and when once, then that the server still says on.
+    context = {"health": health(debug_switch=SET), "debug_actor": "admin@example.org"}
+    details = debug_details(tiles(context))
+    assert details.count("turned off by admin@example.org at") == 1
+    assert "The setting on the server still says “on”." in details
+    assert details.count("pk-stewardship debug-off-clear") == 1  # the toggletip
+    # Off everywhere: said once, as the greyed button's reason.
+    quiet = debug_details(tiles({"health": health()}))
+    assert quiet.count("Debug logging is off in every service that reports.") == 1
+
+
+def test_a_live_request_is_stated_once_in_the_band():
+    """The request's progress is one line, under Take a backup now's button
+    (#1317): when it was made and its state (and when it started); the
+    panel does not repeat it, and the confirmation points to the line."""
+    made = NOW - timedelta(minutes=12)
+    started = NOW - timedelta(minutes=2)
+    for status in ("waiting", "held", "running"):
+        request = BackupRequestStatus(
+            state="waiting",
+            status=status,
+            created_at=made,
+            held_at=None,
+            claimed_at=started,
+            finished_at=None,
+            failure_kind=None,
+        )
+        model = health(backup_request=request, offsite=offsite())
+        details = backups_details(tiles({"health": model}))
+        assert details.count(f'datetime="{made.isoformat()}"') == 1, status
+        assert "A backup was requested at" in details, status
+        confirmed = backups_details(
+            tiles(
+                {
+                    "health": model,
+                    "backup_now": {"requested": SimpleNamespace(created_at=made)},
+                }
+            )
+        )
+        assert confirmed.count(f'datetime="{made.isoformat()}"') == 1, status
+        assert (
+            "Backup requested. The line under the button follows its progress"
+            in confirmed
+        )
+        assert details.count("data-backup-request=") == 1, status
+        line = confirmed[confirmed.index('id="backup-now-reason"') :]
+        assert f'data-backup-request="{status}"' in line[: line.index(">")]
+    assert details.count(f'datetime="{started.isoformat()}"') == 1
+
+
+def test_an_ended_request_is_said_under_the_offered_button():
+    """Once the request has ended, the button is offered again and the line
+    under it says how it ended; a failure points to the tile's problems,
+    which explain it (#1317)."""
+    for status, words in (
+        ("finished", "The backup requested at"),
+        ("restored", "was never run: the system was restored"),
+        ("failed", "did not complete; the Backups problems above say what to do"),
+        ("not_picked_up", "did not complete; the Backups problems above"),
+    ):
+        details = backups_details(
+            tiles({"health": health(backup_request=backup_request(status))})
+        )
+        region = details[details.index('id="backup-now"') :]
+        region = region[: region.index("</section>")]
+        assert 'value="preview"' in region and words in region, status
+        panel = details[details.index("</section>") :]
+        assert words not in panel, status
+
+
+def test_the_backup_region_checks_the_status_again_once_answered():
+    """Its answer replaces only the region, so the page checks the status at
+    once (data-live-recheck) and the progress line follows (#1317)."""
+    details = backups_details(tiles({"health": health()}))
+    region = details[details.index('id="backup-now"') :]
+    assert (
+        'data-in-place-region data-live-recheck="system-health"'
+        in (region[: region.index(">")])
+    )
+
+
+def test_the_debug_regions_answers_point_where_things_are_said():
+    """After turning it off, nothing points to a service list the
+    Production panel no longer has; a repeated request points to the greyed
+    button, which says who and when; the Testing note about the button is
+    left out while the switch greys it."""
+    body = debug_page(debug_off={"requested": SimpleNamespace(set_at=NOW)})
+    assert "Each service stops logging in debug form within about a minute." in body
+    assert "details below show when" not in body
+    busy = debug_page(switch=SET, debug_off={"refused": "busy"})
+    assert "The greyed button below says who did it and when." in busy
+    assert "Turn off debug logging works here too" in debug_page(mode="testing")
+    assert "works here too" not in debug_page(switch=SET, mode="testing")
+
+
+def test_the_debug_region_checks_the_status_again_once_answered():
+    """Its answer replaces only the region, so the page checks the status at
+    once (data-live-recheck) and the tile and both buttons follow (#1317)."""
+    for body in (
+        debug_page(),
+        debug_page(switch=SET, debug_off={"requested": SimpleNamespace(set_at=NOW)}),
+    ):
+        region = body[body.index('id="debug-off"') :]
+        assert region[: region.index(">")].endswith(
+            'data-in-place-region data-live-recheck="system-health" '
+            'aria-labelledby="debug-off-heading"'
+        )
