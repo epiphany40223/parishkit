@@ -37,6 +37,17 @@ RESOLVABLE_LABELS = {
 }
 
 
+class SenderCheckRequired(StaleRecordError):
+    """Resume or Release needs a sender check that has not passed (#1288).
+
+    A sender check is required only after real sender or delivery trouble
+    (``health``'s ``trouble``). The Pause and resume mail page catches this
+    and draws itself again, with Resume or Release unavailable and the
+    reason in place, instead of the generic "This information changed"
+    refusal its parent class would get.
+    """
+
+
 def _current(request, service, campaign_id, *, passive=False):
     """Recheck current scope/authority before private reads, including replay."""
     actor = principal(request, service, passive=passive)
@@ -73,7 +84,14 @@ def _available(campaign, runtime):
 
 
 def health(campaign_id):
-    """Expose only current proof metadata, never provider responses or recipients."""
+    """Whether held mail may go to the current sender, as count-only metadata.
+
+    ``ready`` is true while paused when no sender check is required, or when
+    the required one has passed; ``required`` and ``trouble`` (a code such
+    as ``provider_failure``) say whether and why one is required. See the
+    ``stewardship_delivery_control_health`` view for the rule. Never exposes
+    provider responses or recipients.
+    """
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT health FROM stewardship_delivery_control_health "
@@ -82,7 +100,14 @@ def health(campaign_id):
         )
         row = cursor.fetchone()
     if row is None:
-        return {"ready": False, "proof": None, "checked_at": None, "expires_at": None}
+        return {
+            "ready": False,
+            "required": False,
+            "trouble": None,
+            "proof": None,
+            "checked_at": None,
+            "expires_at": None,
+        }
     return json.loads(row[0]) if isinstance(row[0], str) else row[0]
 
 
@@ -201,7 +226,7 @@ def _closed_selection(campaign, current, *, decision, types):
         raise StaleRecordError("Select held messages, or clear a fully resolved pause.")
     proof = health(campaign.pk) if decision == "release" else None
     if proof is not None and not proof["ready"]:
-        raise StaleRecordError(
+        raise SenderCheckRequired(
             "Releasing held messages requires a current sender check."
         )
     with connection.cursor() as cursor:
@@ -355,11 +380,13 @@ def _preview(
         selected = {}
         current = inventory(campaign_id)
         if action == "resume":
-            proof = health(campaign_id)
-            if not proof["ready"] or current["submitting"] or current["unknown"]:
+            if current["submitting"] or current["unknown"]:
                 raise StaleRecordError(
-                    "A current sender check and resolved delivery are required."
+                    "Resume requires resolved delivery: resolve email still being sent "
+                    "or not sure it arrived first."
                 )
+            if not health(campaign_id)["ready"]:
+                raise SenderCheckRequired("Send a test email first.")
             selected = _resume_selection(campaign)
             if selected.get("family", {}).get("blocked"):
                 raise StaleRecordError("Resolve blocked Family groups before resuming.")
@@ -465,6 +492,14 @@ def confirm(request, service, campaign_id, *, token):
             max_age=CONTROL_PREVIEW_MAX_AGE,
         )
         current_inventory = inventory(campaign_id)
+        # A sender check that expired or was overtaken by new trouble since
+        # the preview is said in place, not as a changed preview (#1288).
+        releases = binding["action"] == "resume" or (
+            binding["action"] == "resolve"
+            and binding["selection"].get("decision") == "release"
+        )
+        if releases and campaign.delivery_paused and not health(campaign_id)["ready"]:
+            raise SenderCheckRequired("Send a test email first.")
         if (
             not _action_available(campaign, binding["action"])
             or not _available(campaign, runtime)
