@@ -312,6 +312,13 @@ An Admin control acts where the reader is: it never reloads the page or sends
 the reader back to its top (#519). The [table controls](#admin-tables) are one case;
 the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
 
+A status line appears next to the control that caused it: under the form or
+button it answers, or inside the pane that holds that control on a page with
+several panes (each pane its own line), never in one line elsewhere on the
+page. So the reader sees what happened where they are looking, and the page
+never scrolls to show it (Administrator, pk-local review of
+[#750](https://github.com/epiphany40223/parishkit/issues/750), 2026-10-15).
+
 - **Regions.** A page marks each part a control can change as a region, an
   element with a stable id (a table's region, or `data-in-place-region`). The
   id is also the control's URL fragment, which is required: the script finds
@@ -649,28 +656,21 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   in-place region of its own, so the quiet refresh once a change is applied
   brings it up to date; it sits below the review region, so a status whose
   length changes never moves the form or the review.
-- **In-place review: Campaign images (#750).** Campaign images has no
-  settings form: each slot's upload form (`data-in-place`, multipart) and
-  its Remove this image link (`a[data-in-place]`) answer with the page
-  naming the change (`?review=<slot>&bundle=<id>` or `?remove=<slot>`), whose
-  review region under every slot shows the image (or the removal) with
-  Apply, so a review appearing never moves a slot. Apply posts to that
-  address. The slots are one in-place region, redrawn by an upload's answer
-  and by the quiet refresh once a change is applied; a refused upload's
-  field error shows in its slot and, linked to that field, in the review
-  region, which takes focus. Each slot is the same height with or without
-  an image (its image box keeps the slot's image size, its caption is one
-  line, and the removal line keeps its space), so the quiet refresh never
-  moves the review region below the slots. A stale upload (the page's
-  settings changed elsewhere) is refused in the region too; a stale Apply
-  says to upload the image again, or for a removal, to choose Remove this
-  image again. A refused Apply's answer marks the slots
-  `data-in-place-always`, so their forms are redrawn at the current
-  version and the next upload is accepted. Loading an address whose change
-  can no longer be reviewed (an image already applied, expired, another
-  sign-in's or stale; a slot with nothing left to remove) shows the page
-  with that explanation in the review region. Each upload form has an id,
-  so a file chosen while the quiet refresh redraws it is said not to be
+- **Review dialog: Campaign images (#750).** Campaign images reviews in the
+  [review dialog](#review-dialog). It has no settings form: each slot's
+  upload form (multipart, sent as
+  [preparing the review](#review-dialog) says) and its
+  Remove this image (a text-styled button in a form of its own, drawn only
+  when the slot has an image) open the dialog with the image as it will
+  appear, or the removal. The slots are one in-place region, redrawn after
+  Apply with the new current image. Each slot is the same height with or
+  without an image (its image box keeps the slot's image size, its caption
+  is one line, and the removal line keeps the button's space), so that
+  redraw never moves a slot. Each slot ends with its own reserved status
+  line, which its upload and its Remove this image name, so the line saying
+  what was applied is in the slot where the change was made and the page
+  never jumps to it. Each upload form has
+  an id, so a file chosen while the slots are redrawn is said not to be
   kept.
 - **In-place review: Parish logos (#750).** Parish logos has no settings
   form: its upload form (`data-in-place`, multipart, a region of its own)
@@ -1024,7 +1024,9 @@ section says how every Review behaves.
   refuses an unchanged Review, as a safeguard for requests that bypass the
   page script.
 - **Preparing the review.** Review changes posts the form without a page
-  load. Until the answer arrives the form is inert and marked busy, and
+  load, sent as a native submit would send it: multipart when the form's
+  enctype is `multipart/form-data` (an upload editor's file), otherwise
+  URL-encoded. Until the answer arrives the form is inert and marked busy, and
   Review changes says it is working, so nothing can be edited while the
   review is being prepared.
 - **Field errors stay on the form.** A Review refused for the values in the
@@ -1064,7 +1066,11 @@ section says how every Review behaves.
   what was applied and when ("Applied at 3:42 PM."), and focus moves to it.
   The line is a polite live region (`role="status"`), so a screen reader
   hears it, and its space is reserved, so it never moves a control ([no
-  layout shift](#no-layout-shift)).
+  layout shift](#no-layout-shift)). It sits
+  [next to the control that caused it](#in-place-controls): where panes
+  share one dialog, each pane has its own line, which the pane's forms name
+  with `data-review-outcome` in place of the dialog's line, so the page
+  never scrolls to a line elsewhere.
 - **Refusals stay in the dialog.** A Review or Apply refused because the
   settings changed elsewhere (another tab or another Administrator), an
   out-of-date or expired preview, a change that failed to apply or was
@@ -1111,9 +1117,9 @@ dialog is decided on [#750](https://github.com/epiphany40223/parishkit/issues/75
 
 Current state, to be converted: Users' New user, Edit user and Import
 Ministry leaders, New and Edit scheduled email,
-[Campaign settings](../admin-portal/spec.md#campaign-settings-page) (#1119)
-and Share options use the dialog. Parish
-settings, No-reminders WorkGroup, Campaign images and Parish logos show the in-place
+[Campaign settings](../admin-portal/spec.md#campaign-settings-page) (#1119),
+Share options and Campaign images use the dialog. Parish
+settings, No-reminders WorkGroup and Parish logos show the in-place
 review panel of #532 and #750
 ([in-place controls](#in-place-controls)); the other editors use separate
 Review and Change status pages.

@@ -15,7 +15,7 @@ the page's GET records nothing. The images are the campaign's own theme
 artwork, never a Family's. Uploads stay in the browser.
 
 ``artwork remove-preview`` and ``artwork remove`` are the page's **Remove
-this image** and its in-place **Apply** (#750), as ``parish preview`` and
+this image** and its review dialog's **Apply** (#750), as ``parish preview`` and
 ``parish confirm`` are Parish settings' Review and Apply:
 
 - ``artwork remove-preview`` admits as the page does (recording activity,
@@ -169,7 +169,7 @@ def preview_removal(caller, service, slot, *, expected_version):
     Admits as the page does (``CONFIGURE``, recording activity), then, in
     one read snapshot, checks the version (another one is
     ``stale_version``) and builds the page's own removal review. A slot
-    with no image is ``not_available`` (the page's 404); a resulting
+    with no image is ``not_available`` (the page refuses it too); a resulting
     document the configuration refuses is ``invalid``. Rechecks access
     afterwards. Changes nothing.
     """
