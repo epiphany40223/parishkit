@@ -101,7 +101,7 @@ def test_family_templates_are_not_gated():
 def _gated(html):
     """Whether rendered HTML carries every part of the JavaScript gate."""
     parts = (
-        '<html lang="en" class="js-required">' in html,
+        '<html lang="en" class="admin-document js-required">' in html,
         '<script src="/static/stewardship/admin-gate-v1.js"></script>' in html,
         # hidden keeps the panel out of a page whose stylesheet failed.
         '<div class="js-required-panel" hidden>' in html,

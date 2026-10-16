@@ -13,9 +13,12 @@ notes start closed and open on request (#1161).
 
 import pytest
 
+from parishkit.stewardship.web.design_tokens import DARK_COLORS
+
 from .comparison_components import DAY_5, PAGE
 from .test_charts import assert_clean, watch
 from .test_components import axe_violations
+from .test_dark_scheme import rgb
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "webkit"], indirect=True
@@ -140,27 +143,27 @@ def test_page_is_accessible_and_fits(page, component_origin, axe_source, path, w
     assert_clean(page, errors)
 
 
-def test_dark_mode_keeps_the_light_theme_and_its_contrast(
+def test_dark_mode_draws_the_page_dark_and_the_charts_as_light_cards(
     page, component_origin, axe_source
 ):
-    """A browser set to dark mode still gets the portal's one light theme.
+    """A browser set to dark mode gets the Admin dark scheme (#1264).
 
-    The theme declares only a light color scheme, and the charts draw with
-    its tokens on a white background, so their text keeps its contrast.
+    Campaign comparison is an Admin page like any other, so its panels take
+    the dark tokens. Its charts stay light cards until charts get a dark
+    scheme (#1264 slice 2): Vega draws them on white with the light theme's
+    muted ink, so their text keeps its contrast.
     """
     page.emulate_media(color_scheme="dark")
     page.goto(component_origin + "/campaign-comparison")
     expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(DRAWN)
-    assert page.evaluate("matchMedia('(prefers-color-scheme: dark)').matches")
-    assert page.evaluate("getComputedStyle(document.body).colorScheme") in (
-        "light",
-        "normal",
+    assert page.evaluate("getComputedStyle(document.documentElement).colorScheme") == (
+        "dark"
     )
     panel = page.locator("#comparison-families-heading").locator("xpath=..")
-    assert panel.evaluate("e => getComputedStyle(e).backgroundColor") == (
-        "rgb(255, 255, 255)"
+    assert panel.evaluate("e => getComputedStyle(e).backgroundColor") == rgb(
+        DARK_COLORS["paper"]
     )
-    # The axis labels use the theme's muted ink, not Vega's light grey.
+    # The axis labels use the light theme's muted ink, not Vega's light grey.
     label = page.locator("[data-chart-view] svg g.role-axis-label text").first
     assert label.evaluate("e => e.getAttribute('fill')") == "#4f5e66"
     assert axe_violations(page, axe_source) == []

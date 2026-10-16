@@ -5,6 +5,11 @@ properties on ``:root``, and a unit test (``test_design_tokens.py``) fails if
 the stylesheet and this module ever disagree. Email cannot load the
 stylesheet, so email components read the same values here and inline them.
 
+``DARK_COLORS`` is the Admin portal's dark colour scheme (#1264; ui-conventions
+"Colour scheme"): ``ui-v1.css`` declares it for Admin pages when the operating
+system asks for dark, and the same test checks it. Email and downloaded files
+never read it; they stay light.
+
 Only add a token when two places need the same value. Every text and
 background pair must keep WCAG AA contrast (see the note at the top of
 ``ui-v1.css``); re-check it when changing a colour.
@@ -38,6 +43,53 @@ COLORS = {
     "level-info": "#1d5fbf",
     "level-critical": "#7f0000",
     "level-audit": "#5b3fa0",
+    # Chrome details that have a separate value in the dark scheme (#1264):
+    # selected text, an unavailable menu entry or control link, the teal
+    # hairline round accent-soft boxes, the rule under table headings, a
+    # table row under the pointer, and a progress bar's empty track.
+    "selection": "#cfe6e2",
+    "unavailable": "#646e73",
+    "accent-line": "#b9d7d2",
+    "rule-strong": "#c9d1cf",
+    "row-hover": "#f8faf9",
+    "progress-track": "#e3e8e7",
+}
+
+# The Admin portal's dark scheme (#1264), with the same keys as COLORS. Text
+# keeps 4.5:1 on every surface, and control borders, the focus ring and the
+# status icons 3:1 (test_design_tokens.py checks both schemes). The accent
+# is a light teal here, so a primary button's --paper label (now dark) keeps
+# its contrast on it.
+DARK_COLORS = {
+    "ink": "#e4eaeb",
+    "muted": "#a8b5ba",
+    "page": "#121a1d",
+    "paper": "#1b2529",
+    "paper-soft": "#222e33",
+    "border": "#34434a",
+    "track": "#3b4b52",
+    "control-border": "#80929a",
+    "accent": "#5cc0b2",
+    "accent-strong": "#86d5ca",
+    "accent-soft": "#173c38",
+    "gold": "#d2a54e",
+    "link": "#84bdf0",
+    "focus": "#f0a34a",
+    "warning-bg": "#2f2611",
+    "warning-border": "#d09a2c",
+    "warning-ink": "#f2c66e",
+    "error-bg": "#3b1c19",
+    "error-border": "#f07a6a",
+    "error-ink": "#ffb3a7",
+    "level-info": "#7eaaf2",
+    "level-critical": "#ff8f86",
+    "level-audit": "#bba5ee",
+    "selection": "#245a53",
+    "unavailable": "#8d9ba1",
+    "accent-line": "#2f6a62",
+    "rule-strong": "#45555c",
+    "row-hover": "#202b30",
+    "progress-track": "#34434a",
 }
 
 # Corner radii: panels and cards, then controls, notices and buttons.

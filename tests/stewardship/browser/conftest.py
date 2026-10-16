@@ -2252,6 +2252,7 @@ def component_origin():
         ("digest-v1.css", "text/css"),
         ("setup-v1.css", "text/css"),
         ("select-arrow-v1.svg", "image/svg+xml"),
+        ("select-arrow-dark-v1.svg", "image/svg+xml"),
         ("chart-v1.js", "application/javascript"),
         ("chart-v1.css", "text/css"),
     ):

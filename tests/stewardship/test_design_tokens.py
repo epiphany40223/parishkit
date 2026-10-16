@@ -12,7 +12,7 @@ from parishkit.stewardship.web.report_markup import button as report_button
 STATIC = (
     Path(__file__).parents[2] / "src/parishkit/stewardship/accounts/static/stewardship"
 )
-ROOT_BLOCK = re.compile(r":root\s*{(.*?)}", re.S)
+ROOT_BLOCK = re.compile(r":root, \.light-card\s*{(.*?)}", re.S)
 DECLARATION = re.compile(r"--([a-z][a-z0-9-]*):\s*([^;]+);")
 COMMENT = re.compile(r"/\*.*?\*/", re.S)
 
@@ -32,6 +32,54 @@ def test_stylesheet_declares_exactly_the_module_values():
     # The body font shorthand starts from the shared sans stack.
     css = (STATIC / "ui-v1.css").read_text()
     assert f"font: 100%/1.6 {tokens.SANS};" in css
+
+
+DARK_BLOCK = re.compile(
+    r"@media screen and \(prefers-color-scheme: dark\) {"
+    r"\s*html\.admin-document\s*{(.*?)}",
+    re.S,
+)
+
+
+def dark_properties():
+    """The custom properties ui-v1.css redefines for the Admin dark scheme."""
+    css = COMMENT.sub("", (STATIC / "ui-v1.css").read_text())
+    return dict(DECLARATION.findall(DARK_BLOCK.search(css)[1]))
+
+
+def test_dark_scheme_declares_exactly_the_module_values():
+    """The dark block redefines every colour token, and only colours (#1264)."""
+    assert set(tokens.DARK_COLORS) == set(tokens.COLORS)
+    assert dark_properties() == tokens.DARK_COLORS
+    # The dark scheme applies only to screens and only to Admin pages.
+    css = (STATIC / "ui-v1.css").read_text()
+    assert css.count("prefers-color-scheme") == 1
+    assert "color-scheme: dark;" in DARK_BLOCK.search(css)[1]
+
+
+def test_only_the_portal_stylesheet_reads_the_dark_scheme():
+    """Email and downloaded files stay light: no module but the tokens' own
+    names DARK_COLORS (ui-conventions "Colour scheme")."""
+    source = Path(__file__).parents[2] / "src/parishkit"
+    readers = sorted(
+        path.relative_to(source).as_posix()
+        for path in source.rglob("*.py")
+        if "DARK_COLORS" in path.read_text()
+    )
+    assert readers == ["stewardship/web/design_tokens.py"]
+
+
+@pytest.mark.parametrize(
+    "name,colors",
+    [
+        ("select-arrow-v1.svg", tokens.COLORS),
+        ("select-arrow-dark-v1.svg", tokens.DARK_COLORS),
+    ],
+)
+def test_each_select_arrow_draws_in_its_schemes_ink(name, colors):
+    """The select arrow is an image, so each scheme has its own in --ink."""
+    svg = (STATIC / name).read_text()
+    assert re.findall(r'stroke="(#[0-9a-f]+)"', svg) == [colors["ink"]]
 
 
 def test_only_layout_properties_live_outside_the_module():
@@ -165,8 +213,11 @@ STATUS_LOOKS = {
 }
 
 
-def contrast(first, second):
-    """The WCAG contrast ratio of two colour tokens' values."""
+SCHEMES = {"light": tokens.COLORS, "dark": tokens.DARK_COLORS}
+
+
+def contrast(first, second, colors=tokens.COLORS):
+    """The WCAG contrast ratio of two colour tokens' values in one scheme."""
 
     def luminance(color):
         """Relative luminance of a hex colour."""
@@ -179,18 +230,67 @@ def contrast(first, second):
         return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
 
     high, low = sorted(
-        (luminance(tokens.COLORS[first]), luminance(tokens.COLORS[second])),
+        (luminance(colors[first]), luminance(colors[second])),
         reverse=True,
     )
     return (high + 0.05) / (low + 0.05)
 
 
+@pytest.mark.parametrize("scheme", sorted(SCHEMES))
 @pytest.mark.parametrize("state", sorted(STATUS_LOOKS))
-def test_each_status_look_meets_the_contrast_minimums(state):
-    """Text meets 4.5:1 and the icon and border 3:1 on the state's background."""
+def test_each_status_look_meets_the_contrast_minimums(state, scheme):
+    """Text meets 4.5:1 and the icon and border 3:1 on the state's background,
+    in the light and the dark scheme."""
     text, line, background = STATUS_LOOKS[state]
-    assert contrast(text, background) >= 4.5
-    assert contrast(line, background) >= 3
+    assert contrast(text, background, SCHEMES[scheme]) >= 4.5
+    assert contrast(line, background, SCHEMES[scheme]) >= 3
+
+
+# The text tokens and the surfaces they are drawn on across the portal, and
+# the non-text marks (control borders, the focus ring, level icons) with the
+# surfaces they sit on. --paper is also the label colour on the accent
+# buttons. --muted is not drawn on --selection or --row-hover alone.
+TEXT_ON = {
+    "ink": ("page", "paper", "paper-soft", "accent-soft", "row-hover", "selection"),
+    "muted": ("page", "paper", "paper-soft", "accent-soft", "row-hover"),
+    "link": ("page", "paper", "paper-soft", "accent-soft", "row-hover"),
+    "accent": ("page", "paper", "paper-soft"),
+    "accent-strong": ("page", "paper", "paper-soft", "accent-soft"),
+    "unavailable": ("page", "paper", "paper-soft"),
+    "paper": ("accent", "accent-strong", "ink"),
+    "warning-ink": ("warning-bg", "paper"),
+    "error-ink": ("error-bg", "paper"),
+}
+MARKS_ON = {
+    "control-border": ("page", "paper", "paper-soft"),
+    "focus": ("page", "paper", "paper-soft"),
+    "accent": ("accent-soft",),
+    "level-info": ("paper", "paper-soft"),
+    "level-critical": ("paper", "paper-soft"),
+    "level-audit": ("paper", "paper-soft"),
+    "warning-border": ("paper", "paper-soft"),
+    "error-border": ("paper", "paper-soft"),
+    # The focus ring on the checked Basic/Advanced segment is --paper.
+    "paper": ("accent",),
+}
+
+
+@pytest.mark.parametrize("scheme", sorted(SCHEMES))
+def test_text_and_marks_meet_the_contrast_minimums(scheme):
+    """Every text pair meets 4.5:1 and every mark 3:1 in both schemes (#1264)."""
+    colors = SCHEMES[scheme]
+    low = [
+        (text, surface)
+        for text, surfaces in TEXT_ON.items()
+        for surface in surfaces
+        if contrast(text, surface, colors) < 4.5
+    ] + [
+        (mark, surface)
+        for mark, surfaces in MARKS_ON.items()
+        for surface in surfaces
+        if contrast(mark, surface, colors) < 3
+    ]
+    assert low == []
 
 
 @pytest.mark.parametrize("state", sorted(STATUS_LOOKS))

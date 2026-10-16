@@ -59,6 +59,7 @@ when it lands.
   [unavailable menu pages](#unavailable-menu-pages).
 - Admin page layout: [page help](#page-help),
   [button labels](#button-labels), [shared visual style](#shared-visual-style),
+  [colour scheme](#colour-scheme),
   [status indicators](#status-indicators), [time entry](#time-entry),
   [schedules](#schedules).
 - Tables: [Admin tables](#admin-tables),
@@ -1601,6 +1602,51 @@ The portal and the emails share one visual style
 
 Portal notices, cards and headings follow in later slices of #732.
 
+### Colour scheme
+
+**Rule.** The Admin portal, including sign-in and the setup wizard, follows
+the operating system's light or dark setting (`prefers-color-scheme`) on
+screen. In dark, every colour token takes its dark value, and the browser's
+own form controls and scrollbars turn dark too. Everything else stays light:
+
+- the [Family portal](#family-portal);
+- a printed Admin page;
+- emails, which keep the light tokens and rely on the
+  [email button](#shared-visual-style) to survive a mail program's inverted
+  dark mode;
+- [downloaded files](#downloaded-files);
+- for now, each drawn chart, which keeps its white background and its own
+  dark labels as a light card;
+- each email sample preview (the content sample, the setup text editor's
+  saved sample and the new campaign's copy preview), a light card that
+  shows the email as it is sent.
+
+Both schemes meet the same contrast minimums: text 4.5:1 on every surface
+it is drawn on, and control borders, the focus ring and status and level
+icons 3:1; where the focus ring sits on an accent surface (the checked
+Basic or Advanced segment), it is drawn in the paper colour. The
+[status indicators](#status-indicators) keep their per-state tokens in
+both. Every colour a scheme changes is a token, so the dark scheme reaches
+each rule with no per-component CSS; only shadows, print rules and the
+logo backing name a colour. An image that draws in the ink
+colour, such as the select arrow, has a dark twin. A parish logo gets a
+white backing in dark, because it was drawn for a light header.
+
+The scheme follows the operating system only. An explicit Light, Auto or
+Dark choice, dark charts and a guard against new literal colours are later
+slices of [#1264](https://github.com/epiphany40223/parishkit/issues/1264).
+
+**Why.** Administrators who work in a dark desktop get a portal that
+matches it, without a second stylesheet that would drift from the first.
+Parishioners are the larger and less technical audience and have not asked
+for dark, so the Family portal is left as it is. **Shared code.**
+`DARK_COLORS` in `web/design_tokens.py`, declared by the
+`prefers-color-scheme: dark` block in `ui-v1.css` for the `admin-document`
+root that `admin-base.html` sets. `test_design_tokens.py` checks both
+token sets and their contrast. The browser test `test_dark_scheme.py`
+checks that key Admin pages leave no light surface or light ink in dark.
+**Precedent.** #732 (tokens), #1264.
+
 ### Status indicators
 
 **Rule.** A status that says whether something is working shows a word, an
@@ -2515,10 +2561,10 @@ three formats; the guard checks its Members and Families tables in each.
 **Rule.** The Family portal is mobile-first, is not behind the Admin
 JavaScript gate (where its flow needs script, an unsupported browser gets a
 plain notice rather than a broken page), and keeps every link it has emailed
-working. It
-shares the theme and design tokens with the Admin portal but keeps its own
-spacing, and the Admin-only conventions above (in-place controls, the
-JavaScript gate, Admin tables) do not apply to it. **Why.** Families use
+working. It shares the theme and design tokens with the Admin portal but
+keeps its own spacing and stays light (no
+[dark colour scheme](#colour-scheme)), and the Admin-only conventions above
+(in-place controls, the JavaScript gate, Admin tables) do not apply to it. **Why.** Families use
 whatever device and browser they have, and an emailed link cannot be
 re-sent. **Shared code.** `family-v1.js`, `ui-v1.css`, `web/design_tokens.py`.
 **Precedent.** #466, #565, #864. The Family flow's own behavior is in the

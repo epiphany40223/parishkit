@@ -333,7 +333,7 @@ def _assert_no_page(response, *, admin=True):
     assert "Check the address, or use the links below to continue." in body
     assert "private" not in body
     assert "Check this value." not in body
-    assert ('class="js-required"' in body) is admin
+    assert ('class="admin-document js-required"' in body) is admin
     return body
 
 
