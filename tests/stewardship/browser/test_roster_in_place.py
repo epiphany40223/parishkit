@@ -14,7 +14,7 @@ from django.http import QueryDict
 from parishkit.stewardship.reports.ministry_roster_views import bulk_values
 
 from .followup_components import TICK_ITEM
-from .roster_components import BULK_KEY, BULK_POST, PATH
+from .roster_components import BULK_KEY, BULK_POST, PATH, TWICE
 from .test_components import axe_violations
 from .test_table_sorting import MARK, MARKED
 from .waits import available, has_text, hidden, same_place, visible
@@ -24,6 +24,11 @@ pytestmark = pytest.mark.parametrize(
 )
 
 NAMES = "#table tbody th[scope=row] a"
+# Every accessible name and tooltip in a table, to find a stray UTC instant.
+NAME_TEXT = (
+    "node => [...node.querySelectorAll('[aria-label], [title]')]"
+    ".map((el) => el.getAttribute('aria-label') + el.title).join()"
+)
 
 
 def test_a_tick_and_the_pager_act_in_place(page, component_origin):
@@ -225,3 +230,83 @@ def test_a_refused_bulk_mark_names_the_row_inside_the_dialog(page, component_ori
     assert page.locator(NAMES).first.inner_text() == "Member 29"
     assert page.evaluate(MARKED) == "kept"
     assert not failures
+
+
+@pytest.mark.parametrize(
+    ("zone", "days"),
+    [
+        ("America/New_York", ("Oct 4, 2054", "Oct 1, 2054")),
+        ("Asia/Tokyo", ("Oct 5, 2054", "Oct 2, 2054")),
+    ],
+)
+def test_a_change_listed_twice_names_its_browser_local_day(
+    browser_engine, component_origin, zone, days
+):
+    """A change listed twice names each row by the day it was resolved in
+    this browser's time zone (#558): its box, its tick's name and tooltip and
+    the bulk dialog's title, for resolutions at 03:30 UTC, the evening before
+    in New York. The bulk dialog posts the browser's zone, in which the
+    server names a stale row's day."""
+    context = browser_engine.new_context(timezone_id=zone)
+    try:
+        page = context.new_page()
+        failures = []
+        page.on("pageerror", lambda error: failures.append(str(error)))
+        page.goto(component_origin + TWICE)
+        rows = page.locator("#table tbody tr")
+        for index, day in enumerate(days):
+            name = f"Member 00 — Food pantry, resolved {day}"
+            row = rows.nth(index)
+            box = row.get_by_label(f"Select {name}", exact=True)
+            assert box.get_attribute("data-confirm-name") == name
+            tick = row.get_by_role(
+                "button", name=f"Mark {name} entered in ParishSoft", exact=True
+            )
+            assert tick.get_attribute("title") == f"Mark {name} entered in ParishSoft"
+        # No UTC instant is left in any name.
+        assert "+00:00" not in page.locator("#table").evaluate(NAME_TEXT)
+        # A tick refreshes the table in place: the row left in the swapped-in
+        # table is named by the browser's day too, not the server's instant.
+        page.evaluate(MARK)
+        rows.nth(0).get_by_role(
+            "button",
+            name=f"Mark Member 00 — Food pantry, resolved {days[0]} "
+            "entered in ParishSoft",
+        ).click()
+        has_text(page.locator(NAMES).first, "Member 00")
+        assert rows.count() == 1
+        assert page.evaluate(MARKED) == "kept"
+        name = f"Member 00 — Food pantry, resolved {days[1]}"
+        assert rows.first.get_by_label(f"Select {name}", exact=True).count() == 1
+        assert (
+            rows.first.get_by_role(
+                "button", name=f"Mark {name} entered in ParishSoft", exact=True
+            ).get_attribute("title")
+            == f"Mark {name} entered in ParishSoft"
+        )
+        assert "+00:00" not in page.locator("#table").evaluate(NAME_TEXT)
+        rows.nth(0).get_by_role("checkbox").check()
+        page.locator(".bulk-bar").get_by_role(
+            "button", name="Mark entered in ParishSoft"
+        ).click()
+        dialog = page.locator("dialog#roster-bulk-dialog")
+        visible(dialog)
+        assert dialog.locator("h2").inner_text() == (
+            f"Mark Member 00 — Food pantry, resolved {days[1]} entered in ParishSoft?"
+        )
+        posted = []
+
+        def answer(route):
+            """Record the dialog's POST and answer as the bulk view does."""
+            posted.append(route.request.post_data or "")
+            route.fulfill(status=204, body="")
+
+        page.route(component_origin + BULK_POST, answer)
+        dialog.get_by_role("button", name="Mark entered").click()
+        hidden(dialog)
+        form = QueryDict(posted[0])
+        assert form.getlist("zone") == [zone]
+        assert bulk_values(form)[1] == BULK_KEY
+        assert not failures
+    finally:
+        context.close()
