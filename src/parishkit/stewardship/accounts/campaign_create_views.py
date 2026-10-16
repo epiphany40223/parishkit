@@ -38,6 +38,7 @@ window makes the next scheduled quick update run as a full refresh (see
 from uuid import uuid4
 
 from django.core import signing
+from django.core.exceptions import ValidationError
 from django.db import DatabaseError
 from django.shortcuts import render
 from django.urls import reverse
@@ -254,7 +255,12 @@ def creation_review(service, actor, state, form):
     try:
         build_candidate(base, patch, candidate_id=uuid4())
     except ConfigError:
-        form.add_error(None, _("Check the campaign name and dates."))
+        form.add_error(
+            None,
+            ValidationError(
+                _("Check the campaign name and dates."), code="candidate_refused"
+            ),
+        )
         return None
     return {
         # Worked out here, from the modules chosen: the page does not show it.

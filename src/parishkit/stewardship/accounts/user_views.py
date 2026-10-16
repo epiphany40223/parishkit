@@ -506,7 +506,10 @@ def _refuse(form, refused):
         raise UserFacingError(
             _refusal_message(refused), fix=_("Nothing was changed.")
         ) from None
-    form.add_error(refused.field, _refusal_message(refused))
+    form.add_error(
+        refused.field,
+        forms.ValidationError(_refusal_message(refused), code=refused.code),
+    )
 
 
 def _refusal_message(refused):

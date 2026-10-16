@@ -107,7 +107,9 @@ class SourceChoices(forms.MultipleChoiceField):
         """Reject repeated IDs rather than silently changing the submitted intent."""
         values = super().clean(value)
         if len(set(values)) != len(values):
-            raise forms.ValidationError(_("Select each item only once."))
+            raise forms.ValidationError(
+                _("Select each item only once."), code="repeated"
+            )
         return sorted(int(item) for item in values)
 
 
@@ -126,7 +128,9 @@ class LeaderRoleChoices(forms.MultipleChoiceField):
         """Refuse repeats, even in another case, and store the canonical order."""
         values = super().clean(value)
         if len({leader_role_key(name) for name in values}) != len(values):
-            raise forms.ValidationError(_("Select each role only once."))
+            raise forms.ValidationError(
+                _("Select each role only once."), code="repeated"
+            )
         return canonical_roles(values)
 
 
@@ -273,7 +277,11 @@ class CampaignForm(AdminForm):
         found = False
         if data["end_date"] <= data["start_date"]:
             self.add_error(
-                "end_date", _("The campaign end date must be after its start date.")
+                "end_date",
+                forms.ValidationError(
+                    _("The campaign end date must be after its start date."),
+                    code="end_before_start",
+                ),
             )
             found = True
         if data["financial_enabled"]:
@@ -281,17 +289,25 @@ class CampaignForm(AdminForm):
                 try:
                     expected = financial_period_end(data[start])
                 except (ValueError, OverflowError):
-                    self.add_error(start, _("Choose an earlier start date."))
+                    self.add_error(
+                        start,
+                        forms.ValidationError(
+                            _("Choose an earlier start date."), code="out_of_range"
+                        ),
+                    )
                     found = True
                     continue
                 if data[end] != expected:
                     self.add_error(
                         end,
-                        _(
-                            "A financial period spans exactly one year: with this "
-                            "start, it ends on %(date)s."
-                        )
-                        % {"date": parish_date(expected)},
+                        forms.ValidationError(
+                            _(
+                                "A financial period spans exactly one year: with this "
+                                "start, it ends on %(date)s."
+                            )
+                            % {"date": parish_date(expected)},
+                            code="financial_period_length",
+                        ),
                     )
                     found = True
         return found
@@ -332,21 +348,33 @@ class CampaignForm(AdminForm):
         if self.errors:
             return data
         if not any(data[name] for name in ("census", "ministry", "financial_enabled")):
-            raise forms.ValidationError(_("Enable at least one campaign module."))
+            raise forms.ValidationError(
+                _("Enable at least one campaign module."), code="choose_one"
+            )
         if not data["ministry"] and data["ministry_duids"]:
             self.add_error(
-                "ministry_duids", _("Enable Ministry stewardship to select Ministries.")
+                "ministry_duids",
+                forms.ValidationError(
+                    _("Enable Ministry stewardship to select Ministries."),
+                    code="module_disabled",
+                ),
             )
         financial_fields = (*FINANCIAL_REQUIRED, "overlap_confirmed")
         if not data["financial_enabled"]:
             if any(data[name] for name in financial_fields):
                 raise forms.ValidationError(
-                    _("Financial settings require financial stewardship.")
+                    _("Financial settings require financial stewardship."),
+                    code="module_disabled",
                 )
         else:
             for name in FINANCIAL_REQUIRED:
                 if not data[name]:
-                    self.add_error(name, _("Required for financial stewardship."))
+                    self.add_error(
+                        name,
+                        forms.ValidationError(
+                            _("Required for financial stewardship."), code="required"
+                        ),
+                    )
             if (
                 not self.errors
                 and self.whole
@@ -360,9 +388,12 @@ class CampaignForm(AdminForm):
             ):
                 self.add_error(
                     "overlap_confirmed",
-                    _(
-                        "The upcoming financial period overlaps the campaign "
-                        "dates. Check this box to confirm that is intended."
+                    forms.ValidationError(
+                        _(
+                            "The upcoming financial period overlaps the campaign "
+                            "dates. Check this box to confirm that is intended."
+                        ),
+                        code="overlap_unconfirmed",
                     ),
                 )
         if not self.errors and self.whole and not self._date_errors(data):
@@ -374,7 +405,8 @@ class CampaignForm(AdminForm):
                         "Check the campaign dates and settings. The end date must "
                         "follow the start date; each financial period must span "
                         "exactly one year. Confirm any campaign overlap."
-                    )
+                    ),
+                    code="invalid_campaign",
                 ) from None
         return data
 
@@ -510,7 +542,12 @@ class CampaignSettingsForm(CampaignForm):
             and data.get("ministry")
             and not data.get("ministry_leader_roles")
         ):
-            self.add_error("ministry_leader_roles", _("Choose at least one role."))
+            self.add_error(
+                "ministry_leader_roles",
+                forms.ValidationError(
+                    _("Choose at least one role."), code="choose_one"
+                ),
+            )
         return data
 
     def values(self):

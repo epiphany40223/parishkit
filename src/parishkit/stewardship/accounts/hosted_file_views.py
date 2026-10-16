@@ -329,7 +329,12 @@ def upload(request):
                 )
             except (FileRefused, hosted_files.HostedFileError) as refusal:
                 field = "slug" if refusal.reason.startswith("slug") else "file"
-                form.add_error(field, str(REFUSALS[refusal.reason]))
+                form.add_error(
+                    field,
+                    forms.ValidationError(
+                        str(REFUSALS[refusal.reason]), code=refusal.reason
+                    ),
+                )
             else:
                 return _no_store(
                     HttpResponseRedirect(
@@ -428,7 +433,12 @@ def rename(request, file_id):
                 except hosted_files.HostedFileError as refusal:
                     uses = list(refusal.uses) or uses
                     if refusal.reason != "in_use":
-                        form.add_error("slug", str(REFUSALS[refusal.reason]))
+                        form.add_error(
+                            "slug",
+                            forms.ValidationError(
+                                str(REFUSALS[refusal.reason]), code=refusal.reason
+                            ),
+                        )
                 else:
                     return _no_store(
                         HttpResponseRedirect(reverse("admin:hosted_files"))

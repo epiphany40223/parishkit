@@ -244,7 +244,9 @@ class ArtworkForm(AdminForm):
         """Size is an early bound; signature, pixels and animation are checked next."""
         value = self.cleaned_data["image"]
         if not 0 < value.size <= MAX_IMAGE_BYTES:
-            raise forms.ValidationError(_("Choose an image no larger than 5 MB."))
+            raise forms.ValidationError(
+                _("Choose an image no larger than 5 MB."), code="too_large"
+            )
         return value
 
 
@@ -538,12 +540,17 @@ def artwork_upload(request, campaign_id, slot):
             # The page shows this upload unavailable; a request that skips it
             # is refused at the field like any other upload error (#563).
             form.is_valid()
-            form.add_error("image", reason)
+            form.add_error("image", forms.ValidationError(reason, code="not_available"))
         elif form.is_valid():
             try:
                 graphics = prepare_artwork(form.cleaned_data["image"], _kind(slot))
             except ValueError:
-                form.add_error("image", NOT_STATIC_IMAGE[_kind(slot)])
+                form.add_error(
+                    "image",
+                    forms.ValidationError(
+                        NOT_STATIC_IMAGE[_kind(slot)], code="unsupported_image"
+                    ),
+                )
             else:
                 try:
                     identifier = stage_branding(

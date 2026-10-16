@@ -9,6 +9,7 @@ reading anything. The rest of this module stays, unreachable, until #145.
 from uuid import UUID, uuid4
 
 from django.core import signing
+from django.core.exceptions import ValidationError
 from django.db import DatabaseError
 from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
@@ -93,7 +94,13 @@ def _preview(
         raise stale_page()
     parish = document_parish(configuration.active_configuration.canonical_document)
     if values["timezone"] != parish["timezone"]:
-        form.add_error("timezone", "A new campaign must start in the Parish timezone.")
+        form.add_error(
+            "timezone",
+            ValidationError(
+                "A new campaign must start in the Parish timezone.",
+                code="not_parish_zone",
+            ),
+        )
         return _page(request, source, form, schedules, seed, status=400)
     base = service.store.active()
     if base is None or base.digest != configuration.active_configuration.digest:
@@ -124,10 +131,13 @@ def _preview(
     except (ConfigError, ValueError):
         form.add_error(
             None,
-            "Check the new name, dates and schedules. Reminders must follow one "
-            "initial mailing. Clones are limited to 100 configuration records and "
-            "the preview size limit; larger campaigns can start empty and add "
-            "content in smaller requests.",
+            ValidationError(
+                "Check the new name, dates and schedules. Reminders must follow one "
+                "initial mailing. Clones are limited to 100 configuration records and "
+                "the preview size limit; larger campaigns can start empty and add "
+                "content in smaller requests.",
+                code="candidate_refused",
+            ),
         )
         return _page(request, source, form, schedules, seed, status=400)
     admin_navigation.place(request, flow="change", step="review")

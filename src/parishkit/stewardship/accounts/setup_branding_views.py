@@ -66,7 +66,8 @@ class SetupLogoForm(LogoForm):
             return None
         if value.size > MAX_IMAGE_BYTES:
             raise forms.ValidationError(
-                str(LOGO_TOO_LARGE).replace("{size}", file_size(value.size))
+                str(LOGO_TOO_LARGE).replace("{size}", file_size(value.size)),
+                code="too_large",
             )
         return super().clean_logo()
 
@@ -117,7 +118,11 @@ def setup_branding(request):
                     graphics = prepare_graphics(form.cleaned_data["logo"])
                 except ValueError:
                     form.add_error(
-                        "logo", _("Choose a supported, bounded static image.")
+                        "logo",
+                        forms.ValidationError(
+                            _("Choose a supported, bounded static image."),
+                            code="unsupported_image",
+                        ),
                     )
                 else:
                     identifier = stage_branding(

@@ -125,7 +125,9 @@ class LogoForm(AdminForm):
         """Size is an early bound; signature, pixels and animation are checked next."""
         value = self.cleaned_data["logo"]
         if not 0 < value.size <= MAX_IMAGE_BYTES:
-            raise forms.ValidationError(_("Choose an image no larger than 5 MB."))
+            raise forms.ValidationError(
+                _("Choose an image no larger than 5 MB."), code="too_large"
+            )
         return value
 
 
@@ -243,10 +245,13 @@ class LogoUploadForm(LogoForm):
             return None
         value = self.cleaned_data.get("logo")
         if value is None:
-            raise forms.ValidationError(self.fields["logo"].error_messages["required"])
+            raise forms.ValidationError(
+                self.fields["logo"].error_messages["required"], code="required"
+            )
         if value.size > MAX_IMAGE_BYTES:
             raise forms.ValidationError(
-                str(LOGO_TOO_LARGE).replace("{size}", file_size(value.size))
+                str(LOGO_TOO_LARGE).replace("{size}", file_size(value.size)),
+                code="too_large",
             )
         return super().clean_logo()
 
@@ -264,14 +269,21 @@ class LogoUploadForm(LogoForm):
         chosen = {name: values.get(name) for name in SLOTS if values.get(name)}
         if not chosen:
             self.add_error(
-                "large", _("Choose an image for at least one size to upload.")
+                "large",
+                forms.ValidationError(
+                    _("Choose an image for at least one size to upload."),
+                    code="choose_one",
+                ),
             )
             return values
         total = sum(item.size for item in chosen.values())
         if total > MAX_TOTAL_BYTES:
             self.add_error(
                 next(iter(chosen)),
-                str(self.max_total_message).replace("{size}", file_size(total)),
+                forms.ValidationError(
+                    str(self.max_total_message).replace("{size}", file_size(total)),
+                    code="total_too_large",
+                ),
             )
             return values
         sizes = {}
@@ -349,12 +361,23 @@ def _upload(request, service):
                     form.cleaned_data["sizes"], active.parish, media_root()
                 )
             except MissingSlot as missing:
-                form.add_error(missing.slot, missing_message(missing.slot))
+                form.add_error(
+                    missing.slot,
+                    forms.ValidationError(
+                        missing_message(missing.slot), code="missing_size"
+                    ),
+                )
         else:
             try:
                 graphics = prepare_graphics(form.cleaned_data["logo"])
             except ValueError:
-                form.add_error("logo", _("Choose a supported, bounded static image."))
+                form.add_error(
+                    "logo",
+                    forms.ValidationError(
+                        _("Choose a supported, bounded static image."),
+                        code="unsupported_image",
+                    ),
+                )
         if graphics is not None:
             identifier = stage_branding(
                 request,
