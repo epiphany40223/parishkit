@@ -43,8 +43,8 @@ AXE = """async () => (await axe.run(document, {
 # one-word "Join" in a join request's Request cell, whatever the engine's
 # font; a two-line row stays under three.
 ROWS = """() => {
-    const rows = [...document.querySelectorAll('tbody tr')];
-    const cell = [...document.querySelectorAll('tbody td')].find(
+    const rows = [...document.querySelectorAll('#followup-table tbody tr')];
+    const cell = [...document.querySelectorAll('#followup-table tbody td')].find(
         (td) => td.textContent.trim() === 'Join');
     const range = document.createRange();
     range.selectNodeContents(cell);
@@ -59,8 +59,9 @@ ROWS = """() => {
     };
 }"""
 # Each Ministry name's text and whether it is cut short (#1136).
-MINISTRY_NAMES = """() => [...document.querySelectorAll('tbody .cell-clamp')]
-    .map((name) => [
+MINISTRY_NAMES = """() => [
+    ...document.querySelectorAll('#followup-table tbody .cell-clamp')
+].map((name) => [
         name.textContent,
         name.scrollHeight > name.clientHeight + 1
             || name.scrollWidth > name.clientWidth + 1,
@@ -119,13 +120,15 @@ def test_queue_cells_hold_one_short_value(page, component_origin):
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + PAGE)
     # The first cell is the bulk outcome selection box (#1131).
-    cells = page.locator("tbody tr").nth(0).locator("th, td")
+    cells = page.locator("#followup-table tbody tr").nth(0).locator("th, td")
     assert cells.nth(4).inner_text() == "Leave (cannot participate)"
     marker = cells.nth(4).locator("span[title]")
     assert marker.get_attribute("title") == (
         "Cannot participate in any ministries (physical limitations)"
     )
-    statuses = page.locator("tbody tr td:nth-child(6)").all_inner_texts()
+    statuses = page.locator(
+        "#followup-table tbody tr td:nth-child(6)"
+    ).all_inner_texts()
     assert "Resolved: Declined / no longer interested" in statuses
     assert "Resolved: Joined the Ministry" in statuses
     # A leave request resolved as declined reads Stayed (#1132).
@@ -135,7 +138,7 @@ def test_queue_cells_hold_one_short_value(page, component_origin):
     assert not any("No response" in text for text in statuses)
     # The Ministry removed from the campaign (row 7) carries its badge,
     # whose words a screen reader hears in full.
-    removed = page.locator("tbody tr").nth(6).locator("td").nth(2)
+    removed = page.locator("#followup-table tbody tr").nth(6).locator("td").nth(2)
     badge = removed.locator(".status-badge")
     # The tooltip is on the visible word, which screen readers skip, so the
     # sentence is announced once.
@@ -146,7 +149,13 @@ def test_queue_cells_hold_one_short_value(page, component_origin):
         "No longer in this campaign"
     )
     # Last contact uses the compact form: no "at" and no time zone name.
-    contact = page.locator("tbody tr").nth(1).locator("td").nth(5).inner_text()
+    contact = (
+        page.locator("#followup-table tbody tr")
+        .nth(1)
+        .locator("td")
+        .nth(5)
+        .inner_text()
+    )
     assert contact.startswith("Sep") and " at " not in contact
     assert not contact.endswith(("PDT", "PST"))
 
@@ -173,7 +182,7 @@ def test_queue_clipped_member_name_tip(page, component_origin):
 
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + PAGE)
-    link = page.locator("tbody tr").nth(0).locator("th a")
+    link = page.locator("#followup-table tbody tr").nth(0).locator("th a")
     whole = "Member0 Bartholomew-Fitzgerald <Example>"
     assert link.text_content() == whole
     assert link.get_attribute("title") is None
@@ -193,7 +202,7 @@ def test_queue_clipped_name_tip_can_be_hovered(page, component_origin):
 
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + PAGE)
-    link = page.locator("tbody tr").nth(0).locator("th a")
+    link = page.locator("#followup-table tbody tr").nth(0).locator("th a")
     link.hover()
     tip = page.locator(".admin-tip.is-shown")
     expect(tip).to_have_text("Member0 Bartholomew-Fitzgerald <Example>")
@@ -234,7 +243,9 @@ def test_queue_is_one_column_at_phone_width(page, component_origin, axe_source):
     rows = page.evaluate(ROWS)
     assert max(short_rows(rows)) < rows["oneLine"], rows
     assert max(rows["heights"]) < rows["twoLines"], rows
-    assert page.locator(".table-scroll").evaluate("e => e.scrollWidth > e.clientWidth")
+    assert page.locator("#followup-table").evaluate(
+        "e => e.scrollWidth > e.clientWidth"
+    )
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
 
@@ -257,14 +268,14 @@ def test_queue_filters_stay_put_when_applied_in_place(page, component_origin):
     before = page.evaluate(layout)
     body = page.request.get(component_origin + "/followup-queue").text()
     page.route(
-        "**/follow-up/",
+        "**/reports/ministries/",
         lambda route: route.fulfill(content_type="text/html; charset=utf-8", body=body),
     )
     page.evaluate("document.querySelector('h1').dataset.mark = 'kept'")
     page.get_by_role("button", name="Apply filters").click()
     # A locator wait, not wait_for_function: the page's CSP refuses the eval
     # that wait_for_function re-polls with when the answer is not in yet.
-    expect(page.locator("tbody tr")).to_have_count(1)
+    expect(page.locator("#followup-table tbody tr")).to_have_count(1)
     # Applied in place: a full page load would have lost the mark.
     assert page.evaluate("document.querySelector('h1').dataset.mark") == "kept"
     after = page.evaluate(layout)

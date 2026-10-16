@@ -117,12 +117,12 @@ def test_steps_follow_the_viewers_menu():
 def test_active_and_paused_steps_carry_the_open_counts():
     """The queues show their open counts; Outgoing mail filters to the emails
     that may not have arrived while there are some; paused mail comes first."""
-    entries = menu(counts={"information_queue": 3, "ministry_followup": 0})
+    entries = menu(counts={"information_queue": 3, "ministry_report": 0})
     active = home_steps.next_steps("active", "administrator", entries, mail_unknown=2)
     assert labels(active) == [
         "Response dashboard",
         "Additional information",
-        "Ministry follow-up",
+        "Ministry requests",
         "Family email progress",
         "Outgoing mail",
     ]
@@ -138,10 +138,10 @@ def test_active_and_paused_steps_carry_the_open_counts():
     assert labels(home_steps.next_steps("paused", "staff", entries)) == [
         "Response dashboard",
         "Additional information",
-        "Ministry follow-up",
+        "Ministry requests",
     ]
     leader = home_steps.next_steps("active", "ministry_leader", entries)
-    assert labels(leader) == ["Ministry requests", "Ministry follow-up"]
+    assert labels(leader) == ["Ministry requests"]
 
 
 def test_greyed_queue_shows_no_count():
@@ -216,7 +216,7 @@ def test_home_returns_nothing_without_a_campaign_or_chrome():
 def test_template_links_available_steps_and_names_greyed_ones():
     """The panel links what the menu offers, writes the reason for the rest,
     and leads with the Today line."""
-    entries = menu(greyed={"ministry_followup"}, counts={"information_queue": 5})
+    entries = menu(greyed={"ministry_report"}, counts={"information_queue": 5})
     context = {
         "admin_chrome": {
             "sections": [{"items": list(entries.values())}],
@@ -230,7 +230,7 @@ def test_template_links_available_steps_and_names_greyed_ones():
     assert "data-next-steps" in html and ">Next steps</h2>" in html
     assert "Today: 1 Family responded in the past 24 hours." in html
     assert '<a href="/information_queue/">Additional information</a> — 5 open' in html
-    assert f"Ministry follow-up — {navigation.NO_CAMPAIGN}" in html
+    assert f"Ministry requests — {navigation.NO_CAMPAIGN}" in html
     assert (
         '<a href="/deliveries/?state=delivery_unknown">Outgoing mail</a>'
         " — 1 may not have arrived"

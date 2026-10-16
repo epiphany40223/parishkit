@@ -9,13 +9,11 @@ from django.utils.datastructures import MultiValueDict
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.accounts.policy import Capability, allows
-from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.dates import UnknownZone
-from parishkit.stewardship.web.presentation import out_of
 from parishkit.stewardship.web.refusals import UserFacingDenied
 from parishkit.stewardship.web.tables import PAGE_SIZES, Sorting
 
@@ -210,53 +208,6 @@ class MinistryQuery:
         return int(self.size)
 
 
-# The summary counts added up across Ministries for the page's totals (#720).
-TOTALS = ("joining", "leaving", "unresolved", "completed", "requests")
-
-
-def summary_totals(summaries):
-    """Each summary count added up across ``summaries`` (#720).
-
-    The page passes every Ministry matching the search, not one page of the
-    table, so its tiles and follow-up chart describe the whole selection.
-    Each row's counts are already the latest live requests only, so the
-    totals count each request once.
-    """
-    return {key: sum(row[key] for row in summaries) for key in TOTALS}
-
-
-def matching_summaries(result, query, read_every):
-    """Every summary row matching the query's search, whatever page is shown.
-
-    A page that already holds every matching row is reused; otherwise
-    ``read_every(query)`` reads the whole matching summary once more,
-    through the same role-scoped selection.
-    """
-    if result["total"] > len(result["summaries"]):
-        return read_every(query)["summaries"]
-    return result["summaries"]
-
-
-def packet_choices(result, query, read_every):
-    """Every Ministry the packet may include, by name, whatever the table shows.
-
-    The packet takes no report filters, so its choices are the reader's
-    whole summary scope (#533), not the page of rows shown: a leader of
-    many Ministries can tick a few from different pages, and paging,
-    sorting or searching the table leaves the ticks alone. When this page
-    already holds the unfiltered summary in full (the usual case for a
-    leader), it is reused; otherwise ``read_every()`` reads the whole
-    unfiltered summary once, through the same scoped selection.
-    """
-    summaries = result["summaries"]
-    if query.search or result["total"] > len(summaries):
-        summaries = read_every()["summaries"]
-    return sorted(
-        ({"duid": row["duid"], "name": row["name"]} for row in summaries),
-        key=lambda row: (row["name"].lower(), row["duid"]),
-    )
-
-
 def reads_every_ministry(principal):
     """Whether ``principal`` reads every Ministry: Staff or an Administrator.
 
@@ -437,10 +388,6 @@ def ministry_page(
         # A filter can legitimately hide a selected Ministry; never turn an
         # empty result into a broader fallback scope.
         result["rows"] = []
-    for summary in result["summaries"]:
-        summary["progress"] = out_of(
-            Percentage(summary["completed"], summary["requests"])
-        )
     for row in result["rows"]:
         row["submitted_at"] = datetime.fromisoformat(row["submitted_at"])
         row["state_label"] = STATE_LABELS[row["state"]]

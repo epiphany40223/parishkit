@@ -559,9 +559,16 @@ def test_ministry_followup_draws_each_state_against_all_requests():
     )
 
 
-def test_ministry_followup_without_requests_draws_nothing():
-    """No request means no progress to draw, not a chart of empty bars."""
-    totals = dict.fromkeys(
+def test_ministry_followup_without_progress_draws_zero_bars():
+    """With no request, or no progress at all (Members no longer in
+    ParishSoft), the chart still draws, its bars at zero, so its box never
+    appears or disappears under the reader (no layout shift, #736)."""
+    empty = dict.fromkeys(
         ("joining", "leaving", "unresolved", "completed", "requests"), 0
     )
-    assert ministry_followup(totals) is None
+    gone = {"joining": 2, "leaving": 1, "requests": None}
+    for totals in (empty, gone):
+        chart = ministry_followup(totals)
+        assert chart.key == "ministry-followup"
+        assert [row["count"] for row in chart.spec["data"]["values"]] == [0, 0]
+        assert chart.spec["encoding"]["x"]["scale"]["domain"] == [0, 1]

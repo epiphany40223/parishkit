@@ -11,7 +11,7 @@ pytestmark = pytest.mark.parametrize(
 AXE = """async () => (await axe.run(document, {
   runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']}
 })).violations.map(({id,impact}) => ({id,impact}))"""
-QUEUE = "/admin/reports/ministries/follow-up/"
+QUEUE = "/admin/reports/ministries/"
 # Lines an element's text takes: its height over its line height.
 LINES = """e => {
   const style = getComputedStyle(e);
@@ -59,7 +59,7 @@ def test_my_ministries_reads_on_a_phone_and_links_each_queue(
         "no longer in this campaign"
     )
     expect(
-        panel.get_by_role("link", name="Ministry follow-up", exact=True)
+        panel.get_by_role("link", name="Ministry requests", exact=True)
     ).to_have_attribute("href", QUEUE)
     expect(
         panel.get_by_role("link", name="Follow-up packet for my Ministries")
@@ -69,5 +69,7 @@ def test_my_ministries_reads_on_a_phone_and_links_each_queue(
         page.get_by_text("None of your Ministries is part of the current campaign.")
     ).to_be_visible()
     expect(
-        page.get_by_role("link", name="Ministry follow-up", exact=True)
+        page.locator("[data-my-ministries]").get_by_role(
+            "link", name="Ministry requests", exact=True
+        )
     ).to_be_visible()

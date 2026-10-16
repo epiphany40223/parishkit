@@ -598,7 +598,7 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
     browser, head, _, _ = leader(harness, google)
     admin = user("admin@example.org").pk
     join, leave = requests()
-    route = reverse("admin:ministry_followup")
+    route = reverse("admin:ministry_report")
     absent = (
         b'name="selected"',
         b"Assign selected",
@@ -1119,16 +1119,16 @@ def test_menu_shows_open_follow_up_counts_scoped_to_the_viewer(
     join, leave = requests()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         body = get(admin_browser, "/admin/")[1]
-        assert _menu_count(body, "Ministry follow-up") == 2
+        assert _menu_count(body, "Ministry requests") == 2
         # This Family wrote no additional information, so nothing is open.
         assert b"Additional information <span" not in body
-        assert _menu_count(get(browser, "/admin/")[1], "Ministry follow-up") == 1
+        assert _menu_count(get(browser, "/admin/")[1], "Ministry requests") == 1
     edit(harness, admin, join, state="resolved", outcome="joined")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        assert _menu_count(get(admin_browser, "/admin/")[1], "Ministry follow-up") == 1
+        assert _menu_count(get(admin_browser, "/admin/")[1], "Ministry requests") == 1
         body = get(browser, "/admin/")[1]
-        assert b">Ministry follow-up</a>" in body
-        assert _menu_count(body, "Ministry follow-up") is None
+        assert b">Ministry requests</a>" in body
+        assert _menu_count(body, "Ministry requests") is None
     # Additional information counts the Family's current, uncompleted request;
     # a Ministry leader has no Additional information entry at all.
     form = revisit(harness)
@@ -1179,12 +1179,12 @@ def test_a_leaders_open_count_costs_the_chrome_one_query(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         monkeypatch.setitem(family_maintenance._cache, "at", None)
         body = get(browser, "/admin/")[1]
-        assert _menu_count(body, "Ministry follow-up") == 1
+        assert _menu_count(body, "Ministry requests") == 1
         with monkeypatch.context() as patched:
             patched.setattr(admin_context, "_open_counts", lambda *args: {})
             patched.setitem(family_maintenance._cache, "at", None)
             body = get(browser, "/admin/")[1]
-            assert _menu_count(body, "Ministry follow-up") is None
+            assert _menu_count(body, "Ministry requests") is None
     counts, plain = runs
     assert len(counts) == len(plain) + 1, (counts, plain)
     marker = "stewardship_ministry_followup_v2"
@@ -1203,14 +1203,14 @@ def test_menu_ministry_count_applies_the_follow_up_pages_filters(response_servic
     from parishkit.stewardship.accounts import admin_context
 
     harness = setup(response_service)
-    items = [SimpleNamespace(name="ministry_followup", url="/admin/follow-up/")]
+    items = [SimpleNamespace(name="ministry_report", url="/admin/follow-up/")]
 
     def count(principal, campaign_id=harness.campaign.pk):
         """The menu's count for ``principal``, read as the web role reads it."""
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             return admin_context._open_counts(
                 SimpleNamespace(), principal, items, SimpleNamespace(pk=campaign_id)
-            ).get("ministry_followup")
+            ).get("ministry_report")
 
     staff = actor(harness, ("staff",), ())
     own = actor(harness, ("ministry_leader",), (9,))
@@ -1267,11 +1267,11 @@ def test_a_failing_menu_count_leaves_the_page_and_transaction_usable(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = get(admin_browser, "/admin/")
         assert response.status_code == 200
-        assert b">Ministry follow-up</a>" in body
+        assert b">Ministry requests</a>" in body
         assert b"admin-menu-count" not in body
         # Read inside one transaction, as an owning view would: the failed
         # count rolls back only its savepoint.
-        items = [SimpleNamespace(name="ministry_followup", url="/admin/follow-up/")]
+        items = [SimpleNamespace(name="ministry_report", url="/admin/follow-up/")]
         with transaction.atomic():
             counts = admin_context._open_counts(
                 SimpleNamespace(), staff, items, SimpleNamespace(pk=harness.campaign.pk)
@@ -1325,7 +1325,7 @@ def test_users_read_through_the_actor_and_domain_rules_grant_nothing(
     assert staff.roles == {"staff"} and not staff.ministries
     assert head.roles == {"ministry_leader"} and head.ministries == {9}
     administrator = actor(harness, ("administrator",), ())
-    items = [SimpleNamespace(name="ministry_followup", url="/admin/follow-up/")]
+    items = [SimpleNamespace(name="ministry_report", url="/admin/follow-up/")]
     for principal, duids, total in (
         (staff, [4, 9], 2),
         (administrator, [4, 9], 2),
@@ -1345,7 +1345,7 @@ def test_users_read_through_the_actor_and_domain_rules_grant_nothing(
         assert summary["authorization_scope"]["operational"] is (principal is not head)
         assert [row["duid"] for row in summary["summaries"]] == duids
         assert sorted(row["ministry_duid"] for row in queue["rows"]) == duids
-        assert queue["total"] == total and counts == {"ministry_followup": total}
+        assert queue["total"] == total and counts == {"ministry_report": total}
         if principal is head:
             assert [(m["duid"], m["join"]) for m in mine["ministries"]] == [(9, 1)]
     # A proven domain identity with no user: SQL reads only users, so even
@@ -1490,7 +1490,7 @@ def test_bulk_outcome_route_refuses_in_the_dialog_and_marks_history(
     browser, head, _, _ = leader(harness, google)
     join, leave = requests()
     route = reverse("admin:ministry_followup_bulk")
-    queue = reverse("admin:ministry_followup")
+    queue = reverse("admin:ministry_report")
     form = {
         "outcome": "join:joined",
         "bulk_key": str(uuid4()),
@@ -1618,7 +1618,7 @@ def test_requests_for_members_no_longer_in_parishsoft_leave_leaders_work(
     staff = Principal(admin, frozenset({"staff"}), frozenset())
     scoped = Principal(head, frozenset({"ministry_leader"}), frozenset({9}))
     join, leave = requests()
-    items = [SimpleNamespace(name="ministry_followup", url="/admin/follow-up/")]
+    items = [SimpleNamespace(name="ministry_report", url="/admin/follow-up/")]
 
     def counts(principal):
         """The menu count and, for the leader, My Ministries' join count."""
@@ -1628,7 +1628,7 @@ def test_requests_for_members_no_longer_in_parishsoft_leave_leaders_work(
         ):
             menu = admin_context._open_counts(
                 SimpleNamespace(), principal, items, harness.campaign
-            )["ministry_followup"]
+            )["ministry_report"]
             mine = my_ministries(harness.campaign.pk, principal)
         listed = (mine or {}).get("ministries", [])
         return menu, [(entry["duid"], entry["join"]) for entry in listed]
@@ -1749,7 +1749,7 @@ def test_queue_pages_mark_and_refuse_members_no_longer_in_parishsoft(
     harness = setup(response_service)
     browser, _, _, _ = leader(harness, google)
     join, leave = requests()
-    route = reverse("admin:ministry_followup")
+    route = reverse("admin:ministry_report")
     bulk_route = reverse("admin:ministry_followup_bulk")
     option = b'<option value="not_in_parishsoft"'
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -1850,7 +1850,7 @@ def test_save_and_next_skips_members_no_longer_in_parishsoft(response_service, g
         ).values_list("pk", flat=True)
     }
     browser, _, _, _ = leader(harness, google, roles=("staff",))
-    route = reverse("admin:ministry_followup")
+    route = reverse("admin:ministry_report")
     item = reverse("admin:ministry_followup_item", args=[proposed.pk])
 
     def following():

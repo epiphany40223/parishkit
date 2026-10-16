@@ -388,7 +388,7 @@ def test_a_ruled_leader_who_leads_nothing_is_told_so(response_service, google):
     claims.update(email="ruleonly@example.org", hd=OMIT, sub="rule-only-subject")
     client, response = signed_in()
     assert response.status_code == 302
-    for name in ("ministry_report", "ministry_followup", "reports"):
+    for name in ("ministry_report", "reports"):
         response = client.get(reverse(f"admin:{name}"), HTTP_ACCEPT="text/html")
         body = unescape(response.content.decode())
         assert response.status_code == 403, name
