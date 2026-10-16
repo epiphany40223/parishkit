@@ -28,6 +28,7 @@ from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import report_table
 
+from .chart_specs import information_followup
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .information import (
@@ -283,6 +284,11 @@ def _page_response(request, campaign_id, *, item_id=None):
                 next_history=history_page + 1 if more_history else None,
                 request_key=uuid4(),
                 export_timezones=sorted(timezone_names()) if not item_id else (),
+                # Every matching request by follow-up state, counted by the
+                # same selection as the total, not just this page (#720).
+                followup_chart=None
+                if item_id
+                else information_followup(result["counts"], result["total"]),
                 table=None
                 if item_id
                 else report_table(
