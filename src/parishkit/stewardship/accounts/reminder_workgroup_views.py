@@ -51,6 +51,7 @@ from parishkit.stewardship.source.workgroups import (
     snapshot_evidence,
 )
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import UserFacingError, stale_page
 
@@ -73,7 +74,7 @@ from .sessions import authenticated_admin
 SALT = "stewardship-reminder-workgroup-preview-v1:"
 
 
-class WorkGroupForm(forms.Form):
+class WorkGroupForm(AdminForm):
     """The WorkGroup name, trimmed; empty turns the setting off."""
 
     name = forms.CharField(

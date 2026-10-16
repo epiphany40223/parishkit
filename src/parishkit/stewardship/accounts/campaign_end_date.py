@@ -19,6 +19,7 @@ from django.urls import reverse
 from django.utils.http import urlencode
 from django.utils.translation import gettext_lazy as _
 
+from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.presentation import parish_date
 from parishkit.stewardship.web.refusals import Refusal, UserFacingStale, stale_page
 
@@ -56,7 +57,7 @@ CHECK_FAILED = _(
 SIGNED_OUT = _("Your sign-in has ended. Sign in again, then reload the page.")
 
 
-class LiveEndDateForm(forms.Form):
+class LiveEndDateForm(AdminForm):
     """The one date a live campaign may still change, against the applied digest."""
 
     end_date = forms.DateField(

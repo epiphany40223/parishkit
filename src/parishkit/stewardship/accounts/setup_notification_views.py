@@ -11,6 +11,7 @@ from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
+from parishkit.stewardship.web.admin_forms import AdminForm
 
 from .authentication import runtime
 from .setup_drafts import view_draft
@@ -32,7 +33,7 @@ SLACK_LABELS = LABELS | {
 EMPTY = _("No test has been requested yet. Select Send Slack test below to send one.")
 
 
-class SetupNotificationForm(forms.Form):
+class SetupNotificationForm(AdminForm):
     """Only explicit intent and uncertainty acknowledgement are client inputs."""
 
     preview_token = forms.CharField(max_length=4096, widget=forms.HiddenInput)

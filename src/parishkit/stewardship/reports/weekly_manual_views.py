@@ -23,13 +23,14 @@ from parishkit.stewardship.jobs.delivery_views import (
 )
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
+from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.security import private_response
 
 from .weekly_manual import request_manual_report
 
 
-class ManualReportForm(forms.Form):
+class ManualReportForm(AdminForm):
     """No caller-selected recipients, report data, task identifiers or schedule."""
 
     command_id = forms.UUIDField(widget=forms.HiddenInput)

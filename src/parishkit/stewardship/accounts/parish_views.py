@@ -14,6 +14,7 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.schema_primitives import canonical_timezone, typed
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web import dates
+from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.presentation import parse_us_phone, phone
 from parishkit.stewardship.web.refusals import UserFacingError, stale_page
@@ -86,7 +87,7 @@ class PhoneField(forms.CharField):
             ) from None
 
 
-class ParishForm(forms.Form):
+class ParishForm(AdminForm):
     """The profile form cannot modify branding, runtime mode or campaign snapshots."""
 
     name = forms.CharField(label=_("Parish name"), max_length=254)

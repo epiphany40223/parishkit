@@ -40,7 +40,7 @@ from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from django import forms
-from django.forms import BaseFormSet, formset_factory
+from django.forms import formset_factory
 from django.utils.translation import gettext, ngettext, ngettext_lazy
 from django.utils.translation import gettext_lazy as _
 
@@ -61,6 +61,7 @@ from parishkit.stewardship.source.refresh_rules import (
     valid_shape,
 )
 from parishkit.stewardship.wall_clock import WEEKDAYS, hhmm, wall_hhmm
+from parishkit.stewardship.web.admin_forms import AdminForm, AdminFormSet
 from parishkit.stewardship.web.time_entry_fields import FlexibleTimeField
 
 from .refresh_schedule_grid import HOURS, grid_rows, legend
@@ -244,7 +245,7 @@ def _off_quarter(value):
     return minutes(value) % SPACING != 0
 
 
-class _Row(forms.Form):
+class _Row(AdminForm):
     """Shared row behavior: kept times and the quarter-hour rule at each field."""
 
     def __init__(self, *args, kept=frozenset(), **kwargs):
@@ -378,7 +379,7 @@ class SkipForm(_Row):
         return data
 
 
-class RowSet(BaseFormSet):
+class RowSet(AdminFormSet):
     """Every posted row is checked: an unchanged blank row is a problem too.
 
     Django leaves an unchanged extra row unvalidated (``empty_permitted``);

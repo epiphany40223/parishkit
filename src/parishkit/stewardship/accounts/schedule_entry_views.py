@@ -58,6 +58,7 @@ from parishkit.stewardship.campaigns.work_locks import (
 )
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.wall_clock import weekday_choices
+from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.presentation import parish_date
@@ -156,7 +157,7 @@ PREVIEW_LIMIT = 256_000
 TOO_LARGE = _("This email is too large to save. Shorten it, then try again.")
 
 
-class RepeatRule(forms.Form):
+class RepeatRule(AdminForm):
     """New scheduled email's Repeat checkbox and rule, for reminders only.
 
     The page script expands the rule into dates (``window.ParishRecurrence``)

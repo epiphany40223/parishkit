@@ -3,10 +3,11 @@
 from uuid import uuid4
 
 from django import forms
-from django.forms import BaseFormSet, formset_factory
+from django.forms import formset_factory
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.schema_primitives import text
+from parishkit.stewardship.web.admin_forms import AdminForm, AdminFormSet
 from parishkit.stewardship.web.content import validate_share_label
 
 DEFAULT_LABELS = (
@@ -29,7 +30,7 @@ def default_share_options():
     ]
 
 
-class ShareOptionForm(forms.Form):
+class ShareOptionForm(AdminForm):
     """Identity is retained only from this campaign; order/deletion are explicit."""
 
     id = forms.UUIDField(required=False, widget=forms.HiddenInput)
@@ -54,7 +55,7 @@ class ShareOptionForm(forms.Form):
         return value
 
 
-class ShareOptionsBase(BaseFormSet):
+class ShareOptionsBase(AdminFormSet):
     """The management form bounds work, but never controls authoritative identities."""
 
     def __init__(self, *args, previous=(), **kwargs):

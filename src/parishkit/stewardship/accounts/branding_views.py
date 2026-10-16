@@ -29,6 +29,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.content import MAX_IMAGE_BYTES, prepare_graphics
 from parishkit.stewardship.web.contracts import (
     ErrorCode,
@@ -105,7 +106,7 @@ def _error(error):
     return error_response(error)
 
 
-class LogoForm(forms.Form):
+class LogoForm(AdminForm):
     """Only the bounded original image is submitted; output names are server-owned."""
 
     logo = forms.FileField(
