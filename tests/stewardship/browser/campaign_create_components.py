@@ -24,7 +24,10 @@ from uuid import UUID
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts import setup_help
-from parishkit.stewardship.accounts.admin_editing import review_region, summary_errors
+from parishkit.stewardship.accounts.admin_editing import (
+    receipt_status,
+    summary_errors,
+)
 from parishkit.stewardship.accounts.campaign_forms import CampaignForm
 
 from .stepper_components import PATH as STEPPER
@@ -91,7 +94,7 @@ def components(context, admin):
                     if receipt
                     else None,
                 }
-                | review_region(None, receipt=receipt),
+                | receipt_status(receipt),
             ),
         )
 

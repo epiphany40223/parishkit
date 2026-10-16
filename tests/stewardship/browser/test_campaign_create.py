@@ -12,9 +12,9 @@ import json
 import pytest
 
 from .campaign_create_components import APPLIED, ONWARD, PAGE, REFUSED, REVIEW, VALUES
+from .review_helpers import answer_reviews
 from .stepper_components import PATH as STEPPER
 from .test_in_place import MARK, MARKED
-from .test_settings_in_place import answer_reviews
 from .waits import available, eventually, greyed, has_attribute, hidden, visible
 
 pytestmark = pytest.mark.parametrize(

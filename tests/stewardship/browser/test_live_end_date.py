@@ -17,6 +17,7 @@ from urllib.parse import parse_qs
 import pytest
 
 from .campaign_settings_components import LIVE, LIVE_REFUSED
+from .review_helpers import RESTORE, answer_reviews
 from .settings_components import (
     BEFORE_START,
     COMBINED_REVIEW,
@@ -25,7 +26,6 @@ from .settings_components import (
     STRANDING,
 )
 from .test_in_place import MARK, MARKED
-from .test_settings_in_place import answer_reviews
 from .waits import has_attribute, hidden, same_place, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -50,7 +50,6 @@ COULD_NOT = (
 SIGNED_OUT = "Your sign-in has ended. Sign in again, then reload the page."
 # A date whose check answers slowly, when a test asks (``held``).
 HELD = {"2054-11-15"}
-RESTORE = "window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))"
 
 
 def answer_checks(page, origin, *, failing=None, held=None):

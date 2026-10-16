@@ -20,8 +20,8 @@ import pytest
 from parishkit.stewardship.accounts.artwork_views import NOT_STATIC_IMAGE, UNAVAILABLE
 
 from .artwork_components import PAGE, REMOVAL
+from .review_helpers import answer_reviews
 from .test_in_place import MARK, MARKED
-from .test_settings_in_place import answer_reviews
 from .waits import eventually, has_attribute, hidden, same_place, visible
 
 pytestmark = pytest.mark.parametrize(

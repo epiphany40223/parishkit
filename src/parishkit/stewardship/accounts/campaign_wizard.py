@@ -534,9 +534,9 @@ class StatusLink:
 def continue_for(receipt):
     """Where Change status leads once a step's change is applied, or None.
 
-    Change status (and an in-place settings page's status, which reads it)
-    offers it once the change is applied, while the stepper is shown
-    (Change status itself already required the Administrator capability).
+    Change status offers it once the change is applied, while the stepper is
+    shown (Change status itself already required the Administrator
+    capability).
     A change made on a sub-page (an email's editor, a mail schedule) leads
     Return to its step (#1404); any other step change leads on to the next
     step not done yet. The change that created the campaign is not a step's

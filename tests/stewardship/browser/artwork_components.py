@@ -162,8 +162,7 @@ def components(context, admin):
             "text/html",
             render_to_string(
                 "stewardship/configuration-request.html",
-                context
-                | {"admin_chrome": admin, "receipt": applied, "follow_url": None},
+                context | {"admin_chrome": admin, "receipt": applied},
             ),
         ),
         SETTLED: ("text/html", page({"welcome": welcome, "banner": banner})),

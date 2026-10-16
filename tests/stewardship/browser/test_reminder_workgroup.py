@@ -16,9 +16,9 @@ import pytest
 from playwright.sync_api import expect
 
 from .reminder_workgroup_components import CONFIRM, EDITOR, NAME, REFUSED
+from .review_helpers import answer_reviews
 from .test_components import axe_violations
 from .test_in_place import MARK, MARKED
-from .test_settings_in_place import answer_reviews
 from .waits import eventually, has_attribute, hidden, same_place, visible
 
 pytestmark = pytest.mark.parametrize(

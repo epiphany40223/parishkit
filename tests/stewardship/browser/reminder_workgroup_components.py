@@ -94,7 +94,6 @@ def components(context, admin):
             | {
                 "admin_chrome": admin,
                 "receipt": Value(state="applied", request_id=REQUEST, failure_code=""),
-                "follow_url": None,
             },
         ),
     )

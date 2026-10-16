@@ -1046,15 +1046,15 @@
   // Every answer refreshes every region on the page, unless the link is
   // marked data-in-place-only: then only the region it names is swapped (a
   // history pager nested in a panel whose form holds unsaved typing), plus
-  // any regions whose ids the attribute's value lists (a settings page's
-  // Apply also moves its step indicator: data-in-place-only="flow-steps"). A
+  // any regions whose ids the attribute's value lists (a Mail delivery
+  // resolution also redraws the email's state and history). A
   // link whose key is gone from the fresh page (Older history on the last
   // page) hands focus to the link its data-in-place-fallback key names. A
   // form marked data-in-place-anywhere changes a region every Admin page
   // draws (the critical-problems banner): whichever same-origin page
   // answers it, only that region is taken from the answer, and the address
-  // stays. An element of the swapped region marked data-in-place-focus (an
-  // in-place review's heading, #532) takes focus after a successful answer
+  // stays. An element of the swapped region marked data-in-place-focus (a
+  // review's heading) takes focus after a successful answer
   // instead of the control, since that is what the reader acts on next.
   // A region marked data-in-place-own is replaced only by an answer to a
   // control that names it (or lists it in data-in-place-only), never by
@@ -1308,12 +1308,12 @@
     });
     // Charts keep their space until the fresh ones are drawn (chart-v1.js).
     if (window.ParishCharts) window.ParishCharts.hold(region, fresh);
-    // A data-keep-height region (a settings page's review region) keeps the
-    // height the reader's place needs (heldHeight, above) (#736). One whose
-    // fresh copy is empty holds nothing: every in-place answer redraws every
-    // region, so a panel's review region that another panel's Review empties
-    // (Campaign settings' end date, then its leader roles) would otherwise
-    // keep a blank gap until the page reloads (#973).
+    // A data-keep-height region (a review or status region, such as Restore
+    // review's or Past campaigns') keeps the height the reader's place needs
+    // (heldHeight, above) (#736). One whose fresh copy is empty holds
+    // nothing: every in-place answer redraws every region, so a review
+    // region that another control's answer empties would otherwise keep a
+    // blank gap until the page reloads (#973).
     const empty = !fresh.firstElementChild && !fresh.textContent.trim();
     if (region.hasAttribute("data-keep-height")) {
       fresh.style.minHeight = empty ? "" : heldHeight(region);
@@ -1785,13 +1785,7 @@
     try {
       document.querySelectorAll(REGIONS).forEach((other) => {
         const copy = parsed.getElementById(other.id);
-        // An answer may mark one of its regions data-in-place-always: it is
-        // taken even then (a settings form, once the change it applied has
-        // already settled, is redrawn at the version that change made).
-        if (only && other !== region && !alsoSwapped.includes(other.id)
-            && !(!anywhere && isRegion(copy) && copy.hasAttribute("data-in-place-always"))) {
-          return;
-        }
+        if (only && other !== region && !alsoSwapped.includes(other.id)) return;
         if (ownedElsewhere(other, region) && !alsoSwapped.includes(other.id)) return;
         if (isRegion(copy)) swapRegion(other, copy);
       });
@@ -2002,9 +1996,9 @@
     refreshTable(region, control, action.href, init, load, {owner, form: save ? form : null})
       .finally(settle);
   }, true);
-  // An in-place review (#532): a settings page's review region shows what its
-  // form's last Review would change, in an element marked
-  // data-review-of="<form id>", with Apply. Editing that form again makes
+  // An in-place review (Outgoing mail's bulk review, #382; Past campaigns'
+  // import, #1018) shows what its form's last Review would change, in an
+  // element marked data-review-of="<form id>", with Apply. Editing that form again makes
   // the review out of date, and Apply would still apply the reviewed values,
   // so the review is withdrawn at once: its Apply is removed, the rest is
   // greyed out (data-review-stale), and its data-review-note line says to
