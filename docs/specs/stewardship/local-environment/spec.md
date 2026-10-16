@@ -642,6 +642,35 @@ any seed's start Saturday is at most 16 days before that seed's `now`, so
 phase 1's jump is always forward, including after `reseed` restores the
 post-setup snapshot.
 
+The `testing` step
+([#1413](https://github.com/epiphany40223/parishkit/issues/1413)) is not part
+of `seed`. It is the last part of `seed --testing`
+([#1395](https://github.com/epiphany40223/parishkit/issues/1395)), which
+runs it under `web` at real time in normal mode on the restored post-setup
+data. It refuses unless the global mode is Testing, the campaign is a
+`draft` that was never active and never started go-live, the campaign has no
+Initial or Reminder schedule yet, and the Testing recipient is an
+`@example.test` address. One configuration change request then sets campaign
+dates from today to four weeks ahead and adds the Initial a week ahead and two
+Reminders after it. The Family portal admits a Testing sign-in only while
+the dates contain now, and a due schedule in Testing mode sends to every
+Family, so every schedule is in the future. Next, readiness's full refresh
+and the Initial email's sample run. A chosen-Family Testing send of the
+Initial follows, through that page's own review and confirmation, to the
+first five Portal-eligible Families with an email by DUID, and the step waits
+until each message is delivered. Each Family then signs in with the rehearsal
+code its message carried, read from its rehearsal credential with the web
+keyring as the live code is read in `drive`. Three submit Testing responses,
+one opens the form only, and one never signs in. The step stops before
+go-live. Every message goes only to the Testing recipient.
+
+A snapshot saved after the `testing` step is good for under a week of real
+time. A week after it was built the Initial falls due, and the Testing
+scheduler then sends one Testing message per Family to the Testing
+recipient; after four weeks the dates no longer contain now and Testing
+sign-ins stop. Rebuild it with `seed --testing` before then. The step's
+answer names the Initial's day as `rebuild_before`.
+
 ### Seeded Ministry leader user
 
 So that the Ministry leader flow can be tried at once, the finish phase makes
@@ -1029,6 +1058,16 @@ check passed; no Reminder went to a Family that had submitted and the early
 responder's invitation was skipped; every message reached Mailpit; go-live
 reached `scheduled` with no catch-up and the campaign became `active` at the
 start boundary; the deployment ended in normal mode at offset zero.
+
+**Testing-step tests** (no VM) pin the `testing` step's calendar (now inside
+the dates, every schedule after now, across local midnight and a DST
+change), its refusals, and its wiring (the refusal comes before any write,
+and the parts run in order). A PostgreSQL test checks that its patch, from a
+campaign with no schedules, installs through the real request path. Another sends a chosen-Family Testing send through the page's
+service layer and follows the real ticket and message rows. It then checks
+that the driver's rehearsal code is the one the message carries and that it
+signs the Family in for a Testing submission. The step itself runs in the VM
+as part of `seed --testing`.
 
 The schema's guard and function SQL contains no LOCAL branch; that test stays
 under [production invariants](#production-invariants).
