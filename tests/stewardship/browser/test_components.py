@@ -755,7 +755,8 @@ def test_parish_editor_retains_native_form_validation_and_timezone_scope(
     assert not name.evaluate("field => field.checkValidity()")
     name.fill("A renamed parish")
     assert name.evaluate("field => field.checkValidity()")
-    visible(page.get_by_role("button", name="Review changes"))
+    # The form's Review is labelled Save, as a compact review's (#1356).
+    visible(page.get_by_role("button", name="Save", exact=True))
 
 
 def test_ministry_preview_preserves_operational_indicators(page, component_origin):
