@@ -33,6 +33,7 @@ import json
 from types import SimpleNamespace
 from uuid import UUID
 
+from django import forms
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts import setup_help
@@ -194,10 +195,13 @@ def components(context, admin):
     late.is_valid()
     late.add_error(
         "end_date",
-        "Some scheduled emails would no longer fit the campaign, such as "
-        "invitations or Reminders after the new end date. Change the end date "
-        "together with those mailings on Dates and mail schedules: reschedule "
-        "or delete each one there.",
+        forms.ValidationError(
+            "Some scheduled emails would no longer fit the campaign, such as "
+            "invitations or Reminders after the new end date. Change the end date "
+            "together with those mailings on Dates and mail schedules: reschedule "
+            "or delete each one there.",
+            code="end_date_refused",
+        ),
     )
     POSTS.update(
         {

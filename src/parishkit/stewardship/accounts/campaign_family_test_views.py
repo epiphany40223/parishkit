@@ -74,7 +74,7 @@ class FamilyTestForm(AdminForm):
         try:
             return parse_family_duids(self.cleaned_data["families"])
         except ValueError as error:
-            raise forms.ValidationError(str(error)) from None
+            raise forms.ValidationError(str(error), code="invalid_duids") from None
 
 
 class FamilyTestConfirmForm(AdminForm):
