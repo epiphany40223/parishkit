@@ -401,12 +401,13 @@ def _find_family(actor, items, campaign):
 
 
 # Menu entries that show how many open items their queue holds (#585).
-COUNTED = frozenset({"information_queue", "ministry_followup"})
+COUNTED = frozenset({"information_queue", "ministry_report"})
 # Both counts in one statement, each only when asked for (NULL otherwise).
 # Additional information counts current requests not yet marked "Follow-up
-# completed" (its default view lists completed ones too). Ministry follow-up
-# runs the page's own selection with its default (Unresolved) filters and no
-# rows, and takes its total, so the count applies every filter the page
+# completed" (its default view lists completed ones too). Ministry requests
+# (the follow-up queue, #1133) runs the page's own selection with its
+# default (Unresolved) filters and no rows, and takes its total, so the
+# count applies every filter the page
 # does: the Ministry module, a promoted and uncompacted source, the
 # campaign's Ministries (plus removed ones with a current request), the
 # viewer's scope and the latest revision. The selection derives that scope
@@ -491,7 +492,7 @@ def _read_open_counts(offered, actor, campaign):
             OPEN_COUNTS,
             {
                 "information": "information_queue" in offered,
-                "ministry": "ministry_followup" in offered,
+                "ministry": "ministry_report" in offered,
                 "campaign": campaign.pk,
                 "filters": selection_filters(FollowupQuery()),
                 "viewer": actor.identity,
@@ -508,7 +509,7 @@ def _read_open_counts(offered, actor, campaign):
         name: count
         for name, count in (
             ("information_queue", information),
-            ("ministry_followup", ministry),
+            ("ministry_report", ministry),
         )
         if count is not None
     }

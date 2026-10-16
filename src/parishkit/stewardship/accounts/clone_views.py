@@ -1,7 +1,7 @@
 """Archived-campaign cloning through one reviewed, immutable configuration intent.
 
 Copy campaign is retired until the single-campaign change (#145) removes it
-(admin-portal spec, navigation rule 10 and decision 18): Campaign settings
+(UX conventions navigation rule 10, admin-portal decision 18): Campaign settings
 shows it greyed out and ``campaign_clone`` refuses every request before
 reading anything. The rest of this module stays, unreachable, until #145.
 """

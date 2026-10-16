@@ -11,7 +11,7 @@ from parishkit.stewardship.web.content import MAX_IMAGE_BYTES
 
 from .auth_builders import signed_in
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
-from .test_branding_views_postgresql import media, upload  # noqa: F401
+from .test_branding_views_postgresql import browser_post, media, upload  # noqa: F401
 from .test_runtime_auth_grants_postgresql import web_login
 from .test_setup_views_postgresql import post, setup_http, started  # noqa: F401
 
@@ -85,6 +85,38 @@ def test_setup_logo_rejects_invalid_stale_and_extra_inputs_before_selection(requ
         assert not SetupDraftSection.objects.exists()
 
 
+def test_setup_logo_left_empty_is_not_refused_as_an_extra_field(request):
+    """A browser sends the logo input left empty (Save and continue with no
+    file chosen) as a part with an empty filename, which Django keeps as an
+    empty POST value (#1396). With no logo saved it is refused on the field,
+    not as an unexpected field; with one saved the step continues and keeps
+    it."""
+    request.getfixturevalue("setup_http")
+    request.getfixturevalue("google")
+    request.getfixturevalue("media")
+    url = "/admin/setup/branding"
+
+    def version():
+        """The step's current draft version, as its page carries it."""
+        page = browser.get(url).content.decode()
+        return re.search(r'name="version" value="(\d+)"', page).group(1)
+
+    with web_login():
+        browser = started()
+        empty = [("logo", "", b"")]
+        refused = browser_post(browser, {"version": version()}, empty, url=url)
+        assert refused.status_code == 400
+        assert refused["Content-Type"].startswith("text/html")
+        assert 'aria-invalid="true"' in refused.content.decode()
+        assert not BrandingBundle.objects.exists()
+        saved = post(browser, url, {"version": version(), "logo": upload()})
+        assert saved.status_code == 302, saved.content
+        kept = browser_post(browser, {"version": version()}, empty, url=url)
+        assert kept.status_code == 302, kept.content
+        assert kept["Location"] == "/admin/setup/access"
+        assert BrandingBundle.objects.count() == 1
+
+
 def test_setup_logo_over_the_limit_is_refused_at_its_field(request):
     """A hand-built upload over 5 MB, which the page would never send, is
     still refused (400), at the logo field, in the words the page uses for
@@ -107,3 +139,56 @@ def test_setup_logo_over_the_limit_is_refused_at_its_field(request):
         assert "the limit is 5 MB." in line
         assert not BrandingBundle.objects.exists()
         assert not SetupDraftSection.objects.exists()
+
+
+def test_setup_logo_kept_again_after_back_and_a_stale_form_says_reload(request):
+    """With a logo saved, Save and continue with no file chosen keeps it, and
+    still does after Back from the next step (#1396). A post with a field the
+    form does not have, as a page left open while it changed would send, is
+    refused with the plain "out of date" page, not "Check your entries"
+    (#1401)."""
+    request.getfixturevalue("setup_http")
+    request.getfixturevalue("google")
+    request.getfixturevalue("media")
+    url = "/admin/setup/branding"
+
+    def version():
+        """The step's current draft version, as its page carries it."""
+        page = browser.get(url).content.decode()
+        return re.search(r'name="version" value="(\d+)"', page).group(1)
+
+    with web_login():
+        browser = started()
+        empty = [("logo", "", b"")]
+        saved = post(browser, url, {"version": version(), "logo": upload()})
+        assert saved.status_code == 302, saved.content
+        kept = browser_post(browser, {"version": version()}, empty, url=url)
+        assert kept["Location"] == "/admin/setup/access"
+        # Back from the next step is a link to this step, which keeps the
+        # saved logo optional.
+        access = browser.get("/admin/setup/access").content.decode()
+        (back,) = re.findall(r'<a class="setup-back" href="([^"]+)"', access)
+        assert back == url
+        again = browser_post(browser, {"version": version()}, empty, url=url)
+        assert again.status_code == 302, again.content
+        assert again["Location"] == "/admin/setup/access"
+        assert BrandingBundle.objects.count() == 1
+        stale = browser.post(
+            url,
+            {
+                "version": version(),
+                "path": "/private",
+                "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
+            },
+            HTTP_ACCEPT="text/html",
+            HTTP_SEC_FETCH_MODE="navigate",
+        )
+        body = stale.content.decode()
+        assert stale.status_code == 400
+        assert "<h1>This page is out of date</h1>" in body
+        assert "the page changed after you opened it" in body
+        # Reload would post the same form again: open the page again.
+        assert "Open the page again, then try again." in body
+        assert f'<a href="{url}">Return to the previous page</a>' in body
+        assert "Check your entries" not in body and "unexpected data" not in body
+        assert BrandingBundle.objects.count() == 1

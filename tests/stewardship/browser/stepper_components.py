@@ -23,6 +23,7 @@ from django.urls import reverse
 
 from parishkit.stewardship.accounts import campaign_wizard
 from parishkit.stewardship.accounts.content_forms import ContentForm
+from parishkit.stewardship.accounts.option_editing import option_changes
 from parishkit.stewardship.accounts.share_forms import (
     ShareOptions,
     default_share_options,
@@ -130,8 +131,7 @@ def components(context, admin):
                 "stewardship/share-options-review.html",
                 {
                     "review": {
-                        "before": options,
-                        "after": renamed,
+                        "changes": option_changes(options, renamed),
                         "preview": "synthetic-signed-intent",
                     }
                 },

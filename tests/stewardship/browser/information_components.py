@@ -179,6 +179,17 @@ def components(context, admin):
             },
         ),
         "/information-queue-gated": ("information", values | {"mutable": False}),
+        # The queue as first opened, with its default filters: the Filters
+        # panel starts closed (#227).
+        "/information-unfiltered": (
+            "information",
+            values
+            | {
+                "query": InformationQuery(),
+                "query_fields": InformationQuery().form_values(),
+                "table": table(InformationQuery()),
+            },
+        ),
         "/information-item": ("information", values | {"item": item}),
         "/information-unresolved": (
             "information",

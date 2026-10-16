@@ -133,6 +133,14 @@ docker compose ... exec -T worker pk-stewardship smoke \
   --config /opt/parishkit/config/services/worker-slack.yaml \
   --target slack --channel-id C0123456789 --send
 
+# ParishSoft Member contact read: probe one test Member's record; with
+# --send, write one marker field, read it back and restore the original.
+# Note the test Member's values first; see the smoke tools guide.
+docker compose ... exec -T worker pk-stewardship smoke \
+  --config /opt/parishkit/config/services/worker.yaml \
+  --target parishsoft_contact --organization-id 12345 \
+  --member-id 67890 --confirm-member-id 67890
+
 # Google login: validate the OAuth client document and print the redirect
 # URI to register; then sign in at the public origin yourself.
 docker compose ... exec -T web pk-stewardship smoke \

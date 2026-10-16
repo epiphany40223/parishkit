@@ -8,47 +8,52 @@ BROWSER_ENGINES = ("chromium", "firefox", "webkit")
 # The browser CI jobs (#627), one workflow matrix entry each; every entry
 # runs its ENGINE:INDEX/COUNT partitions in turn. test_browser_ci.py requires
 # the matrix to equal this and every engine's partitions to appear exactly
-# once. Measured in October 2026 (#1151), all of an engine's cases take about
-# 3,340 s of tests on WebKit, 2,130 on Chromium and 1,570 to 1,750 on Firefox.
-# Firefox runs whole; WebKit and Chromium are each split in three and paired,
-# so every job has about 1,650 to 1,850 s of tests, near 60% of
-# quality_browser.JOB_SECONDS. (Three jobs, halving WebKit and Chromium, ran
-# at 2,958 s of 3,000 on slow runners.) WebKit, the slowest engine, runs last
-# in its job so it inherits whatever time Chromium leaves of its reserved
-# share (quality_browser.partition_limit, #1112).
+# once. Measured in CI run 38719928786 (October 2026, #1380), all of an
+# engine's cases take about 3,290 s of tests on WebKit, 2,200 on Chromium and
+# 2,340 on Firefox. Firefox is halved, alone in each of its two jobs, so each
+# half has about 1,200 s of tests, 40% of quality_browser.JOB_SECONDS. (Whole,
+# it ran 2,343 s on a normal runner and was killed at 3,000 s on one about
+# 27% slower, in run 38731308882.) WebKit and Chromium are each split in three
+# and paired, so each of those jobs has about 1,800 s of tests, 60% of the
+# budget. WebKit, the slowest engine, runs last in its job so it inherits
+# whatever time Chromium leaves of its reserved share
+# (quality_browser.partition_limit, #1112).
 BROWSER_JOBS = (
-    "firefox:1/1",
+    "firefox:1/2",
+    "firefox:2/2",
     "chromium:1/3 webkit:1/3",
     "chromium:2/3 webkit:2/3",
     "chromium:3/3 webkit:3/3",
 )
 
-# Scheduling hints only, fitted to the per-test CI_PROGRESS seconds of CI runs
-# 38257793840 and 38265706112 (#1151). A test file costs its engine's fixed
-# seconds (opening pages and module fixtures) plus its per-case seconds for
-# each case, plus any BROWSER_FILE_EXTRA_SECONDS: fixed waits in that file
-# that cost about the same on every engine. Each recorded file fit within
-# about 13 s. Hints never select or exclude a test; they only balance whole
-# files (which keeps module-scoped fixtures together) across an engine's
-# partitions, and give each partition's logged estimate.
+# Scheduling hints only, fitted to the per-test CI_PROGRESS seconds of CI run
+# 38719928786 (#1380). A test file costs its engine's fixed seconds (opening
+# pages and module fixtures) plus its per-case seconds for each case, plus
+# any BROWSER_FILE_EXTRA_SECONDS: fixed waits in that file that cost about
+# the same on every engine. Replayed on that run's file times, every
+# partition's estimate fell within about 4% of its actual seconds. Hints
+# never select or exclude a test; they only balance whole files (which keeps
+# module-scoped fixtures together) across an engine's partitions, and give
+# each partition's logged estimate.
 BROWSER_ENGINE_SECONDS = {
     # engine: (seconds per file, seconds per case)
-    "chromium": (11, 0.35),
-    "firefox": (8, 0.53),
-    "webkit": (13, 1.22),
+    "chromium": (8, 0.28),
+    "firefox": (9, 0.6),
+    "webkit": (11, 0.8),
 }
 BROWSER_FILE_EXTRA_SECONDS = {
-    "test_system_health.py": 121,
-    "test_family_pledge_walks.py": 51,
-    "test_about_page.py": 38,
-    "test_live_status_in_place.py": 30,
-    "test_refresh_schedule_editor.py": 23,
-    "test_settings_in_place.py": 21,
-    "test_send_progress.py": 19,
-    "test_family_acceptance.py": 17,
-    "test_schedule_fields.py": 15,
-    "test_live_end_date.py": 12,
-    "test_campaign_comparison.py": 11,
+    "test_system_health.py": 440,
+    "test_about_page.py": 53,
+    "test_family_pledge_walks.py": 53,
+    "test_live_status_in_place.py": 35,
+    "test_refresh_schedule_editor.py": 29,
+    "test_settings_in_place.py": 22,
+    "test_send_progress.py": 20,
+    "test_campaign_comparison.py": 19,
+    "test_family_acceptance.py": 18,
+    "test_schedule_fields.py": 14,
+    "test_schedule_list.py": 14,
+    "test_system_logs.py": 12,
     "test_time_entry.py": 11,
 }
 

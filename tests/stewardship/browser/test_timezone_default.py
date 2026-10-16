@@ -88,3 +88,19 @@ def test_setup_parish_without_a_browser_zone_asks_for_one(page, component_origin
     assert menu.evaluate("select => select.required && !select.checkValidity()")
     menu.select_option("America/Chicago")
     assert menu.evaluate("select => select.checkValidity()")
+
+
+@pytest.mark.parametrize("utc", ["UTC", "Etc/UTC"])
+def test_a_utc_browser_counts_as_no_zone(browser_engine, component_origin, utc):
+    """A browser reporting UTC (a server, VM or privacy setting, rarely the
+    parish's clock) is treated like one reporting no zone: Create the
+    campaign keeps the parish zone, and the setup Parish step a blank
+    required choice."""
+    context, page = zone_page(browser_engine, utc)
+    try:
+        page.goto(component_origin + "/campaign-create")
+        assert page.locator(MENU).input_value() == "America/New_York"
+        page.goto(component_origin + "/setup-parish")
+        assert page.locator(MENU).input_value() == ""
+    finally:
+        context.close()

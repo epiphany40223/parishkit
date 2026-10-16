@@ -1,0 +1,19 @@
+{% load i18n %}{% comment %}
+  A compact review (UX conventions, "A compact review when Review adds only
+  the old value", #1356): the body of a review dialog's answer for a change
+  of one or a few fields, where the new values are the form behind the
+  dialog and the one thing the page no longer shows is each old value. It
+  draws one line per changed field, "Field: old → new", instead of a Now and
+  After table.
+
+  - changes is a list of {label, before, after}, already in words (the
+    receiving template escapes them; none is marked safe). A before of None
+    draws "Field: new" alone, for a line that has no old value ("Added:
+    <option>").
+  - summary_id is the list's id, which the answer names as the dialog's
+    description (data-review-describedby, or the page's describedby), so a
+    screen reader hears the lines with the dialog's question.
+
+  The arrow is hidden from screen readers, which hear "old, becomes new"
+  instead; a multi-line value keeps its line breaks.
+{% endcomment %}<ul class="compact-review" id="{{ summary_id }}">{% for change in changes %}<li><span class="compact-review-field">{{ change.label }}:</span> {% if change.before is not None %}{{ change.before|linebreaksbr }} <span aria-hidden="true">→</span><span class="visually-hidden">{% translate ", becomes" %}</span> {% endif %}{{ change.after|linebreaksbr }}</li>{% endfor %}</ul>

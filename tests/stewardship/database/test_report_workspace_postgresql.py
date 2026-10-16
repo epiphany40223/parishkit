@@ -55,7 +55,7 @@ def read(browser, path):
 
 
 def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkeypatch):  # noqa: F811
-    """One setup covers real admission, complete HTML/PNG and invalid queries."""
+    """One setup covers real admission, complete HTML and invalid queries."""
     setup, browser = http_scenario
     campaign_id = setup[2].campaign_id
     pointer(setup[2])
@@ -77,15 +77,10 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
         assert b"ParishSoft data load" in html
         assert b"Historical as of day" in html
         assert str(setup[2].pk).encode() in html
-        chart_path = (
-            re.search(rb'<img class="digest-chart" src="([^"]+)"', html)
-            .group(1)
-            .decode()
-            .replace("&amp;", "&")
-        )
-        chart_response, chart = read(browser, chart_path)
-        assert chart_response.status_code == 200
-        assert chart.startswith(b"\x89PNG")
+        # The daily chart is drawn in the browser from its embedded spec
+        # (#720); the page has no chart image to fetch.
+        assert b'id="daily-participation-spec"' in html
+        assert b"digest-chart" not in html and b"<img" not in html
         _, missing = read(browser, path + "?scope=current")
         assert b"No complete report is ready" in missing
         for query in (
@@ -101,7 +96,7 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
             assert response.status_code == 400
     assert SystemConfiguration.objects.get().current_campaign_id == before
     events = AuditEvent.objects.filter(event_type="participation_viewed")
-    assert events.count() == 6
+    assert events.count() == 4
     assert all(
         event.ownership_scope == "parish" and event.campaign_reference == campaign_id
         for event in events
@@ -114,7 +109,7 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
     )
     from parishkit.stewardship.reports import workspace_views
 
-    assert events.count() == 6
+    assert events.count() == 4
 
     from parishkit.stewardship.reports import read_admission
 
@@ -127,12 +122,12 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
     with monkeypatch.context() as patch:
         patch.setattr(read_admission, "admit_campaign", closed_admission)
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            for endpoint in (reverse("admin:reports"), path, chart_path):
+            for endpoint in (reverse("admin:reports"), path):
                 response, body = read(browser, endpoint)
                 assert response.status_code == 503, endpoint
                 assert response["Retry-After"] == "5"
                 assert b"private lifecycle detail" not in body
-    assert events.count() == 6
+    assert events.count() == 4
 
     # Existing middleware routes an already-restoring deployment to maintenance.
     # The admission unit cases separately cover closure after that middleware.
@@ -140,16 +135,12 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
         restored_runtime(INSTANT),
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
     ):
-        for endpoint in (
-            reverse("admin:reports"),
-            path,
-            chart_path,
-        ):
+        for endpoint in (reverse("admin:reports"), path):
             response, _ = read(browser, endpoint)
             assert response.status_code == 302, endpoint
             assert response["Location"] == "/admin/maintenance"
             assert "Retry-After" not in response
-    assert events.count() == 6
+    assert events.count() == 4
 
     # Use a smaller page budget to exercise actual pagination with this small
     # source fixture. Selection, ordering, rows and URL construction stay real.
@@ -430,7 +421,7 @@ def test_staff_report_access_then_ministry_role_and_revocation(http_scenario, go
         ],
     )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        for url in (reverse("admin:reports"), path, f"{path}{facts.pk}.png", job_path):
+        for url in (reverse("admin:reports"), path, job_path):
             response, _ = read(browser, url)
             assert response.status_code == 403
         assert post(browser, export_action(job_path, "cancel")).status_code == 403

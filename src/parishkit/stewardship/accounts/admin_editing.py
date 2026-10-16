@@ -40,6 +40,7 @@ from parishkit.stewardship.web.refusals import (
     gone_response,
     load_preview,
     unavailable_response,
+    unexpected_fields,
 )
 
 from . import admin_navigation
@@ -55,15 +56,12 @@ from .sessions import FreshAuthenticationRequired, authenticated_admin, require_
 # confirmation answers with the page again rather than Change status. The
 # names are the pages' URL names; Change status's in-place follow-up may lead
 # only to one of them. Campaign settings (#1119), Share options, Campaign
-# images and Parish logos review in the review dialog instead, which follows
-# Change status itself.
+# images, Parish logos, Parish settings and No-reminders WorkGroup review in
+# the review dialog instead, which follows Change status itself, so no page
+# is followed back to in place any more (Create the campaign draws the panel
+# but names no in_place page).
 REVIEW_REGION = "settings-review"
-IN_PLACE_PAGES = frozenset(
-    {
-        "parish_settings",
-        "reminder_workgroup",
-    }
-)
+IN_PLACE_PAGES = frozenset()
 
 
 def principal(
@@ -137,7 +135,7 @@ def form_action(
             for name, values in parameters.lists()
         )
     ):
-        raise ValueError("Invalid configuration action or fields.")
+        raise unexpected_fields()
     return action
 
 

@@ -31,12 +31,12 @@ _ACTIVE = {
     "administrator": (
         "response_dashboard",
         "information_queue",
-        "ministry_followup",
+        "ministry_report",
         "family_email_progress",
         "mail_problems",
     ),
-    "staff": ("response_dashboard", "information_queue", "ministry_followup"),
-    "ministry_leader": ("ministry_report", "ministry_followup"),
+    "staff": ("response_dashboard", "information_queue", "ministry_report"),
+    "ministry_leader": ("ministry_report",),
 }
 STEPS = {
     "testing": {

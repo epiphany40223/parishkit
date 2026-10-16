@@ -29,6 +29,11 @@ BLOCKED = "/restore-review-blocked"
 INERT_PREVIEW = "/restore-review-inert-preview"
 # The page before anything was found, in Testing (nothing is ever held).
 TESTING = "/restore-review-testing"
+# Held emails found, without a recent sign-in: every decision and the
+# release are unavailable, named by the step-up notice (#1331).
+STALE = "/restore-review-stale"
+# Nothing needs a hold, but a campaign change is still running (#1331).
+RELEASE_BLOCKED = "/restore-review-release-blocked"
 
 INVITATION = UUID(int=537)
 REMINDER = UUID(int=538)
@@ -83,16 +88,21 @@ def components(context, admin):
     )
     chrome = admin | {"sections": [], "breadcrumbs": [], "restored": True}
 
-    def page(state, **step):
+    def page(state, fresh=True, release_refusal="", **step):
         """The page as the view renders it after one step.
 
         ``step["panel"]`` names the panel whose control was used (held emails
-        or release), where the view draws the step's outcome.
+        or release), where the view draws the step's outcome. ``fresh`` says
+        the sign-in is recent, and ``release_refusal`` is the view's
+        ``release_refusal()`` answer.
         """
+        refusal = "needs_holds" if state.needed else release_refusal
         values = {
             "review": state,
             "step": step,
-            "release_ready": not state.needed,
+            "release_ready": not refusal,
+            "release_refusal": refusal,
+            "fresh": fresh,
             "page_url": PAGE,
         }
         return (
@@ -121,8 +131,13 @@ def components(context, admin):
         ),
         # A release preview with a stale sign-in: the step-up after its button.
         STEP_UP: page(
-            review(now, groups=found), refused="reauthenticate", panel="release"
+            review(now, groups=found),
+            fresh=False,
+            refused="reauthenticate",
+            panel="release",
         ),
+        STALE: page(review(now, groups=found), fresh=False),
+        RELEASE_BLOCKED: page(review(now, groups=settled), release_refusal="blocked"),
         CHANGED: page(review(now, groups=found), refused="changed", panel="emails"),
         REVIEWING: page(review(now, groups=found)),
         BLOCKED: page(review(now, groups=blocked)),

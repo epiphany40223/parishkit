@@ -1,0 +1,6 @@
+{% load i18n %}{% comment %}
+  Why a page-load tile (Families the form cannot open, Pages and emails to
+  re-save; #1214) does not follow the 10-second poll, in a toggletip
+  (``tip_id`` and ``tip_label_id`` as for components/toggletip.html; ui-
+  conventions "Page help"), so the text is written once.
+{% endcomment %}{% translate "This is checked when the page opens, not every 10 seconds like the other tiles, because the check reads every Family or every saved page and email. Reload the page to check again." as loaded_tip %}{% include "stewardship/components/toggletip.html" with tip_text=loaded_tip %}

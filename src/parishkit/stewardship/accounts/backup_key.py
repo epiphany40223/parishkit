@@ -48,6 +48,7 @@ from parishkit.stewardship.backup_sealing import (
     seal_proof,
 )
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.web.refusals import unexpected_fields
 
 from . import admin_navigation
 from .admin_editing import confirm, editable_configuration, form_action, sign_preview
@@ -399,7 +400,7 @@ def backup_key_page(request, service, actor):
         )
     if action == "challenge":
         if set(request.POST) - {"action", "csrfmiddlewaretoken", "public_key"}:
-            raise ValueError("Invalid key change fields.")
+            raise unexpected_fields()
         require_fresh(request)
         status = key_status(configuration)
         try:

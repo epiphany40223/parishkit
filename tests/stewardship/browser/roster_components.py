@@ -7,7 +7,9 @@ request's roster address; the fixture server answers the first row's with
 the real Post/Redirect/Get redirect back to the list (``POSTS``), which then
 no longer shows that row (``TICKED``). The list on All is served at the Show
 filter's own GET address, and the second row's tick there redirects to the
-list still on All (``AFTER_ALL``), with that row now marked.
+list still on All (``AFTER_ALL``), with that row now marked. The bulk
+dialog's POST (``BULK_POST``) is answered by each test with a route; the
+dialog then redraws the list from ``BULKED``, without the two newest rows.
 """
 
 from dataclasses import replace
@@ -27,6 +29,11 @@ TICKED = PATH + "?ticked=1"
 AFTER_ALL = PATH + "?show=all&ticked=1"
 # The list after a tick someone else changed first.
 STALE = PATH + "?size=25&changed=1"
+# The list the bulk dialog redraws from (its data-refresh-url) once the two
+# newest changes are marked; the test answers the dialog's POST itself.
+BULKED = PATH + "?bulked=1"
+BULK_POST = reverse("admin:ministry_roster_bulk")
+BULK_KEY = UUID(int=30_000)
 ROWS = 30
 
 
@@ -53,8 +60,7 @@ def _rows():
             "roster_at": None,
             "roster_by": "",
             "request_key": UUID(int=20_000 + index),
-            "describedby": f"member-{UUID(int=10_000 + index)} "
-            f"ministry-{UUID(int=10_000 + index)}",
+            "label": f"Member {index:02d} — Food pantry",
         }
         for index in range(ROWS)
     ]
@@ -69,7 +75,7 @@ def components(context, admin):
     """The list (Not yet entered and All), its second page, and the list after
     a tick, at the addresses the view and the in-place GET refreshes use."""
 
-    def page(rows, paging, show="todo", changed=False):
+    def page(rows, paging, show="todo", changed=False, bulk_key=BULK_KEY):
         """Render the list from ``rows`` with ``paging``'s table choices."""
         table = paginate(rows, paging, carry=[("show", show)], sorting=SORTING)
         return table, (
@@ -87,6 +93,8 @@ def components(context, admin):
                     "ministries": [{"duid": 9, "name": "Food pantry"}],
                     "changed": changed,
                     "tick_fields": table.page_fields(table.number),
+                    "refresh_url": BULKED,
+                    "bulk_key": bulk_key,
                     "mutable": True,
                     "can_tick": True,
                     "export_timezones": ["UTC", "America/Detroit"],
@@ -103,6 +111,8 @@ def components(context, admin):
     del marked[-2]
     _, after_all = page(marked, {"size": "25"}, show="all")
     _, stale = page(rows, {"size": "25"}, changed=True)
+    # A fresh key on the redrawn list, as the view draws one per page.
+    _, bulked = page(rows[:-2], {"size": "25"}, bulk_key=UUID(int=30_001))
     # The Show filter's own GET: the selects, then its kept size and sort.
     shown = urlencode([("show", "all"), ("ministry", ""), *first.view_fields])
     return {
@@ -112,6 +122,7 @@ def components(context, admin):
         f"{PATH}?{shown}": everything,
         AFTER_ALL: after_all,
         STALE: stale,
+        BULKED: bulked,
     }
 
 

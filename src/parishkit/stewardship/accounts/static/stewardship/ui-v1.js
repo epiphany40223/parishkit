@@ -47,11 +47,21 @@
   // ten-minute limit pair with STEP_UP_KEY and STEP_UP_SECONDS in
   // local-sign-in-v1.js; change them together. A step-up an in-place answer
   // brings in (a Family test review shown with a stale sign-in, #519) is
-  // recorded too, as it would be had the page loaded with it.
+  // recorded too, as it would be had the page loaded with it. A copy that
+  // CSS hides (System health draws Accept this change once's offer with and
+  // without its step-up and shows one, #1385) is not on show and records
+  // nothing. A step-up inside a closed tile or section, hidden only by a
+  // hidden attribute on the way up, still counts: opening it shows it.
+  const cssHidden = (node) => {
+    for (let at = node; at instanceof Element; at = at.parentElement) {
+      if (!at.hasAttribute("hidden") && window.getComputedStyle(at).display === "none") return true;
+    }
+    return false;
+  };
   const recordStepUp = (root) => {
     const nodes = [...root.querySelectorAll("[data-local-step-up]")];
     if (root instanceof Element && root.matches("[data-local-step-up]")) nodes.unshift(root);
-    nodes.forEach((node) => {
+    nodes.filter((node) => !cssHidden(node)).forEach((node) => {
       try {
         window.localStorage.setItem("pk-local-step-up", JSON.stringify({
           next: node.dataset.localStepUp, at: Date.now(),
@@ -179,12 +189,16 @@
     // engine may report ICU's older name for a zone the list offers by its
     // IANA name (Chromium says America/Louisville for
     // America/Kentucky/Louisville), so an option this engine resolves to the
-    // reported name matches too.
+    // reported name matches too. A browser reporting UTC (or one of its
+    // aliases) is treated like one reporting no zone: a server, VM or
+    // privacy setting reports it, rarely a parish's own clock.
     const resolved = (name) => {
       try { return new Intl.DateTimeFormat("en-US", {timeZone: name}).resolvedOptions().timeZone; } catch (_) { return ""; }
     };
+    const unknownZone = !zone || zone === "Etc/Unknown"
+      || /^(Etc\/)?(UTC|UCT|Universal|Zulu)$/.test(zone);
     root.querySelectorAll("select[data-browser-default]").forEach((select) => {
-      if (select.disabled || !zone || zone === "Etc/Unknown") return;
+      if (select.disabled || unknownZone) return;
       const values = Array.from(select.options, (option) => option.value).filter(Boolean);
       const match = values.includes(zone) ? zone : values.find((value) => resolved(value) === zone);
       if (match) select.value = match;
@@ -781,6 +795,11 @@
     // A table that gives an empty-table reason (the include's empty_hint)
     // keeps it visible in the line while the table has no rows at all.
     const emptyHint = hint?.dataset.emptyHint || "";
+    // Rows can be shown with none of them selectable (every file in use,
+    // no open request): their selection cells are empty. The line then says
+    // why nothing can be ticked, from the table's data-none-hint; without
+    // one it stays blank, as for an empty table (#1332).
+    const noneHint = scope.dataset.noneHint || "";
     const update = () => {
       const all = rows();
       const chosen = all.filter((node) => node.checked).length;
@@ -799,20 +818,27 @@
       // available only while every ticked row is of its kind. While one is
       // unavailable for that reason, the line says why: the table's
       // data-kind-hint-<kind> when the ticked rows are all of one kind, or
-      // its data-kind-hint-mixed when they mix kinds.
-      const kinds = new Set(all.filter((node) => node.checked)
-        .map((node) => node.dataset.confirmKind || ""));
+      // its data-kind-hint-mixed when they mix kinds. A row whose box lists
+      // several kinds (space-separated: the Census changes decisions a
+      // row's Review offers, #528) fits each of them; a table whose rows
+      // do so gives one data-kind-hint for every case.
+      const ticked = all.filter((node) => node.checked);
+      const kinds = new Set(ticked.map((node) => node.dataset.confirmKind || ""));
       const fits = (node) => chosen > 0 && (!node.dataset.confirmKind
-        || (kinds.size === 1 && kinds.has(node.dataset.confirmKind)));
+        || ticked.every((row) => (row.dataset.confirmKind || "").split(/\s+/)
+          .includes(node.dataset.confirmKind)));
       const kindHint = !chosen || actions.every(fits) ? ""
-        : scope.getAttribute(`data-kind-hint-${kinds.size > 1 ? "mixed" : [...kinds][0]}`) || "";
+        : scope.dataset.kindHint
+          || scope.getAttribute(`data-kind-hint-${kinds.size > 1 ? "mixed" : [...kinds][0]}`) || "";
       // With no rows at all the table itself says it is empty, unless the
       // table gave an empty-table reason, which then stays in the line.
-      const empty = !all.length && Boolean(emptyHint);
+      const none = !all.length && Boolean(noneHint)
+        && Boolean(scope.querySelector("tbody td.select-col"));
+      const empty = !all.length && !none && Boolean(emptyHint);
       const explain = Boolean(hint)
-        && (Boolean(kindHint) || (!chosen && (all.length > 0 || empty)));
+        && (Boolean(kindHint) || (!chosen && (all.length > 0 || empty || none)));
       if (hint) {
-        const text = kindHint || (empty ? emptyHint : missingHint);
+        const text = kindHint || (none ? noneHint : empty ? emptyHint : missingHint);
         if (hint.textContent !== text) hint.textContent = text;
       }
       hint?.toggleAttribute("data-cleared", !explain);
@@ -875,9 +901,9 @@
   // (data-require-change, below) compares the form with, so Review changes
   // stays unavailable until the reader changes one (#750). Without a zone
   // Review changes stays unavailable and [data-zone-missing] says why.
-  // The first-campaign step's schedules (form[data-schedule-zoned])
-  // works the same way, row by row: each unbound saved row carries its own
-  // data-schedule-local, and Save and continue waits for a zone.
+  // The date-change review's schedules (form[data-schedule-zoned]) work the
+  // same way, row by row: each unbound saved row carries its own
+  // data-schedule-local, and Review changes waits for a zone.
   // localParts: a moment (ms) as this browser's {date, time, weekday}, the
   // time canonical as the time entry writes it and Monday 0.
   const localParts = (moment) => {
@@ -913,7 +939,8 @@
       });
     }
   });
-  // Fill one schedule's fields (New and Edit's form, or one first-campaign
+  // Fill one schedule's fields (New and Edit's form,
+  // or one date-change review repeat
   // row) from its data-schedule-local moment, in this browser's zone.
   document.querySelectorAll("form[data-schedule-entry][data-schedule-local], "
     + "[data-schedule-row][data-schedule-local]").forEach((scope) => {
@@ -1452,6 +1479,46 @@
     document.write(text);
     document.close();
   };
+  // A refused in-place POST answered as JSON (a typed error: a user-facing
+  // refusal, a stale page, a denial, an outage) is the server's answer to a
+  // script, never a page: shown whole it would be raw JSON (#519). It is
+  // shown in place instead, as one alert line after the control's buttons,
+  // so nothing above it moves: the refusal's message and fix in plain words
+  // (refusalText, with the confirm dialogs' wording for its status when it
+  // has none) and its same-origin link when it has one. A later answer to
+  // the same form replaces the line (a new element, so it is announced
+  // again) or, when it is not such a refusal, removes it. Keyed by the form
+  // (or the control, outside any form) so a submitter outside its form
+  // (form="…") still finds its own line.
+  const refusalNotes = new WeakMap();
+  const clearRefusal = (key) => {
+    refusalNotes.get(key)?.remove();
+    refusalNotes.delete(key);
+  };
+  const showRefusal = (key, control, status, text) => {
+    const note = document.createElement("p");
+    note.className = "notice notice-error";
+    note.setAttribute("role", "alert");
+    note.setAttribute("data-in-place-refusal", "");
+    note.textContent = refusalText(status, text);
+    let link = null;
+    try { link = JSON.parse(text)?.refusal?.link; } catch { /* refusalText fell back already */ }
+    if (link?.url && link.label && sameOrigin(link.url)) {
+      const anchor = document.createElement("a");
+      anchor.href = link.url;
+      anchor.textContent = link.label;
+      note.append(" ", anchor);
+    }
+    const old = refusalNotes.get(key);
+    if (old?.isConnected) {
+      old.replaceWith(note);
+    } else if (control instanceof HTMLFormElement || !(control instanceof Element)) {
+      key.append(note);
+    } else {
+      (control.closest(".actions, p") || control).after(note);
+    }
+    refusalNotes.set(key, note);
+  };
   // Load the page a control leads to and bring this page up to date from it.
   // Success: every region present in both pages is swapped (the one the
   // control changes and any other on the page, so they never disagree), the
@@ -1649,6 +1716,22 @@
       leave(fallback);
       return;
     }
+    // A refused POST answered as JSON is shown in place beside its control
+    // (showRefusal), never written as the page; the page and focus stay.
+    // Any other answer removes such a line an earlier answer left.
+    const noteKey = owner || (control instanceof Element && control.closest("form")) || control;
+    if (refused && /^application\/json\b/i.test(response.headers.get("Content-Type") || "")) {
+      region.removeAttribute("aria-busy");
+      if (isBox(control)) failedState.set(control, sentState.get(control));
+      showRefusal(noteKey, control, response.status, text);
+      // Focus is on the control, as after a swapped refusal with no
+      // summary; a click does not focus a button in every engine (Safari).
+      if (control instanceof HTMLElement && !(control instanceof HTMLFormElement)) {
+        control.focus({preventScroll: true});
+      }
+      return;
+    }
+    clearRefusal(noteKey);
     // A redirect chose the answer's address: a refusal that was redirected
     // to another page (the sign-in page) is that page, not this one.
     const otherOrigin = answered.origin !== window.location.origin;
@@ -2574,10 +2657,31 @@
       });
     });
   };
+  // data-max-ticked="N" on a group of checkboxes allows at most N ticked
+  // (the Ministry requests packet's Ministries, #1332). Past that each
+  // ticked box is invalid with the group's data-max-ticked-hint, its
+  // "{count}" the number ticked, which the gate below shows as its hint.
+  // Only a mark this check made is cleared. The server refuses more too.
+  const maxTicked = (form) => {
+    form.querySelectorAll("[data-max-ticked]").forEach((group) => {
+      const boxes = [...group.querySelectorAll("input[type=checkbox]")];
+      const ticked = boxes.filter((box) => box.checked && !box.disabled);
+      const over = !group.closest("[hidden]")
+        && ticked.length > Number(group.dataset.maxTicked);
+      const hint = (group.dataset.maxTickedHint || "").replace("{count}",
+        ticked.length.toLocaleString("en-US"));
+      boxes.forEach((box) => {
+        const mark = over && ticked.includes(box);
+        if (mark || box.hasAttribute("data-max-ticked-over")) box.setCustomValidity(mark ? hint : "");
+        box.toggleAttribute("data-max-ticked-over", mark);
+      });
+    });
+  };
   const gateComplete = (form) => {
     if (!form || !form.hasAttribute("data-require-complete")) return;
     requiredWhen(form);
     requireOne(form);
+    maxTicked(form);
     // A required text field holding only spaces is still empty: the server
     // trims it (notes for the outcome Other, a Slack token being set up).
     const blank = (node) => node.required
@@ -2605,6 +2709,7 @@
           || (missing.matches("[data-time-entry]") && missing.validity.customError
             && missing.validationMessage)
           || (empty && missing.dataset.emptyHint)
+          || (missing.hasAttribute("data-max-ticked-over") && missing.validationMessage)
           || missing.closest("[data-missing-hint]")?.dataset.missingHint
           || "Fill in the required fields to save.")
         : "";
@@ -2835,8 +2940,15 @@
       const ordered = !start.value || !end.value || start.validity.patternMismatch
         || end.validity.patternMismatch || Number(end.value) >= Number(start.value);
       end.setCustomValidity(ordered ? "" : (end.dataset.missingHint || "Out of order."));
-    } else if (start.value) end.min = start.value;
-    else end.removeAttribute("min");
+    } else if (end.min !== start.value) {
+      // Written only when it changes (#1419). Rewriting min, even to the
+      // same value, makes Chromium rebuild the date's fields; the end's own
+      // input event fires once its first year digit makes a whole date, so
+      // a rewrite there dropped the year being typed and the next digit
+      // cleared the field.
+      if (start.value) end.min = start.value;
+      else end.removeAttribute("min");
+    }
   };
   const wireNotBefore = (root) => within(root, "input[data-not-before]").forEach(checkNotBefore);
   // One listener for every page, in the capture phase, so the order is set
@@ -3415,7 +3527,15 @@
   // The server checks every chosen row itself.
   const CONFIRM_POLL_MS = 1000;
   const CONFIRM_WAIT_MS = 30000;
+  // A refusal with no explanation of its own, by status. A bare 400 means
+  // the page sent something the server did not expect (most often a page
+  // left open while it changed), never an outage: retrying cannot help, a
+  // reload can (#1400, #1401). A 404 or 410 means the item is gone; only an
+  // outage (5xx, or no status here) keeps "try again in a moment".
   const CONFIRM_REFUSED = {
+    400: "This was not done: the page sent something the server did not expect. Reload the page, then try again.",
+    404: "This was not done: it no longer exists. Reload the page.",
+    410: "This was not done: it no longer exists. Reload the page.",
     403: "This was not done: you are not allowed to do this now, or your sign-in has ended. Reload the page.",
     409: "This was not done: the page is out of date. Reload the page, then try again.",
   };
@@ -3557,11 +3677,29 @@
   });
   // Show why the action was not done, below the dialog's buttons; ``link``
   // is an optional same-origin {href, text} (a change's status page).
+  // text is a sentence, or the nodes of a refusal the server drew
+  // (refusalMarkup), shown as drawn.
   const refuseConfirm = (state, text, link) => {
     const error = state.dialog.querySelector("[data-confirm-error]");
-    const line = document.createElement("p");
-    line.textContent = text;
-    error.replaceChildren(line);
+    if (Array.isArray(text)) {
+      error.replaceChildren(...text);
+      // A drawn refusal can carry a control (the step-up's Confirm with
+      // Google), which must not be read as part of the announcement: only
+      // its sentences are the alert, as step-up-notice.html's role rule
+      // says, so the line itself is no live region then.
+      error.removeAttribute("role");
+      error.querySelectorAll(":scope > p, [data-step-up-notice] > p").forEach((line) => {
+        line.setAttribute("role", "alert");
+      });
+      // A LOCAL step-up it brings records its return path (recordStepUp).
+      recordStepUp(error);
+    } else {
+      // A sentence is the whole alert (a drawn refusal may have removed it).
+      error.setAttribute("role", "alert");
+      const line = document.createElement("p");
+      line.textContent = text;
+      error.replaceChildren(line);
+    }
     if (link && sameOrigin(link.href)) {
       const anchor = document.createElement("a");
       anchor.href = link.href;
@@ -3580,6 +3718,65 @@
     state.busy = false;
     cancel.focus();
   };
+  // A refusal whose errors name fields in the dialog (field_id: the bulk
+  // outcome's contact date and time, #1332) is shown at those fields
+  // instead: the message fills the dialog's field-error line (its first
+  // .errorlist with an id) and each field is marked and described by it.
+  // Confirm stays unavailable, naming the line, until one of them is
+  // edited: the edit clears the mark (wireValidity) and then lets the
+  // form's complete gate decide again. Any change on the form counts,
+  // since choosing no contact attempt greys Date and Time without an event
+  // on them. False when nothing was marked.
+  const refuseAtFields = (state, raw, text) => {
+    let ids = [];
+    try {
+      ids = (JSON.parse(raw)?.errors || []).map((item) => item?.field_id).filter(Boolean);
+    } catch { return false; }
+    const fields = [...new Set(ids)].map((id) => document.getElementById(id))
+      .filter((node) => node instanceof HTMLElement && state.dialog.contains(node)
+        && node.matches("input, select, textarea") && !node.disabled);
+    const list = state.dialog.querySelector(".errorlist[id]");
+    if (!fields.length || !list) return false;
+    const item = list.querySelector("li") || list.appendChild(document.createElement("li"));
+    item.textContent = text;
+    list.hidden = false;
+    list.dataset.source = "server";
+    const describe = (node) => node.setAttribute("aria-describedby", [...new Set([
+      ...(node.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean), list.id])].join(" "));
+    fields.forEach((node) => {
+      node.setAttribute("aria-invalid", "true");
+      node.setAttribute("data-field-error", "");
+      describe(node);
+    });
+    state.dialog.querySelector("[data-confirm-error]").hidden = true;
+    state.dialog.querySelector("[data-confirm-status]").textContent = "";
+    const accept = state.dialog.querySelector("[data-confirm-accept]");
+    accept.classList.remove("is-busy");
+    accept.removeAttribute("aria-disabled");
+    accept.disabled = true;
+    describe(accept);
+    state.dialog.querySelector("[data-confirm-cancel]").disabled = false;
+    state.busy = false;
+    // In the capture phase on the form, so the button stops naming the
+    // line before wireValidity's clearFieldError (on the field) runs:
+    // that would otherwise mark the button aria-invalid too.
+    const done = new AbortController();
+    const release = () => {
+      done.abort();
+      const kept = (accept.getAttribute("aria-describedby") || "").split(/\s+/)
+        .filter((id) => id && id !== list.id);
+      if (kept.length) accept.setAttribute("aria-describedby", kept.join(" "));
+      else accept.removeAttribute("aria-describedby");
+      if (confirming !== state) return;
+      accept.disabled = false;
+      if (state.form.hasAttribute("data-require-complete")) gateComplete(state.form);
+    };
+    ["input", "change"].forEach((type) =>
+      state.form.addEventListener(type, release, {capture: true, signal: done.signal}));
+    state.dialog.addEventListener("close", release, {signal: done.signal});
+    fields[0].focus();
+    return true;
+  };
   // A refused answer's message: the server's own explanation when it gives
   // one (a JSON refusal), else a plain one for its status.
   const refusalText = (status, text) => {
@@ -3588,6 +3785,15 @@
       if (refusal?.message) return [refusal.message, refusal.fix].filter(Boolean).join(" ");
     } catch { /* not JSON: the plain message below */ }
     return CONFIRM_REFUSED[status] || CONFIRM_UNAVAILABLE;
+  };
+  // A refusal the server draws as markup, marked data-review-refusal: the
+  // nodes to show, or null for any other answer. System health's actions
+  // (#1356) answer so, since a stale sign-in brings the shared step-up
+  // notice and its Confirm with Google, which a sentence cannot carry.
+  const refusalMarkup = (text) => {
+    const node = new DOMParser().parseFromString(text, "text/html")
+      .querySelector("[data-review-refusal]");
+    return node ? [...node.childNodes].map((child) => document.importNode(child, true)) : null;
   };
   // A change's status page: {state, text} from its data-live-status region,
   // or null for any other page (the change needed no waiting).
@@ -3631,7 +3837,13 @@
       return false;
     }
     if (!answer.response.ok) {
-      refuseConfirm(state, refusalText(answer.response.status, answer.text));
+      // A refusal the server draws (data-review-refusal, #1364) is shown as
+      // drawn; any other is marked at its fields when it names them (z27),
+      // else said in the dialog.
+      const markup = refusalMarkup(answer.text);
+      const text = refusalText(answer.response.status, answer.text);
+      if (markup) refuseConfirm(state, markup);
+      else if (!refuseAtFields(state, answer.text, text)) refuseConfirm(state, text);
       return false;
     }
     onRecorded?.();
@@ -3709,8 +3921,14 @@
     // Applied: redraw every region from the table's own address. A dialog
     // whose form sits outside the table's region (its rows tied to it by
     // their form attribute) finds the region from the button that opened it.
+    // A page whose view travels only in POST bodies (Census changes, #528)
+    // has no address that shows it again, so its dialog posts to the page
+    // itself with the view's fields, and the answer is that page, redrawn
+    // from directly (data-confirm-answer-page).
     const region = form.closest(REGIONS) || state.opener.closest(REGIONS);
-    const fresh = await freshPage(region?.dataset.refreshUrl || window.location.href);
+    const fresh = dialog.hasAttribute("data-confirm-answer-page")
+      ? new DOMParser().parseFromString(answer.text, "text/html")
+      : await freshPage(region?.dataset.refreshUrl || window.location.href);
     if (!fresh) return;
     state.done = true;
     dialog.close();
@@ -3781,7 +3999,7 @@
   // marked data-review-open="<dialog id>" (New and Edit user, Import
   // Ministry leaders, New and Edit scheduled email, Campaign settings, its
   // date change on Dates and mail schedules, Share options, Campaign images,
-  // Parish logos and Create the campaign's confirmation).
+  // Parish logos, Parish settings and Create the campaign's confirmation).
   //
   // Review posts the form, submitter included, without a page load. Until
   // the answer arrives the form is inert and aria-busy, and its Review
@@ -3810,9 +4028,14 @@
   // none, every region is redrawn from the form's region's data-refresh-url
   // (or, for a dialog marked data-review-redraw="answer", from the address
   // Apply's answer ended on).
-  // Either way the page's reserved status line named by
-  // data-review-outcome then says what was applied and when, and takes
-  // focus. Across a page change that line's text waits in sessionStorage,
+  // Either way the page's reserved status line then says what was applied
+  // and when, and takes focus. That line is the one the form that opened
+  // the dialog names with its own data-review-outcome, else the dialog's:
+  // a page whose panes share one dialog (Campaign images' slots) gives each
+  // pane its own line, so the status shows next to the control that caused
+  // it and the page never scrolls to a line elsewhere (UX conventions,
+  // "Review dialog"). A line inside a redrawn region is written after the
+  // redraw, so the redraw never wipes it. Across a page change that line's text waits in sessionStorage,
   // for that address only and for a minute: it is the review's short
   // sentence and a time, never an answer, a value or a credential.
   const REVIEW_OUTCOME = "pk-review-outcome";
@@ -3842,8 +4065,39 @@
   // An address from an attribute, never the form's action property, which
   // a field named "action" shadows.
   const formUrl = (form) => new URL(form.getAttribute("action") || "", document.baseURI).href;
+  // A form that names its pane's own reserved status line (Campaign images'
+  // slots, data-review-outcome) shows a refused Review there (#1410).
+  const paneLine = (form) => (form.dataset.reviewOutcome
+    ? document.getElementById(form.dataset.reviewOutcome) : null);
+  // A refusal written to a pane's line goes once it no longer applies: on
+  // an edit of a form naming the line, when a Review from the pane is
+  // accepted, or when the line takes another refusal. The pane's forms
+  // share the line (Campaign images' upload and Remove this image), so
+  // every field the line describes loses that description and its server
+  // mark, whichever form cleared it.
+  const clearPaneRefusal = (form) => {
+    const line = paneLine(form);
+    if (!line?.hasAttribute("data-refusal")) return;
+    line.removeAttribute("data-refusal");
+    line.textContent = "";
+    line.removeAttribute("title");
+    document.querySelectorAll("[aria-describedby]").forEach((node) => {
+      const ids = node.getAttribute("aria-describedby").split(/\s+/).filter(Boolean);
+      if (!ids.includes(line.id)) return;
+      const kept = ids.filter((id) => id !== line.id);
+      if (kept.length) node.setAttribute("aria-describedby", kept.join(" "));
+      else node.removeAttribute("aria-describedby");
+      node.removeAttribute("data-field-error");
+      node.setAttribute("aria-invalid", "false");
+    });
+  };
+  // Forms whose edits clear their pane's refusal: one listener each.
+  const paneWatched = new WeakSet();
   const showFieldErrors = (form, parsed) => {
     const fresh = parsed.getElementById(form.id);
+    const line = paneLine(form);
+    // A pane line's earlier refusal, and the marks it described, give way.
+    if (line) clearPaneRefusal(form);
     // A list placed by an earlier answer (below) that this one does not
     // repeat is out of date: its field's mark and message clear.
     form.querySelectorAll(".errorlist[data-review-placed]").forEach((placed) => {
@@ -3860,6 +4114,9 @@
     // the control's label, for a checkbox inside one).
     fresh.querySelectorAll(".errorlist[id]").forEach((list) => {
       let live = form.querySelector(`#${CSS.escape(list.id)}`);
+      // A pane with its own line says it there instead: a list added
+      // here would move the pane's button under the pointer (#1410).
+      if (!live && line) return;
       if (!live) {
         const control = form.querySelector(`#${CSS.escape(list.id.replace(/_error$/, ""))}`);
         if (!control) return;
@@ -3878,10 +4135,16 @@
       if (!node.id || isSubmit(node) || node instanceof HTMLButtonElement) return;
       const twin = fresh.querySelector(`#${CSS.escape(node.id)}`);
       if (!twin) return;
+      const invalid = twin.getAttribute("aria-invalid") === "true";
       if (twin.hasAttribute("aria-describedby")) {
-        node.setAttribute("aria-describedby", twin.getAttribute("aria-describedby"));
+        // A pane's field is described by the pane's line, in place of the
+        // list it does not draw.
+        const ids = twin.getAttribute("aria-describedby").split(/\s+/)
+          .filter((id) => id && (!line || form.querySelector(`#${CSS.escape(id)}`)));
+        if (line && invalid) ids.push(line.id);
+        node.setAttribute("aria-describedby", ids.join(" "));
       }
-      if (twin.getAttribute("aria-invalid") === "true") {
+      if (invalid) {
         node.setAttribute("aria-invalid", "true");
         node.setAttribute("data-field-error", "");
       }
@@ -3890,6 +4153,19 @@
       if (!node.closest(REGIONS)) node.remove();
     });
     const summary = parsed.querySelector("[data-error-summary]");
+    if (line) {
+      // The refusal is said in the pane's own line, where the reader is,
+      // never in a summary above the heading: focusing that would scroll
+      // the page to the top (#1410; UX conventions, "Review dialog").
+      line.setAttribute("data-refusal", "");
+      showOutcome(line.id, sentences([...(summary?.querySelectorAll("li") || [])]) || NOT_ACCEPTED);
+      if (!paneWatched.has(form)) {
+        paneWatched.add(form);
+        // A file pick fires both; the second finds nothing to clear.
+        ["input", "change"].forEach((type) => form.addEventListener(type, () => clearPaneRefusal(form)));
+      }
+      return;
+    }
     if (!summary) {
       form.querySelector("[aria-invalid=true]")?.focus();
       return;
@@ -3915,6 +4191,18 @@
     const token = carried.find((field) => field.hasAttribute("data-review-preview"))?.value || "";
     dialog.querySelector("[data-review-body]").replaceChildren(
       ...(answer ? [...answer.childNodes].map((node) => document.importNode(node, true)) : []));
+    // An editor whose Review is a confirmation only for some changes (#1356:
+    // New scheduled email, Import Ministry leaders) has its answer name the
+    // confirmation's question (data-review-title) and the sentence that
+    // describes the dialog (data-review-describedby). Any other answer, or a
+    // refusal, gets the dialog's own title and description back.
+    const title = dialog.querySelector("[data-review-title]");
+    title.dataset.reviewDefault ??= title.textContent;
+    title.textContent = answer?.getAttribute("data-review-title") || title.dataset.reviewDefault;
+    dialog.dataset.reviewDescribed ??= dialog.getAttribute("aria-describedby") || "";
+    const described = answer?.getAttribute("data-review-describedby") || dialog.dataset.reviewDescribed;
+    if (described) dialog.setAttribute("aria-describedby", described);
+    else dialog.removeAttribute("aria-describedby");
     const error = dialog.querySelector("[data-confirm-error]");
     error.hidden = true;
     error.replaceChildren();
@@ -3997,6 +4285,7 @@
       form.querySelectorAll(".errorlist[data-review-placed]").forEach((placed) => {
         placed.hidden = true;
       });
+      clearPaneRefusal(form);
       openReview(dialog, form, opener, review, null);
     } else if (answer.response.status === 400 && form.id && parsed.getElementById(form.id)) {
       showFieldErrors(form, parsed);
@@ -4004,7 +4293,8 @@
       // review opens the schedule editors the answer drew open).
       form.dispatchEvent(new CustomEvent("review-refused", {detail: parsed}));
     } else {
-      openReview(dialog, form, opener, null, refusalText(answer.response.status, answer.text));
+      openReview(dialog, form, opener, null, refusalMarkup(answer.text)
+        || refusalText(answer.response.status, answer.text));
     }
   };
   document.addEventListener("submit", (event) => {
@@ -4035,7 +4325,7 @@
       {time: clockTime()})].filter(Boolean).join(" ");
     const own = review.back && sameOrigin(review.back) ? review.back : "";
     const back = own || dialog.dataset.reviewReturn;
-    const outcome = (own && review.backOutcome) || dialog.dataset.reviewOutcome || "";
+    const outcome = (own && review.backOutcome) || state.form.dataset.reviewOutcome || dialog.dataset.reviewOutcome || "";
     if (back) {
       const target = new URL(back, document.baseURI);
       try {
@@ -4051,11 +4341,16 @@
     // applied (Create the campaign, data-review-redraw="answer") is redrawn
     // from the address Apply's answer ended on, the page naming its change,
     // which then becomes the page's address so a reload shows the same.
+    // A dialog marked data-review-redraw="body" is redrawn from Apply's
+    // answer itself, which holds the regions it changed: System health,
+    // whose own address records a page view each time it is read (#1356).
     const region = state.form.closest(REGIONS);
     const fromAnswer = dialog.dataset.reviewRedraw === "answer"
       && sameOrigin(answer.response.url) ? answer.response.url : "";
-    const fresh = await freshPage(fromAnswer || region?.dataset.refreshUrl
-      || window.location.href);
+    const fresh = dialog.dataset.reviewRedraw === "body"
+      ? new DOMParser().parseFromString(answer.text, "text/html")
+      : await freshPage(fromAnswer || region?.dataset.refreshUrl
+        || window.location.href);
     if (!fresh) return;
     state.done = true;
     dialog.close();
@@ -4298,9 +4593,8 @@
   // Repeating reminders (#469). expandRecurrence turns a repeat rule into
   // the calendar dates it produces. Dates are civil days, computed with UTC
   // dates so the browser's own zone never shifts them; the send time is
-  // added later per date (the campaign's wall-clock time on the date-change
-  // review, the browser's on the first-campaign step and New scheduled
-  // email, #558).
+  // added later per date (the browser's wall-clock time on the date-change
+  // review and New scheduled email, #558).
   // The rule: {frequency: "daily" | "weekly" | "monthly", start,
   // end (inclusive, "YYYY-MM-DD"), weekdays: [0 (Monday) … 6] for weekly,
   // and for monthly either {day: 1–31} or {ordinal: 1–4 or -1 (last),
@@ -4374,11 +4668,10 @@
   // inside the campaign dates, strictly after the initial invitation, not at
   // the instant of another Family mailing, at most REPEAT_LIMIT dates per
   // rule and the form's MAX_NUM_FORMS rows in all. Here every comparison is
-  // of date and time text in the zone the form's rows use: the browser's on
-  // the first-campaign step (#558), the campaign's on the date-change
-  // review. The campaign-date check compares calendar days, so on the
-  // first-campaign step the server decides a time near either edge (New
-  // scheduled email compares moments instead; see repeatDates).
+  // of date and time text in the browser's zone, which the date-change
+  // review's rows use (#558). The campaign-date check compares calendar
+  // days, so the server decides a time near either edge (New scheduled
+  // email compares moments instead; see repeatDates).
   const REPEAT_LIMIT = 30;
   const REPEAT_ERRORS = {
     dates: "Choose the first and last dates to repeat on.",
@@ -4424,7 +4717,8 @@
     });
   };
   // Every date a repeat rule gives, and why any of them will not be added
-  // (shared by the first-campaign panel and New scheduled email, #878).
+  // (shared by the date-change review repeat panel and New scheduled
+  // email, #878).
   // ``existing`` is the Family mailings already scheduled, as {kind, date,
   // time} campaign-local text; ``first`` and ``last`` the campaign's dates;
   // ``room`` how many more of the ``limit`` schedules fit; ``sendTime`` the canonical send
@@ -4841,7 +5135,8 @@
   // Reminder, a Repeat checkbox swaps the send date for a repeat rule. The
   // page's own send time and Email to send apply to every date. As the Admin
   // types, the dates the rule gives are listed with the same checks as the
-  // first-campaign panel (repeatDates), against the saved invitations and
+  // date-change review repeat panel (repeatDates), against the saved
+  // invitations and
   // reminders the page carries (data-repeat-mailings) and the schedules
   // still free (data-repeat-room). Dates and the time are this browser's
   // (#558): the saved mailings and the campaign's first and last moments

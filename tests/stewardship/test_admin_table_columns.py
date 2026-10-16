@@ -218,7 +218,6 @@ MEMBER_DUID_PAGES = {
     "census-changes.html",
     "limitations-report.html",
     "ministry-followup.html",
-    "ministry-report.html",
     "ministry-roster.html",
     "source-form.html",
     "user-leader-import.html",

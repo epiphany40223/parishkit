@@ -124,16 +124,24 @@ class Identity:
         return REACH["deliverable"] if self.email_deliverable else _("No")
 
 
-def open_form(identity, *, testing_codes):
+def open_form(identity, *, testing_codes, current=True, eligible=True):
     """Whether Open form is offered, and if not, why: ``(available, reason)``.
 
     The form is opened with the Family's code; in Testing mode the Family
     sign-in accepts only rehearsal codes, so a live code would be refused.
+    The hand-off (``assisted_entry.open_form``) also refuses a campaign that
+    is not the current one (``current``) and a Family that may not use the
+    Family form (``eligible``, its ``portal_eligible``), so the page shows
+    those refusals too rather than offering a button that fails (#1331).
     """
     if identity.code is None:
         return False, "no_code"
     if testing_codes:
         return False, "testing"
+    if not current:
+        return False, "not_current"
+    if not eligible:
+        return False, "not_eligible"
     return True, ""
 
 
@@ -145,7 +153,9 @@ def page_context(campaign, family_id, identity, mode, timeline, as_of, **options
     view: the timeline and the mode switch), ``show_codes`` (the role may see
     Family codes; without it the code and Open form are left out),
     ``testing_codes`` and ``family_test_url`` (the active parishioner family directory's
-    Testing-mode link, given only to roles that may open that page), and
+    Testing-mode link, given only to roles that may open that page),
+    ``current`` and ``eligible`` (whether the campaign is the current one
+    and the Family may use the Family form, for Open form), and
     ``values``, the timeline table's validated ``sort`` and ``size``, and
     ``export``, the export form's values (``export_context``), shown only on
     the full view of a timeline (with no Testing rehearsal there is none).
@@ -159,7 +169,12 @@ def page_context(campaign, family_id, identity, mode, timeline, as_of, **options
     # view with no rehearsal), so switching back to Production keeps it.
     sort = table.sort if table is not None else values.get("sort")
     testing_codes = options.get("testing_codes", False)
-    available, reason = open_form(identity, testing_codes=testing_codes)
+    available, reason = open_form(
+        identity,
+        testing_codes=testing_codes,
+        current=options.get("current", True),
+        eligible=options.get("eligible", True),
+    )
     return {
         "campaign": campaign,
         "identity": identity,
@@ -378,6 +393,8 @@ def family_timeline(request, campaign_id, family_id):
                 full=full,
                 show_codes=codes,
                 testing_codes=testing_codes,
+                current=system.current_campaign_id == campaign_id,
+                eligible=family.portal_eligible,
                 family_test_url=test_url,
                 values=values,
                 export=export_context(campaign_id, family.pk) if full else None,

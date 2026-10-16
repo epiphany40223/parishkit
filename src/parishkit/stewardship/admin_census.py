@@ -21,8 +21,10 @@ its downloads (a later ``export census``). It records the page's
 ``census resolve`` is a row's Record outcome (Entered in ParishSoft, Ignore
 or Reopen, #528), through the page's own admission and the page's own
 service (``census_resolution.resolve_census_change``), keyed by the page's
-request key. It prints ids, versions and states, never the note, the
-Family, the Member or the value.
+request key. ``census review`` is an Automatic row's Review (Approve,
+Ignore or Back to To review, ADM-09), the same way, through the page's
+``census_review.review_census_change``. Both print ids, versions and
+states, never the note, the Family, the Member or the value.
 """
 
 from dataclasses import dataclass
@@ -185,50 +187,43 @@ def _admit_resolve(caller, store, *, final=False):
         raise
 
 
-def resolve_census(
-    caller,
-    service,
-    proposal_id,
-    *,
-    action,
-    expected_version,
-    note,
-    request_key,
-    context,
+def _census_write(
+    caller, service, proposal_id, *, request_key, context, records, write, event, build
 ):
-    """``census resolve``: a Census changes row's Record outcome.
+    """One row write of the Census changes page, in the page's command scope.
 
-    Admits as the page's post does, then in the page's command scope (the
-    session row locked, the admission repeated around the effect) checks
-    the current campaign as the page does (``admit_report_read``), finds
-    the Live change in it (another campaign's, or an unknown one, is
-    ``not_available``, as the page refuses it) and calls the page's
-    ``resolve_census_change``, which checks the action's capability
-    (Reopen is the Administrator's), the version and the row's state, and
-    records the page's ``census_change_updated``. The command's
-    ``admin_cmd_census_resolve`` joins the same transaction, only when the
-    key is new: a repeat with the same intent returns the first resolution
-    (``created`` false), another intent is ``invalid``. The campaign is
-    checked first, so a repeat after the current campaign changed is
-    ``not_available``, as the page no longer lists the change.
+    ``census resolve`` and ``census review`` share it, as the page's one
+    post handles both. Admits as the page's post does, then in the page's
+    command scope (the session row locked, the admission repeated around the
+    effect) checks the current campaign as the page does
+    (``admit_report_read``) and finds the Live change in it (another
+    campaign's, or an unknown one, is ``not_available``, as the page refuses
+    it). ``write(actor)`` is then the page's own service, which checks the
+    capability, the version and the row's state and records the page's
+    ``census_change_updated``; it returns the receipt. ``event``, the
+    command's own action, joins the same transaction only when the key is
+    new (no row of ``records``, the receipt's model, holds it): a repeat
+    with the same intent returns the first receipt (``created`` false),
+    another intent is ``invalid``. The campaign is checked first, so a
+    repeat after the current campaign changed is ``not_available``.
+    ``build(created, receipt, proposal)`` reads the document back inside
+    the transaction, with ``proposal`` the change's state as the command
+    leaves it.
 
-    A change updated since ``expected_version`` is ``stale_version``, as is
-    the page's racing second write (a unique violation); an action the
-    row's state does not allow, or a Reopen without a note, is ``invalid``
-    (the page's 400). ``context["request_id"]`` is the key, so an exit-6
-    document names it; ``context["committed"]`` is set once the resolution
-    may have committed.
+    A change updated since the version is ``stale_version``, as is the
+    page's racing second write (a unique violation).
+    ``context["request_id"]`` is the key, so an exit-6 document names it;
+    ``context["committed"]`` is set once the write may have committed.
     """
     from .accounts.policy import Capability
     from .admin_report_reads import _current, _refusal, _refusals
-    from .audit.schemas import Action, ActorKind, Outcome
+    from .audit.schemas import ActorKind, Outcome
     from .audit.services import record_action
     from .campaigns.work_locks import require_work_order
     from .jobs.task_retries import command_scope
     from .observability import _guard_refusal
     from .reports.read_admission import admit_report_read
-    from .responses.census_resolution import resolve_census_change
-    from .responses.models import ProposalResolution, ProposedChange
+    from .responses.models import ProposedChange
     from .storage import StaleRecordError
 
     actor = _admit_resolve(caller, service.store)
@@ -236,7 +231,7 @@ def resolve_census(
     written = []
 
     def step():
-        """The page's resolution in its command scope, with the command's event."""
+        """The page's write in its command scope, with the command's event."""
         # A step repeated after an activating change starts over: nothing
         # from an earlier attempt, which rolled back, counts as written.
         written.clear()
@@ -259,21 +254,13 @@ def resolve_census(
             # repeats, so this tells a repeat from a new key; fail closed if
             # the scope ever stops holding it (#1222, #147).
             require_work_order()
-            repeat = ProposalResolution.objects.filter(
+            repeat = records.objects.filter(
                 actor_id=actor.identity, request_key=request_key
             ).exists()
-            receipt = resolve_census_change(
-                service.store,
-                actor.identity,
-                proposal_id,
-                expected_version=expected_version,
-                request_key=request_key,
-                action=action,
-                note=note,
-            )
+            receipt = write(actor)
             if not repeat:
                 record_action(
-                    Action.ADMIN_CMD_CENSUS_RESOLVE,
+                    event,
                     actor_kind=ActorKind.PORTAL_USER,
                     actor_id=actor.identity,
                     subject_id=caller.automation_session_id,
@@ -282,18 +269,10 @@ def resolve_census(
                 written.append(True)
             # Read back inside the transaction: the database's creation
             # time, and the change's state as this command leaves it.
-            resolution = ProposalResolution.objects.values(
-                "id", "proposal_id", "action", "expected_version", "created_at"
-            ).get(pk=receipt.pk)
             proposal = ProposedChange.objects.values(
                 "id", "version", "decision", "execution"
             ).get(pk=proposal_id)
-        return CensusResolve(
-            created=not repeat,
-            request_key=request_key,
-            resolution=resolution,
-            proposal=proposal,
-        )
+            return build(not repeat, receipt, proposal)
 
     try:
         model = _held(step)
@@ -309,3 +288,139 @@ def resolve_census(
         raise error
     context["committed"] = True
     return model
+
+
+def resolve_census(
+    caller,
+    service,
+    proposal_id,
+    *,
+    action,
+    expected_version,
+    note,
+    request_key,
+    context,
+):
+    """``census resolve``: a Census changes row's Record outcome.
+
+    The page's ``resolve_census_change`` through ``_census_write``: it
+    checks the action's capability (Reopen is the Administrator's), the
+    version and the row's state. The command records
+    ``admin_cmd_census_resolve``. An action the row's state does not allow,
+    or a Reopen without a note, is ``invalid`` (the page's 400).
+    """
+    from .audit.schemas import Action
+    from .responses.census_resolution import resolve_census_change
+    from .responses.models import ProposalResolution
+
+    def write(actor):
+        """The page's Record outcome."""
+        return resolve_census_change(
+            service.store,
+            actor.identity,
+            proposal_id,
+            expected_version=expected_version,
+            request_key=request_key,
+            action=action,
+            note=note,
+        )
+
+    def build(created, receipt, proposal):
+        """The resolution as recorded, and the change's state."""
+        resolution = ProposalResolution.objects.values(
+            "id", "proposal_id", "action", "expected_version", "created_at"
+        ).get(pk=receipt.pk)
+        return CensusResolve(
+            created=created,
+            request_key=request_key,
+            resolution=resolution,
+            proposal=proposal,
+        )
+
+    return _census_write(
+        caller,
+        service,
+        proposal_id,
+        request_key=request_key,
+        context=context,
+        records=ProposalResolution,
+        write=write,
+        event=Action.ADMIN_CMD_CENSUS_RESOLVE,
+        build=build,
+    )
+
+
+@dataclass(frozen=True)
+class CensusReview(ReadModel):
+    """The review a ``census review`` recorded, or found for its key.
+
+    ``review`` is the immutable record (``id``, ``proposal_id``,
+    ``decision``, ``expected_version``, ``created_at``), never its note;
+    ``proposal`` is the change's state as the command's transaction left it
+    (``id``, ``version``, ``decision``, ``execution``).
+    """
+
+    created: bool
+    request_key: UUID
+    review: dict
+    proposal: dict
+
+
+def review_census(
+    caller,
+    service,
+    proposal_id,
+    *,
+    decision,
+    expected_version,
+    note,
+    request_key,
+    context,
+):
+    """``census review``: an Automatic row's Review (ADM-09, #528).
+
+    The page's ``review_census_change`` through ``_census_write``, so every
+    guard is the page's: an Administrator only (``PUBLISH_CENSUS``; Staff
+    are ``denied``), an Automatic change only, only while it is open
+    (``pending``, ``conflict`` or ``failed``: never ``queued`` for
+    publication, #1245 review note 5, nor final), a decision different
+    from the current one, and no Approve of a Conflict. Any of those is
+    ``invalid`` (the page's 400). The command records
+    ``admin_cmd_census_review``.
+    """
+    from .audit.schemas import Action
+    from .responses.census_review import review_census_change
+    from .responses.models import ProposalReview
+
+    def write(actor):
+        """The page's Review."""
+        return review_census_change(
+            service.store,
+            actor.identity,
+            proposal_id,
+            expected_version=expected_version,
+            request_key=request_key,
+            decision=decision,
+            note=note,
+        )
+
+    def build(created, receipt, proposal):
+        """The review as recorded, and the change's state."""
+        review = ProposalReview.objects.values(
+            "id", "proposal_id", "decision", "expected_version", "created_at"
+        ).get(pk=receipt.pk)
+        return CensusReview(
+            created=created, request_key=request_key, review=review, proposal=proposal
+        )
+
+    return _census_write(
+        caller,
+        service,
+        proposal_id,
+        request_key=request_key,
+        context=context,
+        records=ProposalReview,
+        write=write,
+        event=Action.ADMIN_CMD_CENSUS_REVIEW,
+        build=build,
+    )

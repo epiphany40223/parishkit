@@ -2,14 +2,12 @@
 
 import json
 from contextlib import ExitStack
-from urllib.parse import urlencode
 from uuid import uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
 from django.shortcuts import redirect
 from django.template.loader import render_to_string
-from django.urls import reverse
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET
 
@@ -29,16 +27,14 @@ from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
 from parishkit.stewardship.web.tables import paginate
 
-from .chart_specs import PROGRESS, population_progress
-from .charts import participation_png
+from .chart_specs import PROGRESS, participation_chart, population_progress
 from .daily_digest import statistics_cards
-from .digest_presentation import participation_context
-from .documents import participation_document
+from .digest_presentation import participation_table_context
 from .exact_models import ExactExportRequest
 from .export_models import ExportRequest
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES, _principal
-from .facts import FactUnavailable, read_fact_set
+from .facts import FactUnavailable
 from .ministries import can_report, unscoped
 from .read_admission import admit_report_read
 from .selection import guarded_participation
@@ -122,14 +118,12 @@ def _audit(principal, campaign_id, outcome):
 
 
 @require_GET
-def participation(request, campaign_id, *, fact_set_id=None):
-    """Chart subrequests name the displayed generation, never today's pointer."""
+def participation(request, campaign_id):
+    """The Participation page, its daily chart drawn in the browser (#720)."""
     finish, handed_off = None, False
     try:
         service = runtime()
-        principal = _principal(
-            request, service.store, read_only=fact_set_id is not None
-        )
+        principal = _principal(request, service.store)
         query = ReportQuery.parse(request.GET)
         identities = (campaign_id,)
         admit_report_read(campaign_id)
@@ -165,40 +159,18 @@ def participation(request, campaign_id, *, fact_set_id=None):
         def content():
             """Prepare before headers and transfer generation protection to WSGI."""
             with ExitStack() as stack:
-                if fact_set_id is not None:
-                    facts = stack.enter_context(
-                        read_fact_set(
-                            fact_set_id,
-                            admit=lambda action, inputs: (
-                                action == "read"
-                                and inputs.campaign_id == campaign_id
-                                and inputs.population_scope == query.scope
-                            ),
-                        )
-                    )
-                    system = SystemConfiguration.objects.select_related(
-                        "active_configuration__parish"
-                    ).get()
-                    document = participation_document(
-                        facts,
-                        parish_name=system.active_configuration.parish.name,
+                selected = stack.enter_context(
+                    guarded_participation(
+                        response_guard,
+                        campaign_id=campaign_id,
+                        population_scope=query.scope,
                         browser_timezone=query.timezone,
-                        requested_at=facts.created_at,
                     )
-                    payload = participation_png(document)
-                else:
-                    selected = stack.enter_context(
-                        guarded_participation(
-                            response_guard,
-                            campaign_id=campaign_id,
-                            population_scope=query.scope,
-                            browser_timezone=query.timezone,
-                        )
-                    )
-                    context = _page_context(campaign_id, query, selected, principal)
-                    payload = render_to_string(
-                        "stewardship/participation.html", context, request=request
-                    ).encode()
+                )
+                context = _page_context(campaign_id, query, selected, principal)
+                payload = render_to_string(
+                    "stewardship/participation.html", context, request=request
+                ).encode()
                 response_guard.check()
                 return RenderedReport(payload, stack.pop_all())
 
@@ -207,9 +179,7 @@ def participation(request, campaign_id, *, fact_set_id=None):
             identities,
             authorize=authorize,
             open_content=content,
-            content_type="image/png"
-            if fact_set_id is not None
-            else "text/html; charset=utf-8",
+            content_type="text/html; charset=utf-8",
             on_close=finish,
         )
         handed_off = response.status_code == 200 and response.streaming
@@ -230,7 +200,7 @@ def participation(request, campaign_id, *, fact_set_id=None):
 def daily_table(chart, presented, query):
     """The daily table's sorted, paged context for one participation chart.
 
-    ``presented`` is ``participation_context(chart)``. Each day is paired
+    ``presented`` is ``participation_table_context(chart)``. Each day is paired
     with its formatted cells, so the server sorts by the exact stored values
     while the table shows the shared formatting. The whole document is
     already in memory, so the shared navigator shows the total and allows
@@ -342,15 +312,10 @@ def _page_context(campaign_id, query, selected, principal):
         ),
     }
     if selected.document is not None:
-        context.update(participation_context(selected.document))
+        context.update(participation_table_context(selected.document))
         context.update(daily_table(selected.document, context, query))
         context["row_count"] = len(selected.document.days)
-        context["chart_url"] = (
-            reverse(
-                "admin:participation_chart",
-                args=[selected.document.fact_set_id],
-            )
-            + "?"
-            + urlencode({"scope": query.scope, "timezone": query.timezone})
-        )
+        # The daily chart drawn in the browser (#720); the exports and the
+        # daily email keep the static drawing.
+        context["daily_chart"] = participation_chart(selected.document)
     return context

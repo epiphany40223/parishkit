@@ -48,25 +48,30 @@ source-form`` (in ``admin_source_form``), ``report data-to-fix`` (in
 ``admin_data_to_fix``), ``files list``, ``files
 delete`` and ``files rename`` (PR 10, in ``admin_hosted_files``),
 ``content list``, ``content show`` and ``content history`` (PR 10, in
-``admin_content``), ``integration list``, ``integration show`` and
-``integration status`` (PR 10, in ``admin_integrations``),
+``admin_content``), ``integration list``, ``integration show``, ``integration status``
+and ``integration schedule-preview`` (PR 10, in ``admin_integrations``),
 ``parish show``, ``ministries list``, ``branding show`` and ``campaign
 shares`` (PR 10, in ``admin_settings``), ``parish preview`` and
 ``parish confirm`` (PR 10, in ``admin_parish``), and ``events list`` and
 ``events acknowledge`` (PR 11, in ``admin_events``). A
 command that streams a file (``logs export``, ``export census``,
-``export limitations`` and ``export download --stream``) writes the file's
-bytes, and nothing else, to standard output, and its document to standard
-error. Other areas join the same
+``export limitations``, ``export roster`` and ``export download
+--stream``) writes the file's bytes, and nothing else, to standard output,
+and its document to standard error. Other areas join the same
 subparser tree in later pull requests, each listed in the catalog with the
 pull request that added it. ``report roster`` (in ``admin_roster``) counts
-the Roster changes to enter list, and ``report census`` (in
+the Roster changes to enter list, whose download is ``export roster`` (in
+``admin_roster_export``), and ``report census`` (in
 ``admin_census``) the Census changes list (#463), whose download is
 ``export census`` (in ``admin_census_export``). ``export limitations``
 (in ``admin_limitations_export``) is the Limitations report's download.
 ``artwork show``,
 ``artwork remove-preview`` and ``artwork remove`` (PR 10, in
 ``admin_artwork``) read Campaign images and remove one of them.
+``workgroup show``, ``workgroup preview`` and ``workgroup confirm`` (PR 10,
+in ``admin_workgroup``) read and change the No-reminders WorkGroup.
+``campaign show``, ``campaign preview`` and ``campaign confirm`` (PR 10, in
+``admin_campaign``) read and change Campaign settings.
 """
 
 import argparse
@@ -1235,6 +1240,23 @@ def integration_status(args, preamble, runtime, context):
     return read_integration_status(context["caller"], runtime, args.target)
 
 
+def integration_schedule_preview(args, preamble, runtime, context):
+    """Preview the applied or a proposed ParishSoft refresh schedule (#632).
+
+    The role first (#1339): Staff is denied before standard input is read.
+    """
+    from .admin_integration_changes import CHANGES_LIMIT
+    from .admin_integrations import read_schedule_preview
+
+    _role_first(context, runtime)
+    schedule = args.refresh_schedule
+    return read_schedule_preview(
+        context["caller"],
+        runtime,
+        None if schedule is None else _input(schedule, context, CHANGES_LIMIT),
+    )
+
+
 def integration_preview(args, preamble, runtime, context):
     """Review a change to, or the removal of, an integration's settings (PR 10).
 
@@ -1385,6 +1407,74 @@ def parish_confirm(args, preamble, runtime, context):
     from .admin_parish import TOKEN_LIMIT, confirm_parish
 
     return confirm_parish(
+        context["caller"],
+        runtime,
+        token=_input(args.token, context, TOKEN_LIMIT),
+        context=context,
+    )
+
+
+def workgroup_show(args, preamble, runtime, context):
+    """The current campaign's No-reminders WorkGroup (PR 10)."""
+    from .admin_workgroup import read_workgroup
+
+    return read_workgroup(context["caller"], runtime)
+
+
+def workgroup_preview(args, preamble, runtime, context):
+    """Review a change to the No-reminders WorkGroup (PR 10)."""
+    from .admin_workgroup import preview_workgroup
+
+    return preview_workgroup(
+        context["caller"],
+        runtime,
+        name=None if args.clear else args.name,
+        expected_version=args.expected_version,
+    )
+
+
+def workgroup_confirm(args, preamble, runtime, context):
+    """Confirm a reviewed No-reminders WorkGroup change as a request (PR 10)."""
+    from .admin_changes import TOKEN_LIMIT
+    from .admin_workgroup import confirm_workgroup
+
+    return confirm_workgroup(
+        context["caller"],
+        runtime,
+        token=_input(args.token, context, TOKEN_LIMIT),
+        context=context,
+    )
+
+
+def campaign_show(args, preamble, runtime, context):
+    """Campaign settings: the current campaign's settings (PR 10)."""
+    from .admin_campaign import read_campaign
+
+    return read_campaign(context["caller"], runtime)
+
+
+def campaign_preview(args, preamble, runtime, context):
+    """Review a change to the current campaign's settings (PR 10)."""
+    from .admin_campaign import CHANGES_LIMIT, preview_campaign
+
+    # The role first (#1341): denied before any input is read.
+    _role_first(context, runtime)
+    return preview_campaign(
+        context["caller"],
+        runtime,
+        expected_version=args.expected_version,
+        changes=_input(args.changes, context, CHANGES_LIMIT),
+    )
+
+
+def campaign_confirm(args, preamble, runtime, context):
+    """Confirm a reviewed Campaign settings change as a request (PR 10)."""
+    from .admin_campaign import confirm_campaign
+    from .admin_changes import TOKEN_LIMIT
+
+    # The role first (#1341): denied before any input is read.
+    _role_first(context, runtime)
+    return confirm_campaign(
         context["caller"],
         runtime,
         token=_input(args.token, context, TOKEN_LIMIT),
@@ -2249,6 +2339,21 @@ def _census_filters(args):
     }
 
 
+def export_roster(args, preamble, runtime, context):
+    """The Roster changes to enter download, streamed to standard output (#463)."""
+    from .admin_roster_export import export_roster as export
+
+    return export(
+        context["caller"],
+        runtime,
+        show=args.show,
+        ministry=args.ministry,
+        fmt=args.format,
+        zone_name=args.timezone,
+        context=context,
+    )
+
+
 def export_limitations(args, preamble, runtime, context):
     """The Limitations download, streamed to standard output (#463)."""
     from .admin_limitations_export import export_limitations as export
@@ -2318,6 +2423,39 @@ def census_resolve(args, preamble, runtime, context):
         runtime,
         args.proposal_id,
         action=args.action,
+        expected_version=args.expected_version,
+        note=note,
+        request_key=key,
+        context=context,
+    )
+
+
+def census_review(args, preamble, runtime, context):
+    """Review an Automatic census change, as its row's Review does (#528).
+
+    Approve (``approved``), Ignore (``ignored``) or Back to To review
+    (``unreviewed``). Without ``--request-key`` a new key is made and
+    written to standard error before anything is done. Every review can be
+    changed again until publication of the change starts, so, as on the
+    page, it asks nothing.
+    """
+    from .accounts.policy import Capability
+    from .admin_census import review_census
+    from .responses.census_resolution import MAX_NOTE
+
+    # The role first (#1341): an Administrator's, so Staff are denied before
+    # any input or lookup.
+    _role_first(context, runtime, Capability.PUBLISH_CENSUS)
+
+    key = _request_key(args, context)
+    # The page strips the note it posts; so does a note read from standard
+    # input (``_input``).
+    note = _input(args.note, context, MAX_NOTE * 4).strip()
+    return review_census(
+        context["caller"],
+        runtime,
+        args.proposal_id,
+        decision=args.decision,
         expected_version=args.expected_version,
         note=note,
         request_key=key,
@@ -2980,6 +3118,16 @@ def _integration_preview_options(parser):
     )
 
 
+def _integration_schedule_preview_options(parser):
+    """Options of ``integration schedule-preview``: a proposed schedule, if any."""
+    parser.add_argument(
+        "--refresh-schedule",
+        help="a proposed refresh schedule as YAML or JSON in the stored "
+        "refresh_rules shape, or - to read it from standard input "
+        "(default: the applied schedule)",
+    )
+
+
 def _integration_confirm_options(parser):
     """Options of ``integration confirm``: the integration and the token."""
     parser.add_argument("target", choices=INTEGRATION_SHOW_TARGETS, metavar="TARGET")
@@ -3548,6 +3696,27 @@ def _report_roster_options(parser):
     )
 
 
+def _export_roster_options(parser):
+    """Options of ``export roster``: ``report roster``'s, format and time zone.
+
+    The format choices are the page's own (``ministry_roster_views.
+    FORMATS``, which a test keeps equal), listed here because the parser is
+    built before Django is set up.
+    """
+    _report_roster_options(parser)
+    parser.add_argument(
+        "--format",
+        choices=("csv", "xlsx", "pdf"),
+        default=DEFAULT_EXPORT_FORMAT,
+        help=f"default {DEFAULT_EXPORT_FORMAT}",
+    )
+    parser.add_argument(
+        "--timezone",
+        default="UTC",
+        help="the time zone of the file's times (default UTC)",
+    )
+
+
 def _export_limitations_options(parser):
     """Options of ``export limitations``: the page's Show, format and time zone.
 
@@ -3647,6 +3816,35 @@ def _census_resolve_options(parser):
         default="",
         help="an optional note (required to reopen), or - to read it from "
         "standard input (needs --yes)",
+    )
+    _request_key_option(parser)
+
+
+# An Administrator's review decisions (``responses.models.REVIEW_DECISIONS``),
+# spelled out because the parser is built before Django is set up; a test
+# keeps them equal.
+CENSUS_DECISIONS = ("approved", "ignored", "unreviewed")
+
+
+def _census_review_options(parser):
+    """Options of ``census review``: an Automatic row's Review."""
+    parser.add_argument("proposal_id", type=_uuid, metavar="PROPOSAL_ID")
+    parser.add_argument(
+        "--decision",
+        required=True,
+        choices=CENSUS_DECISIONS,
+        help="approved (Approve), ignored (Ignore) or unreviewed (Back to To review)",
+    )
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_version,
+        help="the change's version, as export census --format jsonl prints it",
+    )
+    parser.add_argument(
+        "--note",
+        default="",
+        help="an optional note, or - to read it from standard input",
     )
     _request_key_option(parser)
 
@@ -3803,6 +4001,58 @@ def _parish_confirm_options(parser):
         "--token",
         required=True,
         help="preview.token from parish preview, or - for standard input",
+    )
+
+
+def _workgroup_preview_options(parser):
+    """Options of ``workgroup preview``: the new name or --clear, and the version."""
+    choice = parser.add_mutually_exclusive_group(required=True)
+    choice.add_argument(
+        "--name", help="the ParishSoft Family WorkGroup's name, as ParishSoft shows it"
+    )
+    choice.add_argument(
+        "--clear",
+        action="store_true",
+        help="name no WorkGroup: every eligible Family gets the Reminders",
+    )
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_digest,
+        help="the version workgroup show printed",
+    )
+
+
+def _workgroup_confirm_options(parser):
+    """Options of ``workgroup confirm``: the preview's token."""
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from workgroup preview, or - for standard input",
+    )
+
+
+def _campaign_preview_options(parser):
+    """Options of ``campaign preview``: the settings' version and the change."""
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_digest,
+        help="the version campaign show printed",
+    )
+    parser.add_argument(
+        "--changes",
+        required=True,
+        help="the change document as JSON, or - to read it from standard input",
+    )
+
+
+def _campaign_confirm_options(parser):
+    """Options of ``campaign confirm``: the preview's token."""
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from campaign preview, or - for standard input",
     )
 
 
@@ -4622,6 +4872,102 @@ def _settings_specs():
     )
 
 
+def _workgroup_specs():
+    """The No-reminders WorkGroup page (PR 10, ``admin_workgroup``).
+
+    Like ``parish show``, any session runs ``workgroup show`` and it records
+    nothing, as the page's GET records nothing. The page's Review and Apply
+    are ``workgroup preview`` and ``workgroup confirm``, as ``parish
+    preview`` and ``parish confirm``: full scope, as the page's posts record
+    activity; neither is fresh-gated nor prompts, as the page asks for no
+    recent sign-in and its Apply is the reviewed token.
+    """
+    from .admin_workgroup import WorkGroupConfirm, WorkGroupPreview, WorkGroupShow
+
+    return (
+        CommandSpec(
+            "workgroup show",
+            "Show the current campaign's No-reminders WorkGroup.",
+            workgroup_show,
+            "read_only",
+            False,
+            WorkGroupShow.field_names(),
+            10,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "workgroup preview",
+            "Review a change to the No-reminders WorkGroup.",
+            workgroup_preview,
+            "full",
+            False,
+            WorkGroupPreview.field_names(),
+            10,
+            options=(_workgroup_preview_options,),
+            expected_version=True,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "workgroup confirm",
+            "Confirm a reviewed change to the No-reminders WorkGroup.",
+            workgroup_confirm,
+            "full",
+            True,
+            WorkGroupConfirm.field_names(),
+            10,
+            options=(_workgroup_confirm_options,),
+        ),
+    )
+
+
+def _campaign_specs():
+    """Campaign settings (PR 10, ``admin_campaign``).
+
+    Like ``parish show``, any session runs ``campaign show`` and it records
+    nothing, as the page's GET records nothing. The page's Review and Apply
+    are ``campaign preview`` and ``campaign confirm``, as ``parish
+    preview`` and ``parish confirm``: full scope, as the page's posts record
+    activity; neither is fresh-gated nor prompts, as the page asks for no
+    recent sign-in and its Apply is the reviewed token.
+    """
+    from .admin_campaign import CampaignConfirm, CampaignPreview, CampaignShow
+
+    return (
+        CommandSpec(
+            "campaign show",
+            "Show the current campaign's settings.",
+            campaign_show,
+            "read_only",
+            False,
+            CampaignShow.field_names(),
+            10,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "campaign preview",
+            "Review a change to the current campaign's settings.",
+            campaign_preview,
+            "full",
+            False,
+            CampaignPreview.field_names(),
+            10,
+            options=(_campaign_preview_options,),
+            expected_version=True,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "campaign confirm",
+            "Confirm a reviewed change to the current campaign's settings.",
+            campaign_confirm,
+            "full",
+            True,
+            CampaignConfirm.field_names(),
+            10,
+            options=(_campaign_confirm_options,),
+        ),
+    )
+
+
 def _artwork_specs():
     """The Campaign images page's read and removal (PR 10, ``admin_artwork``).
 
@@ -4676,11 +5022,13 @@ def _integration_specs():
     Like ``parish show``, any session runs them and they record nothing, as
     the pages' GETs record nothing. ``integration status`` takes ``--watch``,
     as the settings page follows its status line while a change runs.
-    A settings page's Save and Remove are ``integration preview`` and
-    ``integration confirm`` (``admin_integration_changes``), as ``parish
-    preview`` and ``parish confirm``: full scope, as the page's posts record
-    activity. The page asks for a recent sign-in (#547), so ``integration
-    confirm`` is fresh-gated and prompts; the preview records nothing.
+    ``integration schedule-preview`` is the ParishSoft page's live schedule
+    check, which records nothing either. A settings page's Save and Remove
+    are ``integration preview`` and ``integration confirm``
+    (``admin_integration_changes``), as ``parish preview`` and ``parish
+    confirm``: full scope, as the page's posts record activity. The page
+    asks for a recent sign-in (#547), so ``integration confirm`` is
+    fresh-gated and prompts; the preview records nothing.
     ``integration backup-probe`` (Test access) and ``integration dismiss``
     (a key change line's Dismiss) are full scope and neither fresh-gated
     nor prompting, as those pages ask for neither
@@ -4694,7 +5042,12 @@ def _integration_specs():
     from .admin_integration_actions import BackupProbe, KeyDismissal
     from .admin_integration_changes import IntegrationConfirm, IntegrationPreview
     from .admin_integration_keys import FinishConfirm, FinishPreview, KeyStatus
-    from .admin_integrations import IntegrationList, IntegrationShow, IntegrationStatus
+    from .admin_integrations import (
+        IntegrationList,
+        IntegrationShow,
+        IntegrationStatus,
+        SchedulePreview,
+    )
 
     return (
         CommandSpec(
@@ -4729,6 +5082,17 @@ def _integration_specs():
             options=(_integration_status_options,),
             audit_event=None,
             watch=True,
+        ),
+        CommandSpec(
+            "integration schedule-preview",
+            "Preview the ParishSoft refresh schedule's next seven days and cost.",
+            integration_schedule_preview,
+            "read_only",
+            False,
+            SchedulePreview.field_names(),
+            10,
+            options=(_integration_schedule_preview_options,),
+            audit_event=None,
         ),
         CommandSpec(
             "integration preview",
@@ -4882,7 +5246,7 @@ def _report_specs():
     (``admin_digests``) and PR 8e the Family-level exports
     (``admin_family_exports``).
     """
-    from .admin_census import CensusReport, CensusResolve
+    from .admin_census import CensusReport, CensusResolve, CensusReview
     from .admin_census_export import CensusExport
     from .admin_data_to_fix import DataToFixReport
     from .admin_digests import DailyDigest, DigestList, WeeklyDigest, WeeklyRequest
@@ -4901,6 +5265,7 @@ def _report_specs():
     )
     from .admin_reports import LogExport, LogList
     from .admin_roster import RosterReport
+    from .admin_roster_export import RosterExport
     from .admin_source_form import SourceFormReport
 
     return (
@@ -5305,6 +5670,19 @@ def _report_specs():
             options=(_report_roster_options,),
             audit_event="roster_changes_viewed",
         ),
+        # The Roster changes to enter download (PR 8g): the page's file.
+        CommandSpec(
+            "export roster",
+            "Write the Roster changes to enter download to standard output.",
+            export_roster,
+            "full",
+            False,
+            RosterExport.field_names(),
+            8,
+            options=(_export_roster_options,),
+            audit_event="roster_changes_exported",
+            streams=True,
+        ),
         # The Limitations download (PR 8h): the page's file.
         CommandSpec(
             "export limitations",
@@ -5360,6 +5738,20 @@ def _report_specs():
             options=(_census_resolve_options,),
             # Only Entered in ParishSoft, which cannot be undone, asks.
             prompts=True,
+            request_key=True,
+            expected_version=True,
+        ),
+        # An Automatic row's Review (#528, ADM-09): the page's service,
+        # keyed by the page's request key; reversible, so it asks nothing.
+        CommandSpec(
+            "census review",
+            "Review an automatic census change, as its row's Review does.",
+            census_review,
+            "full",
+            True,
+            CensusReview.field_names(),
+            8,
+            options=(_census_review_options,),
             request_key=True,
             expected_version=True,
         ),
@@ -5503,6 +5895,8 @@ COMMANDS = (
     + _portal_specs()
     + _file_specs()
     + _settings_specs()
+    + _workgroup_specs()
+    + _campaign_specs()
     + _operation_specs()
     + _report_specs()
     + _users_specs()

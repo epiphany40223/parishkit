@@ -134,12 +134,17 @@ def test_system_health_lists_content_on_page_load_only(
     assert add_draft(store, store.active(), uuid4())[0].state == "applied"
     _, body = get(browser, HEALTH)
     assert b"No saved page or email needs re-saving." in body
+    # Nothing to re-save, so Pages and emails is not linked from the tile.
+    clean = body.decode().split('id="resave-summary"', 1)[1].split("</div>", 1)[0]
+    assert reverse("admin:content_catalog") not in clean
     campaign = Campaign.objects.get()
     page, email = stale_rows(str(campaign.pk))
     plant_stale(store, monkeypatch, page, email)
     response, body = get(browser, HEALTH)
     text = body.decode()
-    assert "2 saved pages or emails should be re-saved" in text
+    # The blocked invitation is the Error tile's sentence; the page follows.
+    assert "1 email cannot be sent until it is fixed" in text
+    assert "1 other saved page or email should be re-saved." in text
     summary = text.split('id="resave-summary"', 1)[1].split("</div>", 1)[0]
     assert reverse("admin:content_catalog") in summary
     editor = reverse("admin:content_revision", args=["email", "initial", email["id"]])

@@ -1,14 +1,14 @@
 """Shared exact-value presentation for the digest's protected snapshot page."""
 
-from decimal import ROUND_HALF_UP, Decimal
 from io import BytesIO
 
 from django.urls import reverse
 from PIL import Image
 
+from .chart_specs import whole_dollars as tooltip_dollars
 from .charts import (
-    EMAIL_PLOT_LAYOUT,
-    EMAIL_RENDERER_VERSION,
+    DIGEST_PLOT_LAYOUTS,
+    LEGACY_PLOT_LAYOUT,
     PLOT_LAYOUT,
     participation_limits,
 )
@@ -17,15 +17,8 @@ from .digest_comparison import data_line
 from .digest_funnel import funnel_context
 
 
-def snapshot_context(
-    document, *, mode, chart_url, download_url, plot=PLOT_LAYOUT, funnel_charts=False
-):
+def snapshot_context(document, *, mode, chart_url, download_url, plot=PLOT_LAYOUT):
     """Show the email's exact report-day figures; nothing is recalculated.
-
-    ``funnel_charts`` says the email had the Response funnel's two charts
-    (the ready row retained them, #477), so the page draws them too; a
-    digest compiled before them, or sent with its charts withheld, shows
-    only the funnel's table, as its email did.
 
     ``plot`` is where the retained chart image draws its plot, for the date
     hit-testing; see ``chart_layout``. The Compared with past campaigns
@@ -43,9 +36,9 @@ def snapshot_context(
         "mode": mode,
         "cards": report_day_cards(document),
         # The response funnel at the end of the report day, counted again
-        # from the same durable timestamps the email used (#477), with the
-        # email's two charts drawn in the browser when it had them (slice 2).
-        **funnel_context(document.funnel, document.mode, charts=funnel_charts),
+        # from the same durable timestamps the email used (#477); no charts
+        # (#1370), even for a digest whose email still had them.
+        **funnel_context(document.funnel, document.mode),
         "chart_url": chart_url,
         "download_url": download_url,
     }
@@ -54,11 +47,6 @@ def snapshot_context(
 def comparison_path(section):
     """The Campaign comparison report on the section's day (``?day=N``)."""
     return f"{reverse('admin:campaign_comparison')}?day={int(section['day'])}"
-
-
-def tooltip_dollars(amount):
-    """Round an exact pledge total to whole dollars, halves up: $760,410."""
-    return f"${amount.quantize(Decimal(1), rounding=ROUND_HALF_UP):,}"
 
 
 def tooltip_point(day, row):
@@ -91,21 +79,27 @@ def tooltip_point(day, row):
 def chart_layout(chart):
     """Return the plot layout of a retained digest chart from its PNG bytes.
 
-    Digests compiled since #720 carry the email drawing, named in the PNG's
-    Creator text; earlier ones carry the Participation page's drawing. The
-    retained bytes are never redrawn, so the page hit-tests the drawing it
-    actually shows. Unreadable metadata falls back to the older layout.
+    Digests compiled since #720 carry an email drawing, named in the PNG's
+    Creator text: the separate-panel one, or the earlier one with a second
+    dollar axis. Older ones carry the Participation page's drawing from
+    before #720. The retained bytes are never redrawn, so the page hit-tests
+    the drawing it actually shows. Unreadable metadata falls back to the
+    oldest layout.
     """
     try:
         with Image.open(BytesIO(chart)) as image:
             creator = image.text.get("Creator")
     except (OSError, ValueError, SyntaxError):
         creator = None
-    return EMAIL_PLOT_LAYOUT if creator == EMAIL_RENDERER_VERSION else PLOT_LAYOUT
+    return DIGEST_PLOT_LAYOUTS.get(creator, LEGACY_PLOT_LAYOUT)
 
 
-def participation_context(chart, *, plot=PLOT_LAYOUT):
-    """Shared exact chart/table/hover presentation for live and pinned pages."""
+def participation_table_context(chart):
+    """The exact daily table's rows and headings, as every page shows them.
+
+    The live Participation page needs only these: its chart is drawn in the
+    browser (#720), so it has no image to hit-test.
+    """
     rows = [
         participation_row(day, financial_enabled=chart.financial_enabled)
         for day in chart.days
@@ -113,6 +107,16 @@ def participation_context(chart, *, plot=PLOT_LAYOUT):
     headings = ["Campaign date", "First submissions", "Cumulative participation"]
     if chart.financial_enabled:
         headings.append(PLEDGE_HEADING)
+    return {"chart": chart, "headings": headings, "rows": rows}
+
+
+def participation_context(chart, *, plot=PLOT_LAYOUT):
+    """The table plus a retained chart image's hover and slider data.
+
+    A saved digest's page hit-tests the PNG it holds (``digest-v1.js``).
+    """
+    table = participation_table_context(chart)
+    headings, rows = table["headings"], table["rows"]
     labels = [
         chart.scope_label
         + "; "
@@ -122,9 +126,7 @@ def participation_context(chart, *, plot=PLOT_LAYOUT):
         for row in rows
     ]
     return {
-        "chart": chart,
-        "headings": headings,
-        "rows": rows,
+        **table,
         "chart_interaction": {
             "labels": labels,
             "points": [

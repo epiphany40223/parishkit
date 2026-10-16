@@ -23,7 +23,7 @@ and locks it (``campaign_views.lock_settings``):
   Apply posts to ``LIVE``, which the fixture server redirects to
   ``APPLIED``; ``LIVE_REFUSING`` is the same page whose Apply is answered
   with ``NOT_APPLIED``, the status of a change the installer refused.
-- ``LOCKED``: an archived campaign: nothing can change, so Review changes
+- ``LOCKED``: an archived campaign: nothing can change, so Save
   stays unavailable with its reason.
 
 ``POSTS`` lists the fixture server's answers to the pages' Apply POSTs.
@@ -153,8 +153,9 @@ def components(context, admin):
             reason=LOCKED_LIVE,
         )
 
-    def review(changes, notes=(), ministries=None):
-        """The review dialog's fragment for ``changes``."""
+    def review(changes, notes=(), ministries=None, compact=False):
+        """The review dialog's fragment for ``changes``; ``compact`` as
+        ``campaign_views._compact`` decides it (#1356)."""
         return (
             "text/html",
             render_to_string(
@@ -164,6 +165,7 @@ def components(context, admin):
                         "changes": changes,
                         "ministries": ministries,
                         "notes": list(notes),
+                        "compact": compact,
                         "preview": "synthetic-signed-intent",
                     }
                 },
@@ -222,7 +224,8 @@ def components(context, admin):
                     "before": "Sample campaign",
                     "after": "Renamed campaign",
                 }
-            ]
+            ],
+            compact=True,
         ),
         DRAFT_REFUSED: page(refused, state="draft", path=DRAFT),
         LIVE: page(live_form(), state="active", path=LIVE, live=True),

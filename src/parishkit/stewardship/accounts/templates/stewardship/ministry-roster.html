@@ -2,12 +2,12 @@
 {% block title %}{% translate "Roster changes to enter" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Roster changes to enter" %}</h1>
-{% aboutpage "ministry-roster" %}<p>{% translate "Ministry joins and leaves that someone resolved as Joined or Left, which must be entered in ParishSoft by hand: the ParishSoft API cannot change Ministry rosters. Mark each one Entered in ParishSoft once it is; clear a mark made by mistake. Changes the ParishSoft roster already showed are not listed, since nothing is left to enter. Marking never changes ParishSoft. Opening this page and every download is recorded." %}</p>
+{% aboutpage "ministry-roster" %}<p>{% translate "Ministry joins and leaves that someone resolved as Joined or Left, which must be entered in ParishSoft by hand: the ParishSoft API cannot change Ministry rosters. Mark each one Entered in ParishSoft once it is, with the check mark in its row; clear a mark made by mistake with the undo arrow. To mark several at once, tick them and select Mark entered in ParishSoft; the selection covers the changes on this page only. Changes the ParishSoft roster already showed are not listed, since nothing is left to enter. Marking never changes ParishSoft. Opening this page and every download is recorded." %}</p>
 <p>{% translate "Member DUID and Family DUID are ParishSoft's ID numbers, each in its own column so you can sort or copy it. A Member the Family added on the form is not in ParishSoft yet, so their Member DUID shows New Member; add them to the Family first. Times use your computer's time zone." %}</p>
 <p>{% translate "If a Family answered again after a change was resolved, the change stays listed, with Yes under Replaced by a later response, since it still has to be entered. If the new request was resolved too, the same change is listed twice: enter it in ParishSoft once, then mark both. Ministry narrows the list to one Ministry; the downloads follow it." %}</p>
-<p>{% translate "ParishSoft status is blank while ParishSoft lists the Member. Otherwise it says Not in ParishSoft, Inactive in ParishSoft or Deceased in ParishSoft: Ministry follow-up leaves such a Member's requests out, but a change resolved for them may still need entering, so it stays here." %}</p>
+<p>{% translate "ParishSoft status is blank while ParishSoft lists the Member. Otherwise it says Not in ParishSoft, Inactive in ParishSoft or Deceased in ParishSoft: Ministry requests leaves such a Member's requests out, but a change resolved for them may still need entering, so it stays here." %}</p>
 <p>{% translate "The downloads carry the same columns as the list, for the list's Show choice, in every row rather than one page." %}</p>{% endaboutpage %}
-<p><a href="{% url 'admin:ministry_followup' %}">{% translate "Ministry follow-up" %}</a></p>
+<p><a href="{% url 'admin:ministry_report' %}">{% translate "Ministry requests" %}</a></p>
 {% comment %}The answer to a row's tick. Its two lines are reserved while empty, so the notice appearing never moves the table under the pointer (no layout shift).{% endcomment %}<div id="roster-notice" class="action-status" data-table-sync>{% if changed %}<p>{% translate "That mark was changed by someone else first, so nothing was recorded. The list shows its current state." %}</p>{% endif %}</div>
 {% if not mutable %}<p class="notice">{% translate "Other campaign work is under way, so the Entered in ParishSoft mark cannot be changed until it finishes." %}</p>{% endif %}
 <form id="table-filters" data-table-sync method="get" action="{% url 'admin:ministry_roster' %}">
@@ -22,12 +22,20 @@
 <label for="roster-timezone">{% translate "Timezone" %}</label><select id="roster-timezone" name="timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
 {% button type="submit" %}{% translate "Download this list" %}{% endbutton %}</form></section>
 <script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
-<div id="{{ table.anchor }}" data-table-region>
+{# Row actions follow the shared action-table pattern (UX conventions, "Row actions and confirmation", #879): each row's tick is an icon button in the Actions column (roster-tick-row.html), and rows not yet marked have a selection box for the bulk bar's Mark entered in ParishSoft, which asks in the shared confirmation dialog. The sort headings, navigators and row ticks are forms of their own, so the boxes and the bulk key belong to form#roster-bulk (below, outside the region) through their form attribute. The region's data-refresh-url is the list's own address, which the dialog redraws the table from once the marks are recorded, keeping Show, Ministry, sort and page. #}
+<div id="{{ table.anchor }}" data-table-region data-refresh-url="{{ refresh_url }}">
 {% translate "Roster change pages" as pages_label %}{% include "stewardship/table-navigator.html" with table=table label=pages_label %}
-<div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Roster changes to enter' %}"><table>
+<div data-select-table data-missing-hint="{% translate 'Tick changes not yet entered on this page to mark them entered in ParishSoft.' %}">
+{% if mutable %}<input type="hidden" name="bulk_key" value="{{ bulk_key }}" form="roster-bulk">
+<div class="bulk-bar">
+{% button type="button" variant="secondary" data-bulk-action data-confirm-open="roster-bulk-dialog" %}{% translate "Mark entered in ParishSoft" %}{% endbutton %}
+{% include "stewardship/table-selection.html" %}
+</div>{% endif %}
+<div class="table-scroll" id="roster-table" tabindex="0" role="region" aria-label="{% translate 'Roster changes to enter' %}"><table>
 {# Columns in the shared order (UX conventions, "Table column order", #932): the Member leads, the Member and Family names each with its DUID in its own column, the Ministry by name alone (#1123), then the change, its resolution and its mark, and the tick last. #}
-<caption>{% translate "Roster changes to enter" %}</caption><thead><tr>{% translate "Member" as heading %}{% sort_heading table "member" heading %}{% translate "Member DUID" as heading %}{% sort_heading table "member_duid" heading "numeric" %}<th scope="col">{% translate "ParishSoft status" %}</th>{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "Family DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}{% translate "Ministry" as heading %}{% sort_heading table "ministry" heading %}{% translate "Request" as heading %}{% sort_heading table "request" heading %}{% translate "Resolved" as heading %}{% sort_heading table "resolved" heading %}<th scope="col">{% translate "Resolved by" %}</th><th scope="col">{% translate "Replaced by a later response" %}</th><th scope="col">{% translate "Entered in ParishSoft" %}</th><th scope="col">{% translate "Entered by" %}</th><th scope="col">{% translate "Entered at" %}</th><th scope="col">{% translate "Actions" %}</th></tr></thead><tbody>
+<caption>{% translate "Roster changes to enter" %}</caption><thead><tr>{% if mutable %}<th scope="col" class="select-col"><input type="checkbox" data-select-all aria-label="{% translate 'Select every change not yet entered on this page' %}"></th>{% endif %}{% translate "Member" as heading %}{% sort_heading table "member" heading %}{% translate "Member DUID" as heading %}{% sort_heading table "member_duid" heading "numeric" %}<th scope="col">{% translate "ParishSoft status" %}</th>{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "Family DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}{% translate "Ministry" as heading %}{% sort_heading table "ministry" heading %}{% translate "Request" as heading %}{% sort_heading table "request" heading %}{% translate "Resolved" as heading %}{% sort_heading table "resolved" heading %}<th scope="col">{% translate "Resolved by" %}</th><th scope="col">{% translate "Replaced by a later response" %}</th><th scope="col">{% translate "Entered in ParishSoft" %}</th><th scope="col">{% translate "Entered by" %}</th><th scope="col">{% translate "Entered at" %}</th><th scope="col">{% translate "Actions" %}</th></tr></thead><tbody>
 {% for row in table.rows %}<tr>
+{% if mutable %}<td class="select-col">{% if row.roster_eligible and not row.roster_entered %}<input type="checkbox" name="request" value="{{ row.id }}:{{ row.roster_sequence|add:1 }}" form="roster-bulk" data-select-row data-confirm-name="{{ row.label }}" aria-label="{% blocktranslate with name=row.label %}Select {{ name }}{% endblocktranslate %}">{% endif %}</td>{% endif %}
 <th scope="row" id="member-{{ row.id }}"><a href="{% url 'admin:ministry_followup_item' row.id %}">{% if row.member_name %}{{ row.member_name }}{% else %}{{ row.member_label }}{% endif %}</a></th>
 {% if row.member_duid %}<td class="numeric">{{ row.member_duid|duid }}</td>{% else %}<td>{% translate "New Member" %}</td>{% endif %}
 <td>{% if row.source_mark %}{% source_status row.member_status %}{% endif %}</td>
@@ -41,8 +49,12 @@
 <td>{% if row.roster_entered %}{% translate "Yes" %}{% else %}{% translate "Not yet" %}{% endif %}</td>
 <td>{% if row.roster_entered %}{{ row.roster_by }}{% endif %}</td>
 <td>{% if row.roster_entered and row.roster_at %}<time datetime="{{ row.roster_at|date:'c' }}" data-local-instant data-compact>{{ row.roster_at|date:'c' }}</time>{% endif %}</td>
-<td>{% include "stewardship/roster-tick-row.html" with row=row %}</td></tr>
-{% empty %}<tr><td colspan="14">{% translate "No roster changes to enter." %}</td></tr>{% endfor %}</tbody></table></div>
+{% include "stewardship/roster-tick-row.html" with row=row %}</tr>
+{% empty %}<tr><td colspan="{% if mutable %}15{% else %}14{% endif %}">{% translate "No roster changes to enter." %}</td></tr>{% endfor %}</tbody></table></div>
+</div>
 {% include "stewardship/table-navigator.html" with table=table label=pages_label %}
 </div>
+{% if mutable %}<form id="roster-bulk" method="post" action="{% url 'admin:ministry_roster_bulk' %}">{% csrf_token %}
+{% translate "Mark {name} entered in ParishSoft?" as title_one %}{% translate "Mark {count} changes entered in ParishSoft?" as title_many %}{% translate "This records that each change is already entered in ParishSoft. It never changes ParishSoft, and a mark made by mistake can be cleared in its row." as body %}{% translate "Mark entered" as accept %}{% translate "Marked {name} entered in ParishSoft." as done_one %}{% translate "Marked {count} changes entered in ParishSoft." as done_many %}{% include "stewardship/components/confirm-dialog.html" with dialog_id="roster-bulk-dialog" form_id="roster-bulk" fallback="roster-table" title_one=title_one title_many=title_many body=body accept=accept done_one=done_one done_many=done_many plain_accept=True %}
+</form>{% endif %}
 {% endblock %}

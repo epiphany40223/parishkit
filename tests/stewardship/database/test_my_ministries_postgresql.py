@@ -72,7 +72,7 @@ def test_home_links_the_queue_by_get_and_the_filter_survives(response_service, g
     harness = setup(response_service)
     browser, _, _, _ = leader(harness, google)
     join, leave = requests()
-    route = "/admin/reports/ministries/follow-up/"
+    route = "/admin/reports/ministries/"
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = get(browser, "/admin/")
         assert response.status_code == 200
@@ -89,12 +89,14 @@ def test_home_links_the_queue_by_get_and_the_filter_survives(response_service, g
             assert response.status_code == 200
             assert str(join.pk).encode() in body and str(leave.pk).encode() not in body
         # The view is remembered like any other (#534): the request page and
-        # its "Return to Ministry follow-up" carry its token, which keeps the
+        # its "Return to Ministry requests" carry its token, which keeps the
         # Ministry.
-        token = re.search(rf"{route}{join.pk}/\?queue=([A-Za-z0-9_-]+)".encode(), body)
+        token = re.search(
+            rf"{route}follow-up/{join.pk}/\?queue=([A-Za-z0-9_-]+)".encode(), body
+        )
         assert token, "the request link carries the remembered view"
         token = token[1].decode()
-        response, detail = get(browser, f"{route}{join.pk}/?queue={token}")
+        response, detail = get(browser, f"{route}follow-up/{join.pk}/?queue={token}")
         assert response.status_code == 200
         assert f'href="{route}?queue={token}"'.encode() in detail
         response, back = get(browser, f"{route}?queue={token}")
@@ -105,10 +107,16 @@ def test_home_links_the_queue_by_get_and_the_filter_survives(response_service, g
         assert get(browser, route + "?ministry=09")[0].status_code == 400
         assert get(browser, route + "?ministry=9&search=x")[0].status_code == 400
         assert get(browser, f"{route}?ministry=9&queue={token}")[0].status_code == 400
-        assert get(browser, f"{route}{join.pk}/?ministry=9")[0].status_code == 400
+        assert (
+            get(browser, f"{route}follow-up/{join.pk}/?ministry=9")[0].status_code
+            == 400
+        )
         # A refused link says so plainly: no form was sent, and reloading the
         # same address would only repeat the error.
-        for address in (route + "?ministry=09", f"{route}{join.pk}/?ministry=9"):
+        for address in (
+            route + "?ministry=09",
+            f"{route}follow-up/{join.pk}/?ministry=9",
+        ):
             response, body = get(browser, address)
             assert response.status_code == 400
             assert b"This link isn't valid any more." in body

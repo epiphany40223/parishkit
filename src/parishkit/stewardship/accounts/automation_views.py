@@ -42,6 +42,7 @@ from redis.exceptions import RedisError
 from parishkit.config import ConfigError
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.refusals import unexpected_fields
 from parishkit.stewardship.web.tables import whole_table
 
 from .admin_editing import error_response, principal
@@ -100,7 +101,7 @@ def _fields(parameters, allowed):
     if set(parameters) - allowed or any(
         len(values) != 1 for _, values in parameters.lists()
     ):
-        raise ValueError("Invalid automation form fields.")
+        raise unexpected_fields()
 
 
 def _administrator(request, service):

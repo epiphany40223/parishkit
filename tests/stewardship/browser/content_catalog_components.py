@@ -12,6 +12,9 @@ Rendered from the real template, so the browser checks need no database:
   gone, which also drops the table's selection column and bulk bar.
 - ``REFUSED`` and ``FAILED``: pages whose Delete is refused with the server's
   explanation, or recorded but not applied.
+- ``BARE``: a page whose Delete gets a bare 400, with no refusal of its own
+  (an unexpected field the server refused, #1401); ``GONE`` pages whose
+  Delete gets a bare 404 or 410 (``GONE.format(status)``, #1400).
 
 ``POSTS`` lists the fixture server's answers to the pages' POSTs; it is
 filled in by ``components``, before the server starts.
@@ -26,6 +29,8 @@ CATALOG = "/content-catalog"
 BULK = "/content-catalog-bulk"
 REFUSED = "/content-catalog-refused"
 FAILED = "/content-catalog-failed"
+BARE = "/content-catalog-bare"
+GONE = "/content-catalog-gone-{}"
 DELETE = "/content-catalog/deletion"
 APPLIED = "/content-change-applied"
 NOT_APPLIED = "/content-change-failed"
@@ -147,6 +152,19 @@ def components(context, admin):
                 ),
             ),
             f"{FAILED}/deletion": (303, NOT_APPLIED, ""),
+            f"{BARE}/deletion": (
+                400,
+                None,
+                json.dumps({"errors": [{"code": "invalid", "field_id": None}]}),
+            ),
+            **{
+                f"{GONE.format(status)}/deletion": (
+                    status,
+                    None,
+                    json.dumps({"errors": [{"code": code, "field_id": None}]}),
+                )
+                for status, code in ((404, "invalid"), (410, "gone"))
+            },
         }
     )
     return {
@@ -164,6 +182,16 @@ def components(context, admin):
         FAILED: _page(
             values, rows, refresh_url=FAILED, delete_url=f"{FAILED}/deletion"
         ),
+        BARE: _page(values, rows, refresh_url=BARE, delete_url=f"{BARE}/deletion"),
+        **{
+            GONE.format(status): _page(
+                values,
+                rows,
+                refresh_url=GONE.format(status),
+                delete_url=f"{GONE.format(status)}/deletion",
+            )
+            for status in (404, 410)
+        },
         APPLIED: _status(values, "applied"),
         NOT_APPLIED: _status(values, "failed", failure_code="stale_base"),
     }

@@ -10,6 +10,7 @@ instants, late events at once), the configuration patch and the invariant
 
 import json
 import logging
+import sys
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -153,6 +154,51 @@ def test_timeline_step_prints_the_summary_without_a_database(
     assert request.response_scale == 2.5
     assert str(request.clock_directory) == "/run/parishkit-clock"
     assert request.now == datetime(2026, 10, 7, 15, 30, tzinfo=UTC)
+
+
+def completion_module(monkeypatch, complete):
+    """Stand in for setup_completion, which needs a configured Django."""
+    monkeypatch.setitem(
+        sys.modules,
+        "parishkit.stewardship.accounts.setup_completion",
+        SimpleNamespace(setup_is_complete=lambda: complete),
+    )
+
+
+def test_credentials_step_reports_the_frozen_attempts_request_ids(monkeypatch):
+    """finish-setup's lookup (#1355): the ids, not frozen yet, or already done."""
+    monkeypatch.setattr(seeder, "configure_web_process", lambda configuration: None)
+    requests = {"parishsoft": "p-id", "google_workspace": "g-id"}
+    monkeypatch.setattr(seeder, "frozen_credential_requests", lambda: requests)
+    request = SimpleNamespace(step="credentials")
+    completion_module(monkeypatch, False)
+    assert seeder.run_step(request, None) == {
+        "step": "credentials",
+        "result": "frozen",
+        "requests": requests,
+    }
+    monkeypatch.setattr(seeder, "frozen_credential_requests", lambda: None)
+    assert seeder.run_step(request, None)["result"] == "not frozen"
+    # Complete setup is never looked up again.
+    monkeypatch.setattr(
+        seeder, "frozen_credential_requests", Mock(side_effect=AssertionError)
+    )
+    completion_module(monkeypatch, True)
+    assert seeder.run_step(request, None)["result"] == "setup was already complete"
+
+
+def test_credentials_step_needs_no_admin_email(quiet, monkeypatch, capsys):
+    """The step runs through the command in LOCAL and prints its JSON answer."""
+    monkeypatch.setattr(
+        seeder,
+        "credentials_step",
+        lambda request, configuration: {"step": request.step, "result": "not frozen"},
+    )
+    assert (
+        main(["local-seed", "--profile", "local", "--step", "credentials", *ARGUMENTS])
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["result"] == "not frozen"
 
 
 # Waits.
@@ -586,8 +632,9 @@ def test_constants_match_the_specification():
         "check",
         "finish",
     )
-    # The BG-12 rehearsal's two steps (local/rehearsal.py) follow the seed's.
-    assert seeder.STEPS[7:] == ("reminder", "measure")
+    # The BG-12 rehearsal's two steps (local/rehearsal.py) follow the seed's,
+    # then finish-setup's read-only lookup (#1355).
+    assert seeder.STEPS[7:] == ("reminder", "measure", "credentials")
     assert sorted(seeder.FATAL_OCCURRENCE_STATES) == [
         "coalesced",
         "delivery_unknown",

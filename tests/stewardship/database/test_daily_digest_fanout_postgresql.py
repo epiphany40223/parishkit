@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 from functools import partial
+from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -14,7 +15,10 @@ from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage
 from parishkit.stewardship.reports.digest_building import retain_daily_content
 from parishkit.stewardship.reports.digest_fanout import fanout_daily, retained_render
-from parishkit.stewardship.reports.digest_models import DailyDigestRecipient
+from parishkit.stewardship.reports.digest_models import (
+    DailyDigestReady,
+    DailyDigestRecipient,
+)
 
 from ..content_factory import content
 from ..policy_factory import administrator
@@ -225,3 +229,51 @@ def test_sql_rejects_detached_envelope_values(family_mail, monkeypatch, field, v
         ):
             fanout_daily(claim)
         assert not OutboxMessage.objects.exists()
+
+
+def test_a_ready_row_compiled_with_funnel_charts_still_fans_out(family_mail):  # noqa: F811
+    """A row compiled before #1370 keeps its two funnel images end to end.
+
+    The compile no longer writes ``funnel_chart``/``activity_chart``, but a
+    ready row already retained with both must still yield them from
+    ``images()``, validate against its retained HTML and fan out with them,
+    so a retry of such a digest sends exactly what was compiled.
+    """
+    from parishkit.stewardship.web.digest_content import FUNNEL_CHART_IDS
+
+    from ..test_daily_digest_content import legacy_funnel_body
+
+    # The harness digest has no funnel section to anchor the tags, so wrap
+    # the helper's tags around the compiled body.
+    tagged, images = legacy_funnel_body(SimpleNamespace(html="Response funnel</h2>"))
+    tags = tagged.removeprefix("Response funnel</h2>")
+    funnel, activity = (data for _, data in images)
+    real = DailyDigestReady.objects.create
+
+    def legacy_create(**fields):
+        """Retain the row as a pre-#1370 compile wrote it.
+
+        Retained rows are immutable (model and trigger), so the legacy shape
+        is written at creation: both PNGs (the both-or-neither check) and an
+        HTML body naming their two content ids.
+        """
+        fields.update(
+            html=tags + fields["html"], funnel_chart=funnel, activity_chart=activity
+        )
+        return real(**fields)
+
+    with (
+        campaign_clock(INSTANT),
+        patch.object(DailyDigestReady.objects, "create", legacy_create),
+    ):
+        claim, ready = ready_report(family_mail)
+        ready = DailyDigestReady.objects.get(pk=ready.pk)
+        assert ready.images() == images
+        assert [name for name, _ in ready.images()] == list(FUNNEL_CHART_IDS)
+        with task_login(ServiceRole.WORKER, exact=True), work_transaction():
+            assert fanout_daily(claim).phase == "complete"
+        recipient = DailyDigestRecipient.objects.select_related("outbox__render").get()
+        render = recipient.outbox.render
+        assert render.html.endswith(ready.html) and tags in render.html
+        for name in FUNNEL_CHART_IDS:
+            assert render.html.count(f'src="cid:{name}"') == 1

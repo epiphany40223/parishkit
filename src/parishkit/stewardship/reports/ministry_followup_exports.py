@@ -120,8 +120,8 @@ def pdf_refusal():
                 limit=f"{EXPORT_PDF_LIMIT:,}",
             ),
             fix=PDF_TOO_LARGE_FIX,
-            link=reverse("admin:ministry_followup"),
-            link_label=_("Return to Ministry follow-up"),
+            link=reverse("admin:ministry_report"),
+            link_label=_("Return to Ministry requests"),
         ),
     )
 

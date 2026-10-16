@@ -4,7 +4,7 @@ Signs in as Administrator and as Staff (with no current campaign, on a new
 Testing draft, on a campaign with a complete ParishSoft capture, and on a
 live Production campaign with every module and a configured Ministry) and as
 a Ministry leader, and follows every GET link from Home, as a reader clicking
-through the portal would. It checks the admin-portal spec's navigation rules
+through the portal would. It checks the UX conventions spec's navigation rules
 against the rendered pages, not only the registry
 (``tests/stewardship/test_admin_navigation.py`` covers the registry):
 
@@ -393,7 +393,7 @@ def test_a_ministry_leader_reaches_their_ministry_pages(auth_service, google, me
     add_draft(store, store.active(), uuid4())
     browser = _sign_in(store, google, "ministry_leader")
     reached = _check(browser, "leader")
-    assert reached == {"index", "ministry_report", "ministry_followup"}
+    assert reached == {"index", "ministry_report"}
 
 
 def _go_live_in_production(auth_service, settings):

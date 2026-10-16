@@ -10,6 +10,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.jobs.queue_wait import waited_words
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.refusals import unexpected_fields
 
 from .authentication import runtime
 from .setup_drafts import view_draft
@@ -185,7 +186,7 @@ def setup_source_progress(request, task_id):
             or set(request.POST) - {"csrfmiddlewaretoken"}
             or any(len(values) != 1 for _, values in request.POST.lists())
         ):
-            raise ValueError("Invalid source progress fields.")
+            raise unexpected_fields()
         service = runtime()
         progress = source_progress(
             request, service, task_id, renew=request.method == "POST"
