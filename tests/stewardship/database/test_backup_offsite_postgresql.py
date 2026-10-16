@@ -25,7 +25,7 @@ from parishkit.stewardship.audit.models import OperationalLog
 from parishkit.stewardship.backup_drive import PROBE_WAIT
 from parishkit.stewardship.backup_offsite import SEALED_FILES, copy_offsite
 from parishkit.stewardship.campaigns.work_locks import work_transaction
-from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.deployment import DeploymentProfile, ServiceRole
 from parishkit.stewardship.jobs import backup_health
 from parishkit.stewardship.jobs.backup_models import (
     BackupDriveProbe,
@@ -67,7 +67,9 @@ def offsite(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(key_files, "read_private", lambda path: b"key")
     return SimpleNamespace(
-        configuration=SimpleNamespace(paths={"backups": backups}),
+        configuration=SimpleNamespace(
+            paths={"backups": backups}, profile=DeploymentProfile.PRODUCTION
+        ),
         drive=drive,
         target=target,
         directory=directory,
@@ -682,13 +684,17 @@ def test_the_installer_answers_access_checks(workspace, monkeypatch):
         for _ in range(3):
             assert (
                 backup_probes.run_pending_probes(
-                    "unused", session_factory=lambda value, subject: None
+                    "unused",
+                    profile=DeploymentProfile.PRODUCTION,
+                    session_factory=lambda value, subject: None,
                 )
                 == 1
             )
         assert (
             backup_probes.run_pending_probes(
-                "unused", session_factory=lambda value, subject: None
+                "unused",
+                profile=DeploymentProfile.PRODUCTION,
+                session_factory=lambda value, subject: None,
             )
             == 0
         )
@@ -877,7 +883,11 @@ def test_a_check_that_waited_too_long_closes_unanswered(workspace, monkeypatch, 
     checks = []
     with target_login("google_workspace"):
         assert (
-            backup_probes.run_pending_probes("unused", check=lambda: checks.append(1))
+            backup_probes.run_pending_probes(
+                "unused",
+                profile=DeploymentProfile.PRODUCTION,
+                check=lambda: checks.append(1),
+            )
             == 1
         )
     assert checks == [1]

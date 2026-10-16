@@ -8,6 +8,8 @@ waited longer than ``PROBE_WAIT`` is closed as unanswered without contacting
 Drive, matching what the page already shows, so the table keeps no stale work.
 """
 
+from functools import partial
+
 from django.db import transaction
 
 from .backup_drive import (
@@ -71,9 +73,13 @@ def has_pending():
 
 
 def run_pending_probes(
-    credential_path, *, session_factory=workspace_session, check=lambda: None
+    credential_path, *, profile, session_factory=None, check=lambda: None
 ):
     """Complete up to ``PER_PASS`` pending checks; return how many finished.
+
+    ``profile`` is the installer's deployment profile; the default session is
+    ``workspace_session`` bound to it, so a LOCAL check fails as a credential
+    problem without contacting Drive (#1399).
 
     Drive is contacted outside any transaction: a slow reply never holds a
     database transaction or row lock open. ``check`` (the installer's lease
@@ -83,6 +89,8 @@ def run_pending_probes(
     from .jobs.backup_models import BackupDriveProbe
     from .jobs.ownership import database_now
 
+    if session_factory is None:
+        session_factory = partial(workspace_session, profile=profile)
     finished = 0
     for _ in range(PER_PASS):
         check()

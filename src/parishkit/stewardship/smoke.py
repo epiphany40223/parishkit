@@ -29,7 +29,7 @@ from .accounts.integration_candidates import (
 from .accounts.key_files import read_private
 from .accounts.policy_schema import normalized_email
 from .accounts.provider_context import validated_context
-from .deployment import ServiceRole, load_deployment
+from .deployment import DeploymentProfile, ServiceRole, load_deployment
 from .observability import Event, configure_logging, emit_failure
 from .runtime_paths import RuntimeLayout
 
@@ -217,12 +217,20 @@ def check_backup_drive(configuration, *, delegated_email, folder_link, send=Fals
 
     if configuration.service_role is not ServiceRole.BACKUP_WORKER:
         raise ConfigError("Run the off-site backup check in the backup profile.")
+    if configuration.profile is DeploymentProfile.LOCAL:
+        # Drive stays closed in LOCAL until a real Workspace key is admitted
+        # there (#1399); refused before the key or the database is read.
+        raise ConfigError("Off-site Drive copies are not available in LOCAL.")
     folder = folder_id_from_url(folder_link or "")
     tag = {"tag": _deployment_tag(configuration)} if send else {}
     value = read_private(RuntimeLayout(configuration).credential("google_workspace"))
     try:
         client = DriveClient(
-            workspace_session(value, subject=normalized_email(delegated_email)),
+            workspace_session(
+                value,
+                subject=normalized_email(delegated_email),
+                profile=configuration.profile,
+            ),
             **tag,
         )
         probe(client, folder)

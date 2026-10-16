@@ -19,6 +19,7 @@ from parishkit.stewardship.backup_drive import (
     with_retries,
 )
 from parishkit.stewardship.backup_offsite import SEALED_FILES, destination_from
+from parishkit.stewardship.deployment import DeploymentProfile
 
 from .drive_fakes import FakeDrive, write_sealed_set
 
@@ -728,7 +729,9 @@ def test_the_token_fetch_tries_its_connection_once(monkeypatch):
         "load_service_account_info",
         lambda info, **kwargs: oauth_credentials.Credentials(token="t"),
     )
-    session = backup_drive.workspace_session(b"key", subject="mail@example.org")
+    session = backup_drive.workspace_session(
+        b"key", subject="mail@example.org", profile=DeploymentProfile.PRODUCTION
+    )
     adapter = session._auth_request.session.get_adapter("https://oauth2.example")
     assert adapter.max_retries.total == 0
 

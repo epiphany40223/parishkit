@@ -36,6 +36,7 @@ from .backup import (
     retention_paused,
     set_started,
 )
+from .deployment import DeploymentProfile
 from .observability import Event, FailureKind, emit
 
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
@@ -197,8 +198,15 @@ def folder_id_from_url(value):
     return candidate
 
 
-def workspace_session(credential_value, *, subject):
+def workspace_session(credential_value, *, subject, profile):
     """Build an authorized HTTP session for the delegated user, Drive scope only.
+
+    ``profile`` is the caller's deployment profile. LOCAL is refused before
+    the key is parsed (#1399): LOCAL's application services have Production's
+    route out, and Drive stays closed there until a real Workspace key is
+    admitted with the mail redirect, so this use-time refusal, not the
+    network, keeps a LOCAL backup out of any Drive folder. A caller that does
+    not name a profile is refused too.
 
     The access token is fetched inside the first Drive request, with that
     request's timeout. Google's default token session retries a failed
@@ -215,6 +223,8 @@ def workspace_session(credential_value, *, subject):
     from .accounts.integration_candidates import workspace_info
     from .accounts.policy_schema import normalized_email
 
+    if not isinstance(profile, DeploymentProfile) or profile is DeploymentProfile.LOCAL:
+        raise DriveFailure("credential")
     try:
         info = workspace_info(credential_value)
         credentials = load_service_account_info(
