@@ -2704,6 +2704,21 @@ email sample are not on the page. While sends block the change it says so and of
 no Apply. **Apply** records the change, with the same signed preview,
 blocking-work recheck and audit as before; reminder planning and emailed
 Family codes and links are unaffected by how the review is shown.
+Apply also checks again, against the database's clock (the clock sending
+uses), each send time the change sets that was still ahead at Review
+([#1464](https://github.com/epiphany40223/parishkit/issues/1464)). A review
+stays valid for 15 minutes, so a time chosen a few minutes ahead can pass
+before Apply, and that email would then send at once. If any such time is at
+or before the clock, Apply is refused in the dialog: "A send time in this
+change has passed since it was reviewed, so that email would send at once."
+Nothing changes; the Administrator chooses a later time and reviews again.
+The check is made when Apply records the change; the installer activates
+it moments later. This check only refuses: it never moves a time and
+never sends. A send time the change leaves as it was is not checked, and
+neither is one already past at Review (the edited reminder itself, which
+the ordinary Edit may move into the past). The same check applies to every schedule review that Apply
+confirms on Dates and mail schedules, including series edits and the
+date-change review.
 **Cancel** on the page returns to the list without saving.
 
 New and Edit both offer **Edit this schedule's email**, a checkbox under Email
