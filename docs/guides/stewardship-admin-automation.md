@@ -1041,6 +1041,71 @@ exit 1 (`not_available`). `workgroup confirm` records
 `admin_cmd_workgroup_confirm` in System logs with the request; repeating
 it with the same token returns the same request.
 
+## Campaign settings
+
+`campaign show` reads the current campaign's **Campaign settings**: each
+setting the page's form has, and which of them can change now. It needs
+an Administrator; a session of any scope may run it, and it records
+nothing in System logs, as opening the page records nothing.
+
+```sh
+pk-admin campaign show
+```
+
+| Field | What it holds |
+| --- | --- |
+| `version` | The configuration version; `campaign preview --expected-version` takes it |
+| `campaign_id`, `state` | The current campaign and its state (`draft`, `scheduled`, `active`, ...) |
+| `editable` | Whether every setting can change: a Testing-mode draft that has never been live, with no background work running |
+| `open` | The settings that can change now. On a live campaign, the end date (while it may still move), the Ministry leader roles and the Ministries, while no background work holds them |
+| `settings` | Each setting by the page's form field name: `name`, `year_label`, `timezone`, `start_date`, `end_date`, the module boxes `census`, `ministry` and `financial_enabled`, `ministry_duids`, `ministry_leader_roles`, the financial periods (`financial_start`, `financial_end`, `comparison_start`, `comparison_end`, `fund_duids`, `comparison_fund_duids`, `overlap_confirmed`) and `additional_information` |
+
+`campaign preview` and `campaign confirm` are the page's **Review
+changes** and **Apply changes**, as `parish preview` and `parish
+confirm` are for the parish profile. They need a full-scope session.
+`--changes` is a JSON document shaped like `settings`, with only the
+settings to change; every other setting keeps its saved value. Check
+boxes are `true` or `false`, the Ministry, fund and leader role lists
+JSON arrays (Ministries by the DUID `ministries list` prints, funds by
+their ParishSoft DUID), dates `YYYY-MM-DD`, and `year_label` may be null. Nothing
+changes until `campaign confirm`.
+
+```sh
+VERSION=$(pk-admin campaign show | jq -r .result.version)
+pk-admin campaign preview --expected-version "$VERSION" \
+    --changes '{"campaign": {"ministry_leader_roles": ["Chairperson"]}}' |
+  jq -r .result.preview.token | pk-admin campaign confirm --token -
+```
+
+On a live campaign the page reviews a Ministries change on its own: give
+`ministry_duids` alone. A live end date is reviewed as Dates and mail
+schedules reviews it, so `schedule preview` can change it too. On a
+draft that has mail schedules, change its dates with `schedule preview`,
+which moves the mailings with them; `campaign preview` refuses a dates
+change there, as the page sends it to Dates and mail schedules.
+
+| Field | What it holds |
+| --- | --- |
+| `version`, `campaign_id` (`campaign preview`) | The version the change was reviewed against, and the current campaign |
+| `kind` | Which review it is: `settings`, `end_date` (a live campaign's end date) or `ministries` (a live campaign's Ministries) |
+| `changes` | Each stored setting that changes: `field`, `before` and `after`. These are the stored names, not the document's: the module boxes change `modules`, and the financial periods change `financial` |
+| `replanned` | For an end date, the ids of the saved schedules it re-plans |
+| `ministries` | For Ministries, those to add and to remove (each with its `duid`, `name` and counts of what it touches) and `open_forms`, the Families with a form open now; otherwise null |
+| `notes` | The page's notes, such as what a later end date means for Families |
+| `preview.token` | What `campaign confirm --token` takes, valid for fifteen minutes |
+| `created`, `request` (`campaign confirm`) | As `parish confirm` prints them; follow the change with `config request show --watch` |
+
+No change, a value the page refuses, or Ministries given with another
+change is exit 1 (`invalid`), naming the setting where the page does
+(`campaign.<field>`). A setting that cannot change now, a version that is
+no longer current, or an expired token is exit 1 (`stale_version`): read
+`campaign show` again. An altered token is exit 1 (`invalid`). With no
+current campaign, each command is exit 1 (`not_available`). `campaign
+confirm` records `admin_cmd_campaign_confirm` in System logs with the
+request, plus what the page records: `campaign_end_date_requested` for an
+end date, `campaign_ministries_requested` for Ministries. Repeating it
+with the same token returns the same request.
+
 ## Parish, Ministry, logo and Share option settings
 
 `parish show`, `ministries list`, `branding show` and `campaign shares`
@@ -2865,3 +2930,9 @@ print is exit 1 (`invalid`).
   `census_change_updated` and `admin_cmd_census_review`). `export census
   --format jsonl` records gain `reviews`, the decisions `census review`
   takes on the row now.
+- `pk-admin/1` (#463): additive. `campaign show`, `campaign preview
+  --changes FILE|- --expected-version VERSION` and `campaign confirm
+  --token TOKEN|-`, Campaign settings' read, Review and Apply
+  (Administrators only; the read in any session, the others in a
+  full-scope one); `campaign confirm` records `admin_cmd_campaign_confirm`
+  and the page's own events.

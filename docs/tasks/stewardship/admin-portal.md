@@ -857,7 +857,29 @@ a page token by the command, a stale version, no change, a name too long,
 an altered, another page's or another Administrator's token, a token
 reviewed before the settings changed, no current campaign, a read-only
 session and Staff denied, an ended session) and the unchanged
-No-reminders WorkGroup page suite.
+No-reminders WorkGroup page suite. Another part adds `campaign show`,
+`campaign preview` and `campaign confirm`, Campaign settings' read, Review
+and Apply, in `parishkit.stewardship.admin_campaign`, through the page's
+own state, form, Review (moved into `campaign_views.review_settings`) and
+Apply routing (moved into `campaign_views.confirm_route`), both of which
+the page now calls, and `admin_editing.confirm_intent`, with no schema
+change; proven by `tests/stewardship/test_admin_campaign.py` (the change
+document's parser, the catalog entries, the described event, the
+documents' names, the ledger, usage errors),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_campaign_cli_postgresql.py` (a
+draft's read with no event, a rename previewed and confirmed with the
+request and event and applied once installed, a repeated confirm, a
+command token confirmed on the page and a page token by the command, a
+stale version, no change, a field error, an unknown field and a wrong
+type, an altered, another page's or another Administrator's token, a token
+reviewed before the settings changed, a live campaign's open fields and a
+locked field refused, its leader roles, its end date with
+`campaign_end_date_requested` and its intent, its Ministries with
+`campaign_ministries_requested`, no current campaign, a read-only session
+and Staff denied, an ended session) and the unchanged Campaign settings,
+live end date and live Ministries page suites.
 
 ADM-11.12 lands in parts. The first adds `events list` and `events
 acknowledge`, the Admin home page's security events and critical-problem

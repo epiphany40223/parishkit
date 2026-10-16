@@ -139,21 +139,20 @@ LEDGER = {
     # Change status; ``config request cancel`` (#944) is the operator's way
     # out of a stuck live end-date change, which the page offers no button for.
     "configuration_request": command("config request show", "config request cancel"),
-    "campaign_settings": pending(
-        "PR 10",
-        "campaign show",
-        "campaign preview",
-        "campaign confirm",
-        # A live campaign's Ministries joined this page (#1119).
-        "campaign ministries",
+    # One editor and one Review (#1119): a draft's settings, a live
+    # campaign's end date and leader roles, and its Ministries all go
+    # through ``campaign preview`` and ``campaign confirm``.
+    "campaign_settings": command(
+        "campaign show", "campaign preview", "campaign confirm"
     ),
     # The live end-date check validates what ``schedule preview`` reviews.
     "campaign_end_date_check": command("schedule preview"),
     # The command line has no first-campaign path yet: ``campaign confirm``
-    # refuses any added campaign. When PR 10 adds one, it must admit the
-    # first campaign only through ``single_campaign.first_campaign_admitted``
-    # (and ``refuse_campaign_creation(first=True)``), as this page does.
-    "campaign_create": pending("PR 10", "campaign preview", "campaign confirm"),
+    # edits the current campaign and refuses any added one. When PR 10 adds
+    # one, it must admit the first campaign only through
+    # ``single_campaign.first_campaign_admitted`` (and
+    # ``refuse_campaign_creation(first=True)``), as this page does.
+    "campaign_create": pending("PR 10", "campaign create-preview", "campaign create"),
     "campaign_clone": pending("PR 10", "campaign clone"),
     "share_settings": command("campaign shares", owed="PR 10"),
     # The page's read, Review and Apply (#750), all on the page itself.

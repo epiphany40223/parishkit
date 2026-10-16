@@ -191,6 +191,10 @@ DESCRIPTIONS = {
         "An automation session confirmed a reviewed change to the campaign's "
         "No-reminders WorkGroup, which became a configuration request."
     ),
+    "admin_cmd_campaign_confirm": _(
+        "An automation session confirmed a reviewed change to the campaign's "
+        "settings, which became a configuration request."
+    ),
     "admin_cmd_users_import_leaders": _(
         "An automation session confirmed a reviewed import of ParishSoft "
         "Ministry leaders as users, which became a configuration request."
