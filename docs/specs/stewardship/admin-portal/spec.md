@@ -7607,8 +7607,10 @@ Only Admins access the combined log screen. It supports:
   record" alone is the audit trail only, and leaving it unticked shows
   operational entries only. At least one must be ticked: the filter form's
   complete gate keeps Apply unavailable, saying "Tick at least one kind of
-  entry to show.", and the server refuses a form with none with its own
-  message, not the identifier guidance. A campaign filter with Audit record
+  entry to show.", and the server refuses a form with none at the Show
+  choices (see refusals at a field, below), not with the identifier
+  guidance. A download with none keeps its own error message. A campaign
+  filter with Audit record
   unticked lists nothing, and its empty table says to tick Audit record.
   There is no separate Source field. For one release the server still accepts the
   retired `source` value an older open tab may send, mapped onto the
@@ -7761,7 +7763,19 @@ day and Through into the start of the next local day (exclusive), so a
 daylight-saving day is 23 or 25 hours long, and paging, sorting and export
 carry the zone with the other filters. A date sent without a zone the server
 knows is refused with a hint to apply again; while the browser reports no zone
-the page keeps Apply unavailable whenever a date is entered. The critical-event
+the page keeps Apply unavailable whenever a date is entered.
+The page checks its filters before Apply (a Show choice ticked, a whole
+identifier, a whole date, and Through no earlier than From). A request
+that reaches the server with one broken is refused at that field
+([field errors](../ui-conventions/spec.md#field-errors-and-live-checks),
+[#1332](https://github.com/epiphany40223/parishkit/issues/1332)): nothing
+ticked at the Show choices, with each box that can be ticked marked (under
+an audit-only Activity, Audit record alone, in its hint's words); dates
+out of order at Through, with both dates marked. The message is shown in
+the filters' hint row. The view is audited
+denied. A day outside 2020 to 2999, which no hint names, keeps the error
+page, and so does a date without a known zone, and every refusal no field
+can fix. The critical-event
 banner's link sends the browser's zone with a From day one day before its
 24-hour window, so the window is covered in every zone; when the browser
 reports no zone it sends no From day. Export
