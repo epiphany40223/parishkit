@@ -1,6 +1,9 @@
 """The ``filterpanel`` tag collapses a report's filters unless one is applied."""
 
+import re
 from dataclasses import dataclass
+from html.parser import HTMLParser
+from pathlib import Path
 
 import pytest
 from django.template import Context, Template, TemplateSyntaxError
@@ -19,6 +22,12 @@ class Query:
     sort: str = "name"
     zone: str | None = ""
     page: int = 1
+
+
+TEMPLATES = (
+    Path(__file__).parents[2]
+    / "src/parishkit/stewardship/accounts/templates/stewardship"
+)
 
 
 def render(source, **context):
@@ -111,3 +120,65 @@ def test_open_word_opens_the_panel_by_default_only_when_given():
         "{% filterpanel query %}x{% endfilterpanel %}", query=DirectoryQuery()
     )
     assert closed.startswith('<details class="filter-panel" data-filter-panel><')
+
+
+# Django comments, tags and variables, removed before the panel's markup is
+# parsed: they may sit inside a start tag ({% if %} selected{% endif %}).
+TEMPLATE_SYNTAX = re.compile(
+    r"{% comment %}.*?{% endcomment %}|{#.*?#}|{%.*?%}|{{.*?}}", re.DOTALL
+)
+VOID = frozenset({"input", "br", "hr", "img", "meta", "link", "wbr"})
+
+
+class PanelCells(HTMLParser):
+    """Record each label's ancestors and the order of the form's children."""
+
+    def __init__(self):
+        super().__init__()
+        self.stack = []
+        self.labels = []  # (label id, its ancestors, innermost last)
+        self.children = []  # the form's direct child elements, in order
+
+    def handle_starttag(self, tag, attrs):
+        if self.stack == ["form"]:
+            self.children.append((tag, dict(attrs).get("id")))
+        if tag == "label":
+            self.labels.append((dict(attrs).get("for"), list(self.stack)))
+        if tag not in VOID:
+            self.stack.append(tag)
+
+    def handle_endtag(self, tag):
+        if tag in self.stack:
+            del self.stack[len(self.stack) - 1 - self.stack[::-1].index(tag) :]
+
+
+def panel_cells(name):
+    """Parse the form inside a report's ``filterpanel`` tag."""
+    source = (TEMPLATES / name).read_text(encoding="utf-8")
+    body = source.split("{% filterpanel", 1)[1].split("{% endfilterpanel %}", 1)[0]
+    body = body.split("%}", 1)[1]
+    # The Apply button is the {% button %} tag; keep its place as markup.
+    body = re.sub(r"{% button .*?%}", "<button>", body)
+    body = body.replace("{% endbutton %}", "</button>")
+    parser = PanelCells()
+    parser.feed(TEMPLATE_SYNTAX.sub("", body))
+    return parser
+
+
+@pytest.mark.parametrize("name", ["information.html", "financial-report.html"])
+def test_each_panel_filter_is_one_grid_cell(name):
+    """Every label and its control share one div, a cell of the panel's grid.
+
+    The open panel's form is a grid (#1411, ui-v1.css): a label or control
+    left loose in the form would take a cell of its own and split the
+    field. A range fieldset is one cell, its two ends a div each; Apply
+    follows the last field, and only full-row notes come after it, so Apply
+    can share the last row of fields.
+    """
+    parser = panel_cells(name)
+    assert parser.labels
+    for label, ancestors in parser.labels:
+        assert ancestors in (["form", "div"], ["form", "fieldset", "div"]), label
+    tags = [tag for tag, _id in parser.children]
+    after = tags[tags.index("button") + 1 :]
+    assert after and set(after) == {"p"}, parser.children

@@ -1772,9 +1772,13 @@ browser's own toolbars). Pages with short filters put them in one row. A
 report whose filter form is longer than a row puts it in a "Filters" panel (the
 `filterpanel` template tag): a native disclosure that starts closed and renders
 open whenever the shown results use any filter other than the page's default,
-so an applied filter is never hidden. The Family directory is the exception:
-its Filters panel is open by default (Administrator decision, #227), and the
-other reports keep theirs closed. Its summary says how many are applied
+so an applied filter is never hidden. Open, a long form is a compact grid of
+its fields, each label tight above its box and Apply beside the last field
+when the row has room, in one column on a phone (#1411); the Family
+directory's short fields keep their filter bar. The Family directory is also
+the one exception to the closed start: its Filters panel is open by default
+(an Administrator decision, #227), and the other reports keep theirs closed.
+A panel's summary says how many are applied
 ("Filters: 2 applied", or "none applied"), and that count follows an in-place
 Apply while the panel and its form keep their elements. A report's export form
 is likewise a closed disclosure (for example, "Export complete results (CSV,

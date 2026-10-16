@@ -852,6 +852,42 @@ details.export-panel > form { margin-top: .5rem; }
    box gives up its side gutters and borders, so its filter bar keeps the
    full width it had before the panel and a label and its "i" keep one line. */
 @media (max-width: 40rem) { details.filter-panel { padding-inline: 0; border-inline: 0; border-radius: 0; } }
+/* A long filter form in the panel is a grid (#1411), so it takes a few rows
+   rather than one per field: one column on a phone, and from 40rem as many
+   14rem columns as fit (two or three on a tablet, four on a laptop, where
+   the form's 60rem cap stops it). Each field is a div cell with its label
+   tight above its box, without the theme's 1rem gap above a label; cells
+   align at the bottom, so the boxes line up when a label wraps. Apply takes
+   the next cell, beside the last field when there is room. The reserved
+   complete-gate hint and the time-zone note each take a full row, as
+   before, so nothing moves when they fill. A range fieldset (Financial
+   stewardship's dates and amounts) spans two columns, its two ends side by
+   side, and on a phone stacks them; the theme floats a legend, which in a
+   grid fieldset makes it a plain item, so it is given the fieldset's first
+   row. A search keeps one cell, its long label wrapping, so the fields
+   after it fill the row instead of leaving a hole at its end. The Family
+   directory's form keeps its filter bar (.filter-bar, below): its short
+   fields already share rows, and in the grid's equal columns it measured
+   taller. */
+details.filter-panel > form:not(.filter-bar) { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem 1rem; align-items: end; margin-top: .25rem; }
+details.filter-panel > form:not(.filter-bar) label { margin: 0 0 .25rem; font-size: .925rem; }
+details.filter-panel > form:not(.filter-bar) > :is(p, [data-complete-hint]) { grid-column: 1 / -1; margin: 0; }
+details.filter-panel > form:not(.filter-bar) > button { justify-self: start; margin: 0; }
+details.filter-panel > form:not(.filter-bar) > fieldset { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem 1rem; align-items: end; margin: 0; padding: .5rem .75rem .75rem; }
+details.filter-panel > form:not(.filter-bar) > fieldset > legend { grid-column: 1 / -1; margin: 0; font-size: .925rem; }
+/* The theme's short-field rule (a date's div, from 48rem, above) gives a
+   date cell an end margin and caps its box at 14rem, which left the dates
+   narrower than the selects beside them and ragged against the row above.
+   The attribute selector outranks that rule, so every cell fills its
+   track and every box fills its cell. */
+details.filter-panel[data-filter-panel] > form:not(.filter-bar) > div,
+details.filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div { margin: 0; }
+details.filter-panel[data-filter-panel] > form:not(.filter-bar) > div > input,
+details.filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div > input { max-width: none; }
+@media (min-width: 40rem) {
+  details.filter-panel > form:not(.filter-bar) { grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); }
+  details.filter-panel > form:not(.filter-bar) > fieldset { grid-column: span 2; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 /* Compact filter bars: short fields share one row on wider screens. */
 .filter-bar { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem 1rem; }
 .filter-bar label { margin: 0 0 .25rem; font-size: .925rem; }
