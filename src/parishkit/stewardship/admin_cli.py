@@ -768,6 +768,77 @@ def send_controls(args, preamble, runtime, context):
     return read_controls(context["caller"], runtime)
 
 
+# --- Pause and resume mail's controls (PR 7b, #463) ---------------------------
+
+
+def _send_reason(args, context):
+    """The ``--reason`` text, or for ``-`` standard input (bounded in bytes)."""
+    from .accounts.delivery_control_commands import REASON_LIMIT
+
+    # Up to four UTF-8 bytes a character; the page counts characters.
+    return _input(args.reason, context, REASON_LIMIT * 4)
+
+
+def send_pause_preview(args, preamble, runtime, context):
+    """Review pausing live Family email, as the page's Preview pause."""
+    from .admin_delivery_control import preview_control
+
+    return preview_control(
+        context["caller"], runtime, "pause", reason=_send_reason(args, context)
+    )
+
+
+def send_resume_preview(args, preamble, runtime, context):
+    """Review resuming live Family email, as the page's Preview resume."""
+    from .admin_delivery_control import preview_control
+
+    return preview_control(
+        context["caller"], runtime, "resume", reason=_send_reason(args, context)
+    )
+
+
+def send_resolve_preview(args, preamble, runtime, context):
+    """Review resolving a closed campaign's held messages, as the page's form.
+
+    As the form: Release and Cancel take at least one message type, Clear
+    takes none. The page's own preview checks the rest.
+    """
+    from .admin_delivery_control import preview_control
+
+    types = sorted(set(args.type or ()))
+    if (args.decision == "clear") == bool(types):
+        raise UsageError("--type goes with release or cancel, and only with them.")
+    return preview_control(
+        context["caller"],
+        runtime,
+        "resolve",
+        reason=_send_reason(args, context),
+        decision=args.decision,
+        types=types,
+    )
+
+
+def send_confirm(args, preamble, runtime, context):
+    """Confirm a reviewed pause, resume or resolution, as the page's Confirm.
+
+    The page needs a recent sign-in, so this always prompts (``--yes``
+    answers it) with the preview's action, reason, counts and caution,
+    after checking the Administrator role and then the token's signature,
+    and before any transaction.
+    """
+    from .admin_changes import TOKEN_LIMIT
+    from .admin_delivery_control import confirm_control, confirm_prompt_lines
+
+    # The role first (#1339): Staff is denied before any read or prompt.
+    _role_first(context, runtime)
+    token = _input(args.token, context, TOKEN_LIMIT)
+    confirm(context, confirm_prompt_lines(token))
+    return confirm_control(context["caller"], runtime, token=token, context=context)
+
+
+# --- end of Pause and resume mail's controls ----------------------------------
+
+
 def system_health(args, preamble, runtime, context):
     """The System health page's problems and panels (ADM-13)."""
     from .admin_reads import read_system_health
@@ -3010,6 +3081,46 @@ def _portal_maintenance_set_options(parser):
     )
 
 
+# --- Options of Pause and resume mail's controls (PR 7b, #463) ----------------
+
+
+def _send_reason_options(parser):
+    """The page's reason, which every pause, resume and resolution asks for."""
+    parser.add_argument(
+        "--reason",
+        required=True,
+        help="why (at most 1,024 characters; the page shows it), or - to read "
+        "it from standard input",
+    )
+
+
+def _send_resolve_options(parser):
+    """Options of ``send resolve-preview``: the decision and message types."""
+    from .admin_delivery_control import RESOLVE_DECISIONS, RESOLVE_TYPES
+
+    parser.add_argument("--decision", required=True, choices=RESOLVE_DECISIONS)
+    parser.add_argument(
+        "--type",
+        action="append",
+        choices=RESOLVE_TYPES,
+        help="a held message type to release or cancel (repeatable); none "
+        "with --decision clear",
+    )
+
+
+def _send_confirm_options(parser):
+    """Options of ``send confirm``: the reviewed preview's token."""
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from send pause-preview, resume-preview or "
+        "resolve-preview, or - for standard input (needs --yes)",
+    )
+
+
+# --- end of the options of Pause and resume mail's controls -------------------
+
+
 def _history_year(value):
     """A campaign archive's pledge year: four digits, 2000 to 2100."""
     if not (len(value) == 4 and value.isdecimal() and 2000 <= int(value) <= 2100):
@@ -4714,7 +4825,71 @@ def _portal_specs():
             7,
             audit_event=None,
         ),
+        # --- Pause and resume mail's controls (PR 7b, #463) ---
+        *_send_control_specs(),
     )
+
+
+def _send_control_specs():
+    """Pause and resume mail's previews and confirmation (PR 7b, #463).
+
+    The previews record activity as the page's preview posts do, so they
+    need a full-scope session, and record no event. ``send confirm`` is
+    fresh-gated on the page, so it always prompts.
+    """
+    from .admin_delivery_control import ControlConfirm, ControlPreview
+
+    preview = ControlPreview.field_names()
+    return (
+        CommandSpec(
+            "send pause-preview",
+            "Review pausing live Family email.",
+            send_pause_preview,
+            "full",
+            False,
+            preview,
+            7,
+            options=(_send_reason_options,),
+            audit_event=None,
+        ),
+        CommandSpec(
+            "send resume-preview",
+            "Review resuming live Family email.",
+            send_resume_preview,
+            "full",
+            False,
+            preview,
+            7,
+            options=(_send_reason_options,),
+            audit_event=None,
+        ),
+        CommandSpec(
+            "send resolve-preview",
+            "Review resolving a closed campaign's held messages.",
+            send_resolve_preview,
+            "full",
+            False,
+            preview,
+            7,
+            options=(_send_resolve_options, _send_reason_options),
+            audit_event=None,
+        ),
+        CommandSpec(
+            "send confirm",
+            "Confirm a reviewed pause, resume or held-message resolution.",
+            send_confirm,
+            "full",
+            True,
+            ControlConfirm.field_names(),
+            7,
+            options=(_send_confirm_options,),
+            fresh_gated=True,
+            prompts=True,
+        ),
+    )
+
+
+# --- end of Pause and resume mail's controls ----------------------------------
 
 
 def _file_specs():

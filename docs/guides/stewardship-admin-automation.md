@@ -775,8 +775,8 @@ to Families is paused, what is queued or held, and what can be paused,
 resumed or resolved now. Like the page, it needs an Administrator; a
 session of any scope may run it, and it records nothing in System logs, as
 opening the page records nothing. It reads the current campaign only;
-without one it is exit 1 (`not_available`). Pausing, resuming and
-resolving held messages stay on the page for now.
+without one it is exit 1 (`not_available`). The page's pause, resume and
+resolution follow below.
 
 ```sh
 pk-admin send controls
@@ -801,6 +801,49 @@ pk-admin send controls
 whatever `available` says; the controls and choices follow the page, which
 draws them only when `available` is true. Every number is a count, apart
 from the reason; no recipient, message or mail-service response is printed.
+
+Pausing, resuming and resolving held messages work as on the page: a
+preview first, then its confirmation. Each preview asks for a reason (the
+page shows it), needs a full-scope session and records nothing; each runs
+the page's own preview, so it is refused exactly where the page offers no
+such button (exit 1, `stale_version`), for example a resume while any
+email is still being handed to the mail service or not sure it arrived, or
+before a needed sender check has passed.
+
+```sh
+pk-admin send pause-preview --reason "Wrong reminder text" > preview.json
+jq -r .result.preview.token preview.json | pk-admin send confirm --token - --yes
+pk-admin send resume-preview --reason "Reminder fixed"
+pk-admin send resolve-preview --decision cancel --type receipt \
+    --type weekly_digest --reason "Campaign closed"
+```
+
+`send resolve-preview` is the Resolve held messages form of a paused,
+closed campaign: `--decision release` or `cancel` takes one or more
+`--type` (`receipt`, `daily_digest`, `weekly_digest`), and `clear` takes
+none. A preview prints `action`, `campaign_id`, the `reason`, `expires_at`, the
+`inventory` it bound (as `send controls` prints it), for a resume its
+`plan` (`before_start`: nothing is overdue yet; `family`: the overdue
+`family_recovery` and `report_recovery` counts), for a resolution its
+`resolution` (`decision`, `types` and each type's follow-up `coverage`),
+and `preview.token`.
+
+`send confirm --token TOKEN` is the preview's Confirm button. The token is
+the page's own and lasts five minutes, so a preview made on the page
+confirms here and the other way round. Like the page's button it needs a
+recent sign-in, which a full-scope session stands in for, so it always
+asks, naming the action, the reason, the counts and the page's own caution
+(for a resolution, each type's follow-up coverage too); `--yes` answers,
+and `--token -` (standard input) needs it. The page then checks everything
+again, as it does for its own button, and records the control. System logs
+then show the page's own events (`campaign_pause` or `campaign_resume`;
+for a resolution `delivery_held_release`, `delivery_held_cancel` or
+`delivery_held_clear`, with `campaign_resume` when it ends the pause), with `automation_fresh_gate` and
+`admin_cmd_send_confirm` beside them. An out-of-date
+token is exit 1 (`stale_version`): preview again. Repeating a confirmed
+token returns the same control with `created` false and records nothing.
+The result is `created`, `command_id`, `action` and `status`, which is
+`send controls`'s document after the change.
 
 ## Hosted files
 
@@ -2990,3 +3033,9 @@ print is exit 1 (`invalid`).
   pause existed. A reader that took `ready` as proof of a test must read
   `required` and `checked_at` instead. The command mirrors the Pause and
   resume mail page, and its only readers are Administrator-run assistants.
+- `pk-admin/1` (#463): additive. `send pause-preview --reason TEXT|-`,
+  `send resume-preview --reason TEXT|-`, `send resolve-preview --decision
+  release|cancel|clear [--type KIND …] --reason TEXT|-` (full scope, no
+  event) and `send confirm --token TOKEN|-` (full scope, fresh-gated and
+  prompting, recording `admin_cmd_send_confirm`), Pause and resume mail's
+  previews and confirmation.
