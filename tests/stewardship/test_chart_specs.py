@@ -10,14 +10,17 @@ import re
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import pytest
 import vl_convert
+from matplotlib.colors import CSS4_COLORS
 
 from parishkit.stewardship.archive.workbook import BAND_EDGES
 from parishkit.stewardship.jobs.send_history import SendKey
+from parishkit.stewardship.reports import chart_specs
 from parishkit.stewardship.reports import comparison_charts as charts
 from parishkit.stewardship.reports.chart_assets import VEGA_LITE_SCHEMA
 from parishkit.stewardship.reports.chart_specs import (
@@ -50,6 +53,12 @@ from parishkit.stewardship.reports.response_metrics import (
 )
 from parishkit.stewardship.reports.statistics import PopulationStatistics
 from parishkit.stewardship.web.dates import using
+from parishkit.stewardship.web.design_tokens import (
+    CHART_COLORS,
+    CHART_PORTAL_TOKENS,
+    COLORS,
+    hex6,
+)
 from parishkit.stewardship.web.report_markup import TRACK
 
 from .test_comparison_charts import comparison
@@ -804,6 +813,53 @@ def page_charts():
         *charts.final_charts(built),
         *(chart for chart in bands if chart is not None),
     ]
+
+
+def colours_in(value):
+    """Every hex colour string anywhere in a specification (marks, scales,
+    config, and data fields a mark reads its colour from)."""
+    if isinstance(value, str):
+        return {value} if re.fullmatch(r"#(?:[0-9a-fA-F]{3}){1,2}", value) else set()
+    if isinstance(value, dict):
+        value = list(value.values())
+    if isinstance(value, list):
+        return set().union(set(), *(colours_in(part) for part in value))
+    return set()
+
+
+def test_every_chart_colour_is_a_token():
+    """Each colour a chart names is a token's light value (#1264 slice 2).
+
+    chart-v1.js draws a colour in the page's scheme by finding the token
+    whose light value it is, so a literal colour no token has would stay
+    light on a dark page. The email keeps exactly these light values.
+    """
+    names = (*CHART_COLORS, *CHART_PORTAL_TOKENS)
+    light = {hex6((COLORS | CHART_COLORS)[name]) for name in names}
+    documents = [
+        *page_charts(),
+        information_followup(
+            {"completed": 1, "needed_open": 1, "not_needed_open": 1}, 3
+        ),
+        ministry_followup(
+            {"joining": 2, "leaving": 1, "unresolved": 1, "completed": 2, "requests": 3}
+        ),
+    ]
+    found = set().union(*(colours_in(document.spec) for document in documents))
+    assert found and {hex6(colour) for colour in found} <= light
+    # The chart modules spell no colour of their own: no string that is a
+    # hex colour (3, 4, 6 or 8 digits), an rgb()/rgba()/hsl()/hsla()
+    # colour, or a CSS colour name. (Issue numbers such as #720 are not
+    # strings.)
+    source = Path(chart_specs.__file__).parent
+    for name in ("chart_specs.py", "comparison_charts.py"):
+        text = (source / name).read_text()
+        hexes = r"[\"']#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})[\"']"
+        assert not re.findall(hexes, text), name
+        assert not re.findall(r"[\"']\s*(?:rgba?|hsla?)\(", text, re.I), name
+        strings = {word.lower() for word in re.findall(r"[\"']([A-Za-z]+)[\"']", text)}
+        # A token's name ("gold") is how a colour should be named.
+        assert not (strings - set(COLORS)) & set(CSS4_COLORS), name
 
 
 def test_every_page_chart_compiles_without_warnings(capfd):
