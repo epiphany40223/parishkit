@@ -37,7 +37,13 @@ from dataclasses import dataclass
 
 from django.db import DatabaseError
 
-from .admin_changes import InvalidChange, _admit_change, _ended_or_raise, _problem
+from .admin_changes import (
+    InvalidChange,
+    _admit_change,
+    _ended_or_raise,
+    form_problems,
+    unexpected_problem,
+)
 from .admin_reads import ReadModel, _held, _recheck, config_request
 
 TOKEN_LIMIT = 256_000
@@ -69,11 +75,9 @@ def parse_profile(text):
     if unknown:
         raise InvalidChange(
             [
-                {
-                    "field": f"parish.{name}",
-                    "code": "invalid",
-                    "message": "This is not a parish profile field.",
-                }
+                unexpected_problem(
+                    f"parish.{name}", "This is not a parish profile field."
+                )
                 for name in unknown
             ]
         )
@@ -125,11 +129,7 @@ def field_errors(form):
     The field is ``parish.<name>``, or ``parish`` for the form as a whole
     (no change, or a document the configuration refuses).
     """
-    problems = []
-    for name, messages in form.errors.get_json_data().items():
-        field = "parish" if name == "__all__" else f"parish.{name}"
-        problems.extend(_problem(field, item) for item in messages)
-    return problems
+    return form_problems("parish", form.errors, "parish")
 
 
 @dataclass(frozen=True)

@@ -1344,7 +1344,16 @@ def test_only_an_unexpected_error_logs_a_failure_line(
     with caplog.at_level(logging.DEBUG):
         code, document = run_failing(monkeypatch, failing, written=written)
     assert document["error"]["code"] == expected
-    assert len(failure_lines(caplog)) == (expected in admin_cli.TRACED_CODES)
+    lines = [json.loads(line)["message"] for line in failure_lines(caplog)]
+    # A refusal of input has its own line instead (#1403).
+    refused = expected in {"invalid", "denied"}
+    assert lines == (
+        ["admin_input_refused"]
+        if refused
+        else ["task_failed"]
+        if expected in admin_cli.TRACED_CODES
+        else []
+    )
     # Only the unexpected is recorded durably, too (#617).
     assert len(written) == (expected in admin_cli.TRACED_CODES)
 
