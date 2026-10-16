@@ -375,6 +375,11 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # setup disposal check and the safe context in place. Only the safe context
 # comes back older (0089's, through ``CLOSURE_REPLACED``), so
 # ``CLOSURE_REPLACED_AGAIN`` runs 0102's file after it.
+# 0106 (#1403) creates nothing a reinstall would make twice: it widens the
+# event check and replaces the safe context and log writer in place again,
+# after 0089 and 0104, and makes its partial index only when missing. The
+# reruns above bring back 0089's event check and 0104's safe context, so
+# ``CLOSURE_REPLACED_LAST`` runs 0106's file after them.
 # 0103 (#1330) creates nothing: it replaces 0091's campaign pointer function
 # in place. No closure file installs that function again, and 0091's
 # ``CLOSURE_OLD_BODIES`` rerun touches only bodies still reading Ministry
@@ -693,6 +698,17 @@ CLOSURE_REPLACED_AGAIN = {
 }
 
 
+# Run after ``CLOSURE_REPLACED_AGAIN`` the same way: 0106 (#1403) widens
+# 0104's safe context with the refusal schema, and its file also puts back
+# the event check and log writer that 0089's rerun made older.
+CLOSURE_REPLACED_LAST = {
+    "public.stewardship_safe_context_v1(text,jsonb)": (
+        ("stewardship_audit", "0004_admin_input_refusal_log"),
+        "WHEN 'refusal' THEN",
+    ),
+}
+
+
 # Closure migrations whose frozen files replace, in place, functions that a
 # reinstalled earlier file (``CLOSURE_CREATED``, ``CLOSURE_ALTERED`` or
 # runtime_grants.CLOSURE_FUNCTIONS) brings back with an older body, with
@@ -993,6 +1009,7 @@ def swap_pending():
     assert set(CLOSURE_ALTERED.values()) <= set(closure)
     assert {key for key, _ in CLOSURE_REPLACED.values()} <= set(closure)
     assert {key for key, _ in CLOSURE_REPLACED_AGAIN.values()} <= set(closure)
+    assert {key for key, _ in CLOSURE_REPLACED_LAST.values()} <= set(closure)
     assert set(CLOSURE_RERUN) | set(CLOSURE_RERUN.values()) <= set(closure)
     assert set(CLOSURE_OLD_BODIES) <= set(closure)
     assert {key for key, _ in CLOSURE_REPLACED_ONLY.values()} <= set(closure)
@@ -1060,6 +1077,7 @@ def swap_pending():
             for function, (key, phrase) in (
                 *CLOSURE_REPLACED.items(),
                 *CLOSURE_REPLACED_AGAIN.items(),
+                *CLOSURE_REPLACED_LAST.items(),
             ):
                 cursor.execute(
                     "SELECT prosrc LIKE %s FROM pg_proc WHERE oid=to_regprocedure(%s)",

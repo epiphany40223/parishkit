@@ -73,6 +73,9 @@ REQUIRED = {
     Event.RETRY_REFUSAL_UNRECORDED: frozenset(
         {"failure", "failure_kind", "message_id", "count"}
     ),
+    # A refused Admin input (#1403): why it was refused. A denial and a
+    # server-state reason are WARNING (audit.refusal_context).
+    Event.ADMIN_INPUT_REFUSED: frozenset({"reason"}),
     # A backup sealed to a different key (backup_health); its outcome
     # ``changed`` selects the sentence that says what to check.
     Event.CONFIG_MISMATCH: frozenset({"outcome"}),

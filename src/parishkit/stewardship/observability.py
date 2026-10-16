@@ -15,6 +15,7 @@ from urllib.parse import parse_qsl
 from uuid import UUID, uuid4
 
 from parishkit.logging import JsonLogFormatter, log_extra, setup_logging
+from parishkit.stewardship.audit.refusal_context import is_clean
 
 
 class Event(StrEnum):
@@ -108,6 +109,11 @@ class Event(StrEnum):
     # email and how many addresses. The critical-problems banner and System
     # health show it until an Administrator acknowledges it.
     RETRY_REFUSAL_UNRECORDED = "retry_refusal_unrecorded"
+    # An Admin page request or pk-admin command whose input was refused
+    # (#1403): one process-log line for every refusal, and a durable entry
+    # at INFO or WARNING naming the signed-in user, under a per-actor cap
+    # (audit.refusals). Its context is closed (audit.refusal_context).
+    ADMIN_INPUT_REFUSED = "admin_input_refused"
     UNSTRUCTURED = "unstructured_log_suppressed"
 
 
@@ -290,6 +296,9 @@ TIMEOUT_LIMITS = frozenset(
         # A full ParishSoft load stopped at its own time bound (#834); also
         # a durable timeout kind (audit.schemas.TIMEOUT_KINDS).
         "source_load_budget",
+        # A refused Admin input's durable entry stopped by its own
+        # statement or lock limit (#1403, audit.refusals); process log only.
+        "refusal_log_write",
     }
 )
 
@@ -392,6 +401,8 @@ def emit(
     watched_command: str | None = None,
     subject_id: UUID | None = None,
     confirmation: str | None = None,
+    refusal: dict | None = None,
+    actor_id: UUID | None = None,
 ) -> None:
     """Emit only typed identifiers and an allowlisted event; accept no free text.
 
@@ -422,6 +433,9 @@ def emit(
     followed) say what an ``automation_watch`` timeout was waiting for
     (#807), only with that timeout. ``confirmation`` is how an Admin automation
     command was confirmed (``prompt`` or ``yes``), only with ``TASK_STARTED``.
+    ``refusal`` is a refused Admin input's closed context, exactly as
+    ``audit.refusal_context.clean`` builds it, and ``actor_id`` the signed-in
+    user it refused, both only with ``ADMIN_INPUT_REFUSED`` (#1403).
     """
     if not isinstance(event, Event) or level not in {
         logging.DEBUG,
@@ -495,6 +509,14 @@ def emit(
         event is not Event.TASK_STARTED or confirmation not in {"prompt", "yes"}
     ):
         raise ValueError("A confirmation is prompt or yes, as a command starts.")
+    if (refusal is not None or actor_id is not None) and (
+        event is not Event.ADMIN_INPUT_REFUSED
+    ):
+        raise ValueError("A refusal context belongs only to a refused input.")
+    if refusal is not None and not is_clean(refusal):
+        raise ValueError("A refusal context must be its own cleaned values.")
+    if actor_id is not None and not isinstance(actor_id, UUID):
+        raise ValueError("A refused user is named by their internal UUID.")
     logging.getLogger("parishkit.stewardship").log(
         level,
         event,
@@ -519,6 +541,8 @@ def emit(
                 "watched_command": watched_command,
                 "subject_id": subject_id,
                 "confirmation": confirmation,
+                "refusal": refusal,
+                "actor_id": actor_id,
             }
         ),
     )
@@ -953,6 +977,16 @@ class SafeJsonFormatter(JsonLogFormatter):
             and context.get("shaping") in SHAPING_STEPS
         ):
             safe.extra["shaping"] = context["shaping"]
+        if (
+            record.msg is Event.ADMIN_INPUT_REFUSED
+            and isinstance(context, dict)
+            and is_clean(context.get("refusal"))
+        ):
+            # Re-checked like the other fields: only the closed refusal
+            # keys, and the refused user's internal id (#1403).
+            safe.extra["refusal"] = dict(context["refusal"])
+            if isinstance(context.get("actor_id"), UUID):
+                safe.extra["actor_id"] = str(context["actor_id"])
         if debug_logging_enabled():
             # The debug details are the only free text in a line. Scrub each
             # value before serialization. The current request's secrets come

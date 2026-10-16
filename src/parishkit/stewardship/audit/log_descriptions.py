@@ -567,6 +567,12 @@ DESCRIPTIONS = {
         "email; its Mail message page labels the address refused "
         "permanently. Report this entry with its correlation id."
     ),
+    "admin_input_refused": _(
+        "An Admin page or pk-admin command refused what the person "
+        "submitted. The detail names the page or command, the fields and "
+        "why it was refused; nothing they entered is kept. Many refusals "
+        "from one person in a short time are not all kept here."
+    ),
     "incident_recovered": _(
         "A problem the system had detected has ended. The detail names it "
         "and how long it lasted, and says what to check when its end still "
