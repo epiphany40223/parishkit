@@ -91,18 +91,18 @@ def visit_every_page(page, *, required=True):
 
 
 def review(page):
-    """Go to Review as a Family would, and select Review response.
+    """Go to Review as a Family would, and select the last page's Next.
 
     A Family reaches Review only through every page (#330), so Next checks any
     page not yet passed. When one of those has a problem, the Family stops on
     that page with its errors shown, exactly as Next shows them, instead of
     reaching Review; tests of Review-time checks then assert on those errors.
-    Returns whether Review response was selected, so such a test can say
+    Returns whether the last page's Next was selected, so such a test can say
     which it expects.
     """
     if not visit_every_page(page, required=False):
         return False
-    page.get_by_role("button", name="Review response").click()
+    page.get_by_role("button", name="Next", exact=True).click()
     return True
 
 
