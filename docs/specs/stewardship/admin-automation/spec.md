@@ -2152,7 +2152,11 @@ the applied configuration's `version`, the `campaign_id`, the WorkGroup
 closed `state` (`off`, `pending` until a refresh reads that name,
 `missing` when the newest refresh found no such Family WorkGroup, or
 `found`) with `families`, the number of Families the refresh found when
-`found`, never a Family's DUID or name. `workgroup preview` admits as
+`found`, and `excluding`, the number of Families Reminders skip now
+(`source.workgroups.applied_evidence`), with `excluding_from`, the
+WorkGroup that set was read from when it is not `name` (else null, and
+always null for a set kept from a refresh that did not find its
+WorkGroup), never a Family's DUID or name. `workgroup preview` admits as
 the page's Review post does (recording activity) and, in one read
 snapshot, binds the name to the page's form (`WorkGroupForm`: a name it
 refuses is `invalid` at `name`), checks the version (another is
@@ -2170,12 +2174,14 @@ session; none is fresh-gated or prompts, as the page asks for no recent
 sign-in and shows no confirmation dialog: the reviewed token is the
 confirmation. A `--name` that is blank once trimmed is `invalid` before
 anything else (turning the exclusion off takes `--clear`), so an unset
-shell variable cannot silently clear it. Once the change is applied the
-old WorkGroup stops applying at once, and a new name applies only from
-the next ParishSoft refresh that reads it, so until then no Family is
-excluded (`source.workgroups.current_evidence`), on the page as on the
-command line. The command names, `--name`/`--clear` and the `state` codes
-are defaults, pending Administrator confirmation. The
+shell variable cannot silently clear it. Once the change is applied,
+`--clear` stops every exclusion at once; the Families the newest refresh
+found in the previous WorkGroup are still excluded until a refresh reads
+the new name (`source.workgroups.applied_evidence`, #1305), so `state` is
+`pending` while `excluding` counts them; and a name ParishSoft does not
+have keeps the earlier set until a refresh finds it, on the page as on
+the command line. The command names, `--name`/`--clear` and the `state`
+codes are defaults, pending Administrator confirmation. The
 [operator guide](../../../guides/stewardship-admin-automation.md#no-reminders-workgroup)
 lists the fields.
 
