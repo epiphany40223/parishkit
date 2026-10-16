@@ -11,7 +11,12 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 
 from parishkit.stewardship.accounts.policy import Principal
-from parishkit.stewardship.reports.ministries import SUMMARY_SORTING, MinistryQuery
+from parishkit.stewardship.reports.chart_specs import ministry_followup
+from parishkit.stewardship.reports.ministries import (
+    SUMMARY_SORTING,
+    MinistryQuery,
+    summary_totals,
+)
 from parishkit.stewardship.reports.ministry_views import queue_links
 from parishkit.stewardship.web.tables import report_table
 
@@ -44,8 +49,10 @@ def components(context, admin):
             active=None,
             joining=51,
             leaving=0,
-            unresolved=51,
-            progress="0 out of 51 (0%)",
+            unresolved=40,
+            completed=11,
+            requests=51,
+            progress="11 out of 51 (21.6%)",
         )
     ]
     # The packet offers every Ministry in scope, whatever the table shows
@@ -56,7 +63,11 @@ def components(context, admin):
     staff = Principal(UUID(int=97), frozenset({"staff"}))
     for summary in summaries:
         summary["queue_links"] = queue_links(staff, summary)
+    # The totals and follow-up chart of every matching Ministry (#720).
+    totals = summary_totals(first)
     summary = dict(
+        totals=totals,
+        followup_chart=ministry_followup(totals),
         # Staff or an Administrator: the ParishSoft and campaign marks (#1135).
         show_marks=True,
         campaign_id=campaign,
@@ -83,6 +94,13 @@ def components(context, admin):
     # on the page: what its heading's POST form returns, served from a GET
     # path to the in-place re-sort tests (#478).
     descending = MinistryQuery(search="Example", sort="name_desc")
+    # A search matching a second Ministry with 9 resolved leave requests.
+    searched = summary_totals(
+        [
+            *first,
+            dict(first[0], joining=0, leaving=9, unresolved=0, completed=9, requests=9),
+        ]
+    )
     pages = {
         "/ministry-summary": summary,
         # What a Ministry leader sees: no marks (#1135).
@@ -95,6 +113,13 @@ def components(context, admin):
             table=_table(summaries, descending, 2, action=root),
         ),
         "/ministry-gated": summary | dict(mutable=False),
+        # What an applied search returns in place (#720): fresh totals and
+        # a fresh follow-up chart for the Ministries it matches.
+        "/ministry-summary-searched": summary
+        | dict(
+            totals=searched,
+            followup_chart=ministry_followup(searched),
+        ),
     }
     return {
         path: (

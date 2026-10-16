@@ -1,5 +1,6 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Ministry requests" %}{% endblock %}
+{% block head %}{% include 'stewardship/components/chart-scripts.html' %}{% endblock %}
 {% block content %}
 <h1>{% translate "Ministry requests" %}</h1>
 {% aboutpage "ministry-report" %}<p>{% translate "Families' requests to join or leave each Ministry you may follow up, counted for each Ministry." %}</p>
@@ -13,6 +14,10 @@
 <label for="ministry-search">{% translate "Search Ministry name" %}</label><input id="ministry-search" name="search" maxlength="200" value="{{ query.search }}">
 {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
 {% button type="submit" %}{% translate "Apply filters" %}{% endbutton %}</form>
+{% comment %}Visuals first (#720): totals for every Ministry the search matches, not just the table's page, so they follow the search in place (data-table-sync) and not the paging. Two tiles, then follow-up progress as progress bars against all those requests, each bar's count and share in its axis label and tooltip (#1266), with no caption repeating them. With no request nothing is drawn.{% endcomment %}<div id="ministry-totals" data-table-sync><h2>{% translate "Totals for all matching Ministries" %}</h2>
+<ul class="stat-tiles"><li class="stat-tile"><span class="stat-label">{% translate "Join requests" %}</span> <span class="stat-value">{{ totals.joining|number }}</span></li>
+<li class="stat-tile"><span class="stat-label">{% translate "Leave requests" %}</span> <span class="stat-value">{{ totals.leaving|number }}</span></li></ul>
+{% if followup_chart %}{% include 'stewardship/components/chart.html' with chart=followup_chart no_table=True %}{% endif %}</div>
 <div id="{{ table.anchor }}" data-table-region>
 {% translate "Ministry requests pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Ministry summary' %}"><table><caption>{% translate "Current Ministry request summary" %}</caption>
@@ -21,7 +26,7 @@
 {% comment %}Each count links to Ministry follow-up showing exactly the requests it counts (#1133): that Ministry with Join or Leave and Any status, or Unresolved with either request. The view builds the addresses (queue_links), only for a count above zero that the reader may follow up, so a zero count, or one a leader does not lead, is plain text. Each link's accessible name names its Ministry. The Members joining and leaving lists and their Contact details controls were retired (#1157): each request's page in Ministry follow-up shows its Member's contact details.{% endcomment %}{% blocktranslate asvar join_label with number=ministry.joining|number name=ministry.name %}{{ number }} join requests for {{ name }}{% endblocktranslate %}{% blocktranslate asvar leave_label with number=ministry.leaving|number name=ministry.name %}{{ number }} leave requests for {{ name }}{% endblocktranslate %}{% blocktranslate asvar unresolved_label with number=ministry.unresolved|number name=ministry.name %}{{ number }} unresolved requests for {{ name }}{% endblocktranslate %}
 <td>{% if ministry.queue_links.joining %}<a href="{{ ministry.queue_links.joining }}" aria-label="{{ join_label }}">{{ ministry.joining|number }} {% translate "join requests" %}</a>{% else %}{{ ministry.joining|number }} {% translate "join requests" %}{% endif %}</td>
 <td>{% if ministry.queue_links.leaving %}<a href="{{ ministry.queue_links.leaving }}" aria-label="{{ leave_label }}">{{ ministry.leaving|number }} {% translate "leave requests" %}</a>{% else %}{{ ministry.leaving|number }} {% translate "leave requests" %}{% endif %}</td>
-<td>{% if ministry.queue_links.unresolved %}<a href="{{ ministry.queue_links.unresolved }}" aria-label="{{ unresolved_label }}">{{ ministry.unresolved|number }}</a>{% else %}{{ ministry.unresolved|number }}{% endif %}</td><td>{{ ministry.progress }}</td></tr>{% empty %}<tr><td colspan="5">{% translate "No matching authorized Ministries." %}</td></tr>{% endfor %}</tbody></table></div>
+<td>{% if ministry.queue_links.unresolved %}<a href="{{ ministry.queue_links.unresolved }}" aria-label="{{ unresolved_label }}">{{ ministry.unresolved|number }}</a>{% else %}{{ ministry.unresolved|number }}{% endif %}</td>{# The bar shows the share the text states, so assistive technology hears only the text (#720). #}<td class="progress-cell">{% if ministry.requests %}<progress value="{{ ministry.completed }}" max="{{ ministry.requests }}" aria-hidden="true"></progress> {% endif %}{{ ministry.progress }}</td></tr>{% empty %}<tr><td colspan="5">{% translate "No matching authorized Ministries." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
 <section aria-labelledby="ministry-packet-heading"><h2 id="ministry-packet-heading">{% translate "Follow-up packet" %}</h2>

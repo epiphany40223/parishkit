@@ -10,7 +10,9 @@ from parishkit.stewardship.audit.schemas import ContextKind, sanitize
 from parishkit.stewardship.reports.ministries import (
     MinistryQuery,
     can_report,
+    matching_summaries,
     packet_choices,
+    summary_totals,
 )
 from parishkit.stewardship.reports.ministry_export_views import (
     TOO_MANY,
@@ -213,3 +215,89 @@ def test_packet_limit_is_refused_with_its_own_message():
         packet_selection(chosen(201))
     assert "at most 200 ticked Ministries" in str(TOO_MANY)
     assert "leave every box unticked" in str(TOO_MANY_FIX)
+
+
+def counted(name, joining, leaving, completed):
+    """A summary row as the selection returns it, with consistent counts."""
+    requests = joining + leaving
+    return {
+        "duid": len(name),
+        "name": name,
+        "joining": joining,
+        "leaving": leaving,
+        "unresolved": requests - completed,
+        "completed": completed,
+        "requests": requests,
+        "progress": f"{completed} out of {requests}",
+    }
+
+
+def test_summary_totals_add_up_every_count():
+    """The page's totals add each count across the Ministries given (#720)."""
+    rows = [counted("Choir", 3, 1, 2), counted("Bread", 0, 2, 2)]
+    assert summary_totals(rows) == {
+        "joining": 3,
+        "leaving": 3,
+        "unresolved": 2,
+        "completed": 4,
+        "requests": 6,
+    }
+    assert summary_totals([])["requests"] == 0
+
+
+def test_matching_summaries_reuse_a_page_that_holds_every_match():
+    """A page with every matching Ministry needs no second read (#720)."""
+
+    def read_every(query):
+        """Fails the test: this page already holds every match."""
+        raise AssertionError("The matching summary was read again.")
+
+    result = summary_result("Choir", "Bread")
+    assert (
+        matching_summaries(result, MinistryQuery(), read_every) == (result["summaries"])
+    )
+
+
+def test_matching_summaries_read_beyond_the_page_with_the_same_search():
+    """Totals cover every page: the whole match is read with the query's
+    search, so they follow the search and not the paging (#720)."""
+    reads = []
+    query = MinistryQuery(search="o", page=2)
+
+    def read_every(given):
+        """The whole matching summary for ``given``."""
+        reads.append(given)
+        return summary_result("Choir", "Food", "Hospitality")
+
+    rows = matching_summaries(summary_result("Choir", total=3), query, read_every)
+    assert reads == [query]
+    assert [row["name"] for row in rows] == ["Choir", "Food", "Hospitality"]
+
+
+def test_totals_tiles_chart_and_cell_bars_render_above_the_table():
+    """The totals region follows the search in place, its chart draws its
+    values so it has no exact-values table, and each row's progress cell
+    has a bar hidden from assistive technology (#720)."""
+    html = render_report(
+        [], summaries=[counted("Choir", 3, 1, 2), counted("Bread", 0, 0, 0)]
+    )
+    start = html.index('<div id="ministry-totals" data-table-sync>')
+    region = html[start : html.index('<div id="', start + 1)]
+    assert "Totals for all matching Ministries" in region
+    assert 'class="stat-value">3</span>' in region  # Join requests.
+    assert 'class="stat-value">1</span>' in region  # Leave requests.
+    assert 'data-chart="ministry-followup-spec"' in region
+    assert "Exact values" not in region
+    assert start < html.index("<table>")
+    assert (
+        '<progress value="2" max="4" aria-hidden="true"></progress> 2 out of 4' in html
+    )
+    # A Ministry with no request has no bar, only its text.
+    assert '<td class="progress-cell">0 out of 0</td>' in html
+
+
+def test_totals_without_requests_show_tiles_and_no_chart():
+    """With no request nothing is drawn: the tiles still read zero."""
+    html = render_report([], summaries=[counted("Choir", 0, 0, 0)])
+    assert 'id="ministry-totals"' in html
+    assert "data-chart=" not in html
