@@ -18,9 +18,10 @@ The view and each download are audited as a count only.
 
 import csv
 import io
+from collections import Counter
 from dataclasses import replace
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -28,6 +29,7 @@ from django.db import DatabaseError, connection, transaction
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_GET, require_POST
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
@@ -41,9 +43,9 @@ from parishkit.stewardship.observability import Event, debug_swallowed, emit_fai
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.source.snapshot_names import snapshot_family_names
 from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
-from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 from parishkit.stewardship.web import dates
-from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.contracts import expected_version, filters
 from parishkit.stewardship.web.exports import (
     DEFAULT_EXPORT_FORMAT,
     csv_cell,
@@ -57,9 +59,12 @@ from parishkit.stewardship.workflows.models import (
     MinistryWorkflowRevision,
 )
 from parishkit.stewardship.workflows.roster import (
+    MAX_BULK,
+    RosterStale,
     can_tick,
     eligible,
     mark,
+    mark_many_entered,
     roster_marks,
 )
 
@@ -525,16 +530,31 @@ def _respond(request, campaign_id, *, export, parameters, render):
             finish(False)
 
 
-def row_controls(rows):
-    """Give each shown row what its tick form needs.
+def resolved_on(moment, zone):
+    """A resolution's calendar day in ``zone``, in the parish's compact style."""
+    return dates.format_date(moment.astimezone(ZoneInfo(zone)).date(), compact=True)
 
-    A fresh request key per drawn form makes a repeated submission a replay;
-    the ids name the row's Member and Ministry cells, which describe its
-    button (the {% button %} tag takes each attribute as one value).
+
+def row_controls(rows, zone):
+    """Give each shown row what its tick form and selection box need.
+
+    A fresh request key per drawn form makes a repeated submission a replay.
+    ``label`` names the row as "Member — Ministry", in its icon button's
+    accessible name and tooltip, its box's name and the bulk dialog's title
+    (the follow-up queue's bulk outcomes name a row the same way). The same
+    change can be listed twice (a Family answered again and both requests
+    were resolved); those rows add their Resolved day in ``zone`` (the
+    parish's), "Member — Ministry, resolved Oct 5, 2054", so each control
+    names its own row, as a stale bulk refusal does.
     """
     for row in rows:
         row["request_key"] = uuid4()
-        row["describedby"] = f"member-{row['id']} ministry-{row['id']}"
+        member = row["member_name"] or row["member_label"]
+        row["label"] = f"{member} — {row['ministry_name']}"
+    names = Counter(row["label"] for row in rows)
+    for row in rows:
+        if names[row["label"]] > 1 and row["resolved_at"]:
+            row["label"] += f", resolved {resolved_on(row['resolved_at'], zone)}"
 
 
 @require_GET
@@ -552,7 +572,8 @@ def page(request, campaign_id):
             admit_campaign(campaign_id, mutating=True)
         except PermissionError:
             mutable = False
-        row_controls(table.rows)
+        row_controls(table.rows, dates.parish_zone())
+        tick_fields = table.page_fields(table.number)
         return render_to_string(
             "stewardship/ministry-roster.html",
             {
@@ -564,7 +585,13 @@ def page(request, campaign_id):
                 # The Ministry filter's choices: the Ministries the list reads.
                 "ministries": result["ministries"],
                 "changed": extra["changed"],
-                "tick_fields": table.page_fields(table.number),
+                "tick_fields": tick_fields,
+                # The bulk dialog redraws the table from the list's own
+                # address, with the same Show, Ministry, sort and page.
+                "refresh_url": f"{action}?{table.current_query}",
+                # One key per drawn page: each bulk entry's request key is
+                # made from it, so a repeated post replays.
+                "bulk_key": uuid4(),
                 "mutable": mutable,
                 "can_tick": True,
                 "export_timezones": sorted(timezone_names()),
@@ -591,3 +618,89 @@ def export(request, campaign_id):
     return _respond(
         request, campaign_id, export=True, parameters=request.POST, render=render
     )
+
+
+# What a refused bulk mark says in its dialog (#879), naming the one change
+# it is about by the names its row shows; nothing submitted is echoed.
+BULK_STALE = _(
+    "%(row)s changed after this list was shown (someone else may have marked "
+    "it), so nothing was marked."
+)
+
+
+def bulk_values(parameters):
+    """Strict closed grammar of the bulk bar's POST: the chosen ticks and key.
+
+    Each ``request`` value is ``<request id>:<next sequence>``, as the row's
+    box carries it: at most one page of them (``MAX_BULK``), none twice.
+    ``bulk_key`` is the page's key, from which each entry's request key is
+    made, so a repeated post replays. Anything else is a malformed form.
+    """
+    keys = set(parameters) - {"csrfmiddlewaretoken", "request"}
+    values = parameters.getlist("request")
+    if keys != {"bulk_key"} or len(parameters.getlist("bulk_key")) != 1:
+        raise ValueError("Invalid roster bulk form.")
+    if not 1 <= len(values) <= MAX_BULK:
+        raise ValueError("Choose between one and a page of changes.")
+    chosen = {}
+    for value in values:
+        identity, separator, sequence = value.partition(":")
+        if not separator or len(value) > 64:
+            raise ValueError("Invalid roster selection.")
+        chosen[UUID(identity)] = expected_version(sequence)
+    if len(chosen) != len(values):
+        raise ValueError("A change was chosen twice.")
+    return chosen, UUID(parameters["bulk_key"])
+
+
+@require_POST
+def bulk(request, campaign_id):
+    """Mark the changes chosen on the list Entered in ParishSoft (#879).
+
+    The shared confirmation dialog posts the ticked rows, each with its
+    tick's next sequence, without a page load. All or none: a change someone
+    else marked or cleared since the list was shown is named in the
+    refusal the dialog shows (409); a malformed form, or a change that does
+    not take the tick, is a 400; another campaign's request or a person who
+    may not tick is denied. Success answers 204, and the dialog redraws the
+    table from the list's own address, keeping its Show, Ministry, sort and
+    page.
+    """
+    # Lazy, as the follow-up views read this module lazily too.
+    from .ministry_followup_views import _bulk_refusal, _in_campaign, _row_name
+
+    try:
+        service = runtime()
+        principal = _principal(request, service.store)
+        if request.GET:
+            raise ValueError("Roster marks require a POST body.")
+        sequences, bulk_key = bulk_values(request.POST)
+        _in_campaign(campaign_id, list(sequences))
+        mark_many_entered(
+            service.store, principal.identity, sequences, bulk_key=bulk_key
+        )
+        response = HttpResponse(status=204)
+        response["Cache-Control"] = "no-store"
+        return response
+    except RosterStale as error:
+        row = _row_name(campaign_id, principal, error.request_id)
+        if row is None:
+            return _error(status=409)
+        # The change may be listed twice (row_controls), so the refusal
+        # always names the day it was resolved, which tells the rows apart.
+        resolved = (
+            MinistryRequest.objects.filter(pk=error.request_id)
+            .values_list("resolved_at", flat=True)
+            .first()
+        )
+        if resolved:
+            row += f", resolved {resolved_on(resolved, dates.parish_zone())}"
+        return _bulk_refusal(409, BULK_STALE % {"row": row})
+    except StaleRecordError:
+        return _error(status=409)
+    except (PermissionError, ObjectDoesNotExist):
+        return denial()
+    except (*SAFE_FAILURES, StorageInvariantError):
+        return _error(status=503)
+    except ValueError:
+        return _error(status=400)
