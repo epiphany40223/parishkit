@@ -18,6 +18,11 @@ views act on them:
   the same reviewed change.
   Its **Send a test of this text** sends the unsaved text as a test, saving
   nothing (``schedule_email_test``).
+- **Reminder series** (#469): New's Repeat also remembers its rule as a
+  series (``_remember``), and Edit of a series' reminder offers "this and
+  following" and "the whole series" for a time or email change
+  (``SeriesScope``, ``_series_edit``), planned by the command line's own
+  ``series_edits.plan``. Delivery never reads a series.
 - **Delete** answers the list's confirmation dialog: it removes the chosen
   schedules in one configuration change.
 
@@ -52,6 +57,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.intervals import local_day
+from parishkit.stewardship.campaigns.recurrence import canonical_rule, expand
 from parishkit.stewardship.campaigns.work_locks import (
     read_transaction,
     work_transaction,
@@ -60,7 +66,7 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.wall_clock import weekday_choices
 from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.dates import UnknownZone
+from parishkit.stewardship.web.dates import UnknownZone, browser_zone, format_time
 from parishkit.stewardship.web.presentation import parish_date
 from parishkit.stewardship.web.refusals import (
     UserFacingDenied,
@@ -98,7 +104,10 @@ from .schedule_forms import (
 from .schedule_preview import work_summary
 from .schedule_reads import campaign_schedules, schedule_state
 from .schedule_table import schedule_rows
+from .series_edits import SCOPES, SeriesEditError, cut, plan, rule_text
+from .series_schema import SECTION as SERIES
 from .sessions import authenticated_admin
+from .users_schema import uses_users
 
 ERRORS = (
     ConfigError,
@@ -142,6 +151,50 @@ REPEAT_FIELDS = (
     "dates",
 )
 REPEAT_MULTIPLE = {"repeat-weekdays", "repeat-dates"}
+# Edit's choice of which reminders of a series change (#469), posted as
+# ``series-scope``.
+SCOPE = "series-scope"
+# A series edit's time moves a reminder to another day in the campaign's
+# zone, which its series' rule would no longer give (#469).
+DAY_MOVED = _(
+    "At this time, some reminders of this series would send on another day. "
+    "Choose another time, or This reminder only."
+)
+# A posted series scope for a reminder that is no longer in a series.
+NOT_IN_SERIES = _("This reminder is no longer part of a series.")
+# The page's words for each refusal of a series edit (series_edits.plan's
+# reason codes; its own messages are the command line's), and for any other.
+SERIES_REFUSALS = {
+    "all_sent": _(
+        "Every reminder of this series has already sent or is being prepared."
+    ),
+    "read_only_series": _(
+        "A reminder of this series after its first unsent one has already sent "
+        "or is being prepared, so the whole series can't change together. Open "
+        "a reminder after it and choose \u201cThis and following\u201d."
+    ),
+    "read_only_following": _(
+        "A reminder of this series from this one on has already sent or is "
+        "being prepared. Open a reminder after it and choose \u201cThis and "
+        "following\u201d."
+    ),
+    "day_moved": DAY_MOVED,
+}
+# A series edit's new time is already past for another reminder (#469).
+TIME_PASSED = _(
+    "At this time, the reminder of this series on %(date)s would send at "
+    "%(time)s, which has already passed, so it would send at once. Choose a "
+    "later time, or change that reminder on its own."
+)
+SERIES_REFUSED = _("This change can't be made to the series. Reload the page.")
+# Another reminder from the cut date whose time has passed without sending
+# (#469): a series change would add it again on its past date, so it would
+# send at once. Only the page refuses this; the command line allows it.
+MISSED = _(
+    "The reminder of this series on %(date)s has passed without sending, so "
+    "changing it with the others would send it at once. Change it on its own, "
+    "or open a later reminder and choose \u201cThis and following\u201d."
+)
 # The browser's IANA time zone, which ui-v1.js fills in (#558).
 ZONE = "zone"
 # Edit's refusal of a save that changes nothing. The page's change gate
@@ -227,6 +280,91 @@ class RepeatRule(AdminForm):
             ) from None
 
 
+class SeriesScope(AdminForm):
+    """Edit's choice of which reminders of a remembered series change (#469).
+
+    "This reminder only" is the ordinary Edit; the other two change the
+    reminder's series from it, or from the series' first reminder that has
+    not sent (``series_edits.plan``). It is drawn only for a series' reminder.
+    """
+
+    scope = forms.ChoiceField(
+        required=False,
+        label=_("Apply this edit to"),
+        choices=[
+            ("this", _("This reminder only")),
+            ("following", _("This and following")),
+            ("series", _("The whole series")),
+        ],
+        widget=forms.RadioSelect,
+        help_text=_(
+            "Choose \u201cThis reminder only\u201d to change just this reminder; "
+            "moving it to a day its series does not repeat on takes it out of "
+            "the series. \u201cThis and following\u201d and \u201cThe whole "
+            "series\u201d change only the send time and email, of every "
+            "reminder they cover, and each keeps its own date. Reminders that "
+            "sent or are being prepared don't change."
+        ),
+    )
+
+    def clean_scope(self):
+        """The scope chosen; "this" when none is posted."""
+        return self.cleaned_data.get("scope") or "this"
+
+
+def _series_of(configuration, campaign, schedule):
+    """The applied ``schedule_series`` record holding ``schedule``, or None."""
+    if schedule is None or schedule["values"]["kind"] != "reminder":
+        return None
+    rows = configuration.active_configuration.canonical_document["sections"]
+    return next(
+        (
+            row
+            for row in rows.get(SERIES, [])
+            if row["values"]["campaign_id"] == str(campaign.pk)
+            and schedule["id"] in row["values"]["schedules"]
+        ),
+        None,
+    )
+
+
+def series_context(entry, record, data=None, refusals=None):
+    """Edit's "Part of" and scope for a series' reminder, or None (#469).
+
+    ``record`` is the reminder's series (``_series_of``), ``data`` the post
+    and ``refusals`` the scopes already known to be unavailable
+    (``scope_refusals``). Returns ``{"text", "form", "options"}``: the rule
+    in plain words, the bound ``SeriesScope`` and each choice to draw
+    (``value``, ``label``, ``checked`` and the ``reason`` it is
+    unavailable, or None). The send date is the reminder's own only for
+    This reminder only, so the other scopes grey ``entry``'s date in place,
+    unsent (conditional fields, ``data-enabled-when``); its help says so.
+    """
+    if record is None:
+        return None
+    field = entry.fields["date"]
+    field.widget.attrs["data-enabled-when"] = f"{SCOPE}=this"
+    field.help_text = _(
+        "Used only with \u201cThis reminder only\u201d. Otherwise each "
+        "reminder keeps its own date, and this box shows this reminder's."
+    )
+    form = SeriesScope(data, prefix="series", initial={"scope": "this"})
+    chosen = form["scope"].value() or "this"
+    return {
+        "text": rule_text(record["values"]["rule"]),
+        "form": form,
+        "options": [
+            {
+                "value": value,
+                "label": label,
+                "checked": value == chosen,
+                "reason": (refusals or {}).get(value),
+            }
+            for value, label in form.fields["scope"].choices
+        ],
+    }
+
+
 def _saved(state, campaign):
     """The campaign's saved schedules, in sending order."""
     return sorted(campaign_schedules(state[0], campaign.pk), key=schedule_order)
@@ -247,7 +385,8 @@ def _changeable(saved, campaign, identifiers):
     """Refuse an unknown or read-only schedule among ``identifiers``.
 
     Called inside the view's transaction. The table offers no action on
-    either, so this is reached only from an old page or link.
+    either, so this is reached only from an old page or link. Returns the
+    read-only schedule IDs, which Edit's series scopes reuse (#469).
     """
     known = {row["id"] for row in saved}
     if set(identifiers) - known:
@@ -257,7 +396,8 @@ def _changeable(saved, campaign, identifiers):
             link=reverse("admin:schedule_settings"),
             link_label=_("Dates and mail schedules"),
         )
-    if set(identifiers) & _read_only(saved, campaign):
+    read_only = _read_only(saved, campaign)
+    if set(identifiers) & read_only:
         raise UserFacingDenied(
             _(
                 "That scheduled email has already run, or is being prepared, "
@@ -267,10 +407,21 @@ def _changeable(saved, campaign, identifiers):
             link=reverse("admin:schedule_settings"),
             link_label=_("Dates and mail schedules"),
         )
+    return read_only
 
 
 def review(
-    service, actor, state, campaign, editable, entries, *, base_digest, content=()
+    service,
+    actor,
+    state,
+    campaign,
+    editable,
+    entries,
+    *,
+    base_digest,
+    content=(),
+    series=(),
+    series_changes=(),
 ):
     """Bind a change document to the review's forms and build the review.
 
@@ -282,7 +433,9 @@ def review(
     and ``identifiers`` names each form (a saved ID, or ``new<n>``).
     ``content`` lists the content records the change adds (an edited email,
     ``schedule_email.copy``); the forms offer them as saved emails, so an
-    entry may send one.
+    entry may send one. ``series`` and ``series_changes`` are
+    ``build_preview``'s reminder series to remember and series operations
+    (#469).
     """
     # The schedule commands' own binding, so the page and the command line
     # cannot read the same change differently.
@@ -319,6 +472,8 @@ def review(
         base_digest=base_digest,
         salt=preview_salt(campaign.pk),
         content=content,
+        series=series,
+        series_changes=series_changes,
     )
     return context, window, schedules, identifiers
 
@@ -459,6 +614,8 @@ def _fields(new):
     }
     if new:
         names.update(f"repeat-{name}" for name in REPEAT_FIELDS)
+    else:
+        names.add(SCOPE)
     return names
 
 
@@ -548,20 +705,270 @@ def _check_repeat(entry, repeat):
         )
 
 
-def _summary(entry, repeat, email=None):
+def _rule(repeat):
+    """The canonical rule New's Repeat fields give, or None (#469).
+
+    The page script expands the same fields into the posted dates; here
+    they are read only to remember the rule, so anything incomplete or
+    invalid is simply None.
+    """
+    data = repeat.cleaned_data
+    frequency = data.get("frequency")
+    rule = {
+        "frequency": frequency,
+        "start": data["start"].isoformat() if data.get("start") else None,
+        "end": data["until"].isoformat() if data.get("until") else None,
+    }
+    try:
+        if frequency == "weekly":
+            rule["weekdays"] = [int(value) for value in data.get("weekdays") or []]
+        elif frequency == "monthly" and data.get("by") == "weekday":
+            rule["monthly"] = {
+                "ordinal": int(data.get("ordinal")),
+                "weekday": int(data.get("month_weekday")),
+            }
+        elif frequency == "monthly":
+            rule["monthly"] = {"day": data.get("day")}
+    except (TypeError, ValueError):
+        return None
+    return canonical_rule(rule)
+
+
+def _remember(repeat, entries, document):
+    """New's Repeat as ``build_preview``'s series to remember, or none (#469).
+
+    The rule is remembered, holding exactly the reminders the repeat adds,
+    when it is valid, every reminder's campaign-local date is a day it gives
+    (a browser far from the campaign's zone can move a send to another
+    campaign day) and the configuration ``document`` is in the users form,
+    the only form that can hold a series. Otherwise the reminders are added
+    as before, unremembered.
+    """
+    rule = _rule(repeat)
+    if rule is None or not uses_users(document):
+        return []
+    given = set(expand(rule)["dates"])
+    if any(row["date"] not in given for row in entries):
+        return []
+    return [{"rule": rule, "added": list(range(len(entries)))}]
+
+
+def _page_refusal(error):
+    """The page's own translated words for a refused series edit (#469).
+
+    ``series_edits.plan`` words its refusals for the command line; the page
+    maps each reason code to plain words that name what it offers.
+    """
+    return SERIES_REFUSALS.get(error.reason, SERIES_REFUSED)
+
+
+def scope_refusals(record, saved, schedule, campaign, read_only, now):
+    """The series scopes the page can already tell are unavailable, and why.
+
+    Returns ``{scope: message}`` (UX conventions, "Prerequisite gates"): a
+    scope ``series_edits.plan`` refuses even with nothing changed (a
+    reminder from the cut date has sent or is being prepared), or one whose
+    reminders from the cut date include another reminder whose time has
+    already passed without sending, which any change would add again on its
+    past date and so send at once (``MISSED``). The reminder being edited
+    keeps the ordinary Edit's meaning. Only the page refuses that; the
+    command line keeps its documented behaviour.
+    """
+    zone = campaign.active_configuration.values["timezone"]
+    schedules = {row["id"]: row["values"] for row in saved}
+    result = {}
+    for scope in SCOPES:
+        try:
+            plan(record, schedules, read_only, scope=scope, start=schedule["id"])
+            _anchor, cut_date = cut(
+                record, schedules, read_only, scope=scope, start=schedule["id"]
+            )
+        except SeriesEditError as error:
+            result[scope] = _page_refusal(error)
+            continue
+        missed = sorted(
+            schedules[member]["date"]
+            for member in record["values"]["schedules"]
+            if member != schedule["id"]
+            and member not in read_only
+            and schedules[member]["date"] >= cut_date
+            and schedule_local.instant(schedules[member], zone, now) <= now
+        )
+        if missed:
+            result[scope] = MISSED % {
+                "date": parish_date(date.fromisoformat(missed[0]))
+            }
+    return result
+
+
+class TimePassed(ValueError):
+    """A series edit's new time would put another reminder in the past (#469)."""
+
+
+def _refuse_passed(added, schedule, campaign_zone, zone, now):
+    """Refuse a series edit that adds another reminder at a time already past.
+
+    A new send time can move one of today's unsent reminders before now (a
+    9:00 AM reminder moved to 7:00 AM at 8:00 AM), and an added reminder
+    whose time has passed is due at once, so it would send right after
+    Apply. Only the reminder being edited may be added in the past, as on
+    the ordinary Edit: the one added on its own date (once). The message
+    names the date and new time in the browser's ``zone``. The saved-time
+    check (``scope_refusals``) covers reminders already missed; this one
+    covers the new times. The command line keeps its documented behaviour.
+    """
+    own = schedule["values"]["date"]
+    for row in added:
+        if row["date"] == own:
+            own = None  # the edited reminder's own re-add, allowed once
+            continue
+        moment = schedule_local.instant(row, campaign_zone, now)
+        if moment <= now:
+            shown = moment.astimezone(browser_zone(zone))
+            raise TimePassed(
+                TIME_PASSED
+                % {
+                    "date": parish_date(shown.date()),
+                    "time": format_time(shown.time()),
+                }
+            )
+
+
+def _series_edit(
+    entry, schedule, record, saved, campaign, *, scope, zone, now, email, read_only
+):
+    """The change document for "this and following" or "the whole series" (#469).
+
+    ``record`` is the reminder's series, ``saved`` the campaign's saved
+    schedules, ``read_only`` the ids that have run or have work prepared and
+    ``email`` the email every changed reminder sends (an edited email's new
+    id, or the one chosen). A send time left as the page showed it, and the
+    reminder's own email, leave each reminder's own; otherwise the browser
+    time is converted on each date the edit changes (the unsent members from
+    the cut date on), as a repeat's dates are, and one that would move such a
+    reminder to another campaign day is refused (``DAY_MOVED``). Members
+    before the cut date keep their times, so they are not checked. The plan
+    itself is the command line's (``series_edits.plan``). Returns
+    ``(entries, series, series_changes, notes)``: the schedules to delete
+    and add, the series to remember (``build_preview``'s ``series``), the
+    operations on the existing record and the review's lines on the series
+    (``_edit_notes``). Raises ``TimePassed`` (``_refuse_passed``),
+    ``SeriesEditError``, ``UnknownZone`` or ``schedule_local.RepeatedHour``.
+    """
+    campaign_zone = campaign.active_configuration.values["timezone"]
+    schedules = {row["id"]: row["values"] for row in saved}
+    _anchor, cut_date = cut(
+        record, schedules, read_only, scope=scope, start=schedule["id"]
+    )
+    clock = entry.cleaned_data["time"]
+    times = None
+    if clock != schedule_local.in_browser(schedule["values"], zone, campaign_zone, now):
+        times = {}
+        for member in record["values"]["schedules"]:
+            values = schedules[member]
+            if member in read_only or values["date"] < cut_date:
+                continue
+            day = (
+                schedule_local.instant(values, campaign_zone, now)
+                .astimezone(browser_zone(zone))
+                .date()
+            )
+            moved, converted, _weekday = schedule_local.to_campaign(
+                day, clock, None, zone=zone, campaign_zone=campaign_zone, now=now
+            )
+            if moved.isoformat() != values["date"]:
+                raise SeriesEditError(str(DAY_MOVED), "day_moved")
+            times.setdefault(values["date"], converted.isoformat(timespec="seconds"))
+    changed_email = email != schedule["values"]["template_version"]
+    outcome = plan(
+        record,
+        schedules,
+        read_only,
+        scope=scope,
+        start=schedule["id"],
+        times=times,
+        template_version=email if changed_email else None,
+    )
+    entries = [{"id": member, "delete": True} for member in outcome["remove"]]
+    entries.extend(
+        {"kind": "reminder", **row, "weekday": None, "comparison": False}
+        for row in outcome["add"]
+    )
+    series = (
+        [outcome["series"] | {"added": list(range(len(outcome["add"])))}]
+        if outcome["series"] is not None
+        else []
+    )
+    _refuse_passed(outcome["add"], schedule, campaign_zone, zone, now)
+    notes = _edit_notes(
+        outcome, cut_date, clock if times is not None else None, changed_email
+    )
+    return entries, series, outcome["changes"], notes
+
+
+def _edit_notes(outcome, cut_date, clock, changed_email):
+    """The review's plain lines on what a series edit does to its series.
+
+    ``clock`` is the new send time as typed (this computer's time), or None
+    when the time is unchanged; ``changed_email`` says whether the email
+    changed. A split names both parts: the reminders before the cut date
+    that stay in the series, and the changed ones that become a new series.
+    """
+    if outcome["series"] is None:
+        return []
+    day = parish_date(date.fromisoformat(cut_date))
+    notes = []
+    if clock is not None:
+        notes.append(
+            _(
+                "From %(date)s, every reminder of this series sends at %(time)s "
+                "(this computer's time)."
+            )
+            % {"date": day, "time": format_time(clock)}
+        )
+    if changed_email:
+        notes.append(
+            _("From %(date)s, every reminder of this series sends the chosen email.")
+            % {"date": day}
+        )
+    for change in outcome["changes"]:
+        notes.append(
+            _("Reminders before %(date)s stay in this series: %(rule)s.")
+            % {"date": day, "rule": rule_text(change["values"]["rule"])}
+        )
+    if outcome["changes"]:
+        notes.append(
+            _("From %(date)s, the changed reminders are a new series: %(rule)s.")
+            % {"date": day, "rule": rule_text(outcome["series"]["rule"])}
+        )
+    return notes
+
+
+def _series_notes(reviewed):
+    """The review's line on a repeat New remembers as a series (#469)."""
+    return [
+        _("Kept together as a series: %(rule)s.") % {"rule": rule_text(row["rule"])}
+        for row in reviewed.get("series", ())
+    ]
+
+
+def _summary(entry, repeat, email=None, scope=None):
     """The page's error summary: every message, linked to its field.
 
     The shared summary (components/errors.html) takes focus when the refused
     page loads, so the reader hears what to fix and can jump to each field.
     ``email`` is the schedule's email form; it counts only while in use
-    (bound).
+    (bound). ``scope`` is Edit's series scope (#469), linked to its first
+    choice, since a choice group has no control of its own id.
     """
     errors = []
-    for form in (entry, repeat, email):
+    for form in (entry, repeat, email, scope):
         if form is None or not form.is_bound:
             continue
         for field, messages in form.errors.items():
             target = None if field == "__all__" else form[field].auto_id
+            if form is scope and target:
+                target = f"{target}_0"
             errors.extend(
                 {"message": message, "field_id": target} for message in messages
             )
@@ -573,7 +980,10 @@ def _entry_page(request, context, *, status=200):
     if status == 400:
         context = context | {
             "errors": _summary(
-                context["entry"], context["repeat"], context.get("email")
+                context["entry"],
+                context["repeat"],
+                context.get("email"),
+                (context.get("series") or {}).get("form"),
             )
         }
     response = render(
@@ -619,7 +1029,11 @@ def _entry(request, campaign_id, schedule_id=None):
     rules compare the moments the Admin chose. A ticked "Edit this
     schedule's email" with changed text adds the new email to the same
     review, and the schedule sends it (``schedule_email``); on New with
-    Repeat, every reminder the rule adds sends that one new email.
+    Repeat, every reminder the rule adds sends that one new email, and the
+    rule is remembered as a series (``_remember``). On Edit of a series'
+    reminder, "this and following" or "the whole series" (``SeriesScope``)
+    plans the series edit instead (``_series_edit``); the send date is not
+    posted then, so the date the page showed stands in for it.
     """
     service = runtime()
     actor = principal(request, service)
@@ -645,9 +1059,24 @@ def _entry(request, campaign_id, schedule_id=None):
         values = campaign.active_configuration.values
         saved = _saved(state, campaign)
         schedule = None
+        read_only = set()
         if not new:
-            _changeable(saved, campaign, {str(schedule_id)})
+            read_only = _changeable(saved, campaign, {str(schedule_id)})
             schedule = next(row for row in saved if row["id"] == str(schedule_id))
+        record = _series_of(state[0], campaign, schedule)
+        refusals = (
+            scope_refusals(record, saved, schedule, campaign, read_only, now)
+            if record is not None
+            else {}
+        )
+        scoped = posted is not None and posted.get(SCOPE) in SCOPES
+        if scoped and record is None:
+            # A page drawn while the reminder was in a series (#469).
+            raise UserFacingError(
+                NOT_IN_SERIES, fix=_("Reload the page to see it as it is now.")
+            )
+        if scoped:
+            posted = _with_shown_date(posted, schedule, values["timezone"], now)
         records = _records(state[0], campaign.pk)
         test_mail = admits_test_mail(state[0].mode, campaign)
         entry = entry_form(
@@ -664,6 +1093,8 @@ def _entry(request, campaign_id, schedule_id=None):
             else None,
         )
         repeat = RepeatRule(posted, prefix="repeat") if new else None
+        part_of = series_context(entry, record, posted, refusals)
+        scope = part_of["form"] if part_of else None
         # The schedule's own email (#446): on New, of the posted mail type.
         toggle, email, sources = schedule_email.editor(
             posted, records, schedule, campaign.pk
@@ -680,6 +1111,8 @@ def _entry(request, campaign_id, schedule_id=None):
             "email_test": schedule_email.test_context(test_mail, campaign.pk),
             "new": new,
             "schedule": schedule,
+            # Edit of a series' reminder (#469): its rule and the scope.
+            "series": part_of,
             "base_digest": state[0].active_configuration.digest,
             "post_url": request.path,
             "list_url": reverse("admin:schedule_settings"),
@@ -693,6 +1126,7 @@ def _entry(request, campaign_id, schedule_id=None):
         valid = (
             entry.is_valid()
             & (repeat is None or repeat.is_valid())
+            & (scope is None or scope.is_valid())
             & (not email.is_bound or email.is_valid())
         )
         if valid:
@@ -742,10 +1176,56 @@ def _entry(request, campaign_id, schedule_id=None):
             if email.is_bound
             else None
         )
-        if added is not None:
+        series, series_changes, notes = [], [], None
+        chosen = scope.cleaned_data["scope"] if scope is not None else "this"
+        if chosen in refusals:
+            # Drawn unavailable with its reason; a post that names it anyway
+            # (an old page) is refused at the choice, changing nothing.
+            scope.add_error(
+                "scope",
+                forms.ValidationError(refusals[chosen], code="series_edit_refused"),
+            )
+            return _entry_page(request, context, status=400)
+        if chosen != "this":
+            try:
+                entries, series, series_changes, notes = _series_edit(
+                    entry,
+                    schedule,
+                    record,
+                    saved,
+                    campaign,
+                    scope=chosen,
+                    zone=posted.get(ZONE, ""),
+                    now=now,
+                    email=added["id"]
+                    if added is not None
+                    else entry.cleaned_data["template_version"],
+                    read_only=read_only,
+                )
+            except TimePassed as error:
+                entry.add_error(
+                    "time", forms.ValidationError(str(error), code="series_time_passed")
+                )
+                return _entry_page(request, context, status=400)
+            except SeriesEditError as error:
+                scope.add_error(
+                    "scope",
+                    forms.ValidationError(
+                        _page_refusal(error), code="series_edit_refused"
+                    ),
+                )
+                return _entry_page(request, context, status=400)
+            except schedule_local.RepeatedHour:
+                entry.add_error(
+                    "time", forms.ValidationError(REPEATED_HOUR, code="repeated_hour")
+                )
+                return _entry_page(request, context, status=400)
+        elif added is not None:
             # Every entry sends the one new email (a repeat's reminders share
             # it); nothing else changes.
             entries = [row | {"template_version": added["id"]} for row in entries]
+        if repeat is not None and repeat.cleaned_data["repeat"]:
+            series = _remember(repeat, entries, service.store.active().document())
         reviewed, window, schedules, identifiers = review(
             service,
             actor,
@@ -755,6 +1235,8 @@ def _entry(request, campaign_id, schedule_id=None):
             entries,
             base_digest=request.POST.get("base_digest"),
             content=[added] if added else (),
+            series=series,
+            series_changes=series_changes,
         )
         if reviewed is None and str(NO_CHANGES) in _messages(window.non_field_errors()):
             # Only Edit can post its schedule as saved. Its change gate keeps
@@ -771,19 +1253,25 @@ def _entry(request, campaign_id, schedule_id=None):
         if reviewed is None:
             repeating = repeat is not None and repeat.cleaned_data["repeat"]
             days = _days(entry, repeat) if repeating else None
-            _carry_errors(
-                entry,
-                window,
-                schedules,
-                identifiers,
-                _targets(entries, schedule, days),
-            )
+            targets = _targets(entries, schedule, days)
+            if chosen != "this":
+                # A series edit adds reminders, each standing for its date.
+                targets = {
+                    f"new{offset}": date.fromisoformat(row["date"])
+                    for offset, row in enumerate(
+                        row for row in entries if "delete" not in row
+                    )
+                }
+            _carry_errors(entry, window, schedules, identifiers, targets)
             return _entry_page(request, context, status=400)
         if added is not None:
             if len(reviewed["preview"] or "") > PREVIEW_LIMIT:
                 schedule_email.refuse(email, TOO_LARGE, "too_large")
                 return _entry_page(request, context, status=400)
             reviewed = reviewed | {"email": _sample(service, campaign, added)}
+        reviewed = reviewed | {
+            "series_notes": _series_notes(reviewed) if notes is None else notes
+        }
         # The review dialog's fragment, never a page: its Apply confirms on
         # Dates and mail schedules (the form's dialog names it), and the
         # dialog then returns there. A New schedule that sends once, with no
@@ -797,6 +1285,24 @@ def _entry(request, campaign_id, schedule_id=None):
                 "confirmation": new and added is None and _sends_once(reviewed, repeat),
             },
         )
+
+
+def _with_shown_date(posted, schedule, campaign_zone, now):
+    """``posted`` with the send date the Edit page showed (#469).
+
+    A series scope greys the date, so the browser does not post it; the
+    one schedule form still reads one, and the series edit keeps each
+    reminder's own date anyway. A blank or unknown zone leaves the post as
+    it is, for the page's own zone refusal.
+    """
+    try:
+        zone = browser_zone(posted.get(ZONE, ""))
+    except UnknownZone:
+        return posted
+    shown = schedule_local.instant(schedule["values"], campaign_zone, now)
+    posted = posted.copy()
+    posted[f"{ENTRY}-date"] = shown.astimezone(zone).date().isoformat()
+    return posted
 
 
 def _sends_once(reviewed, repeat):
