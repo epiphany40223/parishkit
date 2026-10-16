@@ -56,6 +56,15 @@ CONFLICT_RESOLVED = (
     "ParishSoft's current value."
 )
 CONFLICT_PAGE = "/census-changes-conflict-resolved"
+# The Automatic page redrawn with other view settings, nothing saved: 50 rows
+# a page; then also sorted newest first; then also filtered to Automatic
+# changes. Its first row's Edit value is drawn at the same version each time
+# (#1334 re-review).
+AUTOMATIC_REDRAWS = (
+    "/census-changes-automatic-50",
+    "/census-changes-automatic-newest",
+    "/census-changes-automatic-filtered",
+)
 STALE = (
     "Mobile phone for Member DUID 100 in Family DUID 1000 was updated by "
     "someone else, so nothing was recorded. The list shows its current status."
@@ -111,6 +120,7 @@ def components(context, admin):
         edited=False,
         conflict=False,
         path=None,
+        filters=None,
     ):
         """Render the page with the table paged and sorted as ``paging`` says,
         and ``notice`` (a resolution's answer) above it; with ``automatic``,
@@ -118,17 +128,19 @@ def components(context, admin):
         its forms post to ``AUTOMATIC``; with ``bulk``, its first three rows
         are, it offers bulk review, and its forms post to ``BULK``; with
         ``edited``, its first (Automatic) row has an edited value; with
-        ``conflict``, it is a Conflict; ``path`` is where its forms post."""
+        ``conflict``, it is a Conflict; ``path`` is where its forms post;
+        ``filters`` (a CensusQuery) replace the default filters."""
         path = path or (BULK if bulk else AUTOMATIC if automatic else PATH)
+        shown = filters or query
         count = 3 if bulk else int(automatic)
         rows = [
             shaped(index, count, approved, edited, conflict) for index in range(ROWS)
         ]
-        result = select(rows, query, administrator=True)
+        result = select(rows, shown, administrator=True)
         table = paginate(
             result["rows"],
             paging,
-            carry=list(query.form_values().items()),
+            carry=list(shown.form_values().items()),
             sorting=SORTING,
         )
         row_controls(table.rows)
@@ -142,8 +154,8 @@ def components(context, admin):
                 | {
                     "table": replace(table, method="post", action=path),
                     "campaign_id": CAMPAIGN,
-                    "query": query,
-                    "query_fields": query.form_values(),
+                    "query": shown,
+                    "query_fields": shown.form_values(),
                     "status_choices": STATUS_LABELS.items(),
                     "route_choices": ROUTE_LABELS.items(),
                     "kind_choices": KIND_LABELS.items(),
@@ -190,6 +202,15 @@ def components(context, admin):
         ),
         # Three Automatic rows with bulk review; and the answer to Approve.
         BULK: page({"size": "25"}, bulk=True),
+        AUTOMATIC_REDRAWS[0]: page({"size": "50"}, automatic=True),
+        AUTOMATIC_REDRAWS[1]: page(
+            {"size": "50", "sort": "-submitted"}, automatic=True
+        ),
+        AUTOMATIC_REDRAWS[2]: page(
+            {"size": "50", "sort": "-submitted"},
+            automatic=True,
+            filters=CensusQuery(route="automatic"),
+        ),
         "/census-changes-bulk-approved": page(
             {"size": "25"}, notice=BULK_APPROVED, bulk=True, approved=2
         ),

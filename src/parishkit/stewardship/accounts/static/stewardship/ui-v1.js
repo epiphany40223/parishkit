@@ -2247,19 +2247,20 @@
   // so a control inside a disabled fieldset (which is not sent either)
   // counts as disabled.
   //
-  // A hidden field can hold a setting: a stored row the page shows only as
-  // words posts itself back through hidden fields (ParishSoft's stored quick
-  // updates, #1122), so removing that row, or a script rewriting such a
-  // field, is a change (#1334 review). A hidden field's default is its live
+  // A hidden field counts only when it is marked data-change-setting: it
+  // carries a saved setting the page shows only as words (ParishSoft's
+  // stored quick updates, #1122) or a saved row's identity, so removing it,
+  // or a script rewriting it, is a change (#1334 review). Every other hidden
+  // field carries none and stays out: the CSRF token, the version field the
+  // gate keys by, a formset's row counts, a one-time request key or signed
+  // intent, the browser's zone, a table's filters, size and sort (a redraw
+  // at other view settings is no change, #1334 re-review), and the fields a
+  // script writes from the visible controls the reader changed (a repeat
+  // rule's dates), which count themselves. Opt-in, so a new hidden field is
+  // no change until it is marked. A hidden field's default is its live
   // value (the browser keeps the two as one), so its saved value is what
-  // the first gate run read, when the form was drawn. Hidden fields that
-  // carry no setting stay out: the CSRF token, the version field the gate
-  // keys by, a formset's row counts (they follow the rows, which count
-  // themselves, and an added blank row is no change), a one-time request
-  // key a restored page renews, and the browser's own zone. A hidden field
-  // a script adds is no change by itself: such fields follow the visible
-  // controls the reader changed (a repeat rule's dates), which count.
-  const NO_SETTING = /^(csrfmiddlewaretoken|request_key|.*-(TOTAL|INITIAL|MIN_NUM|MAX_NUM)_FORMS)$/;
+  // the gate read from the form element it was drawn in (savedState). A
+  // marked hidden field a script adds is no change by itself either.
   const controlValue = (node, defaults) => {
     const saved = defaults ? node.dataset.savedValue : undefined;
     if (node.type === "checkbox" || node.type === "radio") {
@@ -2283,8 +2284,7 @@
         || node instanceof HTMLTextAreaElement)) return;
       if (["submit", "button", "reset", "image", "file"].includes(node.type)) return;
       const hidden = node.type === "hidden";
-      if (hidden && (NO_SETTING.test(node.name) || node.name === form.dataset.requireChange
-        || node.hasAttribute("data-browser-zone"))) return;
+      if (hidden && !node.hasAttribute("data-change-setting")) return;
       // A presentation choice (the Basic / Advanced toggle and the Basic
       // panel that drives the Advanced fields, #1121) is not a change to
       // review: the configuration it writes is.
@@ -2340,6 +2340,13 @@
   };
   const matchesSaved = (form, saved) => !changedNames(form, saved).size;
   // The saved state of a data-require-change form at its current version.
+  // A form element drawn anew at the same version (a table redrawn at other
+  // view settings, #1334 re-review) takes its hidden settings from the new
+  // element, which are what the server drew: a hidden field's default is
+  // its live value, so the old element's could differ only by a script's
+  // edit there, which the redraw replaced. Its visible controls keep the
+  // cached saved values, so a redraw that keeps the reader's typing still
+  // shows it as a change.
   const savedState = (form) => {
     const field = form.elements.namedItem(form.dataset.requireChange);
     const version = field instanceof HTMLInputElement ? field.value : "";
@@ -2347,9 +2354,14 @@
     if (!saved || saved.version !== version) {
       const applied = saved && reviewApplied.get(form.id);
       const kept = applied?.form === form;
-      saved = {version, state: kept ? applied.state : formState(form, true)};
+      saved = {version, form, state: kept ? applied.state : formState(form, true)};
       savedStates.set(form.id, saved);
       reviewApplied.delete(form.id);
+    } else if (saved.form !== form) {
+      const state = new Map([...saved.state].filter(([, entry]) => !entry.hidden));
+      formState(form, true).forEach((entry, key) => entry.hidden && state.set(key, entry));
+      saved = {version, form, state};
+      savedStates.set(form.id, saved);
     }
     return saved.state;
   };

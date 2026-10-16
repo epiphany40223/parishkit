@@ -305,3 +305,41 @@ def test_leader_roles_need_one_ticked_while_shown():
         "<div data-require-one data-missing-hint=\"{% translate 'Choose at least "
         "one role.' %}\">{{ form.ministry_leader_roles.as_field_group }}"
     ) in source
+
+
+def test_hidden_settings_are_marked_for_the_change_gate():
+    """The change gate counts a hidden field only when it is marked
+    data-change-setting (#1334 re-review): a saved row's identity, the
+    refresh rules' kind and ParishSoft's stored quick updates are; a signed
+    one-time intent and a version field are not. The browser guard
+    (browser/test_editor_gates.py) checks every gated fixture page."""
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts.integration_forms import (
+        InlineCredentialForm,
+    )
+    from parishkit.stewardship.accounts.refresh_schedule_forms import RuleForm
+    from parishkit.stewardship.accounts.schedule_forms import ScheduleForm
+    from parishkit.stewardship.accounts.share_forms import ShareOptionForm
+
+    def marked(field):
+        """Whether the field's widget carries the change gate's mark."""
+        return "data-change-setting" in field.widget.attrs
+
+    assert marked(ShareOptionForm.base_fields["id"])
+    assert marked(ScheduleForm.base_fields["id"])
+    assert not marked(ScheduleForm.base_fields["drawn_at"])
+    assert marked(RuleForm.base_fields["kind"])
+    assert not marked(InlineCredentialForm.base_fields["intent"])
+    assert not marked(IntegrationForm.base_fields["base_digest"])
+    quick = SimpleNamespace(
+        index=0,
+        number=1,
+        quick=SimpleNamespace(fields=[("rules-0-kind", "quick")], words="Quick"),
+        messages=[],
+    )
+    html = render_to_string("stewardship/refresh-schedule-rule.html", {"row": quick})
+    assert (
+        '<input type="hidden" name="rules-0-kind" value="quick" data-change-setting>'
+        in html
+    )
