@@ -184,6 +184,18 @@ def test_images_belong_to_the_campaign_publish_and_clear(auth_service, google, m
     assert banner_for_email(values, "initial", origin=ORIGIN) == resolved["banner"]
     # Selected images are pinned against staging cleanup.
     assert not unpinned_bundles().filter(pk=banner.bundle_id).exists()
+    # The removal's Review is a confirmation (#1356): its question and one
+    # sentence, which describes the dialog; nothing is removed yet.
+    with task_login(ServiceRole.WEB):
+        asked = removal(browser, auth_service, path, "closing").content.decode()
+    assert 'data-review-title="Remove this image?"' in asked
+    assert 'data-review-describedby="artwork-review-summary"' in asked
+    assert (
+        '<p id="artwork-review-summary">Closing page icon: Families will see no'
+        " image there until you upload a new one.</p>"
+    ) in asked
+    assert "Nothing changes until" not in asked
+    assert "closing" in artwork(row)["images"]
     removed = remove(browser, auth_service, path, "closing")
     apply(store, removed)
     # The removal can no longer be reviewed (nothing left to remove): a

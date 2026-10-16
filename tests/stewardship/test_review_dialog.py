@@ -97,13 +97,27 @@ def test_the_row_action_dialog_is_unchanged():
     assert "data-review-dialog" not in text and "data-review-body" not in text
 
 
+# A button partial whose dialog its page includes instead: System health's
+# action buttons (#1356), drawn in the region and in the polled copy alike,
+# while the dialogs sit outside every region on the page.
+DIALOG_PAGES = {
+    "system-health-backup-button.html": "system-health.html",
+    "system-health-debug-button.html": "system-health.html",
+}
+
+
 def test_every_review_form_names_a_review_dialog_on_its_page():
     """A form marked data-review-open names a review dialog its template
-    includes, so the script never falls back to a native submission."""
+    (or, for a button partial, its page) includes, so the script never falls
+    back to a native submission."""
     found = 0
     for path in sorted(TEMPLATES.rglob("*.html")):
         source = path.read_text(encoding="utf-8")
-        for name in re.findall(r'<form [^>]*data-review-open="([\w-]+)"', source):
+        if path.name in DIALOG_PAGES:
+            source = (TEMPLATES / DIALOG_PAGES[path.name]).read_text(encoding="utf-8")
+        for name in re.findall(
+            r'<form [^>]*data-review-open="([\w-]+)"', path.read_text(encoding="utf-8")
+        ):
             found += 1
             assert re.search(
                 r'confirm-dialog\.html" with review=True dialog_id="'
@@ -415,3 +429,59 @@ def test_create_the_campaign_confirms_without_repeating_the_form():
     assert "It starts with 1 page or email in the default text." in fragment
     assert 'name="preview" value="signed" data-review-preview' in fragment
     assert "Current" not in fragment and "Proposed" not in fragment
+
+
+def artwork_fragment(removing):
+    """Campaign images' review fragment: a removal, or a staged upload."""
+    from types import SimpleNamespace
+    from uuid import UUID
+
+    asset = SimpleNamespace(pk=UUID(int=1), label="section", width=256, height=256)
+    return render_to_string(
+        "stewardship/artwork-review.html",
+        {
+            "review": {
+                "removing": removing,
+                "slot": "welcome",
+                "bundle": UUID(int=2),
+                "asset": None if removing else asset,
+                "label": "Welcome page icon",
+                "preview": "signed",
+            }
+        },
+    )
+
+
+def test_removing_a_campaign_image_is_a_confirmation():
+    """Remove this image is a confirmation (#1356): the answer names its own
+    question and its one sentence, which describes the dialog, and drops the
+    fixed "nothing changes" line. An upload keeps the dialog's own title,
+    since the staged image is new (class C)."""
+    removal = artwork_fragment(True)
+    assert 'data-review-title="Remove this image?"' in removal
+    assert 'data-review-describedby="artwork-review-summary"' in removal
+    assert (
+        '<p id="artwork-review-summary">Welcome page icon: Families will see no'
+        " image there until you upload a new one.</p>"
+    ) in removal
+    assert "Nothing changes until" not in removal
+    assert 'name="preview" value="signed" data-review-preview' in removal
+    upload = artwork_fragment(False)
+    assert "data-review-title" not in upload and "artwork-review-summary" not in upload
+    assert "not yet in use" in upload
+
+
+def test_apply_may_post_another_action_and_a_drawn_refusal_is_shown():
+    """Apply posts "confirm" unless the page names another action
+    (apply_action, System health's steps, #1356), and a refusal the server
+    draws (data-review-refusal) is shown as drawn, step-up included."""
+    assert 'name="action" value="confirm"' in dialog()
+    named = dialog(apply_action="debug_off_confirm")
+    assert 'name="action" value="debug_off_confirm"' in named
+    script = (TEMPLATES.parents[1] / "static/stewardship/ui-v1.js").read_text()
+    assert '.querySelector("[data-review-refusal]")' in script
+    assert "refusalMarkup(answer.text)\n        || refusalText(" in script
+    assert script.count("refusalMarkup(answer.text)") == 2
+    # Redrawn from Apply's answer itself, without reading the page again.
+    assert 'data-review-redraw="body"' in dialog(redraw_body=True)
+    assert 'dialog.dataset.reviewRedraw === "body"' in script

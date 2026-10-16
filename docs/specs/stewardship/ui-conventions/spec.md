@@ -670,7 +670,8 @@ never scrolls to show it (Administrator, pk-local review of
   [preparing the review](#review-dialog) says) and its
   Remove this image (a text-styled button in a form of its own, drawn only
   when the slot has an image) open the dialog with the image as it will
-  appear, or the removal. The slots are one in-place region, redrawn after
+  appear, or with a [confirmation](#review-dialog) of the removal ("Remove
+  this image?", #1356). The slots are one in-place region, redrawn after
   Apply with the new current image. Each slot is the same height with or
   without an image (its image box keeps the slot's image size, its caption
   is one line, and the removal line keeps the button's space), so that
@@ -1015,7 +1016,11 @@ with `data-review-open`; its Review answers a fragment marked
 `data-review-answer` (with `data-review-done`, the start of the status
 line), whose hidden fields Apply posts, the signed preview marked
 `data-review-preview`. A field-value refusal answers the form again (status
-400); any other refusal is the closed JSON refusal. **Precedent.**
+400); any other refusal is the closed JSON refusal, or a fragment marked
+`data-review-refusal` that the dialog shows as drawn. A page whose own
+address records a view when read (System health) marks its dialog
+`data-review-redraw="body"`: Apply's answer then holds the regions the
+change redraws, and the page is not read again. **Precedent.**
 Administrator decision, 2026-10-11, on
 [#750](https://github.com/epiphany40223/parishkit/issues/750), which replaces
 the in-place review panel of #532 and the separate Review and Change status
@@ -1132,7 +1137,10 @@ section says how every Review behaves.
   and the form keeps the reader's values at the version they came from,
   never the current one, so a stale page can never quietly propose undoing a
   change made elsewhere. A refusal that needs a fresh sign-in offers
-  **Confirm with Google** and its step-up page, as it does today.
+  **Confirm with Google** and its step-up page, as it does today. A
+  refusal the server draws itself (a fragment marked `data-review-refusal`,
+  such as the shared step-up notice with its **Confirm with Google**) is
+  shown in the dialog as drawn.
 - **Uploads.** In an upload editor (Campaign images, Parish logos), choosing
   the file and selecting Review uploads it as the first step of Review: the
   server stages it and the dialog shows its preview (each generated size, the
@@ -1164,6 +1172,11 @@ cancelling go-live, pausing and resuming mail, fixing many emails at once,
 test email sends, a manual ParishSoft refresh, Family portal maintenance) keep
 the flows their own sections describe; whether any of them moves to the
 dialog is decided on [#750](https://github.com/epiphany40223/parishkit/issues/750).
+System health's Take a backup now, Turn off debug logging and Allow debug
+logging again confirm in the dialog
+([#1356](https://github.com/epiphany40223/parishkit/issues/1356)), since
+their previews would only repeat the page; Accept this change once keeps its
+in-place preview of the counts.
 
 Current state, to be converted: Users' New user, Edit user and Import
 Ministry leaders, New and Edit scheduled email,
@@ -1171,8 +1184,8 @@ Ministry leaders, New and Edit scheduled email,
 Share options, Campaign images, Parish logos, Parish settings, Create the
 campaign and No-reminders WorkGroup use the dialog; Create the campaign, New
 user and No-reminders WorkGroup are confirmations under #1356, and so are a
-one-time New scheduled email and Import selected with nobody skipped. No
-settings editor shows the in-place
+one-time New scheduled email, Import selected with nobody skipped and
+Campaign images' Remove this image. No settings editor shows the in-place
 review panel of #532 and #750
 ([in-place controls](#in-place-controls)); the other editors use separate
 Review and Change status pages.

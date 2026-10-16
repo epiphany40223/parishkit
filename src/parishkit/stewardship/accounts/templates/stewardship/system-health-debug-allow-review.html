@@ -1,0 +1,33 @@
+{% load i18n stewardship %}{% comment %}
+  Allow debug logging again's answers in the shared review dialog (ADM-13 PR
+  6c, Testing only, #1356; system_health_views._act), never a page of its
+  own: the button's form (system-health-debug-button.html) posts the preview
+  step without a page load and ui-v1.js shows this fragment in the dialog.
+  ``debug_off`` holds the step's result, marked ``allow``:
+
+  - ``preview`` (a system_health.DebugAllowPreview): a confirmation (UX
+    conventions, "A confirmation when Review would only repeat the page").
+    When the switch was set is on the page behind the dialog (the button's
+    reason and the Debug logging panel), so it says in one sentence what
+    Apply does (debug-allow-review-summary, the dialog's description),
+    keeping the caution that debug logs can hold Families' personal
+    information. The preview's key, the set switch's identity
+    (data-review-preview), is what Apply posts, so a repeated Apply returns
+    the switch already cleared.
+  - ``allowed``: Apply's answer once the switch is cleared: Turn off debug
+    logging's region drawn again, which the dialog puts in place of the
+    page's (data-review-redraw="body", so the page is not read again); the
+    status line after the region says debug logging is allowed again.
+  - ``refused``: why the step was refused, marked data-review-refusal so
+    the dialog shows it as drawn, with the shared step-up for a stale
+    sign-in, which returns to System health.
+{% endcomment %}{% if debug_off.preview %}{% with preview=debug_off.preview %}<div data-review-answer data-review-done="{% translate 'Debug logging allowed again.' %}">
+<p id="debug-allow-review-summary">{% translate "This clears the debug-off switch: within about a minute, services started with debug logging on log in debug form again, which can record Families' personal information." %}</p>
+<input type="hidden" name="key" value="{{ preview.key }}" data-review-preview>
+</div>{% endwith %}
+{% elif debug_off.allowed %}{% include 'stewardship/system-health-debug-off.html' %}
+{% else %}<div data-review-refusal>{% if debug_off.refused == "reauthenticate" %}{% url 'admin:system_health' as here %}{% translate "allowing debug logging again" as step_up_action %}{% translate "Nothing was changed." as step_up_outcome %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action outcome=step_up_outcome next=here marker="debug-allow-refused" marker_value="reauthenticate" %}
+{% elif debug_off.refused == "busy" %}<p data-debug-allow-refused="busy">{% translate "The debug-off switch is no longer set, so nothing was changed. The Debug logging details show who cleared it and when." %}</p>
+{% elif debug_off.refused == "production" %}<p data-debug-allow-refused="production">{% translate "In Production only the server operator can clear the debug-off switch, offline, with pk-stewardship debug-off-clear. Nothing was changed." %}</p>
+{% elif debug_off.refused == "denied" %}<p data-debug-allow-refused="denied">{% translate "The server refused to allow debug logging again, so nothing was changed. System logs record why; ask the server operator to check the database grants." %}</p>
+{% else %}<p data-debug-allow-refused="invalid">{% translate "That request could not be read. Nothing was changed; try again." %}</p>{% endif %}</div>{% endif %}
