@@ -11,7 +11,10 @@
   another test and Continue come from the server for the settled result,
   without a reload and without moving focus. ``empty`` is the page's own
   words for a list with no tests yet.
-{% endcomment %}<div class="setup-test-status" data-live-status="setup-test"{% if status_url %} data-live-url="{{ status_url }}"{% endif %} data-live-announce="{% if items %}{% blocktranslate trimmed with state=items.0.label %}Latest test: {{ state }}.{% endblocktranslate %}{% endif %}"{% if pending %} data-live-pending{% endif %}>
+  The region's checking-problem line (live-status-v1.js) has the id
+  setup-test-problem, which a Send held while a test is pending names
+  beside setup-test-pending (setup-test-actions.html) while it shows (#1332).
+{% endcomment %}<div class="setup-test-status" data-live-status="setup-test" data-live-problem-id="setup-test-problem"{% if status_url %} data-live-url="{{ status_url }}"{% endif %} data-live-announce="{% if items %}{% blocktranslate trimmed with state=items.0.label %}Latest test: {{ state }}.{% endblocktranslate %}{% endif %}"{% if pending %} data-live-pending{% endif %}>
 <h2 id="setup-tests-heading" tabindex="-1" data-in-place-focus>{% translate "Recent tests" %}</h2>
 <ul>{% for item in items %}<li data-mail-id="{{ item.id }}">
 <time data-local-instant datetime="{{ item.created_at }}">{{ item.created_at }}</time> — <span data-mail-state>{{ item.label }}</span>
