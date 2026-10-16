@@ -20,6 +20,7 @@ from parishkit.stewardship.campaigns.configuration import (
 )
 from parishkit.stewardship.campaigns.intervals import financial_period_end
 from parishkit.stewardship.campaigns.leader_roles import canonical_roles
+from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.presentation import parish_date
 
 from .share_forms import default_share_options
@@ -129,7 +130,7 @@ class LeaderRoleChoices(forms.MultipleChoiceField):
         return canonical_roles(values)
 
 
-class CampaignForm(forms.Form):
+class CampaignForm(AdminForm):
     """Complete structural fields, validated against the same canonical YAML rules."""
 
     name = forms.CharField(label=_("Campaign name"), max_length=254)

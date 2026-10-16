@@ -1546,9 +1546,10 @@ refusal itself, which the shared refusals fix (`stale_page`,
 retired action or another campaign's address); and the Django
 error codes of a refused form (`required`, `invalid_choice`, `max_length`
 and so on), which every Admin form records through one shared form base.
-A refusal with no reason of its own has reason `unclassified` and names
-its exception's class in `exception_class`. Django's CSRF reason text is
-never used.
+A refusal with no reason of its own has reason `unclassified`. When an
+exception refused it, `exception_class` names that exception's class; a
+form drawn again with its errors has no exception, and names its form,
+fields and codes instead. Django's CSRF reason text is never used.
 
 **Allow-list.** The context holds closed values only, mirrored by
 `stewardship_safe_context_v1`. Anything not on the list is dropped, not
@@ -1559,10 +1560,15 @@ redacted:
   `command`, its catalog name. Every entry carries exactly one of `route`
   and `command`;
 - `form` and `fields`, server-owned form and field names, at most 10.
-  `fields` comes from the form's own declared fields, never from the keys a
-  request submitted. A formset field keeps its prefix and index
-  (`slots-0-time`), as `web.contracts.FieldError` field identifiers allow;
-- `codes`, the `ErrorCode` and Django error codes, at most 10;
+  `form` is the first refused form's class name in lowercase snake form
+  (`CampaignForm` is `campaign_form`). `fields` comes from the form's own
+  declared fields, never from the keys a request submitted. A formset field
+  keeps its prefix and index (`slots-0-time`), as `web.contracts.FieldError`
+  field identifiers allow;
+- `codes`, the `ErrorCode` and Django error codes, at most 10. The
+  refusal's own typed errors come first, then the errors of every Admin
+  form the request validated, as the forms hold them when the answer
+  leaves the view. A formset row marked for deletion is left out;
 - `reason`, the closed reason code, always present. It also keys the
   sentence [System logs](../admin-portal/spec.md#activity-groups) shows, so
   an entry reads the same in any language and after a message's wording
@@ -1578,8 +1584,8 @@ redacted:
   them; the database checks their shape, not their reason;
 - `unexpected_count`, for reason `unexpected_fields`, the number of
   submitted field names that are not the form's own. Those names are
-  client-supplied and are never recorded. A field of the form's own that
-  was sent twice is named in `fields`, with the code `duplicate`;
+  client-supplied and are never recorded. A field of a refused form's own
+  that was sent twice is named in `fields`, with the code `duplicate`;
 - `mode`, `testing` or `production`, the global mode when the refusal was
   made; and
 - `capped`, below.
@@ -1682,11 +1688,11 @@ second one: refused sign-ins (`admin_login_refused` and the sampled
 `admin_login_denied`), including a step-up sign-in by the wrong account,
 and refused automation sessions (`automation_session_refused`). The code
 that writes such a record marks the request or response as already
-recorded, and the hook skips a marked one, so each of those paths gives its own record
-and no `admin_input_refused` entry or line. A completed step-up stays
-recorded as `admin_step_up` or `automation_fresh_gate`; the refused request
-that asked for it is new information and is recorded, with reason
-`fresh_authentication_required`. Debug logging is unchanged, and the
+recorded, and the hook skips a marked one, so each of those paths gives
+its own record and no `admin_input_refused` entry or line. A completed
+step-up stays recorded as `admin_step_up` or `automation_fresh_gate`; the
+refused request that asked for it is new information and is recorded, with
+reason `fresh_authentication_required`. Debug logging is unchanged, and the
 browser sends no report of its own: the server already knows every refusal
 it makes.
 

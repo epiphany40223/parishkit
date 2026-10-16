@@ -12,6 +12,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.jobs.delivery_metadata import STATE_LABELS
 from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
+from parishkit.stewardship.web.admin_forms import AdminForm
 
 from .authentication import runtime
 from .setup_delivery_models import SetupMailDelivery
@@ -35,7 +36,7 @@ LABELS = {
 EMPTY = _("No test has been requested yet. Select Send test email below to send one.")
 
 
-class SetupMailForm(forms.Form):
+class SetupMailForm(AdminForm):
     """Only the acknowledgement is editable; message and routing are server-owned."""
 
     preview_token = forms.CharField(max_length=4096, widget=forms.HiddenInput)

@@ -12,6 +12,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.jobs.delivery_metadata import STATE_LABELS
 from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
+from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import unexpected_fields
 
@@ -53,7 +54,7 @@ REASON_LABELS = {
 }
 
 
-class FamilyTestForm(forms.Form):
+class FamilyTestForm(AdminForm):
     """Only DUIDs are typed; recipients, content and credentials are server-owned."""
 
     families = forms.CharField(
@@ -76,7 +77,7 @@ class FamilyTestForm(forms.Form):
             raise forms.ValidationError(str(error)) from None
 
 
-class FamilyTestConfirmForm(forms.Form):
+class FamilyTestConfirmForm(AdminForm):
     """Confirmation carries the signed review and an explicit acknowledgement."""
 
     preview = forms.CharField(max_length=4096, widget=forms.HiddenInput)

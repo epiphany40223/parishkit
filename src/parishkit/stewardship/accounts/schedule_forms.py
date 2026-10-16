@@ -6,7 +6,7 @@ from datetime import date
 from uuid import uuid4
 
 from django import forms
-from django.forms import BaseFormSet, formset_factory
+from django.forms import formset_factory
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
@@ -15,6 +15,7 @@ from parishkit.stewardship.campaigns.configuration import (
     schedule_values,
 )
 from parishkit.stewardship.wall_clock import weekday_choices
+from parishkit.stewardship.web.admin_forms import AdminForm, AdminFormSet
 from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.presentation import parish_date
 from parishkit.stewardship.web.time_entry_fields import FlexibleTimeField
@@ -80,7 +81,7 @@ def schedulable(templates):
     )
 
 
-class ScheduleWindow(forms.Form):
+class ScheduleWindow(AdminForm):
     """Draft dates may change together with mail; locked structural inputs are inert."""
 
     timezone = TimezoneField(
@@ -395,7 +396,7 @@ def email_details(emails, usage, *, links, test_mail=True):
     return details
 
 
-class ScheduleForm(forms.Form):
+class ScheduleForm(AdminForm):
     """Stable schedule identity, local civil time, and an existing email revision.
 
     Every field except the mail type is optional here: which of them a row needs
@@ -564,7 +565,7 @@ def schedule_order(row):
     )
 
 
-class ScheduleSet(BaseFormSet):
+class ScheduleSet(AdminFormSet):
     """The server owns saved IDs; missing rows never imply schedule removal."""
 
     def __init__(

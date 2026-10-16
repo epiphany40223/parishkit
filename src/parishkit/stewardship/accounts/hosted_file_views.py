@@ -23,6 +23,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.hosted_file_types import FileRefused
 from parishkit.stewardship.web.refusals import UserFacingStale, unexpected_fields
@@ -128,7 +129,7 @@ def _upload_limits(form, files):
     return len(files) >= MAX_FILES or room <= 0
 
 
-class UploadForm(forms.Form):
+class UploadForm(AdminForm):
     """The file and an optional placeholder name; everything else is derived."""
 
     file = forms.FileField(
@@ -168,7 +169,7 @@ class UploadForm(forms.Form):
     )
 
 
-class RenameForm(forms.Form):
+class RenameForm(AdminForm):
     """A new placeholder name for an unused file."""
 
     slug = forms.CharField(

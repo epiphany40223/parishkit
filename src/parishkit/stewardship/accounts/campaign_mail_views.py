@@ -12,6 +12,7 @@ from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
+from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.namespaces import admin_return_path
 
 from . import admin_navigation
@@ -23,7 +24,7 @@ from .setup_mail_views import LABELS
 from .setup_views import _closed, error_response
 
 
-class CampaignMailForm(forms.Form):
+class CampaignMailForm(AdminForm):
     """Routing and sample identity are server-owned, not arbitrary recipient fields."""
 
     preview_token = forms.CharField(max_length=4096, widget=forms.HiddenInput)

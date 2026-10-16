@@ -17,9 +17,14 @@ the entry says comes from what the response already carries.
   ``web.security.csrf_failure``), else its refusal's reason, else
   ``unclassified`` with the exception's class name.
 - What: the closed ``ErrorCode`` values and the server-owned field
-  identifiers of its typed errors. ``fields`` never comes from the keys a
-  request submitted: a ``FieldError``'s identifier is fixed by the view that
-  refused, never copied from the request.
+  identifiers of its typed errors, then the field names and Django error
+  codes of every Admin form this request validated with errors
+  (``web.admin_forms``), and the first such form's name. ``fields`` never
+  comes from the keys a request submitted: a ``FieldError``'s identifier is
+  fixed by the view that refused, and a form's field names are its own
+  fields (with a formset row's prefix and index), never copied from the
+  request. A field of a refused form's own sent more than once is named
+  with the code ``duplicate``.
 - Who: the signed-in Administrator's ``PortalUser`` id, or none.
 
 ``audit.refusals.record_refusal`` then writes the process-log line and, for
@@ -31,10 +36,17 @@ import logging
 from contextlib import suppress
 from uuid import UUID
 
+from django import forms
+
 from parishkit.stewardship.audit.refusal_context import STATUSES
-from parishkit.stewardship.audit.refusals import RefusalRecord, record_refusal
+from parishkit.stewardship.audit.refusals import (
+    RefusalRecord,
+    exception_class_of,
+    record_refusal,
+)
 from parishkit.stewardship.observability import Event, emit_failure
 
+from .admin_forms import AdminFormSet, collecting
 from .namespaces import is_admin
 from .refusals import NOT_INPUT, RECORDED
 
@@ -51,9 +63,14 @@ class AdminRefusalMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        """Answer as the view did, recording the answer when it is a refusal."""
-        response = self.get_response(request)
-        log_refusal(request, response)
+        """Answer as the view did, recording the answer when it is a refusal.
+
+        The Admin forms the request validates are collected meanwhile, so a
+        refused form's errors can be read as its answer leaves the view.
+        """
+        with collecting() as validated:
+            response = self.get_response(request)
+            log_refusal(request, response, validated)
         return response
 
     def process_exception(self, request, exception):
@@ -64,10 +81,13 @@ class AdminRefusalMiddleware:
         setattr(request, _EXCEPTION, type(exception))
 
 
-def log_refusal(request, response):
-    """Record ``response`` if it refuses an Admin page request; never raise."""
+def log_refusal(request, response, validated=()):
+    """Record ``response`` if it refuses an Admin page request; never raise.
+
+    ``validated`` are the Admin forms and formsets the request validated.
+    """
     try:
-        record = refusal_record(request, response)
+        record = refusal_record(request, response, validated)
     except Exception as error:
         with suppress(Exception):
             emit_failure(error, event=Event.ADMIN_INPUT_REFUSED, level=logging.WARNING)
@@ -78,8 +98,12 @@ def log_refusal(request, response):
             record_refusal(record)
 
 
-def refusal_record(request, response):
-    """The ``RefusalRecord`` for a refused Admin page request, else None."""
+def refusal_record(request, response, validated=()):
+    """The ``RefusalRecord`` for a refused Admin page request, else None.
+
+    The typed errors' fields and codes come first, then the forms' own, so
+    the entry's limit of 10 keeps the refusal's own codes.
+    """
     match = getattr(request, "resolver_match", None)
     if (
         match is None
@@ -92,6 +116,7 @@ def refusal_record(request, response):
         return None
     errors = getattr(response, "stewardship_errors", None) or ()
     refusal = getattr(response, "stewardship_refusal", None)
+    form, form_fields, form_codes = form_errors(validated)
     return RefusalRecord(
         reason=(
             getattr(response, "stewardship_reason", None)
@@ -102,15 +127,105 @@ def refusal_record(request, response):
         route=match.view_name,
         method=request.method,
         status=response.status_code,
+        form=form,
         # Server-owned names only (see the module docstring).
-        fields=tuple(item.field_id for item in errors if item.field_id),
-        codes=tuple(item.code.value for item in errors),
+        fields=tuple(item.field_id for item in errors if item.field_id) + form_fields,
+        codes=tuple(item.code.value for item in errors) + form_codes,
         mode=_mode(),
         error=(
             getattr(response, "stewardship_exception_class", None)
             or getattr(request, _EXCEPTION, None)
         ),
     )
+
+
+def form_errors(validated):
+    """``(form, fields, codes)`` of the validated forms' errors.
+
+    ``form`` is the first form with errors, by its class name in lowercase
+    snake form (``CampaignForm`` is ``campaign_form``), else None. ``fields``
+    and ``codes`` are in order, possibly repeated: ``refusal_context.clean``
+    keeps each once, at most 10. A code-less error (a view's
+    ``add_error(field, message)``) names its field with no code; its message
+    is never read. A formset row marked for deletion is skipped, as Django's
+    formset leaves its errors out too.
+    """
+    form, fields, codes = None, [], []
+    deleted = _deleted_rows(validated)
+    for item in validated:
+        if id(item) in deleted:
+            continue
+        found = list(_errors_of(item))
+        if found and form is None:
+            # The snake form of any class name, an exception's or a form's;
+            # a private class (``_Row``) loses its leading underscore.
+            form = exception_class_of(item).lstrip("_")
+        for field, code in found:
+            if field is not None:
+                fields.append(field)
+            if isinstance(code, str):
+                codes.append(code)
+    return form, tuple(fields), tuple(codes)
+
+
+def _deleted_rows(validated):
+    """The ids of the collected formsets' rows marked for deletion."""
+    return {
+        id(row)
+        for item in validated
+        if isinstance(item, AdminFormSet) and item.can_delete
+        for row in item.forms
+        if item._should_delete_form(row)
+    }
+
+
+def _errors_of(item):
+    """``(field, code)`` for each error of a validated form or formset.
+
+    A formset gives its own (non-form) errors with no field; its rows are
+    forms of their own. A form gives each field error under the field's
+    prefixed name, only when that name is one of the form's own fields, and
+    each form-wide error with no field, and then, only for a form that has
+    errors, each of its own fields sent more than once (``duplicate``): a
+    form that validated cleanly is not the one that was refused. Errors are
+    read as the forms hold them; reading them validates nothing again.
+    """
+    if isinstance(item, AdminFormSet):
+        for error in item.non_form_errors().as_data():
+            yield None, error.code
+        return
+    # A validated form's errors are an ErrorDict; ``item.errors`` would
+    # validate an unvalidated one, so the stored dict is read instead.
+    if not item._errors:
+        return
+    for name, found in item._errors.as_data().items():
+        field = item.add_prefix(name) if name in item.fields else None
+        for error in found:
+            yield field, error.code
+    for field in _duplicated(item):
+        yield field, "duplicate"
+
+
+def _duplicated(form):
+    """The prefixed names of the form's own one-value fields sent twice or more.
+
+    Only names of the form's own fields are looked up, so a submitted name
+    the form does not have is never read. A field drawn with a widget that
+    sends several values (a multiple choice, ``MultipleHiddenInput``) is
+    skipped.
+    """
+    for name, field in form.fields.items():
+        widget = field.widget
+        if getattr(widget, "allow_multiple_selected", False) or isinstance(
+            widget, forms.MultipleHiddenInput
+        ):
+            continue
+        key = form.add_prefix(name)
+        for source in (form.data, form.files):
+            getlist = getattr(source, "getlist", None)
+            if getlist is not None and len(getlist(key)) > 1:
+                yield key
+                break
 
 
 def _actor(request):

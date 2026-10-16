@@ -3,6 +3,7 @@
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
+from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.sender_name_field import SenderNameField
 
 from . import field_tips, setup_help
@@ -29,7 +30,7 @@ MISSING_HINTS = {
 }
 
 
-class IntegrationForm(forms.Form):
+class IntegrationForm(AdminForm):
     """Non-secret settings never accept fingerprints, keys or arbitrary URLs."""
 
     base_digest = forms.RegexField(
@@ -206,7 +207,7 @@ class WriteOnlyTextarea(forms.Textarea):
         return None
 
 
-class CredentialForm(forms.Form):
+class CredentialForm(AdminForm):
     """Paste secret material in memory; no upload/temp-file handling is involved."""
 
     candidate = forms.CharField(
@@ -281,7 +282,7 @@ SETUP_KEY_FIELDS = {
 }
 
 
-class InlineCredentialForm(forms.Form):
+class InlineCredentialForm(AdminForm):
     """The replacement key shown on an integration's settings page.
 
     The key is optional once the integration is set up (blank keeps the
