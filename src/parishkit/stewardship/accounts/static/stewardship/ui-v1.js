@@ -2232,10 +2232,24 @@
   // the state the Review behind that Apply sent.
   const reviewApplied = new Map();
   // The form's state as a Map of "name#n" (the nth control of that name) to
-  // {value, disabled}: its defaults or its live values. Hidden fields carry
-  // versions and tokens, not settings; text is trimmed as the server trims it.
-  // :disabled, not the disabled property, so a control inside a disabled
-  // fieldset (which is not sent either) counts as disabled.
+  // {value, blank, disabled, hidden}: its defaults or its live values; text
+  // is trimmed as the server trims it. :disabled, not the disabled property,
+  // so a control inside a disabled fieldset (which is not sent either)
+  // counts as disabled.
+  //
+  // A hidden field can hold a setting: a stored row the page shows only as
+  // words posts itself back through hidden fields (ParishSoft's stored quick
+  // updates, #1122), so removing that row, or a script rewriting such a
+  // field, is a change (#1334 review). A hidden field's default is its live
+  // value (the browser keeps the two as one), so its saved value is what
+  // the first gate run read, when the form was drawn. Hidden fields that
+  // carry no setting stay out: the CSRF token, the version field the gate
+  // keys by, a formset's row counts (they follow the rows, which count
+  // themselves, and an added blank row is no change), a one-time request
+  // key a restored page renews, and the browser's own zone. A hidden field
+  // a script adds is no change by itself: such fields follow the visible
+  // controls the reader changed (a repeat rule's dates), which count.
+  const NO_SETTING = /^(csrfmiddlewaretoken|request_key|.*-(TOTAL|INITIAL|MIN_NUM|MAX_NUM)_FORMS)$/;
   const controlValue = (node, defaults) => {
     const saved = defaults ? node.dataset.savedValue : undefined;
     if (node.type === "checkbox" || node.type === "radio") {
@@ -2257,7 +2271,10 @@
     [...form.elements].forEach((node) => {
       if (!node.name || !(node instanceof HTMLInputElement || node instanceof HTMLSelectElement
         || node instanceof HTMLTextAreaElement)) return;
-      if (["hidden", "submit", "button", "reset", "image", "file"].includes(node.type)) return;
+      if (["submit", "button", "reset", "image", "file"].includes(node.type)) return;
+      const hidden = node.type === "hidden";
+      if (hidden && (NO_SETTING.test(node.name) || node.name === form.dataset.requireChange
+        || node.hasAttribute("data-browser-zone"))) return;
       // A presentation choice (the Basic / Advanced toggle and the Basic
       // panel that drives the Advanced fields, #1121) is not a change to
       // review: the configuration it writes is.
@@ -2268,13 +2285,13 @@
       const blank = !defaults && Boolean(node.closest("[data-change-blank]"))
         && value === controlValue(node, true);
       const disabled = node.matches(":disabled") || node.hasAttribute("data-change-ignore");
-      state.set(`${node.name}#${index}`, {value, blank, disabled});
+      state.set(`${node.name}#${index}`, {value, blank, disabled, hidden});
     });
     return state;
   };
   // Whether the form's enabled controls hold exactly the saved values, with
   // no control added or removed (a new or deleted option row; an added
-  // blank row, above, is no change). A control
+  // blank row or hidden field, above, is no change). A control
   // that is disabled (a hidden module's field) is not sent, so its value
   // does not count; the control that hid it differs instead.
   // changedNames lists the names of the controls that differ (#1330: the
@@ -2282,8 +2299,10 @@
   const changedNames = (form, saved) => {
     const now = formState(form, false);
     const keys = [...saved.keys()].filter((key) => !now.has(key));
-    now.forEach(({value, blank, disabled}, key) => {
-      if (!disabled && !(saved.has(key) ? saved.get(key).value === value : blank)) keys.push(key);
+    now.forEach(({value, blank, disabled, hidden}, key) => {
+      if (!disabled && !(saved.has(key) ? saved.get(key).value === value : blank || hidden)) {
+        keys.push(key);
+      }
     });
     return new Set(keys.map((key) => key.replace(/#\d+$/, "")));
   };
@@ -2385,6 +2404,15 @@
   document.addEventListener("stewardship:html-changed", (event) => {
     if (event.target instanceof HTMLFormElement) gateChange(event.target);
   }, true);
+  // A page script that adds or removes a gated form's rows fires no input
+  // event (ParishSoft's Remove quick updates and a rule's Remove, #1334
+  // review), so the gate also runs, once per form, after the nodes inside
+  // a gated form change. The gate itself only sets attributes, which this
+  // does not watch, so it never wakes itself.
+  new MutationObserver((records) => {
+    new Set(records.map(({target}) => target instanceof Element
+      && target.closest("form[data-require-change]"))).forEach((form) => form && gateChange(form));
+  }).observe(document.body, {childList: true, subtree: true});
   window.addEventListener("pageshow", gateChanges);
   gateChanges();
   // A checkbox marked data-submit-on-change applies at once (Automation
