@@ -3125,7 +3125,7 @@ lists them.
 | URL names | Command or exemption |
 | --- | --- |
 | `integrations`, `integration_settings`, `integration_status` | `integration list`, `integration show TARGET` and `integration status TARGET [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the pages' reads (any session; no event, as the pages' reads record none; see below); `integration preview TARGET` and `integration confirm TARGET` for the settings page's non-secret Save and its Remove ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below); `integration backup-probe [--folder LINK]` for the Off-site backups page's Test access ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below); `integration preview parishsoft` takes the [refresh schedule](../background-processing/spec.md#refresh-schedule) with the page's validation, and `integration schedule-preview` prints the page's [seven-day preview](../admin-portal/spec.md#seven-day-preview) and [cost and freshness summary](../admin-portal/spec.md#cost-and-freshness-summary), for a saved or a proposed schedule ([#632](https://github.com/epiphany40223/parishkit/issues/632)) |
-| `refresh_schedule_check` | `integration schedule-preview` (PR 10): the ParishSoft page's no-save live check of the refresh schedule editor's rows answers the same validation, preview and cost summary ([#632](https://github.com/epiphany40223/parishkit/issues/632)) |
+| `refresh_schedule_check` | `integration schedule-preview [--refresh-schedule DOCUMENT\|-]` ([#632](https://github.com/epiphany40223/parishkit/issues/632)): the ParishSoft page's no-save live check of the refresh schedule editor's rows, with the same validation, preview and cost summary (any session; no event, as the check records none; see below) |
 | `dismiss_credential_result` | `integration dismiss TARGET --request-id ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
 | `credential_status` | `integration key status TARGET [--request-id ID] [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
 | Key replacement through `integration_settings` | `integration key replace --target …` (PR 10; see [secret replacement](#secret-replacement)) |
@@ -3169,6 +3169,25 @@ takes the same option for a proposed schedule, or reads the applied one
 without it, and its JSON document carries the page's seven days, cost and
 freshness. Both follow the ParishSoft page's
 [live checks and saving](../admin-portal/spec.md#live-checks-and-saving).
+
+`integration schedule-preview` is the page's live check: the document is
+parsed and refused exactly as for `integration preview` (another shape, or
+an added quick rule, is `invalid` without echoing it), posted as the
+editor's rows and read by the page's editor, and previewed by the page's
+own preview. As on the page, the editor's problems are answered, not
+refused: `problems` lists each at its row with the page's words, `blocking`
+says whether they would keep this schedule from being saved (only a
+changed schedule's do) and `status` is the line beside Save. It also
+prints `version`, `timezone`, `proposed`, `changed`, `schedule` (the
+checked document, null while a row cannot be read) and `preview`: the
+page's seven `days` (each with its `counts` and `times` in the page's
+words) and its `line`, `summary`, `warning`, `freshness` and
+`estimated_windows`, or null when there is nothing to preview. The grid's
+quarter-hour cells, which draw the same days, are left out. Administrators
+only (`CONFIGURE`), the role checked before standard input is read; then,
+as `integration show`, admitted passively, read in one read snapshot,
+rechecked and recording no event. ParishSoft not set up is
+`not_available`.
 
 `integration list` is the Integrations page: the applied configuration's
 `version` and each integration's `target`, `name` (the page's label) and

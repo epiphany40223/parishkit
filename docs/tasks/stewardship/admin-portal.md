@@ -964,6 +964,20 @@ each row, the review) and
 (a schedule reviewed and applied, the same patch as the page's review of
 the same rows, an unchanged schedule kept exactly, the refusals).
 
+`integration schedule-preview [--refresh-schedule DOCUMENT|-]` (#632 slice 5a)
+is the ParishSoft page's live schedule check: the applied or a proposed
+schedule, read by the page's `ScheduleEditor` and previewed by the page's
+`_schedule_context`, with the page's problems reported rather than refused;
+any session, Administrators only, the role first, no event, no schema
+change. Proven by the schedule preview tests in
+`tests/stewardship/test_admin_integrations.py` (the page's preview words,
+problems at each row, an unreadable row, the refusals after the recheck,
+the catalog and ledger) and
+`tests/stewardship/database/test_admin_integrations_cli_postgresql.py`
+(the applied schedule as `integration show` prints it, a proposed one from
+standard input, problems at exit 0, refusals without echo, Staff denied,
+an ended session).
+
 Another part adds `integration backup-probe` (the Off-site backups page's
 Test access) and `integration dismiss` (a key change line's Dismiss) in
 `parishkit.stewardship.admin_integration_actions`, through the page's own
