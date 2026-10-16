@@ -57,24 +57,12 @@ CALENDAR_INPUTS = {
     ("repeat-rule.html", "repeat-until"): "Repeat range day",
 }
 # Date controls that still filter instants by a campaign-zone day, waiting
-# for their own #558 slice. Remove an entry when its page moves.
-PENDING_INPUTS = {
-    # "First/Latest response date (campaign timezone)": the day filters are
-    # inside frozen SQL (financial_reports.sql), so moving them needs a
-    # migration, like the Additional information and Ministry reports (#1047).
-    ("financial-report.html", "first-start"): "#558 financial filters",
-    ("financial-report.html", "first-end"): "#558 financial filters",
-    ("financial-report.html", "latest-start"): "#558 financial filters",
-    ("financial-report.html", "latest-end"): "#558 financial filters",
-}
+# for their own #558 slice. Remove an entry when its page moves. Empty since
+# the Financial stewardship response dates moved (migration 0110).
+PENDING_INPUTS = {}
 # Labels and legends that still name a fixed zone, by template: the
 # PENDING_INPUTS fieldsets' legends.
-PENDING_LABELS = {
-    "financial-report.html": [
-        "First response date (campaign timezone)",
-        "Latest response date (campaign timezone)",
-    ],
-}
+PENDING_LABELS = {}
 # Form date fields, by (form class, field): a pure calendar date (never
 # shifted, ui-conventions "A pure date with no time stays a calendar date"),
 # or a date read with the browser zone the form posts.

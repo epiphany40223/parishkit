@@ -2143,7 +2143,13 @@ A file captured before frozen migration 0066 added the marker to
 the projection leaves the column blank, never No (#794).
 
 Filters include active/inactive, first/latest submission dates, pledge range,
-zero/nonzero/cannot contribute, frequency, and share method. The summary of
+zero/nonzero/cannot contribute, frequency, and share method. The first and
+latest response dates (From, Through) are whole days in the viewer's browser
+time zone and work as the [Additional information](#additional-information)
+submitted-date filters do: the form sends the browser's zone with the dates,
+and a date without a known zone is refused, never read in another zone
+(schema migration 0110). Filters without a zone, from a release before 0110
+or a retained export capture, keep their campaign-zone days. The summary of
 the matching pledges comes first, as visuals
 ([#720](https://github.com/epiphany40223/parishkit/issues/720)): tiles for the
 Family count, the annual total and the number of Families that cannot
