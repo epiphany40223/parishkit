@@ -2077,7 +2077,7 @@
       const index = pages.findIndex((page) => page.key === currentPage);
       if (index > 0) showPage(pages[index - 1].key, {push: true});
     });
-    const next = node("button", "Next", nav, {type: "button", "data-page-next": ""});
+    const next = node("button", "Next", nav, {type: "button", class: "button-secondary", "data-page-next": ""});
     next.addEventListener("click", () => {
       // The press that deferred blur validation is over; a later outside click
       // must validate as usual.
@@ -2085,7 +2085,11 @@
       const index = pages.findIndex((page) => page.key === currentPage);
       if (pageValid(pages[index])) showPage(pages[index + 1].key, {push: true});
     });
-    node("button", "Review response", nav, {type: "submit", "data-page-review": ""});
+    // The last page's Next is the form's submit button, so the submit handler
+    // below checks every page before Review (#330). It looks and reads exactly
+    // like the earlier pages' Next (#1422): both carry the same class, so they
+    // share one style and position whatever their type.
+    node("button", "Next", nav, {type: "submit", class: "button-secondary", "data-page-review": ""});
     // Enter in a field (or a phone keyboard's Go) means Next on every page but
     // the last, instead of implicitly submitting straight to Review.
     editor.addEventListener("keydown", (event) => {

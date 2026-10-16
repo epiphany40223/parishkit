@@ -29,6 +29,19 @@ AXE = """async () => (await axe.run(document, {
 })).violations.map(v => v.id)"""
 
 
+# The visible navigation Next's text, look and position, to compare the last
+# page's Next (the form's submit) with an earlier page's.
+NAV_BUTTON_LOOK = """() => {
+  const button = [...document.querySelectorAll('.family-nav button')]
+    .find(b => b.checkVisibility() && b.textContent === 'Next');
+  const style = getComputedStyle(button), box = button.getBoundingClientRect();
+  return [button.textContent, button.className, style.color,
+    style.backgroundColor, style.borderColor, style.boxShadow, style.fontWeight,
+    Math.round(box.width), Math.round(box.height),
+    Math.round(button.parentElement.getBoundingClientRect().right - box.right)];
+}"""
+
+
 def paged_form():
     """Every module on, with a surname and a one-person ParishSoft mailing name."""
     form = financial_form(census=True, ministry=True)
@@ -56,7 +69,7 @@ def capture(page, name):
         page.screenshot(path=str(path), full_page=True)
 
 
-@pytest.mark.parametrize("width", [390, 1280])
+@pytest.mark.parametrize("width", [320, 390, 1280])
 def test_pages_navigate_with_buttons_steps_and_browser_history(
     page, component_origin, axe_source, width
 ):
@@ -93,10 +106,20 @@ def test_pages_navigate_with_buttons_steps_and_browser_history(
         if title == "Financial stewardship":
             # The annual pledge is required; zero is a valid answer.
             page.get_by_label("Annual pledge (USD)").fill("0")
+        if index == 1:
+            # The first page with Back beside Next, like the last page.
+            earlier_next = page.evaluate(NAV_BUTTON_LOOK)
         if index < len(titles) - 1:
             next_page(page)
-    expect(page.get_by_role("button", name="Review response")).to_be_visible()
-    expect(page.get_by_role("button", name="Next", exact=True)).to_be_hidden()
+    # The last page's button is the form's submit (which checks every page
+    # before Review), yet it reads and looks exactly like every earlier Next
+    # (#1422): one button named Next, in the same place and style.
+    last_next = page.get_by_role("button", name="Next", exact=True)
+    expect(last_next).to_have_count(1)
+    expect(last_next).to_have_attribute("data-page-review", "")
+    expect(page.locator("[data-page-next]")).to_be_hidden()
+    expect(page.get_by_text("Review response")).to_have_count(0)
+    assert page.evaluate(NAV_BUTTON_LOOK) == earlier_next
     page.go_back()
     assert step_text(page).endswith(titles[-2])
     page.go_forward()
@@ -106,6 +129,10 @@ def test_pages_navigate_with_buttons_steps_and_browser_history(
     page.locator('[data-step-link="intro"]').click()
     assert step_text(page) == f"Step 1 of {total}: Welcome"
     expect(page.get_by_role("button", name="Back", exact=True)).to_be_hidden()
+    # Next on the last page opens Review.
+    page.locator("[data-step-link]").nth(len(titles) - 1).click()
+    next_page(page)
+    expect(page.get_by_role("button", name="Submit to Sample Parish")).to_be_visible()
     assert not errors
 
 

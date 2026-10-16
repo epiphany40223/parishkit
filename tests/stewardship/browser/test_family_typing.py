@@ -331,6 +331,6 @@ def test_the_kept_height_ends_with_the_page_and_never_reaches_review(
     assert lock.is_visible(), "the Member page is this form's last page"
     lock.uncheck()
     assert page.evaluate(KEPT_HEIGHT).endswith("px")
-    page.get_by_role("button", name="Review response").click()
+    page.get_by_role("button", name="Next", exact=True).click()
     expect(page.get_by_role("button", name="Submit to Sample Parish")).to_be_visible()
     assert page.evaluate(KEPT_HEIGHT) == ""

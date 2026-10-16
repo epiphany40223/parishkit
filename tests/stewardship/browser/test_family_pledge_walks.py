@@ -510,7 +510,7 @@ def send(page, walk, *, refreshed):
     """Review and Submit, answering whatever stops it, then wait for the reply."""
     for _attempt in range(ATTEMPTS):
         if visit_every_page(page, required=False):
-            page.get_by_role("button", name="Review response").click()
+            page.get_by_role("button", name="Next", exact=True).click()
             submit = page.get_by_role("button", name="Submit to Sample Parish")
             if submit.count():
                 count = len(walk.submissions)
