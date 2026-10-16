@@ -1688,11 +1688,11 @@ second one: refused sign-ins (`admin_login_refused` and the sampled
 `admin_login_denied`), including a step-up sign-in by the wrong account,
 and refused automation sessions (`automation_session_refused`). The code
 that writes such a record marks the request or response as already
-recorded, and the hook skips a marked one, so each of those paths gives its own record
-and no `admin_input_refused` entry or line. A completed step-up stays
-recorded as `admin_step_up` or `automation_fresh_gate`; the refused request
-that asked for it is new information and is recorded, with reason
-`fresh_authentication_required`. Debug logging is unchanged, and the
+recorded, and the hook skips a marked one, so each of those paths gives
+its own record and no `admin_input_refused` entry or line. A completed
+step-up stays recorded as `admin_step_up` or `automation_fresh_gate`; the
+refused request that asked for it is new information and is recorded, with
+reason `fresh_authentication_required`. Debug logging is unchanged, and the
 browser sends no report of its own: the server already knows every refusal
 it makes.
 
