@@ -175,7 +175,8 @@ missing, as [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)
 describe; a logo file over 5 MB is refused at its field as soon as it is
 chosen, as on Parish logos), a short introduction, and plain-language help for
 every field. Revisiting a page shows its saved values; a credential page never
-shows the secret but says that one is saved (with its public scope, such as
+shows the saved secret (a typed key or token can be checked with the shared
+[Show control](../ui-conventions/spec.md#secret-fields)) but says that one is saved (with its public scope, such as
 the ParishSoft organization), lets it be kept by leaving the key empty
 (unless it was entered for settings changed since, or the ParishSoft
 organization ID is changed, when the key is required again), and
@@ -1618,7 +1619,8 @@ sign-in gets the step-up, which returns to the settings page with nothing
 saved, and the page says so beside Save.
 The UI seals the submitted value to its target-specific installer, shows
 staged/testing/installing/consumer-acknowledged progress, and never redisplays
-it. Failure or expiry destroys sealed staging and leaves the old working
+it; a typed key or token has the shared
+[Show control](../ui-conventions/spec.md#secret-fields). Failure or expiry destroys sealed staging and leaves the old working
 credential installed. Slack is optional; its token and channel must be
 supplied/removed together, so while Slack is not set up its token field is
 required and Save waits for it
