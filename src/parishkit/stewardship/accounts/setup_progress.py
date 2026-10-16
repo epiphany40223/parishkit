@@ -6,14 +6,14 @@ from uuid import UUID
 from django.db.models import F
 
 from parishkit.stewardship.campaigns.work_locks import work_transaction
-from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRunEvent
+from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun, TaskRunEvent
 from parishkit.stewardship.jobs.phases import TaskPhase
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.source.load_progress import collections
 from parishkit.stewardship.source.models import SourceMutationLease
 
 from .sessions import authenticated_admin, database_now
-from .setup_drafts import _owned
+from .setup_drafts import _owned, staged_load
 from .setup_models import SetupAttempt
 from .setup_policy import SetupState
 from .setup_staging import _expire, _expiry, _window
@@ -55,8 +55,28 @@ def _load_detail(task):
     }
 
 
+def _discarded(attempt, task_id, renew):
+    """An earlier load of this attempt that a discard unbound (#1353), or refuse.
+
+    Its progress page stays readable, so a page left open can say the load is
+    no longer used, but only passively: a renewal POST is refused. The
+    identity checks in ``source_progress`` still apply to the Task found here.
+    """
+    if renew:
+        raise LookupError("Setup source progress is unavailable.")
+    task = TaskRun.objects.filter(
+        pk=task_id, task_type="setup_source_load", domain_request_id=attempt.pk
+    ).first()
+    if task is None:
+        raise LookupError("Setup source progress is unavailable.")
+    return task
+
+
 def source_progress(request, service, task_id, *, renew=False):
     """Observe one exact task; only its current live leases permit throttled renewal.
+
+    The task is the attempt's bound load or, read passively, an earlier load
+    of the same attempt that a discard unbound (``_discarded``, #1353).
 
     The Task's immutable creation instant anchors the hard watchdog. Failed,
     queued or abandoned work never extends idle time. A renewal POST commits an
@@ -67,9 +87,10 @@ def source_progress(request, service, task_id, *, renew=False):
         raise ValueError("Exact setup task and renewal intent are required.")
     with work_transaction():
         actor, attempt = _owned(request, service)
-        if attempt is None or attempt.source_task_id != task_id:
+        if attempt is None:
             raise LookupError("Setup source progress is unavailable.")
-        task = attempt.source_task
+        bound = attempt.source_task_id == task_id
+        task = attempt.source_task if bound else _discarded(attempt, task_id, renew)
         now = database_now()
         if (
             task.task_type != "setup_source_load"
@@ -133,16 +154,27 @@ def source_progress(request, service, task_id, *, renew=False):
                 task.heartbeat_at.isoformat() if task.heartbeat_at else None
             ),
             "setup_state": attempt.state,
+            # Whether this is still the attempt's load, and whether its staged
+            # data is still the valid one review uses (#1353): a discarded or
+            # stale load is shown as no longer used, never as loaded.
+            "bound": bound,
+            "loaded": bound
+            and task.state == "succeeded"
+            and staged_load(attempt) is not None,
             "phase": task.phase,
             **_load_detail(task),
             "worker_live": bool(worker_live),
             "renewed": renewed,
             "active": (
-                attempt.state == SetupState.LOADING
+                bound
+                and attempt.state == SetupState.LOADING
                 and reason is None
                 and task.state in NONTERMINAL_STATES
             ),
             "idle_at": window.idle_at.isoformat(),
             "absolute_at": window.absolute_at.isoformat(),
-            "watchdog_at": window.watchdog_at.isoformat(),
+            # None once a discard leaves the attempt with no load (#1353).
+            "watchdog_at": (
+                window.watchdog_at.isoformat() if window.watchdog_at else None
+            ),
         }
