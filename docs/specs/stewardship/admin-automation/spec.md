@@ -1511,7 +1511,7 @@ Administrator who is now Staff) is `denied` with no prompt, never
 `invalid`, `stale_version` or `not_available`, and learns nothing of the
 state the prompt would describe. The capability is the action's own, so a
 command Staff may run (`export financial`, `export directory`, `export
-postal`, `export family-timeline`, `census resolve`) still prompts Staff;
+postal`, `export family-timeline`, `census resolve`, `followup bulk`) still prompts Staff;
 the action then admits again as its page's post does.
 
 ### Audit attribution
@@ -2564,7 +2564,7 @@ file is regenerated from the retained capture, in its original format.
 | `daily_digest_chart`, `daily_digest_download` | Permanent: PNG images; the data is in the matching report or digest read |
 | `financial_report`, `limitations_report`, `information_queue` | `report financial`, `report limitations`, `report information`: summaries and counts (PR 8c; `report limitations` was `report talents` until #970); Family-level rows only as exports (PR 8e, PR 8h for limitations) |
 | `information_item` | One Family's submission and its follow-up history: `followup …` (PR 11), with the Ministry follow-up items; it prints only the item's state and history, and the submission's content comes through `export information` (PR 8e) |
-| `ministry_report` | `report ministry`, and `report ministry --ministry DUID --requests join\|leave` for one Ministry's join or leave count (PR 8c); rows only as exports (PR 8e). The Members joining and leaving pages (`ministry_joiners`, `ministry_leavers`) were retired ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)); the commands stay, and `export ministry`, which writes one Ministry's join or leave list, now covers this summary, whose counts it lists. Since [#1133](https://github.com/epiphany40223/parishkit/issues/1133) the page is one Ministry requests page with the follow-up queue: its By Ministry counts are `report ministry`'s summary, and its queue is `followup …` (PR 11) |
+| `ministry_report` | `report ministry`, and `report ministry --ministry DUID --requests join\|leave` for one Ministry's join or leave count (PR 8c); rows only as exports (PR 8e). The Members joining and leaving pages (`ministry_joiners`, `ministry_leavers`) were retired ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)); the commands stay, and `export ministry`, which writes one Ministry's join or leave list, now covers this summary, whose counts it lists. Since [#1133](https://github.com/epiphany40223/parishkit/issues/1133) the page is one Ministry requests page with the follow-up queue: its By Ministry counts are `report ministry`'s summary, and its queue is `followup list` (PR 11a) |
 | `ministry_packet` | A packet of Members' contacts, so export only: `export ministry-packet` (PR 8e) |
 | `past_campaign_archive` | `export archive` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) part (a), [archive export](../campaign-history/spec.md#download-campaign-archive)): Past campaigns' Download campaign archive, through the same service (`create_archive_export`), with the page's `campaign_archive_exported` and `admin_cmd_export_archive`; [fresh-gated](#fresh-gated-actions-from-the-command-line) |
 | `financial_export`, `information_export` | `export financial`, `export information` (PR 8e); `export financial` is [fresh-gated](#fresh-gated-actions-from-the-command-line). `export ministry` still captures one Ministry's join or leave list, whose page form (`ministry_export`) was retired with the lists (#1157) |
@@ -3083,7 +3083,10 @@ unknown email `not_available`, and a key used with another intent `invalid`.
 | `user_rules`, `rule_apply`, `rule_base`, `rule_request` | Retired by #952: removed with the rule tables and autosave when the users commands land; no rule commands are built |
 | `chair_confirmations`, `chair_reviews`, `assignments` | Retired by #922: removed with Ministry assignments and Chairperson flows; no commands are built |
 | `security_event_acknowledge`, `critical_events_acknowledge` | `events list`, `events acknowledge` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); see below |
-| `information_update`, `ministry_followup_item`, `ministry_followup_update`, `ministry_followup_bulk` | `followup …` (PR 11); the queue page itself is `ministry_report` since #1133 (`ministry_followup` was retired); follow-up has no assignment ([#552](https://github.com/epiphany40223/parishkit/issues/552)); the queue's bulk outcome ([#1131](https://github.com/epiphany40223/parishkit/issues/1131)) goes through the same `workflows.followup` service |
+| `ministry_followup_item` | `followup show REQUEST_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11a; see below) |
+| `ministry_followup_update` | `followup update REQUEST_ID` (PR 11a; see below); follow-up has no assignment ([#552](https://github.com/epiphany40223/parishkit/issues/552)) |
+| `ministry_followup_bulk` | `followup bulk` (PR 11a; see below), the queue's bulk outcome ([#1131](https://github.com/epiphany40223/parishkit/issues/1131)), through the same `workflows.followup` service |
+| `information_update` | `followup …` (PR 11), with the Family information follow-up |
 | `ministry_followup_export` | The queue's Export these requests ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)), the follow-up queue's filtered set with each Member's contact details: `followup export` (PR 11) |
 | `ministry_followup_roster`, `ministry_roster_bulk` | A resolved join or leave's Entered in ParishSoft tick ([#528](https://github.com/epiphany40223/parishkit/issues/528)), one at a time or several from Roster changes to enter ([#879](https://github.com/epiphany40223/parishkit/issues/879)): `followup roster-entered REQUEST_ID --set\|--clear` (PR 11), through the same `workflows.roster` service |
 | `ministry_roster`, `ministry_roster_export` | Roster changes to enter ([#528](https://github.com/epiphany40223/parishkit/issues/528)): `report roster`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export roster [--show S] [--ministry DUID] [--format F] [--timezone Z]` (PR 8g, [#463](https://github.com/epiphany40223/parishkit/issues/463)), the page's download through the page's own writer (`ministry_roster_views.export_body`) |
@@ -3164,6 +3167,71 @@ and records nothing. A restore under review is `unavailable`. The
 [operator guide](../../../guides/stewardship-admin-automation.md#security-events-and-critical-problems)
 lists the fields; the shapes are defaults pending Administrator
 confirmation.
+
+`followup list`, `followup show`, `followup update` and `followup bulk`
+([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11a) are
+the Ministry requests follow-up queue (the queue's table is the
+`ministry_report` page's, which `followup list` covers with `report
+ministry`), through the page's own pieces: its admission
+(`ministry_followup_views._principal`), the shared report read (current
+campaign, `admit_report_read`, the campaign read guard and the session
+recheck), the queue's selection (`followup_page`, with its scope and
+filters) and history (`followup_history`), and its services
+(`workflows.followup.update_request` and `apply_bulk_outcome`).
+
+- **Privacy.** Each row names a Member of a Family, so the documents print
+  ids, versions, states, outcomes, the Ministry (DUID and name), the
+  Member's standing in ParishSoft, the roster tick and instants, never the
+  Member's name or DUID, the notes or a contact attempt's notes, and no
+  command takes the queue's search. `--notes` and `--contact-notes` accept
+  `-` to read standard input (one of them per run), so free text about a
+  Member need not go into shell history.
+- **Reads.** `followup list [--ministry DUID] [--action A] [--state S]
+  [--outcome O] [--sort S] [--page N] [--size 25|50|100|250]` (50 rows by
+  default) and `followup show REQUEST_ID [--page N]` admit passively, so
+  any session scope reads, and record the page's
+  `ministry_followup_viewed` (started, then succeeded or failed, naming
+  the request's Ministry for `followup show`).
+- **Save.** `followup update REQUEST_ID --expected-version N --state S
+  [--outcome O] [--notes TEXT|-] [--contact-channel C --contact-at INSTANT
+  [--contact-notes TEXT|-]]` is a request page's Save: the notes are kept
+  when `--notes` is left out, as the page's form opens with them, and the
+  contact attempt's instant is ISO 8601 with its offset, never a guessed
+  zone.
+- **Bulk outcome.** `followup bulk --outcome KIND:OUTCOME --request
+  ID:VERSION ... [--contact-channel C --contact-at INSTANT
+  [--contact-notes TEXT|-]] [--yes]` is the queue's bulk outcome with the
+  dialog's optional contact attempt, all or none, for at most 250
+  requests; it asks at the prompt (or takes `--yes`), as the page's
+  confirmation dialog does, since a resolved request is closed.
+- **Keys and audit.** Both changes need a full-scope session and run in
+  the page's command scope. The request key binds each request's revision,
+  as on the page: a bulk's per-request keys derive from it, so a repeat
+  replays what was recorded and records nothing, while the same key with
+  more requests resolves only the new ones. They record the services' own
+  events (`ministry_request_updated`, and for a bulk
+  `ministry_followup_bulk_applied`) and `admin_cmd_followup_update` or
+  `admin_cmd_followup_bulk` in the same transaction, for each run that
+  recorded something.
+- **Refusals.** As the page's `_refused` does, the requests are checked
+  before any field rule. A request that is not the current campaign's, or
+  is outside the session's Ministries, is `not_available`, the same answer
+  for both, so nothing says it exists. One changed or closed since its
+  version, or whose Member ParishSoft no longer lists, is `stale_version`.
+  Then the page's correctable refusals, and input past the page's lengths
+  (5,000 characters of notes, 2,000 of contact notes, 250 requests; a bulk
+  checks these before its prompt), are `invalid` with `error.fields`
+  naming the option (`outcome`, `notes`, `contact_at`, `contact_notes` or
+  `request`). An option that would have no effect is a usage error (exit
+  2): `--outcome` without `--state resolved`, or `--contact-at` or
+  `--contact-notes` without `--contact-channel`. Neither change is
+  fresh-gated, as the page asks for no recent sign-in.
+
+The roster tick (`followup roster-entered`), the queue's export and Family
+information follow-up stay pending in PR 11. The names, options and fields
+are defaults pending Administrator confirmation; the
+[operator guide](../../../guides/stewardship-admin-automation.md#ministry-follow-up)
+lists the fields.
 
 `report roster [--show todo|all] [--ministry DUID]` is Roster changes to
 enter through the page's own pieces: its admission

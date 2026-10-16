@@ -901,6 +901,31 @@ session, an ended session and Staff refused) and the unchanged
 `tests/stewardship/database/test_security_events_postgresql.py` and
 `tests/stewardship/database/test_critical_events_postgresql.py`.
 
+ADM-11.12's PR 11a adds `followup list`, `followup show`, `followup
+update` and `followup bulk`, the Ministry requests follow-up queue, in
+`parishkit.stewardship.admin_followup`, through the page's own admission,
+selection, history and services (`update_request`, `apply_bulk_outcome`)
+in its command scope, with no schema change; proven by
+`tests/stewardship/test_admin_followup.py` (golden documents and the
+personal-data allowlist, catalog flags, the parser's choices against the
+page's, the ledger, the page's refusals as field errors, usage errors),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_role_first.py`,
+`tests/stewardship/test_pk_admin.py`,
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_followup_cli_postgresql.py` (the
+queue and a request with the page's events and filters for a read-only
+session, a Save with its events once for each revision its key binds, a
+key shared with the page, notes kept or replaced, contact notes from
+standard input, stale and closed requests checked before the field rules,
+options without effect refused as usage, lengths and the page's refusals
+as field errors, the bulk outcome's prompt, a mixed or stale choice saving
+nothing, a choice too long refused before the prompt, a repeat, Staff
+reading and changing, a leader's out-of-scope request answered as an
+unknown one, another campaign's request, a read-only session refused, an
+ended session and no current campaign). The roster tick, the queue's export and Family
+information follow-up remain.
+
 Another part adds `content show`, the content editor's read
 of one page's or email's text, in `parishkit.stewardship.admin_content`,
 through the editor's own lookup (moved into

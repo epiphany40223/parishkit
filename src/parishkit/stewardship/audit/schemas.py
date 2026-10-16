@@ -316,6 +316,10 @@ class Action(StrEnum):
     ADMIN_CMD_CENSUS_RESOLVE = "admin_cmd_census_resolve"
     # census review: an Automatic row's Review (#528, ADM-09).
     ADMIN_CMD_CENSUS_REVIEW = "admin_cmd_census_review"
+    # followup update and followup bulk: a Ministry follow-up request's Save
+    # and the queue's bulk outcome (#463 PR 11a).
+    ADMIN_CMD_FOLLOWUP_UPDATE = "admin_cmd_followup_update"
+    ADMIN_CMD_FOLLOWUP_BULK = "admin_cmd_followup_bulk"
 
 
 # Closed field identifiers are operational metadata, never census values.

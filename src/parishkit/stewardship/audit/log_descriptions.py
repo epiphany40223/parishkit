@@ -226,6 +226,14 @@ DESCRIPTIONS = {
         "(approved, ignored or sent back to To review), as the Census "
         "changes page's Review does."
     ),
+    "admin_cmd_followup_update": _(
+        "An automation session recorded follow-up on a Ministry request, as "
+        "the request's Save on Ministry requests does."
+    ),
+    "admin_cmd_followup_bulk": _(
+        "An automation session resolved several Ministry requests with one "
+        "outcome, as the Ministry requests queue's bulk outcome does."
+    ),
     "admin_cmd_refresh_start": _(
         "An automation session asked for a full ParishSoft refresh, as the "
         "Refresh from ParishSoft page's confirmation does."
