@@ -1454,9 +1454,21 @@ Admin pages are laid out for a laptop screen: compact headings, panels,
 notices and table cells, and short filter forms in one row. The target is that,
 with help closed, a page's first data starts inside the browser window of a
 typical laptop (a 1366×768 screen, about 650 pixels of page after the
-browser's own toolbars). Pages with short filters meet it now; report pages
-with long filter and export forms meet it once those forms are collapsed by
-default (a #227 follow-up). An edit form's short fields (a status, an outcome,
+browser's own toolbars). Pages with short filters put them in one row. A
+report whose filter form is longer than a row puts it in a "Filters" panel (the
+`filterpanel` template tag): a native disclosure that starts closed and renders
+open whenever the shown results use any filter other than the page's default,
+so an applied filter is never hidden. The Family directory is the exception:
+its Filters panel is open by default (Administrator decision, #227), and the
+other reports keep theirs closed. Its summary says how many are applied
+("Filters: 2 applied", or "none applied"), and that count follows an in-place
+Apply while the panel and its form keep their elements. A report's export form
+is likewise a closed disclosure (for example, "Export complete results (CSV,
+XLSX or PDF)") with its sensitive-data notice inside. The Family directory,
+Additional information, Financial stewardship and Limitations follow this
+(#227); System logs, Ministry follow-up and the remaining report pages are
+still to convert.
+An edit form's short fields (a status, an outcome,
 a date and a time) likewise share a row on desktop (`.field-row` in
 `ui-v1.css`), top-aligned so a time's reading line fits under its box, while
 notes span the form; at phone width each field takes its own row (#1014). The

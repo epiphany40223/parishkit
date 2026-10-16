@@ -342,6 +342,8 @@ def test_export_choices_survive_a_sort_and_its_hidden_fields_follow(
     the in-place re-sort while the reader's format and timezone, including
     the browser zone a script added, stay as chosen."""
     page.goto(component_origin + "/information")
+    # The export starts closed (#227).
+    page.get_by_text("Export complete results").click()
     export = page.locator("#table-export")
     export.locator("select[name=format]").select_option("xlsx")
     zone = export.locator("select[data-information-timezone]")
@@ -483,6 +485,8 @@ def test_post_filter_applies_in_place_with_csrf(page, component_origin):
     page.set_viewport_size(VIEWPORT)
     page.goto(component_origin + "/information")
     page.evaluate(MARK)
+    # The export starts closed (#227); its count is checked below.
+    page.get_by_text("Export complete results").click()
     page.get_by_label("Request history").select_option("withdrawn")
     offset = scroll_to_filters(page)
     fulfil_post_with(
