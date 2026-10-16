@@ -625,6 +625,7 @@ CLOSURE_ALTERED = {
 # 0100 (#720) replaces the information selection 0094 also replaces, so its
 # entry comes after 0094's: 0094's file, run again for the limitations
 # report, puts that selection back without the counts first.
+# 0101 (#528) replaces the task-type maps 0077's file brings back.
 CLOSURE_REPLACED = {
     "public.stewardship_debug_off_switch_guard_v1()": (
         ("stewardship_jobs", "0031_debug_allow"),
@@ -649,6 +650,13 @@ CLOSURE_REPLACED = {
     "public.stewardship_information_report_v2(uuid,jsonb,integer,uuid,integer)": (
         ("stewardship_reports", "0028_information_status_counts"),
         "'counts',(SELECT jsonb_build_object(",
+    ),
+    **dict.fromkeys(
+        (
+            "public.stewardship_task_type_login_v1(text)",
+            "public.stewardship_task_type_creators_v1(text)",
+        ),
+        (("stewardship_responses", "0007_publication_tasks"), "census_publication"),
     ),
 }
 
