@@ -1,24 +1,27 @@
 """Normalized logo upload, versioned preview and narrowly served immutable PNGs.
 
-Review, apply and the change's status happen on Parish logos itself (#750),
-in its review region under the upload form: a successful upload stages the
-four variants and answers with the page naming them (``?review=<bundle>``),
-and Apply posts the signed preview to that same address. The answer is the
-page again naming the request (``?request=<id>``), whose status the region
-follows until the change settles and the page refreshes itself quietly with
-the new current logos.
+New logos are reviewed and applied in the shared review dialog (UX
+conventions, "Review dialog", #750). The upload form posts its image (or,
+in Advanced, its sizes) without a page load: staged logos are answered with
+the dialog's fragment (``branding-review.html``), which carries the signed
+preview and the staged bundle it was signed for; the dialog's Apply posts
+both back to Parish logos. Apply is answered with the change's status, which
+the dialog follows; once the change is applied it redraws the form and the
+current logos from the page's address. A refused upload (a field error) is
+the page again with status 400, so the error stays on its field and the
+dialog stays shut; any other refusal (a stale page, expired or out-of-date
+logos) is raised and shown in the dialog.
 """
 
 from io import BytesIO
 from pathlib import Path
-from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
 from django import forms
 from django.conf import settings
 from django.core import signing
-from django.db import DatabaseError, transaction
-from django.http import FileResponse, HttpResponseRedirect
+from django.db import DatabaseError
+from django.http import FileResponse
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
@@ -33,19 +36,17 @@ from parishkit.stewardship.web.contracts import (
     filters,
     validation_response,
 )
-from parishkit.stewardship.web.refusals import UserFacingStale, stale_page
+from parishkit.stewardship.web.refusals import UserFacing, UserFacingStale, stale_page
 
 from . import admin_navigation, field_tips
 from .admin_editing import (
-    REVIEW_REGION,
     confirm,
     editable_configuration,
     error_response,
     form_action,
     principal,
-    requested_status,
-    review_region,
     sign_preview,
+    summary_errors,
 )
 from .authentication import runtime
 from .branding_files import read_variant
@@ -61,7 +62,12 @@ from .branding_slots import (
     file_size,
     missing_message,
 )
-from .branding_staging import file_receipt, stage_branding, staged_bundle
+from .branding_staging import (
+    applied_upload,
+    file_receipt,
+    stage_branding,
+    staged_bundle,
+)
 from .branding_validation import campaign_artwork_retained, validate_installation
 from .configuration_installation import coherent_configuration
 from .configuration_models import Parish
@@ -301,9 +307,9 @@ def _retained(asset):
 def _upload(request, service):
     """Stage one uploaded logo, or return its refused form.
 
-    Returns ``(redirect, None)`` once the four variants are staged: the
-    page naming them, whose review region shows them with Apply. Otherwise
-    ``(None, form)``, the bound form with its errors.
+    Returns ``(bundle_id, None)`` once the four variants are staged, which
+    the review dialog then shows with Apply. Otherwise ``(None, form)``, the
+    bound form with its errors.
     """
     # A file input left empty (in Basic, the hidden Advanced panel's sizes,
     # which are still sent; in Advanced, each size not chosen) arrives as a
@@ -354,10 +360,7 @@ def _upload(request, service):
                 # applied (#1062).
                 mode=mode,
             )
-            query = urlencode({"review": identifier})
-            return HttpResponseRedirect(
-                f"{reverse('admin:branding_settings')}?{query}#{REVIEW_REGION}"
-            ), None
+            return UUID(str(identifier)), None
     return None, form
 
 
@@ -366,8 +369,8 @@ def _review(service, actor, configuration, staged):
 
     ``staged`` is ``staged_bundle``'s row and assets, read before the
     configuration so the preview is signed against the version checked
-    last. Returns ``review_region``'s ``review``: the generated sizes and
-    the signed preview Apply posts.
+    last. Returns the dialog fragment's ``review``: the generated sizes,
+    the signed preview Apply posts and the staged bundle it names.
     """
     row, assets = staged
     for asset in assets:
@@ -395,9 +398,7 @@ def _review(service, actor, configuration, staged):
         asset.title = SLOTS[asset.label].title
         asset.changed = asset.label in changed
     return {
-        # Drawn inside settings-review.html, above its Apply.
-        "template": "stewardship/branding-review.html",
-        "notes": [],
+        "bundle": row.pk,
         "assets": assets,
         "preview": sign_preview(
             actor=actor,
@@ -417,7 +418,7 @@ def _scope(request, bundle_id):
         """Permit exact receipt retries after selection, not stale new edits."""
         asset = BrandingAsset.objects.filter(bundle_id=bundle_id, label="large").first()
         if asset is None or not _retained(asset):
-            staged_bundle(request, service, bundle_id)
+            applied_upload(request, service, bundle_id, refusal=GONE_UPLOAD)
         return editable_configuration(service), None
 
     return scope
@@ -441,13 +442,12 @@ def opening_mode(parish):
     return ADVANCED if mode == ADVANCED else BASIC
 
 
-def _page(request, service, configuration, form, *, status=200, redraw=False, **region):
-    """Render the upload form, its review region and the current logos.
+def _page(request, service, configuration, form, *, status=200):
+    """Render the upload form and the current logos.
 
-    ``region`` is ``review_region``'s ``review``, ``receipt``, ``refusal`` or
-    ``message``; the step indicator follows it through edit, review and
-    apply (#196), all on this page. ``redraw`` marks the form and the
-    current logos to be redrawn even by Apply's answer.
+    ``form`` is the unbound upload form, or a refused upload's bound one
+    (status 400), whose errors are marked on its fields and summarized
+    above the heading.
     """
     current = configuration.active_configuration.parish
     assets = sorted(
@@ -457,23 +457,20 @@ def _page(request, service, configuration, form, *, status=200, redraw=False, **
     # The toggle opens in (and Advanced → Basic asks unless) the mode that
     # saved the current logos.
     form.stored_mode = opening_mode(current)
-    step = "review" if region.get("review") else "edit"
-    if region.get("receipt"):
-        step = "apply"
-    admin_navigation.place(request, flow="change", step=step)
+    admin_navigation.place(request, flow="change", step="edit")
+    page_url = reverse("admin:branding_settings")
     response = render(
         request,
         "stewardship/branding-settings.html",
         {
             "form": form,
             "assets": assets,
-            # A refused Apply's answer redraws the form and the current
-            # logos at the current version (data-in-place-always), though
-            # Apply's answer otherwise takes only the review region.
-            "redraw": redraw,
-            # A refused upload's errors are summarized in the review region
-            # too, linked to its field, where focus then goes.
-            **review_region("branding_settings", form, **region),
+            # The upload's Review and the dialog's Apply post here.
+            "page_url": page_url,
+            # Once a change is applied, the dialog redraws the form and the
+            # current logos from this page's own address.
+            "refresh_url": page_url,
+            "errors": summary_errors(form) if form.is_bound else [],
         },
         status=status,
     )
@@ -483,55 +480,74 @@ def _page(request, service, configuration, form, *, status=200, redraw=False, **
 
 
 # Why staged logos cannot be used: they expired after a day, belong to
-# another sign-in, were already applied, or the settings changed since.
+# another sign-in, were already applied, or the settings changed since. A
+# refusal in the review dialog never redraws the form, which keeps the
+# version the page was loaded at (as on every dialog editor), so each
+# message says to reload first; otherwise the next upload would be refused
+# again as a stale page.
 EXPIRED = _(
     "These logos expired, or the settings changed after they were uploaded, "
-    "so they were not used. Upload the logo again."
+    "so they were not used. Reload the page, then upload the logo again."
+)
+# Why staged logos unknown to this sign-in cannot be applied: they were
+# uploaded before the reader signed in again (another tab), or are gone.
+GONE_UPLOAD = _(
+    "These logos were uploaded in another sign-in, or are no longer "
+    "available, so they were not used. Reload the page, then upload the logo "
+    "again."
 )
 UNREVIEWABLE = _(
-    "These uploaded logos can no longer be reviewed: they were already "
-    "applied, expired after a day, or the settings changed since they were "
-    "uploaded. Upload the logo again."
+    "These uploaded logos can no longer be reviewed: the settings changed "
+    "after they were uploaded. Reload the page, then upload the logo again."
 )
 
 
-def _unreviewable(error):
-    """The review region's values and status for staged logos that cannot
-    be reviewed (a reload of an old review address): the page itself, with
-    the explanation where the review would be. An unknown or another
-    sign-in's upload is 404; an expired, applied or stale one 409."""
-    return {"message": UNREVIEWABLE}, 404 if isinstance(error, LookupError) else 409
+def _reviewed(request, service, actor, bundle_id):
+    """The review dialog's fragment for the staged logos ``bundle_id``.
+
+    The staged upload is read before the configuration it is reviewed
+    against, so the preview is signed against the version checked last.
+    Settings that changed in between are refused in the dialog.
+    """
+    staged = staged_bundle(request, service, bundle_id)
+    configuration = editable_configuration(service)
+    try:
+        review = _review(service, actor, configuration, staged)
+    except StaleRecordError as error:
+        if isinstance(error, UserFacing):
+            raise
+        raise UserFacingStale(UNREVIEWABLE) from None
+    return _checked(
+        request,
+        service,
+        render(request, "stewardship/branding-review.html", {"review": review}),
+    )
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
 def branding_settings(request):
-    """Upload, review and apply new logos, all on this page (#750).
+    """Show the upload form and current logos; review an upload; apply it.
 
-    The query is nothing, ``request`` (Apply's answer) or ``review`` (the
-    staged logos a successful upload names); Apply posts to the ``review``
-    address. A refused Apply (an out-of-date preview, an upload that
-    expired) is the page again (status 409) explained in its review region.
+    GET takes no query. A POST without ``action`` is the upload, answered
+    with the review dialog's fragment (or, refused for its fields, the
+    page again with status 400). A POST with ``action=confirm`` is the
+    dialog's Apply (the preview and the staged bundle it was signed for),
+    answered with the change's status. Other refusals are raised for the
+    dialog (see the module docstring).
     """
     try:
         service = runtime()
-        # Reading a change's status (the page's own quiet refresh once it is
-        # applied) is passive, as Change status is: it never renews idle time.
-        actor = principal(
-            request,
-            service,
-            passive=request.method != "POST" and "request" in request.GET,
-        )
-        selected = filters(request.GET, allowed={"review", "request"})
-        if len(selected) > 1:
-            raise ValueError("Invalid Parish logos query.")
-        bundle_id = UUID(selected["review"]) if "review" in selected else None
-        form, region, status = None, {}, 200
+        actor = principal(request, service)
+        filters(request.GET, allowed=set())
         if request.method == "POST" and "action" in request.POST:
             if (
-                bundle_id is None
-                or form_action(request.POST, preview_fields=set()) != "confirm"
+                form_action(
+                    request.POST, preview_fields=set(), confirm_fields={"bundle"}
+                )
+                != "confirm"
             ):
-                raise ValueError("Confirm reviewed Parish logos.")
+                raise ValueError("Review Parish logos by uploading them.")
+            bundle_id = UUID(request.POST.get("bundle", ""))
             try:
                 return _checked(
                     request,
@@ -542,50 +558,33 @@ def branding_settings(request):
                         actor,
                         salt=SALT + str(bundle_id),
                         current_scope=_scope(request, bundle_id),
-                        in_place=True,
                     ),
                 )
-            except UserFacingStale as error:
-                region, status = {"refusal": error.refusal, "redraw": True}, 409
-            except StaleRecordError:
+            except StaleRecordError as error:
+                if isinstance(error, UserFacing):
+                    raise
                 # Staged logos are tied to the settings they were uploaded
                 # against and to this sign-in, and expire after a day.
-                region, status = {"message": EXPIRED, "redraw": True}, 409
-        elif request.method == "POST":
+                raise UserFacingStale(EXPIRED) from None
+        form = None
+        if request.method == "POST":
             try:
-                redirect, form = _upload(request, service)
-            except StaleRecordError:
-                # The form's version is not the current one: say so in place,
-                # as any other settings page does, and stage nothing.
-                region, status = {"refusal": stale_page().refusal}, 409
-            else:
-                if redirect is not None:
-                    return _checked(request, service, redirect)
-                status = 400
-        if request.method != "POST" and "request" in selected:
-            # The change's status is read first, as on Parish settings.
-            with transaction.atomic():
-                region["receipt"] = requested_status(
-                    request, service, actor, request.GET
-                )
-        staged = None
-        if request.method != "POST" and bundle_id is not None:
-            # The staged upload is read before the configuration it is
-            # reviewed against (as the separate review page did).
-            try:
-                staged = staged_bundle(request, service, bundle_id)
-            except (StaleRecordError, LookupError, ConfigError) as error:
-                region, status = _unreviewable(error)
-        configuration = editable_configuration(service)
-        if staged is not None:
-            try:
-                region["review"] = _review(service, actor, configuration, staged)
+                bundle_id, form = _upload(request, service)
             except StaleRecordError as error:
-                region, status = _unreviewable(error)
-        form = form or LogoUploadForm(
+                if isinstance(error, UserFacing):
+                    raise
+                # The form's version is not the current one: refused in the
+                # dialog, as any other settings page does; nothing staged.
+                raise stale_page() from None
+            if bundle_id is not None:
+                return _reviewed(request, service, actor, bundle_id)
+        configuration = editable_configuration(service)
+        if form is not None:
+            return _page(request, service, configuration, form, status=400)
+        form = LogoUploadForm(
             initial={"base_digest": configuration.active_configuration.digest}
         )
-        return _page(request, service, configuration, form, status=status, **region)
+        return _page(request, service, configuration, form)
     except ERRORS as error:
         return _error(error)
 

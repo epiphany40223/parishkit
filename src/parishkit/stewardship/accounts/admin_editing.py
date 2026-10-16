@@ -54,15 +54,14 @@ from .sessions import FreshAuthenticationRequired, authenticated_admin, require_
 # its refusals and the change's status fill this region under the form, and
 # confirmation answers with the page again rather than Change status. The
 # names are the pages' URL names; Change status's in-place follow-up may lead
-# only to one of them. Campaign settings (#1119), Share options and Campaign
-# images review in the review dialog instead, which follows Change status
-# itself.
+# only to one of them. Campaign settings (#1119), Share options, Campaign
+# images and Parish logos review in the review dialog instead, which follows
+# Change status itself.
 REVIEW_REGION = "settings-review"
 IN_PLACE_PAGES = frozenset(
     {
         "parish_settings",
         "reminder_workgroup",
-        "branding_settings",
     }
 )
 
