@@ -596,11 +596,29 @@ def end_check_words():
     }
 
 
+# Settings whose words are a long list (every Ministry or fund named, every
+# share option's label): a change of one keeps the full review's table even
+# alone, since a "Field: old → new" line of two such lists is no shorter.
+LONG_FIELDS = frozenset({"ministry_duids", "financial", "share_options"})
+
+
+def _compact(changed):
+    """Whether a change's review is a compact one (#1356, class A2).
+
+    A change of one or two short settings (a name, the modules, a date)
+    repeats only the form behind the dialog, plus each old value, so it is
+    one "Field: old → new" line each. More settings, or a long one, keep the
+    full review.
+    """
+    return len(changed) <= 2 and not LONG_FIELDS.intersection(changed)
+
+
 def _review(request, review):
     """The signed review for the review dialog: a fragment, never a page.
 
     ``review`` holds each change (label, current and proposed), the change's
-    notes and its signed ``preview``, which the dialog's Apply posts here.
+    notes and its signed ``preview``, which the dialog's Apply posts here;
+    ``compact`` (``_compact``) draws the changes as one line each.
     """
     return render(
         request, "stewardship/campaign-settings-review.html", {"review": review}
@@ -744,6 +762,7 @@ def _draft_review(service, actor, state, campaign, form):
             funds=form.fields["fund_duids"].choices,
         ),
         "notes": [REMOVES_SHARE_OPTIONS] if removes_share_options else [],
+        "compact": _compact(changed),
         "preview": _signed(actor, configuration, patch, fingerprint),
     }
 
@@ -843,6 +862,7 @@ def _live_review(service, actor, state, campaign, form, opened):
         "values": _pairs(previous, changed),
         "changes": describe_changes(previous, changed),
         "notes": [],
+        "compact": _compact(changed),
         "preview": _signed(actor, configuration, patch, fingerprint),
     }
 

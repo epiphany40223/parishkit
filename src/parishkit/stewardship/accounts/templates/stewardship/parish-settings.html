@@ -1,6 +1,5 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
 {% block title %}{% translate "Parish settings" %}{% endblock %}
-{% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block content %}
 <h1>{% translate "Parish settings" %}</h1>
 <section id="testing-mode" class="panel"><h2>{% translate "Operating mode" %}</h2>
@@ -8,10 +7,11 @@
 {% if configuration.mode == 'testing' %}<p>{% translate "Test recipient:" %} {{ configuration.testing_recipient }}</p>{% endif %}
 <p>{% translate "Production activation is a separate campaign readiness workflow, not a profile setting." %}</p></section>
 <p class="notice">{% translate "Changing the Parish timezone affects general presentation and future campaign drafts. Existing campaign timezones, dates, schedules and historical reports do not change." %}</p>
-{% comment %}Review and apply happen in place, below the form (#532).{% endcomment %}<form id="settings-form" method="post" action="#settings-review" class="panel" data-in-place data-table-sync data-in-place-message="{% translate 'Review ready.' %}" data-require-change="base_digest">
+{% comment %}Review changes is unavailable until the form differs from the saved settings (data-require-change, #921). Review posts the form without a page load (data-review-open, UX conventions "Review dialog", #750): an accepted review opens the shared review dialog below with parish-settings-review.html, whose Apply posts the signed preview here, follows the change and, once it is applied, redraws the form's region from this page's address at the applied version; the status line under the form says what was applied. A Review refused for a field's value keeps the dialog shut: ui-v1.js marks each field and shows the summary from this page drawn again. Any other refusal (a stale page, an out-of-date preview) shows inside the dialog and never redraws the form.{% endcomment %}<div id="settings-editor" data-in-place-region data-refresh-url="{{ refresh_url }}"><form id="settings-form" method="post" action="{{ page_url }}" class="panel" data-review-open="parish-review" data-require-change="base_digest">
   {% csrf_token %}<input type="hidden" name="action" value="preview">
   {{ form.as_div }}
   {% include 'stewardship/components/review-changes-button.html' %}
-</form>
-<div id="settings-review" data-in-place-region data-keep-height>{% include 'stewardship/settings-review.html' %}</div>
+</form></div>
+{% include 'stewardship/components/review-outcome.html' with outcome_id="parish-outcome" %}
+{% translate "Review Parish settings" as review_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="parish-review" title=review_title apply_url=page_url outcome_id="parish-outcome" fallback="settings-form" %}
 {% endblock %}

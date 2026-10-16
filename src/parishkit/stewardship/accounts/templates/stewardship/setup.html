@@ -7,7 +7,7 @@
 {% if not expired %}{% aboutpage "setup" %}{% if draft %}{% if wizard %}<p>{% translate "Use Continue to go to the next step that still needs work, or return to any completed step from the list above." %}</p>
 <p>{% translate "The Administrator you signed in as keeps access. Other sign-in rules take effect only when setup completes." %}</p>{% endif %}
 <p>{% translate "Provider credentials, source loading, delivery checks and the final readiness confirmation must also complete before this system can be configured." %}</p>
-{% else %}<p>{% translate "This wizard collects everything the system needs before it can run: connections to ParishSoft, Google Workspace and (optionally) Slack, the parish profile, who may sign in, and the first campaign. Each step explains its fields." %}</p>{% endif %}
+{% else %}<p>{% translate "This wizard collects everything the system needs before it can run: connections to ParishSoft, Google Workspace and (optionally) Slack, the parish profile, and who may sign in. You create the campaign after setup finishes. Each step explains its fields." %}</p>{% endif %}
 <p>{% translate "Closing the browser stops the data-load progress page from counting as activity; the inactivity and sign-in time limits still apply." %}</p>{% endaboutpage %}{% endif %}
 <p class="notice">{% translate "Testing mode. Settings saved here are temporary and are not active configuration. No campaign is open to parishioners." %}</p>
 {% if expired %}
@@ -31,13 +31,14 @@
 {% else %}
 <h2>{% translate "Have these ready before you start" %}</h2>
 <ul class="setup-checklist">
-<li>{% translate "Your parish's ParishSoft API key and ParishSoft organization ID." %}</li>
 <li>{% translate "A Google Workspace mailbox to send from, and the JSON key of a Google Cloud service account authorized for domain-wide delegation with the scope https://mail.google.com/." %}</li>
+<li>{% translate "A staff mailbox for Testing mode." %}</li>
 <li>{% translate "Optionally, a Slack app bot token (xoxb-…) and the ID of the alert channel." %}</li>
-<li>{% translate "A staff mailbox for Testing mode, the parish logo image, and the first campaign's dates." %}</li>
+<li>{% translate "The parish logo image." %}</li>
+<li>{% translate "Your parish's ParishSoft API key and ParishSoft organization ID." %}</li>
 </ul>
 {% fresh_sign_in as fresh %}{% if not fresh %}{% translate "saving a credential" as step_up_action %}{% translate "Your setup is kept." as step_up_note %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action note=step_up_note later=True %}{% endif %}
-<p>{% translate "Complete the Parish and first campaign setup using this login. Another login cannot resume your temporary settings." %}</p>
+<p>{% translate "Complete setup using this login. Another login cannot resume your temporary settings." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="start">{% button type="submit" %}{% translate "Start setup" %}{% endbutton %}</form>
 {% endif %}
 <form method="post" action="{% url 'admin:logout' %}">{% csrf_token %}

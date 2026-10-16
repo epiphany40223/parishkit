@@ -10,6 +10,7 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.web.refusals import UserFacingMissing
 
 from .admin_editing import editable_configuration, principal
 from .branding_files import BrandingFile, create_bundle, media_lock, remove_bundle
@@ -142,6 +143,23 @@ def staged_bundle(request, service, bundle_id, *, setup_attempt_id=None):
         if row.state != "ready":
             raise ConfigError("Branding upload is not ready.")
         return row, tuple(row.assets.order_by("label"))
+
+
+def applied_upload(request, service, bundle_id, *, refusal):
+    """Apply's check that a staged upload is still this sign-in's own.
+
+    Parish logos and Campaign images apply staged uploads from their review
+    dialogs (#750). An upload unknown to this sign-in (the reader signed in
+    again in another tab, or it was cleaned up) can never be applied, so it
+    is refused with ``refusal``, the page's own words saying to reload and
+    upload again, rather than a bare 404 that the dialog could only answer
+    with "try again in a moment". It stays a 404 (UserFacingMissing). An
+    expired upload is still raised as StaleRecordError for the page to word.
+    """
+    try:
+        return staged_bundle(request, service, bundle_id)
+    except LookupError:
+        raise UserFacingMissing(refusal) from None
 
 
 def file_receipt(asset):

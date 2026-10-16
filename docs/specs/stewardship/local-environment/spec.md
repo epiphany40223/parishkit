@@ -1086,7 +1086,11 @@ Because LOCAL has no Google sign-in, a local-only route signs an Admin in.
     ([#613](https://github.com/epiphany40223/parishkit/issues/613)). Each
     prompt records its return path in the browser's `localStorage` (the
     printed link is often opened in a new tab), replacing any earlier one,
-    for ten minutes. The sign-in page's script sends it as the form's `next`
+    for ten minutes. A prompt copy that CSS hides (a page that draws one
+    control with and without its step-up and shows one) records nothing
+    ([#1385](https://github.com/epiphany40223/parishkit/issues/1385)); a
+    prompt inside a closed section still records, since opening the section
+    shows it. The sign-in page's script sends it as the form's `next`
     and clears it when the form is submitted, so a link opened but not
     submitted keeps it. The POST passes it to the shared core, which honours
     it only when the sign-in is a step-up of this browser's live session for
@@ -1210,11 +1214,12 @@ refuses when the clock-mode marker says `normal`.
 
 **`wizard`.** For an unattended install (and the documented VM seed runs),
 `wizard` completes the setup wizard through the wizard pages' own service
-layer (`pk-stewardship local-seed --step wizard` under `web`: the parish,
-access, mail, Slack and Testing-recipient settings, the fake ParishSoft key
-and organization, the source load, the mail-catcher document, a generated
-logo through the real branding staging, the review, the setup test mail and
-the final confirmation), then follows the deployment runbook's post-wizard
+layer, in the wizard's page order (`pk-stewardship local-seed --step wizard`
+under `web`: the parish, mail and Testing-recipient settings, the
+mail-catcher document, the Slack setting, a generated logo through the real
+branding staging, the access lists, the fake ParishSoft key and organization,
+the source load, the review, the setup test mail and the final
+confirmation), then follows the deployment runbook's post-wizard
 step: once the credential installers report `awaiting_ack`, it recreates
 `worker` and `mail-dispatch` from `compose.json` and acknowledges each
 request inside them, which lets the installer complete setup. Setup collects

@@ -34,16 +34,17 @@ from .automation_builders import as_staff, paired
 from .test_admin_digest_list_cli_postgresql import revoke
 from .test_admin_test_sample_cli_postgresql import runner
 from .test_artwork_views_postgresql import (
-    address,
     artwork,
+    carried,
     change_parish,
     draft,
     image,
     media,  # noqa: F401
+    removal,
     select,
 )
 from .test_background_grants_postgresql import task_login
-from .test_branding_views_postgresql import post, preview_token
+from .test_branding_views_postgresql import post
 from .test_campaign_views_postgresql import apply
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -230,10 +231,11 @@ def test_a_command_preview_confirms_on_the_page(admin, banner):
     with task_login(ServiceRole.WEB):
         response = post(
             browser,
-            "/admin/campaign/images/?remove=banner",
-            {"action": "confirm", "preview": signed},
+            "/admin/campaign/images/",
+            {"action": "confirm", "preview": signed, "slot": "banner"},
         )
-    assert address(response).startswith("/admin/campaign/images/?request=")
+    assert response.status_code == 302, response.content
+    assert response["Location"].startswith("/admin/changes/")
     assert ConfigurationChangeRequest.objects.count() == requests + 1
     assert events() == 0
 
@@ -243,7 +245,8 @@ def test_a_page_preview_confirms_on_the_command_line(admin, banner):
     ``artwork remove``, records the request and the command's event."""
     browser, secret, _ = paired(admin.service)
     with task_login(ServiceRole.WEB):
-        signed = preview_token(browser.get("/admin/campaign/images/?remove=banner"))
+        review = removal(browser, admin.service, "/admin/campaign/images/", "banner")
+        signed = carried(review)["preview"]
     code, confirmed, _ = remove(admin, secret, "banner", signed)
     assert code == 0, confirmed
     install(admin, confirmed)

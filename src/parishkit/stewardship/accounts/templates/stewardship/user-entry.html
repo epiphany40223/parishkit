@@ -4,11 +4,18 @@
 {% block content %}{% comment %}
 New user and Edit user (#952; user_views._entry). One page with three fields:
 Email (typed on New, shown on Edit, where it never changes), Name and Role.
-Review posts here without a page load (data-review-open, UX conventions
+Review (Add the user on New, Save on Edit) posts here without a page load (data-review-open, UX conventions
 "Review dialog", #750): while the answer is prepared the form is inert and
 busy; an accepted review opens the shared review dialog below with
 user-review.html, whose Apply posts to Users and follows the change, then
-returns to Users, whose status line says what was applied. A review refused
+returns to Users, whose status line says what was applied. On New the
+dialog is a confirmation (UX conventions, "A confirmation when Review would
+only repeat the page", #1356): every value is on the form behind it, so it
+says in one sentence what Apply does (user-review-summary, its description)
+and adds only the Administrator warning. On Edit it is a compact review
+("A compact review when Review adds only the old value"): one line per
+changed field, "Role: old → new" (user-review-summary again), and the
+Administrator grant or removal warning. A review refused
 for a field's value keeps the dialog shut: ui-v1.js marks each field and
 shows the summary from this page drawn again with the errors. Any other
 refusal (a stale page, a refused Apply) shows inside the dialog.
@@ -22,7 +29,7 @@ is always there. That line is one line high whatever it says: a long answer
 is cut short with an ellipsis and shown whole in its title (and read whole
 through the Name's aria-describedby), so the Role choices below never move
 under the pointer (#736).
-On Edit, Review is available only once the Name or role differs from the
+On Edit, Save is available only once the Name or role differs from the
 saved user (data-require-change, #921), with the reason after it.
 On Edit, the lower roles are unavailable for the reader's own user (an
 Administrator never demotes themselves, Administrator decision 2026-10-11)
@@ -32,7 +39,7 @@ Sign-in activity button (#953), posting the identity, never in an address.
 {% endcomment %}
 <h1>{% if new %}{% translate "New user" %}{% else %}{% translate "Edit user" %}{% endif %}</h1>
 {% aboutpage "user-entry" %}<p>{% translate "A user is one email address with a Name and one role. The person signs in with the account of that address. The Name is a label for this portal; it is not tied to a ParishSoft Member." %}</p>
-<p>{% translate "Review shows what would change; nothing takes effect until you apply it and the status says Applied. Then you return to Users. Making someone an Administrator also tells every other Administrator." %}</p>{% endaboutpage %}
+<p>{% if new %}{% translate "Nothing takes effect until you confirm the new user and the status says Applied. Then you return to Users. Making someone an Administrator also tells every other Administrator." %}{% else %}{% translate "Save asks you to confirm each change, from its old value to its new one; nothing takes effect until you apply it and the status says Applied. Then you return to Users. Making someone an Administrator also tells every other Administrator." %}{% endif %}</p>{% endaboutpage %}
 <form method="post" action="{{ post_url }}" class="user-entry" id="user-entry-form" data-review-open="user-review"{% if not new %} data-require-change="base_digest"{% endif %}{% if new %} data-user-entry data-names-url="{{ names_url }}" data-names-none="{% translate 'No ParishSoft Member lists this address.' %}" data-names-found="{% translate 'Suggested from ParishSoft: {names}' %}" data-names-waiting="{% translate 'Looking up ParishSoft names for this address…' %}" data-names-failed="{% translate "Couldn't look up ParishSoft names. Enter the Name yourself." %}"{% endif %}>{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}">
 {{ form.non_field_errors }}
 <div class="field">{% if new %}<label for="{{ form.email.auto_id }}">{{ form.email.label }}</label>
@@ -51,9 +58,9 @@ Sign-in activity button (#953), posting the identity, never in an address.
 <p class="help" id="{{ form.role.auto_id }}_{{ forloop.counter0 }}_help">{{ role.help }}</p></div>{% endfor %}
 <p class="help" id="user-roles-reason">{{ locked_reason }}</p>
 <div class="field-error-line" role="status"><ul class="errorlist" id="{{ form.role.auto_id }}_error"{% if not form.role.errors %} hidden{% endif %}>{% for error in form.role.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></fieldset>
-<p>{% if new %}{% button type="submit" %}{% translate "Review" %}{% endbutton %}{% else %}{% button type="submit" autocomplete="off" %}{% translate "Review" %}{% endbutton %}{% endif %} <a href="{{ list_url }}">{% translate "Cancel" %}</a>{% if not new %} <span class="help unchanged-hint" data-unchanged-hint data-idle>{% translate "Change the Name or role to review it." %}</span>{% endif %}</p>
+<p>{% if new %}{% button type="submit" %}{% translate "Add the user" %}{% endbutton %}{% else %}{% button type="submit" autocomplete="off" %}{% translate "Save" %}{% endbutton %}{% endif %} <a href="{{ list_url }}">{% translate "Cancel" %}</a>{% if not new %} <span class="help unchanged-hint" data-unchanged-hint data-idle>{% translate "Change the Name or role to save it." %}</span>{% endif %}</p>
 </form>
-{% if new %}{% translate "Review new user" as review_title %}{% else %}{% translate "Review user change" as review_title %}{% endif %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="user-review" title=review_title apply_url=apply_url return_url=list_url outcome_id="users-outcome" fallback="user-entry-form" %}
+{% if new %}{% translate "Add this user?" as review_title %}{% else %}{% translate "Save this user change?" as review_title %}{% endif %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="user-review" title=review_title apply_url=apply_url return_url=list_url outcome_id="users-outcome" fallback="user-entry-form" describedby="user-review-summary" %}
 {% if identities %}<section class="panel" id="user-sign-in-activity" tabindex="-1" aria-labelledby="user-sign-in-activity-title">
 <h2 id="user-sign-in-activity-title">{% translate "Sign-in activity" %}</h2>
 <p>{% blocktranslate count counter=identities|length %}This address has one recorded sign-in account.{% plural %}This address has {{ counter }} recorded sign-in accounts.{% endblocktranslate %}</p>

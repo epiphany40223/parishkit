@@ -27,6 +27,8 @@ from parishkit.stewardship.system_health import (
     loaded_query,
     loaded_states,
     page_findings,
+    resave_tile,
+    source_form_tile,
 )
 
 from .automation_components import canonical
@@ -39,16 +41,21 @@ STATUS = "/system-health/status"
 STEADY = "/system-health-steady"
 STEADY_STATUS = "/system-health-steady/status"
 # Take a backup now (ADM-13 PR 3b): the page, and the answers its preview and
-# confirmation POSTs get (the browser test routes the POSTs to them).
-# The page is served at its real address, so the answers (at the same
-# address in the real app) are swapped in place rather than shown as a
-# page from elsewhere.
+# confirmation POSTs get (the browser test routes the POSTs to them). The
+# page is served at its real address, where the review dialog posts.
 BACKUP_PAGE = "/admin/system/health/"
 BACKUP_STATUS = "/system-health-backup/status"
 BACKUP_PREVIEW = "/system-health-backup-preview"
 BACKUP_REQUESTED = "/system-health-backup-requested"
 BACKUP_STEP_UP = "/system-health-backup-step-up"
 BACKUP_BUSY = "/system-health-backup-busy"
+# The page with a request held while a Family email send is in progress;
+# its polls (BACKUP_STATUS) bring the same state.
+BACKUP_HELD = "/system-health-backup-held"
+# Take a backup now's steps answer the review dialog with this fragment
+# (#1356): the preview's confirmation, the region drawn again once the
+# request is made, or a refusal.
+BACKUP_ANSWER = "stewardship/system-health-backup-review.html"
 # Turn off debug logging (ADM-13 PR 6b): a page whose web portal reports
 # debug logging, and the answers its steps get. The browser test serves the
 # page at the real address (BACKUP_PAGE) by routing, as the POSTs are.
@@ -66,13 +73,16 @@ DEBUG_TILE_STATUS = "/system-health-debug-tile/status"
 # a page whose web portal reports debug logging and which polls only once a
 # minute, so only the answer's own check can bring the tile up to date; its
 # status before the switch is set (``/status``) and after (``/status-set``),
-# with no service named any more; and the confirmation's answer (``/set``).
+# with no service named any more; and Apply's review-dialog answer (``/set``).
 DEBUG_LIVE = "/system-health-debug-live-"
 # Take a backup now, followed in place (#1317): a page with no request that
 # polls every 2 seconds; its status with no request (``/status``), with the
 # request running (``/status-running``) and finished (``/status-finished``);
-# and the confirmation's answer, the request waiting (``/requested``).
+# and Apply's review-dialog answer, the request waiting (``/requested``).
 BACKUP_LIVE = "/system-health-backup-live"
+# Turn off debug logging's steps answer the review dialog with this
+# fragment (#1356), as Take a backup now's do.
+DEBUG_ANSWER = "stewardship/system-health-debug-off-review.html"
 # Accept this change once (ADM-13 PR 5b): a page showing only a refused
 # large change, the answers its steps get, and its next poll, in which
 # another Administrator has accepted it. The browser test serves the page at
@@ -102,8 +112,13 @@ ACCEPT_LAPSED_STATUS = "/system-health-accept-lapsed/status"
 # set, its poll (unchanged), and the answers its steps get.
 ALLOW_PAGE = "/system-health-allow"
 ALLOW_STATUS = "/system-health-allow/status"
+# Its status once Apply has cleared the switch (the page rechecks at once).
+ALLOW_CLEARED_STATUS = "/system-health-allow/status-cleared"
 ALLOW_PREVIEW = "/system-health-allow-preview"
 ALLOW_CLEARED = "/system-health-allow-cleared"
+# Allow debug logging again's steps answer the review dialog with this
+# fragment (#1356).
+ALLOW_ANSWER = "stewardship/system-health-debug-allow-review.html"
 # A healthy page whose next poll changes only a time's datetime attribute.
 DATED = "/system-health-dated"
 DATED_STATUS = "/system-health-dated/status"
@@ -121,6 +136,27 @@ STALE_STATUS = "/system-health-stale/status"
 MAIL_STATES = ("sending", "paused", "daily", "stopped")
 MAIL = "/system-health-mail-"
 LOADED = loaded_states(0, list(RESAVE))
+# The page-load and services tiles (#1214 slice 6), each page in one state
+# (``TILE_STATES``) that its own poll brings again: Families the form cannot
+# open, Pages and emails to re-save and Version and services all Working,
+# all Warning (Families listed, an item to re-save, a stopped installer),
+# Error where they can be (a blocked email, different versions, a database
+# that does not match and a stopped worker), or with the two page-load
+# checks unable to run.
+TILE_STATES = ("working", "warning", "error", "unchecked")
+TILE_PAGES = "/system-health-tiles-"
+# Accept this change once while the sign-in was stale when the page was
+# drawn (#1331 item 18): the offer shows the step-up notice and greys the
+# button; a fresh page offers it, and no poll changes which (#1159).
+ACCEPT_STEP_UP = "/system-health-accept-step-up"
+ACCEPT_STEP_UP_STATUS = "/system-health-accept-step-up/status"
+ACCEPT_FRESH = "/system-health-accept-fresh"
+ACCEPT_FRESH_STATUS = "/system-health-accept-fresh/status"
+ACCEPT_STEP_UP_LATE = "/system-health-accept-step-up-late"
+ACCEPT_STEP_UP_LATE_STATUS = "/system-health-accept-step-up-late/status"
+# Accept this change once in LOCAL, drawn with a recent and a stale sign-in.
+ACCEPT_LOCAL_FRESH = "/system-health-accept-local-fresh"
+ACCEPT_LOCAL_STALE = "/system-health-accept-local-stale"
 TROUBLED_STATUS = canonical(f"{STATUS}?{urlencode({'loaded': loaded_query(LOADED)})}")
 
 
@@ -277,6 +313,51 @@ def health(
     )
 
 
+def services_state(model, now, state):
+    """``model``, a healthy read, with its Version and services tile in
+    ``state`` (``TILE_STATES``); its problems are found again."""
+    if state not in {"warning", "error"}:
+        return model
+    rows = [
+        _row(now, "web"),
+        _row(now, "worker", age=600 if state == "error" else 0),
+        _row(now, "worker", "source"),
+        _row(now, "scheduler", application_version="1.4.1")
+        if state == "error"
+        else _row(now, "scheduler"),
+        _row(now, "mail-dispatch"),
+        _row(now, "mail-dispatch", "mail"),
+        _row(now, "config-installer", age=600 if state == "warning" else 0),
+    ]
+    processes = group_processes(rows, now)
+    schema = state != "error"
+    return replace(
+        model,
+        processes=processes,
+        versions=tuple(sorted({line.version for line in processes if line.running})),
+        schema_current=schema,
+        problems=find_problems(
+            mode=model.mode,
+            processes=processes,
+            missing=(),
+            schema_current=schema,
+            incidents=model.incidents,
+            refresh=model.refresh,
+            backup_at=model.backup_at,
+        ),
+    )
+
+
+# The page-load reads of each TILE_STATES page: source_form_summary's and
+# resave_summary's answers.
+TILE_READS = {
+    "working": (0, []),
+    "warning": (3, [RESAVE[0]]),
+    "error": (0, list(RESAVE)),
+    "unchecked": (None, None),
+}
+
+
 def mail_state(model, now, state):
     """``model``, a healthy read, with its Mail tile in ``state``
     (``MAIL_STATES``); its problems are found again from its processes."""
@@ -345,6 +426,7 @@ def components(context, admin):
         mode="production",
         mail=None,
         request=None,
+        tiles=None,
         **extra,
     ):
         """Template context the view would build.
@@ -367,7 +449,16 @@ def components(context, admin):
         )
         if mail:
             model = mail_state(model, now, mail)
-        loaded = extra.pop("loaded", LOADED if troubled else {})
+        if tiles:
+            model = services_state(model, now, tiles)
+        # The page-load reads, as the view makes them (#774, #838).
+        form, resave = (
+            TILE_READS[tiles] if tiles else (0, list(RESAVE) if troubled else [])
+        )
+        loaded = extra.pop(
+            "loaded",
+            loaded_states(form, resave) if tiles else (LOADED if troubled else {}),
+        )
         return (
             context
             | {
@@ -376,7 +467,11 @@ def components(context, admin):
                 "dashboard": dashboard(
                     model, findings=page_findings(model), loaded=loaded
                 ),
-                "source_form_count": 0,
+                "source_form_count": form,
+                "source_form_tile": source_form_tile(form),
+                "resave_tile": resave_tile(resave),
+                # A sign-in recent enough for the step-up gated actions.
+                "fresh": True,
                 "debug_actor": "other@example.org" if switch else None,
                 "accept_actor": "other@example.org" if accepted is True else None,
                 "refused_attempt": attempt if refused else None,
@@ -387,7 +482,7 @@ def components(context, admin):
                 "poll_interval": POLL_MILLISECONDS,
                 # Content to re-save (#838) on the troubled page; none on
                 # the healthy one.
-                "resave": list(RESAVE) if troubled else [],
+                "resave": resave,
             }
             | extra
         )
@@ -431,15 +526,23 @@ def components(context, admin):
         )
         extra[f"{base}/status"] = status(values(False, debug=True, mode=mode))
         extra[f"{base}/status-set"] = status(values(False, switch=True, mode=mode))
-        extra[f"{base}/set"] = page(
-            values(
-                False,
-                switch=True,
-                mode=mode,
-                status_url=f"{base}/status",
-                debug_off={"requested": SimpleNamespace(set_at=now), "created": True},
-                debug_off_shown=True,
-            )
+        # Apply's answer in the review dialog (#1356): the region drawn again.
+        extra[f"{base}/set"] = (
+            "text/html",
+            render_to_string(
+                DEBUG_ANSWER,
+                values(
+                    False,
+                    switch=True,
+                    mode=mode,
+                    status_url=f"{base}/status",
+                    debug_off={
+                        "requested": SimpleNamespace(set_at=now),
+                        "created": True,
+                    },
+                    debug_off_shown=True,
+                ),
+            ),
         )
     extra[BACKUP_LIVE] = page(
         values(False, status_url=f"{BACKUP_LIVE}/status", poll_interval=2000)
@@ -447,14 +550,65 @@ def components(context, admin):
     extra[f"{BACKUP_LIVE}/status"] = status(values(False))
     for state in ("running", "finished"):
         extra[f"{BACKUP_LIVE}/status-{state}"] = status(values(False, request=state))
-    extra[f"{BACKUP_LIVE}/requested"] = page(
-        values(
-            False,
-            request="waiting",
-            status_url=f"{BACKUP_LIVE}/status",
-            backup_now={"requested": SimpleNamespace(created_at=now), "created": True},
-        )
+    # Apply's answer in the review dialog (#1356): the region drawn again.
+    extra[f"{BACKUP_LIVE}/requested"] = (
+        "text/html",
+        render_to_string(
+            BACKUP_ANSWER,
+            values(
+                False,
+                request="waiting",
+                status_url=f"{BACKUP_LIVE}/status",
+                backup_now={
+                    "requested": SimpleNamespace(created_at=now),
+                    "created": True,
+                },
+            ),
+        ),
     )
+    # The page-load and services tiles in each state (slice 6), each page
+    # polling a status that brings the same state, as the view would render
+    # it from the page's ?loaded=.
+    for state in TILE_STATES:
+        found = values(False, tiles=state)
+        query = loaded_query(loaded_states(*TILE_READS[state]))
+        url = f"{TILE_PAGES}{state}/status"
+        extra[TILE_PAGES + state] = page(
+            found
+            | {"status_url": f"{url}?{urlencode({'loaded': query})}" if query else url}
+        )
+        extra[canonical(f"{url}?{urlencode({'loaded': query})}") if query else url] = (
+            status(found)
+        )
+    # Accept this change once with a stale sign-in (#1331 item 18). The
+    # status is the same whatever the sign-in; only the page's own
+    # data-health-fresh, set when it was drawn, picks the form.
+    stale_sign_in = {"fresh": False, "status_url": ACCEPT_STEP_UP_STATUS}
+    extra[ACCEPT_STEP_UP] = page(values(False, refused=True) | stale_sign_in)
+    extra[ACCEPT_STEP_UP_STATUS] = status(values(False, refused=True))
+    # A page drawn with a recent sign-in, whose polls bring the same refusal.
+    extra[ACCEPT_FRESH] = page(
+        values(False, refused=True) | {"status_url": ACCEPT_FRESH_STATUS}
+    )
+    extra[ACCEPT_FRESH_STATUS] = status(values(False, refused=True))
+    # A stale page drawn before any refusal, carrying a CSRF token, whose
+    # poll brings one: the swapped-in step-up form takes the page's token.
+    extra[ACCEPT_STEP_UP_LATE] = page(
+        values(False)
+        | {
+            "fresh": False,
+            "csrf_token": "component-token",
+            "status_url": ACCEPT_STEP_UP_LATE_STATUS,
+        }
+    )
+    extra[ACCEPT_STEP_UP_LATE_STATUS] = status(values(False, refused=True))
+    # In LOCAL, an open refusal's offer drawn with a recent sign-in and with
+    # a stale one (#1385): only the shown copy's step-up records a return
+    # path. Their polls bring the same refusal.
+    for url, fresh in ((ACCEPT_LOCAL_FRESH, True), (ACCEPT_LOCAL_STALE, False)):
+        local = values(False, refused=True) | {"local_environment": True}
+        extra[url] = page(local | {"fresh": fresh, "status_url": f"{url}/status"})
+        extra[f"{url}/status"] = status(local)
     return extra | {
         PAGE: (
             "text/html",
@@ -514,6 +668,13 @@ def components(context, admin):
             ),
         ),
         # The next poll: another Administrator's request is now waiting.
+        BACKUP_HELD: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(False, status_url=BACKUP_STATUS, waiting=True),
+            ),
+        ),
         BACKUP_STATUS: (
             "text/html",
             render_to_string(
@@ -523,7 +684,7 @@ def components(context, admin):
         BACKUP_STEP_UP: (
             "text/html",
             render_to_string(
-                "stewardship/system-health.html",
+                BACKUP_ANSWER,
                 values(
                     False,
                     status_url=BACKUP_STATUS,
@@ -534,14 +695,14 @@ def components(context, admin):
         BACKUP_BUSY: (
             "text/html",
             render_to_string(
-                "stewardship/system-health.html",
+                BACKUP_ANSWER,
                 values(False, status_url=BACKUP_STATUS, backup_now={"refused": "busy"}),
             ),
         ),
         BACKUP_PREVIEW: (
             "text/html",
             render_to_string(
-                "stewardship/system-health.html",
+                BACKUP_ANSWER,
                 values(
                     False,
                     status_url=BACKUP_STATUS,
@@ -560,7 +721,7 @@ def components(context, admin):
         BACKUP_REQUESTED: (
             "text/html",
             render_to_string(
-                "stewardship/system-health.html",
+                BACKUP_ANSWER,
                 values(
                     False,
                     status_url=BACKUP_STATUS,
@@ -603,7 +764,7 @@ def components(context, admin):
         DEBUG_PREVIEW: (
             "text/html",
             render_to_string(
-                "stewardship/system-health.html",
+                DEBUG_ANSWER,
                 values(
                     False,
                     debug=True,
@@ -620,7 +781,7 @@ def components(context, admin):
         DEBUG_SET: (
             "text/html",
             render_to_string(
-                "stewardship/system-health.html",
+                DEBUG_ANSWER,
                 values(
                     False,
                     debug=True,
@@ -637,7 +798,7 @@ def components(context, admin):
         DEBUG_STEP_UP: (
             "text/html",
             render_to_string(
-                "stewardship/system-health.html",
+                DEBUG_ANSWER,
                 values(
                     False,
                     debug=True,
@@ -791,10 +952,16 @@ def components(context, admin):
                 values(False, switch=True, mode="testing"),
             ),
         ),
+        ALLOW_CLEARED_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html", values(False, mode="testing")
+            ),
+        ),
         ALLOW_PREVIEW: (
             "text/html",
             render_to_string(
-                "stewardship/system-health.html",
+                ALLOW_ANSWER,
                 values(
                     False,
                     switch=True,
@@ -813,7 +980,7 @@ def components(context, admin):
         ALLOW_CLEARED: (
             "text/html",
             render_to_string(
-                "stewardship/system-health.html",
+                ALLOW_ANSWER,
                 values(
                     False,
                     mode="testing",

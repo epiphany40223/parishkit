@@ -1,0 +1,18 @@
+{% load i18n %}{% comment %}
+The review of one Share options change (#750; option_editing._preview),
+drawn in the shared review dialog (UX conventions, "Review dialog"), never
+as a page of its own: share-settings.html's Save posts without a page load
+and ui-v1.js moves this fragment's content into the dialog's body. It is a
+compact review (UX conventions, "A compact review when Review adds only the
+old value", #1356): the proposed list is the form behind the dialog, so it
+marks only what changed, one line each (option_editing.option_changes: an
+option added, removed, relabelled, given or losing its free-text response,
+or moved), never both whole lists. The lines (share-review-summary) describe
+the dialog. The signed preview (data-review-preview) is what the dialog's
+Apply posts to Share options, and data-review-done starts the status line
+the page shows once the change is applied. A review lasts fifteen minutes,
+as every review does.
+{% endcomment %}<div data-review-answer data-review-done="{% translate 'Share options changed.' %}">
+{% include "stewardship/components/compact-review.html" with changes=review.changes summary_id="share-review-summary" %}
+<input type="hidden" name="preview" value="{{ review.preview }}" data-review-preview>
+</div>

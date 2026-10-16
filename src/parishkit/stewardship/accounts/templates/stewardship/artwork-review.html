@@ -1,9 +1,26 @@
 {% load i18n stewardship %}{% comment %}
-  A campaign image change under review (#248), drawn inside
-  settings-review.html on Campaign images (#750): a staged upload, shown as
-  it will appear, for one slot, or that slot's image being removed. The
-  review region's own heading, notes and Apply surround it.
-{% endcomment %}{% if review.removing %}<p class="notice">{% blocktranslate with slot=review.label %}Stop showing an image for: {{ slot }}. Families will see no image there until you upload a new one.{% endblocktranslate %}</p>
+The review of one Campaign images change (#248, #750; artwork_views._review),
+drawn in the shared review dialog (UX conventions, "Review dialog"), never
+as a page of its own: a slot's upload, or its Remove this image, posts
+without a page load and ui-v1.js moves this fragment's content into the
+dialog's body. It shows a staged upload as it will appear for one slot, or
+that slot's image being removed. A removal is a confirmation (UX
+conventions, "A confirmation when Review would only repeat the page",
+#1356): the slot and its current image are on the page behind the dialog,
+so the answer names its own question (data-review-title, "Remove this
+image?") and its one sentence, which describes the dialog
+(data-review-describedby); an upload keeps the dialog's own title, since
+the staged image is new. The hidden fields (the signed preview,
+marked data-review-preview, and the slot and staged bundle it was signed
+for) are what the dialog's Apply posts to Campaign images, and
+data-review-done starts the status line the page shows once the change is
+applied.
+{% endcomment %}<div data-review-answer data-review-done="{% if review.removing %}{% translate 'Campaign image removed.' %}{% else %}{% translate 'Campaign image changed.' %}{% endif %}"{% if review.removing %} data-review-title="{% translate 'Remove this image?' %}" data-review-describedby="artwork-review-summary"{% endif %}>
+{% if review.removing %}<p id="artwork-review-summary">{% blocktranslate with slot=review.label %}{{ slot }}: Families will see no image there until you upload a new one.{% endblocktranslate %}</p>
 {% else %}<p class="notice">{% blocktranslate with slot=review.label %}This image is uploaded but not yet in use. Apply the change to use it as: {{ slot }}.{% endblocktranslate %}</p>
 <figure><img src="{% url 'admin:branding_asset' review.asset.pk %}" alt="" width="{{ review.asset.width }}" height="{{ review.asset.height }}" class="branding-preview artwork-{{ review.asset.label }}"><figcaption>{{ review.asset.width|number }} × {{ review.asset.height|number }} {% translate "pixels" %}</figcaption></figure>
 <p>{% translate "Uploads that are never applied are discarded after a day." %}</p>{% endif %}
+<input type="hidden" name="preview" value="{{ review.preview }}" data-review-preview>
+<input type="hidden" name="slot" value="{{ review.slot }}">{% if not review.removing %}
+<input type="hidden" name="bundle" value="{{ review.bundle }}">{% endif %}
+</div>

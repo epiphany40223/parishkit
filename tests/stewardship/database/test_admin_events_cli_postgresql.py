@@ -172,7 +172,7 @@ def test_the_banner_is_listed_and_exactly_its_rows_acknowledged(admin):
     assert [
         (group["event"], group["name"], group["count"]) for group in banner["events"]
     ] == [
-        (Event.SOURCE_INVALID.value, "ParishSoft data refresh failed", 2),
+        (Event.SOURCE_INVALID.value, "ParishSoft refresh failed", 2),
         (Event.MAIL_PROVIDER_FAILED.value, "Email sending failed", 1),
     ]
     # Recorded after the list: not in its token, so it stays.

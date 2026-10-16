@@ -710,3 +710,124 @@ def test_pdf_keeps_a_seven_digit_duid_on_one_line():
     for heading in ("Family DUID", "Member DUID"):
         values = ["1234567" if name == heading else "" for name in HEADINGS]
         assert table.cells(values)[HEADINGS.index(heading)] == ["1234567"], heading
+
+
+def test_bulk_form_parsing():
+    """A bulk review is the button's decision, the page's key, a note and
+    one or more distinct ticked rows, or none at all (a filter POST); more
+    rows than one bulk review covers raise TooMany (#528, ADM-09)."""
+    from django.http import QueryDict
+
+    from parishkit.stewardship.reports.census_change_views import TooMany, _bulk
+    from parishkit.stewardship.responses.census_review import MAX_BULK
+
+    first, second, key = (
+        "00000000-0000-4000-8000-000000000001",
+        "00000000-0000-4000-8000-000000000002",
+        "00000000-0000-4000-8000-000000000003",
+    )
+    head = f"bulk=approve&bulk_key={key}&bulk_note=++Checked++"
+    form = QueryDict(
+        f"{head}&change={first}:3&change={second}:4&status=open", mutable=True
+    )
+    parsed = _bulk(form)
+    assert parsed["action"] == "approve" and parsed["note"] == "Checked"
+    assert {str(key): value for key, value in parsed["versions"].items()} == {
+        first: 3,
+        second: 4,
+    }
+    assert dict(form) == {"status": ["open"]}
+    assert _bulk(QueryDict("status=open", mutable=True)) is None
+    for broken in (
+        head,
+        f"bulk=approve&change={first}:1",
+        f"{head}&change={first}:1&change={first}:2",
+        f"{head}&change={first}",
+        f"{head}&change={first}:x",
+        f"{head}&change=bad:1",
+        f"bulk=entered&bulk_key={key}&bulk_note=&change={first}:1",
+    ):
+        with pytest.raises(ValueError):
+            _bulk(QueryDict(broken, mutable=True))
+    many = "&".join(f"change={first[:-3]}{index:03}:1" for index in range(MAX_BULK + 1))
+    with pytest.raises(TooMany):
+        _bulk(QueryDict(f"{head}&{many}", mutable=True))
+
+
+def test_page_offers_bulk_review_only_on_reviewable_rows():
+    """An Administrator's page has a box for each row a Review is offered
+    for, listing that Review's decisions, the bulk bar and its dialog; a
+    By-hand row has no box; Staff, or a page held by other campaign work,
+    get none of it; a page of more rows than one bulk review covers says
+    how to review several (#528, ADM-09)."""
+    from uuid import uuid4
+
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.reports.census_change_views import (
+        bulk_actions,
+        row_controls,
+    )
+    from parishkit.stewardship.web.tables import paginate
+
+    shown = [
+        shape(row(id="todo", handling="manual", field="suffix")),
+        shape(row(id="auto")),
+    ]
+    row_controls(shown)
+
+    def page(bulk, too_many=False):
+        """The page with or without bulk review."""
+        return render_to_string(
+            "stewardship/census-changes.html",
+            {
+                "table": paginate(shown, {}, sorting=SORTING),
+                "query": CensusQuery(),
+                "query_fields": {"status": "open"},
+                "summary": [],
+                "status_choices": [],
+                "route_choices": [],
+                "kind_choices": [],
+                "export_timezones": ["UTC"],
+                "administrator": True,
+                "action": "/admin/reports/census/",
+                "mutable": True,
+                "bulk": bulk,
+                "bulk_too_many": too_many,
+                "max_bulk": 250,
+                "bulk_actions": bulk_actions(),
+                "bulk_key": uuid4(),
+            },
+        )
+
+    html = page(True)
+    assert html.count("data-select-row") == 1
+    assert 'data-confirm-kind="approve ignore_automatic"' in html
+    assert 'value="auto:' in html and 'value="todo:' not in html
+    assert 'id="census-bulk"' in html and "data-confirm-answer-page" in html
+    assert html.count('data-confirm-open="census-bulk-dialog"') == 3
+    assert 'name="bulk_note"' in html and 'name="bulk_key"' in html
+    assert '<input type="hidden" name="status" value="open">' in html
+    assert ">Approve 3 changes?<" not in html  # titles are filled in by script
+    assert 'data-title-many="Approve {count} changes?"' in html
+    without = page(False)
+    assert "data-select-row" not in without and 'id="census-bulk"' not in without
+    many = page(False, too_many=True)
+    assert "data-select-row" not in many and "show 250 rows per page" in many
+    assert 'id="census-bulk"' in many
+
+
+def test_a_bulk_review_covers_one_campaign():
+    """A batch whose changes span two campaigns is refused before anything
+    is admitted or written (only a crafted post can mix them)."""
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.responses.census_review import one_campaign
+
+    def proposal(campaign):
+        """A stand-in proposal of ``campaign``."""
+        return SimpleNamespace(submission=SimpleNamespace(campaign_id=campaign))
+
+    assert one_campaign([proposal("a"), proposal("a")]) == "a"
+    with pytest.raises(ValueError):
+        one_campaign([proposal("a"), proposal("b")])

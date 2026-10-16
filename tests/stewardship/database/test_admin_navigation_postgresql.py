@@ -181,20 +181,21 @@ def test_a_settings_change_shows_its_steps_and_leads_back_to_its_editor(
     assert flow_steps(browser.get(parish.URL).content) == (STEPS, "Make changes")
     # Pages outside a flow show no indicator.
     assert flow_steps(browser.get("/admin/system/background/").content) is None
-    # A review with nothing changed is refused back to the form, step 1.
-    unchanged = parish.post(browser, parish.fields(store))
-    assert unchanged.status_code == 400
-    assert flow_steps(unchanged.content) == (STEPS, "Make changes")
+    # A refused review is the form again, step 1; an accepted one is the
+    # review dialog's fragment (#750), which draws no indicator of its own.
+    refused = parish.post(browser, parish.fields(store, phone="123"))
+    assert refused.status_code == 400
+    assert flow_steps(refused.content) == (STEPS, "Make changes")
     review = parish.post(browser, parish.fields(store, name="Renamed Parish"))
-    assert flow_steps(review.content) == (STEPS, "Review")
+    assert flow_steps(review.content) is None
     confirmed = parish.post(
         browser, {"action": "confirm", "preview": parish.token(review)}
     )
-    # Parish settings applies in place (#532): its own page shows step 3.
-    assert flow_steps(browser.get(confirmed["Location"]).content) == (STEPS, "Apply")
+    # Apply answers with Change status, which the dialog follows: step 3.
     status_url = reverse(
         "admin:configuration_request", args=[parish.requested(confirmed)]
     )
+    assert confirmed["Location"] == status_url
     status = browser.get(status_url)
     assert status.status_code == 200
     body = status.content

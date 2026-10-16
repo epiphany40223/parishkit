@@ -39,16 +39,19 @@ from parishkit.stewardship.system_health import (
     page_findings,
     parse_loaded,
     read_health,
+    resave_tile,
+    source_form_tile,
 )
 from parishkit.stewardship.web.contracts import ErrorCode, filters
 from parishkit.stewardship.web.refusals import refusal_text, unexpected_fields
 
 from .admin_editing import editable_configuration
 from .authentication import runtime
+from .branding_context import local_environment
 from .content_views import resave_recommended
 from .policy import Capability, allows
 from .runtime_models import SystemConfiguration
-from .sessions import authenticated_admin
+from .sessions import authenticated_admin, freshness
 from .source_form_views import source_form_summary
 
 # How often the open page re-reads the status, in ms (the specification's
@@ -158,12 +161,23 @@ def _read(request, template, *, page):
             context = _context(health, extra, loaded=loaded)
             context["source_form_count"] = source_form
             context["resave"] = resave
+            # Their summaries and states, chosen in one place (#1214).
+            context["source_form_tile"] = source_form_tile(source_form)
+            context["resave_tile"] = resave_tile(resave)
             context["status_url"] = _status_url(loaded)
+            # Whether the sign-in is recent now, fixed for the page's life:
+            # it picks Accept this change once's offered or step-up form,
+            # and no poll changes it (#1159, #1331 item 18). A sign-in that
+            # ages later gets the step-up answer when the form is sent.
+            context["fresh"] = freshness(request)[0]
             # The Admin chrome reuses this instant instead of reading the clock.
             request._stewardship_display_now = health.checked_at
             response = render(request, template, context)
         else:
             context = _context(health, extra, loaded=parse_loaded(query.get("loaded")))
+            # The step-up notice's LOCAL wording, which a full page render
+            # gets from its context processor (#619).
+            context |= local_environment(request)
             # The fragment needs no Admin chrome, so it skips the context
             # processors (and their queries) a full page render runs.
             response = HttpResponse(render_to_string(template, context))
@@ -225,22 +239,20 @@ def system_health_status(request):
 # 3b), Accept this change once's (PR 5b, named accept_*; ``checked`` is the
 # "I checked this in ParishSoft" tick box), Turn off debug logging's (PR
 # 6b, named debug_off_*) and Allow debug logging again's (PR 6c, named
-# debug_allow_*, answered in Turn off debug logging's region).
+# debug_allow_*, whose answer redraws Turn off debug logging's region).
 _ACTION_FIELDS = {
     "accept_preview": {"action"},
     "accept_confirm": {"action", "token", "checked"},
     "accept_cancel": {"action"},
     "preview": {"action"},
     "confirm": {"action", "key"},
-    "cancel": {"action"},
     "debug_off_preview": {"action"},
     "debug_off_confirm": {"action", "key"},
-    "debug_off_cancel": {"action"},
     "debug_allow_preview": {"action"},
     "debug_allow_confirm": {"action", "key"},
-    "debug_allow_cancel": {"action"},
 }
-# What an in-place refusal is answered with (HTTP status, the region's words).
+# What a refusal is answered with (HTTP status; the words are the region's,
+# or the review dialog fragment's).
 _REFUSALS = {
     "reauthenticate": 403,
     "busy": 409,
@@ -255,6 +267,16 @@ _REGIONS = (
     ("debug_off_", "debug_off"),
     ("debug_allow_", "debug_off"),
 )
+# The actions confirmed in the shared review dialog (UX conventions, "A
+# confirmation when Review would only repeat the page", #1356), by their
+# result's context name (and whether it is Allow debug logging again's):
+# each step answers with this fragment, which holds the confirmation, the
+# refusal (data-review-refusal) or the result, never the whole page.
+_DIALOG_ANSWERS = {
+    ("backup_now", False): "stewardship/system-health-backup-review.html",
+    ("debug_off", False): "stewardship/system-health-debug-off-review.html",
+    ("debug_off", True): "stewardship/system-health-debug-allow-review.html",
+}
 
 
 def _step(action, request, service):
@@ -301,7 +323,9 @@ def _step(action, request, service):
             request, service.store, key=UUID(request.POST.get("key", ""))
         )
         return {"requested": row, "created": created}
-    # Cancel only closes the preview; nothing was recorded.
+    # Cancel only closes the preview; nothing was recorded. Only Accept
+    # this change once has a Cancel step: the review dialog's Cancel sends
+    # nothing.
     _principal(request, service.store, activity=True)
     return None
 
@@ -309,11 +333,15 @@ def _step(action, request, service):
 def _act(request):
     """An action's step, posted to the System health page itself.
 
-    The answer is the whole page at its own address, so ui-v1.js swaps the
-    action's region (``#backup-now``, ``#accept-change`` or ``#debug-off``)
-    in place; the step's result goes to the template as ``backup_now``,
-    ``accept`` or ``debug_off`` (where an Allow debug logging again step's
-    result is marked ``allow``). A step
+    Accept this change once's answer is the whole page at its own address,
+    so ui-v1.js swaps its region (``#accept-change``) in place. Take a backup
+    now, Turn off debug logging and Allow debug logging again confirm in the
+    shared review dialog (#1356): each of their steps is
+    answered with its fragment (``_DIALOG_ANSWERS``), the preview's
+    confirmation, the request made, or a refusal the dialog shows as drawn.
+    The step's result goes to the template as ``backup_now``, ``accept`` or
+    ``debug_off`` (where an Allow debug logging again step's result is
+    marked ``allow``). A step
     the server refuses for a reason the reader can act on (a stale sign-in,
     a request already live or a switch already set or already cleared, Allow
     debug logging again in Production, a malformed form) is
@@ -377,11 +405,13 @@ def _act(request):
         if found is None:
             return _error(ErrorCode.UNAVAILABLE, 503)
         health, extra = found
-        # Only the action's region is swapped in, so the answer skips the
+        # Only the action's region is used, so the answer skips the
         # page-load tiles' reads; they show as Working in the discarded rest.
+        # A review dialog's action answers with its fragment instead, whose
+        # result draws the region again.
         response = render(
             request,
-            "stewardship/system-health.html",
+            _DIALOG_ANSWERS.get((region, allow), "stewardship/system-health.html"),
             _context(health, extra, loaded={})
             | {"status_url": _status_url({}), region: result},
             status=status,

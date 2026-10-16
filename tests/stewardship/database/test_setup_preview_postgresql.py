@@ -99,7 +99,9 @@ def before_142(monkeypatch):
     Such an attempt, frozen before the upgrade, still finishes as it was
     confirmed, so the one-campaign completion stays tested. The release
     before #142 compiled the draft's campaign, content and schedule sections
-    too; ``complete_draft`` then stages them, as its wizard pages did.
+    too: ``complete_draft`` then stages them, as its wizard pages did, and
+    the Review compiles them with ``one_campaign_candidate``, that release's
+    compiler.
     """
     from parishkit.stewardship.accounts import setup_preview
     from parishkit.stewardship.accounts.setup_content_values import CONTENT_STEPS
@@ -110,6 +112,7 @@ def before_142(monkeypatch):
         "SYSTEM_SECTIONS",
         setup_preview.SYSTEM_SECTIONS | {"campaign", "schedules", *CONTENT_STEPS},
     )
+    monkeypatch.setattr(setup_preview, "compile_candidate", one_campaign_candidate)
 
     def staged(service, monkeypatch):
         """The loaded draft with its first campaign, content and schedules."""
@@ -117,6 +120,54 @@ def before_142(monkeypatch):
         return request, SimpleNamespace(pk=status.attempt_id, version=status.version)
 
     monkeypatch.setattr(module, "completed", staged)
+
+
+def one_campaign_candidate(base, *, attempt_id, operation_id, sections, **kwargs):
+    """The pre-#142 setup compiler: the system candidate plus the first campaign.
+
+    Its campaign is the draft's ``campaign`` section under the attempt's
+    UUID, with the draft's applicable content and its schedules. The
+    candidate is built and checked as setup builds any candidate
+    (``setup_candidate._compile``).
+    """
+    from parishkit.stewardship.accounts import setup_candidate
+    from parishkit.stewardship.accounts.content_forms import (
+        LEGACY_PAGE_REFERENCES,
+        page_slots,
+    )
+    from parishkit.stewardship.accounts.setup_content_values import CONTENT_STEPS
+    from parishkit.stewardship.accounts.setup_forms import FORMS, validate_values
+
+    values = {step: validate_values(step, sections[step]) for step in FORMS}
+    campaign = dict(sections["campaign"]["campaign"])
+    active_pages = page_slots(campaign)
+    content = [
+        sections[step]
+        for step in CONTENT_STEPS
+        if sections.get(step, {}).get("values")
+        and (step.startswith("email_") or step[5:] in active_pages)
+    ]
+    campaign["content_versions"] = {
+        row["values"]["slot"]: row["id"]
+        for row in content
+        if row["values"]["kind"] == "page"
+        and row["values"]["slot"] in LEGACY_PAGE_REFERENCES
+    }
+    public = setup_candidate._system_records(
+        base,
+        attempt_id,
+        operation_id,
+        values,
+        kwargs["branding"],
+        kwargs["credentials"],
+    ) | {
+        "campaigns": [{"id": str(attempt_id), "values": campaign}],
+        "content": content,
+        "schedules": sections["schedules"]["records"],
+    }
+    return setup_candidate._compile(
+        base, public, candidate_id=kwargs["candidate_id"], operation_id=operation_id
+    )
 
 
 def test_exact_preview_is_passive_and_stale_on_any_edit(
@@ -186,7 +237,8 @@ def test_retired_step_left_in_a_draft_blocks_neither_saving_nor_finishing(
 
     The leftover step is written straight to SQL, as the older release did;
     the current code can no longer save it. Like every first-campaign section
-    (#142), it never reaches the candidate.
+    (#142), it never reaches the candidate, and later saves of the system
+    steps still work.
     """
     request, status, _ = complete_draft(
         setup_service, monkeypatch, tmp_path, campaign=True
@@ -199,30 +251,15 @@ def test_retired_step_left_in_a_draft_blocks_neither_saving_nor_finishing(
             values=content(str(status.attempt_id), kind=kind, slot=slot),
             actor_id=request.portal_session.principal_id,
         )
-    saved = {
-        row.step: row.values
-        for row in SetupDraftSection.objects.filter(
-            step__in=["campaign", "schedules", "email_initial"]
-        )
-    }
-    replacement = content(
-        str(status.attempt_id), kind="email", slot="initial", subject="Updated"
-    )
     with web_login():
-        # Each first-campaign section reconciles against the whole draft.
-        for name, values in (
-            ("campaign", saved["campaign"]),
-            ("schedules", saved["schedules"]),
-            ("email_initial", replacement),
-        ):
-            status = save_section(
-                request,
-                setup_service,
-                status.attempt_id,
-                step=name,
-                values=values,
-                expected_version=status.version,
-            )
+        status = save_section(
+            request,
+            setup_service,
+            status.attempt_id,
+            step="access",
+            values=VALUES["access"] | {"staff_addresses": ["new@example.org"]},
+            expected_version=status.version,
+        )
         preview = prepare_preview(request, setup_service)
     assert not preview.compiled.candidate.document()["sections"].get("content")
     # The leftover is inert, not rewritten.

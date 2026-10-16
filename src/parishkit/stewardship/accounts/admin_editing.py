@@ -55,18 +55,13 @@ from .sessions import FreshAuthenticationRequired, authenticated_admin, require_
 # its refusals and the change's status fill this region under the form, and
 # confirmation answers with the page again rather than Change status. The
 # names are the pages' URL names; Change status's in-place follow-up may lead
-# only to one of them. Campaign settings reviews in the review dialog instead
-# (#1119), which follows Change status itself.
+# only to one of them. Campaign settings (#1119), Share options, Campaign
+# images, Parish logos, Parish settings and No-reminders WorkGroup review in
+# the review dialog instead, which follows Change status itself, so no page
+# is followed back to in place any more (Create the campaign draws the panel
+# but names no in_place page).
 REVIEW_REGION = "settings-review"
-IN_PLACE_PAGES = frozenset(
-    {
-        "parish_settings",
-        "share_settings",
-        "reminder_workgroup",
-        "artwork_settings",
-        "branding_settings",
-    }
-)
+IN_PLACE_PAGES = frozenset()
 
 
 def principal(
@@ -188,7 +183,8 @@ def confirm(
     for a recent Google sign-in again under the work lock (#547). An
     ``in_place`` editor (#532) is answered with itself instead, naming the
     request, so its review region follows the change where the Administrator
-    already is.
+    already is; ``in_place`` may name that region (Create the campaign's,
+    which its review dialog follows), else it is ``REVIEW_REGION``.
     """
     receipt = confirm_intent(
         request,
@@ -207,7 +203,8 @@ def confirm(
     admin_navigation.remember_origin(request, receipt.request_id)
     if in_place:
         query = urlencode({"request": receipt.request_id})
-        return HttpResponseRedirect(f"{request.path}?{query}#{REVIEW_REGION}")
+        region = in_place if isinstance(in_place, str) else REVIEW_REGION
+        return HttpResponseRedirect(f"{request.path}?{query}#{region}")
     return HttpResponseRedirect(
         reverse("admin:configuration_request", args=[receipt.request_id])
     )
@@ -267,12 +264,15 @@ def reviewed_base(parameters, salt):
 
 
 def summary_errors(form):
-    """A refused form's errors for the in-place review region's summary.
+    """A refused form's (or formset's) errors for an error summary.
 
-    The form itself may not be replaced in place (its scripts and the
-    reader's typing stay), so the summary names each field and links to it.
-    A hidden field's error (a stale version) has nothing to link to. A
-    formset's errors are its own, then each row's.
+    The summary is drawn in an in-place review region, or, for a review
+    dialog's editor, on the page a Review refused for its values answers
+    with (status 400), which the page script places above the heading. The
+    form itself is never replaced (its scripts and the reader's typing
+    stay), so the summary names each field and links to it. A hidden
+    field's error (a stale version) has nothing to link to. A formset's
+    errors are its own, then each row's.
     """
     if hasattr(form, "forms"):
         # A formset: its own errors, then each row's.

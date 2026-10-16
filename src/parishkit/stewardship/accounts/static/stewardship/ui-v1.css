@@ -643,6 +643,10 @@ button.is-busy::after, .button.is-busy::after { content: ""; display: inline-blo
 [data-health-dashboard]:not([data-not-current]) .health-restart { visibility: hidden; }
 [data-health-dashboard]:not([data-not-current]) .health-unknown,
 [data-health-dashboard][data-not-current] .health-counted { display: none !important; }
+/* Accept this change once's offer is drawn offered and with its step-up;
+   the page's sign-in, as of when it was drawn, picks one (#1331 item 18). */
+[data-health-dashboard]:not([data-health-fresh]) .accept-when-fresh,
+[data-health-dashboard][data-health-fresh] .accept-when-stale { display: none; }
 .health-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, max(22rem, calc((100% - 1.5rem) / 3))), 1fr)); grid-auto-flow: row dense; gap: .75rem; align-items: start; }
 .health-tile { position: relative; min-width: 0; }
 .health-band { grid-column: 1 / -1; min-width: 0; padding: 1rem 1.25rem; background: var(--paper); border: 1px solid var(--status-line, var(--border)); border-inline-start-width: calc(1px + var(--status-bar, 0rem)); border-radius: var(--radius-small); }
@@ -998,7 +1002,13 @@ fieldset.member-section { border: 0; border-radius: 0; background: none; padding
 .artwork-box-banner { width: 1024px; aspect-ratio: 1024 / 217; }
 .artwork-box-section { width: 6rem; aspect-ratio: 1; }
 .artwork-box > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-.artwork-remove { min-height: 1.6em; min-height: 1lh; }
+/* The removal line holds Remove this image, a text-styled button in a form
+   of its own (#750); the line keeps the button's full touch height whether
+   or not it is drawn, and the button never looks filled, on hover or while
+   its Review is prepared (it then keeps its text style, with the busy
+   spinner after it). */
+.artwork-remove { min-height: var(--button-min-height); margin-block: .5rem; }
+.artwork-remove .link-button, .artwork-remove .link-button:not(:disabled):hover, .artwork-remove .link-button.is-busy[aria-disabled=true] { margin: 0; min-height: var(--button-min-height); background: none; box-shadow: none; color: var(--link); }
 /* A slot's upload controls sit in a plain fieldset only so a slot whose
    Family page the campaign never shows can grey them all at once (#563). */
 fieldset.artwork-upload { border: 0; border-radius: 0; background: none; padding: 0; margin: 0; }
@@ -1278,6 +1288,11 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .review-dialog .dialog-body { flex: 1 1 auto; min-height: 0; overflow: auto; margin-bottom: 1rem; }
 .review-dialog .dialog-body > :first-child { margin-top: 0; }
 .review-dialog [data-confirm-accept][data-recorded] { visibility: hidden; }
+/* A compact review (#1356, components/compact-review.html): one line per
+   changed field, "Field: old → new"; a long label or value wraps. */
+.compact-review { padding-left: 1.25rem; overflow-wrap: anywhere; }
+.compact-review li + li { margin-top: 0.25rem; }
+.compact-review-field { font-weight: 600; }
 .review-outcome { min-height: 1.6em; margin: .5rem 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* The Basic / Advanced mode toggle (#1121, components/editor-mode.html): a
    segmented pair of radios with a visible label, at the top of the editor.

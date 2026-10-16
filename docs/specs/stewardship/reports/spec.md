@@ -1047,6 +1047,21 @@ zone, and its retry asks for exactly those filters; a capture made before
 schema migration 0064 has no zone, keeps its campaign-zone days and is retried
 unchanged.
 
+The page is visual first
+([#720](https://github.com/epiphany40223/parishkit/issues/720)). After the
+matching-request count and before the export, one
+[chart engine](#chart-engine) chart, "Follow-up status", draws every request
+the filters match, not only the table's page, as progress bars against all
+of them. There are three bars: "Completed", "Needed, not completed" and "Not
+needed, not completed". Every request is in exactly one, so the bars add up
+to the matching requests. The chart draws its values the way the
+[Participation statistics](#campaign-statistics) chart does, in each bar's
+axis label, so it has no exact-values table. With no matching request,
+nothing is drawn. The installed selection counts the states from the same
+filtered rows, in the same statement as the total and the page (schema
+migration 0100), so the counts follow the filters in place, and paging and
+sorting leave them unchanged.
+
 Editing is audited and uses optimistic concurrency. This report is also the
 source for the weekly Admin digest.
 
@@ -1964,12 +1979,32 @@ buttons the row allows. A review is reversible, so none asks first. The form
 posts with the page's filters and table choices, and the answer is the same
 page, refreshed in place, with the notice naming the row; a row someone else
 changed first is left as it is, and the notice says so. While other campaign
-work holds the campaign, no Review is offered. Bulk review of the selected
-rows with exact counts, an Administrator's edited value
+work holds the campaign, no Review is offered. An Administrator's edited
+value, conflict resolution
 ([ADM-09](../../../plans/stewardship/admin-portal.md#adm-09-census-review-and-parishsoft-publication-ui))
 come later. On the command line, `pk-admin census review` records the same
 review through the same service
 ([admin automation](../admin-automation/spec.md#reports-and-exports)).
+
+An Administrator may also give several Automatic changes one decision at
+once, with the shared selection column, bulk bar and confirmation dialog
+([row actions and confirmation](../ui-conventions/spec.md#row-actions-and-confirmation)):
+**Approve**, **Ignore** and **Back to To review** above the table. Only a
+row whose Review is offered has a box, and the box lists the decisions that
+Review offers. A button is available only while every ticked row offers its
+decision. The dialog names the exact count ("Approve 3 changes?") and takes
+one optional note, recorded on each change. The selection covers the rows on
+the page shown, as every Admin table's does, and at most 250, the largest
+page. A page showing more rows (All) offers no boxes and says to show fewer.
+Each change is reviewed exactly as its own Review would review it (its own
+review row, version and audit event; queued and final changes refused), all
+or none, in one work transaction, each against the version its row showed.
+A change someone else updated first leaves every chosen change as it is,
+and the notice names it. The dialog posts with the page's filters and table
+choices, so the answer is the same page, redrawn in place, with a notice
+counting the changes ("3 changes approved."). Each change's request key is
+derived from one key per drawn page, so a repeated post records nothing
+more. Bulk review adds no schema and no audit action of its own.
 
 Each review is one immutable review row (who, when, the note and the
 resulting decision and edit fields), added by forward migration 0096 under

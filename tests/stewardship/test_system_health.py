@@ -6,12 +6,15 @@ projection, without a database.
 """
 
 import re
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from parishkit.stewardship.source.data_age import Connection
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
@@ -22,9 +25,13 @@ from parishkit.stewardship.system_health import (
     LOADED_TILES,
     MAIL_SUMMARIES,
     REGISTRY,
+    RESAVE_SUMMARIES,
+    SOURCE_FORM_SUMMARIES,
     SOURCE_SUMMARIES,
     TILES,
+    VERSION_SUMMARIES,
     AcceptPreview,
+    BackupPreview,
     BackupRequestStatus,
     DebugAllowPreview,
     DebugOffPreview,
@@ -43,10 +50,16 @@ from parishkit.stewardship.system_health import (
     loaded_states,
     page_findings,
     parse_loaded,
+    resave_tile,
+    source_form_tile,
     tile_parts,
 )
 
 NOW = datetime(2026, 10, 6, 15, 0, tzinfo=UTC)
+TEMPLATES = (
+    Path(__file__).parents[2]
+    / "src/parishkit/stewardship/accounts/templates/stewardship"
+)
 
 
 def row(service="web", process="main", *, age=0, started=600, **values):
@@ -1092,6 +1105,79 @@ def test_a_requested_backup_reads_as_the_page_words_it():
     assert "Its size is 3.0" in body and "taken by version 1.4.2" in body
 
 
+def backup_answer(**result):
+    """Take a backup now's review dialog fragment for one step's result."""
+    return render_to_string(
+        "stewardship/system-health-backup-review.html",
+        {"health": health(), "poll_interval": 10000, "backup_now": result},
+    )
+
+
+def test_take_a_backup_now_opens_its_confirmation_in_the_review_dialog():
+    """The button posts the preview step to the page's review dialog (#1356),
+    not in place, and the page draws that dialog, a confirmation redrawn from
+    Apply's answer, with the region's status line after the region."""
+    body = whole({"health": health()})
+    region = section(body, 'id="backup-now"')
+    assert 'data-review-open="backup-review"' in region
+    assert 'value="preview"' in region and "data-in-place=" not in region
+    assert 'action="/admin/system/health/"' in region
+    assert 'id="backup-now-outcome"' in body
+    assert body.index('id="backup-now-outcome"') > body.index('id="backup-now"')
+    page = (TEMPLATES / "system-health.html").read_text()
+    assert 'dialog_id="backup-review"' in page and "review=True" in page
+    assert 'describedby="backup-review-summary"' in page
+    assert 'outcome_id="backup-now-outcome"' in page and "redraw_body=True" in page
+    assert 'translate "Take a backup now?" as backup_title' in page
+    # The request's retention moved to the page's help, out of the preview.
+    assert "follows the usual retention rules" in page
+
+
+def test_the_backup_confirmation_says_only_what_the_page_does_not():
+    """One sentence, off-site or not; the held-send warning only when a send
+    is in progress; the key Apply posts. Never the last backup's time or
+    size, which the Backups details show."""
+    preview = BackupPreview(
+        key="k-9", backup_at=NOW, backup_bytes=1024, offsite=True, held=False
+    )
+    text = backup_answer(preview=preview)
+    assert '<div data-review-answer data-review-done="Backup requested.">' in text
+    assert (
+        '<p id="backup-review-summary">This asks the server to take one backup soon,'
+        " of the same kind as the scheduled ones, and to copy it off-site to"
+        " Google Drive.</p>"
+    ) in text
+    assert 'name="key" value="k-9" data-review-preview' in text
+    assert "The last backup finished" not in text and "1.0" not in text
+    assert "Family email send is in progress" not in text
+    held = backup_answer(
+        preview=BackupPreview(
+            key="k-9", backup_at=None, backup_bytes=None, offsite=False, held=True
+        )
+    )
+    assert "off-site copies are not set up, so it stays on the server only" in held
+    assert "A Family email send is in progress, so the backup will wait" in held
+    assert f'<a href="{reverse("admin:family_email_progress")}">' in held
+
+
+def test_the_backup_request_and_refusals_answer_the_dialog():
+    """Apply's answer draws the region again; each refusal is marked for the
+    dialog to show as drawn, the step-up's Confirm with Google included."""
+    done = backup_answer(requested=SimpleNamespace(created_at=NOW), created=True)
+    assert 'id="backup-now"' in done and "data-review-answer" not in done
+    for refused, words in (
+        ("reauthenticate", "For security, taking a backup now needs a Google"),
+        ("busy", "A backup is already requested"),
+        ("denied", "The server refused this backup request"),
+        ("invalid", "That request could not be read."),
+    ):
+        text = backup_answer(refused=refused)
+        assert text.strip().startswith("<div data-review-refusal>"), refused
+        assert f'data-backup-refused="{refused}"' in text and words in text
+        assert 'id="backup-now"' not in text
+    assert "Confirm with Google" in backup_answer(refused="reauthenticate")
+
+
 def debug_page(
     *, switch=None, debug=True, actor="admin@example.org", mode="production", **values
 ):
@@ -1113,37 +1199,63 @@ def debug_page(
 
 
 def test_turn_off_debug_logging_is_offered_while_a_service_has_it_on():
-    """The button posts the preview step in place; help says who clears it."""
+    """The button posts the preview step to the page's review dialog
+    (#1356); help says who clears it."""
     body = debug_page()
     assert 'value="debug_off_preview"' in body
-    assert 'data-in-place="debug-off-preview"' in body
-    assert 'action="/admin/system/health/#debug-off"' in body
+    assert 'data-review-open="debug-off-review"' in body
+    assert 'data-in-place="debug-off-preview"' not in body
+    assert body.index('id="debug-off-outcome"') > body.index('id="debug-off"')
+    page = (TEMPLATES / "system-health.html").read_text()
+    assert 'dialog_id="debug-off-review"' in page
+    assert 'apply_action="debug_off_confirm"' in page
+    assert 'describedby="debug-off-review-summary"' in page
+    assert 'translate "Turn off debug logging?" as debug_off_title' in page
+    # What the switch leaves alone moved to the page's help.
+    assert "before it first reads the switch" in page
     # The polled copy carries the same enabled button for the mirror.
     assert '<template data-live-mirror="debug-off-button">' in body
-    assert "pk-stewardship debug-off-clear" in body
-    assert "those whose server setting is still on log in debug form again" in body
+    # The intro's toggletip says what the switch does, not how a set switch
+    # is cleared, and names no Allow button (not drawn yet).
+    assert "each service reads within about a minute" in body
+    intro = section(body, 'id="debug-off"')
+    assert "Allow debug logging again" not in intro
+    assert "those whose server setting is still on" not in intro
+    testing = section(debug_page(mode="testing"), 'id="debug-off"')
+    assert "Allow debug logging again" not in testing
     # In Production the debug_logging problem says what to do; the panel
     # does not say it again.
     assert "Debug logging must be off in Production" not in body
 
 
-def test_a_set_switch_greys_the_button_and_says_who_and_when():
-    """Who set it and when (browser-local), and that the setting still says on."""
+def test_a_set_switch_shows_only_who_and_when():
+    """Who set it and when (browser-local), and that the setting still says
+    on; no Turn off button, greyed or not (Administrator, 2026-10-15)."""
     switch = DebugSwitchStatus(set_at=NOW, cleared_at=None, cleared_by=None)
     body = debug_page(switch=switch)
     assert 'value="debug_off_preview"' not in body
-    assert 'disabled aria-describedby="debug-off-reason"' in body
+    assert "debug-off-reason" not in body and "debug-allow-reason" not in body
+    assert "Turn debug logging off in every service now" not in body
+    assert 'data-debug-status="set"' in body
     assert "Debug logging was turned off by admin@example.org at" in body
     assert f'<time datetime="{NOW.isoformat()}" data-local-instant>' in body
     assert 'data-debug-switch="set"' in body
     assert "The setting on the server still says “on”." in body
-    # Once no service reports debug logging, the button stays greyed with why.
+    # Once no service reports debug logging, the line still says who and when.
     quiet = debug_page(switch=switch, debug=False)
     assert "Debug logging was turned off by admin@example.org at" in quiet
     assert 'data-debug-switch="set"' in quiet
+    # No switch and no service in debug form: the plain status line only.
     unset = debug_page(debug=False)
     assert 'value="debug_off_preview"' not in unset
-    assert 'disabled aria-describedby="debug-off-reason"' in unset
+    assert "debug-off-reason" not in unset
+    assert 'data-debug-status="off"' in unset
+    assert "Debug logging is off in every service that reports." in unset
+    assert "Turn debug logging off in every service now" not in unset
+    # The controls' target waits while the pointer is over the grid, since
+    # its states differ in height.
+    target = '<div data-live-mirror-target="debug-off-button" data-live-mirror-hold>'
+    assert target in body and target in unset
 
 
 def test_a_cleared_switch_is_named_only_while_debug_logging_is_back():
@@ -1157,35 +1269,54 @@ def test_a_cleared_switch_is_named_only_while_debug_logging_is_back():
     assert "cleared the debug-off switch" not in debug_page(switch=cleared, debug=False)
 
 
-def test_the_preview_and_each_refusal_read_in_the_region():
-    """Preview, result and refusals are drawn inside #debug-off."""
-    preview = DebugOffPreview(key="k-1", processes=("the web portal",))
-    body = debug_page(debug_off={"preview": preview})
-    for words in (
-        "Debug logging is on in: the web portal.",
-        "Lines already written stay in the logs",
-        "still says “on” until the server operator recreates the services",
-        "Only the server operator can clear the switch.",
-        "Confirm: turn off debug logging",
-    ):
-        assert words in body, words
-    assert 'name="key" value="k-1"' in body
-    assert 'value="debug_off_confirm"' in body and 'value="debug_off_cancel"' in body
-    # The preview replaces the region's button, so a poll cannot discard it.
-    region = section(body, 'id="debug-off"')
-    assert "data-live-mirror-target" not in region
-    done = debug_page(
-        switch=DebugSwitchStatus(set_at=NOW, cleared_at=None, cleared_by=None),
-        debug_off={"requested": SimpleNamespace(set_at=NOW), "created": True},
+def debug_off_answer(**result):
+    """Turn off debug logging's review dialog fragment for one step's result."""
+    return render_to_string(
+        "stewardship/system-health-debug-off-review.html",
+        {
+            "health": health(
+                processes=group_processes([row(debug_logging=True)], NOW),
+                debug_switch=DebugSwitchStatus(
+                    set_at=NOW, cleared_at=None, cleared_by=None
+                ),
+            ),
+            "debug_actor": "admin@example.org",
+            "poll_interval": 10000,
+            "debug_off": result,
+        },
     )
-    assert "data-debug-off-set" in done and "Debug logging turned off at" in done
+
+
+def test_the_debug_off_confirmation_and_each_refusal_answer_the_dialog():
+    """The preview is one sentence naming the services with debug logging on,
+    never the fixed bullets the About panel holds; Apply's answer draws the
+    region again, with its status line; each refusal is marked for the dialog."""
+    preview = DebugOffPreview(key="k-1", processes=("the web portal",))
+    text = debug_off_answer(preview=preview)
+    assert (
+        '<div data-review-answer data-review-done="Debug logging turned off.">'
+    ) in text
+    assert (
+        '<p id="debug-off-review-summary">This turns debug logging off now in the'
+        " services that have it on (the web portal), without restarting them,"
+        " until the debug-off switch is cleared.</p>"
+    ) in text
+    assert 'name="key" value="k-1" data-review-preview' in text
+    for words in ("Lines already written", "still says", "Confirm: turn off"):
+        assert words not in text, words
+    quiet = debug_off_answer(preview=DebugOffPreview(key="k-1", processes=()))
+    assert "No service reports debug logging right now" in quiet
+    done = debug_off_answer(requested=SimpleNamespace(set_at=NOW), created=True)
+    assert 'id="debug-off"' in done and "data-review-answer" not in done
+    assert 'data-debug-status="set"' in done
     for refused, words in (
         ("reauthenticate", "For security, turning off debug logging needs a Google"),
         ("busy", "Debug logging has already been turned off"),
         ("denied", "The server refused to turn off debug logging"),
         ("invalid", "That request could not be read."),
     ):
-        answer = debug_page(debug_off={"refused": refused})
+        answer = debug_off_answer(refused=refused)
+        assert answer.strip().startswith("<div data-review-refusal>"), refused
         assert f'data-debug-off-refused="{refused}"' in answer
         assert words in answer, refused
 
@@ -1735,52 +1866,70 @@ SET = DebugSwitchStatus(set_at=NOW, cleared_at=None, cleared_by=None)
 
 
 def test_allow_debug_logging_again_is_offered_only_in_testing_while_set():
-    """Testing with the switch set: the button posts the preview in place,
-    and the polled copy carries it. Otherwise it is greyed with why."""
+    """Testing with the switch set: the button posts the preview to its
+    review dialog (#1356), and the polled copy carries it. Otherwise it is
+    not drawn at all (Administrator, 2026-10-15): never in Production, nor
+    without a switch."""
     body = debug_page(switch=SET, debug=False, mode="testing")
     assert 'value="debug_allow_preview"' in body
-    assert 'data-in-place="debug-allow-preview"' in body
+    assert 'data-review-open="debug-allow-review"' in body
+    assert "data-in-place=" not in section(body, 'id="debug-off"')
+    page = (TEMPLATES / "system-health.html").read_text()
+    assert 'dialog_id="debug-allow-review"' in page
+    assert 'apply_action="debug_allow_confirm"' in page
+    assert 'describedby="debug-allow-review-summary"' in page
+    assert 'translate "Allow debug logging again?" as debug_allow_title' in page
     assert body.count('value="debug_allow_preview"') == 2  # region and mirror
     assert "In Testing, Allow debug logging again on this page clears" in body
     production = debug_page(switch=SET, debug=False)
     assert 'value="debug_allow_preview"' not in production
-    assert 'disabled aria-describedby="debug-allow-reason"' in production
-    assert "In Production only the server operator can clear" in production
+    assert ">Allow debug logging again<" not in production
+    assert "debug-allow-reason" not in production
+    # The status line's toggletip says only the server operator clears it.
+    assert "using pk-stewardship debug-off-clear; this page cannot." in production
     unset = debug_page(mode="testing")
     assert 'value="debug_allow_preview"' not in unset
-    assert "The debug-off switch is not set." in unset
+    assert ">Allow debug logging again<" not in unset
+    assert "The debug-off switch is not set." not in unset
 
 
-def test_the_allow_preview_result_and_refusals_read_in_the_region():
-    """Allow debug logging again answers inside #debug-off, in its own words."""
-    preview = DebugAllowPreview(key="k-2", set_at=NOW)
-    body = debug_page(
-        switch=SET, mode="testing", debug_off={"allow": True, "preview": preview}
-    )
-    for words in (
-        "This clears the debug-off switch set at",
-        "never turns debug logging on in a service started without it",
-        "Confirm: allow debug logging again",
-    ):
-        assert words in body, words
-    assert 'name="key" value="k-2"' in body
-    assert 'value="debug_allow_confirm"' in body
-    assert 'value="debug_allow_cancel"' in body
-    # The region alone: the tile's panel content follows it, in its own
-    # mirror target.
-    start = body.index('id="debug-off"')
-    region = body[start : body.index("</section>", start)]
-    assert "data-live-mirror-target" not in region
-    assert "Confirm: turn off debug logging" not in body
+def debug_allow_answer(**result):
+    """Allow debug logging again's review dialog fragment for one result."""
     cleared = DebugSwitchStatus(
         set_at=NOW - timedelta(hours=1), cleared_at=NOW, cleared_by="administrator"
     )
-    done = debug_page(
-        switch=cleared,
-        mode="testing",
-        debug_off={"allow": True, "allowed": cleared, "created": True},
+    return render_to_string(
+        "stewardship/system-health-debug-allow-review.html",
+        {
+            "health": health(debug_switch=cleared, mode="testing"),
+            "debug_actor": None,
+            "poll_interval": 10000,
+            "debug_off": {"allow": True} | result,
+        },
     )
-    assert "data-debug-allowed" in done and "Debug-off switch cleared at" in done
+
+
+def test_the_allow_confirmation_result_and_refusals_answer_the_dialog():
+    """Allow debug logging again's preview is one sentence that keeps the
+    personal-information caution, never the switch's set time the page
+    shows; Apply's answer draws Turn off debug logging's region again; each
+    refusal is marked for the dialog, in its own words."""
+    preview = DebugAllowPreview(key="k-2", set_at=NOW)
+    text = debug_allow_answer(preview=preview)
+    assert (
+        '<div data-review-answer data-review-done="Debug logging allowed again.">'
+    ) in text
+    assert (
+        '<p id="debug-allow-review-summary">This clears the debug-off switch:'
+        " within about a minute, services started with debug logging on log in"
+        " debug form again, which can record Families' personal"
+        " information.</p>"
+    ) in text
+    assert 'name="key" value="k-2" data-review-preview' in text
+    assert "set at" not in text and NOW.isoformat() not in text
+    assert "Confirm: allow debug logging again" not in text
+    done = debug_allow_answer(allowed=SimpleNamespace(cleared_at=NOW), created=True)
+    assert 'id="debug-off"' in done and "data-review-answer" not in done
     for refused, words in (
         ("reauthenticate", "allowing debug logging again needs a Google sign-in"),
         ("busy", "The debug-off switch is no longer set"),
@@ -1788,7 +1937,8 @@ def test_the_allow_preview_result_and_refusals_read_in_the_region():
         ("denied", "The server refused to allow debug logging again"),
         ("invalid", "That request could not be read."),
     ):
-        answer = debug_page(debug_off={"allow": True, "refused": refused})
+        answer = debug_allow_answer(refused=refused)
+        assert answer.strip().startswith("<div data-review-refusal>"), refused
         assert f'data-debug-allow-refused="{refused}"' in answer
         assert words in answer, refused
 
@@ -2398,7 +2548,7 @@ def test_the_debug_panel_repeats_no_sentence():
     assert details.count("turned off by admin@example.org at") == 1
     assert "The setting on the server still says “on”." in details
     assert details.count("pk-stewardship debug-off-clear") == 1  # the toggletip
-    # Off everywhere: said once, as the greyed button's reason.
+    # Off everywhere: said once, as the region's status line.
     quiet = debug_details(tiles({"health": health()}))
     assert quiet.count("Debug logging is off in every service that reports.") == 1
 
@@ -2406,7 +2556,9 @@ def test_the_debug_panel_repeats_no_sentence():
 def test_a_live_request_is_stated_once_in_the_band():
     """The request's progress is one line, under Take a backup now's button
     (#1317): when it was made and its state (and when it started); the
-    panel does not repeat it, and the confirmation points to the line."""
+    panel does not repeat it, nor does Apply's answer, the region drawn
+    again for the review dialog (#1356), whose status line says only that
+    the backup was requested."""
     made = NOW - timedelta(minutes=12)
     started = NOW - timedelta(minutes=2)
     for status in ("waiting", "held", "running"):
@@ -2432,10 +2584,6 @@ def test_a_live_request_is_stated_once_in_the_band():
             )
         )
         assert confirmed.count(f'datetime="{made.isoformat()}"') == 1, status
-        assert (
-            "Backup requested. The line under the button follows its progress"
-            in confirmed
-        )
         assert details.count("data-backup-request=") == 1, status
         line = confirmed[confirmed.index('id="backup-now-reason"') :]
         assert f'data-backup-request="{status}"' in line[: line.index(">")]
@@ -2475,14 +2623,17 @@ def test_the_backup_region_checks_the_status_again_once_answered():
 
 def test_the_debug_regions_answers_point_where_things_are_said():
     """After turning it off, nothing points to a service list the
-    Production panel no longer has; a repeated request points to the greyed
-    button, which says who and when; the Testing note about the button is
-    left out while the switch greys it."""
-    body = debug_page(debug_off={"requested": SimpleNamespace(set_at=NOW)})
-    assert "Each service stops logging in debug form within about a minute." in body
+    Production panel no longer has; Apply's answer redraws the region with
+    its status line; a repeated request, refused in the review dialog
+    (#1356), points to that line, which says who and when (no "below" in a
+    dialog); the Testing note about the button is left out while the
+    switch is set and the button is not drawn."""
+    body = debug_off_answer(requested=SimpleNamespace(set_at=NOW))
+    assert 'data-debug-status="set"' in body
     assert "details below show when" not in body
-    busy = debug_page(switch=SET, debug_off={"refused": "busy"})
-    assert "The greyed button below says who did it and when." in busy
+    busy = debug_off_answer(refused="busy")
+    assert "The line under Turn off debug logging says who did it and when." in busy
+    assert "below" not in busy
     assert "Turn off debug logging works here too" in debug_page(mode="testing")
     assert "works here too" not in debug_page(switch=SET, mode="testing")
 
@@ -2499,3 +2650,464 @@ def test_the_debug_region_checks_the_status_again_once_answered():
             'data-in-place-region data-live-recheck="system-health" '
             'aria-labelledby="debug-off-heading"'
         )
+
+
+# ------------------------------- the page-load and services tiles (slice 6)
+
+BLOCKED = {
+    "label": "Initial invitation",
+    "subject": "Hi",
+    "url": "/e/",
+    "blocked": True,
+}
+RECOMMENDED = {
+    "label": "Family welcome",
+    "subject": None,
+    "url": "/p/",
+    "blocked": False,
+}
+
+
+def loaded_page(source_form=0, resave=(), model=None, **context):
+    """The dashboard with the page-load tiles read as ``source_form`` and
+    ``resave`` (``source_form_summary``'s and ``resave_summary``'s answers),
+    as the view draws it."""
+    model = model or health()
+    resave = list(resave) if isinstance(resave, tuple) else resave
+    return whole(
+        {
+            "health": model,
+            "dashboard": dashboard(
+                model,
+                findings=page_findings(model),
+                loaded=loaded_states(source_form, resave),
+            ),
+            "source_form_count": source_form,
+            "resave": resave,
+            "source_form_tile": source_form_tile(source_form),
+            "resave_tile": resave_tile(resave),
+        }
+        | context
+    )
+
+
+def band(body, tile, following):
+    """The tile's details band, up to the next tile ``following`` (or the end)."""
+    start = body.index(f'id="health-{tile}-details"')
+    end = body.index(f'id="health-{following}"', start) if following else len(body)
+    return body[start:end]
+
+
+def counted_words(body, tile):
+    """A tile's counted summary row text, without markup."""
+    tile_body = section(body, f'id="health-{tile}"')
+    counted = tile_body.split('class="health-said">', 1)[1].split("</span>", 1)[0]
+    return re.sub(r"<[^>]+>", "", counted).strip()
+
+
+def test_the_source_form_summary_names_the_first_that_holds():
+    """Each summary in SOURCE_FORM_SUMMARIES's order, with its state, which
+    loaded_states takes from the same choice."""
+    cases = [
+        (None, "unchecked", "warning", "Could not be checked"),
+        (3, "families", "warning", "3 Families cannot open the form"),
+        (1, "families", "warning", "1 Family cannot open the form"),
+        ("no_data", "no_data", "working", "No ParishSoft data yet"),
+        ("no_campaign", "no_campaign", "working", "No current campaign"),
+        (0, "none", "working", "Every Family can open the form"),
+    ]
+    assert {kind for _, kind, _, _ in cases} == set(SOURCE_FORM_SUMMARIES)
+    for answer, kind, state, words in cases:
+        summary = source_form_tile(answer)
+        assert (summary.kind, summary.state) == (kind, state), answer
+        assert loaded_states(answer, []).get("source-form", "working") == state
+        assert counted_words(loaded_page(answer), "source-form") == words, answer
+
+
+def test_the_resave_summary_names_the_first_that_holds():
+    """Each summary in RESAVE_SUMMARIES's order: a blocked email is an Error
+    named with how many other items follow it."""
+    cases = [
+        (None, "unchecked", "warning", "Could not be checked"),
+        (
+            [RECOMMENDED, BLOCKED, RECOMMENDED],
+            "blocked",
+            "error",
+            "1 email cannot be sent until it is fixed and 2 more",
+        ),
+        (
+            [BLOCKED, BLOCKED],
+            "blocked",
+            "error",
+            "2 emails cannot be sent until they are fixed",
+        ),
+        ([RECOMMENDED, RECOMMENDED], "recommended", "warning", "2 to re-save"),
+        ("no_campaign", "no_campaign", "working", "No current campaign"),
+        ([], "none", "working", "Nothing to re-save"),
+    ]
+    assert {kind for _, kind, _, _ in cases} == set(RESAVE_SUMMARIES)
+    for answer, kind, state, words in cases:
+        summary = resave_tile(answer)
+        assert (summary.kind, summary.state) == (kind, state), answer
+        assert loaded_states(0, answer).get("resave", "working") == state
+        assert counted_words(loaded_page(resave=answer), "resave") == words, kind
+
+
+def test_a_source_form_finding_is_its_tiles_problem_item_with_the_link():
+    """Families listed, or a check that could not run, are the Warning
+    tile's problem item, linking the list; otherwise a plain line with no
+    link, since the list would be empty (conditional fields)."""
+    link = 'href="/admin/system/source-form/"'
+    for answer in (2, None):
+        details = band(loaded_page(answer), "source-form", "resave")
+        assert 'data-problem="source_form" data-severity="warning"' in details
+        assert link in details
+        assert 'aria-controls="source-form-tip"' in details
+    for answer in (0, "no_data", "no_campaign"):
+        details = band(loaded_page(answer), "source-form", "resave")
+        assert "data-problem" not in details and link not in details, answer
+        assert 'aria-controls="source-form-tip"' in details
+
+
+def test_a_resave_finding_is_its_tiles_problem_item_with_the_list():
+    """A blocked email is an error notice, other items a warning; each is
+    followed by the linked list and links Pages and emails, which a Working
+    tile leaves out."""
+    catalog = 'href="/admin/campaign/content/"'
+    error = band(loaded_page(resave=[BLOCKED, RECOMMENDED]), "resave", "version")
+    assert (
+        'class="notice notice-error" data-problem="resave" data-severity="error"'
+        in error
+    )
+    assert "1 email cannot be sent until it is fixed" in error
+    assert "1 other saved page or email should be re-saved." in error
+    assert error.count('href="/e/"') == 1 and error.count('href="/p/"') == 1
+    assert catalog in error
+    warning = band(loaded_page(resave=[RECOMMENDED]), "resave", "version")
+    assert 'class="notice" data-problem="resave" data-severity="warning"' in warning
+    assert catalog in warning
+    unchecked = band(loaded_page(resave=None), "resave", "version")
+    assert 'data-severity="warning"' in unchecked and catalog in unchecked
+    for answer in ([], "no_campaign"):
+        working = band(loaded_page(resave=answer), "resave", "version")
+        assert "data-problem" not in working and catalog not in working
+        assert "resave-list" not in working
+        assert 'aria-controls="resave-tip"' in working
+
+
+def test_the_page_load_tips_and_about_say_why_the_tiles_do_not_follow_the_poll():
+    """A toggletip beside each sentence, and "About this page" explains what
+    keeps a Family from the form."""
+    page_body = loaded_page(2, [RECOMMENDED])
+    assert page_body.count("checked when the page opens, not every 10 seconds") == 2
+    from pathlib import Path
+
+    template = (
+        Path(__file__).parents[2]
+        / "src/parishkit/stewardship/accounts/templates/stewardship/system-health.html"
+    ).read_text()
+    assert '<dt>{% translate "Families the form cannot open" %}</dt>' in template
+    assert "the next ParishSoft refresh" in template
+
+
+def test_the_version_summary_names_the_first_that_holds():
+    """Each Working summary in VERSION_SUMMARIES's order."""
+    cases = [
+        (health(), "version", "Version 1.4.2, Production, all services running"),
+        (
+            health(mode="testing"),
+            "version",
+            "Version 1.4.2, Testing, all services running",
+        ),
+        (health(versions=()), "none", "No service has reported its version"),
+    ]
+    assert {kind for _, kind, _ in cases} == set(VERSION_SUMMARIES)
+    for model, kind, words in cases:
+        assert model.version_summary.kind == kind
+        assert said("health-version", model) == words, words
+
+
+def test_the_version_panel_repeats_no_problem():
+    """Different versions and a database that does not match are the tile's
+    problems, said once; the panel keeps the facts."""
+    model = health(
+        versions=("1.4.1", "1.4.2"),
+        schema_current=False,
+        problems=(Problem("versions_differ"), Problem("schema_mismatch")),
+    )
+    body = whole({"health": model})
+    details = band(body, "version", None)
+    assert details.count("The services run different versions") == 1
+    assert details.count("The database does not match") == 1
+    assert 'data-problem="versions_differ"' in details
+    assert 'data-problem="schema_mismatch"' in details
+    assert "The database matches" not in details
+    assert "All services run version" not in details
+    assert "Mode:" in details and "<caption>Services</caption>" in details
+    healthy = band(whole({"health": health()}), "version", None)
+    assert "All services run version 1.4.2." in healthy
+    assert "The database matches the version that is running." in healthy
+    assert "data-problem" not in healthy
+    # The polled copy is the same panel.
+    region = page({"health": model})[0]
+    copy = region.split('data-live-mirror="health-version-panel">', 1)[1]
+    assert "The services run different versions" not in copy.split("</template>")[0]
+
+
+def test_accept_this_change_once_draws_its_offer_and_its_step_up():
+    """#1331 item 18: an open refusal's offer is drawn offered and, greyed,
+    with the shared step-up notice that names it; the page's sign-in when it
+    was drawn picks one (data-health-fresh), so the polled copy is the same
+    whatever the sign-in. The fixed sign-in sentence is gone, and the polled
+    step-up form leaves its CSRF token empty."""
+    body = accept_page()
+    offer = section(body, 'id="accept-change"')
+    assert 'class="accept-when-fresh"' in offer and 'value="accept_preview"' in offer
+    stale = offer.split('class="accept-when-stale">', 1)[1].split("</div>\n<div", 1)[0]
+    assert "data-step-up-notice" in stale and "data-accept-step-up" in stale
+    assert "For security, accepting this change needs" in stale
+    assert 'id="accept-change-fresh-reason"' in stale
+    assert 'aria-describedby="accept-change-fresh-reason"' in stale
+    assert "It needs a recent" not in offer
+    model = health(refused_at=NOW, refused_counts=FAILED)
+    region = page({"health": model, "refused_attempt": REFUSED_ATTEMPT})[0]
+    copy = region.split('data-live-mirror="accept-offer">', 1)[1].split("</template>")[
+        0
+    ]
+    assert "data-step-up-notice" in copy
+    assert 'name="csrfmiddlewaretoken" value=""' in copy
+    # The same polled copy for a stale and a fresh reader.
+    again = page({"health": model, "refused_attempt": REFUSED_ATTEMPT, "fresh": True})
+    assert again[0] == region
+    # An accepted refusal's greyed button says who accepted, not the step-up.
+    assert "data-accept-step-up" not in accept_page(acceptance=accepted())
+
+
+def test_only_the_page_judges_the_sign_in(monkeypatch):
+    """The page passes ``fresh`` from the session's sign-in as it is drawn;
+    the fragment and an action's answer never carry it, so no poll changes
+    which form the page shows (#1159)."""
+    from pathlib import Path
+
+    from parishkit.stewardship.accounts import system_health_views
+
+    source = Path(system_health_views.__file__).read_text()
+    assert source.count('context["fresh"] = freshness(request)[0]') == 1
+    extra = {
+        "workgroup_missing": None,
+        "campaign_id": None,
+        "pause": None,
+        "debug_actor": None,
+        "accept_actor": None,
+        "refused_attempt": None,
+    }
+    assert "fresh" not in system_health_views._context(health(), extra, loaded={})
+    template = (
+        Path(system_health_views.__file__).parent
+        / "templates/stewardship/system-health.html"
+    ).read_text()
+    assert "{% if fresh %} data-health-fresh{% endif %}" in template
+
+
+@pytest.mark.parametrize(
+    ("kind", "tile", "link", "following"),
+    [
+        ("versions_differ", "version", "See Version", None),
+        ("mail_provider_unavailable", "mail", "See Mail sender", "source"),
+    ],
+)
+def test_a_sentence_links_its_tile_only_off_the_page(kind, tile, link, following):
+    """#1385: inside its own tile the sentence draws no link to that tile;
+    Home, which has no ``health``, keeps it."""
+    problem = Problem(kind, at=NOW)
+    model = health(problems=(problem,), incidents={kind: NOW})
+    details = band(whole({"health": model}), tile, following)
+    assert f'data-problem="{kind}"' in details
+    assert link not in details
+    home = render_to_string(
+        "stewardship/system-health-problem.html", {"problem": problem}
+    )
+    assert f'#health-{tile}">{link}</a>' in home
+
+
+# One problem of every registry kind, as Home lists them (#1214).
+MAILER = Subject("mail-dispatch", "mail")
+HOME_SUBJECTS = {
+    "sender_halted": (MAILER,),
+    "sender_outage": (MAILER,),
+    "not_running": (Subject("worker", "source"),),
+    "not_reported": (Subject("scheduler"),),
+    "debug_logging": (Subject("web", "main"),),
+}
+
+
+def home_line(kind):
+    """Home's line for one problem of ``kind``, as Home draws it."""
+    problem = Problem(
+        kind,
+        subjects=HOME_SUBJECTS.get(kind, ()),
+        at=NOW,
+        count=1 if kind == "refusal_unrecorded" else 0,
+    )
+    return problem, render_to_string(
+        "stewardship/system-health-home-line.html", {"problem": problem}
+    )
+
+
+@pytest.mark.parametrize("kind", sorted(REGISTRY))
+def test_a_home_line_shows_its_state_and_links_its_tile_once(kind):
+    """Each Home line shows the registry's icon and state word beside the
+    page's sentence, and links its problem's tile exactly once: by the
+    sentence's own link when it has one, else by "See … in System health"."""
+    problem, line = home_line(kind)
+    severity = REGISTRY[kind][1]
+    assert problem.severity == severity
+    assert f'data-severity="{severity}"' in line
+    assert f"level-icon-{severity}" in line
+    word = {"warning": "Warning", "error": "Error"}[severity]
+    assert f'<span class="status-word">{word}</span>' in line
+    assert ("notice-error" in line) is (severity == "error")
+    anchor = f'href="/admin/system/health/#health-{REGISTRY[kind][0]}"'
+    assert line.count(anchor) == 1, line
+    assert line.count('href="/admin/system/health/"') == 0
+    own = f"See {problem.tile_name} in System health" in line
+    assert own is not problem.links_tile
+
+
+def test_home_words_and_tiles_for_a_split_process_problem():
+    """A stopped installer alone is a warning; with a mail sender the line
+    links the Mail tile, its first, and is an error."""
+    installer = Problem("not_running", (Subject("config-installer"),), NOW)
+    assert (installer.severity, installer.word, installer.tile) == (
+        "warning",
+        "Warning",
+        "version",
+    )
+    both = replace(installer, subjects=(MAILER, Subject("config-installer")))
+    assert (both.severity, both.tile, both.tile_name) == ("error", "mail", "Mail")
+
+
+def refresh_block(**context):
+    """Home's ParishSoft refresh block with a failed and a late full refresh."""
+    status = FullRefreshStatus(
+        NOW - timedelta(hours=8),
+        NOW - timedelta(hours=1),
+        False,
+        failed_task_id=uuid4(),
+        overdue_at=NOW - timedelta(minutes=30),
+        out_of_date=True,
+        late_minutes=30,
+    )
+    return render_to_string(
+        "stewardship/full-refresh-status.html",
+        {
+            "status": status,
+            "can_view_task": True,
+            "can_refresh": True,
+            "refresh_key": "key",
+        }
+        | context,
+    )
+
+
+def test_home_shows_a_listed_refresh_problem_once_and_keeps_its_links():
+    """#1214: with ``source_failed`` and ``source_late`` listed, Home's
+    refresh block leaves both notices out but keeps "See what went wrong"
+    and one Run a full refresh now. Without them both notices stay."""
+    listed = refresh_block(failed_listed=True, problems_listed=True, keep_action=True)
+    assert "notice-error" not in listed
+    assert "did not finish" not in listed and "minutes late" not in listed
+    assert "See what went wrong" in listed
+    assert listed.count("Run a full refresh now") == 1
+    # Only the failure listed (the late refresh is not): the late notice
+    # keeps the button, and the failure's plain line adds none.
+    failed = refresh_block(failed_listed=True, keep_action=True)
+    assert failed.count("notice-error") == 1 and "minutes late" in failed
+    assert failed.count("Run a full refresh now") == 1
+    plain = refresh_block()
+    assert plain.count("notice-error") == 2 and "did not finish" in plain
+    assert plain.count("Run a full refresh now") == 1
+
+
+def test_only_a_listed_failure_gives_the_off_site_line_way():
+    """``health_listed``: each notice gives way only to its own listed
+    problem, and the off-site line only while it reports the failure."""
+    from parishkit.stewardship.accounts.admin_dashboard import health_listed
+    from parishkit.stewardship.accounts.backup_destination import OffsiteStatus
+
+    def offsite(kind):
+        """An off-site line of ``kind``."""
+        return OffsiteStatus(kind, "Words.", NOW, NOW, None)
+
+    listed = (
+        Problem("source_failed", at=NOW),
+        Problem("source_late", at=NOW),
+        Problem("backup_offsite_failed", at=NOW),
+    )
+    assert health_listed(listed, offsite("failed")) == {
+        "failed": True,
+        "late": True,
+        "offsite": True,
+    }
+    # The incident is open, but the newest copy went through: the line no
+    # longer reports a failure, so it stays.
+    for kind in ("uploaded", "disabled", "none"):
+        assert health_listed(listed, offsite(kind))["offsite"] is False, kind
+    assert health_listed(listed, None)["offsite"] is False
+    # A failing off-site line with no listed problem stays too.
+    assert health_listed((), offsite("failed")) == {
+        "failed": False,
+        "late": False,
+        "offsite": False,
+    }
+
+
+def home_page(dashboard):
+    """Home's page body as the index view draws it for ``dashboard``."""
+    from parishkit.stewardship.accounts.backup_destination import OffsiteStatus
+
+    status = FullRefreshStatus(
+        NOW - timedelta(days=1), NOW - timedelta(hours=1), False, failed_task_id=uuid4()
+    )
+    return render_to_string(
+        "stewardship/home.html",
+        {
+            "admin_chrome": {"admin": True},
+            "suppress_admin_session_chrome": True,
+            "dashboard": {
+                "full_refresh": status,
+                "can_view_task": True,
+                "can_refresh": True,
+                "refresh_key": "key",
+                "offsite": OffsiteStatus(
+                    "failed", "Copying the newest backup failed.", NOW, NOW, None
+                ),
+            }
+            | dashboard,
+        },
+    )
+
+
+def test_home_keeps_both_notices_for_a_viewer_without_system_health():
+    """A viewer who may not open System health gets no lines and no
+    ``health_listed``, so the failed refresh and the failed off-site copy
+    keep their own notices; a viewer with the lines sees each once."""
+    other = home_page({})
+    assert "data-home-health" not in other
+    assert "did not finish." in other
+    assert "Copying the newest backup failed." in other
+    assert other.count("Run a full refresh now") == 1
+    problems = (
+        Problem("source_failed", at=NOW - timedelta(hours=1)),
+        Problem("backup_offsite_failed", at=NOW),
+    )
+    admin = home_page(
+        {
+            "health_problems": problems,
+            "health_listed": {"failed": True, "late": False, "offsite": True},
+        }
+    )
+    assert admin.count("did not finish.") == 1
+    assert "Copying the newest backup failed." not in admin
+    assert admin.count("Run a full refresh now") == 1
+    assert admin.count("Off-site backup settings") == 1

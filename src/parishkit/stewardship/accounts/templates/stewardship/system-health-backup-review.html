@@ -1,0 +1,36 @@
+{% load i18n stewardship %}{% comment %}
+  Take a backup now's answers in the shared review dialog (ADM-13 PR 3b,
+  #1356; system_health_views._act), never a page of its own: the button's
+  form (system-health-backup-button.html) posts the preview step without a
+  page load and ui-v1.js shows this fragment in the dialog.
+  ``backup_now`` holds the step's result:
+
+  - ``preview`` (a system_health.BackupPreview): a confirmation (UX
+    conventions, "A confirmation when Review would only repeat the page").
+    The last backup's time and size are in the Backups details behind the
+    dialog and the request's rules in the About panel, so it says in one
+    sentence what Apply does (backup-review-summary, the dialog's
+    description), with whether the copy goes off-site, and adds only the
+    server's warning that a Family email send is in progress, so the backup
+    will wait. The preview's key (data-review-preview) is what Apply posts
+    as the request's identity, so a repeated Apply returns the first
+    request.
+  - ``requested``: Apply's answer once the request is recorded: this
+    region drawn again, which the dialog puts in place of the page's
+    (data-review-redraw="body", so the page is not read again), its button
+    greyed while the request waits; the status line after the region says
+    the backup was requested, and the line under the button follows its
+    progress (#1317).
+  - ``refused``: why the step was refused, marked data-review-refusal so
+    the dialog shows it as drawn, with the shared step-up for a stale
+    sign-in, which returns to System health.
+{% endcomment %}{% if backup_now.preview %}{% with preview=backup_now.preview %}<div data-review-answer data-review-done="{% translate 'Backup requested.' %}">
+<p id="backup-review-summary">{% if preview.offsite %}{% translate "This asks the server to take one backup soon, of the same kind as the scheduled ones, and to copy it off-site to Google Drive." %}{% else %}{% translate "This asks the server to take one backup soon, of the same kind as the scheduled ones; off-site copies are not set up, so it stays on the server only." %}{% endif %}</p>
+{% if preview.held %}<p class="notice">{% translate "A Family email send is in progress, so the backup will wait until the send finishes." %} <a href="{% url 'admin:family_email_progress' %}">{% translate "Family email progress" %}</a></p>{% endif %}
+<input type="hidden" name="key" value="{{ preview.key }}" data-review-preview>
+</div>{% endwith %}
+{% elif backup_now.requested %}{% include 'stewardship/system-health-backup-now.html' %}
+{% else %}<div data-review-refusal>{% if backup_now.refused == "reauthenticate" %}{% url 'admin:system_health' as here %}{% translate "taking a backup now" as step_up_action %}{% translate "Nothing was requested." as step_up_outcome %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action outcome=step_up_outcome next=here marker="backup-refused" marker_value="reauthenticate" %}
+{% elif backup_now.refused == "busy" %}<p data-backup-refused="busy">{% translate "A backup is already requested, or a restore is under review, so no other can be requested now. The line under the button says when it was requested." %}</p>
+{% elif backup_now.refused == "denied" %}<p data-backup-refused="denied">{% translate "The server refused this backup request, so nothing was requested. System logs record why; ask the server operator to check the database grants." %}</p>
+{% else %}<p data-backup-refused="invalid">{% if backup_now.refusal_text %}{{ backup_now.refusal_text }}{% else %}{% translate "That request could not be read. Nothing was requested; try again." %}{% endif %}</p>{% endif %}</div>{% endif %}

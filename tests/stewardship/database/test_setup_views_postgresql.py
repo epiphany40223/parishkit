@@ -20,11 +20,12 @@ from .test_setup_expiry_postgresql import sweep
 
 pytestmark = pytest.mark.django_db(transaction=True)
 # Save and continue goes to the next page of the wizard's one ordered list.
+# The wizard's order (#1353): ParishSoft and its load come after access.
 NEXT = {
-    "parish": "/admin/setup/credentials/parishsoft",
-    "access": "/admin/setup/preview",
+    "parish": "/admin/setup/mail",
+    "access": "/admin/setup/credentials/parishsoft",
     "mail": "/admin/setup/testing",
-    "slack": "/admin/setup/source",
+    "slack": "/admin/setup/branding",
     "testing": "/admin/setup/credentials/google_workspace",
 }
 

@@ -18,7 +18,7 @@ from parishkit.stewardship.source.refresh_status import (
 )
 from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSnapshot
 
-from .content_models import ContentVersion
+from .campaign_wizard import invitation_revision
 from .policy import Capability, allows
 
 
@@ -51,6 +51,25 @@ def observe(actor, store, *, home=False):
             ).get(pk=config.current_campaign_id)
         now = database_now()
         return config, summary(actor, config, now, home=home), now
+
+
+def health_listed(problems, offsite):
+    """Which of Home's own notices give way to a System health line.
+
+    A problem Home also reports in its own notice is shown once, as the
+    System health line (#1214). ``problems`` are Home's System health
+    problems; ``offsite`` is the off-site line's ``OffsiteStatus`` (or
+    None). The off-site line gives way only while it reports the failure.
+    Viewers without System health get no such map, so every notice stays.
+    """
+    kinds = {problem.kind for problem in problems}
+    return {
+        "failed": "source_failed" in kinds,
+        "late": "source_late" in kinds,
+        "offsite": "backup_offsite_failed" in kinds
+        and offsite is not None
+        and offsite.kind == "failed",
+    }
 
 
 def summary(actor, configuration, now, *, home=False):
@@ -139,17 +158,7 @@ def summary(actor, configuration, now, *, home=False):
             # initial invitation's current revision while a Testing draft
             # admits test mail (NAV-18); the same row Pause and resume mail
             # links. One small indexed query, for Administrators only.
-            result["test_email"] = (
-                ContentVersion.objects.filter(
-                    configuration_id=configuration.active_configuration_id,
-                    campaign_id=campaign.pk,
-                    kind="email",
-                    slot="initial",
-                )
-                .order_by("record_id")
-                .values_list("record_id", flat=True)
-                .first()
-            )
+            result["test_email"] = invitation_revision(configuration, campaign.pk)
         if campaign.state in {"draft", "scheduled", "active"} and allows(
             actor, Capability.FAMILY_CODES
         ):
@@ -208,6 +217,9 @@ def summary(actor, configuration, now, *, home=False):
         # that page (ADM-13); others see none.
         result["health_problems"] = home_problems(
             configuration, now, result["full_refresh"]
+        )
+        result["health_listed"] = health_listed(
+            result["health_problems"], result.get("offsite")
         )
     if home and campaign is not None and leads_ministries(actor):
         from parishkit.stewardship.reports.ministry_followup import my_ministries

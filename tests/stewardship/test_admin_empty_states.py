@@ -58,8 +58,6 @@ ALLOWED = {
     # The shared chart's exact-values table; the page around each chart
     # says what it covers.
     "components/chart.html": {"Nothing to show yet."},
-    # A value in a before-and-after list, not an empty list.
-    "option-review.html": {"None"},
 }
 
 

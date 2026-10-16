@@ -70,4 +70,61 @@ def components(context, admin):
             },
         },
     )
-    return {PATH: ("text/html", html)}
+    return {PATH: ("text/html", html)} | health_components(
+        context, admin, chrome, actor, configuration
+    )
+
+
+# Home with System health problems and a critical-problems banner (#1214):
+# an error, two warnings (one Home also reports in its refresh block), and
+# a banner group whose problem is current.
+HEALTH_PATH = "/home-health"
+
+
+def health_components(context, admin, chrome, actor, configuration):
+    """Home as an Administrator sees it while System health lists problems."""
+    from datetime import timedelta
+
+    from parishkit.stewardship.accounts.backup_destination import OffsiteStatus
+    from parishkit.stewardship.audit.critical_events import summary
+    from parishkit.stewardship.source.refresh_status import FullRefreshStatus
+    from parishkit.stewardship.system_health import Problem, Subject
+
+    now = context["server_now"]
+    failed = now - timedelta(hours=2)
+    problems = (
+        Problem("sender_halted", (Subject("mail-dispatch", "mail"),), now),
+        Problem("source_failed", at=failed),
+        Problem("backup_offsite_failed", at=now - timedelta(hours=5)),
+    )
+    banner = chrome | {
+        "critical_count": 2,
+        "critical_limit": 500,
+        "critical_shown": "shown",
+        "critical_events": summary({"source_destructive_change": 1, "task_failed": 1}),
+    }
+    html = render_to_string(
+        "stewardship/home.html",
+        context
+        | {
+            "admin_chrome": banner,
+            "principal": actor,
+            "configuration": configuration,
+            "dashboard": {
+                "campaign": CAMPAIGN,
+                "refreshed_at": None,
+                "full_refresh": FullRefreshStatus(
+                    now - timedelta(days=1), failed, False, failed_task_id=UUID(int=7)
+                ),
+                "can_view_task": True,
+                "can_refresh": True,
+                "refresh_key": "component-key",
+                "health_problems": problems,
+                "health_listed": {"failed": True, "late": False, "offsite": True},
+                "offsite": OffsiteStatus(
+                    "failed", "Copying the newest backup failed.", now, None, None
+                ),
+            },
+        },
+    )
+    return {HEALTH_PATH: ("text/html", html)}

@@ -1,12 +1,14 @@
 """Exact source-load progress; GET is passive and visible-page POST is bounded."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from django.http import JsonResponse
 from django.shortcuts import render
+from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
+from parishkit.stewardship.jobs.queue_wait import waited_words
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import unexpected_fields
 
@@ -16,9 +18,8 @@ from .setup_progress import source_progress
 from .setup_views import ERRORS, _checked, error_response, page_error
 from .setup_wizard import wizard_for
 
-# Plain-language status for each observable load situation. The page renders
-# all of them (hidden) so the polling script can switch text without inventing
-# its own wording; ``summary`` picks the same key on the server.
+# Plain-language status for each observable load situation; ``summary``
+# picks the key for one observation.
 SUMMARIES = {
     "queued": _("Waiting for the background loading service to pick up the job."),
     "retry_wait": _(
@@ -67,8 +68,7 @@ COLLECTIONS = {
     "ministry_roster": _("Ministry rosters (one request per Ministry)"),
     "funds": _("Giving funds"),
 }
-# Status wording with {placeholders}; the polling script fills in the same
-# templates from the page's data attributes, so both stay in one language.
+# Status wording with {placeholders}, filled in by ``collections``.
 COLLECTION_TEXT = {
     "done": _("{count} loaded"),
     "rosters": _("{finished} of {expected} loaded"),
@@ -78,7 +78,7 @@ COLLECTION_TEXT = {
 
 
 def phases(progress, status_key):
-    """Name each load phase's state; the polling script mirrors this."""
+    """Name each load phase's state for the live status region."""
     order = [key for key, _label in PHASES]
     # Before the download starts (queued, starting) no phase has begun.
     index = order.index(progress["phase"]) if progress["phase"] in order else -1
@@ -100,7 +100,6 @@ def collections(progress):
     """Label each downloaded collection and word its state for the first render.
 
     Exactly one unfinished collection is "active" while the download runs.
-    The polling script mirrors this so the list updates without a reload.
     """
     fetching = progress["phase"] == "fetching" and progress["active"]
     rows, waiting = [], False
@@ -141,20 +140,46 @@ def summary(progress):
     return progress["phase"] if progress["phase"] in SUMMARIES else "working"
 
 
-def _seconds_since(now, instant):
-    """Whole seconds from an ISO instant to the server's observation time."""
+def _ago(now, instant):
+    """How long before the observation ``instant`` was, in waited_words' words.
+
+    live-status-v1.js ticks the same words forward between polls.
+    """
     if not instant:
         return None
     delta = datetime.fromisoformat(now) - datetime.fromisoformat(instant)
-    return max(0, int(delta.total_seconds()))
+    return waited_words(max(delta, timedelta()))
+
+
+def _status_context(progress):
+    """The live status region's context for one progress observation."""
+    status_key = summary(progress)
+    return {
+        "progress": progress,
+        "status_key": status_key,
+        "summary_text": SUMMARIES[status_key],
+        "phases": phases(progress, status_key),
+        "collections": collections(progress),
+        "started_ago": _ago(progress["server_now"], progress["started_at"]),
+        "quiet_ago": _ago(progress["server_now"], progress["heartbeat_at"]),
+    }
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
 def setup_source_progress(request, task_id):
-    """No posted heartbeat, deadline, worker or claimed version is trusted."""
+    """No posted heartbeat, deadline, worker or claimed version is trusted.
+
+    A GET is passive: the page, its JSON, or (``?format=status``) the live
+    status region the open page polls (#1354). Only a POST, the visible
+    page's renewal (answered as JSON), may renew the setup's idle deadline.
+    Every form is admitted by the same exact-task ``source_progress`` check.
+    """
     try:
         query = filters(request.GET, allowed={"format"})
-        if query and query != {"format": "json"}:
+        shape = query.get("format")
+        if shape not in {None, "json", "status"} or (
+            shape == "status" and request.method == "POST"
+        ):
             raise ValueError("Invalid progress format.")
         if (
             request.FILES
@@ -166,28 +191,22 @@ def setup_source_progress(request, task_id):
         progress = source_progress(
             request, service, task_id, renew=request.method == "POST"
         )
-        if query:
+        wizard = None if shape == "json" else _wizard(request, service)
+        if shape == "json":
             response = JsonResponse(progress)
+        elif shape == "status":
+            response = render(
+                request,
+                "stewardship/setup-source-progress-status.html",
+                _status_context(progress) | {"wizard": wizard},
+            )
         else:
+            path = reverse("admin:setup_source_progress", args=[task_id])
             response = render(
                 request,
                 "stewardship/setup-source-progress.html",
-                {
-                    "progress": progress,
-                    "wizard": _wizard(request, service),
-                    "status_key": summary(progress),
-                    "summaries": SUMMARIES,
-                    "phases": phases(progress, summary(progress)),
-                    "phase_status": PHASE_STATUS,
-                    "collections": collections(progress),
-                    "collection_text": COLLECTION_TEXT,
-                    "elapsed": _seconds_since(
-                        progress["server_now"], progress["started_at"]
-                    ),
-                    "quiet": _seconds_since(
-                        progress["server_now"], progress["heartbeat_at"]
-                    ),
-                },
+                _status_context(progress)
+                | {"wizard": wizard, "status_url": path + "?format=status"},
             )
         return _checked(request, service, response)
     except ERRORS as error:
