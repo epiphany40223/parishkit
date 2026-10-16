@@ -30,4 +30,4 @@
 {% elif debug_off.refused == "busy" %}<p data-debug-allow-refused="busy">{% translate "The debug-off switch is no longer set, so nothing was changed. The Debug logging details show who cleared it and when." %}</p>
 {% elif debug_off.refused == "production" %}<p data-debug-allow-refused="production">{% translate "In Production only the server operator can clear the debug-off switch, offline, with pk-stewardship debug-off-clear. Nothing was changed." %}</p>
 {% elif debug_off.refused == "denied" %}<p data-debug-allow-refused="denied">{% translate "The server refused to allow debug logging again, so nothing was changed. System logs record why; ask the server operator to check the database grants." %}</p>
-{% else %}<p data-debug-allow-refused="invalid">{% translate "That request could not be read. Nothing was changed; try again." %}</p>{% endif %}</div>{% endif %}
+{% else %}<p data-debug-allow-refused="invalid">{% if debug_off.refusal_text %}{{ debug_off.refusal_text }}{% else %}{% translate "That request could not be read. Nothing was changed; try again." %}{% endif %}</p>{% endif %}</div>{% endif %}

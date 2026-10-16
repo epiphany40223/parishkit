@@ -236,6 +236,29 @@ fresh authentication offers **Confirm with Google** as described under
 [identity and session security](../architecture/spec.md#identity-and-session-security). Forms that
 can re-render with inline field errors still do so.
 
+A form posted with a field it does not have, a field repeated, an unknown
+action, or a hidden or always-sent field left out is still refused (400, code
+`invalid`), but it is not treated as a wrong entry (#1401). The Admin portal
+requires JavaScript, so even a required checkbox behind a gate is always
+sent; such a post means a page left open while it changed, a stale copy of
+it, or a hand-made post. Views raise the shared unexpected-fields refusal for
+this, not a plain invalid-value error, and it says: "Nothing was done: this
+page sent something the server did not expect, which usually means the page
+changed after you opened it." What comes next depends on where it shows:
+
+- In a dialog or an in-place region, which is still on the page, it adds
+  "Reload the page, then try again."
+- On the full error page that answers a form's POST, where the browser's
+  Reload would send the same refused form again, it adds "Open the page
+  again, then try again." with a **Return to the previous page** link to the
+  form's page (on the delivery pages too). The page is titled **This page is
+  out of date**, never "Check your entries".
+
+An in-place control or dialog whose refusal has no explanation of its own
+names what its status means (#1400): a bare 400 says the page sent something
+unexpected and to reload, a 404 or 410 that the item no longer exists, and
+only an outage says to try again in a moment.
+
 An Admin (`/admin/…`) or Family (`/family/…`) address that no page answers,
 because no route matches or a view raises the framework's not-found error, gets
 the same treatment (#927): the page is titled **Page not found** and shows only

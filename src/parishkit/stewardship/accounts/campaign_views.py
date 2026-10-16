@@ -47,6 +47,7 @@ from parishkit.stewardship.web.refusals import (
     UserFacingError,
     UserFacingStale,
     stale_page,
+    unexpected_fields,
 )
 
 from . import admin_navigation, field_tips, setup_help
@@ -1099,7 +1100,7 @@ def campaign_end_date_check(request, campaign_id):
                 for name, values in request.POST.lists()
             )
         ):
-            raise ValueError("Invalid end date fields.")
+            raise unexpected_fields()
         with read_transaction():
             state = _state(service)
             configuration, campaigns, _source, held = state[:4]

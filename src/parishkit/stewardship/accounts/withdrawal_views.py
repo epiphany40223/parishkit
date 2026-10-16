@@ -7,6 +7,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.web.refusals import unexpected_fields
 
 from . import withdrawal_commands
 from .admin_editing import principal
@@ -55,7 +56,7 @@ def withdrawal(request, campaign_id):
                 )
             )
         elif request.method == "POST":
-            raise ValueError("Invalid withdrawal action.")
+            raise unexpected_fields()
         return _checked(
             request,
             service,

@@ -40,6 +40,7 @@ from parishkit.stewardship.web.refusals import (
     gone_response,
     load_preview,
     unavailable_response,
+    unexpected_fields,
 )
 
 from . import admin_navigation
@@ -134,7 +135,7 @@ def form_action(
             for name, values in parameters.lists()
         )
     ):
-        raise ValueError("Invalid configuration action or fields.")
+        raise unexpected_fields()
     return action
 
 
