@@ -1069,7 +1069,9 @@ size is chosen, and the form is not sent until a smaller file is chosen; a
 form marked `data-max-total-bytes` refuses files that together exceed it
 the same way. The message shows where the server's errors for that field
 go, in a reserved line that keeps its height once the error clears and is
-announced to screen readers (`file-size-field.html`). A field that a
+announced to screen readers (`file-size-field.html`; Off-site backups'
+folder link keeps the same line, so Test access refused there in place
+moves nothing, #1334 review). A field that a
 choice hides drops its refusal, and shows it again if it reappears with
 the same file. The reverse proxy refuses an oversized request before the
 page could explain it, so this check is what keeps such a refusal on the
