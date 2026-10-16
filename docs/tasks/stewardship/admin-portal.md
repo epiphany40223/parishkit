@@ -1367,14 +1367,14 @@ Specification: [System health](../../specs/stewardship/admin-portal/spec.md#syst
 - [x] ADM-13.05 — PR 5: add Accept this change once, bound to every recorded count, with example Families (migration), with its commands or their pending exemption.
 - [x] ADM-13.06 — PR 6: add the debug-off switch, its in-process override, its host clear command and Allow debug logging again (Testing only, refused in Production) (migration), with its command or its pending exemption.
 - [x] ADM-13.07 — specify the System health dashboard (#1214): the overall status line, the tiles, the problem registry, opening and closing tiles, Home and the critical-problems banner, and the delivery slices.
-- [ ] ADM-13.08 — dashboard slice 1: the problem registry, its severities and tiles, and the new warning kinds. (The registry's tiles and severities for the existing kinds, the split of a grouped process problem and the document's `severity` and `tiles` came with ADM-13.09 and ADM-13.10; the new kinds, the backup key rule, Home's key fallback and the shared banner words remain.)
+- [x] ADM-13.08 — dashboard slice 1: the problem registry, its severities and tiles, and the new kinds. (The registry's tiles and severities for the existing kinds, the split of a grouped process problem and the document's `severity` and `tiles` came with ADM-13.09 and ADM-13.10, and the shared banner words with ADM-13.15; the new shared kinds, read in the statement Home already runs, the unknown WorkGroup's error while Reminders are scheduled, the backup key rule and Home's key fallback came last.)
 - [x] ADM-13.09 — dashboard slice 2a: the overall status line, its Not current state, the status indicator icons and the contrast test.
 - [x] ADM-13.10 — dashboard slice 2b: the tile frame, the tile grid and its bands, its mirror targets, the tiles' Not current state, and the moved, always-drawn controls.
 - [x] ADM-13.11 — dashboard slice 3: the Mail tile: its Working summaries in a fixed order, one line for both mail senders while they agree, and its explanations in toggletips and "About this page". (A halt's kind and Clear the halt remain with ADM-13.04.)
 - [x] ADM-13.12 — dashboard slice 4: the ParishSoft refresh tile: its Working summaries in a fixed order, the refused counts inside the refusal's problem item with Accept this change once right under them, and a panel that repeats none of its problems.
 - [x] ADM-13.13 — dashboard slice 5: the Backups and Debug logging tiles: their Working summaries in a fixed order, the Backups page findings as Warning items of the tile's problems, and panels that repeat none of their tiles' problems.
 - [x] ADM-13.14 — dashboard slice 6: the page-load and services tiles: their summaries and states chosen in one place, each page-load finding as its tile's problem item with its link drawn only while relevant, a Version panel that repeats none of its problems, and Accept this change once's step-up notice only while the sign-in is stale.
-- [ ] ADM-13.15 — dashboard slice 7: Home and the critical-problems banner.
+- [x] ADM-13.15 — dashboard slice 7: Home and the critical-problems banner.
 
 Evidence: In progress. ADM-13.00 is this docs-only change: the Admin portal
 specification's System health section (panels, actions, service status

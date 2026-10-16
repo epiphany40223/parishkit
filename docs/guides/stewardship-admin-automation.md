@@ -444,7 +444,11 @@ pk-admin system debug-allow
 `go-live progress` and `system health` prints one document per poll,
 `final` false until the last. It stops with exit 0 once the task has
 finished, once no send is in progress or about to start, once System
-health lists no problem, or once Production preparation is complete,
+health lists no problem except those waiting cannot clear (off-site copies
+not set up, `offsite_missing`, and a requested backup that failed, did not
+finish or was never picked up, `backup_request_failed`: the
+`WAIT_CANNOT_CLEAR` set in `parishkit.stewardship.system_health`), or once
+Production preparation is complete,
 absent or its task has stopped (a failed task waits for the page's retry,
 and `retry_available` says so). It stops with exit 7 and the last state
 after `--timeout` seconds (default and maximum three hours;

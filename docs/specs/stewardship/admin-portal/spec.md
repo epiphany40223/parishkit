@@ -5860,20 +5860,18 @@ its problems. Slice 7 delivered Home and the banner, as
 describes: Home's icons, state words and tile links, one display of a
 problem Home also reports in its own notice, the registry's banner mapping
 with the shared words and the banner's tile links, and Accept this change
-once acknowledging through that mapping. The Administrator
+once acknowledging through that mapping. The rest of slice 1 delivered the
+four former page notices as shared kinds of the
+[problem registry](#health-problem-registry), so Home lists them too: an
+unknown No-reminders WorkGroup (an error while Reminders are scheduled), a
+newest backup sealed to another key under the one-warning-per-cause rule, a
+requested backup that ended without a backup, and, in Production, off-site
+copies that are not set up, with Home's fallback line when the backup key
+cannot be checked. The Administrator
 answered the dashboard's questions on 2026-10-13; the
-[decisions](#administrator-decisions-2026-10-13) record the answers. Until
-the rest of slice 1 lands, the frame applies these defaults:
+[decisions](#administrator-decisions-2026-10-13) record the answers. The
+frame applies these defaults:
 
-- **Page notices count on the page.** Four notices are not yet in the
-  shared list: an unknown No-reminders WorkGroup, a newest backup sealed to
-  another key, a requested backup that failed, did not finish or was not
-  picked up, and, in Production, off-site copies that are not set up. They
-  raise their tile to Warning on the page, and are listed as Warning items
-  after their tile's problems, each with its sentence and link. Home does
-  not list them yet.
-  Slice 1 makes them registry kinds, so Home lists them too and an unknown
-  WorkGroup becomes an error while Reminders are scheduled.
 - **The refusal's counts end the ParishSoft refresh tile's problems**, and
   Accept this change once follows them directly, as the table asks. The
   refusal's item comes after the tile's other problems and the unknown
@@ -5997,7 +5995,7 @@ Working with a summary that says so ("No current campaign").
 | --- | --- | --- | --- | --- | --- |
 | **Mail** | a mail consumer is halted (`sender_halted`); a mail consumer is not running, or mail dispatch has not reported (the `mail-dispatch` part of `not_running` and `not_reported`); the email provider is unavailable (`mail_provider_unavailable`); an address follow-up's permanent refusal could not be set aside (`refusal_unrecorded`, #1201) | a mail consumer is paused after an outage (`sender_outage`) | the first that holds, in the order [why sends are waiting](#why-sends-are-waiting) lists | the [why sends are waiting](#why-sends-are-waiting) panel (every reason, the 24-hour count, the resume time, the Family email progress link) and the [mail sender panel](#mail-sender-panel) (each consumer's line and any open incident) | **Clear the halt** ([ADM-13 PR 4](#clear-a-halted-mail-sender), not built). The panel content keeps its links: the deployment runbook under a not-running line, the mail-provider outage runbook beside an outage pause, Pause and resume mail beside the pause line, and Outgoing mail: waiting to retry beside the retry line. |
 | **ParishSoft refresh** | a refused large change (`source_destructive_change`, whose problem block holds the refused counts table); a different organization (`source_tenant_mismatch`); while the campaign has Reminders still scheduled, an unknown No-reminders WorkGroup (`workgroup_missing`, new in the shared list, the #861 concern) | the last full refresh failed (`source_failed`); ParishSoft could not be reached (`source_failing`); the data is out of date (`source_late`); old copies are not being removed (`source_retention_failing`); an unknown No-reminders WorkGroup while no Reminder is scheduled | the first that holds, in the order the [ParishSoft refresh panel](#parishsoft-refresh-panel) lists | the [ParishSoft refresh panel](#parishsoft-refresh-panel): refresh times, and held and skipped refreshes | **Accept this change once** (its tick box, preview and the example Families of #1213), directly after the refusal's counts table, as the Administrator asked on #1210. The problem sentences keep their links (the ParishSoft outage runbook, Check the No-reminders WorkGroup setting), and Refresh from ParishSoft ends the panel content. |
-| **Backups** | a backup is overdue (`backup_rpo_breach`) | an off-site copy failed (`backup_offsite_failed`); the backup key changed (`backup_key_changed`); the newest backup, finished after the configured key was activated, was sealed to another key (`backup_key_mismatch`, new); a requested backup failed, did not finish or was not picked up (`backup_request_failed`, new, until a newer request or a newer finished backup); in Production, off-site copies are not set up (`offsite_missing`, new) | "Last backup 3 hours ago; off-site copy 3 hours ago"; "Backup requested at 10:42 AM is running" | the [backups panel](#backups-panel) | **Take a backup now**. Off-site backups (Google Drive) stays in the panel content beside the off-site line. |
+| **Backups** | a backup is overdue (`backup_rpo_breach`) | an off-site copy failed (`backup_offsite_failed`); the backup key changed (`backup_key_changed`); the newest backup, started after the configured key was activated, was sealed to another key (`backup_key_mismatch`, new); a requested backup failed, did not finish or was not picked up (`backup_request_failed`, new, until a newer request replaces it; a newer finished backup also clears one that failed or did not finish, but not one never picked up, since a good nightly backup does not prove the server checks for requests); in Production, off-site copies are not set up (`offsite_missing`, new) | "Last backup 3 hours ago; off-site copy 3 hours ago"; "Backup requested at 10:42 AM is running" | the [backups panel](#backups-panel) | **Take a backup now**. Off-site backups (Google Drive) stays in the panel content beside the off-site line. |
 | **Debug logging** | none | in Production, debug logging is in effect in any service (`debug_logging`; a warning because nothing stops working, [decision 11](#administrator-decisions-2026-10-13)) | "Off"; "Turned off from this page by … at …"; "On in 4 services, as expected in Testing" | the [debug logging panel](#debug-logging-panel) | **Turn off debug logging**, drawn only while some service has debug logging in effect; once the switch is set, its status line and, only in Testing, **Allow debug logging again** ([clearing the switch](#turn-off-debug-logging)). |
 | **Families the form cannot open** | none | at least one Family cannot open the form; the check could not run | "Every Family can open the form"; "No current campaign" | the sentence and the link of [Families the form cannot open](#system-health-page) | none; the list's link is in the sentence |
 | **Pages and emails to re-save** | an invitation or reminder cannot be sent until it is fixed (the list's `blocked` items) | other items are marked "Re-save recommended"; the check could not run | "Nothing to re-save"; "No current campaign" | the sentence and the linked list of [pages and emails to re-save](#system-health-page) | none; each item links its editor |
@@ -6037,29 +6035,54 @@ cannot disagree.
   order: one tile for most problems, and both tiles for a grouped process
   problem whose subjects the page splits. The document still lists such a
   problem once, as Home does.
-- **New kinds.** `workgroup_missing` (today a panel notice; an error while
-  Reminders are scheduled, otherwise a warning), and the warnings
+- **New kinds.** `workgroup_missing` (an error while Reminders are
+  scheduled, otherwise a warning), and the warnings
   `backup_key_mismatch`, `backup_request_failed` and `offsite_missing`
   (Production only), join the shared list, so Home and the page agree on
   them.
-  - The backup request and off-site facts are rows `HEALTH_SQL` can read
-    in the statement Home already runs.
-  - `workgroup_missing` needs the current campaign's id and configuration
-    and the current snapshot's cursor, read through the existing helpers
-    (`configured_name` and `recorded` in `source/workgroups.py`, as
-    `_workgroup_missing` does today), so Home reads it in Python after
-    that statement. Slice 1 records Home's query count in its query-budget
-    test.
-  - `backup_key_mismatch` comes from `_backup`, which raises a
-    `ConfigError` when the configured key cannot be read. The System
-    health page keeps its 503 for that, as today; only Home falls back,
-    showing "The backup key could not be checked" as a warning line
-    instead of failing.
+  - Their facts are columns of `HEALTH_SQL`, the statement Home already
+    runs: the newest backup request, the key the newest backup was sealed
+    to and when it started, when the configured key was activated (the
+    newest `backup_key_replaced` security event, which every activation that sets
+    a different key records at its own time), the current snapshot's
+    No-reminders WorkGroup evidence, and whether the current campaign has a
+    Reminder still to come. Whether off-site copies are set up, and the
+    campaign's WorkGroup name, come from the applied configuration and the
+    campaign settings Home has already loaded. Home's query count therefore
+    stays the same whichever problems are open, as its query-budget test
+    holds. This replaces the earlier plan to read the snapshot's cursor
+    through the helpers in Python after that statement, which would have
+    cost Home queries whenever a WorkGroup name is set; the evidence is
+    still checked by the rule `current_evidence` applies, so the page,
+    Home and the Reminder planner agree.
+  - **Reminders are scheduled** while the current campaign's applied
+    schedule has a Reminder whose time is still ahead on the campaign
+    clock. Then `workgroup_missing` is an error, and its sentence adds
+    that Reminders are still scheduled; otherwise it is a warning. A
+    Reminder whose time has passed but which is still being sent (held,
+    paused or spread over a large send) counts as not scheduled.
+  - `backup_key_mismatch` raises a `ConfigError` when the configured key
+    cannot be read. The System health page keeps its 503 for that, as
+    before; only Home falls back, showing "The backup key could not be
+    checked" as a warning line (`backup_key_unchecked`, Home's alone)
+    instead of failing. That line links no tile, since the page it would
+    open cannot be shown.
+  - The `system health` document gains no member for them: the unknown
+    WorkGroup's name is never part of it, and a failed request's status is
+    the document's `backup_request`.
+  - **What waiting cannot clear.** `offsite_missing` needs an
+    Administrator, and `backup_request_failed` the server operator, a
+    newer request or (when it failed or did not finish) the next nightly
+    backup, hours away, so `system health --watch` stops once only they
+    remain
+    (`WAIT_CANNOT_CLEAR` in `system_health.py`; see the
+    [automation guide](../../../guides/stewardship-admin-automation.md#watching-and-errors)).
 - **Backup key, one warning per cause.** `backup_key_mismatch` holds only
-  when the newest backup finished after the configured key was activated
+  when the newest backup started after the configured key was activated
   (the time the configuration that set it was applied) and was sealed to
-  another key, so it never fires in the day between an ordinary key change
-  and the next backup. `backup_key_changed` (the incident raised when a
+  another key. A backup reads its key as it starts, so it never fires in
+  the day between an ordinary key change and the next backup, nor for a
+  backup already running when the key changed. `backup_key_changed` (the incident raised when a
   backup used a different key than the one before it) is the expected
   result of a key change. While both hold, the tile lists only
   `backup_key_mismatch`, whose sentence covers the change, so one cause
@@ -6253,7 +6276,9 @@ The same problem never appears twice in ways that disagree.
     once. While `backup_offsite_failed` is listed and the off-site line
     reports the failure, that line is left out. The sentence keeps its
     Off-site backups (Google Drive) link, and the last copy's time is in the
-    Backups tile.
+    Backups tile. While `offsite_missing` is listed (Production), Home's
+    invitation to set off-site copies up is left out; the sentence keeps
+    its Set up off-site backups link.
 - **Banner events and problems.** Where a problem kind accounts for a
   CRITICAL operational event, the registry names it. While a mapped
   problem is current, the banner's group for its event links, for
@@ -6604,10 +6629,11 @@ might be held back:
   only the Families skipped before stay skipped until a refresh finds it
   ([#1305](https://github.com/epiphany40223/parishkit/issues/1305)). The
   notice names the setting and links its page; the refresh itself logs a
-  WARNING. Until the registry
-  slice makes it a shared kind, it is listed with the tile's problems as a
-  Warning item, after the others and before a refused change, and it
-  clears when a refresh finds the name or the setting is cleared.
+  WARNING. It is the shared `workgroup_missing` problem, an error while
+  [Reminders are scheduled](#health-problem-registry) and otherwise a
+  warning, listed after the tile's other problems and before a refused
+  change. It clears when a refresh finds the name or the setting is
+  cleared.
 
 The panel repeats none of the tile's problems: in the tile, the shared
 refresh status leaves out its late notice, which `source_late` already
@@ -6668,16 +6694,22 @@ server?" (ADM-35):
   panel line names only its state (and when it started running). Why a
   held request can still show for a few minutes after the send ends (the
   server checks again every five minutes) is in a toggletip beside it. A
-  request that ended without a backup is a finding, below.
+  request that ended without a backup is the `backup_request_failed`
+  problem, below, until a newer request replaces it. A newer finished
+  backup also clears one that failed or did not finish, but not one never
+  picked up, since a good nightly backup does not prove the server checks
+  for requests.
 
 The panel repeats none of the tile's problems. The open
 `backup_rpo_breach`, `backup_offsite_failed` and `backup_key_changed`
-incidents are the tile's problems, in their own sentences. Until the
-registry slice makes them shared kinds, the page findings are listed after
-them as Warning items, in this order, each with its sentence and link:
+incidents are the tile's problems, in their own sentences. The shared
+warnings of the [problem registry](#health-problem-registry) follow them,
+in this order, each with its sentence and link:
 
-- a newest backup sealed to another key, linking the **Backup encryption
-  key** settings;
+- a newest backup, started after the configured key was activated,
+  sealed to another key (`backup_key_mismatch`), linking the **Backup
+  encryption key** settings; while it holds, `backup_key_changed` is not
+  listed, since one cause gives one warning;
 - a requested backup that failed or did not finish (linking the backup
   runbook's "Checking" section) or was not picked up (linking the nightly
   backup);
@@ -6690,7 +6722,7 @@ off-site line with **Off-site backups (Google Drive)**. A requested backup's
 progress is not repeated there: it is the line under
 [Take a backup now](#take-a-backup-now)'s button. A failed newest copy without an open incident is a
 plain notice there. In Testing, off-site copies that are not set up are a
-panel line with the setup link, not a finding
+panel line with the setup link, not a problem
 ([decision 5](#administrator-decisions-2026-10-13)).
 
 While the Backups tile is Working, its summary names the first of these
