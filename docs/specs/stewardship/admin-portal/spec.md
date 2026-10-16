@@ -5583,16 +5583,16 @@ the way to do it. A halt's kind arrives with PR 4.
   Administrator watches, so it comes first.
 - **Home.** For viewers who may open this page, Home's problems list (see
   [Home page](#home-page)) adds one line for each System health problem,
-  linking this page. Other viewers see no such line. These lines join the
-  problems list that ADM-12's Home work (#568, NAV-18, with its Today line)
-  renders, so whichever of the two lands second adds its lines to the
-  other's list rather than making a second one. ADM-13 landed first, so
-  its lines are Home's problems list, a panel at the top of Home, each
-  with the page's own sentence; NAV-18 added Next steps without merging
+  linking its tile on this page. Other viewers see no such line. These
+  lines join the problems list that ADM-12's Home work (#568, NAV-18,
+  with its Today line) renders, so whichever of the two lands second adds
+  its lines to the other's list rather than making a second one. ADM-13
+  landed first, so its lines are Home's problems list, a panel at the top
+  of Home, each with the page's own sentence; NAV-18 added Next steps without merging
   the lists (a later slice on #522). Until they are merged, a problem
-  Home already reports elsewhere (a failed ParishSoft refresh, a failed
-  off-site copy) can appear twice on Home: once in its own notice
-  and once as a System health line. The
+  Home already reports elsewhere (a failed or late ParishSoft refresh, a
+  failed off-site copy) is shown once, as the System health line, to those
+  who see the lines (dashboard slice 7). The
   [debug logging banner](#navigation-and-home) and the critical-problems
   banner link this page too. How Home's lines and the critical-problems
   banner stay consistent with the tiles is in
@@ -5676,7 +5676,12 @@ pages and emails to re-save chosen in one place (see the
 [System health page](#system-health-page)), each finding as its tile's
 problem item, the Version and services tile's Working summaries (see the
 [version panel](#version-panel)) and a version panel that repeats none of
-its problems. The Administrator
+its problems. Slice 7 delivered Home and the banner, as
+[health problems on Home and in the banner](#health-problems-on-home-and-in-the-banner)
+describes: Home's icons, state words and tile links, one display of a
+problem Home also reports in its own notice, the registry's banner mapping
+with the shared words and the banner's tile links, and Accept this change
+once acknowledging through that mapping. The Administrator
 answered the dashboard's questions on 2026-10-13; the
 [decisions](#administrator-decisions-2026-10-13) record the answers. Until
 the rest of slice 1 lands, the frame applies these defaults:
@@ -5894,13 +5899,20 @@ cannot disagree.
 #### Opening and closing tiles
 
 - **On page load:** Working tiles are closed. Warning and Error tiles are
-  open. A link to a tile's anchor (for example
+  open. An address whose anchor names a tile (for example
   `/admin/system/health/#health-backups`, which Home's lines use) opens
-  that tile too. The browser stores nothing, so every load applies this
-  rule again ([decision 9](#administrator-decisions-2026-10-13)).
+  only that tile and leaves every other closed, whatever its state, as
+  [a fragment opens only its target](../ui-conventions/spec.md#disclosures)
+  requires (Administrator, pk-local batch 24c). The browser stores
+  nothing, so every load applies this rule again
+  ([decision 9](#administrator-decisions-2026-10-13)).
 - **The Administrator decides after that.** Opening and closing is the
   summary row's disclosure button, by pointer or keyboard (Enter or
-  Space). A poll never opens or closes a
+  Space). The whole summary row is that button, and a click on an open
+  tile's band, outside its controls and not selecting text, closes it too
+  ([whole-card clicks](../ui-conventions/spec.md#disclosures)). A link on
+  the page to a tile, or a changed anchor, opens that tile and closes
+  nothing. A poll never opens or closes a
   tile: a tile whose state changes keeps its open or closed state, and only
   its icon, state word and summary change, in place and at the same height.
   A tile that turns Working while open stays open.
@@ -6041,12 +6053,28 @@ The same problem never appears twice in ways that disagree.
   registry's problems, with the page's sentence, plus the registry's icon
   and state word, and link the problem's tile anchor. Until NAV-18 merges
   Home's lists (see [System health page](#system-health-page)), a problem
-  that Home also reports in its own notice (a failed ParishSoft refresh, a
-  failed off-site copy) is shown once: as the System health line to
+  that Home also reports in its own notice (a failed or late ParishSoft
+  refresh, a failed off-site copy) is shown once: as the System health line to
   viewers who may open System health, and as the other notice to everyone
   else. A line shown in a notice's place keeps that notice's links and
   actions (for example Refresh from ParishSoft, or the off-site backup
   settings), so nothing Home offers today is lost.
+  - **The line.** The icon and the word (Error or Warning) come first,
+    then the sentence, then "See *tile* in System health", which links the
+    first tile that shows the problem (a stopped mail sender's line links
+    Mail). An error line has the error notice's look, a warning line the
+    warning notice's. When the sentence already links that tile ("See Mail
+    sender", "See the counts", "See Version"), the line adds no second
+    link, so each line links its tile exactly once.
+  - **Which notices give way.** While `source_failed` is listed, the
+    refresh block's failure notice becomes the plain line System health's
+    tile uses: when changes appear, and "See what went wrong". While
+    `source_late` is listed, the late notice is left out. Either way, the
+    one-click Run a full refresh now the notice carried stays in the block,
+    once. While `backup_offsite_failed` is listed and the off-site line
+    reports the failure, that line is left out. The sentence keeps its
+    Off-site backup settings link, and the last copy's time is in the
+    Backups tile.
 - **Banner events and problems.** Where a problem kind accounts for a
   CRITICAL operational event, the registry names it. While a mapped
   problem is current, the banner's group for its event links, for
@@ -6075,6 +6103,16 @@ The same problem never appears twice in ways that disagree.
   "ParishSoft data refresh failed"). On the page side, the summaries of
   `source_tenant_mismatch`, `source_failing` and
   `source_destructive_change` change to the shared words.
+
+  The group's link reads "See *tile* in System health" and comes after
+  the group's count, ahead of the System logs button. A problem counts as
+  current while its group has not ended, by the banner's own #633 check.
+  The banner therefore stays at its one query, and an ended group reads
+  "ended" with no tile link. `mail_provider_failed` links no tile until
+  ADM-13 PR 4 adds halt identities, because that one query cannot tell
+  whether a halt is current. The mapping (`BANNER_PROBLEMS`) sits beside
+  the registry in `system_health.py`. The table's `source_invalid` is the
+  event recorded as `source_refresh_invalid`.
 - **An action that resolves a problem clears its banner entries.** When an
   action's confirmation resolves a mapped problem, the same transaction
   acknowledges that event's CRITICAL entries through the banner's existing
@@ -6083,13 +6121,19 @@ The same problem never appears twice in ways that disagree.
   As with the banner's own Acknowledge, that hides them for every Admin.
   Only entries the action's preview showed are acknowledged: the preview's
   signed binding carries their ids (the banner's own `sign` list, at most
-  500), so nothing recorded after the preview is hidden. The in-place
+  500), or names the one record whose entries they are (Accept this change
+  once, below), so nothing recorded after the preview is hidden. The in-place
   answer carries the refreshed banner, so it disappears without a reload.
   A later entry, for example when the accepted refresh is refused again,
   brings it back.
   - **Accept this change once** acknowledges the refusal's
     `source_destructive_change` entries. This is the fix the Administrator
-    asked for on #1210.
+    asked for on #1210. It finds them through the mapping: the entries of
+    the events mapped to `source_destructive_change` that name the refused
+    task. The worker writes them in the refusal's own transaction, so they
+    are exactly the entries any preview of that refusal showed. The
+    preview's binding therefore names the refusal rather than carrying
+    entry ids.
   - **Clear the halt** (ADM-13 PR 4) acknowledges the halt's
     `mail_provider_failed` entries.
   - **Take a backup now** and **Turn off debug logging** acknowledge
@@ -6576,7 +6620,11 @@ The panel repeats none of the tile's problems. Different versions
 are the tile's problems, in their own sentences, so the panel keeps only
 the facts: "All services run version 1.4.2" while every service runs one
 version, each service's line, "The database matches the version that is
-running" while it does, and the mode.
+running" while it does, and the mode. Inside the tile, the versions
+sentence draws no "See Version" link, which would point at the tile it is
+in; Home keeps it. The `mail_provider_unavailable` sentence likewise drops
+its "See Mail sender" link inside the Mail tile
+([#1385](https://github.com/epiphany40223/parishkit/issues/1385)).
 
 While the Version and services tile is Working, its summary names the
 first of these that holds:

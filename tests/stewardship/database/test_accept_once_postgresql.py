@@ -145,7 +145,9 @@ def acknowledged():
 
 # The critical-problems banner and the refusal's line in it.
 BANNER = "Critical problems in the past 24 hours"
-DROP = "ParishSoft refresh would remove too much data"
+DROP = "ParishSoft refresh refused: too large a change"
+# The refusal's group links its tile while the refusal is current (#1214).
+TILE_LINK = 'href="/admin/system/health/#health-source">See ParishSoft refresh'
 
 
 def with_examples(attempt):
@@ -277,6 +279,7 @@ def test_accepting_acknowledges_only_that_refusals_critical_problem(parish, goog
     before = home(browser)
     assert BANNER in before and f"{DROP} (2×)" in before
     assert "Email sending failed" in before
+    assert TILE_LINK in before
     token = token_of(post(browser, action="accept_preview").content.decode())
     # The preview acknowledges nothing.
     assert not acknowledged()
@@ -294,6 +297,8 @@ def test_accepting_acknowledges_only_that_refusals_critical_problem(parish, goog
     assert f"{DROP} (2×)" not in answer.content.decode()
     after = home(browser)
     assert BANNER in after and DROP in after and f"{DROP} (2×)" not in after
+    # The earlier refusal's entry still links the tile.
+    assert TILE_LINK in after
     assert "Email sending failed" in after
     assert earlier.pk not in acknowledged() and outage.pk not in acknowledged()
     # The same confirmation again acknowledges nothing more.
