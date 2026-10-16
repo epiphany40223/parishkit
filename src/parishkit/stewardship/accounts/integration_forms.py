@@ -11,6 +11,9 @@ from .key_files import MAX_FILE_BYTES
 from .policy_schema import normalized_email
 from .refresh_schedule_forms import ScheduleEditor
 
+# A field group with a reserved error line (file-size-field.html).
+ERROR_LINE_TEMPLATE = "stewardship/file-size-field.html"
+
 LABELS = {
     "parishsoft": _("ParishSoft"),
     "google_workspace": _("Google Workspace mail"),
@@ -153,6 +156,12 @@ class IntegrationForm(AdminForm):
                 "organization_id": setup_help.HINTS["organization_id"],
             },
         )
+        # The folder link keeps a line for its error, shown or not, so Test
+        # access's in-place refusal there never moves the buttons below
+        # (#1334 review; ui-conventions "No layout shift"). Set after the tip,
+        # which only a field with no template of its own takes.
+        if "target" in self.fields:
+            self.fields["target"].template_name = ERROR_LINE_TEMPLATE
 
     def clean_target(self):
         """Store one canonical folder link, whichever form the Admin pasted."""

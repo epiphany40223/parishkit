@@ -131,5 +131,7 @@ def bad_link(context, admin):
             "workspace_configured": True,
             "status_url": STATUS,
             "form": form,
+            # The error summary the view draws on a 400, linking the field.
+            "errors": integration_views._summary(form),
         },
     )
