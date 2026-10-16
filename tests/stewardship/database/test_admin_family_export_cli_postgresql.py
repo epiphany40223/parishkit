@@ -164,6 +164,24 @@ def test_a_financial_export_is_the_pages(
     assert code == 0, document
     zero = ExportRequest.objects.get(pk=document["result"]["export"]["id"])
     assert zero.parameters["filters"]["amount"] == "zero"
+    # Response dates are days in a time zone (#558, migration 0110): without
+    # zone= the page's parser refuses them, and nothing is requested; with
+    # it they narrow the capture as on the page.
+    exports = ExportRequest.objects.count()
+    code, document = run(*argv[:-2], "--filter", "first_start=2054-10-01")
+    assert code == 1 and document["error"]["code"] == "invalid"
+    assert ExportRequest.objects.count() == exports
+    code, document = run(
+        *argv[:-2],
+        "--filter",
+        "first_start=2054-10-01",
+        "--filter",
+        "zone=America/New_York",
+    )
+    assert code == 0, document
+    dated = ExportRequest.objects.get(pk=document["result"]["export"]["id"])
+    assert dated.parameters["filters"]["first_start"] == "2054-10-01"
+    assert dated.parameters["filters"]["zone"] == "America/New_York"
 
     # The file: rendered by the real worker, streamed byte for byte as the
     # page's download of the same export.
