@@ -402,19 +402,19 @@ def test_a_withheld_render_sends_every_number_without_server_charts(renderer):
         """The renderer refusing every chart."""
         raise chart_rendering.ChartRenderError("Chart rendering failed.")
 
-    # A render that fails names the chart it could not draw.
+    # A render that fails names the chart it could not draw; a funnel has
+    # no server-drawn charts since #1370, so it renders regardless.
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(chart_rendering, "render_chart", broken)
-        with pytest.raises(chart_rendering.ChartRenderError) as raised:
-            render_daily_digest(
-                replace(digest_document(), funnel=metrics(), mode="production"),
-                public_origin="https://campaign.example.org",
-            )
-        assert raised.value.chart == "digest_funnel_chart"
+        render_daily_digest(
+            replace(digest_document(), funnel=metrics(), mode="production"),
+            public_origin="https://campaign.example.org",
+        )
         with pytest.raises(chart_rendering.ChartRenderError) as raised:
             render_daily_digest(
                 with_section(), public_origin="https://campaign.example.org"
             )
         assert raised.value.chart == "digest_comparison_chart"
+    # The funnel's words stay readable for entries logged before #1370.
     assert {"digest_funnel_chart", "digest_activity_chart"} <= schemas.FAILURES
     assert "digest_comparison_chart" in schemas.FAILURES
