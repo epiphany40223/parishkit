@@ -41,6 +41,7 @@ from .export_services import (
     consume_download,
     directory_mode,
 )
+from .export_window import download_end
 from .facts import FactUnavailable
 
 CONTENT_TYPES = {
@@ -204,7 +205,7 @@ def prepare_download(subject, service, principal, grant_id):
         authorize(service.store, current.identity, request=job)
         admit_campaign(job.campaign_id, mutating=False)
         retained = ExportPublication.objects.get(pk=publication.pk)
-        if retained.expires_at <= database_now():
+        if download_end(retained) <= database_now():
             raise ReadUnavailable("This export has expired.")
 
     def content():
