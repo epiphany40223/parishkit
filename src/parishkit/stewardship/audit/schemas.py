@@ -10,6 +10,7 @@ import re
 from enum import StrEnum
 from uuid import UUID
 
+from parishkit.stewardship.audit import refusal_context
 from parishkit.stewardship.jobs.operational_content import IncidentKind
 from parishkit.stewardship.observability import FailureKind
 
@@ -29,6 +30,7 @@ class ContextKind(StrEnum):
     DUE_WORK = "due_work"
     FAILURE = "failure"
     RECOVERY = "recovery"
+    REFUSAL = "refusal"
 
 
 class Outcome(StrEnum):
@@ -433,6 +435,10 @@ FIELDS = {
         "elapsed_seconds",
         "count",
     },
+    # A refused Admin input (#1403); mirrored in stewardship_safe_context_v1.
+    # Its own closed rules (audit.refusal_context): the page or command,
+    # server-owned names and codes, the reason, never a submitted value.
+    ContextKind.REFUSAL: set(refusal_context.KEYS),
     ContextKind.EMAIL: {"message_id", "recipient_count", "outcome", "reason"},
     ContextKind.SOURCE: {"snapshot_id", "generation", "count", "outcome"},
     ContextKind.MEMBER_SOURCE: {"family_duid", "member_duid", "field"},
@@ -781,6 +787,16 @@ def sanitize(kind, values):
         and values.keys() != FIELDS[kind]
     ):
         raise ValueError("Structured diagnostics require complete identifiers.")
+    if kind is ContextKind.REFUSAL:
+        # Its keys mean something else here (a reason code, a lower-case
+        # method), so it has its own rules; a value they would drop is
+        # refused here, as any other context's would be.
+        if not (refusal_context.is_clean(values) and refusal_context.complete(values)):
+            raise ValueError("Context value does not match its approved type.")
+        return {
+            key: list(value) if type(value) is list else value
+            for key, value in values.items()
+        }
     safe = {}
     for key, value in values.items():
         if key == "outcome":

@@ -494,6 +494,12 @@ UNGROUPED_REASONS = {
         "census_publication_read_unconfirmed",
         "census_publication_refused",
     ),
+    # Refused Admin input (#1403): its writer is in place before anything
+    # calls it, and its own Activity group, Refused input, comes with the
+    # page's operational-only handling of that group.
+    "Refused Admin input; its own Activity group is still to come": (
+        "admin_input_refused",
+    ),
     "In the Action vocabulary, but nothing records it today": (
         "privileged_reauthentication",
     ),

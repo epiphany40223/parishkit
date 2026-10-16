@@ -106,6 +106,11 @@ RAW_WRITERS = {
     # write_failure: a failed Admin command-line command (#617), which runs
     # on the web login.
     "admin_cli.py": [({"web"}, "failure", {"admin_command_failed"}, {"ERROR"})],
+    # record_refusal: a refused Admin input (#1403), on the request's own
+    # connection as the web login, always naming the refused user.
+    "audit/refusals.py": [
+        ({"web"}, "refusal", {"admin_input_refused"}, {"INFO", "WARNING"})
+    ],
     "campaigns/boundary_health.py": [
         ({"scheduler"}, "due_work", {"campaign_boundary_lag"}, {"WARNING"})
     ],
