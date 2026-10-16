@@ -2,8 +2,9 @@
 
 # ruff: noqa: F811 -- pytest injects imported fixture dependencies by name.
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import pytest
 from django.db import DatabaseError, connection, transaction
@@ -522,7 +523,16 @@ def test_resume_materializes_every_due_digest_day(scheduled, monkeypatch, tmp_pa
         add_digest(item.arguments[1].store, item.campaign),
         add_digest(item.arguments[1].store, item.campaign, weekly=True),
     }
-    due = item.campaign.active_configuration.starts_at + timedelta(days=15, minutes=14)
+    # One minute before the 00:15 local digests on campaign day 15. Step in
+    # local wall time: the campaign starts two days from the real clock, so
+    # a UTC offset would slip an hour whenever the span crosses DST (#1416).
+    configuration = item.campaign.active_configuration
+    zone = ZoneInfo(configuration.values["timezone"])
+    due = datetime.combine(
+        configuration.starts_at.astimezone(zone).date() + timedelta(days=15),
+        time(0, 14),
+        tzinfo=zone,
+    ).astimezone(UTC)
     definitions = list(
         ScheduleDefinition.objects.select_related("current_revision").filter(
             pk__in=identifiers
