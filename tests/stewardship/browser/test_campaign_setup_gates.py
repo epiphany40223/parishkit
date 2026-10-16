@@ -232,28 +232,6 @@ def test_campaign_settings_waits_for_an_end_date_after_its_start(
     assert not failures
 
 
-def test_first_campaign_waits_for_a_module(page, component_origin):
-    """Setup's First campaign shares the gate, with its hint below Save."""
-    failures = []
-    page.on("pageerror", lambda error: failures.append(str(error)))
-    page.goto(component_origin + "/setup-campaign")
-    save = page.get_by_role("button", name="Save and continue")
-    hint = page.locator("#setup-complete-hint")
-    page.get_by_label("Campaign name").fill("Sample campaign")
-    page.get_by_label("Campaign start date").fill("2026-10-01")
-    page.get_by_label("Campaign end date").fill("2026-10-31")
-    waits_with(save, hint, MODULE_HINT)
-    ministry = page.locator("#id_ministry")
-    where = (spot(ministry), spot(save))
-    ministry.check()
-    ready(save, hint)
-    # Only Ministry selections opened, below the box: the box stays put.
-    assert spot(ministry) == where[0]
-    restore(ministry, "box => { box.checked = false; }")
-    waits_with(save, hint, MODULE_HINT)
-    assert not failures
-
-
 def test_slack_channel_shows_and_is_required_only_while_enabled(page, component_origin):
     """The channel ID shows only for an enabled Slack, and Save waits for it."""
     failures = []

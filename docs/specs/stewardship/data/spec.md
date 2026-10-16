@@ -499,6 +499,16 @@ signed intent (`series_schema.upkeep`):
 - a series left with no reminder is removed; and
 - a changed time or email keeps the reminder in its series.
 
+A series is created when a schedule change adds a repeat and asks to
+remember it: the same signed intent adds the series record, holding exactly
+the reminders that repeat adds (`schedule_changes.build_preview`'s
+`series`). So far only the command line asks
+([`schedule preview`](../admin-automation/spec.md#schedules-and-configuration)).
+The same command's `series` entries edit a series "this and following" or
+as a whole, or delete it, in one signed intent that adds and removes
+ordinary reminders and updates, adds or removes series records
+(`accounts.series_edits.plan`); a reminder that has sent is never changed.
+
 ### Source snapshot
 
 `SourceSnapshot` records form an ordered history. Each stores type (`full` or
@@ -1142,7 +1152,8 @@ Manual census work uses proposed-change execution state rather than a separate
 workflow; each resolution's note, actor and time are an immutable resolution
 row ([Manual census resolution](../reports/spec.md#manual-census-resolution)).
 Admin and Staff may mark manual items resolved externally or ignored; only
-Admin may approve/edit/publish API-writable items.
+Admin may approve/edit/publish API-writable items, each decision an immutable
+review row ([Automatic census review](../reports/spec.md#automatic-census-review)).
 
 ### Content and email templates
 
@@ -1978,7 +1989,9 @@ Admins may publish any reviewed subset during or after an active campaign.
 They need not finish review in one session. Later Family submissions supersede
 unpublished proposals as appropriate but never rewrite publication history.
 
-Only an Administrator approves and publishes. Only changes the
+Only an Administrator approves and publishes; the per-change decisions are
+the worklist's
+[Automatic census review](../reports/spec.md#automatic-census-review). Only changes the
 [handling registry](#proposed-changes) marks API-writable are ever written;
 staff enter every other census change by hand from the
 [Census changes](../reports/spec.md#pending-census-changes) worklist.

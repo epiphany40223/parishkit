@@ -273,7 +273,7 @@ def test_a_leader_never_sees_the_tick_nor_the_list(response_service, google):
     Administrators keep seeing it and the "update ParishSoft yourself" help."""
     harness, admin, join, _ = resolved(response_service)
     item = f"/admin/reports/ministries/follow-up/{join.pk}/"
-    queue = "/admin/reports/ministries/follow-up/"
+    queue = "/admin/reports/ministries/"
     browser, _, _, _ = leader(harness, google)
 
     def hidden(entered):
@@ -448,6 +448,18 @@ def test_a_gated_campaign_takes_no_tick_and_draws_no_form(response_service, goog
     _, body = get(browser, "/admin/reports/ministries/follow-up/roster/?show=all")
     assert b"Other campaign work is under way" in body
     assert b"Clear Entered in ParishSoft" not in body
+    # The request's own page shows Clear unavailable, named by the locked
+    # notice, rather than leaving it out (#563); a forged POST is refused.
+    _, body = get(browser, f"/admin/reports/ministries/follow-up/{join.pk}/")
+    assert b'id="followup-locked"' in body
+    assert re.search(
+        rb'<button[^>]*disabled data-server-disabled aria-describedby="followup-locked"'
+        rb"[^>]*>Clear Entered in ParishSoft</button>",
+        body,
+    )
+    refused = dict(form, sequence="2", entered="no", request_key=str(uuid4()))
+    assert search(browser, tick_url, refused)[0].status_code != 302
+    assert MinistryRosterEntry.objects.get().entered is True
     with pytest.raises(PermissionError):
         tick(harness, admin, join, False)
 

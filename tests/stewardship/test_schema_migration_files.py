@@ -318,6 +318,9 @@ FROZEN = {
     "0095_canonical_timezone.sql": (
         "6a0abe41bb3cf3e1e44020e55ba662924a634680f424e1e4e0fbe4c358b24998"
     ),
+    "0096_proposal_review.sql": (
+        "c64ebee3ace428eb7b6f9d22f2fcf78c1f754d254bea347ea36973163fbe855a"
+    ),
 }
 
 

@@ -134,7 +134,6 @@ PAGES = {
             "state": "enter",
             "next": NEXT,
             "back": "/admin/automation",
-            "back_label": "Return to Automation access",
         },
         (
             "For security, approving a session needs a Google sign-in from the"

@@ -7,7 +7,7 @@ outside every region shows the page never reloaded.
 
 import pytest
 
-from .census_components import PATH, RESOLVED, STALE
+from .census_components import APPROVED, AUTOMATIC, PATH, RESOLVED, STALE
 from .test_table_sorting import MARK, MARKED, fulfil_post_with, sort_heading
 from .waits import has_attribute, has_text
 
@@ -118,3 +118,37 @@ def test_cancelling_the_confirmation_sends_nothing(page, component_origin):
     assert not dialog.is_visible()
     assert button.evaluate("node => node === document.activeElement")
     assert posts == []
+
+
+def test_an_administrators_review_is_recorded_in_place(page, component_origin):
+    """An Automatic row's Review (#528, ADM-09) folds away like Record
+    outcome, posts Approve with its note and the page's filters without
+    asking first (it is reversible), and the answer refreshes the page in
+    place with its notice announced."""
+    page.goto(component_origin + AUTOMATIC)
+    page.evaluate(MARK)
+    posts = []
+
+    def choose(request):
+        """Answer the review with the page after it."""
+        posts.append(request.post_data)
+        return "/census-changes-approved"
+
+    fulfil_post_with(page, "**" + AUTOMATIC, component_origin, choose)
+    review = page.locator("details.census-record").first
+    assert review.locator("summary").inner_text() == "Review"
+    assert not review.locator("form.census-resolve").is_visible()
+    review.locator("summary").click()
+    form = review.locator("form.census-resolve")
+    # To review: Approve or Ignore, never the tick a By-hand row has.
+    assert form.get_by_role("button", name="Entered in ParishSoft").count() == 0
+    assert form.get_by_role("button", name="Back to To review").count() == 0
+    form.get_by_label("Note (optional)").fill("Checked")
+    form.get_by_role("button", name="Approve").click()
+    has_text(page.locator("#census-notice"), APPROVED)
+    has_text(page.get_by_role("status").filter(has_text="approved."), APPROVED)
+    assert not page.locator("#census-enter-confirm").is_visible()
+    sent = posts[-1]
+    assert "resolve=approve" in sent and "note=Checked" in sent
+    assert "status=open" in sent and "request_key=" in sent
+    assert page.evaluate(MARKED) == "kept"

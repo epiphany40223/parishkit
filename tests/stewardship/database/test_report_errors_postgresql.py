@@ -4,7 +4,7 @@ import pytest
 from django.urls import reverse
 
 from parishkit.config import ConfigError
-from parishkit.stewardship.reports import ministry_views
+from parishkit.stewardship.reports import ministry_followup_views
 
 from .auth_builders import signed_in
 
@@ -29,7 +29,7 @@ def test_ministry_report_outage_renders_the_admin_report_page(
         """A configuration outage carrying detail that must never be shown."""
         raise ConfigError("synthetic private detail")
 
-    monkeypatch.setattr(ministry_views, "runtime", unavailable)
+    monkeypatch.setattr(ministry_followup_views, "runtime", unavailable)
     response = browser.get(
         reverse("admin:ministry_report"),
         HTTP_ACCEPT="text/html,*/*;q=0.8",

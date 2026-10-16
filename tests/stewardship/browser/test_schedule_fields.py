@@ -27,6 +27,11 @@ SHOWN = {
 }
 
 
+def open_saved(page):
+    """Open the first saved schedule's editor from the schedules table."""
+    page.locator("[data-schedule-edit]").first.click()
+
+
 def group(page, field, prefix=NEW):
     """The wrapper of one schedule field: label, help, errors and control."""
     control = f'[name="{prefix}{field}"]'
@@ -53,12 +58,13 @@ def test_rows_show_only_the_fields_of_their_mail_type(
     page.set_viewport_size({"width": width, "height": 900})
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
-    page.goto(component_origin + "/setup-schedules-mail")
+    page.goto(component_origin + "/schedule-editor-mail")
     # The page's explanation waits in its closed About panel (#227).
     page.locator("details[data-about-page] > summary").click()
     visible(page.get_by_role("heading", name="How mail schedules work"))
     assert "October 1, 2054 – October 31, 2054" in page.inner_text("main")
     # The saved initial invitation keeps its fixed type and its own fields.
+    open_saved(page)
     assert page.locator('[name="schedules-0-kind"]').is_disabled()
     assert shown(page, "schedules-0-") == SHOWN["initial"]
     assert shown(page) == set()
@@ -106,7 +112,7 @@ def test_a_reported_field_stays_visible_until_the_type_changes(
 ):
     """The server's weekday error is readable; a new type then hides and clears it."""
     page.set_viewport_size({"width": 320, "height": 900})
-    page.goto(component_origin + "/setup-schedules-error")
+    page.goto(component_origin + "/schedule-editor-error")
     prefix = "schedules-0-"
     weekday = group(page, "weekday", prefix)
     visible(weekday)
@@ -139,7 +145,7 @@ def posted(page, component_origin, path):
     return {name: values[0] for name, values in fields[0].items()}
 
 
-@pytest.mark.parametrize("path", ["/setup-schedules-mail", "/schedule-settings"])
+@pytest.mark.parametrize("path", ["/schedule-editor-mail", "/schedule-settings"])
 def test_add_and_remove_new_schedule_rows_before_saving(
     page, component_origin, axe_source, path
 ):
@@ -193,7 +199,7 @@ RECURRENCE = json.loads(
 
 def test_the_page_expander_runs_the_shared_fixture(page, component_origin):
     """Every repeat rule gives exactly the fixture's dates, gaps or refusal (#469)."""
-    page.goto(component_origin + "/setup-schedules-mail")
+    page.goto(component_origin + "/schedule-editor-mail")
     results = page.evaluate(
         "(cases) => cases.map((item) => window.ParishRecurrence.expand(item.rule))",
         RECURRENCE["cases"],
@@ -222,8 +228,7 @@ def test_repeat_adds_ordinary_reminder_rows_in_place(
     """The rule lists its dates and why any is left out, then adds one row each.
 
     The saved initial invitation is Thursday, October 1, 2054 at 9:00 AM in
-    New York, 6:00 AM in this Los Angeles browser (send times are the
-    browser's on this step, #558), in a campaign of October 2054, so a Monday
+    the campaign's New York time, in a campaign of October 2054, so a Monday
     and Thursday rule at 6am leaves out that first Thursday and adds the
     other eight. Nothing reloads; the rows
     post like hand-added ones, and the panel's own controls never post.
@@ -231,7 +236,7 @@ def test_repeat_adds_ordinary_reminder_rows_in_place(
     page.set_viewport_size({"width": width, "height": 900})
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
-    path = "/setup-schedules-mail"
+    path = "/schedule-editor-mail"
     page.goto(component_origin + path)
     panel = page.locator("[data-repeat-panel]")
     visible(panel)
@@ -260,20 +265,17 @@ def test_repeat_adds_ordinary_reminder_rows_in_place(
     assert "Dates this rule gives:" in dates.inner_text()
     assert "to add" not in dates.inner_text()
     # The send time is a shared time entry field (#1117): the same reading
-    # line, refusal, Save gate and blur rewrite as every Admin time.
+    # line, refusal and blur rewrite as every Admin time.
     reading = panel.locator("#repeat-time + .time-reading")
     assert repeat(page, "time").get_attribute("data-time-entry") == "time"
     described = repeat(page, "time").get_attribute("aria-describedby").split()
     assert described == ["repeat-time-help", reading.get_attribute("id")]
-    save = page.get_by_role("button", name="Save and continue")
-    assert save.is_enabled()
     reading_height = reading.bounding_box()["height"]
     gap = page_top(repeat(page, "email")) - page_top(reading)
     repeat(page, "time").fill("9xx")
     has_attribute(reading, "class", "time-reading is-error")
     has_text(reading, "“9xx” isn't a time. Try 2:00 PM, 2pm, 14:00 or 1400.")
     has_attribute(repeat(page, "time"), "aria-invalid", "true")
-    assert save.is_disabled()
     # Its two lines are reserved: the refusal moves nothing below it.
     assert reading.bounding_box()["height"] == pytest.approx(reading_height, abs=1)
     assert abs(page_top(repeat(page, "email")) - page_top(reading) - gap) < 1
@@ -282,7 +284,6 @@ def test_repeat_adds_ordinary_reminder_rows_in_place(
     has_attribute(reading, "class", "time-reading")
     # The line keeps its height: the reading moves nothing below it.
     assert reading.bounding_box()["height"] == pytest.approx(reading_height, abs=1)
-    assert save.is_enabled()
     repeat(page, "time").blur()
     assert repeat(page, "time").input_value() == "06:00"
     has_text(add, "Add these 8 reminders")
@@ -361,7 +362,7 @@ def test_repeat_adds_ordinary_reminder_rows_in_place(
 def test_repeat_monthly_names_skipped_months_and_refusals(page, component_origin):
     """A month without the chosen day is listed as skipped; dates outside the
     campaign are listed as not added."""
-    page.goto(component_origin + "/setup-schedules-mail")
+    page.goto(component_origin + "/schedule-editor-mail")
     repeat(page, "frequency").select_option("monthly")
     panel = page.locator("[data-repeat-panel]")
     visible(panel.locator('[data-repeat-when="monthly"]'))
@@ -398,7 +399,7 @@ def test_repeat_limit_leaves_out_saved_rows_marked_delete(page, component_origin
     invitation Delete frees its place (and its date and time), as the
     server's formset does not count a deleted row.
     """
-    path = "/setup-schedules-mail"
+    path = "/schedule-editor-mail"
 
     def lower_limit(route):
         """Serve the page with MAX_NUM_FORMS two above TOTAL_FORMS."""
@@ -422,6 +423,7 @@ def test_repeat_limit_leaves_out_saved_rows_marked_delete(page, component_origin
     summary = panel.locator("[data-repeat-summary]")
     has_text(summary, "2 reminders to add, 7 not added.")
     assert f"over the limit of {total + 2} schedules" in panel.inner_text()
+    open_saved(page)
     page.locator('[name="schedules-0-DELETE"]').check()
     has_text(summary, "3 reminders to add, 6 not added.")
     has_text(panel.locator("[data-repeat-add]"), "Add these 3 reminders")

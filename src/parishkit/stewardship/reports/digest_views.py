@@ -2,7 +2,6 @@
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
-from django.db.models import BooleanField, ExpressionWrapper, Q
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.http import require_GET
@@ -101,17 +100,7 @@ def retained_rows(snapshot_id, *, chart=False):
     fields = ("id", "snapshot_id", "fact_set_id", "comparison") + (
         ("chart",) if chart else ()
     )
-    # Whether the email had the Response funnel's charts (#477), without
-    # loading their bytes.
-    ready = (
-        DailyDigestReady.objects.only(*fields)
-        .annotate(
-            has_funnel_charts=ExpressionWrapper(
-                Q(funnel_chart__isnull=False), output_field=BooleanField()
-            )
-        )
-        .get(snapshot=selected)
-    )
+    ready = DailyDigestReady.objects.only(*fields).get(snapshot=selected)
     return selected, ready
 
 
@@ -204,7 +193,6 @@ def snapshot(request, snapshot_id, *, representation="html"):
                 chart_url=reverse("admin:daily_digest_chart", args=[snapshot_id]),
                 download_url=reverse("admin:daily_digest_download", args=[snapshot_id]),
                 plot=chart_layout(bytes(ready.chart)),
-                funnel_charts=ready.has_funnel_charts,
             )
             context |= daily_rows(context, paging)
             return iter(

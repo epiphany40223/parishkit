@@ -541,6 +541,9 @@ CLOSURE_TABLES = {
     **dict.fromkeys(
         PUBLICATION_TABLES, ("stewardship_responses", "0004_publication_plans")
     ),
+    # An Administrator's review of an Automatic census change (0096, #528),
+    # which web records and reads.
+    "stewardship_proposal_review": ("stewardship_responses", "0006_proposal_review"),
 }
 
 
@@ -555,8 +558,9 @@ CLOSURE_COLUMNS = {
         "stewardship_reports",
         "0021_digest_comparison",
     ),
-    # #477's 0083 gives web the ready row's funnel_chart column, so the
-    # saved page knows whether the email had the funnel charts.
+    # #477's 0083 gives web the ready row's funnel_chart column, which the
+    # saved page read until #1370 removed the funnel charts; kept until a
+    # forward migration drops the column.
     ("stewardship_daily_digest_ready", "funnel_chart"): (
         "stewardship_reports",
         "0022_digest_funnel_charts",

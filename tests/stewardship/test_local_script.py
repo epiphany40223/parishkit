@@ -119,6 +119,7 @@ def test_the_guide_and_specification_are_cross_linked():
         "ca",
         "rehearse",
         "spike",
+        "finish-setup",
     ):
         assert f"`{command}" in GUIDE.read_text(), command
     # The spec's command table names every laptop command the script accepts.
@@ -132,6 +133,7 @@ def test_the_guide_and_specification_are_cross_linked():
         "`reset --reinstall`",
         "`down`",
         "`ca`",
+        "`finish-setup`",
     ):
         assert command in SPEC.read_text(), command
 
@@ -281,6 +283,7 @@ def vm_commands(calls):
         ("deploy", "--rollback", "--smtp-latency-ms", "600"),
         ("rehearse", "--bogus"),
         ("rehearse", "--due-in"),
+        ("finish-setup", "x"),
         ("deploy", "--smtp-latency-ms", "123456"),
     ],
 )
@@ -609,6 +612,8 @@ def test_the_simple_commands_reach_the_vm_half(tmp_path):
     assert result.returncode == 0 and ssh_calls(calls) == []
     _, calls, _ = run_local(tmp_path / "signin", "sign-in", "--email", "a@example.test")
     assert vm_commands(calls) == ["sign-in a@example.test"]
+    _, calls, _ = run_local(tmp_path / "finish", "finish-setup")
+    assert vm_commands(calls) == ["finish-setup"]
     result, calls, _ = run_local(tmp_path / "seed", "seed", "--response-scale", "4")
     assert vm_commands(calls) == ["seed 4"]
     assert (tmp_path / "seed" / "home" / ".parishkit-local" / "seed.log").exists()
@@ -662,6 +667,9 @@ def test_vm_create_uses_the_tracked_lima_configuration(tmp_path):
 # FAKE_IMAGE_EXISTS makes `image inspect` find the tag; FAKE_DEPS_FAIL makes
 # the postgres/valkey start fail; FAKE_LEFTOVER makes a container survive
 # `down`; FAKE_KILLED reports the worker as killed by the stop timeout.
+# The wizard and credentials seeder steps answer FAKE_SEED_RESULT (default:
+# a frozen attempt with PS_ID and GW_ID), and setup completes once both are
+# acknowledged.
 FAKE_DOCKER = r"""
 echo "$*" >>"$FAKE_LOG"
 last=${*: -1}
@@ -683,7 +691,19 @@ case "$*" in
         name=$(printf '%s' "$last" | sed -n 's/.*import \([A-Z_]*\) as value.*/\1/p')
         printf "constant-%s" "$name" ;;
     *" local-seed") echo "invalid command; choose ..." >&2; exit 2 ;;
-    *"SELECT EXISTS"*) echo "${FAKE_COMPLETED:-f}" ;;
+    *"SELECT EXISTS"*)
+        # Acknowledging both credentials is what completes setup.
+        if [ "$(cat "$FAKE_ROOT/.fake-acked" 2>/dev/null | wc -l)" -ge 2 ]; then
+            echo t
+        else
+            echo "${FAKE_COMPLETED:-f}"
+        fi ;;
+    *" local-seed --step wizard "*|*" local-seed --step credentials "*)
+        frozen='{"result": "frozen", "requests": {"parishsoft": "'$PS_ID'",'
+        frozen+=' "google_workspace": "'$GW_ID'"}}'
+        echo "${FAKE_SEED_RESULT:-$frozen}" ;;
+    *"count(*) FROM stewardship_secret_request"*) echo "${FAKE_AWAITING:-2}" ;;
+    *" acknowledge-credential "*) echo "$last" >>"$FAKE_ROOT/.fake-acked" ;;
     "compose ls --all --format json") echo '[]' ;;
     *" up --detach --wait --wait-timeout 180 postgres valkey")
         [ -z "$FAKE_DEPS_FAIL" ] || { echo "postgres refused" >&2; exit 1; } ;;
@@ -785,6 +805,8 @@ def run_vm(tmp_path, *args, status=0, prepare=None, env=None):
             "FAKE_LOG": str(log),
             "FAKE_ROOT": str(root),
             "STEWARDSHIP_LOG_DIR": str(logs),
+            "PS_ID": PS_ID,
+            "GW_ID": GW_ID,
             **(env or {}),
         },
         text=True,
@@ -819,6 +841,9 @@ def installed(root, etc, snapshots, *, mode="normal", completed=False):
 
 
 UP = ("up", IMAGE, "100", "a@example.test", "1")
+# The frozen setup attempt's sealed credential ids the seeder stand-in reports.
+PS_ID = "11111111-1111-4111-8111-111111111111"
+GW_ID = "22222222-2222-4222-8222-222222222222"
 
 
 def test_up_follows_the_runbook_first_installation_order(tmp_path):
@@ -975,6 +1000,8 @@ def test_a_failed_dependency_start_is_reported_with_its_limit(tmp_path):
         ("start",),
         ("deploy", IMAGE, "0", "/x/host.sh"),
         ("rollback", "/x/host.sh"),
+        ("wizard",),
+        ("finish-setup",),
     ],
 )
 def test_every_destructive_or_deployment_command_needs_the_marker(tmp_path, args):
@@ -1597,3 +1624,102 @@ def test_spike_refuses_without_postgres_or_the_certificate(tmp_path):
     )  # fmt: skip
     assert "local root certificate" in output
     assert not any("local-spike" in call for call in calls)
+
+
+# ---------------------------------------------------------------------------
+# Finishing setup (runbook first installation, step 5; #1355).
+
+
+def frozen_wizard(root, etc, snapshots):
+    """An installed fake-clock root whose wizard froze its attempt.
+
+    compose.json carries web's rendered environment, mounts and tmpfs, which
+    the seeder's one-off web container copies.
+    """
+    installed(root, etc, snapshots, mode="fake")
+    web = {
+        "image": IMAGE,
+        "environment": {"PARISHKIT_STEWARDSHIP_PROFILE": "local"},
+        "volumes": [{"source": "/x", "target": "/y", "read_only": True}],
+        "tmpfs": ["/tmp"],
+    }
+    services = root / "config" / "services"
+    (services / "compose.json").write_text(json.dumps({"services": {"web": web}}))
+    (services / "compose.faketime.json").write_text(
+        json.dumps({"services": {"web": {**web, "volumes": []}}})
+    )
+
+
+def test_finish_setup_acknowledges_the_frozen_attempts_credentials(tmp_path):
+    """Look up, wait, recreate from compose.json, acknowledge, complete, restart."""
+    calls, output, _ = run_vm(tmp_path, "finish-setup", prepare=frozen_wizard)
+    configured = "-f {0}/compose.json -f {0}/compose.faketime.json -p parishkit-local"
+    configured = configured.format(tmp_path / "root" / "config" / "services")
+    order = [
+        first(calls, "local-seed --step credentials "),
+        first(calls, "count(*) FROM stewardship_secret_request"),
+        first(calls, f"{configured} up --detach --force-recreate worker mail-dispatch"),
+        first(
+            calls, f"{configured} exec -T worker pk-stewardship acknowledge-credential"
+        ),
+        first(calls, " exec -T mail-dispatch pk-stewardship acknowledge-credential"),
+        first(calls, " up --detach --force-recreate web"),
+    ]
+    assert order == sorted(order), calls
+    assert f"--request-id {PS_ID}" in calls[order[3]]
+    assert f"--request-id {GW_ID}" in calls[order[4]]
+    # Read-only lookup: the one-off web container takes the clock directory.
+    assert "--network parishkit-local_backend" in calls[order[0]]
+    assert "Setup complete in" in output
+    assert "Log: " in output
+
+
+def test_finish_setup_is_idempotent_and_refuses_before_finishing_setup(tmp_path):
+    """Complete setup changes nothing; an unfrozen or partial attempt is refused."""
+    for name, env in (
+        ("done", {"FAKE_COMPLETED": "t"}),
+        ("done-late", {"FAKE_SEED_RESULT": '{"result": "setup was already complete"}'}),
+    ):
+        calls, output, _ = run_vm(
+            tmp_path / name, "finish-setup", prepare=frozen_wizard, env=env
+        )
+        assert "already complete; nothing to finish" in output
+        assert not any("acknowledge-credential" in call for call in calls)
+        assert not any("--force-recreate" in call for call in calls)
+    calls, output, _ = run_vm(
+        tmp_path / "early",
+        "finish-setup",
+        status=1,
+        prepare=frozen_wizard,
+        env={"FAKE_SEED_RESULT": '{"result": "not frozen"}'},
+    )
+    assert "has not reached Finishing setup" in output
+    assert not any("--force-recreate" in call for call in calls)
+    partial = json.dumps({"result": "frozen", "requests": {"parishsoft": PS_ID}})
+    calls, output, _ = run_vm(
+        tmp_path / "partial",
+        "finish-setup",
+        status=1,
+        prepare=frozen_wizard,
+        env={"FAKE_SEED_RESULT": partial},
+    )
+    assert "lacks its ParishSoft or Google Workspace credential" in output
+    assert not any("--force-recreate" in call for call in calls)
+
+
+def test_wizard_finishes_setup_through_the_same_step(tmp_path):
+    """`wizard` and `finish-setup` share one runbook step 5 implementation."""
+    calls, output, _ = run_vm(tmp_path, "wizard", prepare=frozen_wizard)
+    assert any("local-seed --step wizard " in call for call in calls)
+    acknowledged = [c for c in calls if "acknowledge-credential" in c]
+    assert [c.split("--request-id ")[1] for c in acknowledged] == [PS_ID, GW_ID]
+    # Setup creates no campaign (#142): wizard creates it afterwards.
+    assert first(calls, "local-seed --step campaign ") > first(
+        calls, " exec -T mail-dispatch pk-stewardship acknowledge-credential"
+    )
+    assert "Setup and the campaign complete in" in output
+    text = VM_SCRIPT.read_text()
+    assert text.count("acknowledge-credential") == 2
+    for command in ("cmd_wizard() {", "cmd_finish_setup() {"):
+        start = text.index(command)
+        assert "finish_setup " in text[start : text.index("\n}\n", start)], command

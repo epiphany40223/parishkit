@@ -80,14 +80,18 @@ class Placement:
     which report an export came from, which settings page a configuration
     change was confirmed on. ``parent`` replaces the registered parent,
     ``arguments`` supplies route arguments that ancestor links need,
-    ``labels`` names ancestor pages more specifically (by URL name), and
-    ``flow``/``step`` select a step indicator from ``FLOWS``. Presentation
-    only: it grants nothing, and every linked page rechecks its own access.
+    ``labels`` names ancestor pages more specifically (by URL name),
+    ``queries`` adds a query string to an ancestor's link (by URL name; the
+    view's own closed choice, such as the timeline's Testing mode, never the
+    request's query), and ``flow``/``step`` select a step indicator from
+    ``FLOWS``. Presentation only: it grants nothing, and every linked page
+    rechecks its own access.
     """
 
     parent: str | None = None
     arguments: dict = field(default_factory=dict)
     labels: dict = field(default_factory=dict)
+    queries: dict = field(default_factory=dict)
     flow: str | None = None
     step: str | None = None
 
@@ -222,15 +226,14 @@ PAGES = {
         "reports", _("Weekly report item"), "weekly_digest_snapshot"
     ),
     "daily_digest_snapshot": Page("reports", _("Daily report"), "emailed_reports"),
+    # Ministry requests is the follow-up queue (#1133); Ministry follow-up,
+    # once a page of its own, was merged into it.
     "ministry_report": Page("reports", _("Ministry requests")),
-    "ministry_followup": Page("reports", _("Ministry follow-up")),
     "ministry_followup_item": Page(
-        "reports", _("Follow-up request"), "ministry_followup"
+        "reports", _("Follow-up request"), "ministry_report"
     ),
     # Resolved Ministry joins and leaves to enter in ParishSoft by hand (#528).
-    "ministry_roster": Page(
-        "reports", _("Roster changes to enter"), "ministry_followup"
-    ),
+    "ministry_roster": Page("reports", _("Roster changes to enter"), "ministry_report"),
     "family_directory": Page("reports", _("Active parishioner family directory")),
     # One Family's summary and timeline (#477), opened from its directory row.
     "family_timeline": Page("reports", _("Family timeline"), "family_directory"),
@@ -517,7 +520,6 @@ MENU = (
     Entry("census_changes", Capability.VIEW_CENSUS, CENSUS),
     Entry("information_queue", Capability.ADDITIONAL_FOLLOWUP, _downloaded(_campaign)),
     Entry("ministry_report", Capability.MINISTRY_REPORT, MINISTRY, scoped=True),
-    Entry("ministry_followup", Capability.MINISTRY_FOLLOWUP, MINISTRY, scoped=True),
     Entry("family_directory", Capability.FAMILY_CODES, _downloaded(_campaign)),
     # Staff see its daily reports; Send a weekly report now is on the page.
     Entry("emailed_reports", Capability.CAMPAIGN_REPORT),
@@ -759,19 +761,14 @@ NON_PAGES = frozenset(
         "setup",
         "setup_branding",
         "setup_branding_asset",
-        "setup_campaign",
         "setup_cancel",
         "setup_confirmation",
-        "setup_content",
-        "setup_content_edit",
         "setup_credential",
         "setup_mail",
         "setup_mail_status",
         "setup_notification",
         "setup_notification_status",
         "setup_preview",
-        "setup_schedules",
-        "setup_shares",
         "setup_source",
         "setup_source_progress",
         "setup_step",
@@ -1019,9 +1016,10 @@ def back(match, placed=None, items=None):
     """
     _name, chain, arguments = _resolved(match, placed)
     labels = placed.labels if placed else {}
+    queries = placed.queries if placed else {}
     offered = _offered(items)
     for ancestor in reversed(chain[:-1]):
-        url = _link(ancestor, arguments, offered)
+        url = _with_query(_link(ancestor, arguments, offered), queries.get(ancestor))
         if url:
             return {"label": labels.get(ancestor, PAGES[ancestor].label), "url": url}
     return {"label": PAGES["index"].label, "url": reverse(f"{NAMESPACE}:index")}
@@ -1077,9 +1075,15 @@ def build(match, items, placed=None):
                 }
             )
     labels = placed.labels if placed else {}
+    queries = placed.queries if placed else {}
     return sections, _breadcrumbs(
-        name, chain, arguments, sections, labels, _offered(items)
+        name, chain, arguments, sections, labels, _offered(items), queries
     )
+
+
+def _with_query(url, query):
+    """``url`` with ``query`` appended, or as it is when either is empty."""
+    return f"{url}?{query}" if url and query else url
 
 
 def _item(entry):
@@ -1094,7 +1098,7 @@ def _offered(items):
     return {item.name: item.url for item in map(_item, items) if item.url}
 
 
-def _breadcrumbs(name, chain, arguments, sections, labels, offered=None):
+def _breadcrumbs(name, chain, arguments, sections, labels, offered=None, queries=None):
     """Home, the section, then each ancestor page, ending at the current page."""
     if name is None or name not in PAGES:
         return []
@@ -1120,7 +1124,9 @@ def _breadcrumbs(name, chain, arguments, sections, labels, offered=None):
         trail.append(
             {
                 "label": labels.get(ancestor, PAGES[ancestor].label),
-                "url": _link(ancestor, arguments, offered),
+                "url": _with_query(
+                    _link(ancestor, arguments, offered), (queries or {}).get(ancestor)
+                ),
             }
         )
     trail.append({"label": PAGES[name].label, "url": None})

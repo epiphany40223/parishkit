@@ -20,7 +20,6 @@ or action lands with its command, or with an exemption here.
 from typing import NamedTuple
 
 from parishkit.stewardship.admin_urls.slashless import TARGETS as SLASHLESS_TARGETS
-from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_SLUG
 
 
 class Parity(NamedTuple):
@@ -140,24 +139,26 @@ LEDGER = {
     # Change status; ``config request cancel`` (#944) is the operator's way
     # out of a stuck live end-date change, which the page offers no button for.
     "configuration_request": command("config request show", "config request cancel"),
-    "campaign_settings": pending(
-        "PR 10",
-        "campaign show",
-        "campaign preview",
-        "campaign confirm",
-        # A live campaign's Ministries joined this page (#1119).
-        "campaign ministries",
+    # One editor and one Review (#1119): a draft's settings, a live
+    # campaign's end date and leader roles, and its Ministries all go
+    # through ``campaign preview`` and ``campaign confirm``.
+    "campaign_settings": command(
+        "campaign show", "campaign preview", "campaign confirm"
     ),
     # The live end-date check validates what ``schedule preview`` reviews.
     "campaign_end_date_check": command("schedule preview"),
     # The command line has no first-campaign path yet: ``campaign confirm``
-    # refuses any added campaign. When PR 10 adds one, it must admit the
-    # first campaign only through ``single_campaign.first_campaign_admitted``
-    # (and ``refuse_campaign_creation(first=True)``), as this page does.
-    "campaign_create": pending("PR 10", "campaign preview", "campaign confirm"),
+    # edits the current campaign and refuses any added one. When PR 10 adds
+    # one, it must admit the first campaign only through
+    # ``single_campaign.first_campaign_admitted`` (and
+    # ``refuse_campaign_creation(first=True)``), as this page does.
+    "campaign_create": pending("PR 10", "campaign create-preview", "campaign create"),
     "campaign_clone": pending("PR 10", "campaign clone"),
     "share_settings": command("campaign shares", owed="PR 10"),
-    "reminder_workgroup": pending("PR 10", f"campaign {REMINDER_WORKGROUP_SLUG}"),
+    # The page's read, Review and Apply (#750), all on the page itself.
+    "reminder_workgroup": command(
+        "workgroup show", "workgroup preview", "workgroup confirm"
+    ),
     "content_catalog": command("content list"),
     # The editor as it opens; its Review and Apply are still owed.
     "content_edit": command("content show", owed="PR 10"),
@@ -247,18 +248,21 @@ LEDGER = {
     "limitations_report": command("report limitations"),
     # Counts only (#463): its rows name Families and Members, so they are
     # export census's. A row's Entered in ParishSoft, Ignore and Reopen post
-    # here too (#528): census resolve.
-    "census_changes": command("report census", "census resolve"),
+    # here too (#528): census resolve; so does an Automatic row's Review
+    # (ADM-09): census review.
+    "census_changes": command("report census", "census resolve", "census review"),
     "information_queue": command("report information"),
     # One Family's submission and its follow-up history: read with the
     # follow-up commands, as the Ministry follow-up items are, which print
     # only the item's state and history; its content is Family-level and
     # comes through ``export information``.
     "information_item": pending("PR 11", "followup"),
+    # Ministry requests (#1133) is the follow-up queue with the summary's
+    # By Ministry counts. ``report ministry`` prints those counts, and
     # ``export ministry`` writes one Ministry's join or leave list, the file
-    # the retired Members joining and leaving pages offered (#1157); its
-    # counts are this summary's, so the summary is the page it covers.
-    "ministry_report": command("report ministry", "export ministry"),
+    # the retired Members joining and leaving pages offered (#1157); the
+    # queue itself is the follow-up commands' (PR 11).
+    "ministry_report": command("report ministry", "export ministry", owed="PR 11"),
     # A packet of the chosen Ministries' Members and contacts: an export.
     "ministry_packet": command("export ministry-packet"),
     "response_dashboard": command("report responses"),
@@ -373,7 +377,6 @@ LEDGER = {
     "security_event_acknowledge": command("events list", "events acknowledge"),
     "critical_events_acknowledge": command("events list", "events acknowledge"),
     "information_update": pending("PR 11", "followup"),
-    "ministry_followup": pending("PR 11", "followup"),
     "ministry_followup_item": pending("PR 11", "followup"),
     "ministry_followup_update": pending("PR 11", "followup"),
     # Bulk outcomes on the queue (#1131).
@@ -384,17 +387,28 @@ LEDGER = {
     "ministry_followup_roster": pending("PR 11", "followup roster-entered"),
     # Counts only (#463): its rows name Members, so they are export roster's.
     "ministry_roster": command("report roster"),
-    "ministry_roster_export": pending("PR 8g", "export roster"),
+    # The page's download, through the page's own writer.
+    "ministry_roster_export": command("export roster"),
     # Integrations and credentials.
     "integrations": command("integration list"),
-    # The settings page as it opens (#463); saving, removing, the backup
-    # folder check and the key replacement are still owed.
-    "integration_settings": command("integration show", owed="PR 10"),
+    # The settings page as it opens, its Save, its Remove and the backup
+    # folder check (#463); the key replacement is still owed.
+    "integration_settings": command(
+        "integration show",
+        "integration preview",
+        "integration confirm",
+        "integration backup-probe",
+        owed="PR 10",
+    ),
     "integration_status": command("integration status"),
-    "refresh_schedule_check": pending("PR 10", "integration schedule-preview"),
-    "credential_status": pending("PR 10", "integration key status"),
-    "dismiss_credential_result": pending("PR 10", "integration dismiss"),
-    "select_credential": pending("PR 10", "integration key finish-switching"),
+    # The ParishSoft page's live refresh schedule check (#632).
+    "refresh_schedule_check": command("integration schedule-preview"),
+    "credential_status": command("integration key status"),
+    "dismiss_credential_result": command("integration dismiss"),
+    "select_credential": command(
+        "integration key finish-switching-preview",
+        "integration key finish-switching",
+    ),
     # The first-Admin setup wizard.
     **{
         name: permanent(SETUP)
@@ -406,17 +420,12 @@ LEDGER = {
             "setup_branding",
             "setup_branding_asset",
             "setup_credential",
-            "setup_campaign",
-            "setup_shares",
             "setup_preview",
             "setup_confirmation",
             "setup_mail",
             "setup_mail_status",
             "setup_notification",
             "setup_notification_status",
-            "setup_schedules",
-            "setup_content",
-            "setup_content_edit",
             "setup_step",
         )
     },

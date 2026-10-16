@@ -270,7 +270,12 @@ def names_trail():
     )
 
 
-def test_names_reach_only_the_exported_file(admin, family_test, reports_root):  # noqa: F811
+def test_names_reach_only_the_exported_file(
+    admin,
+    family_test,  # noqa: F811
+    reports_root,  # noqa: F811
+    google,
+):
     """--names: the preview's document, an export of the names, one trail.
 
     The names the page shows are in the file the worker renders and
@@ -314,6 +319,24 @@ def test_names_reach_only_the_exported_file(admin, family_test, reports_root):  
     }
     assert capture.row_count == 2 and capture.actor_id == row.principal_id
     assert names_trail() == (1, 1, 1)
+    # The status page's trail runs through Send to chosen Families for this
+    # email, so its crumb is the way back and no "Return to" repeats it
+    # (#1345).
+    from django.urls import reverse
+
+    from parishkit.stewardship.deployment import ServiceRole
+
+    from .auth_builders import signed_in
+    from .test_background_grants_postgresql import task_login
+    from .test_report_workspace_postgresql import read
+
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        status, body = read(browser, reverse("admin:report_export", args=[made.pk]))
+    assert status.status_code == 200
+    families = reverse("admin:campaign_mail_families", args=[revision(family_test)])
+    assert f'<li><a href="{families}">Send to chosen Families</a></li>'.encode() in body
+    assert b"Return to " not in body
     [event] = AuditEvent.objects.filter(event_type=NAMES_EVENT)
     assert event.actor_id == row.principal_id and event.subject_id == row.pk
     # No ticket: the review sends nothing.

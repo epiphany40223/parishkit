@@ -157,6 +157,8 @@ def components(context, admin):
     return {
         LIBRARY: page(rows, f"{LIBRARY}-one-deleted"),
         f"{LIBRARY}-one-deleted": page([guide, parish_map], f"{LIBRARY}-one-deleted"),
+        # Only the file in use: rows, none of them selectable (#1332).
+        f"{LIBRARY}-all-used": page([guide], f"{LIBRARY}-all-used"),
         BULK: page(rows, f"{BULK}-deleted"),
         f"{BULK}-deleted": page([guide], f"{BULK}-deleted"),
         REFUSED: page(rows, REFUSED, action=f"{DELETE}?refused"),

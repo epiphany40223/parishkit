@@ -27,6 +27,7 @@ from .test_configuration_service_postgresql import config_role  # noqa: F401
 from .test_runtime_auth_grants_postgresql import web_login
 from .test_setup_final_loading_postgresql import load, prepared, queued
 from .test_setup_loading_postgresql import pages
+from .test_setup_preview_postgresql import before_142
 from .test_setup_staging_postgresql import setup_service  # noqa: F401
 from .test_source_refreshing_postgresql import fake_provider
 
@@ -61,7 +62,12 @@ def test_extra_worker_writes_are_not_general_configuration_authority(statement):
 def test_first_setup_is_atomic_and_has_real_family_codes(
     setup_service, monkeypatch, tmp_path, config_role, financial
 ):
-    """Exercise the restricted worker through actual preparation and final load."""
+    """Exercise the restricted worker through actual preparation and final load.
+
+    The one-campaign completion of an attempt confirmed before #142 (the
+    campaign-free one is test_setup_without_campaign_postgresql's).
+    """
+    before_142(monkeypatch)
     _, attempt, identifier = prepared(
         setup_service, monkeypatch, tmp_path, financial=financial
     )
@@ -188,9 +194,14 @@ def test_prepared_receipt_does_not_replace_current_consumer_proof(
 def test_late_failures_roll_back_every_effect_and_allow_same_live_owner_retry(
     setup_service, monkeypatch, tmp_path, config_role
 ):
-    """Failed population, marker and Task completion never expose partial setup."""
+    """Failed population, marker and Task completion never expose partial setup.
+
+    With a campaign confirmed before #142, so its Families are among the
+    effects that must roll back.
+    """
     from parishkit.stewardship.source import setup_completion as owner
 
+    before_142(monkeypatch)
     _, _, identifier = prepared(setup_service, monkeypatch, tmp_path)
     ring = keys()
     task = queued(setup_service, identifier)

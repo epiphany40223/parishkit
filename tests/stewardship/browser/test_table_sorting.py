@@ -10,6 +10,7 @@ the GET fixture the view would have rendered.
 
 import pytest
 
+from .followup_components import REQUESTS, SORTED
 from .limitations_components import PATH as LIMITATIONS
 from .waits import eventually, has_attribute, has_text, recorded, visible
 
@@ -342,6 +343,8 @@ def test_export_choices_survive_a_sort_and_its_hidden_fields_follow(
     the in-place re-sort while the reader's format and timezone, including
     the browser zone a script added, stay as chosen."""
     page.goto(component_origin + "/information")
+    # The export starts closed (#227).
+    page.get_by_text("Export complete results").click()
     export = page.locator("#table-export")
     export.locator("select[name=format]").select_option("xlsx")
     zone = export.locator("select[data-information-timezone]")
@@ -362,37 +365,32 @@ def test_export_choices_survive_a_sort_and_its_hidden_fields_follow(
     assert zone.locator("option").count() == options
 
 
-def test_packet_choices_keep_their_ticks_while_the_summary_is_resorted(
+def test_packet_choices_keep_their_ticks_while_the_queue_is_resorted(
     page, component_origin
 ):
-    """The Ministry report's packet lists every Ministry in scope, not the
-    page's rows (#533), so an in-place re-sort keeps the list and its ticks,
-    including a Ministry the table's first page did not show; the packet's
-    own options (its browser timezone and a ticked history box) are
-    untouched. The summary has no export of its own (#1126)."""
-    page.goto(component_origin + "/ministry-summary")
+    """Ministry requests' packet lists every Ministry in scope, not the
+    queue's rows (#533, #1133), so an in-place re-sort keeps the list and
+    its ticks; the packet's own options (its browser timezone and a ticked
+    history box) are untouched."""
+    page.goto(component_origin + REQUESTS)
     choices = page.locator("#ministry-packet-choices input[name=ministries]")
     assert choices.count() == 2
-    off_page = page.get_by_role("checkbox", name="Another Ministry")
-    off_page.check()
+    other = page.get_by_role("checkbox", name="Another Ministry")
+    other.check()
     history = page.get_by_role("checkbox", name="Also include resolved")
     history.check()
-    assert page.locator("#table-export").count() == 0
     # The packet asks for no zone (#1127): its hidden field holds the browser's.
-    packet_zone = page.locator("input[name=browser_timezone][data-browser-zone]")
+    packet_zone = page.locator("form[action$='/packets/'] input[name=browser_timezone]")
     assert packet_zone.input_value() != "UTC"
     fulfil_post_with(
-        page,
-        "**/ministries/",
-        component_origin,
-        lambda request: "/ministry-summary-desc",
+        page, "**/reports/ministries/", component_origin, lambda request: SORTED
     )
-    page.get_by_role("button", name="Ministry (sort descending)").click()
-    has_attribute(sort_heading(page, "ministry"), "aria-sort", "descending")
-    assert choices.count() == 2 and off_page.is_checked()
+    page.get_by_role("button", name="Ministry (sort ascending)").click()
+    has_attribute(sort_heading(page, "ministry"), "aria-sort", "ascending")
+    assert choices.count() == 2 and other.is_checked()
     assert (
         page.locator("#table-filters input[type=hidden][name=sort]").input_value()
-        == "name_desc"
+        == "ministry"
     )
     assert history.is_checked()
     assert packet_zone.input_value() != "UTC"
@@ -483,6 +481,8 @@ def test_post_filter_applies_in_place_with_csrf(page, component_origin):
     page.set_viewport_size(VIEWPORT)
     page.goto(component_origin + "/information")
     page.evaluate(MARK)
+    # The export starts closed (#227); its count is checked below.
+    page.get_by_text("Export complete results").click()
     page.get_by_label("Request history").select_option("withdrawn")
     offset = scroll_to_filters(page)
     fulfil_post_with(
@@ -664,7 +664,10 @@ def test_followup_filter_refreshes_in_place_without_assignment(page, component_o
     page.evaluate(MARK)
     page.evaluate("document.querySelector('#table').dataset.old = '1'")
     fulfil_post_with(
-        page, "**/follow-up/", component_origin, lambda request: "/followup-queue"
+        page,
+        "**/reports/ministries/",
+        component_origin,
+        lambda request: "/followup-queue",
     )
     page.get_by_label("Ministry", exact=True).select_option("9")
     with page.expect_request(lambda request: request.method == "POST") as sent:

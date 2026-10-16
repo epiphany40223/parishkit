@@ -58,16 +58,19 @@ from .clock import CLOCK_CONTROL_TARGET, CLOCK_MOUNT_TARGET, FakeClock
 from .synthetic_parish import MAXIMUM_FAMILIES, generate
 
 LOGGER = logging.getLogger(__name__)
-# The seed's own phases, then the BG-12 rehearsal's two steps (local/rehearsal.py).
+# The seed's own phases, the BG-12 rehearsal's two steps (local/rehearsal.py),
+# then the read-only lookup `finish-setup` uses after the browser wizard.
 STEPS = (
     "timeline",
     "wizard",
+    "campaign",
     "prepare",
     "drive",
     "check",
     "finish",
     "reminder",
     "measure",
+    "credentials",
 )
 # The rehearsal steps that need --due-at.
 DUE_STEPS = frozenset({"reminder", "measure"})
@@ -454,17 +457,23 @@ def drive_timeline(timeline, clock, *, settle, driver, evidence, log=LOGGER.info
 def schedule_patch(document, campaign_id, calendar):
     """The one configuration patch that applies the real dates and schedules.
 
-    The campaign's dates become the calendar's; the existing Initial schedule
-    moves to 10:00 on the start Saturday; every existing Reminder schedule is
-    removed and the calendar's Tuesday and Thursday 09:00 Reminders are added,
-    each with the Reminder email revision already in use (or the Initial's
-    when the wizard configured no Reminder). Digest schedules are untouched.
+    The campaign's dates become the calendar's; the Initial schedule is at
+    10:00 on the start Saturday (moved there, or added with the campaign's
+    Initial email when the campaign has none, as Create the campaign leaves
+    it); every existing Reminder schedule is removed and the calendar's
+    Tuesday and Thursday 09:00 Reminders are added, each with the Reminder
+    email revision already in use (or the Initial's when the campaign has no
+    Reminder email). Digest schedules are untouched.
     """
     campaign_id = str(campaign_id)
     initials, reminders = campaign_schedules(document, campaign_id)
     template, subject = reminder_reference(
         document, campaign_id, schedules=(initials, reminders)
     )
+    when = {
+        "date": calendar.start.isoformat(),
+        "time": seed_timeline.INITIAL_TIME.isoformat(timespec="seconds"),
+    }
     patch = [
         {
             "operation": "update",
@@ -474,17 +483,36 @@ def schedule_patch(document, campaign_id, calendar):
                 "start_date": calendar.start.isoformat(),
                 "end_date": calendar.end.isoformat(),
             },
-        },
-        {
-            "operation": "update",
-            "section": "schedules",
-            "id": initials[0]["id"],
-            "values": {
-                "date": calendar.start.isoformat(),
-                "time": seed_timeline.INITIAL_TIME.isoformat(timespec="seconds"),
-            },
-        },
+        }
     ]
+    if initials:
+        patch.append(
+            {
+                "operation": "update",
+                "section": "schedules",
+                "id": initials[0]["id"],
+                "values": when,
+            }
+        )
+    else:
+        initial = campaign_email(document, campaign_id, "initial")
+        if initial is None:
+            raise SeedRefused("The campaign has no Initial email to schedule.")
+        patch.append(
+            {
+                "operation": "add",
+                "section": "schedules",
+                "id": str(uuid4()),
+                "values": {
+                    "campaign_id": campaign_id,
+                    "kind": "initial",
+                    **when,
+                    "weekday": None,
+                    "subject": initial["values"]["subject"],
+                    "template_version": initial["id"],
+                },
+            }
+        )
     patch += [
         {"operation": "remove", "section": "schedules", "id": row["id"]}
         for row in reminders
@@ -510,7 +538,7 @@ def schedule_patch(document, campaign_id, calendar):
 
 
 def campaign_schedules(document, campaign_id):
-    """The campaign's Initial and Reminder schedule rows; exactly one Initial."""
+    """The campaign's Initial and Reminder schedule rows; at most one Initial."""
     schedules = [
         row
         for row in document["sections"].get("schedules", [])
@@ -518,9 +546,23 @@ def campaign_schedules(document, campaign_id):
     ]
     initials = [row for row in schedules if row["values"]["kind"] == "initial"]
     reminders = [row for row in schedules if row["values"]["kind"] == "reminder"]
-    if len(initials) != 1:
-        raise SeedRefused("The campaign needs exactly one Initial schedule.")
+    if len(initials) > 1:
+        raise SeedRefused("The campaign has more than one Initial schedule.")
     return initials, reminders
+
+
+def campaign_email(document, campaign_id, slot):
+    """The campaign's email revision for ``slot`` (a content row), or None."""
+    return next(
+        (
+            row
+            for row in document["sections"].get("content", [])
+            if row["values"]["campaign_id"] == str(campaign_id)
+            and row["values"]["kind"] == "email"
+            and row["values"]["slot"] == slot
+        ),
+        None,
+    )
 
 
 def reminder_reference(document, campaign_id, *, schedules=None):
@@ -528,23 +570,20 @@ def reminder_reference(document, campaign_id, *, schedules=None):
 
     A Reminder schedule must name the campaign's Reminder email revision with
     that revision's subject (content_schema.validate_content_records). The
-    wizard's default content always has one; a configuration without it
-    falls back to an existing Reminder's or the Initial's reference, which
-    validation then checks. ``schedules`` is ``campaign_schedules``' answer
-    when the caller already has it.
+    default content Create the campaign adds always has one; a configuration
+    without it falls back to an existing Reminder's or the Initial's
+    reference, which validation then checks. ``schedules`` is
+    ``campaign_schedules``' answer when the caller already has it.
     """
     campaign_id = str(campaign_id)
     initials, reminders = schedules or campaign_schedules(document, campaign_id)
-    emails = [
-        row
-        for row in document["sections"].get("content", [])
-        if row["values"]["campaign_id"] == campaign_id
-        and row["values"]["kind"] == "email"
-        and row["values"]["slot"] == "reminder"
-    ]
-    source = (emails or reminders or initials)[0]
-    template = source["id"] if emails else source["values"]["template_version"]
-    return template, source["values"]["subject"]
+    email = campaign_email(document, campaign_id, "reminder")
+    if email is not None:
+        return email["id"], email["values"]["subject"]
+    if not (reminders or initials):
+        raise SeedRefused("The campaign has no Reminder email to schedule.")
+    source = (reminders or initials)[0]
+    return source["values"]["template_version"], source["values"]["subject"]
 
 
 def pending_configuration_requests(since):
@@ -965,6 +1004,8 @@ def run_step(request, configuration):
 
     return {
         "wizard": wizard_step,
+        "campaign": campaign_step,
+        "credentials": credentials_step,
         "prepare": prepare_step,
         "drive": drive_step,
         "check": check_step,
@@ -1022,7 +1063,7 @@ def configure_web_process(configuration):
 
 
 def current_campaign():
-    """The setup wizard's first campaign, which the seed reuses; refused if none."""
+    """The deployment's one campaign, which the seed reuses; refused if none."""
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
     from parishkit.stewardship.campaigns.models import Campaign
 
@@ -1030,7 +1071,10 @@ def current_campaign():
         "current_campaign_id", flat=True
     ).get()
     if campaign_id is None:
-        raise SeedRefused("The setup wizard's first campaign is required.")
+        raise SeedRefused(
+            "The campaign is required; create it first (Create the campaign, "
+            "or the seeder's campaign step)."
+        )
     return Campaign.objects.select_related("active_configuration").get(pk=campaign_id)
 
 
@@ -1060,21 +1104,25 @@ def wizard_step(request, configuration):
         # An earlier run's attempt: continue it under its own live session.
         web, attempt_id = resumed
         LOGGER.info("resuming the setup attempt %s", attempt_id)
-    today = (
-        FakeClock(request.clock_directory)
-        .now()
-        .astimezone(ZoneInfo(seed_web.WIZARD_PARISH["timezone"]))
-    )
-    # A first campaign in the near future; the seed moves its dates later.
-    start = today.date() + timedelta(days=10)
-    dates = (start, start + timedelta(days=30))
-    seed_web.run_wizard(
-        web, service, wait=wait_until, campaign_dates=dates, attempt_id=attempt_id
-    )
+    seed_web.run_wizard(web, service, wait=wait_until, attempt_id=attempt_id)
     # The freeze hands over to the credential installers; the operator script
     # then recreates the consumers from compose.json and acknowledges each
     # request inside them (runbook, first installation, step 5), which is
-    # what completes setup. The request ids are the sealed credentials' ids.
+    # what completes setup.
+    requests = frozen_credential_requests()
+    if requests is None:
+        raise SeedFailed("The setup attempt is not frozen after the wizard.")
+    return {"step": "wizard", "result": "frozen", "requests": requests}
+
+
+def frozen_credential_requests():
+    """The frozen setup attempt's credential request ids by target, or None.
+
+    The ids runbook step 5 acknowledges are the frozen attempt's unscrubbed
+    sealed credentials' ids (one per target). None means no attempt is
+    frozen: the wizard has not reached Finishing setup. Django must already
+    be configured.
+    """
     from parishkit.stewardship.accounts.setup_models import SetupAttempt
     from parishkit.stewardship.accounts.setup_secret_models import (
         SetupSealedCredential,
@@ -1084,19 +1132,90 @@ def wizard_step(request, configuration):
         SetupAttempt.objects.filter(state="frozen").order_by("-created_at").first()
     )
     if attempt is None:
-        raise SeedFailed("The setup attempt is not frozen after the wizard.")
-    requests = {
+        return None
+    return {
         row.target: str(row.pk)
         for row in SetupSealedCredential.objects.filter(
             attempt=attempt, scrubbed_at=None
         ).only("id", "target")
     }
-    return {
-        "step": "wizard",
-        "result": "frozen",
-        "campaign_dates": [day.isoformat() for day in dates],
-        "requests": requests,
-    }
+
+
+def credentials_step(request, configuration):
+    """Report the request ids `finish-setup` acknowledges; writes nothing.
+
+    The browser wizard's counterpart of wizard_step's answer: after the
+    Administrator's wizard freezes its attempt, the operator script looks the
+    ids up here and runs the same runbook step 5 that `wizard` runs.
+    """
+    configure_web_process(configuration)
+    # Model imports only after Django is configured.
+    from parishkit.stewardship.accounts.setup_completion import setup_is_complete
+
+    if setup_is_complete():
+        return {"step": "credentials", "result": "setup was already complete"}
+    requests = frozen_credential_requests()
+    if requests is None:
+        return {"step": "credentials", "result": "not frozen"}
+    return {"step": "credentials", "result": "frozen", "requests": requests}
+
+
+def campaign_step(request, configuration):
+    """Create the campaign after setup, then load its Families (LOCAL convenience).
+
+    Setup collects no campaign (#142). As the developer does in the browser,
+    this runs Create the campaign (``seed_web.create_campaign``), waits for
+    the configuration installer to apply it, then requests the full
+    ParishSoft refresh that "Load the campaign's ParishSoft data" requests
+    and waits for it to give the campaign its Families and codes. The
+    campaign has no mail schedules yet; ``prepare`` adds them. A rerun
+    after the campaign exists only loads its Families if it has none.
+    """
+    configure_web_process(configuration)
+    # Model imports only after Django is configured.
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+    from parishkit.stewardship.accounts.setup_completion import setup_is_complete
+    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+    from parishkit.stewardship.campaigns.models import Campaign
+
+    if not setup_is_complete():
+        raise SeedRefused("Setup must be complete before the campaign is created.")
+    web = admin(request)
+    service = seed_web.admin_runtime()
+    since = FakeClock(request.clock_directory).now()
+    result = {"step": "campaign"}
+    if not Campaign.objects.exists():
+        today = since.astimezone(ZoneInfo(seed_web.WIZARD_PARISH["timezone"]))
+        # A campaign in the near future; the seed moves its dates later.
+        start = today.date() + timedelta(days=10)
+        dates = (start, start + timedelta(days=30))
+        seed_web.create_campaign(web, service, dates)
+        wait_until(
+            "the campaign's configuration request to be installed",
+            lambda: (
+                pending_configuration_requests(since) == 0
+                or "a configuration request is still pending"
+            ),
+        )
+        result["campaign_dates"] = [day.isoformat() for day in dates]
+    campaign = current_campaign()
+    result["campaign"] = str(campaign.pk)
+    if FamilyCampaign.objects.filter(campaign=campaign).exists():
+        return result | {"result": "the campaign already has its Families"}
+    receipt = seed_web.request_full_refresh(web, service)
+    wait_until(
+        "the campaign's full ParishSoft refresh to succeed",
+        lambda: task_root_finished(receipt.task_root_id, "the full refresh"),
+    )
+    families = FamilyCampaign.objects.filter(campaign=campaign).count()
+    if not families:
+        raise SeedFailed("The full refresh gave the campaign no Families.")
+    if (
+        SystemConfiguration.objects.values_list("current_campaign_id", flat=True).get()
+        != campaign.pk
+    ):
+        raise SeedFailed("The created campaign is not the current campaign.")
+    return result | {"result": "created", "families": families}
 
 
 def task_root_finished(root_id, what):

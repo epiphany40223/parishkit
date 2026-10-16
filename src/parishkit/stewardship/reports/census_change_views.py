@@ -7,9 +7,11 @@ sorts in place; a download is the filtered list rendered in memory, in the
 timezone the page chose (this browser's); and every view and download is
 audited as a count only.
 
-A row's Entered in ParishSoft, Ignore or Reopen (#528) posts to the page
-itself with the page's filters and table choices, so the answer is the same
-page, refreshed in place, with a notice naming the row.
+A row's Entered in ParishSoft, Ignore or Reopen (#528), and an
+Administrator's Approve, Ignore or Back to To review on an Automatic row
+(ADM-09), post to the page itself with the page's filters and table choices,
+so the answer is the same page, refreshed in place, with a notice naming the
+row.
 """
 
 from dataclasses import replace
@@ -33,6 +35,7 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.responses.census_resolution import resolve_census_change
+from parishkit.stewardship.responses.census_review import review_census_change
 from parishkit.stewardship.responses.models import ProposedChange
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
@@ -48,6 +51,7 @@ from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 from .census_changes import (
     KINDS,
     LABELS,
+    REVIEW_CHOICES,
     ROUTES,
     STATUS_CHOICES,
     STATUSES,
@@ -208,6 +212,15 @@ RESOLVED = {
     "ignored": "marked ignored.",
     "reopened": "reopened.",
 }
+# An Administrator's review of an Automatic row (#528, ADM-09): the decision
+# each form value records (census_changes.REVIEW_CHOICES), and how the notice
+# words it.
+REVIEWS = dict(REVIEW_CHOICES)
+REVIEWED = {
+    "approve": "approved.",
+    "ignore_automatic": "marked ignored.",
+    "to_review": "sent back to To review.",
+}
 # PostgreSQL's SQLSTATE for a unique violation.
 UNIQUE_VIOLATION = "23505"
 STALE = (
@@ -265,7 +278,7 @@ def _resolve(service, principal, campaign_id, resolution):
     from the row's state, a forged or rebound request) is a 400, as a bad
     filter is.
     """
-    action, proposal_id = resolution["action"], resolution.pop("proposal_id")
+    action, proposal_id = resolution.pop("action"), resolution.pop("proposal_id")
     proposal = (
         ProposedChange.objects.select_related("submission__family")
         .filter(pk=proposal_id, submission__campaign_id=campaign_id)
@@ -276,9 +289,22 @@ def _resolve(service, principal, campaign_id, resolution):
         raise PermissionError("This census change is unavailable.")
     name = _row_name(proposal)
     try:
-        resolve_census_change(
-            service.store, principal.identity, proposal_id, **resolution
-        )
+        if action in REVIEWS:
+            review_census_change(
+                service.store,
+                principal.identity,
+                proposal_id,
+                decision=REVIEWS[action],
+                **resolution,
+            )
+        else:
+            resolve_census_change(
+                service.store,
+                principal.identity,
+                proposal_id,
+                action=action,
+                **resolution,
+            )
     except StaleRecordError:
         return f"{name} {STALE}"
     except IntegrityError as error:
@@ -291,7 +317,7 @@ def _resolve(service, principal, campaign_id, resolution):
             return f"{name} {STALE}"
         emit_failure(error, event=Event.TASK_FAILED)
         raise
-    return f"{name} {RESOLVED[action]}"
+    return f"{name} {REVIEWED[action] if action in REVIEWS else RESOLVED[action]}"
 
 
 def row_controls(rows):

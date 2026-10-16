@@ -503,6 +503,11 @@ def components(context, admin):
         LIST: _list(values, owner, emails, rows, refresh_url=f"{LIST}-one-deleted"),
         f"{LIST}?sort=-when": _list(values, owner, emails, rows, sort="-when"),
         f"{LIST}?sort=when": _list(values, owner, emails, rows),
+        # Only the sent invitation, which is read-only: rows, none
+        # selectable, and no reason given for that (#1332).
+        f"{LIST}-sent-only": _list(
+            values, owner, emails, [initial], refresh_url=f"{LIST}-sent-only"
+        ),
         f"{LIST}-one-deleted": _list(
             values,
             owner,

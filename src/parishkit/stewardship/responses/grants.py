@@ -47,6 +47,9 @@ def add_response_web_grants(tables, columns):
         "UPDATE": {"execution", "decision", "superseded_by_id", "version"}
     }
     tables["stewardship_proposal_resolution"] = {"SELECT", "INSERT"}
+    # An Administrator's review of an Automatic change (#528, ADM-09) changes
+    # its decision, admitted only with its paired stewardship_proposal_review.
+    tables["stewardship_proposal_review"] = {"SELECT", "INSERT"}
     # The guard sets resolved_at itself; Staff never write roster evidence.
     columns["stewardship_ministry_request"] = {
         "UPDATE": {"state", "superseded_by_id", "version", "outcome", "assignee_id"}

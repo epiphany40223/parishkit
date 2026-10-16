@@ -30,7 +30,10 @@ The change document (default, pending Administrator confirmation) is JSON::
                    {"repeat": {"frequency": "weekly", "start": "...",
                                "end": "...", "weekdays": [0, 3]},
                     "time": "...", "template_version": "<uuid>"},
-                   {"id": "<saved daily digest>", "comparison": true}]}
+                   {"id": "<saved daily digest>", "comparison": true},
+                   {"series": "<id>", "scope": "following",
+                    "from": "<reminder id>", "time": "..."},
+                   {"series": "<id>", "delete": true}]}
 
 A saved schedule named by ``id`` keeps every field the document leaves out;
 ``delete`` removes it; an entry without ``id`` adds a schedule. Saved
@@ -38,10 +41,21 @@ schedules the document does not name stay as they are: as on the page,
 omission never removes one. A ``repeat`` entry (#469) adds one ordinary
 reminder per date its rule gives (``campaigns.recurrence``), each with the
 entry's ``time`` and ``template_version``, exactly as if the document listed
-them one by one. ``window`` (any of its fields) changes the
-campaign's dates only while they may still change; for a live campaign
-(scheduled or open in Production, #912) only ``end_date`` may change, and
-confirming it binds the exceptional end-date intent as the page does.
+them one by one. With ``"remember": true`` the same change also remembers
+the rule as a reminder series holding exactly those reminders
+(``schedule_changes.build_preview``'s ``series``), for later series edits;
+delivery never reads a series. A ``series`` entry edits a remembered series
+(``accounts.series_edits``): ``"scope": "following"`` from its reminder
+``from`` ("this and following"), ``"scope": "series"`` (the whole series,
+from its first reminder that has not sent), each with an optional new
+``repeat`` rule, ``time`` and ``template_version``; or ``"delete": true``,
+which removes its unsent reminders and the series. Either way it only adds
+and removes ordinary reminders, through the same forms, review and
+confirmation; a reminder that sent stays as it is. ``window`` (any of its
+fields) changes the campaign's dates only while they may still change; for a
+live campaign (scheduled or open in Production, #912) only ``end_date`` may
+change, and confirming it binds the exceptional end-date intent as the page
+does.
 """
 
 import json
@@ -68,6 +82,8 @@ REPEAT_FIELDS = ("time", "template_version")
 # The most reminders one repeat adds, as on New scheduled email
 # (schedule_entry_views.REPEAT_LIMIT).
 REPEAT_LIMIT = 30
+# A series entry's members (#469): which series, how much of it, from where.
+SERIES_FIELDS = ("series", "scope", "from", "repeat", *REPEAT_FIELDS)
 # The page script's messages for each rule ``recurrence.expand`` refuses.
 RULE_ERRORS = {
     "dates": "Choose the first and last dates to repeat on.",
@@ -133,14 +149,32 @@ def _repeat(entry, label):
     date silently, so a date the forms refuse refuses the whole change, named
     ``<label>.<date>``, and so does a month the rule would skip.
     """
-    if set(entry) - {"repeat", *REPEAT_FIELDS} or not all(
-        _typed(name, entry[name]) for name in REPEAT_FIELDS if name in entry
+    if (
+        set(entry) - {"repeat", "remember", *REPEAT_FIELDS}
+        or not all(_typed(name, entry[name]) for name in REPEAT_FIELDS if name in entry)
+        or entry.get("remember", True) is not True
     ):
-        raise ValueError("A repeat takes only its rule, time and template_version.")
-    rule = canonical_rule(entry["repeat"])
+        raise ValueError(
+            'A repeat takes only its rule, time, template_version and "remember": true.'
+        )
+    fields = {name: entry[name] for name in REPEAT_FIELDS if name in entry}
+    return [
+        {"kind": "reminder", "date": day, **fields, LABEL: f"{label}.{day}"}
+        for day in _rule(entry["repeat"])[1]
+    ]
+
+
+def _rule(value):
+    """A repeat rule's canonical form and dates, or the page's ``ValueError``.
+
+    The rule must be valid in every member (``canonical_rule`` admits no
+    stray types), skip no month for want of its day, and give from one to
+    REPEAT_LIMIT dates.
+    """
+    rule = canonical_rule(value)
     if rule is None:
         # canonical_rule refuses exactly the rules expand names an error for.
-        raise ValueError(RULE_ERRORS[expand(entry["repeat"])["error"]])
+        raise ValueError(RULE_ERRORS[expand(value)["error"]])
     expanded = expand(rule)
     if expanded["missing"]:
         months = ", ".join(
@@ -157,11 +191,50 @@ def _repeat(entry, label):
             f"A repeat adds from 1 to {REPEAT_LIMIT} reminders; this one gives "
             f"{len(dates)} dates."
         )
-    fields = {name: entry[name] for name in REPEAT_FIELDS if name in entry}
-    return [
-        {"kind": "reminder", "date": day, **fields, LABEL: f"{label}.{day}"}
-        for day in dates
-    ]
+    return rule, dates
+
+
+def _series(entry, label):
+    """A ``series`` entry's edit, checked for shape, as ``series_edits.plan`` takes it.
+
+    ``{"series", "delete": true}`` deletes the series; otherwise ``scope``
+    is ``"following"`` (with the reminder ``from``) or ``"series"`` (no
+    ``from``), with an optional ``repeat`` rule (checked as a repeat's is),
+    ``time`` and ``template_version``. Returns the entry's series id, scope,
+    from, canonical rule (or None), time, email and ``LABEL``.
+    """
+    from .accounts.series_edits import SCOPES
+
+    if "delete" in entry:
+        if entry["delete"] is not True or set(entry) != {"series", "delete"}:
+            raise ValueError('A series is deleted by its id and "delete": true alone.')
+        scope = "delete"
+    else:
+        scope = entry.get("scope")
+        if (
+            set(entry) - set(SERIES_FIELDS)
+            or scope not in SCOPES
+            or ("from" in entry) != (scope == "following")
+            or not isinstance(entry.get("from", ""), str)
+            or not all(
+                _typed(name, entry[name]) for name in REPEAT_FIELDS if name in entry
+            )
+        ):
+            raise ValueError(
+                'A series entry takes "scope" ("following" with "from", or '
+                '"series"), and optionally repeat, time and template_version.'
+            )
+    if not isinstance(entry["series"], str):
+        raise ValueError("A series is named by its id.")
+    return {
+        "series": entry["series"],
+        "scope": scope,
+        "start": entry.get("from"),
+        "rule": _rule(entry["repeat"])[0] if "repeat" in entry else None,
+        "time_of_day": entry.get("time"),
+        "template_version": entry.get("template_version"),
+        LABEL: label,
+    }
 
 
 def parse_changes(text):
@@ -172,9 +245,15 @@ def parse_changes(text):
     without a saved ``id``, a repeated ``id``, a ``kind`` on a saved
     schedule (its mail type never changes), an empty new entry, a repeat
     ``_repeat`` refuses, and more rows than the page takes, before or after
-    the repeats are expanded. Returns ``{"window": dict, "schedules": list}``:
-    each repeat is replaced by its reminders, and each added entry carries
-    its ``LABEL``.
+    the repeats are expanded, and a ``series`` entry ``_series`` refuses or
+    a series named twice. Returns ``{"window": dict, "schedules": list,
+    "series": list, "edits": list}``: each repeat is replaced by its
+    reminders, each series entry moves to ``edits`` (``_series``; planned
+    against the applied records by ``series_entries``), and each
+    added entry carries its ``LABEL``. ``series`` lists each repeat to
+    remember as ``{"rule", "added"}``: its canonical rule and the positions
+    of its reminders among the document's added entries, which is the order
+    the page's form set adds them in (``build_preview``'s ``series``).
     """
     if len(text) > CHANGES_LIMIT:
         raise ValueError("The change document is too long.")
@@ -196,10 +275,30 @@ def parse_changes(text):
         raise ValueError("The change document's schedules are not valid.")
     seen = set()
     entries = []
+    series = []
+    edits = []
     added = 0
     for row in rows:
+        if isinstance(row, dict) and "series" in row:
+            edit = _series(row, f"new{added}")
+            if edit["series"] in {item["series"] for item in edits}:
+                raise ValueError("A series is named twice.")
+            edits.append(edit)
+            added += 1
+            continue
         if isinstance(row, dict) and "repeat" in row:
-            entries.extend(_repeat(row, f"new{added}"))
+            reminders = _repeat(row, f"new{added}")
+            if row.get("remember"):
+                # Added entries so far, saved ones aside: this repeat's
+                # reminders come next among the change's added schedules.
+                first = sum("id" not in entry for entry in entries)
+                series.append(
+                    {
+                        "rule": canonical_rule(row["repeat"]),
+                        "added": list(range(first, first + len(reminders))),
+                    }
+                )
+            entries.extend(reminders)
             added += 1
             continue
         if (
@@ -215,7 +314,12 @@ def parse_changes(text):
                 # A saved schedule's mail type never changes (as on the page).
                 raise ValueError("A saved schedule's kind cannot change.")
             seen.add(row["id"])
-        elif not row:
+        elif all(
+            value is None or value == "" or value is False for value in row.values()
+        ):
+            # The page's form set skips a new row with only empty or default
+            # values, so it would add nothing; and it would shift a
+            # remembered repeat's positions (build_preview's ``series``).
             raise ValueError("A new schedule needs its fields.")
         if "delete" in row and (
             row["delete"] is not True or "id" not in row or set(row) != {"id", "delete"}
@@ -227,7 +331,91 @@ def parse_changes(text):
         entries.append(row)
     if len(entries) > ROW_LIMIT:
         raise ValueError("The change document's schedules are not valid.")
-    return {"window": window, "schedules": entries}
+    return {"window": window, "schedules": entries, "series": series, "edits": edits}
+
+
+def series_entries(parsed, configuration, saved, campaign):
+    """``parsed`` with each series edit planned against the applied records (#469).
+
+    ``saved`` is the campaign's saved schedule records and ``campaign`` the
+    applied campaign record. Each edit's reminders to remove become
+    ``{"id", "delete": true}`` entries and its reminders to add become added
+    entries labelled ``<label>.<date>``, both after the document's own
+    entries, so the repeats' positions stay as they are; its series is added
+    to ``series`` with the positions of those added reminders, and its other
+    operations on the existing record are ``series_changes``. A series that
+    is not the campaign's, a reminder of it the document also names, or an
+    edit ``series_edits.plan`` refuses is ``InvalidChange`` on the entry.
+    """
+    from django.utils import timezone
+
+    from .accounts.schedule_forms import schedule_order
+    from .accounts.schedule_preview import work_summary
+    from .accounts.schedule_table import schedule_rows
+    from .accounts.series_edits import SeriesEditError, plan
+    from .admin_reads import campaign_series
+
+    result = parsed | {"series_changes": []}
+    if not parsed["edits"]:
+        return result
+    known = {row["id"]: row for row in campaign_series(configuration, campaign.pk)}
+    # The page's read-only statuses: run, running or prepared ahead.
+    read_only = {
+        row.id
+        for row in schedule_rows(
+            sorted(saved, key=schedule_order),
+            campaign.active_configuration.values,
+            work_summary(campaign.pk),
+            timezone.now(),
+        )
+        if row.read_only
+    }
+    named = {entry["id"] for entry in parsed["schedules"] if "id" in entry}
+    entries = list(parsed["schedules"])
+    series = list(parsed["series"])
+    schedules = {row["id"]: row["values"] for row in saved}
+    for edit in parsed["edits"]:
+        try:
+            record = known.get(edit["series"])
+            if record is None:
+                raise SeriesEditError("This campaign has no series with this id.")
+            if named & set(record["schedules"]):
+                raise SeriesEditError(
+                    "A reminder of this series is also changed on its own in "
+                    "this document; change the series and its reminders in "
+                    "separate changes."
+                )
+            outcome = plan(
+                {"id": record["id"], "values": record},
+                schedules,
+                read_only,
+                scope=edit["scope"],
+                start=edit["start"],
+                rule=edit["rule"],
+                time_of_day=edit["time_of_day"],
+                template_version=edit["template_version"],
+            )
+        except SeriesEditError as error:
+            field = f"schedules.{edit[LABEL]}"
+            raise InvalidChange(
+                [{"field": field, "code": "invalid", "message": str(error)}]
+            ) from None
+        entries.extend({"id": member, "delete": True} for member in outcome["remove"])
+        # This edit's reminders come next among the change's added schedules.
+        first = sum("id" not in entry for entry in entries)
+        entries.extend(
+            {"kind": "reminder", **values, LABEL: f"{edit[LABEL]}.{values['date']}"}
+            for values in outcome["add"]
+        )
+        if outcome["series"] is not None:
+            series.append(
+                outcome["series"]
+                | {"added": list(range(first, first + len(outcome["add"])))}
+            )
+        result["series_changes"].extend(outcome["changes"])
+    if len(entries) > ROW_LIMIT:
+        raise ValueError("The change document's schedules are not valid.")
+    return result | {"schedules": entries, "series": series}
 
 
 def _text(value):
@@ -374,6 +562,11 @@ class SchedulePreview(ReadModel):
     total of blocking work; while it is above zero, as on the page, there is
     no ``preview`` to confirm. Otherwise ``preview.token`` is the signed
     binding ``schedule confirm`` takes, valid for fifteen minutes.
+    ``series`` lists each reminder series the change remembers (``id``,
+    ``rule`` and its reminders' ``schedules``), empty when none (#469).
+    ``series_changes`` lists each existing series it updates or removes
+    (``id``, ``operation`` and, for an update, its new ``rule`` and
+    ``schedules``), empty when none.
     """
 
     campaign_id: UUID
@@ -381,6 +574,8 @@ class SchedulePreview(ReadModel):
     window: dict
     changes: list
     blocking: int
+    series: list
+    series_changes: list
     preview: dict | None
 
 
@@ -436,6 +631,8 @@ def schedule_preview_model(context, version):
             for change in context["changes"]
         ],
         blocking=context["blocking"],
+        series=context["series"],
+        series_changes=context["series_changes"],
         preview=None if context["preview"] is None else {"token": context["preview"]},
     )
 
@@ -456,18 +653,29 @@ def _target(service, campaign_id):
     return target
 
 
-def _admit_change(caller, service):
+def _admit_change(caller, service, *, read_only=False, capability=None):
     """The page's admission of a change, recording activity as its post does.
 
     A session that ended since the command was admitted is exit 5
-    (``session_ended``), not the page's signed-out refusal.
+    (``session_ended``), not the page's signed-out refusal. ``read_only``
+    checks the same capability but renews nothing: a prompting command runs
+    it before any lookup or prompt (#1339, #1341), so a session whose user
+    lacks the capability is ``denied`` before anything is read, and the
+    action admits again as its post does. ``capability`` is the one the
+    command's page needs (``CONFIGURE``, an Administrator's, by default).
     """
     from .accounts.admin_editing import principal
     from .accounts.automation_sessions import SessionUnusable
+    from .accounts.policy import Capability
     from .accounts.sessions import authenticated_admin
 
     try:
-        return principal(caller, service)
+        return principal(
+            caller,
+            service,
+            read_only=read_only,
+            capability=capability or Capability.CONFIGURE,
+        )
     except PermissionError:
         if authenticated_admin(caller, store=service.store, read_only=True) is None:
             raise SessionUnusable("session_ended") from None
@@ -518,10 +726,12 @@ def preview_schedule(caller, service, campaign_id, *, expected_version, changes)
                 raise NotAvailable("No such campaign.") from None
             previous = campaign.active_configuration.values
             saved = campaign_schedules(state[0], target)
+            # Series edits are planned against the applied records (#469).
+            changes = series_entries(parsed, state[0], saved, campaign)
             # A live campaign's end date alone may still change (#912).
             live_at = None if editable else live_end_at(state, campaign)
             data, identifiers = form_data(
-                parsed,
+                changes,
                 saved,
                 previous,
                 editable=editable,
@@ -553,6 +763,8 @@ def preview_schedule(caller, service, campaign_id, *, expected_version, changes)
                 schedules,
                 base_digest=expected_version,
                 salt=preview_salt(target),
+                series=changes["series"],
+                series_changes=changes["series_changes"],
             )
             if context is None:
                 raise InvalidChange(field_errors(window, schedules, identifiers))

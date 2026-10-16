@@ -18,7 +18,7 @@ HEADING = "The Admin portal needs JavaScript."
 INSTRUCTION = "Turn it on in your browser settings, then reload this page."
 # A dashboard page, a page full of form controls, the sign-in page and a setup
 # wizard step.
-ADMIN_PAGES = ("/home", "/campaign-settings", "/login", "/setup-shares")
+ADMIN_PAGES = ("/home", "/campaign-settings", "/login", "/setup-branding")
 CONTROLS = "a, button, input, select, textarea, summary, [tabindex]"
 
 

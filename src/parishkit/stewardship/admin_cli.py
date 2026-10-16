@@ -48,25 +48,30 @@ source-form`` (in ``admin_source_form``), ``report data-to-fix`` (in
 ``admin_data_to_fix``), ``files list``, ``files
 delete`` and ``files rename`` (PR 10, in ``admin_hosted_files``),
 ``content list``, ``content show`` and ``content history`` (PR 10, in
-``admin_content``), ``integration list``, ``integration show`` and
-``integration status`` (PR 10, in ``admin_integrations``),
+``admin_content``), ``integration list``, ``integration show``, ``integration status``
+and ``integration schedule-preview`` (PR 10, in ``admin_integrations``),
 ``parish show``, ``ministries list``, ``branding show`` and ``campaign
 shares`` (PR 10, in ``admin_settings``), ``parish preview`` and
 ``parish confirm`` (PR 10, in ``admin_parish``), and ``events list`` and
 ``events acknowledge`` (PR 11, in ``admin_events``). A
 command that streams a file (``logs export``, ``export census``,
-``export limitations`` and ``export download --stream``) writes the file's
-bytes, and nothing else, to standard output, and its document to standard
-error. Other areas join the same
+``export limitations``, ``export roster`` and ``export download
+--stream``) writes the file's bytes, and nothing else, to standard output,
+and its document to standard error. Other areas join the same
 subparser tree in later pull requests, each listed in the catalog with the
 pull request that added it. ``report roster`` (in ``admin_roster``) counts
-the Roster changes to enter list, and ``report census`` (in
+the Roster changes to enter list, whose download is ``export roster`` (in
+``admin_roster_export``), and ``report census`` (in
 ``admin_census``) the Census changes list (#463), whose download is
 ``export census`` (in ``admin_census_export``). ``export limitations``
 (in ``admin_limitations_export``) is the Limitations report's download.
 ``artwork show``,
 ``artwork remove-preview`` and ``artwork remove`` (PR 10, in
 ``admin_artwork``) read Campaign images and remove one of them.
+``workgroup show``, ``workgroup preview`` and ``workgroup confirm`` (PR 10,
+in ``admin_workgroup``) read and change the No-reminders WorkGroup.
+``campaign show``, ``campaign preview`` and ``campaign confirm`` (PR 10, in
+``admin_campaign``) read and change Campaign settings.
 """
 
 import argparse
@@ -861,6 +866,22 @@ def _input(value, context, limit):
         raise ValueError("The input is not UTF-8.") from None
 
 
+def _role_first(context, runtime, capability=None):
+    """Check the command's capability first, renewing nothing (#1339, #1341).
+
+    A prompting or confirming command calls this as its first step, before
+    it reads any input, looks anything up or prompts, so a session whose
+    user lacks the capability (an Administrator who is now Staff, say) is
+    ``denied`` and sees no prompt. ``capability`` is the one the action's
+    own admission checks (``CONFIGURE``, an Administrator's, by default), so
+    a command Staff may run stays Staff's; the action still admits as its
+    page's post does.
+    """
+    from .admin_changes import _admit_change
+
+    _admit_change(context["caller"], runtime, read_only=True, capability=capability)
+
+
 def schedule_preview(args, preamble, runtime, context):
     """Review a change to mail schedules or campaign dates (PR 4)."""
     from .admin_changes import CHANGES_LIMIT, preview_schedule
@@ -901,6 +922,9 @@ def config_request_cancel(args, preamble, runtime, context):
     the prompt comes before any transaction opens.
     """
     from .admin_changes import REASON_LIMIT, cancel_end_change
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
 
     reason = _input(args.reason, context, REASON_LIMIT * 4)
     confirm(
@@ -1066,6 +1090,9 @@ def sample_test(args, preamble, runtime, context):
     from .admin_changes import TOKEN_LIMIT
     from .admin_tests import UNKNOWN_ACKNOWLEDGEMENT, send_sample, unknown_outcome
 
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
+
     token = _input(args.token, context, TOKEN_LIMIT)
     unknown = unknown_outcome(context["caller"], runtime)
     if unknown:
@@ -1132,6 +1159,9 @@ def families_test(args, preamble, runtime, context):
     """
     from .admin_changes import TOKEN_LIMIT
     from .admin_tests import FAMILIES_ACKNOWLEDGEMENT, families_count, send_families
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
 
     token = _input(args.token, context, TOKEN_LIMIT)
     count = families_count(token)
@@ -1210,6 +1240,149 @@ def integration_status(args, preamble, runtime, context):
     return read_integration_status(context["caller"], runtime, args.target)
 
 
+def integration_schedule_preview(args, preamble, runtime, context):
+    """Preview the applied or a proposed ParishSoft refresh schedule (#632).
+
+    The role first (#1339): Staff is denied before standard input is read.
+    """
+    from .admin_integration_changes import CHANGES_LIMIT
+    from .admin_integrations import read_schedule_preview
+
+    _role_first(context, runtime)
+    schedule = args.refresh_schedule
+    return read_schedule_preview(
+        context["caller"],
+        runtime,
+        None if schedule is None else _input(schedule, context, CHANGES_LIMIT),
+    )
+
+
+def integration_preview(args, preamble, runtime, context):
+    """Review a change to, or the removal of, an integration's settings (PR 10).
+
+    ``--refresh-schedule`` (ParishSoft's refresh schedule, #632) goes with
+    or instead of ``--changes``, never with ``--remove``; only one of them
+    may read standard input.
+    """
+    from .admin_integration_changes import CHANGES_LIMIT, preview_integration
+
+    schedule = args.refresh_schedule
+    if args.remove and schedule is not None:
+        raise UsageError("--refresh-schedule does not go with --remove.")
+    if not args.remove and args.changes is None and schedule is None:
+        raise UsageError("Give --changes, --refresh-schedule or --remove.")
+    if args.changes == "-" and schedule == "-":
+        raise UsageError("Only one input may be read from standard input.")
+    return preview_integration(
+        context["caller"],
+        runtime,
+        args.target,
+        expected_version=args.expected_version,
+        changes=(
+            None
+            if args.changes is None
+            else _input(args.changes, context, CHANGES_LIMIT)
+        ),
+        remove=args.remove,
+        refresh_schedule=(
+            None if schedule is None else _input(schedule, context, CHANGES_LIMIT)
+        ),
+    )
+
+
+def integration_confirm(args, preamble, runtime, context):
+    """Apply a reviewed integration settings change (PR 10).
+
+    The page's Apply needs a recent sign-in (#547), so this always prompts,
+    naming the integration and the settings the review changes (never their
+    values), after checking the Administrator role and then the token's
+    signature, and before any transaction.
+    """
+    from .admin_changes import TOKEN_LIMIT
+    from .admin_integration_changes import (
+        applied_settings,
+        confirm_integration,
+        prompt_lines,
+    )
+
+    # The role first (#1339): Staff is denied before any read or prompt
+    # could say whether the integration has a reviewed change.
+    _role_first(context, runtime)
+    token = _input(args.token, context, TOKEN_LIMIT)
+    applied = applied_settings(runtime, args.target)
+    confirm(context, prompt_lines(args.target, token, applied))
+    return confirm_integration(
+        context["caller"], runtime, args.target, token=token, context=context
+    )
+
+
+def integration_backup_probe(args, preamble, runtime, context):
+    """Queue the Off-site backups page's Test access check (PR 10)."""
+    from .admin_integration_actions import backup_probe
+
+    return backup_probe(context["caller"], runtime, folder=args.folder, context=context)
+
+
+def integration_dismiss(args, preamble, runtime, context):
+    """Dismiss a finished key change's status line (PR 10)."""
+    from .admin_integration_actions import dismiss_key
+
+    return dismiss_key(
+        context["caller"],
+        runtime,
+        args.target,
+        request_id=args.request_id,
+        context=context,
+    )
+
+
+def integration_key_status(args, preamble, runtime, context):
+    """One of the Administrator's own key changes, as its status page (PR 10).
+
+    Without ``--request-id`` the first read finds the latest one; a watch
+    then keeps following that key change (and logs it as the watch's
+    subject), even if a newer one starts meanwhile.
+    """
+    from uuid import UUID
+
+    from .admin_integration_keys import read_key_status
+
+    model = read_key_status(
+        context["caller"], runtime, args.target, request_id=args.request_id
+    )
+    if args.request_id is None:
+        args.request_id = UUID(model.request_id)
+    return model
+
+
+def integration_key_finish_switching_preview(args, preamble, runtime, context):
+    """Review Finish switching to an integration's new key (PR 10)."""
+    from .admin_integration_keys import preview_finish
+
+    return preview_finish(context["caller"], runtime, args.target)
+
+
+def integration_key_finish_switching(args, preamble, runtime, context):
+    """Finish switching an integration to its new key (PR 10).
+
+    The page needs a recent sign-in (#547), so this always prompts, naming
+    the integration and the settings the switch also changes (never their
+    values), after checking the Administrator role and then the token's
+    signature, and before any transaction.
+    """
+    from .admin_changes import TOKEN_LIMIT
+    from .admin_integration_keys import confirm_finish, finish_prompt_lines
+
+    # The role first (#1339): Staff is denied before any read or prompt
+    # could say whether the integration has a key change.
+    _role_first(context, runtime)
+    token = _input(args.token, context, TOKEN_LIMIT)
+    confirm(context, finish_prompt_lines(runtime, args.target, token))
+    return confirm_finish(
+        context["caller"], runtime, args.target, token=token, context=context
+    )
+
+
 def parish_show(args, preamble, runtime, context):
     """The Parish settings page's profile (PR 10)."""
     from .admin_settings import read_parish
@@ -1234,6 +1407,74 @@ def parish_confirm(args, preamble, runtime, context):
     from .admin_parish import TOKEN_LIMIT, confirm_parish
 
     return confirm_parish(
+        context["caller"],
+        runtime,
+        token=_input(args.token, context, TOKEN_LIMIT),
+        context=context,
+    )
+
+
+def workgroup_show(args, preamble, runtime, context):
+    """The current campaign's No-reminders WorkGroup (PR 10)."""
+    from .admin_workgroup import read_workgroup
+
+    return read_workgroup(context["caller"], runtime)
+
+
+def workgroup_preview(args, preamble, runtime, context):
+    """Review a change to the No-reminders WorkGroup (PR 10)."""
+    from .admin_workgroup import preview_workgroup
+
+    return preview_workgroup(
+        context["caller"],
+        runtime,
+        name=None if args.clear else args.name,
+        expected_version=args.expected_version,
+    )
+
+
+def workgroup_confirm(args, preamble, runtime, context):
+    """Confirm a reviewed No-reminders WorkGroup change as a request (PR 10)."""
+    from .admin_changes import TOKEN_LIMIT
+    from .admin_workgroup import confirm_workgroup
+
+    return confirm_workgroup(
+        context["caller"],
+        runtime,
+        token=_input(args.token, context, TOKEN_LIMIT),
+        context=context,
+    )
+
+
+def campaign_show(args, preamble, runtime, context):
+    """Campaign settings: the current campaign's settings (PR 10)."""
+    from .admin_campaign import read_campaign
+
+    return read_campaign(context["caller"], runtime)
+
+
+def campaign_preview(args, preamble, runtime, context):
+    """Review a change to the current campaign's settings (PR 10)."""
+    from .admin_campaign import CHANGES_LIMIT, preview_campaign
+
+    # The role first (#1341): denied before any input is read.
+    _role_first(context, runtime)
+    return preview_campaign(
+        context["caller"],
+        runtime,
+        expected_version=args.expected_version,
+        changes=_input(args.changes, context, CHANGES_LIMIT),
+    )
+
+
+def campaign_confirm(args, preamble, runtime, context):
+    """Confirm a reviewed Campaign settings change as a request (PR 10)."""
+    from .admin_campaign import confirm_campaign
+    from .admin_changes import TOKEN_LIMIT
+
+    # The role first (#1341): denied before any input is read.
+    _role_first(context, runtime)
+    return confirm_campaign(
         context["caller"],
         runtime,
         token=_input(args.token, context, TOKEN_LIMIT),
@@ -1424,6 +1665,9 @@ def history_remove(args, preamble, runtime, context):
     """Remove one year's imported figures, as the page's Remove does (#1018)."""
     from .admin_history import remove_archive
 
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
+
     confirm(
         context,
         (
@@ -1453,6 +1697,9 @@ def system_backup_now(args, preamble, runtime, context):
     """
     from .system_health import backup_now, backup_preview_lines
 
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
+
     # A repeat with the key of a request already recorded asks nothing and
     # returns that request, as the page's repeated confirmation does.
     lines = backup_preview_lines(runtime.store, key=args.request_key)
@@ -1477,6 +1724,9 @@ def system_debug_off(args, preamble, runtime, context):
     for the page's recent sign-in, as the switch's guard admits.
     """
     from .system_health import debug_off, debug_off_preview_lines
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
 
     lines = debug_off_preview_lines(runtime.store, key=args.request_key)
     if lines is not None:
@@ -1514,6 +1764,9 @@ def system_refresh_accept(args, preamble, runtime, context):
     from .admin_changes import TOKEN_LIMIT
     from .system_health import accept_prompt_lines, refresh_accept
 
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
+
     token = _input(args.token, context, TOKEN_LIMIT)
     confirm(context, accept_prompt_lines(runtime, token, context["caller"]))
     return refresh_accept(context["caller"], runtime, token=token, context=context)
@@ -1532,6 +1785,9 @@ def system_debug_allow(args, preamble, runtime, context):
     """
     from .system_health import debug_allow, debug_allow_preview_lines
 
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
+
     switch, lines = debug_allow_preview_lines(runtime.store, switch=args.switch)
     if lines is not None:
         confirm(context, lines)
@@ -1547,6 +1803,9 @@ def portal_maintenance_set(args, preamble, runtime, context):
     """
     from .accounts.family_maintenance import MESSAGE_LIMIT, clean_message
     from .admin_portal import set_maintenance
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
 
     closed = args.state == "closed"
     if args.message is not None and not closed:
@@ -1655,6 +1914,9 @@ def export_archive(args, preamble, runtime, context):
     """
     from .admin_family_exports import export_archive as request
 
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
+
     confirm(
         context,
         (
@@ -1678,7 +1940,11 @@ def export_financial(args, preamble, runtime, context):
     any transaction opens; the session then stands in for the page's recent
     sign-in (``admin_family_exports.export_financial``).
     """
+    from .accounts.policy import Capability
     from .admin_family_exports import export_financial as request
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime, Capability.FINANCIAL_DETAIL)
 
     confirm(
         context,
@@ -1753,7 +2019,11 @@ def export_directory(args, preamble, runtime, context):
     Fresh-gated (#547), so it asks at the confirmation prompt first, as
     ``export financial`` does.
     """
+    from .accounts.policy import Capability
     from .admin_family_exports import export_directory as request
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime, Capability.FAMILY_CODES)
 
     confirm(
         context,
@@ -1785,7 +2055,11 @@ def export_postal(args, preamble, runtime, context):
     Fresh-gated (#547), so it asks at the confirmation prompt first, as
     ``export financial`` does.
     """
+    from .accounts.policy import Capability
     from .admin_family_exports import export_directory as request
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime, Capability.FAMILY_CODES)
 
     for pair in args.filter or ():
         name, _, value = pair.partition("=")
@@ -1863,7 +2137,11 @@ def export_family_timeline(args, preamble, runtime, context):
     The file can hold the Family's live code, so it is fresh-gated (#547)
     and asks at the confirmation prompt first, as ``export directory`` does.
     """
+    from .accounts.policy import Capability
     from .admin_family_exports import export_family_timeline as request
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime, Capability.CAMPAIGN_REPORT)
 
     confirm(
         context,
@@ -2061,6 +2339,21 @@ def _census_filters(args):
     }
 
 
+def export_roster(args, preamble, runtime, context):
+    """The Roster changes to enter download, streamed to standard output (#463)."""
+    from .admin_roster_export import export_roster as export
+
+    return export(
+        context["caller"],
+        runtime,
+        show=args.show,
+        ministry=args.ministry,
+        fmt=args.format,
+        zone_name=args.timezone,
+        context=context,
+    )
+
+
 def export_limitations(args, preamble, runtime, context):
     """The Limitations download, streamed to standard output (#463)."""
     from .admin_limitations_export import export_limitations as export
@@ -2105,8 +2398,12 @@ def census_resolve(args, preamble, runtime, context):
     dialog does, it asks first (or takes ``--yes``); Ignore and Reopen can
     be undone and ask nothing, as on the page.
     """
+    from .accounts.policy import Capability
     from .admin_census import resolve_census
     from .responses.census_resolution import MAX_NOTE
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime, Capability.VIEW_CENSUS)
 
     key = _request_key(args, context)
     # The page strips the note it posts; so does a note read from standard
@@ -2126,6 +2423,39 @@ def census_resolve(args, preamble, runtime, context):
         runtime,
         args.proposal_id,
         action=args.action,
+        expected_version=args.expected_version,
+        note=note,
+        request_key=key,
+        context=context,
+    )
+
+
+def census_review(args, preamble, runtime, context):
+    """Review an Automatic census change, as its row's Review does (#528).
+
+    Approve (``approved``), Ignore (``ignored``) or Back to To review
+    (``unreviewed``). Without ``--request-key`` a new key is made and
+    written to standard error before anything is done. Every review can be
+    changed again until publication of the change starts, so, as on the
+    page, it asks nothing.
+    """
+    from .accounts.policy import Capability
+    from .admin_census import review_census
+    from .responses.census_resolution import MAX_NOTE
+
+    # The role first (#1341): an Administrator's, so Staff are denied before
+    # any input or lookup.
+    _role_first(context, runtime, Capability.PUBLISH_CENSUS)
+
+    key = _request_key(args, context)
+    # The page strips the note it posts; so does a note read from standard
+    # input (``_input``).
+    note = _input(args.note, context, MAX_NOTE * 4).strip()
+    return review_census(
+        context["caller"],
+        runtime,
+        args.proposal_id,
+        decision=args.decision,
         expected_version=args.expected_version,
         note=note,
         request_key=key,
@@ -2179,7 +2509,11 @@ def digest_weekly_request(args, preamble, runtime, context):
     already reported; the command asks the same at the prompt (or takes
     ``--yes``), before a request key is made or any transaction opens.
     """
+    from .accounts.policy import Capability
     from .admin_digests import acknowledgement, request_weekly
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime, Capability.BACKGROUND_WORK)
 
     confirm(context, ("Queue a new manual weekly report.", acknowledgement()))
     return request_weekly(
@@ -2214,7 +2548,11 @@ def delivery_resend(args, preamble, runtime, context):
     has nothing left to read and the key is already on standard error; the
     prompt comes before any transaction opens.
     """
+    from .accounts.policy import Capability
     from .admin_operations import NOTE_LIMIT, resend_delivery_command
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime, Capability.BACKGROUND_WORK)
 
     key = _request_key(args, context)
     note = _input(args.note, context, NOTE_LIMIT * 4)
@@ -2238,7 +2576,11 @@ def delivery_resend(args, preamble, runtime, context):
 
 def delivery_refusal_clear(args, preamble, runtime, context):
     """Clear one verified refused address, as its page's form does (PR 9c)."""
+    from .accounts.policy import Capability
     from .admin_operations import NOTE_LIMIT, clear_refusal_command
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime, Capability.BACKGROUND_WORK)
 
     key = _request_key(args, context)
     note = _input(args.note, context, NOTE_LIMIT * 4)
@@ -2268,7 +2610,11 @@ def delivery_bounce_report(args, preamble, runtime, context):
     summary names the email, never the address or the note, and warns, as
     the page's notice does, when the address is the Family's only one left.
     """
+    from .accounts.policy import Capability
     from .admin_operations import NOTE_LIMIT, report_bounce_command
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime, Capability.BACKGROUND_WORK)
 
     key = _request_key(args, context)
     note = _input(args.note, context, NOTE_LIMIT * 4)
@@ -2731,6 +3077,8 @@ INTEGRATION_SHOW_TARGETS = (
     "backup",
 )
 INTEGRATION_STATUS_TARGETS = ("parishsoft", "google_workspace", "slack", "backup")
+# The integrations with a key change line to dismiss (the pages' rotating keys).
+INTEGRATION_DISMISS_TARGETS = ("parishsoft", "google_workspace", "slack")
 
 
 def _integration_show_options(parser):
@@ -2742,6 +3090,105 @@ def _integration_status_options(parser):
     """Options of ``integration status``: the integration, and --watch."""
     parser.add_argument("target", choices=INTEGRATION_STATUS_TARGETS, metavar="TARGET")
     _watch_options(parser)
+
+
+def _integration_preview_options(parser):
+    """Options of ``integration preview``: the integration, version and change."""
+    parser.add_argument("target", choices=INTEGRATION_SHOW_TARGETS, metavar="TARGET")
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_digest,
+        help="the version integration show printed",
+    )
+    change = parser.add_mutually_exclusive_group()
+    change.add_argument(
+        "--changes",
+        help="the settings change as JSON, or - to read it from standard input",
+    )
+    change.add_argument(
+        "--remove",
+        action="store_true",
+        help="review removing the integration (Slack or off-site backups)",
+    )
+    parser.add_argument(
+        "--refresh-schedule",
+        help="ParishSoft's refresh schedule as YAML or JSON in the stored "
+        "refresh_rules shape, or - to read it from standard input",
+    )
+
+
+def _integration_schedule_preview_options(parser):
+    """Options of ``integration schedule-preview``: a proposed schedule, if any."""
+    parser.add_argument(
+        "--refresh-schedule",
+        help="a proposed refresh schedule as YAML or JSON in the stored "
+        "refresh_rules shape, or - to read it from standard input "
+        "(default: the applied schedule)",
+    )
+
+
+def _integration_confirm_options(parser):
+    """Options of ``integration confirm``: the integration and the token."""
+    parser.add_argument("target", choices=INTEGRATION_SHOW_TARGETS, metavar="TARGET")
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from integration preview, or - for standard input "
+        "(needs --yes)",
+    )
+
+
+def _integration_backup_probe_options(parser):
+    """Options of ``integration backup-probe``: a folder link, or the saved one."""
+    parser.add_argument(
+        "--folder",
+        metavar="LINK",
+        help="the Google Drive folder link to check (default: the saved folder)",
+    )
+
+
+def _integration_dismiss_options(parser):
+    """Options of ``integration dismiss``: the integration and its key change."""
+    parser.add_argument("target", choices=INTEGRATION_DISMISS_TARGETS, metavar="TARGET")
+    parser.add_argument(
+        "--request-id",
+        required=True,
+        type=_uuid,
+        help="key.request_id from integration show or integration status",
+    )
+
+
+# The integrations whose key the settings pages replace; a test keeps them
+# equal to ``admin_integration_keys.KEY_TARGETS``.
+INTEGRATION_KEY_TARGETS = ("parishsoft", "google_workspace", "slack")
+
+
+def _integration_key_status_options(parser):
+    """Options of ``integration key status``: the integration, a key change, --watch."""
+    parser.add_argument("target", choices=INTEGRATION_KEY_TARGETS, metavar="TARGET")
+    parser.add_argument(
+        "--request-id",
+        type=_uuid,
+        help="one of your key changes (default: your latest for TARGET)",
+    )
+    _watch_options(parser)
+
+
+def _integration_key_target_options(parser):
+    """Options of ``integration key finish-switching-preview``: the integration."""
+    parser.add_argument("target", choices=INTEGRATION_KEY_TARGETS, metavar="TARGET")
+
+
+def _integration_key_finish_options(parser):
+    """Options of ``integration key finish-switching``: the integration and token."""
+    parser.add_argument("target", choices=INTEGRATION_KEY_TARGETS, metavar="TARGET")
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from integration key finish-switching-preview, or - "
+        "for standard input (needs --yes)",
+    )
 
 
 def _content_history_options(parser):
@@ -3249,6 +3696,27 @@ def _report_roster_options(parser):
     )
 
 
+def _export_roster_options(parser):
+    """Options of ``export roster``: ``report roster``'s, format and time zone.
+
+    The format choices are the page's own (``ministry_roster_views.
+    FORMATS``, which a test keeps equal), listed here because the parser is
+    built before Django is set up.
+    """
+    _report_roster_options(parser)
+    parser.add_argument(
+        "--format",
+        choices=("csv", "xlsx", "pdf"),
+        default=DEFAULT_EXPORT_FORMAT,
+        help=f"default {DEFAULT_EXPORT_FORMAT}",
+    )
+    parser.add_argument(
+        "--timezone",
+        default="UTC",
+        help="the time zone of the file's times (default UTC)",
+    )
+
+
 def _export_limitations_options(parser):
     """Options of ``export limitations``: the page's Show, format and time zone.
 
@@ -3348,6 +3816,35 @@ def _census_resolve_options(parser):
         default="",
         help="an optional note (required to reopen), or - to read it from "
         "standard input (needs --yes)",
+    )
+    _request_key_option(parser)
+
+
+# An Administrator's review decisions (``responses.models.REVIEW_DECISIONS``),
+# spelled out because the parser is built before Django is set up; a test
+# keeps them equal.
+CENSUS_DECISIONS = ("approved", "ignored", "unreviewed")
+
+
+def _census_review_options(parser):
+    """Options of ``census review``: an Automatic row's Review."""
+    parser.add_argument("proposal_id", type=_uuid, metavar="PROPOSAL_ID")
+    parser.add_argument(
+        "--decision",
+        required=True,
+        choices=CENSUS_DECISIONS,
+        help="approved (Approve), ignored (Ignore) or unreviewed (Back to To review)",
+    )
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_version,
+        help="the change's version, as export census --format jsonl prints it",
+    )
+    parser.add_argument(
+        "--note",
+        default="",
+        help="an optional note, or - to read it from standard input",
     )
     _request_key_option(parser)
 
@@ -3504,6 +4001,58 @@ def _parish_confirm_options(parser):
         "--token",
         required=True,
         help="preview.token from parish preview, or - for standard input",
+    )
+
+
+def _workgroup_preview_options(parser):
+    """Options of ``workgroup preview``: the new name or --clear, and the version."""
+    choice = parser.add_mutually_exclusive_group(required=True)
+    choice.add_argument(
+        "--name", help="the ParishSoft Family WorkGroup's name, as ParishSoft shows it"
+    )
+    choice.add_argument(
+        "--clear",
+        action="store_true",
+        help="name no WorkGroup: every eligible Family gets the Reminders",
+    )
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_digest,
+        help="the version workgroup show printed",
+    )
+
+
+def _workgroup_confirm_options(parser):
+    """Options of ``workgroup confirm``: the preview's token."""
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from workgroup preview, or - for standard input",
+    )
+
+
+def _campaign_preview_options(parser):
+    """Options of ``campaign preview``: the settings' version and the change."""
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_digest,
+        help="the version campaign show printed",
+    )
+    parser.add_argument(
+        "--changes",
+        required=True,
+        help="the change document as JSON, or - to read it from standard input",
+    )
+
+
+def _campaign_confirm_options(parser):
+    """Options of ``campaign confirm``: the preview's token."""
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from campaign preview, or - for standard input",
     )
 
 
@@ -4323,6 +4872,102 @@ def _settings_specs():
     )
 
 
+def _workgroup_specs():
+    """The No-reminders WorkGroup page (PR 10, ``admin_workgroup``).
+
+    Like ``parish show``, any session runs ``workgroup show`` and it records
+    nothing, as the page's GET records nothing. The page's Review and Apply
+    are ``workgroup preview`` and ``workgroup confirm``, as ``parish
+    preview`` and ``parish confirm``: full scope, as the page's posts record
+    activity; neither is fresh-gated nor prompts, as the page asks for no
+    recent sign-in and its Apply is the reviewed token.
+    """
+    from .admin_workgroup import WorkGroupConfirm, WorkGroupPreview, WorkGroupShow
+
+    return (
+        CommandSpec(
+            "workgroup show",
+            "Show the current campaign's No-reminders WorkGroup.",
+            workgroup_show,
+            "read_only",
+            False,
+            WorkGroupShow.field_names(),
+            10,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "workgroup preview",
+            "Review a change to the No-reminders WorkGroup.",
+            workgroup_preview,
+            "full",
+            False,
+            WorkGroupPreview.field_names(),
+            10,
+            options=(_workgroup_preview_options,),
+            expected_version=True,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "workgroup confirm",
+            "Confirm a reviewed change to the No-reminders WorkGroup.",
+            workgroup_confirm,
+            "full",
+            True,
+            WorkGroupConfirm.field_names(),
+            10,
+            options=(_workgroup_confirm_options,),
+        ),
+    )
+
+
+def _campaign_specs():
+    """Campaign settings (PR 10, ``admin_campaign``).
+
+    Like ``parish show``, any session runs ``campaign show`` and it records
+    nothing, as the page's GET records nothing. The page's Review and Apply
+    are ``campaign preview`` and ``campaign confirm``, as ``parish
+    preview`` and ``parish confirm``: full scope, as the page's posts record
+    activity; neither is fresh-gated nor prompts, as the page asks for no
+    recent sign-in and its Apply is the reviewed token.
+    """
+    from .admin_campaign import CampaignConfirm, CampaignPreview, CampaignShow
+
+    return (
+        CommandSpec(
+            "campaign show",
+            "Show the current campaign's settings.",
+            campaign_show,
+            "read_only",
+            False,
+            CampaignShow.field_names(),
+            10,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "campaign preview",
+            "Review a change to the current campaign's settings.",
+            campaign_preview,
+            "full",
+            False,
+            CampaignPreview.field_names(),
+            10,
+            options=(_campaign_preview_options,),
+            expected_version=True,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "campaign confirm",
+            "Confirm a reviewed change to the current campaign's settings.",
+            campaign_confirm,
+            "full",
+            True,
+            CampaignConfirm.field_names(),
+            10,
+            options=(_campaign_confirm_options,),
+        ),
+    )
+
+
 def _artwork_specs():
     """The Campaign images page's read and removal (PR 10, ``admin_artwork``).
 
@@ -4377,9 +5022,32 @@ def _integration_specs():
     Like ``parish show``, any session runs them and they record nothing, as
     the pages' GETs record nothing. ``integration status`` takes ``--watch``,
     as the settings page follows its status line while a change runs.
-    Saving, removing and the key steps come later in PR 10.
+    ``integration schedule-preview`` is the ParishSoft page's live schedule
+    check, which records nothing either. A settings page's Save and Remove
+    are ``integration preview`` and ``integration confirm``
+    (``admin_integration_changes``), as ``parish preview`` and ``parish
+    confirm``: full scope, as the page's posts record activity. The page
+    asks for a recent sign-in (#547), so ``integration confirm`` is
+    fresh-gated and prompts; the preview records nothing.
+    ``integration backup-probe`` (Test access) and ``integration dismiss``
+    (a key change line's Dismiss) are full scope and neither fresh-gated
+    nor prompting, as those pages ask for neither
+    (``admin_integration_actions``). A key change's status page and Finish
+    switching are ``integration key status`` (any session, records nothing)
+    and ``integration key finish-switching-preview`` and
+    ``integration key finish-switching`` (``admin_integration_keys``), the
+    confirmation fresh-gated and prompting, as ``integration confirm``.
+    Replacing a key comes later in PR 10.
     """
-    from .admin_integrations import IntegrationList, IntegrationShow, IntegrationStatus
+    from .admin_integration_actions import BackupProbe, KeyDismissal
+    from .admin_integration_changes import IntegrationConfirm, IntegrationPreview
+    from .admin_integration_keys import FinishConfirm, FinishPreview, KeyStatus
+    from .admin_integrations import (
+        IntegrationList,
+        IntegrationShow,
+        IntegrationStatus,
+        SchedulePreview,
+    )
 
     return (
         CommandSpec(
@@ -4414,6 +5082,97 @@ def _integration_specs():
             options=(_integration_status_options,),
             audit_event=None,
             watch=True,
+        ),
+        CommandSpec(
+            "integration schedule-preview",
+            "Preview the ParishSoft refresh schedule's next seven days and cost.",
+            integration_schedule_preview,
+            "read_only",
+            False,
+            SchedulePreview.field_names(),
+            10,
+            options=(_integration_schedule_preview_options,),
+            audit_event=None,
+        ),
+        CommandSpec(
+            "integration preview",
+            "Review a change to an integration's settings, or its removal.",
+            integration_preview,
+            "full",
+            False,
+            IntegrationPreview.field_names(),
+            10,
+            options=(_integration_preview_options,),
+            expected_version=True,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "integration confirm",
+            "Apply a reviewed change to an integration's settings.",
+            integration_confirm,
+            "full",
+            True,
+            IntegrationConfirm.field_names(),
+            10,
+            options=(_integration_confirm_options,),
+            fresh_gated=True,
+            prompts=True,
+        ),
+        CommandSpec(
+            "integration backup-probe",
+            "Check that off-site backups can be saved in a Google Drive folder.",
+            integration_backup_probe,
+            "full",
+            True,
+            BackupProbe.field_names(),
+            10,
+            options=(_integration_backup_probe_options,),
+        ),
+        CommandSpec(
+            "integration dismiss",
+            "Dismiss the result of a finished key change.",
+            integration_dismiss,
+            "full",
+            True,
+            KeyDismissal.field_names(),
+            10,
+            options=(_integration_dismiss_options,),
+        ),
+        CommandSpec(
+            "integration key status",
+            "Show the progress of one of your integration key changes.",
+            integration_key_status,
+            "read_only",
+            False,
+            KeyStatus.field_names(),
+            10,
+            options=(_integration_key_status_options,),
+            audit_event=None,
+            watch=True,
+            watch_subject="request_id",
+        ),
+        CommandSpec(
+            "integration key finish-switching-preview",
+            "Review finishing the switch to an integration's new key.",
+            integration_key_finish_switching_preview,
+            "full",
+            False,
+            FinishPreview.field_names(),
+            10,
+            options=(_integration_key_target_options,),
+            audit_event=None,
+        ),
+        CommandSpec(
+            "integration key finish-switching",
+            "Finish switching an integration to its new key.",
+            integration_key_finish_switching,
+            "full",
+            True,
+            FinishConfirm.field_names(),
+            10,
+            options=(_integration_key_finish_options,),
+            fresh_gated=True,
+            prompts=True,
         ),
     )
 
@@ -4487,7 +5246,7 @@ def _report_specs():
     (``admin_digests``) and PR 8e the Family-level exports
     (``admin_family_exports``).
     """
-    from .admin_census import CensusReport, CensusResolve
+    from .admin_census import CensusReport, CensusResolve, CensusReview
     from .admin_census_export import CensusExport
     from .admin_data_to_fix import DataToFixReport
     from .admin_digests import DailyDigest, DigestList, WeeklyDigest, WeeklyRequest
@@ -4506,6 +5265,7 @@ def _report_specs():
     )
     from .admin_reports import LogExport, LogList
     from .admin_roster import RosterReport
+    from .admin_roster_export import RosterExport
     from .admin_source_form import SourceFormReport
 
     return (
@@ -4910,6 +5670,19 @@ def _report_specs():
             options=(_report_roster_options,),
             audit_event="roster_changes_viewed",
         ),
+        # The Roster changes to enter download (PR 8g): the page's file.
+        CommandSpec(
+            "export roster",
+            "Write the Roster changes to enter download to standard output.",
+            export_roster,
+            "full",
+            False,
+            RosterExport.field_names(),
+            8,
+            options=(_export_roster_options,),
+            audit_event="roster_changes_exported",
+            streams=True,
+        ),
         # The Limitations download (PR 8h): the page's file.
         CommandSpec(
             "export limitations",
@@ -4965,6 +5738,20 @@ def _report_specs():
             options=(_census_resolve_options,),
             # Only Entered in ParishSoft, which cannot be undone, asks.
             prompts=True,
+            request_key=True,
+            expected_version=True,
+        ),
+        # An Automatic row's Review (#528, ADM-09): the page's service,
+        # keyed by the page's request key; reversible, so it asks nothing.
+        CommandSpec(
+            "census review",
+            "Review an automatic census change, as its row's Review does.",
+            census_review,
+            "full",
+            True,
+            CensusReview.field_names(),
+            8,
+            options=(_census_review_options,),
             request_key=True,
             expected_version=True,
         ),
@@ -5108,6 +5895,8 @@ COMMANDS = (
     + _portal_specs()
     + _file_specs()
     + _settings_specs()
+    + _workgroup_specs()
+    + _campaign_specs()
     + _operation_specs()
     + _report_specs()
     + _users_specs()

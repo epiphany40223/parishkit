@@ -406,6 +406,57 @@ class ProposalResolution(ImmutableRecord):
         ]
 
 
+REVIEW_DECISIONS = ("approved", "ignored", "unreviewed")
+
+
+class ProposalReview(ImmutableRecord):
+    """One Administrator's review of an Automatic census change (#528, ADM-09).
+
+    An Automatic change (an API-writable Member field) is published only once
+    an Administrator approves it. Each Approve, Ignore or Back to To review is
+    one immutable row: who, when, the optional note, and the review state the
+    proposal carries afterwards (its ``decision`` and edit fields), which SQL
+    pairs with the proposal (schema/migrations/0096_proposal_review.sql). The
+    edit fields record the whole resulting state, so a later Edit value needs
+    only a wider review guard; today they must equal the proposal's own.
+    """
+
+    proposal = models.ForeignKey(
+        ProposedChange, on_delete=models.PROTECT, related_name="reviews"
+    )
+    expected_version = models.PositiveBigIntegerField()
+    request_key = models.UUIDField()
+    decision = models.CharField(max_length=12)
+    admin_value_set = models.BooleanField(default=False)
+    admin_value = models.JSONField(null=True)
+    note = models.TextField(default="", blank=True)
+
+    class Meta:
+        db_table = "stewardship_proposal_review"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("proposal", "expected_version"),
+                name="proposal_review_version",
+            ),
+            models.UniqueConstraint(
+                fields=("actor_id", "request_key"), name="proposal_review_replay"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(actor_id__isnull=False, expected_version__gte=1),
+                name="proposal_review_identity",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(decision__in=REVIEW_DECISIONS),
+                name="proposal_review_decision",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(admin_value_set=True)
+                | models.Q(admin_value__isnull=True),
+                name="proposal_review_admin_value_shape",
+            ),
+        ]
+
+
 class SubmissionReceiptOccurrence(ImmutableRecord):
     """One atomic receipt or proven no-recipient outcome per accepted submission.
 

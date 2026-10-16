@@ -287,6 +287,27 @@ def test_a_test_email_trail_names_its_email_editor():
     assert navigation.back(match, placed)["url"] == trail[4]["url"]
 
 
+def test_a_timeline_export_trail_keeps_the_timeline_mode():
+    """A placed query reaches the ancestor's crumb and back link, nothing else."""
+    family = uuid4()
+    placed = navigation.Placement(
+        parent="family_timeline",
+        arguments={"family_id": family},
+        queries={"family_timeline": "mode=testing"},
+    )
+    match = _match("report_export", request_id=uuid4())
+    _, trail = navigation.build(match, _items(), placed)
+    timeline = reverse("admin:family_timeline", args=[family])
+    assert [crumb["label"] for crumb in trail][2:] == [
+        navigation.PAGES["family_directory"].label,
+        navigation.PAGES["family_timeline"].label,
+        navigation.PAGES["report_export"].label,
+    ]
+    assert trail[2]["url"] == reverse("admin:family_directory")
+    assert trail[3]["url"] == timeline + "?mode=testing"
+    assert navigation.back(match, placed)["url"] == timeline + "?mode=testing"
+
+
 def test_a_placed_configuration_change_joins_its_origin_section():
     """A change confirmed on an editor shows that editor's trail and section."""
     campaign, request_id = uuid4(), uuid4()
@@ -554,7 +575,6 @@ REPORTS = [
     "census_changes",
     "information_queue",
     "ministry_report",
-    "ministry_followup",
     "family_directory",
     "emailed_reports",
 ]
@@ -587,7 +607,6 @@ SPEC_ORDER = [
     "census_changes",
     "information_queue",
     "ministry_report",
-    "ministry_followup",
     "family_directory",
     "emailed_reports",
     # Parish data
@@ -612,7 +631,7 @@ SHAPES = {
     "administrator": SPEC_ORDER,
     # Staff see Parish data with its one entry for them (#1011).
     "staff": [*REPORTS, "parishsoft_fixes"],
-    "ministry_leader": ["ministry_report", "ministry_followup"],
+    "ministry_leader": ["ministry_report"],
 }
 
 
@@ -672,7 +691,6 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
         "census_changes",
         "information_queue",
         "ministry_report",
-        "ministry_followup",
         "family_directory",
     }
     for item in items:
@@ -1040,6 +1058,51 @@ def test_the_menu_ends_with_sign_out(pending):
     assert '<form method="post" action="/admin/logout">' in menu
 
 
+@pytest.mark.parametrize("pending", [False, True])
+def test_the_menu_has_no_appearance_choice(pending):
+    """The Appearance choice moved from the sidebar to the header (#1264)."""
+    html = render_to_string(
+        "stewardship/admin-navigation.html",
+        {"admin_chrome": {"setup_pending": pending, "setup_url": "/admin/setup"}},
+    )
+    assert "appearance" not in html.lower()
+
+
+def test_the_appearance_switch_closes_every_admin_header():
+    """Sign-in, which has no sidebar, still gets the switch (#1264): a radio
+    group named Appearance whose three icons (sun, moon, monitor) each carry
+    an accessible name and a matching tooltip. Nothing is checked in the
+    markup, since only the browser knows the choice. Family pages have none.
+    """
+    html = render_to_string("stewardship/login.html", {})
+    header = html[html.index('<header class="site-header">') : html.index("</header>")]
+    switch = header[header.index('<div class="appearance-switch"') :]
+    assert header.index('class="brand"') < header.index("appearance-switch")
+    assert switch.startswith(
+        '<div class="appearance-switch" role="radiogroup" aria-label="Appearance">'
+    )
+    labels = re.findall(
+        r'<label data-choice="(\w+)" title="([^"]+)"><input type="radio" '
+        r'name="pk-appearance" value="(\w+)" autocomplete="off"><svg (.*?)</svg>'
+        r'<span class="visually-hidden">([^<]+)</span></label>',
+        switch,
+    )
+    named = [(choice, title, value, name) for choice, title, value, _, name in labels]
+    assert named == [
+        ("light", "Light", "light", "Light"),
+        ("dark", "Dark", "dark", "Dark"),
+        ("auto", "Match this device", "auto", "Match this device"),
+    ]
+    for _, _, _, svg, _ in labels:
+        assert 'aria-hidden="true" focusable="false"' in svg
+        assert 'stroke="currentColor"' in svg and "url(" not in svg
+    assert "checked" not in switch and "<form" not in switch
+    assert "appearance" not in render_to_string("stewardship/family-login.html", {})
+    static = Path(navigation.__file__).parent / "static" / "stewardship"
+    gate = (static / "admin-gate-v1.js").read_text(encoding="utf-8")
+    assert '"pk-admin-appearance"' in gate and 'input[name="pk-appearance"]' in gate
+
+
 def test_admin_pages_load_the_menu_script_and_family_pages_do_not():
     """admin-menu-v1.js loads deferred on Admin pages only, apart from ui-v1.js."""
     script = '<script src="/static/stewardship/admin-menu-v1.js" defer></script>'
@@ -1147,9 +1210,9 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
     active = _campaign("active")
     cases = (
         # Both queues for Staff: every Ministry.
-        ("staff", active, {"information_queue": 3, "ministry_followup": 2}),
-        # A leader only has Ministry follow-up, scoped to their Ministry.
-        ("ministry_leader", active, {"ministry_followup": 2}),
+        ("staff", active, {"information_queue": 3, "ministry_report": 2}),
+        # A leader only has Ministry requests, scoped to their Ministry.
+        ("ministry_leader", active, {"ministry_report": 2}),
         # Greyed out (no Ministry module) or absent: no count, no query.
         ("ministry_leader", _campaign("active", modules=("census",)), {}),
         ("staff", None, {}),
@@ -1192,7 +1255,7 @@ def test_open_counts_are_plain_numbers_with_screen_reader_words():
     campaign = _campaign("active")
     items = _menu("staff", campaign, "production")
     sections, _trail = navigation.build(None, items)
-    counts = {"information_queue": 1234, "ministry_followup": 0}
+    counts = {"information_queue": 1234, "ministry_report": 0}
     for section in sections:
         for entry in section["items"]:
             entry["count"] = counts.get(entry["name"])

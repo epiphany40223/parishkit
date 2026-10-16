@@ -37,7 +37,10 @@
 #                                    (default 200) open their emailed links and submit
 #                                    through Caddy from S sources (default 8), beside a
 #                                    new Reminder send with --during-send
-#   wizard                           complete the setup wizard unattended
+#   wizard                           complete the setup wizard unattended, then
+#                                    create the campaign and load its Families
+#   finish-setup                     after the browser wizard stops at Finishing setup,
+#                                    acknowledge its credentials (runbook step 5)
 #   status                           VM, services, Docker and VM disk use
 #   down                             stop the services; never removes data
 #   sign-in --email E                print a local test sign-in link
@@ -391,6 +394,10 @@ case "$command" in
         [ $# -eq 0 ] || usage
         require_running
         run_remote wizard ;;
+    finish-setup)
+        [ $# -eq 0 ] || usage
+        require_running
+        run_remote finish-setup ;;
     status)
         [ $# -eq 0 ] || usage
         limactl list "$vm" 2>/dev/null || echo "No Lima instance '$vm'."

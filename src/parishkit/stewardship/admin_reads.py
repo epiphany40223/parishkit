@@ -602,7 +602,9 @@ class ScheduleShow(ReadModel):
     campaign's dates may still change. Each schedule lists its civil values
     (a daily digest's ``comparison`` too, #1018)
     and its first resolved send times (``resolved``, at most five, with
-    ``more`` when there are others).
+    ``more`` when there are others). ``series`` lists the campaign's
+    remembered reminder series (#469): each one's ``id``, repeat ``rule``
+    and the ids of the reminders it holds (``schedules``).
     """
 
     campaign_id: UUID
@@ -610,6 +612,7 @@ class ScheduleShow(ReadModel):
     editable: bool
     window: dict
     schedules: list
+    series: list
 
 
 def schedule_entry(row, campaign):
@@ -634,6 +637,22 @@ def schedule_entry(row, campaign):
         "resolved": [{"key": slot.key, "due_at": slot.due_at} for slot in page.slots],
         "more": not page.exhausted,
     }
+
+
+def campaign_series(configuration, campaign_id):
+    """The campaign's remembered reminder series, as ``schedule show`` lists them."""
+    from .accounts.series_schema import SECTION
+
+    rows = configuration.active_configuration.canonical_document["sections"]
+    return [
+        {
+            "id": row["id"],
+            "rule": row["values"]["rule"],
+            "schedules": row["values"]["schedules"],
+        }
+        for row in rows.get(SECTION, [])
+        if row["values"]["campaign_id"] == str(campaign_id)
+    ]
 
 
 def read_schedule(caller, service, campaign_id):
@@ -681,6 +700,7 @@ def read_schedule(caller, service, campaign_id):
                     schedule_entry(row, values)
                     for row in campaign_schedules(state[0], target)
                 ],
+                series=campaign_series(state[0], target),
             )
         _recheck(caller, service.store, actor, Capability.CONFIGURE)
         return model

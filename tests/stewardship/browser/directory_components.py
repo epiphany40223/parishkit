@@ -225,6 +225,15 @@ def components(context, admin):
         "/directory-gated": values | code_list | {"mutable": False},
         "/family-directory": values | code_list | {"page_path": "/family-directory"},
         "/postal-directory": values | mailing,
+        # The directory as first opened, with no filter applied: its Filters
+        # panel starts closed (#227).
+        "/directory-unfiltered": values
+        | code_list
+        | {
+            "query": DirectoryQuery(),
+            "query_fields": DirectoryQuery().form_values() | {"mailing": "no"},
+            "table": _table(values["table_rows"], 51, "no", DirectoryQuery()),
+        },
         "/directory-empty": values
         | mailing
         | {"table": _table([], 0, "yes"), "total": 0},

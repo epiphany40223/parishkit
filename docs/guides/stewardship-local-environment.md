@@ -21,7 +21,9 @@ gives it a campaign in progress in about 17 minutes, and `deploy` upgrades
 the seeded deployment to a pull request's build in about half a minute after
 the image build, with web down for about five seconds. The fake-clock
 (unseeded) deploy path, with its derived-image build, is covered by the
-stand-in tests only; it has not been run in the VM. The BG-12 rehearsal
+stand-in tests only; it has not been run in the VM. Likewise `finish-setup`
+automates the post-wizard step that was run by hand in the VM, but the command
+itself is covered by the stand-in tests only. The BG-12 rehearsal
 (`rehearse`, `deploy --bulk` and `deploy --smtp-latency-ms`) is covered by
 the stand-in tests and a read-only check of its lock sampler and report in
 the VM; its first full run is the baseline run that the
@@ -186,15 +188,31 @@ credential (OPS-10.05). Those two credentials are installed by the real
 credential installers, exactly as in production, which is part of what the
 environment tests.
 
+At Finishing setup the wizard waits for "the server operator" ("0 of 1
+services acknowledged" for ParishSoft and for Google Workspace): that is the
+runbook's post-wizard step, which in LOCAL is one command,
+`tools/stewardship-local.sh finish-setup`. It recreates `worker` and
+`mail-dispatch` from `compose.json`, acknowledges each credential inside them,
+waits for setup to complete and restarts the services; the wizard page then
+moves on by itself. Running it again is harmless: once setup is complete it
+says so and changes nothing. It refuses while the wizard's pages are still
+unfinished.
+
+Setup collects no campaign (#142). Once it is complete, open Home and choose
+**Create the campaign**, fill in its form (every module, for the seeder),
+review and create it, then press **Load the campaign's ParishSoft data** on
+the change's status so the campaign gets its Families and codes.
+
 For an unattended install, `tools/stewardship-local.sh wizard` completes the
 wizard through the wizard pages' own service layer with the fake ParishSoft
-key, the mail-catcher document, a first campaign with every module, default
-pages and emails and a generated logo, then follows the runbook's post-wizard
-step (recreating `worker` and `mail-dispatch` from `compose.json` and
-acknowledging each credential inside them) until setup is complete. The
-browser wizard remains the developer-facing path.
+key, the mail-catcher document and a generated logo, follows the runbook's
+post-wizard step (recreating `worker` and `mail-dispatch` from `compose.json`
+and acknowledging each credential inside them) until setup is complete, and
+then runs Create the campaign (every module, with its default pages and
+emails) and the campaign's full ParishSoft refresh. The browser wizard and
+Create the campaign remain the developer-facing path.
 
-After the wizard completes, take the post-setup snapshot:
+After the campaign has its Families, take the post-setup snapshot:
 `tools/stewardship-local.sh snapshot`. `reset` then returns to that state in
 about half a minute. (A snapshot taken before the wizard is allowed and noted
 as a pre-wizard snapshot; it is still useful for a fast return to a clean
@@ -206,9 +224,10 @@ The recipe for a seeded environment, from a checkout, is:
 
 1. `tools/stewardship-local.sh reset --reinstall` (or `up` on a VM with no
    deployment): about two minutes, ends in fake-clock mode.
-2. The setup wizard: in the browser (`sign-in --email admin@example.test`,
-   then the values the summary printed), or unattended with
-   `tools/stewardship-local.sh wizard` (about 90 seconds).
+2. The setup wizard and the campaign: in the browser (`sign-in --email
+   admin@example.test`, then the values the summary printed, then
+   `finish-setup` at Finishing setup, then Create the campaign and its load),
+   or unattended with `tools/stewardship-local.sh wizard` (about 90 seconds).
 3. `tools/stewardship-local.sh snapshot`: the post-setup snapshot `reseed`
    returns to.
 4. `tools/stewardship-local.sh seed`: about 17 minutes at 100 Families.

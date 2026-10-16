@@ -1,19 +1,23 @@
-"""``census resolve``'s document, options and vocabulary (#463, #528).
+"""``census resolve`` and ``census review``: documents, options, vocabulary.
 
-The command's behavior against a database is in
-``database/test_admin_census_resolve_cli_postgresql.py``.
+Both are Census changes row writes (#463, #528). The commands' behavior
+against a database is in
+``database/test_admin_census_resolve_cli_postgresql.py`` and
+``database/test_admin_census_review_cli_postgresql.py``.
 """
 
 import io
 import json
+from argparse import Namespace
 from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
 from django.db import DatabaseError, IntegrityError
 
-from parishkit.stewardship import admin_census, admin_cli
-from parishkit.stewardship.responses.models import RESOLUTION_ACTIONS
+from parishkit.stewardship import admin_census, admin_changes, admin_cli
+from parishkit.stewardship.accounts.policy import Capability
+from parishkit.stewardship.responses.models import RESOLUTION_ACTIONS, REVIEW_DECISIONS
 
 from .test_admin_reads import FORBIDDEN, members
 
@@ -26,6 +30,72 @@ CREATED = datetime(2026, 10, 12, 18, 30, tzinfo=UTC)
 def test_the_actions_are_the_services():
     """The parser's choices, spelled out before Django, are the service's."""
     assert admin_cli.CENSUS_ACTIONS == RESOLUTION_ACTIONS
+    assert admin_cli.CENSUS_DECISIONS == REVIEW_DECISIONS
+
+
+def test_the_review_document_names_ids_versions_and_states_only():
+    """Golden document: no note, Family, Member or value, nor a guarded word."""
+    model = admin_census.CensusReview(
+        created=True,
+        request_key=KEY,
+        review={
+            "id": RESOLUTION,
+            "proposal_id": PROPOSAL,
+            "decision": "approved",
+            "expected_version": 3,
+            "created_at": CREATED,
+        },
+        proposal={
+            "id": PROPOSAL,
+            "version": 4,
+            "decision": "approved",
+            "execution": "pending",
+        },
+    )
+    document = model.to_document()
+    assert document == {
+        "created": True,
+        "request_key": str(KEY),
+        "review": {
+            "id": str(RESOLUTION),
+            "proposal_id": str(PROPOSAL),
+            "decision": "approved",
+            "expected_version": 3,
+            "created_at": "2026-10-12T18:30:00+00:00",
+        },
+        "proposal": {
+            "id": str(PROPOSAL),
+            "version": 4,
+            "decision": "approved",
+            "execution": "pending",
+        },
+    }
+    for name in members(document):
+        assert FORBIDDEN.search(name) is None, name
+    assert "note" not in set(members(document))
+
+
+def test_review_checks_the_administrator_s_role_first(monkeypatch):
+    """``census review`` is an Administrator's (``PUBLISH_CENSUS``): its
+    first step is that read-only check (#1341), before it reads the note,
+    makes a key or looks anything up."""
+    calls = []
+
+    def denied(caller, service, *, read_only=False, capability=None):
+        """Refuse as the admission does for a user who lacks the capability."""
+        calls.append((read_only, capability))
+        raise PermissionError("denied")
+
+    def unexpected(*arguments, **options):
+        """Nothing after the role check may run."""
+        raise AssertionError("read or looked up before the role check")
+
+    monkeypatch.setattr(admin_changes, "_admit_change", denied)
+    monkeypatch.setattr(admin_cli, "_input", unexpected)
+    monkeypatch.setattr(admin_cli, "_request_key", unexpected)
+    with pytest.raises(PermissionError):
+        admin_cli.census_review(Namespace(), None, None, {"caller": None})
+    assert calls == [(True, Capability.PUBLISH_CENSUS)]
 
 
 def test_the_document_names_ids_versions_and_states_only():
@@ -99,6 +169,22 @@ def test_the_document_names_ids_versions_and_states_only():
         [
             *("census", "resolve", str(PROPOSAL)),
             *("--action", "entered", "--expected-version", "1", "--note", "-"),
+        ],
+        # census review: each required piece missing, and its vocabulary.
+        ["census", "review", "--decision", "approved", "--expected-version", "1"],
+        ["census", "review", str(PROPOSAL), "--expected-version", "1"],
+        ["census", "review", str(PROPOSAL), "--decision", "approved"],
+        [
+            *("census", "review", str(PROPOSAL)),
+            *("--decision", "approve", "--expected-version", "1"),
+        ],
+        [
+            *("census", "review", str(PROPOSAL)),
+            *("--decision", "entered", "--expected-version", "1"),
+        ],
+        [
+            *("census", "review", str(PROPOSAL)),
+            *("--decision", "approved", "--expected-version", "0"),
         ],
     ],
 )

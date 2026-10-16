@@ -223,6 +223,20 @@ class Action(StrEnum):
     ADMIN_CMD_PARISH_CONFIRM = "admin_cmd_parish_confirm"
     # artwork remove: Campaign images' Apply of a removal (ADM-11 PR 10).
     ADMIN_CMD_ARTWORK_REMOVE = "admin_cmd_artwork_remove"
+    # integration confirm: an integration settings page's Apply (ADM-11 PR 10).
+    ADMIN_CMD_INTEGRATION_CONFIRM = "admin_cmd_integration_confirm"
+    # integration backup-probe: the Off-site backups page's Test access.
+    ADMIN_CMD_INTEGRATION_BACKUP_PROBE = "admin_cmd_integration_backup_probe"
+    # integration dismiss: a key change line's Dismiss (ADM-11 PR 10).
+    ADMIN_CMD_INTEGRATION_DISMISS = "admin_cmd_integration_dismiss"
+    # integration key finish-switching: Finish switching to the new key.
+    ADMIN_CMD_INTEGRATION_KEY_FINISH_SWITCHING = (
+        "admin_cmd_integration_key_finish_switching"
+    )
+    # workgroup confirm: the No-reminders WorkGroup page's Apply (ADM-11 PR 10).
+    ADMIN_CMD_WORKGROUP_CONFIRM = "admin_cmd_workgroup_confirm"
+    # campaign confirm: Campaign settings' Apply (ADM-11 PR 10).
+    ADMIN_CMD_CAMPAIGN_CONFIRM = "admin_cmd_campaign_confirm"
     ADMIN_CMD_USERS_IMPORT_LEADERS = "admin_cmd_users_import_leaders"
     # The operator's cancellation of a stuck live end-date change (#944).
     ADMIN_CMD_CONFIG_REQUEST_CANCEL = "admin_cmd_config_request_cancel"
@@ -282,6 +296,8 @@ class Action(StrEnum):
     ADMIN_CMD_EVENTS_ACKNOWLEDGE = "admin_cmd_events_acknowledge"
     # census resolve: a Census changes row's Record outcome (#528, #463).
     ADMIN_CMD_CENSUS_RESOLVE = "admin_cmd_census_resolve"
+    # census review: an Automatic row's Review (#528, ADM-09).
+    ADMIN_CMD_CENSUS_REVIEW = "admin_cmd_census_review"
 
 
 # Closed field identifiers are operational metadata, never census values.

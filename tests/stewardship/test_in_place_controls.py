@@ -221,17 +221,25 @@ def included_in_region(path, fragment):
     either name it or be a polled fragment that carries the partial only as
     a template[data-live-mirror] copy for that page: with every such
     <template> element removed, the includer no longer names the partial.
+    An includer that is itself a partial counts as naming the region when
+    it is, in turn, included in it (Accept this change once's button, inside
+    its offer, inside #accept-change).
     """
     name = f"stewardship/{path.name}"
     includers = [
-        other.read_text()
+        (other, other.read_text())
         for other in TEMPLATES.rglob("*.html")
         if other != path and name in other.read_text()
     ]
     mirrors = re.compile(r"<template\b[^>]*\bdata-live-mirror=.*?</template>", re.S)
-    return any(names_region(text, fragment) for text in includers) and all(
-        names_region(text, fragment) or name not in mirrors.sub("", text)
-        for text in includers
+
+    def names(other, text):
+        """The includer names the region, or sits inside one that does."""
+        return names_region(text, fragment) or included_in_region(other, fragment)
+
+    return any(names(other, text) for other, text in includers) and all(
+        names(other, text) or name not in mirrors.sub("", text)
+        for other, text in includers
     )
 
 
@@ -739,31 +747,3 @@ def test_hosted_file_upload_is_in_place():
     from parishkit.stewardship.accounts.hosted_file_views import UploadForm
 
     assert "data-in-place-focus" in UploadForm().fields["file"].widget.attrs
-
-
-def test_setup_content_defaults_are_in_place():
-    """Fill in and Reset post to the content list's own address in place
-    (#519 PR 7c), each landing on its own region, so focus stays near the
-    reader: Fill in's holds the notice, which takes focus and is read out
-    after either. Every entry's state and the stepper (the content step
-    turns done after a fill) are regions too, and the open step list stays
-    open."""
-    text = (TEMPLATES / "setup-content.html").read_text()
-    for region in (
-        "setup-stepper",
-        "setup-content-fill",
-        "setup-content-entries",
-        "setup-content-reset",
-    ):
-        assert names_region(text, region), region
-    for key in ("setup-content-fill", "setup-content-reset"):
-        body = region_body(text, key)
-        tag = re.search(rf'<form [^>]*data-in-place="{key}"[^>]*>', body).group(0)
-        assert f"action=\"{{% url 'admin:setup_content' %}}#{key}\"" in tag
-        assert 'data-in-place-message-from="setup-content-filled"' in tag
-    fill = region_body(text, "setup-content-fill")
-    assert 'id="setup-content-filled" tabindex="-1" data-in-place-focus' in fill
-    assert "{% for group in groups %}" in region_body(text, "setup-content-entries")
-    assert "stewardship/setup-wizard.html" in region_body(text, "setup-stepper")
-    wizard = (TEMPLATES / "setup-wizard.html").read_text()
-    assert 'id="setup-stepper-list" data-keep-open' in wizard

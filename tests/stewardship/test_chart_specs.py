@@ -24,6 +24,7 @@ from parishkit.stewardship.reports.chart_specs import (
     financial_charts,
     funnel_chart,
     label_room,
+    ministry_followup,
     participation_chart,
     population_progress,
     quiet_slots,
@@ -338,51 +339,6 @@ def test_empty_activity_layers_stay_out_of_the_accessibility_tree():
     assert all("aria" not in layer["mark"] for layer in full.spec["layer"])
 
 
-def test_digest_charts_are_trimmed_like_the_digest_table():
-    """The digest's charts drop Link followed and name Invited as it does (#1016)."""
-    from parishkit.stewardship.reports.digest_funnel import digest_charts
-
-    with using("us_long"):
-        funnel, activity = digest_charts(metrics())
-    rows = funnel.spec["data"]["values"]
-    assert [row["stage"] for row in rows] == [
-        "Email invites sent",
-        "Form opened",
-        "Progressed past the first step",
-        "Submitted",
-    ]
-    assert [row["share"] for row in rows] == ["100%", "100%", "75%", "75%"]
-    assert funnel.table.headings == (
-        "Stage",
-        "Families",
-        "Compared with email invites sent",
-    )
-    assert funnel.summary == (
-        "Families by stage: 4 were sent an email invite, 4 opened the form, "
-        "3 progressed past the first step, 3 submitted."
-    )
-    lines, _rules, _labels = activity.spec["layer"]
-    assert {row["series"] for row in lines["data"]["values"]} == {
-        "Form opened",
-        "Submitted",
-    }
-    assert activity.table.headings == ("Campaign time", "Form opened", "Submitted")
-    assert activity.summary.startswith("Form opens and submissions per hour in ")
-    # The dashboard's own charts are unchanged: five stages, three lines.
-    assert len(funnel_chart(metrics()).spec["data"]["values"]) == 5
-    assert activity_chart(metrics()).table.headings[1] == "Link followed"
-
-
-def test_digest_activity_follows_the_dashboards_automatic_grain():
-    """Hourly while the activity spans three days or less, daily after that."""
-    from parishkit.stewardship.reports.digest_funnel import digest_charts
-
-    value = metrics()
-    assert digest_charts(value)[1].title == "Response activity by hour"
-    later = replace(value, as_of=value.as_of + timedelta(days=5))
-    assert digest_charts(later)[1].title == "Response activity by day"
-
-
 def test_activity_chart_refuses_unknown_series():
     """Only the known lines can be drawn, and at least one of them."""
     for series in ((), (("other", "Other", "#000000", [1, 0]),)):
@@ -577,6 +533,52 @@ def test_population_progress_without_families_or_observation():
     assert {row[2] for row in chart.table.rows} == {"—"}
     assert chart.spec["data"]["values"][0]["text"] == "0 out of 0 (—)"
     assert population_progress(None) is None
+
+
+def test_ministry_followup_draws_each_state_against_all_requests():
+    """Resolved or closed and Unresolved are progress bars against every
+    current request of the matching Ministries (#720), each bar's value on
+    its axis label's second line, as the Participation chart draws it."""
+    totals = {
+        "joining": 30,
+        "leaving": 10,
+        "unresolved": 28,
+        "completed": 12,
+        "requests": 40,
+    }
+    chart = ministry_followup(totals)
+    assert (chart.key, chart.title) == ("ministry-followup", "Follow-up progress")
+    spec = json.loads(json.dumps(chart.spec))
+    assert spec["encoding"]["x"]["scale"] == {"domain": [0, 40], "nice": False}
+    assert spec["encoding"]["x"]["title"] == "Requests"
+    assert [row["tick"] for row in spec["data"]["values"]] == [
+        "Resolved or closed — 12 out of 40 (30%)",
+        "Unresolved — 28 out of 40 (70%)",
+    ]
+    assert chart.summary == (
+        "Follow-up progress: Resolved or closed 12 out of 40 (30%), "
+        "Unresolved 28 out of 40 (70%)."
+    )
+    assert chart.table.headings == (
+        "Follow-up progress",
+        "Requests",
+        "Share of all requests",
+    )
+
+
+def test_ministry_followup_without_progress_draws_zero_bars():
+    """With no request, or no progress at all (Members no longer in
+    ParishSoft), the chart still draws, its bars at zero, so its box never
+    appears or disappears under the reader (no layout shift, #736)."""
+    empty = dict.fromkeys(
+        ("joining", "leaving", "unresolved", "completed", "requests"), 0
+    )
+    gone = {"joining": 2, "leaving": 1, "requests": None}
+    for totals in (empty, gone):
+        chart = ministry_followup(totals)
+        assert chart.key == "ministry-followup"
+        assert [row["count"] for row in chart.spec["data"]["values"]] == [0, 0]
+        assert chart.spec["encoding"]["x"]["scale"]["domain"] == [0, 1]
 
 
 def test_participation_chart_is_panels_on_one_date_axis():

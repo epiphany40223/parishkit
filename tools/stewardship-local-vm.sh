@@ -38,7 +38,10 @@
 #                                       Caddy, beside a new Reminder send when DURING_SEND
 #                                       is 1, for at most WAIT minutes; prints the report
 #   wizard                              complete the setup wizard unattended through
-#                                       its own service layer (LOCAL convenience)
+#                                       its own service layer, then Create the
+#                                       campaign and its first load (LOCAL convenience)
+#   finish-setup                        after the browser wizard: acknowledge its frozen
+#                                       attempt's credentials (runbook step 5)
 #   sign-in EMAIL                       print a local test sign-in link (OPS-10.08)
 #   ca                                  print Caddy's local root certificate
 #
@@ -1202,21 +1205,39 @@ cmd_wizard() {
     # own service layer (seed_web.run_wizard), then the runbook's first-
     # installation step 5: once the installers report awaiting_ack, recreate
     # worker and mail-dispatch from compose.json and acknowledge each request
-    # inside them, which lets the installer finish setup. The developer-facing
-    # path is still the real wizard; this is for unattended installs and tests.
-    local parishsoft workspace
+    # inside them, which lets the installer finish setup (finish_setup,
+    # shared with `finish-setup`). Setup collects no campaign (#142), so the
+    # seeder's campaign step then runs Create the campaign and loads its
+    # Families. The developer-facing path is still the real wizard, finished
+    # by `finish-setup`; this is for unattended installs and tests.
     require_marker
     load_env
     select_compose
     seed_now=$(date -u +%FT%TZ)
     seed_scale=1
     seed_step 1800 wizard web web.yaml
-    if [ "$(jq -r .result <<<"$seed_result")" != frozen ]; then
-        echo "    nothing to finish"
-        return 0
+    if [ "$(jq -r .result <<<"$seed_result")" = frozen ]; then
+        finish_setup "$(jq -r '.requests.parishsoft // empty' <<<"$seed_result")" \
+            "$(jq -r '.requests.google_workspace // empty' <<<"$seed_result")"
+    else
+        echo "    setup needs no finishing"
     fi
-    parishsoft=$(jq -r .requests.parishsoft <<<"$seed_result")
-    workspace=$(jq -r .requests.google_workspace <<<"$seed_result")
+    seed_step 1800 campaign web web.yaml
+    echo "Setup and the campaign complete in $(( $(date -u +%s) - began ))s."
+}
+
+finish_setup() {
+    # finish_setup PARISHSOFT WORKSPACE: the runbook's first-installation
+    # step 5 in LOCAL, the one implementation `wizard` and `finish-setup`
+    # share. Once the installers report awaiting_ack, recreate worker and
+    # mail-dispatch from compose.json (plus the fake-clock override) and
+    # acknowledge each request inside them, which lets the installer finish
+    # setup; then restart everything under the configured topology. A
+    # repeat acknowledgement is a no-op, so a rerun after an interruption
+    # is safe. The ids are the frozen attempt's sealed credentials' ids.
+    local parishsoft=$1 workspace=$2 uuid='^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$'
+    [[ $parishsoft =~ $uuid && $workspace =~ $uuid ]] ||
+        refuse "The frozen setup attempt lacks its ParishSoft or Google Workspace credential; refusing."
     step "Waiting for the credential installers to report awaiting_ack"
     wait_until 600 "the credential installers to report awaiting_ack" awaiting_ack
     step "Recreating worker and mail-dispatch from compose.json (runbook step 5)"
@@ -1233,6 +1254,32 @@ cmd_wizard() {
     wait_until 900 "the configuration installer to complete setup" setup_is_complete
     step "Restarting every service under the configured topology"
     start_services --force-recreate
+}
+
+cmd_finish_setup() {
+    # After the browser wizard stops at Finishing setup ("Waiting for the
+    # server operator"): look up the frozen attempt's request ids (the
+    # seeder's read-only credentials step) and finish setup exactly as
+    # `wizard` does. Already-complete setup is reported and left alone.
+    require_marker
+    load_env
+    select_compose
+    if setup_is_complete; then
+        echo "Setup is already complete; nothing to finish."
+        return 0
+    fi
+    seed_now=$(date -u +%FT%TZ)
+    seed_scale=1
+    seed_step 300 credentials web web.yaml
+    case "$(jq -r .result <<<"$seed_result")" in
+        frozen) ;;
+        "setup was already complete")
+            echo "Setup is already complete; nothing to finish."
+            return 0 ;;
+        *) refuse "The setup wizard has not reached Finishing setup; complete its pages in the browser first, then run finish-setup again." ;;
+    esac
+    finish_setup "$(jq -r '.requests.parishsoft // empty' <<<"$seed_result")" \
+        "$(jq -r '.requests.google_workspace // empty' <<<"$seed_result")"
     echo "Setup complete in $(( $(date -u +%s) - began ))s."
 }
 
@@ -1351,7 +1398,7 @@ cmd_spike() {
 # Long-running commands keep their whole log on the VM under /var/log, as
 # the upgrade script does; the short ones print only their answer.
 case "$command" in
-    build|up|snapshot|reset|wipe|seed|wizard|start|down|deploy|rollback|rehearse|spike)
+    build|up|snapshot|reset|wipe|seed|wizard|finish-setup|start|down|deploy|rollback|rehearse|spike)
         # STEWARDSHIP_LOG_DIR lets the tests run this half without /var/log.
         log=${STEWARDSHIP_LOG_DIR:-/var/log}/stewardship-local-$command-$(date -u +%Y%m%dT%H%M%SZ).log
         exec > >(tee -a "$log") 2>&1
@@ -1376,6 +1423,7 @@ case "$command" in
     rollback) cmd_rollback "${1:?rollback needs HOST_SCRIPT}" ;;
     seed) cmd_seed "${1:-1}" ;;
     wizard) cmd_wizard ;;
+    finish-setup) cmd_finish_setup ;;
     sign-in) cmd_sign_in "${1:?sign-in needs EMAIL}" ;;
     ca) cmd_ca ;;
     *) refuse "unknown VM command: $command" ;;

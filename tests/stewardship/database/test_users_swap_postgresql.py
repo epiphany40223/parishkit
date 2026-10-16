@@ -358,6 +358,11 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # function in place, so once 0067's file (``CLOSURE_CREATED``) and 0072's
 # (``CLOSURE_ALTERED``) install it again with the raw stored zone,
 # ``CLOSURE_REPLACED`` runs 0095's file again.
+# 0096 (#528) creates the review history table (in CLOSURE_TABLES) with its
+# guard and deferred check, and replaces the derived guard again; since
+# 0090's rerun puts 0090's derived guard back, ``CLOSURE_REPLACED_ONLY``
+# then runs 0096's replacement statement alone (its table cannot be made
+# twice).
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -539,6 +544,13 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_reports", "0024_hide_gone_members"),
     ),
+    **dict.fromkeys(
+        (
+            "public.stewardship_proposal_review_guard_v1()",
+            "public.stewardship_proposal_review_effect_v1()",
+        ),
+        ("stewardship_responses", "0006_proposal_review"),
+    ),
 }
 
 
@@ -666,6 +678,18 @@ def rerun_old_bodies(cursor, migrations):
                 re.M,
             ):
                 cursor.execute(alter)
+
+
+# Functions a later closure file replaces in place after a rerun above has
+# put an earlier body back, when that file also creates tables and so cannot
+# run whole twice: only its replacement statement runs again, unless the body
+# already has the phrase. 0096 (#528) replaces the derived guard after 0090.
+CLOSURE_REPLACED_ONLY = {
+    "stewardship_response_derived_guard_v1": (
+        ("stewardship_responses", "0006_proposal_review"),
+        "stewardship_proposal_review v",
+    ),
+}
 
 
 def _replaced(text, name):
@@ -913,6 +937,7 @@ def swap_pending():
     assert {key for key, _ in CLOSURE_REPLACED.values()} <= set(closure)
     assert set(CLOSURE_RERUN) | set(CLOSURE_RERUN.values()) <= set(closure)
     assert set(CLOSURE_OLD_BODIES) <= set(closure)
+    assert {key for key, _ in CLOSURE_REPLACED_ONLY.values()} <= set(closure)
     removed = []
     with transaction.atomic(), connection.cursor() as cursor:
         for app, name in closure:
@@ -983,6 +1008,15 @@ def swap_pending():
                     module = sys.modules[loader.disk_migrations[key].__module__]
                     cursor.execute(Path(module.FROZEN_SQL).read_text(encoding="utf-8"))
             rerun_old_bodies(cursor, loader.disk_migrations)
+            for function, (key, phrase) in CLOSURE_REPLACED_ONLY.items():
+                cursor.execute(
+                    "SELECT prosrc LIKE %s FROM pg_proc WHERE proname=%s",
+                    [f"%{phrase}%", function],
+                )
+                if not cursor.fetchone()[0]:
+                    module = sys.modules[loader.disk_migrations[key].__module__]
+                    text = Path(module.FROZEN_SQL).read_text(encoding="utf-8")
+                    cursor.execute(_replaced(text, function))
             for app, name, applied in removed:
                 # A test that ran the full migration recorded the row again.
                 cursor.execute(

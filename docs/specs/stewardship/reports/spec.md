@@ -260,9 +260,7 @@ their own renderer):
   the engine's two formats; how a report page offers the downloads above is
   specified in a later increment (the [response dashboard](#response-dashboard)
   does not offer them yet). The daily digest's participation chart is the
-  participation graph's renderer. The daily digest's
-  [response funnel](../background-processing/spec.md#daily-campaign-digest)
-  charts and its optional
+  participation graph's renderer. The daily digest's optional
   [Compared with past campaigns](../campaign-history/spec.md#digest-section)
   section's two charts are drawn by this renderer at the email's width (the
   axes and legend inside it) under the timeout name `digest_chart`, and
@@ -699,14 +697,19 @@ only.
 
 `/admin/reports/responses/` shows the funnel of the current campaign at the
 database's current instant, labelled **Counted at**. Data comes first: a
-tile per [funnel stage](#funnel-stages) with its count and its share compared
-with Invited, the three figures reported beside the funnel, then the funnel
+tile per [funnel stage](#funnel-stages) with its count, its share compared
+with Invited and a [share bar](../ui-conventions/spec.md#charts) drawing that
+share ([#720](https://github.com/epiphany40223/parishkit/issues/720)), the
+three figures reported beside the funnel, then the funnel
 chart and the [activity chart](#response-activity-over-time) with its send
 markers, each with its summary and exact-values table. The explanation sits
 in the [About this page](../ui-conventions/spec.md#page-help) panel after the
 data. Each chart is named by its panel's heading rather than a title drawn
-inside it. Until an invitation has been delivered the tiles leave out their
-shares and the page says so in one sentence. A **Lists of Families** panel
+inside it. Invited's own bar is full, as the reference the others are read
+against, and a share past 100% (a Family can follow its link without a
+delivered invitation) fills its bar. Until an invitation has been delivered
+the tiles leave out their shares and bars and the page says so in one
+sentence. A **Lists of Families** panel
 links to the Families behind each count,
 with the number of Families on it (counted from the same read; the list of
 ParishSoft data to check has no number here, since counting it needs the
@@ -820,8 +823,11 @@ both roles see:
   directory, the page shows no notice beside it (the Administrator's choice
   on #590). Open form is a
   disabled button with its reason beside it while the system is in Testing
-  mode (the Family sign-in then accepts only rehearsal codes) or when the
-  Family has no code for the campaign. In Testing mode the reason links "Try
+  mode (the Family sign-in then accepts only rehearsal codes), when the
+  Family has no code for the campaign, when the campaign is not the current
+  one, or when ParishSoft no longer lists the Family as active and
+  registered (#1331), the refusals Open form's hand-off makes (below). In
+  Testing mode the reason links "Try
   the Family form as a chosen Family" for roles that may open that page
   (Administrators).
 
@@ -1455,9 +1461,10 @@ never includes the opaque email-link token.
 **Access:** Admin/Staff for all selected campaign Ministries; leaders for the
 campaign Ministries they lead in ParishSoft only.
 
-The database enforces this scope, not only the application. The summary, the
-Member contact details on each follow-up request and in its export, and the
-[Ministry follow-up](../admin-portal/spec.md#follow-up-workflows) queue read
+The database enforces this scope, not only the application. The Ministry
+requests page (its By Ministry counts and its
+[follow-up](../admin-portal/spec.md#follow-up-workflows) queue), the
+Member contact details on each follow-up request and in its export read
 through `stewardship_ministry_report_v2` and
 `stewardship_ministry_followup_v2` (migration 0040). These take the signed-in
 user and derive the scope from that user's current roles and the Ministries
@@ -1473,48 +1480,123 @@ rather than shown an empty report. The Admin Home's My Ministries panel and the
 follow-up menu count read through the same function and cross-check, so neither
 shows more than the queue would.
 
-The sorted summary has the Ministry name (the row header, with its
-ParishSoft and campaign notes for Admin/Staff; no Ministry DUID,
-[#1123](https://github.com/epiphany40223/parishkit/issues/1123)),
-join-request count, leave-request count, unresolved count, and follow-up
-progress. Counts use latest live request state while retaining links to
-superseded/history views. Requests for
+**One page** ([#1133](https://github.com/epiphany40223/parishkit/issues/1133)
+step 2b, Administrator approval 2026-10-14). The Ministry requests summary and
+the Ministry follow-up queue are one page and one menu entry, **Ministry
+requests**, at `/admin/reports/ministries/`. It is built on the
+[follow-up queue](../admin-portal/spec.md#follow-up-workflows), because
+recording happens per request. The queue's old address,
+`/admin/reports/ministries/follow-up/` (and its slashless form), answers 404
+with no redirect
+([legacy URLs](../ui-conventions/spec.md#addresses-and-legacy-urls)). The
+request pages, the bulk outcome, Export these requests and Roster changes to
+enter keep their addresses under `follow-up/`. The separate summary page is
+retired, along with its Ministry-name search, its paging and sort, its per-row
+Follow-up progress column and bars, and its "Follow up these requests" link.
+Its totals and its follow-up packet move to the one page. Rejected: keeping
+two pages with links only (step 1 did that, and two pages still listed the
+same requests), making the summary the base, and a separate leader portal
+(rejected in #533). The host `report ministry` command is unchanged.
+
+From the top, the page shows:
+
+1. The heading, the page help, the ParishSoft data date, the Roster changes
+   to enter link (Admin/Staff only), and the notice shown while other
+   campaign work locks edits.
+2. The queue's filter bar (Search Member or Ministry name, Ministry, Request,
+   Status, Outcome). It comes first so the totals below can change without
+   moving Apply filters
+   ([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
+3. **Totals**, which are visual first
+   ([#720](https://github.com/epiphany40223/parishkit/issues/720)). Two tiles,
+   Join requests and Leave requests, count the requests the filters select,
+   on every page of the table and within the reader's scope. Then one
+   [chart engine](#chart-engine) chart, "Follow-up progress", draws a
+   progress bar for the resolved or closed requests and one for the
+   unresolved requests, against all those requests; the two always add up to
+   the whole. The chart counts the same requests **regardless of the Status
+   and Outcome filters**, because progress is about status: otherwise the
+   default Unresolved view would always show every request unresolved. This
+   is an implementation default pending Administrator confirmation on #1133.
+   The chart draws its values the way the
+   [Participation statistics](#campaign-statistics) chart does, in each
+   bar's axis label, so it has no exact-values table. The chart is always
+   drawn, so its box never appears or disappears and By Ministry below never
+   moves ([no layout shift](../ui-conventions/spec.md#no-layout-shift)): when
+   there is no request, and for the Staff-only "Members no longer in
+   ParishSoft" status choice, which has nothing to record, its bars read zero
+   out of zero. The totals follow
+   every filter change, sort and page change
+   [in place](../ui-conventions/spec.md#in-place-controls) (#519).
+4. **By Ministry**, a compact table described below.
+5. The queue table, exactly as described in
+   [follow-up workflows](../admin-portal/spec.md#follow-up-workflows): its
+   selection column and bulk outcomes (#1131), row links to request pages,
+   the remembered view, navigators and sort. Then **Export these requests**,
+   unchanged, and then the
+   [follow-up packet](#multi-ministry-follow-up-packet). The packet's choices
+   are still every Ministry in the reader's scope.
+
+**By Ministry** has the columns Ministry, Join requests, Leave requests and
+Unresolved, with one row for every Ministry in the reader's scope. It does
+not follow the filters, because it is the way to choose one Ministry. The
+Ministry name is the row header and shows no Ministry DUID
+([#1123](https://github.com/epiphany40223/parishkit/issues/1123)). Its
+counts are the summary selection's current counts: join requests and leave
+requests of any status, and unresolved requests of either kind. Counts use
+the latest live request state. Requests for
 [Members no longer in ParishSoft](../admin-portal/spec.md#follow-up-workflows)
-are left out of the counts and lists for everyone (#1217).
+are left out for everyone (#1217).
+
+Each count that is not zero applies that Ministry and request type to the
+table below in place, when the reader may follow up that Ministry. It does
+not reload the page or jump to the top, and the filter bar then shows the
+filters it applied. A join count sets Request to Join, and a leave count sets
+it to Leave; both set Status to Any status. An Unresolved count sets Request
+to Join or leave and Status to Unresolved. Each count also clears the search
+and sets Outcome to Any outcome. A count is also an ordinary link carrying
+only the queue's closed link filters (`?ministry=<DUID>&action=join&state=any`
+and the like; see
+[follow-up workflows](../admin-portal/spec.md#follow-up-workflows)), so
+opening it in a new tab shows the same view. A Ministry leader gets links only
+for the Ministries they lead. A zero count is plain text, and each link's
+accessible name names its Ministry ("3 join requests for Choir"), as
+[count links](../ui-conventions/spec.md#admin-tables) ask.
+
+A reader whose scope holds one Ministry sees a single line instead of a
+table. A long list scrolls inside a bounded box, so the queue stays near the
+top of the page. By Ministry is redrawn with every in-place refresh, so the
+change a bulk outcome makes shows in its counts.
 
 "Not in ParishSoft data" and "No longer in this campaign" are the
 Administrator's concern and change nothing a leader does with a request, so
-only Admin/Staff see them: each Ministry's notes and the page help about
-them ([#1135](https://github.com/epiphany40223/parishkit/issues/1135)).
+only Admin/Staff see them: each Ministry's notes in By Ministry and the page
+help about them
+([#1135](https://github.com/epiphany40223/parishkit/issues/1135)).
 There is no Ministry activity filter (Active, Inactive) any more
-([#1267](https://github.com/epiphany40223/parishkit/issues/1267)): the page,
-its export and the command line refuse an `activity` field from anyone, and
-always send the neutral `any` that the installed selection and the export
-capture still take. The [follow-up
-queue](../admin-portal/spec.md#follow-up-workflows) likewise explains its
-"Removed" badge only to Admin/Staff; a leader never meets one, since a leader
-leads only the Ministries the campaign asks about (#922).
+([#1267](https://github.com/epiphany40223/parishkit/issues/1267)): the
+page's packet, the export and the command line refuse an `activity` field
+from anyone, and they always send the neutral `any` that the installed
+selection and the export capture still take. The queue likewise explains its
+"Removed" badge only to Admin/Staff. A leader never meets one, since a
+leader leads only the Ministries the campaign asks about (#922).
 
-Each count that is not zero links to the
-[Ministry follow-up](../admin-portal/spec.md#follow-up-workflows) queue
-showing exactly the requests it counts
-([#1133](https://github.com/epiphany40223/parishkit/issues/1133)): the
-join-request count opens that Ministry's join requests of any status, the
-leave-request count its leave requests of any status, and the unresolved
-count its unresolved requests of either kind, the queue's default status.
-The filter controls show those choices. A count links only when the reader
-may follow up that Ministry, so a Ministry leader gets links only for the
-Ministries they lead; a zero count is plain text, and each link's accessible
-name names its Ministry ("3 join requests for Choir"), as
-[count links](../ui-conventions/spec.md#admin-tables) ask.
+The page reads its rows, totals and export through the follow-up selection
+with its cross-check. By Ministry and the packet's choices read the Ministry
+report selection with its own cross-check, so a reader needs both scopes,
+which the same roles hold. No migration was needed. The page's view audit is
+the queue's `ministry_followup_viewed`; it no longer records
+`ministry_report_viewed`, which the host `report ministry` command still
+records.
 
-The summary table follows the Admin table
+One Ministry's join or leave list, which the host `export ministry` command
+still writes, follows the Admin table
 [column order](../admin-portal/spec.md#table-column-order), leading with the
-Member or the Ministry: a list's Member DUID has its
+Member: a list's Member DUID has its
 own column next to the Member's name, and a Member added on the form, who has
 no ParishSoft DUID yet, shows "New Member" there, followed by the note that
 the Member was added on the form and the proposed Member's reference under
-technical details; the row header is just the name. The summary names each
+technical details; the row header is just the name. By Ministry names each
 Ministry and shows no Ministry DUID. The Member DUID column sorts in the
 installed selection's order
 ([#960](https://github.com/epiphany40223/parishkit/issues/960)), with a
@@ -1589,10 +1671,10 @@ contact. Mailing address/demographics are visible to a Ministry's leaders as
 explicitly authorized for this workflow. Birth date itself is not shown when
 age suffices.
 
-The campaign-wide summary has no export
-([#1126](https://github.com/epiphany40223/parishkit/issues/1126)): its rows
-are counts per Ministry, with no parishioner data, and the page already shows
-them, so its only download is the
+The per-Ministry counts have no export
+([#1126](https://github.com/epiphany40223/parishkit/issues/1126)): they hold
+no parishioner data, and the page already shows them. The page's downloads
+are Export these requests and the
 [follow-up packet](#multi-ministry-follow-up-packet). A request for a summary
 export, including regenerating an expired one made before the removal, is
 refused as an invalid selection; an existing summary file stays downloadable
@@ -1617,23 +1699,28 @@ This representation does not change current-policy checks or report columns.
 
 ## Multi-Ministry follow-up packet
 
-**Access:** same Ministry scoping as the summary.
+**Access:** same Ministry scoping as
+[Ministry requests](#ministry-change-summary).
 
 The request offers multi-select plus Select all authorized Ministries: one
 box per Ministry, and no box ticked selects every Ministry the requester is
-authorized for. The boxes list every Ministry in the requester's
-[summary](#ministry-change-summary) scope by name, whatever page, sort or
-search the summary table shows, so a leader of many Ministries can choose a
-subset across pages; paging, sorting or searching the table keeps the ticks
+authorized for. The form sits at the foot of
+[Ministry requests](#ministry-change-summary). The boxes list every Ministry
+in the requester's scope by name, whatever the page's filters, sort or page
+show, so a leader of many Ministries can choose a subset; filtering, paging
+or sorting the table keeps the ticks
 ([#533](https://github.com/epiphany40223/parishkit/issues/533)). At most
-200 Ministries may be ticked for one packet, as the form's help says; more
-are refused with a message saying to tick fewer or leave every box unticked,
-which includes them all. The list is
-read through the same scoped selection as the summary (once more only when
-the page shown does not already hold the whole unfiltered summary). It shows
+200 Ministries may be ticked for one packet, as the form's help says. While
+more are ticked, Queue is unavailable and its reason line gives the count and
+says to untick some or all
+([#1332](https://github.com/epiphany40223/parishkit/issues/1332)); the server
+still refuses more with a message saying to tick fewer or leave every box
+unticked, which includes them all. The list is
+read through the same scoped Ministry report selection as By Ministry, whose
+whole-scope read it reuses. It shows
 only each Ministry's full name (no DUID,
-[#1123](https://github.com/epiphany40223/parishkit/issues/1123)) and no request data, so the report-view audit
-still records the Ministries of the summary rows shown. For each
+[#1123](https://github.com/epiphany40223/parishkit/issues/1123)) and no
+request data. For each
 Ministry, output its name (never its DUID), chair names, stewardship period/year, and one row for
 each latest effective `join` or `leave` MinistryRequest in that Ministry,
 including resolved/cancelled history only when the requester selects the
@@ -1669,7 +1756,7 @@ Outcome filter offers it; a request already resolved that way keeps its label
 ([#1131](https://github.com/epiphany40223/parishkit/issues/1131)).
 
 For Ministry leaders, every email and phone value in the packet follows the
-summary report's ParishSoft publish-flag rule and renders `Not published`
+Ministry report selection's ParishSoft publish-flag rule and renders `Not published`
 instead of the source value. Admin/Staff retain the operational-contact access
 defined by that rule. This privacy policy applies identically to screen, CSV,
 XLSX, and PDF output.
@@ -1731,11 +1818,14 @@ then:
 - **Submitted**, in browser-local time.
 - **Recorded by**, **Recorded at** and **Note**: the latest *Entered in
   ParishSoft*, *Ignore* or *Reopen* on the row
-  ([manual census resolution](#manual-census-resolution)): the person's
+  ([manual census resolution](#manual-census-resolution)), or *Approve*,
+  *Ignore* or *Back to To review* on an Automatic row
+  ([automatic census review](#automatic-census-review)): the person's
   sign-in address, the time in the parish's compact date format and
   browser-local time, and the note they left. Blank until someone records
   one.
-- **Actions**, last: *Record outcome* on a row someone may resolve.
+- **Actions**, last: *Record outcome* on a By-hand row someone may resolve,
+  and *Review* on an Automatic row, for an Administrator.
 
 A terminal execution decides the status first, since it is the outcome
 whatever the decision says: *published* is **Published**,
@@ -1802,10 +1892,9 @@ every resolved outcome is: a mistaken tick is corrected in ParishSoft, and a
 later Family answer creates new rows. An Administrator may reopen an
 *Ignored* row (decision back to *unreviewed*) with a note saying why, which
 is required. Who, when and the note are kept as history. Automatic rows are
-view-only for Staff. Admin
-review/publish actions are defined by the
-[data](../data/spec.md#review-and-publication) and
-[Admin](../admin-portal/spec.md#follow-up-workflows) specifications.
+view-only for Staff; an Administrator reviews them as the
+[next section](#automatic-census-review) says, and publication follows the
+[data workflow](../data/spec.md#review-and-publication).
 
 The controls sit in the row's last column, in a *Record outcome* disclosure,
 so a row stays short until someone opens it
@@ -1841,6 +1930,48 @@ the campaign, the proposal's version and its starting state again.
 Since Family addresses are not yet written by publication (see the
 [data workflow](../data/spec.md#review-and-publication)), an address entered
 in ParishSoft stays *To do* until it is ticked.
+
+### Automatic census review
+
+Publication writes only Automatic changes an Administrator approved (see the
+[data workflow](../data/spec.md#review-and-publication)). On an Automatic row
+an Administrator may record **Approve** (decision *approved*; the row becomes
+*To do* until it is published), **Ignore** (decision *ignored*, leaving
+ParishSoft as it is) or **Back to To review** (decision *unreviewed*), each
+with an optional note
+([#528](https://github.com/epiphany40223/parishkit/issues/528), ADM-09).
+Each is offered only while it would change the decision, and only while the
+change is open: *pending*, *conflict* or *failed*, never while it is
+*queued* for publication or once it has a final outcome. A *Conflict* row
+may be ignored or sent back, but not approved, since publication blocks an
+approved conflict until it is resolved. A review can be changed again until
+publication of the change starts, and each one changes the proposal's
+version, so a publication plan that included it no longer matches. Staff
+see Automatic rows but never review them.
+
+The controls sit in the row's *Review* disclosure, in the same place and form
+as [Record outcome](#manual-census-resolution): a note field, then the
+buttons the row allows. A review is reversible, so none asks first. The form
+posts with the page's filters and table choices, and the answer is the same
+page, refreshed in place, with the notice naming the row; a row someone else
+changed first is left as it is, and the notice says so. While other campaign
+work holds the campaign, no Review is offered. Bulk review of the selected
+rows with exact counts, an Administrator's edited value
+([ADM-09](../../../plans/stewardship/admin-portal.md#adm-09-census-review-and-parishsoft-publication-ui))
+come later. On the command line, `pk-admin census review` records the same
+review through the same service
+([admin automation](../admin-automation/spec.md#reports-and-exports)).
+
+Each review is one immutable review row (who, when, the note and the
+resulting decision and edit fields), added by forward migration 0096 under
+the [post-launch schema policy](../operations/spec.md#post-launch-schema-policy).
+The database pairs it with the proposal's result at the next version and a
+`census_change_updated` audit event naming only the versions. The web role
+may change an Automatic proposal's decision only with such a row, and the
+row's own guard checks again that the actor is a current Administrator, the
+campaign admits changes, the version is current, the change is Automatic and
+open, and the decision changes. The row records the whole resulting review
+state, so the later edited value needs only a wider guard for the row.
 
 ## Financial stewardship detail
 
@@ -1975,7 +2106,8 @@ keep the names they had as Talents and limitations
 (`talents_report_viewed` and `talents_report_exported`), and System logs
 still word older events' `option` choice and `talent_option_id`. The search
 text itself is never recorded, because it can name a Family. These answers
-are never written to ParishSoft. The Ministry follow-up queue also notes when
+are never written to ParishSoft. The follow-up queue on Ministry requests
+also notes when
 a leave comes from a Member who cannot participate in any ministries.
 
 ## System logs

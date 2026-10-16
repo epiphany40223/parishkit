@@ -45,7 +45,6 @@ from ..reports import (
     weekly_views,
     workspace_views,
 )
-from ..reports import ministry_views as ministry_report_views
 from ..web.admin_routes import current_campaign
 
 
@@ -115,16 +114,16 @@ patterns = [
     # export form (exports/) were retired, with no redirect (#1157): a
     # request's contact details are on its follow-up page, and the export is
     # the follow-up queue's Export these requests.
-    _page("reports/ministries/", ministry_report_views.report, "ministry_report"),
+    # Ministry requests (#1133): the follow-up queue, with the totals, the
+    # By Ministry counts and the follow-up packet, is the one page for
+    # Ministry requests. The queue's own address (follow-up/) was retired
+    # with no redirect; its request pages, bulk outcomes, export and Roster
+    # changes to enter keep their addresses under it.
+    _page("reports/ministries/", ministry_followup_views.queue, "ministry_report"),
     _page(
         "reports/ministries/packets/",
         ministry_export_views.create_packet,
         "ministry_packet",
-    ),
-    _page(
-        "reports/ministries/follow-up/",
-        ministry_followup_views.queue,
-        "ministry_followup",
     ),
     # One outcome for the requests chosen on the queue (#1131), posted by
     # its confirmation dialog.

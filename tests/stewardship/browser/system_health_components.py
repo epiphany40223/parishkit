@@ -1,5 +1,6 @@
 """Render the real System health templates with sample states (ADM-13, #530)."""
 
+from dataclasses import replace
 from datetime import timedelta
 from types import SimpleNamespace
 from uuid import UUID
@@ -57,6 +58,21 @@ DEBUG_STATUS = "/system-health-debug/status"
 DEBUG_PREVIEW = "/system-health-debug-preview"
 DEBUG_SET = "/system-health-debug-set"
 DEBUG_STEP_UP = "/system-health-debug-step-up"
+# The Debug logging tile (#1214 slice 5): the same page, whose next poll
+# finds the switch set and no service logging in debug form any more.
+DEBUG_TILE = "/system-health-debug-tile"
+DEBUG_TILE_STATUS = "/system-health-debug-tile/status"
+# Turn off debug logging, answered and followed in place (#1317): per mode,
+# a page whose web portal reports debug logging and which polls only once a
+# minute, so only the answer's own check can bring the tile up to date; its
+# status before the switch is set (``/status``) and after (``/status-set``),
+# with no service named any more; and the confirmation's answer (``/set``).
+DEBUG_LIVE = "/system-health-debug-live-"
+# Take a backup now, followed in place (#1317): a page with no request that
+# polls every 2 seconds; its status with no request (``/status``), with the
+# request running (``/status-running``) and finished (``/status-finished``);
+# and the confirmation's answer, the request waiting (``/requested``).
+BACKUP_LIVE = "/system-health-backup-live"
 # Accept this change once (ADM-13 PR 5b): a page showing only a refused
 # large change, the answers its steps get, and its next poll, in which
 # another Administrator has accepted it. The browser test serves the page at
@@ -74,6 +90,14 @@ ACCEPT_LATE = "/system-health-accept-late"
 ACCEPT_STALE = "/system-health-accept-stale"
 ACCEPT_STALE_STATUS = "/system-health-accept-stale/status"
 ACCEPT_LATE_STATUS = "/system-health-accept-late/status"
+# A page drawn with a refusal, whose next poll shows it settled (no refusal).
+ACCEPT_SETTLED = "/system-health-accept-settled"
+ACCEPT_SETTLED_STATUS = "/system-health-accept-settled/status"
+# A page drawn with a refusal accepted once, whose next poll shows that
+# acceptance lapsed unused: the refusal can no longer be accepted, so the
+# section goes and the problem line says why (2026-10-15).
+ACCEPT_LAPSED = "/system-health-accept-lapsed"
+ACCEPT_LAPSED_STATUS = "/system-health-accept-lapsed/status"
 # Allow debug logging again (ADM-13 PR 6c): a Testing page with the switch
 # set, its poll (unchanged), and the answers its steps get.
 ALLOW_PAGE = "/system-health-allow"
@@ -91,6 +115,11 @@ STALE_STATUS = "/system-health-stale/status"
 # The troubled page's page-load tiles (#1214): its re-save list has an item
 # that cannot be sent, so that tile is an Error tile, and the page passes
 # that to its polled status as ?loaded=, which the fragment counts.
+# The Mail tile in each state its pk-local check names (slice 3 of #1214):
+# a send, an Administrator's pause, the daily limit and a stopped mail
+# sender. Each page polls its own status, which brings the same state.
+MAIL_STATES = ("sending", "paused", "daily", "stopped")
+MAIL = "/system-health-mail-"
 LOADED = loaded_states(0, list(RESAVE))
 TROUBLED_STATUS = canonical(f"{STATUS}?{urlencode({'loaded': loaded_query(LOADED)})}")
 
@@ -132,13 +161,16 @@ def health(
     refused=False,
     accepted=False,
     mode="production",
+    request=None,
 ):
     """A deployment with several problems, or a healthy one.
 
     ``debug``: the web portal reports debug logging in effect; ``switch``:
     the debug-off switch is set (ADM-13 PR 6b). ``refused``: a large change
-    was refused, and ``accepted``: it was accepted once (ADM-13 PR 5b).
-    ``mode``: the global mode.
+    was refused, and ``accepted``: it was accepted once (ADM-13 PR 5b), or
+    ``"lapsed"``: that acceptance ended unused.
+    ``mode``: the global mode. ``request``: the newest Take a backup now
+    request's page status; without it, ``waiting`` gives a held request.
     """
     refused = refused or troubled
     # A refusal is always an open incident too, so its tile is an Error tile.
@@ -210,14 +242,14 @@ def health(
         backup_version="1.4.2",
         backup_request=BackupRequestStatus(
             state="waiting",
-            status="held",
+            status=request or "held",
             created_at=now - timedelta(minutes=12),
             held_at=now - timedelta(minutes=2),
-            claimed_at=None,
-            finished_at=None,
+            claimed_at=now - timedelta(minutes=1) if request else None,
+            finished_at=now if request == "finished" else None,
             failure_kind=None,
         )
-        if troubled or waiting
+        if troubled or waiting or request
         else None,
         # Off-site copies are set up, except on the troubled page, where
         # their absence in Production is a warning (decision 5).
@@ -238,11 +270,48 @@ def health(
             id=UUID(int=5),
             created_at=now - timedelta(minutes=1),
             expires_at=now + timedelta(hours=24),
-            live=True,
+            live=accepted is True,
         )
         if accepted
         else None,
     )
+
+
+def mail_state(model, now, state):
+    """``model``, a healthy read, with its Mail tile in ``state``
+    (``MAIL_STATES``); its problems are found again from its processes."""
+    rows = {
+        "daily": [
+            _row(now, "mail-dispatch", sender_state="daily_limit"),
+            _row(now, "mail-dispatch", "mail", sender_state="daily_limit"),
+        ],
+        "stopped": [
+            _row(now, "mail-dispatch", age=600),
+            _row(now, "mail-dispatch", "mail"),
+        ],
+    }.get(state)
+    values = {
+        "sending": {"send_active": True},
+        "paused": {"delivery_paused": True, "paused_at": now - timedelta(minutes=30)},
+        "daily": {"daily_sent": 1612, "daily_resume_at": now + timedelta(hours=5)},
+        "stopped": {},
+    }[state]
+    if rows:
+        kept = [line for line in model.processes if not line.sender]
+        processes = tuple(kept) + group_processes(rows, now)
+        values |= {
+            "processes": processes,
+            "problems": find_problems(
+                mode=model.mode,
+                processes=processes,
+                missing=(),
+                schema_current=True,
+                incidents=model.incidents,
+                refresh=model.refresh,
+                backup_at=model.backup_at,
+            ),
+        }
+    return replace(model, **values)
 
 
 def components(context, admin):
@@ -274,6 +343,8 @@ def components(context, admin):
         accepted=False,
         attempt=REFUSED_ATTEMPT,
         mode="production",
+        mail=None,
+        request=None,
         **extra,
     ):
         """Template context the view would build.
@@ -292,7 +363,10 @@ def components(context, admin):
             refused=refused,
             accepted=accepted,
             mode=mode,
+            request=request,
         )
+        if mail:
+            model = mail_state(model, now, mail)
         loaded = extra.pop("loaded", LOADED if troubled else {})
         return (
             context
@@ -304,7 +378,7 @@ def components(context, admin):
                 ),
                 "source_form_count": 0,
                 "debug_actor": "other@example.org" if switch else None,
-                "accept_actor": "other@example.org" if accepted else None,
+                "accept_actor": "other@example.org" if accepted is True else None,
                 "refused_attempt": attempt if refused else None,
                 "campaign_id": None,
                 "pause": {"actor": "admin@example.org", "reason": "Checking a typo"}
@@ -318,7 +392,70 @@ def components(context, admin):
             | extra
         )
 
-    return {
+    def page(context):
+        """The whole page rendered from ``context``, as a component."""
+        return "text/html", render_to_string("stewardship/system-health.html", context)
+
+    def status(context):
+        """The polled status fragment rendered from ``context``."""
+        return "text/html", render_to_string(
+            "stewardship/system-health-status.html", context
+        )
+
+    # The Mail tile's pages and the live Turn off debug logging pages.
+    extra = {}
+    for state in MAIL_STATES:
+        extra[MAIL + state] = (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(False, mail=state, status_url=f"{MAIL}{state}/status"),
+            ),
+        )
+        extra[f"{MAIL}{state}/status"] = (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html", values(False, mail=state)
+            ),
+        )
+    for mode in ("production", "testing"):
+        base = DEBUG_LIVE + mode
+        extra[base] = page(
+            values(
+                False,
+                debug=True,
+                mode=mode,
+                status_url=f"{base}/status",
+                poll_interval=60000,
+            )
+        )
+        extra[f"{base}/status"] = status(values(False, debug=True, mode=mode))
+        extra[f"{base}/status-set"] = status(values(False, switch=True, mode=mode))
+        extra[f"{base}/set"] = page(
+            values(
+                False,
+                switch=True,
+                mode=mode,
+                status_url=f"{base}/status",
+                debug_off={"requested": SimpleNamespace(set_at=now), "created": True},
+                debug_off_shown=True,
+            )
+        )
+    extra[BACKUP_LIVE] = page(
+        values(False, status_url=f"{BACKUP_LIVE}/status", poll_interval=2000)
+    )
+    extra[f"{BACKUP_LIVE}/status"] = status(values(False))
+    for state in ("running", "finished"):
+        extra[f"{BACKUP_LIVE}/status-{state}"] = status(values(False, request=state))
+    extra[f"{BACKUP_LIVE}/requested"] = page(
+        values(
+            False,
+            request="waiting",
+            status_url=f"{BACKUP_LIVE}/status",
+            backup_now={"requested": SimpleNamespace(created_at=now), "created": True},
+        )
+    )
+    return extra | {
         PAGE: (
             "text/html",
             render_to_string(
@@ -447,6 +584,20 @@ def components(context, admin):
             render_to_string(
                 "stewardship/system-health-status.html",
                 values(False, debug=True, switch=True),
+            ),
+        ),
+        DEBUG_TILE: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(False, debug=True, status_url=DEBUG_TILE_STATUS),
+            ),
+        ),
+        DEBUG_TILE_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html",
+                values(False, switch=True),
             ),
         ),
         DEBUG_PREVIEW: (
@@ -581,6 +732,36 @@ def components(context, admin):
             render_to_string(
                 "stewardship/system-health-status.html",
                 values(False, refused=True),
+            ),
+        ),
+        ACCEPT_SETTLED: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(False, refused=True, status_url=ACCEPT_SETTLED_STATUS),
+            ),
+        ),
+        ACCEPT_SETTLED_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html",
+                values(False),
+            ),
+        ),
+        ACCEPT_LAPSED: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(
+                    False, refused=True, accepted=True, status_url=ACCEPT_LAPSED_STATUS
+                ),
+            ),
+        ),
+        ACCEPT_LAPSED_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html",
+                values(False, refused=True, accepted="lapsed"),
             ),
         ),
         ACCEPT_CHANGED: (

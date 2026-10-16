@@ -45,5 +45,5 @@ which is the one those controls act on.{% endcomment %}
 </div>
 {% translate "Preparation history pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
-<p><a href="{% url 'admin:go_live_links' transition.pk %}?{{ table.current_query }}#{{ table.anchor }}" data-in-place="refresh" data-in-place-message="{% translate 'Progress refreshed.' %}">{% translate "Refresh preparation progress" %}</a> · <a href="{% url 'admin:go_live_cleanup' transition.pk %}">{% translate "Return to Testing cleanup" %}</a></p>
+<p><a href="{% url 'admin:go_live_links' transition.pk %}?{{ table.current_query }}#{{ table.anchor }}" data-in-place="refresh" data-in-place-message="{% translate 'Progress refreshed.' %}">{% translate "Refresh preparation progress" %}</a></p>
 {% endblock %}

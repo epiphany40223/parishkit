@@ -10,6 +10,7 @@ instants, late events at once), the configuration patch and the invariant
 
 import json
 import logging
+import sys
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -153,6 +154,51 @@ def test_timeline_step_prints_the_summary_without_a_database(
     assert request.response_scale == 2.5
     assert str(request.clock_directory) == "/run/parishkit-clock"
     assert request.now == datetime(2026, 10, 7, 15, 30, tzinfo=UTC)
+
+
+def completion_module(monkeypatch, complete):
+    """Stand in for setup_completion, which needs a configured Django."""
+    monkeypatch.setitem(
+        sys.modules,
+        "parishkit.stewardship.accounts.setup_completion",
+        SimpleNamespace(setup_is_complete=lambda: complete),
+    )
+
+
+def test_credentials_step_reports_the_frozen_attempts_request_ids(monkeypatch):
+    """finish-setup's lookup (#1355): the ids, not frozen yet, or already done."""
+    monkeypatch.setattr(seeder, "configure_web_process", lambda configuration: None)
+    requests = {"parishsoft": "p-id", "google_workspace": "g-id"}
+    monkeypatch.setattr(seeder, "frozen_credential_requests", lambda: requests)
+    request = SimpleNamespace(step="credentials")
+    completion_module(monkeypatch, False)
+    assert seeder.run_step(request, None) == {
+        "step": "credentials",
+        "result": "frozen",
+        "requests": requests,
+    }
+    monkeypatch.setattr(seeder, "frozen_credential_requests", lambda: None)
+    assert seeder.run_step(request, None)["result"] == "not frozen"
+    # Complete setup is never looked up again.
+    monkeypatch.setattr(
+        seeder, "frozen_credential_requests", Mock(side_effect=AssertionError)
+    )
+    completion_module(monkeypatch, True)
+    assert seeder.run_step(request, None)["result"] == "setup was already complete"
+
+
+def test_credentials_step_needs_no_admin_email(quiet, monkeypatch, capsys):
+    """The step runs through the command in LOCAL and prints its JSON answer."""
+    monkeypatch.setattr(
+        seeder,
+        "credentials_step",
+        lambda request, configuration: {"step": request.step, "result": "not frozen"},
+    )
+    assert (
+        main(["local-seed", "--profile", "local", "--step", "credentials", *ARGUMENTS])
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["result"] == "not frozen"
 
 
 # Waits.
@@ -406,15 +452,48 @@ def test_schedule_patch_applies_dates_the_initial_and_eight_reminders():
     # The digest schedule is untouched, and the other campaign's rows ignored.
     assert not any(step.get("id") in {"cccc", "other"} for step in patch)
     # Without a Reminder email revision the existing Reminder schedule's
-    # reference is reused, then the Initial's; no Initial is refused.
-    del document["sections"]["content"]
+    # reference is reused, then the Initial's; with neither it is refused.
+    content = document["sections"].pop("content")
     patched = schedule_patch(document, campaign_id, cal)
     assert patched[3]["values"]["template_version"] == "rrrr"
     del document["sections"]["schedules"][1]
     patched = schedule_patch(document, campaign_id, cal)
     assert patched[2]["values"]["template_version"] == "tttt"
-    del document["sections"]["schedules"][0]
-    with pytest.raises(SeedRefused, match="exactly one Initial"):
+    initial = document["sections"]["schedules"].pop(0)
+    with pytest.raises(SeedRefused, match="no Reminder email"):
+        schedule_patch(document, campaign_id, cal)
+    # Create the campaign leaves no schedules (#142): the Initial is added
+    # with the campaign's Initial email, the Reminders with its Reminder.
+    document["sections"]["content"] = [
+        *content,
+        {
+            "id": "iiii",
+            "values": {
+                "campaign_id": campaign_id,
+                "kind": "email",
+                "slot": "initial",
+                "subject": "Initial email",
+            },
+        },
+    ]
+    patched = schedule_patch(document, campaign_id, cal)
+    assert patched[1]["operation"] == "add"
+    assert patched[1]["values"] | {"campaign_id": campaign_id} == {
+        "campaign_id": campaign_id,
+        "kind": "initial",
+        "date": "2026-09-26",
+        "time": "10:00:00",
+        "weekday": None,
+        "subject": "Initial email",
+        "template_version": "iiii",
+    }
+    assert [row["values"]["template_version"] for row in patched[2:]] == ["eeee"] * 8
+    # No Initial email to send is refused, and so are two Initials.
+    document["sections"]["content"] = content
+    with pytest.raises(SeedRefused, match="no Initial email"):
+        schedule_patch(document, campaign_id, cal)
+    document["sections"]["schedules"] += [initial, initial]
+    with pytest.raises(SeedRefused, match="more than one Initial"):
         schedule_patch(document, campaign_id, cal)
 
 
@@ -544,16 +623,18 @@ def test_leader_to_import_picks_the_busiest_ministrys_leader():
 
 def test_constants_match_the_specification():
     assert seeder.DEFAULT_WAIT_SECONDS == 600
-    assert seeder.STEPS[:6] == (
+    assert seeder.STEPS[:7] == (
         "timeline",
         "wizard",
+        "campaign",
         "prepare",
         "drive",
         "check",
         "finish",
     )
-    # The BG-12 rehearsal's two steps (local/rehearsal.py) follow the seed's.
-    assert seeder.STEPS[6:] == ("reminder", "measure")
+    # The BG-12 rehearsal's two steps (local/rehearsal.py) follow the seed's,
+    # then finish-setup's read-only lookup (#1355).
+    assert seeder.STEPS[7:] == ("reminder", "measure", "credentials")
     assert sorted(seeder.FATAL_OCCURRENCE_STATES) == [
         "coalesced",
         "delivery_unknown",

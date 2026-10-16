@@ -27,7 +27,9 @@ from .content_forms import EMAIL_LABELS
 from .request_patch import build_candidate
 from .schedule_preview import fingerprint, work_summary
 from .schedule_reads import refuse_archived
+from .series_schema import SECTION as SERIES
 from .series_schema import upkeep
+from .users_schema import uses_users
 
 # A preview that changes nothing is refused with this, not with the catch-all
 # rule text, which would wrongly suggest a schedule breaks a rule (#878).
@@ -38,6 +40,18 @@ DOES_NOT_FIT = (
     "Every Family mailing must fit the campaign; reminders must follow "
     "exactly one initial mailing and use distinct times. Resolve all "
     "affected schedules, or change at most 100 records per request."
+)
+# A remembered repeat's positions must name exactly the reminders it added;
+# when the added forms and adds disagree, refuse rather than guess (#469).
+SERIES_UNMATCHED = (
+    "The repeat to remember could not be matched to the reminders it adds. "
+    "Leave out added schedules that have no values."
+)
+# Only a users-form configuration can hold a remembered series (#469), so
+# remembering one elsewhere is refused in plain words, not as DOES_NOT_FIT.
+SERIES_NEEDS_USERS = (
+    "A repeat can be remembered as a series only once the configuration "
+    "holds Admin users; run upgrade-users first."
 )
 
 # The same, for a change that adds a schedule's own edited email
@@ -99,6 +113,8 @@ def build_preview(
     salt,
     content=(),
     campaign_values=None,
+    series=(),
+    series_changes=(),
 ):
     """Validate the complete candidate, including each stranded or reordered mailing.
 
@@ -117,7 +133,17 @@ def build_preview(
     campaign update (Campaign settings' one Review of a live campaign's end
     date with its Ministry leader roles, #1119); they are listed in neither
     ``window_changes`` nor the schedule changes, and the caller describes
-    them.
+    them. ``series`` lists repeats to remember as reminder series (#469),
+    each ``{"rule", "added"}``: its canonical rule and the positions of its
+    reminders among the schedules this change adds, in form order. Each
+    becomes one ``schedule_series`` record, holding exactly those reminders,
+    in the same signed intent; the review lists them as ``series``. An item
+    may also ``keep`` saved reminder ids the series holds besides them, and
+    name the existing series ``id`` it replaces in place rather than adding
+    one (a series edit, ``series_edits.plan``). ``series_changes`` are other
+    operations on existing series records (a series cut short or deleted).
+    The review lists updated and removed series as ``series_changes``.
+    Delivery never reads a series, so no series operation changes a send.
     """
     configuration = state[0]
     digest = configuration.active_configuration.digest
@@ -136,6 +162,40 @@ def build_preview(
     }
     patch = schedules.patch()
     explicit = {row["id"] for row in patch}
+    # A repeat's positions index the added forms, in form order. They name
+    # the ids the form set just minted only if every added form produced
+    # exactly one "add": the form set skips an added form with no values
+    # (the page's blank extra row too), which would shift every later
+    # position. The command line refuses such entries (parse_changes), and
+    # this check fails closed for any other caller.
+    added = [row["id"] for row in patch if row["operation"] == "add"]
+    added_forms = [
+        form
+        for form in schedules.forms
+        if not form.cleaned_data.get("id") and form not in schedules.deleted_forms
+    ]
+    if series and (
+        len(added) != len(added_forms)
+        or any(index >= len(added) for item in series for index in item["added"])
+    ):
+        window.add_error(None, SERIES_UNMATCHED)
+        return None
+    remembered = [
+        {
+            "operation": "update" if item.get("id") else "add",
+            "section": SERIES,
+            "id": item.get("id") or str(uuid4()),
+            "values": {
+                "campaign_id": str(campaign.pk),
+                "rule": item["rule"],
+                "schedules": sorted(
+                    [*(added[index] for index in item["added"]), *item.get("keep", ())]
+                ),
+            },
+        }
+        for item in series
+    ]
+    remembered.extend(series_changes)
     # A new timezone or digest date window also replaces unchanged civil mail
     # fields. Include their existing work in the reviewed cancellation inventory.
     patch.extend(
@@ -161,11 +221,17 @@ def build_preview(
     base = service.store.active()
     if base is None or base.digest != digest:
         raise StaleRecordError("The applied configuration changed.")
-    if not patch:
+    if not patch and not remembered:
         window.add_error(None, NO_CHANGES)
         return None
-    # An added email comes before the schedule that sends it.
-    patch = [*content, *patch]
+    if any(row["operation"] == "add" for row in remembered) and not uses_users(
+        base.document()
+    ):
+        window.add_error(None, SERIES_NEEDS_USERS)
+        return None
+    # An added email comes before the schedule that sends it, and a new
+    # series follows the reminders it holds.
+    patch = [*content, *patch, *remembered]
     # A remembered reminder series (#469) follows its reminders: a removed
     # one, or one moved off its rule's dates, leaves it, in this same signed
     # intent. The review lists only the schedule changes.
@@ -199,6 +265,29 @@ def build_preview(
         "before_window": campaign.active_configuration.values,
         "after_window": window.values(),
         "blocking": blocking,
+        "series": [
+            {
+                "id": row["id"],
+                **{name: row["values"][name] for name in ("rule", "schedules")},
+            }
+            for row in remembered
+            if row["operation"] == "add"
+        ],
+        # Existing series this change updates or removes, with an update's
+        # resulting rule and reminders (#469).
+        "series_changes": [
+            {
+                "id": row["id"],
+                "operation": row["operation"],
+                **{
+                    name: row["values"][name]
+                    for name in ("rule", "schedules")
+                    if name in row.get("values", {})
+                },
+            }
+            for row in remembered
+            if row["operation"] != "add"
+        ],
         "preview": None
         if blocking
         else sign_preview(

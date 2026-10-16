@@ -1,8 +1,8 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
-{% block title %}{{ report_title|default:"Participation export" }}{% endblock %}
+{% block title %}{% translate "Participation export" as fallback %}{{ report_title|default:fallback }}{% endblock %}
 {% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block content %}
-<h1>{{ report_title|default:"Participation export" }}</h1>
+{% translate "Participation export" as fallback %}<h1>{{ report_title|default:fallback }}</h1>
 {% comment %}
   The live region is what live-status-v1.js refreshes in place while the export is
   queued or running (it re-reads this passive page, which never extends the
@@ -46,7 +46,11 @@
 {% if status.expires_at %}<p class="help">{% translate "File available until" %} <time datetime="{{ status.expires_at }}" data-local-instant>{{ status.expires_at }}</time>.</p>{% endif %}
 </section></div>
 {% if testing_codes %}<p class="notice" data-testing-codes>{% translate "These are the live codes; they work only after go-live." %} {% if testing_codes_administrator %}{% translate "To try the Family form now, send yourself a test invitation." %}{% else %}{% translate "To try the Family form now, ask an Administrator for a test invitation." %}{% endif %}{% if family_test_url %} <a href="{{ family_test_url }}">{% translate "Try the Family form as a chosen Family" %}</a>{% endif %}</p>{% endif %}
-<p><a href="{% url 'admin:report_export' job.pk %}#export-status" data-in-place="refresh" data-in-place-message="{% translate 'Status refreshed.' %}">{% translate "Refresh status" %}</a> · <a href="{{ report_url }}">{% blocktranslate %}Return to {{ report_name }}{% endblocktranslate %}</a></p>
+{% comment %}
+  The parent crumb is the way back (navigation rule 3), so "Return to" is
+  drawn only when its link differs from the crumb's: the directory and
+  participation exports return with the filters the export used (#1345).
+{% endcomment %}<p><a href="{% url 'admin:report_export' job.pk %}#export-status" data-in-place="refresh" data-in-place-message="{% translate 'Status refreshed.' %}">{% translate "Refresh status" %}</a>{% if report_url != admin_chrome.back.url %} · <a href="{{ report_url }}">{% blocktranslate %}Return to {{ report_name }}{% endblocktranslate %}</a>{% endif %}</p>
 <div id="export-lock" data-in-place-region>{% if not mutable %}<p class="notice" id="export-locked">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so new exports, cancelling and retrying are unavailable until it finishes or is cancelled; going live can take days. Files that are ready can still be downloaded." %}</p>{% endif %}</div>
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary>
 <dl><dt>{% translate "Format" %}</dt><dd>{{ job.format|upper }}</dd>

@@ -19,7 +19,7 @@ from parishkit.stewardship.accounts.setup_notification_views import (
 from parishkit.stewardship.accounts.setup_wizard import build
 
 from .test_setup_forms import VALUES
-from .test_setup_wizard import CAMPAIGN, draft
+from .test_setup_wizard import draft
 
 NOW = datetime(2026, 9, 27, 12, tzinfo=UTC)
 
@@ -28,13 +28,11 @@ def wizard(current, *, slack=False, tests=frozenset()):
     """The stepper of a reviewed, otherwise complete draft on ``current``."""
     sections = VALUES | {
         "branding": {"bundle_id": str(uuid4())},
-        "campaign": CAMPAIGN,
-        "schedules": {"records": []},
         "slack": {"enabled": slack, "channel_id": "C0123456789" if slack else ""},
     }
     credentials = {"parishsoft": True, "google_workspace": True, "slack": True}
     return build(
-        draft(sections, source=uuid4(), reviewed={"shares": [], "preview": 3}),
+        draft(sections, source=uuid4(), reviewed={"preview": 3}),
         current,
         credentials=credentials,
         tests=tests,

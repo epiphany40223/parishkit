@@ -14,8 +14,9 @@ filters (``CensusQuery``, without the search, as ``report census``), its read
 
 ``jsonl`` is the command's own format, offered only on the command line:
 the page's columns with the same text under fixed keys, plus each row's
-``proposal_id`` and ``version`` (what ``census resolve`` takes) and the
-``actions`` this reader may record on it now. The page's three files leave
+``proposal_id`` and ``version`` (what ``census resolve`` and ``census
+review`` take), the ``actions`` this reader may record on it now and the
+``reviews`` (decisions) it may give it now. The page's three files leave
 those internal references out (UX conventions, "Downloaded files", #956,
 where this format is a recorded exception): they are not personal data,
 the page's Record outcome forms already carry them, and a script resolving
@@ -101,13 +102,32 @@ def actions(row, actor, *, mutable=True):
     return found
 
 
+def reviews(row, actor, *, mutable=True):
+    """The decisions ``actor`` may give ``row`` now, as the page's Review offers.
+
+    The row's Review choices (``census_changes.REVIEW_CHOICES``: an
+    Automatic row still open, never queued or final, and never the decision
+    it has), as the decisions ``census review`` takes, for an Administrator
+    only; none while other campaign work holds the campaign (``mutable``
+    false), as the page then offers no Review.
+    """
+    from .accounts.policy import Capability, allows
+    from .reports.census_changes import REVIEW_CHOICES
+
+    if not mutable or not allows(actor, Capability.PUBLISH_CENSUS):
+        return []
+    decisions = dict(REVIEW_CHOICES)
+    return [decisions[action] for action in row["review_actions"]]
+
+
 def census_jsonl(result, zone, actor, *, mutable=True):
     """The filtered rows as JSON Lines: the page's cells, ids and actions.
 
     Each cell is the CSV's text (``census_changes.export_rows``), so the
-    formats never disagree about a value; ``proposal_id``, ``version`` and
-    ``actions`` come from the row the cells were made from. ``mutable`` is
-    the page's check that no other campaign work holds the campaign.
+    formats never disagree about a value; ``proposal_id``, ``version``,
+    ``actions`` and ``reviews`` come from the row the cells were made from.
+    ``mutable`` is the page's check that no other campaign work holds the
+    campaign.
     """
     from .reports.census_changes import export_rows
 
@@ -118,6 +138,7 @@ def census_jsonl(result, zone, actor, *, mutable=True):
             "proposal_id": str(row["id"]),
             "version": row["version"],
             "actions": actions(row, actor, mutable=mutable),
+            "reviews": reviews(row, actor, mutable=mutable),
         }
         lines.append(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
     return "".join(lines).encode("utf-8")

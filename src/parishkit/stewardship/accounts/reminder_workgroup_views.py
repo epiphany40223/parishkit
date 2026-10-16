@@ -150,9 +150,10 @@ def _preview(request, service, actor, configuration, campaign, form):
         return _page(request, configuration, campaign, form, status=400)
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
         raise stale_page()
-    before = campaign.active_configuration.values.get(REMINDER_WORKGROUP)
-    after = form.cleaned_data["name"] or None
-    if after == before:
+    review = review_change(
+        service, actor, configuration, campaign, form.cleaned_data["name"]
+    )
+    if review is None:
         # Review only a change (#921): refused in place, nothing requested.
         return _page(
             request,
@@ -163,12 +164,29 @@ def _preview(request, service, actor, configuration, campaign, form):
             message=_("The %(name)s has not changed.")
             % {"name": _(REMINDER_WORKGROUP_NAME)},
         )
+    return _page(request, configuration, campaign, form, review=review)
+
+
+def review_change(service, actor, configuration, campaign, name):
+    """The page's review of setting the WorkGroup to ``name``, or None.
+
+    Request-free, so the page's Review and ``workgroup preview`` (ADM-11)
+    build the same review and the same signed token (the page's salt, bound
+    to the campaign). ``name`` is the form's cleaned value; empty turns the
+    setting off. None means nothing would change. A configuration that moved
+    on since ``configuration`` was read raises ``UserFacingStale``; a
+    candidate the configuration refuses raises ``ConfigError``.
+    """
+    before = campaign.active_configuration.values.get(REMINDER_WORKGROUP)
+    after = name or None
+    if after == before:
+        return None
     patch = workgroup_patch(campaign, after)
     base = service.store.active()
     if base is None or base.digest != configuration.active_configuration.digest:
         raise stale_page()
     build_candidate(base, patch, candidate_id=uuid4())
-    review = {
+    return {
         # Drawn inside settings-review.html, above its Apply.
         "template": "stewardship/reminder-workgroup-review.html",
         "notes": [],
@@ -181,7 +199,6 @@ def _preview(request, service, actor, configuration, campaign, form):
             salt=SALT + str(campaign.pk),
         ),
     }
-    return _page(request, configuration, campaign, form, review=review)
 
 
 @require_http_methods(["GET", "HEAD", "POST"])

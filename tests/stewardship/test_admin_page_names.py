@@ -103,8 +103,8 @@ TEMPLATES = {
     "weekly_digest_manual": "weekly-manual.html",
     "weekly_digest_snapshot": "weekly-digest.html",
     "weekly_digest_item": "weekly-digest.html",
-    "ministry_report": "ministry-report.html",
-    "ministry_followup": "ministry-followup.html",
+    # Ministry requests is the follow-up queue's page (#1133).
+    "ministry_report": "ministry-followup.html",
     "ministry_followup_item": "ministry-followup.html",
     "ministry_roster": "ministry-roster.html",
     "family_directory": "directory.html",
@@ -148,10 +148,6 @@ PENDING = {}
 # heading is the view's ``step_label``, taken from the same stepper entry.
 SETUP = {
     "branding": "setup-branding.html",
-    "campaign": "setup-campaign.html",
-    "content": "setup-content.html",
-    "shares": "setup-shares.html",
-    "schedules": "setup-schedules.html",
     "source": "setup-source.html",
     "preview": "setup-preview.html",
     "mail_test": "setup-mail.html",
@@ -159,18 +155,6 @@ SETUP = {
     "finish": "setup-confirmation.html",
 }
 SETUP_SHARED = ("setup-step.html", "setup-credential.html")
-
-# The review steps of these pages' change flows render their own templates;
-# their "Return to" links are checked with the pages'.
-REVIEWS = (
-    "integration-preview.html",
-    "clone-preview.html",
-    "content-preview.html",
-    "content-settings.html",
-    "schedule-review.html",
-    "user-review.html",
-    "user-leader-import.html",
-)
 
 TRANSLATED = re.compile(r'{% translate "([^"]+)" %}')
 
@@ -261,14 +245,81 @@ def test_title_and_heading_use_the_page_name(name):
     assert title <= shared and heading <= shared
 
 
-@pytest.mark.parametrize("template", sorted(set(TEMPLATES.values()) | set(REVIEWS)))
+# "Return to" links whose target has no fixed name (navigation rule 4): the
+# shared error page returns to whatever page the reader came from, and the
+# export error page, which reads nothing from the database, cannot name the
+# export it returns to.
+UNNAMED_RETURNS = {
+    ("error.html", "the previous page"),
+    ("report-export-error.html", "the export status page"),
+}
+# "Return to {{ … }}" links, by template, and the variable each names its
+# target with. Each variable holds a registry label: the trail's parent
+# crumb (admin_chrome.back), the page a test email was opened from
+# (refusals.return_link), the integration's name (integration_views.LABELS)
+# and the export's report page (export_ui's report_name). A new one must
+# be added here once its variable is known to hold a page's name.
+VARIABLE_RETURNS = {
+    ("campaign-mail.html", "return_link.label"),
+    ("configuration-request.html", "admin_chrome.back.label"),
+    ("credential-status.html", "admin_chrome.back.label"),
+    ("integration-preview.html", "label"),
+    ("report-export.html", "report_name"),
+}
+VARIABLE_RETURN = re.compile(
+    r"{% blocktranslate(?: with (\w+)=([\w.]+))? %}Return to {{ (\w+) }}"
+)
+
+
+@pytest.mark.parametrize(
+    "template", sorted(path.name for path in TEMPLATE_DIR.glob("*.html"))
+)
 def test_return_links_name_a_page(template):
-    """Every "Return to X" names X by a page's label; no "Back to" wording."""
+    """Every "Return to X" names X by a page's label; no "Back to" wording.
+
+    Every Admin template is checked, error pages and shared fragments too,
+    not only the pages' own templates (#520).
+    """
     labels = {str(page.label) for page in navigation.PAGES.values()}
     source = _source(template)
-    assert "Back to " not in source
+    # The Census changes worklist's "Back to To review" is a review decision,
+    # not a link back to a page (see ALLOWED).
+    if template != "census-changes.html":
+        assert "Back to " not in source
     for target in re.findall(r'"Return to ([^"]+)"', source):
-        assert target in labels, (template, target)
+        assert target in labels or (template, target) in UNNAMED_RETURNS, (
+            template,
+            target,
+        )
+
+
+def test_variable_return_links_are_known():
+    """Every "Return to {{ … }}" link names its target from a variable known
+    to hold a page's name; a new one must be checked and listed."""
+    found = set()
+    for path in sorted(TEMPLATE_DIR.glob("*.html")):
+        for alias, value, used in VARIABLE_RETURN.findall(path.read_text("utf-8")):
+            found.add((path.name, value if alias == used else used))
+    assert found == VARIABLE_RETURNS, sorted(found ^ VARIABLE_RETURNS)
+
+
+# Python-built "Return to" link labels: a view's link_label or back_label.
+PYTHON_RETURN = re.compile(r'(?:link_label=|"back_label", )_\("Return to ([^"]+)"\)')
+
+
+def test_python_return_links_name_a_page():
+    """A "Return to" link label built in a view names a page by its label."""
+    labels = {str(page.label) for page in navigation.PAGES.values()}
+    found = [
+        (path.name, target)
+        for path in sorted(PACKAGE.rglob("*.py"))
+        for target in PYTHON_RETURN.findall(path.read_text("utf-8"))
+    ]
+    # The guard sees the known labels (Ministry follow-up, Ministry requests;
+    # setup_content_views' "Return to Pages and emails" was removed by #1269),
+    # so its pattern still matches.
+    assert len(found) >= 2, found
+    assert all(target in labels for _path, target in found), found
 
 
 # A link whose whole text is one translated string, to an Admin page.
@@ -345,12 +396,13 @@ def test_former_names_are_read_from_the_spec():
     former = _former_names()
     assert {"ParishSoft refresh", "Ministry reports", "Delivery controls"} <= former
     # Each of a cell's " / " alternatives is a name of its own.
-    assert {"Participation export", "Financial stewardship export"} <= former
+    assert {"Ministry export", "Family-directory mail-merge export"} <= former
     # An object-named row's former link names count; its placeholder does not.
     assert {"ParishSoft settings", "Off-site backup settings"} <= former
+    assert {"Key change details", "Family-directory export"} <= former
     assert not any(name.startswith("_") for name in former)
     # Current names, a non-page row, quoted wording and single words are not.
-    assert not former & {"Ministry follow-up", "Every Admin page", "Message"}
+    assert not former & {"Ministry requests", "Every Admin page", "Message"}
     assert not any('"' in name or "'" in name for name in former)
 
 
@@ -431,12 +483,15 @@ RETIRED = (
 # Legitimate uses, as (path relative to the package, retired name), each
 # with the reason it is not a page name.
 ALLOWED = {
-    # "Mail schedules keep sending the same kind of email": the schedules
-    # themselves, not the page.
-    ("accounts/templates/stewardship/setup-content.html", "Mail schedules"),
     # "Back to edit" steps back inside the Family form, outside the Admin
     # portal and its page names.
     ("accounts/static/stewardship/family-v1.js", "Back to "),
+    # "Back to To review" is the Census changes review button that undoes an
+    # Approve or Ignore (#528), not a link back to a page.
+    ("accounts/templates/stewardship/census-changes.html", "Back to "),
+    # ``pk-admin census review`` (#528) words that button's decision
+    # (``unreviewed``) in its help, not a link back to a page.
+    ("admin_cli.py", "Back to "),
     # "Distinct Families with Testing submissions": a readiness count and
     # the Testing submissions table's caption, not the page's name.
     (
@@ -646,7 +701,7 @@ def test_pending_names_match_the_spec_later():
         # Ministry requests with no current campaign, as the retired
         # /admin/ministry-reports/ root showed (NAV-11). The reports root
         # opens Participation instead, whose greyed page says why (#522).
-        ("parishkit.stewardship.reports.ministry_views", "ministry_report"),
+        ("parishkit.stewardship.reports.ministry_followup_views", "ministry_report"),
     ],
 )
 def test_empty_report_page_is_named_after_its_report(view, name):
@@ -673,7 +728,7 @@ def _title(template, context):
     [
         ("information_queue", {}),
         ("information_item", {"item": {"pk": 1}}),
-        ("ministry_followup", {}),
+        ("ministry_report", {}),
         ("ministry_followup_item", {"item": {"pk": 1}}),
         ("weekly_digest_snapshot", {}),
         ("weekly_digest_item", {"detail": True}),

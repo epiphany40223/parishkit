@@ -33,10 +33,10 @@
     {% if mine.ministries %}<ul class="my-ministries">{% for ministry in mine.ministries %}<li data-ministry="{{ ministry.duid }}">
       <span class="my-ministry-name">{{ ministry.name }}{% if not ministry.in_campaign %} <span class="my-ministry-note">({% translate "no longer in this campaign" %})</span>{% endif %}</span>
       <span class="my-ministry-counts">{% if ministry.join or ministry.leave %}{% blocktranslate count count=ministry.join trimmed %}{{ count }} asking to join{% plural %}{{ count }} asking to join{% endblocktranslate %} · {% blocktranslate count count=ministry.leave trimmed %}{{ count }} asking to leave{% plural %}{{ count }} asking to leave{% endblocktranslate %}{% else %}{% translate "No open requests" %}{% endif %}</span>
-      {% if ministry.join or ministry.leave %}{% url 'admin:ministry_followup' as queue_url %}{% blocktranslate asvar open_label with name=ministry.name %}Open requests for {{ name }}{% endblocktranslate %}{% with duid=ministry.duid|stringformat:"s" %}{% button variant="secondary" href=queue_url|add:"?ministry="|add:duid aria-label=open_label %}{% translate "Open requests" %}{% endbutton %}{% endwith %}{% endif %}
+      {% if ministry.join or ministry.leave %}{% url 'admin:ministry_report' as queue_url %}{% blocktranslate asvar open_label with name=ministry.name %}Open requests for {{ name }}{% endblocktranslate %}{% with duid=ministry.duid|stringformat:"s" %}{% button variant="secondary" href=queue_url|add:"?ministry="|add:duid aria-label=open_label %}{% translate "Open requests" %}{% endbutton %}{% endwith %}{% endif %}
     </li>{% endfor %}</ul>
     {% else %}<p>{% translate "None of your Ministries is part of the current campaign." %}</p>{% endif %}
-    <p><a href="{% url 'admin:ministry_followup' %}">{% translate "Ministry follow-up" %}</a> · <a href="{% url 'admin:ministry_report' %}#ministry-packet-heading">{% translate "Follow-up packet for my Ministries" %}</a></p>
+    <p><a href="{% url 'admin:ministry_report' %}">{% translate "Ministry requests" %}</a> · <a href="{% url 'admin:ministry_report' %}#ministry-packet-heading">{% translate "Follow-up packet for my Ministries" %}</a></p>
   </section>{% endwith %}{% endif %}
   {# Each Acknowledge acts in place (#519): the region is always drawn, empty once nothing awaits, so the answer after the last one still carries it. #}
   <div id="security-events" data-in-place-region>{% if dashboard.security_events %}<section class="panel" aria-labelledby="security-events-heading">
@@ -56,9 +56,11 @@
   {% if dashboard.ministry_catalog %}{% include "stewardship/ministry-catalog-notice.html" with notice=dashboard.ministry_catalog %}{% endif %}
   {% if dashboard.families %}<section class="panel">
     <h2>{% translate "Family participation" %}</h2>
-    <p>{% translate "Active Families:" %} {{ dashboard.families.active|number }}</p>
-    <p>{% translate "Responses from Families who can use the Family form now:" %} {{ dashboard.families.participation|out_of }}</p>
-    <p>{% translate "All Families with a response (not counting Testing):" %} {{ dashboard.families.responded|number }}</p>
+    {# Tiles, visuals first (#720). Only the participation figure is a share, so only it has a bar, hidden from assistive technology because its text states the share; all Families with a response can include ones no longer active, so that count has none. #}{% with participation=dashboard.families.participation %}<ul class="stat-tiles" data-home-participation>
+      <li class="stat-tile"><span class="stat-label">{% translate "Active Families" %}</span> <span class="stat-value">{{ dashboard.families.active|number }}</span></li>
+      <li class="stat-tile"><span class="stat-label">{% translate "Responses from Families who can use the Family form now" %}</span> <span class="stat-value">{{ participation.numerator|number }}</span> <span class="stat-detail">{% blocktranslate with total=participation.denominator|number share=participation|percentage trimmed %}out of {{ total }} ({{ share }}){% endblocktranslate %}</span>{% if participation.denominator %}<span class="stat-bar" aria-hidden="true"><progress value="{{ participation.numerator }}" max="{{ participation.denominator }}"></progress></span>{% endif %}</li>
+      <li class="stat-tile"><span class="stat-label">{% translate "All Families with a response (not counting Testing)" %}</span> <span class="stat-value">{{ dashboard.families.responded|number }}</span></li>
+    </ul>{% endwith %}
     {% if configuration.mode == 'testing' %}<p>{% translate "Responses made while in Testing mode are not counted here." %}</p>{% endif %}
   </section>{% endif %}
   {% if dashboard.unreachable is not None %}<section class="panel" aria-labelledby="readiness-heading">

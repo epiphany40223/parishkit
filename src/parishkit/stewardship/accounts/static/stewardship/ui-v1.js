@@ -764,6 +764,11 @@
     // A table that gives an empty-table reason (the include's empty_hint)
     // keeps it visible in the line while the table has no rows at all.
     const emptyHint = hint?.dataset.emptyHint || "";
+    // Rows can be shown with none of them selectable (every file in use,
+    // no open request): their selection cells are empty. The line then says
+    // why nothing can be ticked, from the table's data-none-hint; without
+    // one it stays blank, as for an empty table (#1332).
+    const noneHint = scope.dataset.noneHint || "";
     const update = () => {
       const all = rows();
       const chosen = all.filter((node) => node.checked).length;
@@ -791,11 +796,13 @@
         : scope.getAttribute(`data-kind-hint-${kinds.size > 1 ? "mixed" : [...kinds][0]}`) || "";
       // With no rows at all the table itself says it is empty, unless the
       // table gave an empty-table reason, which then stays in the line.
-      const empty = !all.length && Boolean(emptyHint);
+      const none = !all.length && Boolean(noneHint)
+        && Boolean(scope.querySelector("tbody td.select-col"));
+      const empty = !all.length && !none && Boolean(emptyHint);
       const explain = Boolean(hint)
-        && (Boolean(kindHint) || (!chosen && (all.length > 0 || empty)));
+        && (Boolean(kindHint) || (!chosen && (all.length > 0 || empty || none)));
       if (hint) {
-        const text = kindHint || (empty ? emptyHint : missingHint);
+        const text = kindHint || (none ? noneHint : empty ? emptyHint : missingHint);
         if (hint.textContent !== text) hint.textContent = text;
       }
       hint?.toggleAttribute("data-cleared", !explain);
@@ -2740,10 +2747,31 @@
       });
     });
   };
+  // data-max-ticked="N" on a group of checkboxes allows at most N ticked
+  // (the Ministry requests packet's Ministries, #1332). Past that each
+  // ticked box is invalid with the group's data-max-ticked-hint, its
+  // "{count}" the number ticked, which the gate below shows as its hint.
+  // Only a mark this check made is cleared. The server refuses more too.
+  const maxTicked = (form) => {
+    form.querySelectorAll("[data-max-ticked]").forEach((group) => {
+      const boxes = [...group.querySelectorAll("input[type=checkbox]")];
+      const ticked = boxes.filter((box) => box.checked && !box.disabled);
+      const over = !group.closest("[hidden]")
+        && ticked.length > Number(group.dataset.maxTicked);
+      const hint = (group.dataset.maxTickedHint || "").replace("{count}",
+        ticked.length.toLocaleString("en-US"));
+      boxes.forEach((box) => {
+        const mark = over && ticked.includes(box);
+        if (mark || box.hasAttribute("data-max-ticked-over")) box.setCustomValidity(mark ? hint : "");
+        box.toggleAttribute("data-max-ticked-over", mark);
+      });
+    });
+  };
   const gateComplete = (form) => {
     if (!form || !form.hasAttribute("data-require-complete")) return;
     requiredWhen(form);
     requireOne(form);
+    maxTicked(form);
     // A required text field holding only spaces is still empty: the server
     // trims it (notes for the outcome Other, a Slack token being set up).
     const blank = (node) => node.required
@@ -2771,6 +2799,7 @@
           || (missing.matches("[data-time-entry]") && missing.validity.customError
             && missing.validationMessage)
           || (empty && missing.dataset.emptyHint)
+          || (missing.hasAttribute("data-max-ticked-over") && missing.validationMessage)
           || missing.closest("[data-missing-hint]")?.dataset.missingHint
           || "Fill in the required fields to save.")
         : "";
@@ -3746,6 +3775,65 @@
     state.busy = false;
     cancel.focus();
   };
+  // A refusal whose errors name fields in the dialog (field_id: the bulk
+  // outcome's contact date and time, #1332) is shown at those fields
+  // instead: the message fills the dialog's field-error line (its first
+  // .errorlist with an id) and each field is marked and described by it.
+  // Confirm stays unavailable, naming the line, until one of them is
+  // edited: the edit clears the mark (wireValidity) and then lets the
+  // form's complete gate decide again. Any change on the form counts,
+  // since choosing no contact attempt greys Date and Time without an event
+  // on them. False when nothing was marked.
+  const refuseAtFields = (state, raw, text) => {
+    let ids = [];
+    try {
+      ids = (JSON.parse(raw)?.errors || []).map((item) => item?.field_id).filter(Boolean);
+    } catch { return false; }
+    const fields = [...new Set(ids)].map((id) => document.getElementById(id))
+      .filter((node) => node instanceof HTMLElement && state.dialog.contains(node)
+        && node.matches("input, select, textarea") && !node.disabled);
+    const list = state.dialog.querySelector(".errorlist[id]");
+    if (!fields.length || !list) return false;
+    const item = list.querySelector("li") || list.appendChild(document.createElement("li"));
+    item.textContent = text;
+    list.hidden = false;
+    list.dataset.source = "server";
+    const describe = (node) => node.setAttribute("aria-describedby", [...new Set([
+      ...(node.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean), list.id])].join(" "));
+    fields.forEach((node) => {
+      node.setAttribute("aria-invalid", "true");
+      node.setAttribute("data-field-error", "");
+      describe(node);
+    });
+    state.dialog.querySelector("[data-confirm-error]").hidden = true;
+    state.dialog.querySelector("[data-confirm-status]").textContent = "";
+    const accept = state.dialog.querySelector("[data-confirm-accept]");
+    accept.classList.remove("is-busy");
+    accept.removeAttribute("aria-disabled");
+    accept.disabled = true;
+    describe(accept);
+    state.dialog.querySelector("[data-confirm-cancel]").disabled = false;
+    state.busy = false;
+    // In the capture phase on the form, so the button stops naming the
+    // line before wireValidity's clearFieldError (on the field) runs:
+    // that would otherwise mark the button aria-invalid too.
+    const done = new AbortController();
+    const release = () => {
+      done.abort();
+      const kept = (accept.getAttribute("aria-describedby") || "").split(/\s+/)
+        .filter((id) => id && id !== list.id);
+      if (kept.length) accept.setAttribute("aria-describedby", kept.join(" "));
+      else accept.removeAttribute("aria-describedby");
+      if (confirming !== state) return;
+      accept.disabled = false;
+      if (state.form.hasAttribute("data-require-complete")) gateComplete(state.form);
+    };
+    ["input", "change"].forEach((type) =>
+      state.form.addEventListener(type, release, {capture: true, signal: done.signal}));
+    state.dialog.addEventListener("close", release, {signal: done.signal});
+    fields[0].focus();
+    return true;
+  };
   // A refused answer's message: the server's own explanation when it gives
   // one (a JSON refusal), else a plain one for its status.
   const refusalText = (status, text) => {
@@ -3797,7 +3885,8 @@
       return false;
     }
     if (!answer.response.ok) {
-      refuseConfirm(state, refusalText(answer.response.status, answer.text));
+      const text = refusalText(answer.response.status, answer.text);
+      if (!refuseAtFields(state, answer.text, text)) refuseConfirm(state, text);
       return false;
     }
     onRecorded?.();
@@ -5819,12 +5908,13 @@
 //     <span class="toggletip-bubble" id="ID" hidden>Help text</span>
 //   </span>
 // The bubble follows its button in the document, so screen readers reach it
-// next. The button's name is generic on purpose: naming it after its label
+// next; on screen it floats over the page beside its button and never moves
+// anything. The button's name is generic on purpose: naming it after its label
 // ("More about Phone") would make it a second match for that label's text,
 // both for voice control and for tests that find fields by label. Its
 // description (the label, when given an id) says which field it explains. One document-level listener serves every toggletip, including ones
-// page scripts add later. Only one bubble is open at a time; Escape or a
-// click elsewhere closes it. Without JavaScript the bubble stays hidden and
+// page scripts add later. Only one bubble is open at a time; Escape, a click
+// elsewhere or a click on the bubble itself closes it. Without JavaScript the bubble stays hidden and
 // the button does nothing, so keep anything essential in visible text.
 (() => {
   let count = 0;
@@ -5834,18 +5924,15 @@
     tip.querySelector(".toggletip-bubble").hidden = true;
     if (returnFocus) tip.querySelector(".toggletip-button").focus();
   }
-  function floating(bubble) {
-    // ui-v1.css fixes a bubble inside a .table-scroll box to the viewport.
-    // As an absolute child it would grow the box's scroll area (a one-row
-    // table would gain a scrollbar) or be clipped by it; fixed, it is
-    // outside the box's overflow, so the table never changes size or scroll.
-    return getComputedStyle(bubble).position === "fixed";
-  }
   function place(tip) {
-    // Put a floating bubble under its button, or above it when only there
-    // it fits, aligned with the button's start and kept inside the viewport
-    // (its CSS max-width already fits a phone). Rerun on scroll and resize,
-    // since a fixed bubble does not move with its button by itself.
+    // Put the bubble under its button, or above it when only there it
+    // fits, aligned with the button's start and kept inside the viewport
+    // (its CSS max-width already fits a phone). ui-v1.css fixes every
+    // bubble to the viewport, so it sits outside every box's flow and
+    // overflow: opening it never moves a control, grows a field or a
+    // table's .table-scroll box, or scrolls anything (#1289). Rerun on
+    // scroll and resize, since a fixed bubble does not move with its
+    // button by itself.
     const bubble = tip.querySelector(".toggletip-bubble");
     const anchor = tip.querySelector(".toggletip-button").getBoundingClientRect();
     const edge = 8, gap = 6, box = bubble.getBoundingClientRect();
@@ -5868,11 +5955,11 @@
       || anchor.bottom <= box.top || anchor.top >= box.bottom;
   }
   function follow() {
-    // Keep an open floating bubble with its button as the page or the
-    // table's box scrolls, and as the window changes size; close it once
-    // the box scrolls its button out of view.
+    // Keep an open bubble with its button as the page or a table's box
+    // scrolls, and as the window changes size; close it once the box
+    // scrolls its button out of view.
     const tip = document.querySelector(".toggletip-open");
-    if (!tip || !floating(tip.querySelector(".toggletip-bubble"))) return;
+    if (!tip) return;
     if (scrolledOut(tip)) close(tip);
     else place(tip);
   }
@@ -5880,23 +5967,20 @@
   window.addEventListener("resize", follow);
   function open(tip) {
     document.querySelectorAll(".toggletip-open").forEach((other) => close(other));
-    const bubble = tip.querySelector(".toggletip-bubble");
     tip.classList.add("toggletip-open");
     tip.querySelector(".toggletip-button").setAttribute("aria-expanded", "true");
-    bubble.hidden = false;
-    if (floating(bubble)) {
-      place(tip);
-      return;
-    }
-    // Keep the bubble on screen: a button near the right edge of a phone
-    // would otherwise push it past the viewport (and scroll the page).
-    bubble.style.insetInlineStart = "";
-    const edge = 8, box = bubble.getBoundingClientRect();
-    const overflow = box.right - (document.documentElement.clientWidth - edge);
-    if (overflow > 0) {
-      // Shift left by the overflow, but never past the viewport's left edge.
-      bubble.style.insetInlineStart = -Math.max(0, Math.min(overflow, box.left - edge)) + "px";
-    }
+    tip.querySelector(".toggletip-bubble").hidden = false;
+    place(tip);
+  }
+  function inBubbleTap(event) {
+    // A click or tap on the open bubble itself closes it, as in the usual
+    // toggletip pattern (Inclusive Components): the bubble holds only plain
+    // text, and since it floats it may cover the next field or "i", so a tap
+    // on it is how someone gets to what lies underneath (#1289). A drag that
+    // selects some of its text (to copy it) keeps it open. Focus stays put:
+    // the bubble itself is not focusable.
+    return Boolean(event.target.closest?.(".toggletip-bubble"))
+      && document.getSelection().isCollapsed;
   }
   document.addEventListener("click", (event) => {
     const button = event.target.closest?.(".toggletip-button");
@@ -5905,7 +5989,9 @@
       const tip = button.closest(".toggletip");
       if (tip === openTip) close(tip);
       else open(tip);
-    } else if (openTip && !openTip.contains(event.target)) close(openTip);
+    } else if (openTip && (!openTip.contains(event.target) || inBubbleTap(event))) {
+      close(openTip);
+    }
   });
   document.addEventListener("keydown", (event) => {
     const openTip = document.querySelector(".toggletip-open");

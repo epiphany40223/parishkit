@@ -263,7 +263,6 @@ def _page(
             "restored": restored,
             "sent": sent,
             "next": request.path,
-            "sample_url": reverse("admin:campaign_mail", args=[revision_id]),
             # A refused list's error summary (base template), which links to
             # the field and takes focus when Check is answered in place (#519).
             "errors": summary_errors(form) if refused else [],

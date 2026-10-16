@@ -264,7 +264,6 @@ def components(context, admin):
             | {"admin_chrome": admin}
             | {
                 "back": ACCESS,
-                "back_label": "Return to Automation access",
                 "next": APPROVAL,
             }
             | extra,

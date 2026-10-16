@@ -170,6 +170,31 @@ DESCRIPTIONS = {
         "An automation session confirmed a reviewed removal of a campaign "
         "image, which became a configuration request."
     ),
+    "admin_cmd_integration_confirm": _(
+        "An automation session confirmed a reviewed change to an "
+        "integration's settings, or its removal, which became a configuration "
+        "request."
+    ),
+    "admin_cmd_integration_backup_probe": _(
+        "An automation session asked for a check that off-site backups can "
+        "be saved in a Google Drive folder."
+    ),
+    "admin_cmd_integration_dismiss": _(
+        "An automation session dismissed the result of a finished key change "
+        "for an integration."
+    ),
+    "admin_cmd_integration_key_finish_switching": _(
+        "An automation session finished switching an integration to its new "
+        "key, which became a configuration request."
+    ),
+    "admin_cmd_workgroup_confirm": _(
+        "An automation session confirmed a reviewed change to the campaign's "
+        "No-reminders WorkGroup, which became a configuration request."
+    ),
+    "admin_cmd_campaign_confirm": _(
+        "An automation session confirmed a reviewed change to the campaign's "
+        "settings, which became a configuration request."
+    ),
     "admin_cmd_users_import_leaders": _(
         "An automation session confirmed a reviewed import of ParishSoft "
         "Ministry leaders as users, which became a configuration request."
@@ -195,6 +220,11 @@ DESCRIPTIONS = {
         "An automation session recorded a census change's outcome (entered "
         "in ParishSoft, ignored or reopened), as the Census changes page's "
         "Record outcome does."
+    ),
+    "admin_cmd_census_review": _(
+        "An automation session reviewed an automatic census change "
+        "(approved, ignored or sent back to To review), as the Census "
+        "changes page's Review does."
     ),
     "admin_cmd_refresh_start": _(
         "An automation session asked for a full ParishSoft refresh, as the "
@@ -731,11 +761,14 @@ DESCRIPTIONS = {
     "weekly_digest_viewed": _("Someone opened a weekly report."),
     "information_viewed": _("Someone opened the information changes report."),
     "information_updated": _("Someone updated follow-up on an information change."),
-    "ministry_followup_viewed": _("Someone opened the Ministry follow-up report."),
+    "ministry_followup_viewed": _(
+        "Someone opened Ministry requests (formerly Ministry follow-up) or one "
+        "of its follow-up requests."
+    ),
     "ministry_request_updated": _("Someone updated follow-up on a Ministry request."),
     "ministry_followup_bulk_applied": _(
         "Someone recorded one outcome for several Ministry requests at once on "
-        "Ministry follow-up. Each request also has its own entry."
+        "Ministry requests. Each request also has its own entry."
     ),
     "financial_report_viewed": _("Someone opened the Financial stewardship page."),
     # The Limitations report keeps the actions it recorded as "Talents and
@@ -754,7 +787,7 @@ DESCRIPTIONS = {
     ),
     "roster_changes_viewed": _("Someone opened the Roster changes to enter list."),
     "ministry_followup_exported": _(
-        "Someone downloaded Ministry follow-up requests with their contact "
+        "Someone downloaded Ministry requests with their contact "
         "details (Export these requests)."
     ),
     "roster_changes_exported": _(

@@ -37,6 +37,7 @@ ALLOWED = {
     "configured",
     "removable",
     "settings",
+    "refresh_schedule",
     "key",
     "state",
     "at",
@@ -133,6 +134,7 @@ def test_the_google_workspace_page_is_its_golden_document():
         "configured": True,
         "removable": False,
         "settings": {"delegated_email": "mail@x.org"},
+        "refresh_schedule": None,
         "key": {
             "state": "updated",
             "at": AT.isoformat(),
@@ -170,6 +172,15 @@ def test_parishsoft_prints_the_refresh_facts_of_refresh_status():
     )
     assert model.source == refresh_fields(status)
     assert document(model)["settings"] == {"organization_id": "12"}
+    # An existing schedule (the defaults) as the editor shows it (#632).
+    assert document(model)["refresh_schedule"] == {
+        "rules": [
+            {"kind": "full", "at": "02:00"},
+            {"kind": "quick", "every": 15, "from": "00:00", "to": "23:45"},
+        ],
+        "skips": [],
+        "skip_around_family_emails": False,
+    }
 
 
 def test_the_backup_page_prints_its_copy_and_check():
@@ -281,13 +292,13 @@ def test_the_catalog_entries(name, model, arguments, watch):
 
 
 def test_the_ledger_covers_the_pages_with_their_changes_owed():
-    """The reads are covered; saving and the key steps are still PR 10's."""
+    """The reads are covered; replacing a key is still PR 10's."""
     assert LEDGER["integrations"].detail == ("integration list",)
     assert LEDGER["integration_status"].detail == ("integration status",)
     settings = LEDGER["integration_settings"]
     assert settings.kind == "command" and settings.owed == "PR 10"
-    assert settings.detail == ("integration show",)
-    assert LEDGER["credential_status"].kind == "pending"
+    assert settings.detail[0] == "integration show"
+    assert LEDGER["credential_status"].detail == ("integration key status",)
 
 
 @pytest.mark.parametrize(
@@ -363,3 +374,268 @@ def test_a_watch_timeout_names_the_command_and_no_record(caplog):
         subject_id=None,
     )
     assert caplog.records[-1].levelno == logging.WARNING
+
+
+# ``integration schedule-preview`` (#632 slice 5a): the page's live check.
+ZONE = "America/New_York"
+NOW = datetime(2054, 10, 9, 16, tzinfo=UTC)
+STORED = {
+    "organization_id": "1",
+    "full_refresh": "daily",
+    "nightly_time": "00:00",
+    "full_refresh_times": ["00:00", "12:00"],
+    "delta_refresh": "off",
+}
+# Every member name of the preview's document, at any depth.
+PREVIEW_ALLOWED = {
+    "version",
+    "timezone",
+    "proposed",
+    "changed",
+    "schedule",
+    "rules",
+    "skips",
+    "skip_around_family_emails",
+    "kind",
+    "at",
+    "every",
+    "from",
+    "to",
+    "problems",
+    "field",
+    "message",
+    "blocking",
+    "status",
+    "preview",
+    "days",
+    "day",
+    "weekday",
+    "today",
+    "change",
+    "counts",
+    "times",
+    "text",
+    "struck",
+    "due_at",
+    "line",
+    "summary",
+    "warning",
+    "freshness",
+    "estimated_windows",
+}
+
+
+def schedule_preview(posted=None):
+    """The command's document for ``posted`` rules (else the stored schedule).
+
+    Built as the command builds it: the page's editor, its ``editor_view``
+    over a database-free preview, then ``schedule_model``.
+    """
+    from parishkit.stewardship.accounts.refresh_schedule_forms import (
+        ScheduleEditor,
+        editor_view,
+    )
+    from parishkit.stewardship.admin_integration_changes import schedule_rows
+
+    from .test_refresh_schedule_editor import reader
+
+    editor = ScheduleEditor(stored=STORED)
+    if posted is not None:
+        editor = ScheduleEditor(schedule_rows(posted, editor), stored=STORED)
+    view = editor_view(editor, timezone=ZONE, now=NOW, preview_reader=reader)
+    model = admin_integrations.schedule_model(
+        configuration(), view, proposed=posted is not None
+    )
+    return document(model), view
+
+
+def test_the_applied_schedule_is_the_pages_preview():
+    """No option: the stored schedule as the page shows it, its seven days
+    and summary in the page's words, without the grid's cells."""
+    from parishkit.stewardship.source.refresh_rules import converted_rules
+
+    result, view = schedule_preview()
+    assert result["version"] == DIGEST and result["timezone"] == ZONE
+    assert not result["proposed"] and not result["changed"]
+    assert result["schedule"] == converted_rules(STORED)
+    assert result["problems"] == [] and not result["blocking"]
+    assert result["status"] == view.status
+    preview = result["preview"]
+    assert len(preview["days"]) == 7
+    assert preview["summary"] == view.preview["summary"]
+    assert preview["freshness"] == view.preview["freshness"]
+    first = preview["days"][0]
+    assert first["counts"] == view.preview["days"][0]["counts"]
+    assert [entry["text"] for entry in first["times"]] == [
+        entry["text"] for entry in view.preview["days"][0]["times"]
+    ]
+    assert "cells" not in first
+    assert set(members(result)) <= PREVIEW_ALLOWED, set(members(result))
+    # The stored setting's own name, which `integration show` prints too.
+    for name in PREVIEW_ALLOWED - {"skip_around_family_emails"}:
+        assert FORBIDDEN.search(name) is None, name
+
+
+def test_a_proposed_schedule_reports_the_pages_problems_without_refusing():
+    """Two full refreshes 5 minutes apart: the page's problem at its row,
+    blocking a save of this changed schedule; the preview still shows."""
+    posted = {
+        "rules": [
+            {"kind": "full", "at": "02:00"},
+            {"kind": "full", "at": "02:15"},
+            {"kind": "full", "at": "02:20"},
+        ],
+        "skips": [],
+    }
+    result, view = schedule_preview(posted)
+    assert result["proposed"] and result["changed"] and result["blocking"]
+    fields = {problem["field"] for problem in result["problems"]}
+    assert fields and fields <= {
+        f"refresh_schedule.rules[{index}]" for index in range(3)
+    }
+    assert {problem["message"] for problem in result["problems"]} == {
+        problem.text for problem in view.editor.problems()
+    }
+    assert result["status"] == view.status
+    assert set(members(result)) <= PREVIEW_ALLOWED, set(members(result))
+
+
+def test_a_proposed_schedule_without_problems_previews_its_days():
+    """A changed schedule the page would save: no problems, its preview."""
+    posted = {"rules": [{"kind": "full", "at": "03:00"}], "skips": []}
+    result, _ = schedule_preview(posted)
+    assert result["changed"] and not result["blocking"]
+    assert result["problems"] == []
+    assert result["schedule"]["rules"] == posted["rules"]
+    for day in result["preview"]["days"]:
+        assert [entry["text"][:5] for entry in day["times"]] == ["03:00"]
+
+
+def test_a_row_that_cannot_be_read_has_no_preview():
+    """A range ending before it starts: no document, nothing to preview."""
+    posted = {
+        "rules": [{"kind": "full", "every": 60, "from": "18:00", "to": "08:00"}],
+        "skips": [],
+    }
+    result, _ = schedule_preview(posted)
+    assert result["schedule"] is None and result["preview"] is None
+    assert result["blocking"] and result["problems"]
+    assert set(members(result)) <= PREVIEW_ALLOWED, set(members(result))
+
+
+def stand_ins(monkeypatch, calls, stored=STORED):
+    """Replace admission, the snapshot and the configuration for a read."""
+    import contextlib
+
+    from parishkit.stewardship.accounts import admin_editing
+    from parishkit.stewardship.campaigns import work_locks
+
+    monkeypatch.setattr(admin_integrations, "_admit", lambda *a: calls.append("admit"))
+    monkeypatch.setattr(
+        admin_integrations, "_recheck", lambda *a: calls.append("recheck")
+    )
+    monkeypatch.setattr(admin_integrations, "_held", lambda step: step())
+    monkeypatch.setattr(work_locks, "read_transaction", contextlib.nullcontext)
+    monkeypatch.setattr(
+        admin_editing,
+        "editable_configuration",
+        lambda service: configuration(("parishsoft", stored)),
+    )
+    return SimpleNamespace(store=None)
+
+
+def test_an_added_quick_rule_is_refused_after_the_recheck(monkeypatch):
+    """The page cannot add a quick update, so neither can the preview: the
+    refusal of 5b's ``integration preview``, after the session recheck."""
+    from parishkit.stewardship.admin_changes import InvalidChange
+
+    calls = []
+    service = stand_ins(monkeypatch, calls)
+    text = json.dumps({"rules": [{"kind": "quick", "at": "05:00"}]})
+    with pytest.raises(InvalidChange) as refused:
+        admin_integrations.read_schedule_preview(None, service, text)
+    assert calls == ["admit", "recheck"]
+    assert [p["field"] for p in refused.value.fields] == ["refresh_schedule.rules[0]"]
+
+
+def test_a_malformed_document_is_refused_before_any_read(monkeypatch):
+    """Not the stored shape: refused without reading or echoing it."""
+    calls = []
+    service = stand_ins(monkeypatch, calls)
+    with pytest.raises(ValueError, match="not YAML or JSON"):
+        admin_integrations.read_schedule_preview(None, service, "{rules: [")
+    assert calls == []
+
+
+def test_parishsoft_not_set_up_is_not_available(monkeypatch):
+    """No ParishSoft record: the page's 404, after the recheck."""
+    from parishkit.stewardship.accounts import admin_editing
+    from parishkit.stewardship.admin_reads import NotAvailable
+
+    calls = []
+    stand_ins(monkeypatch, calls)
+    monkeypatch.setattr(
+        admin_editing, "editable_configuration", lambda service: configuration()
+    )
+    with pytest.raises(NotAvailable):
+        admin_integrations.read_schedule_preview(None, SimpleNamespace(store=None))
+    assert calls == ["admit", "recheck"]
+
+
+def test_the_schedule_preview_catalog_entry_and_ledger():
+    """Any session, no state change, no event or prompt; the page's live
+    check is covered in the ledger."""
+    entry = {item["name"]: item for item in admin_cli.catalog()}[
+        "integration schedule-preview"
+    ]
+    assert entry["scope"] == "read_only" and not entry["changes_state"]
+    assert entry["audit_event"] is None and entry["pr"] == 10
+    assert not entry["prompts"] and not entry["fresh_gated"]
+    assert entry["arguments"] == [] and entry["watch"] is False
+    assert entry["result_fields"] == list(
+        admin_integrations.SchedulePreview.field_names()
+    )
+    check = LEDGER["refresh_schedule_check"]
+    assert check.kind == "command"
+    assert check.detail == ("integration schedule-preview",)
+
+
+def test_a_schedule_preview_takes_no_target():
+    """A target is a usage error: only ParishSoft has a refresh schedule."""
+    out = io.StringIO()
+    code = admin_cli.main(
+        [
+            "integration",
+            "schedule-preview",
+            "parishsoft",
+            "--config",
+            "web.yaml",
+            "--session-stdin",
+        ],
+        stdin=io.BytesIO(b""),
+        stdout=out,
+        stderr=out,
+    )
+    assert code == 2 and json.loads(out.getvalue())["error"]["code"] == "usage"
+
+
+def test_the_role_is_checked_before_standard_input_is_read(monkeypatch):
+    """Staff is denied before ``--refresh-schedule -`` reads anything (#1339)."""
+    stdin = io.BytesIO(b'{"rules": []}')
+
+    def denied(context, runtime):
+        """The role check, refusing as for Staff."""
+        raise PermissionError("Staff")
+
+    monkeypatch.setattr(admin_cli, "_role_first", denied)
+    monkeypatch.setattr(
+        admin_integrations,
+        "read_schedule_preview",
+        lambda *a: pytest.fail("read after a refused role"),
+    )
+    args = SimpleNamespace(refresh_schedule="-")
+    with pytest.raises(PermissionError):
+        admin_cli.integration_schedule_preview(
+            args, None, None, {"caller": None, "stdin": stdin}
+        )
+    assert stdin.tell() == 0
