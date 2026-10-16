@@ -18,6 +18,7 @@ from parishkit.stewardship import (
     admin_delivery_control,
     admin_digests,
     admin_exports,
+    admin_followup,
     admin_history,
     admin_hosted_files,
     admin_integration_changes,
@@ -71,6 +72,8 @@ ADMITTING_READ = {
     "files delete": (admin_hosted_files, "preview_deletion", {"file_id": ["a"]}),
     "export regenerate": (admin_exports, "regeneration_prompts", {"export_id": "a"}),
     "history confirm": (admin_history, "pending_replacement", {"token": "-"}),
+    # The page's own admission, which admits a leader of any Ministry.
+    "followup bulk": (admin_followup, "admit_followup", {}),
 }
 
 # Everything a handler may read, look up or prompt with after its role check.

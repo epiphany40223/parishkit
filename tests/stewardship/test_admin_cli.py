@@ -210,6 +210,11 @@ def test_the_catalog_lists_every_command_with_its_flags():
         # Home's acknowledgements, with the users and follow-up of PR 11.
         "events list",
         "events acknowledge",
+        # The Ministry follow-up queue (PR 11a).
+        "followup list",
+        "followup show",
+        "followup update",
+        "followup bulk",
     }
     # Past campaigns' archive import (#1018), listed with the reports.
     reports |= {"history list", "history preview", "history confirm", "history remove"}
@@ -821,6 +826,9 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_users_confirm",
         "admin_cmd_users_import_leaders",
         "admin_cmd_events_acknowledge",
+        # The Ministry follow-up queue's Save and bulk outcome (PR 11a).
+        "admin_cmd_followup_update",
+        "admin_cmd_followup_bulk",
         "admin_cmd_history_preview",
         "admin_cmd_history_confirm",
         "admin_cmd_history_remove",
