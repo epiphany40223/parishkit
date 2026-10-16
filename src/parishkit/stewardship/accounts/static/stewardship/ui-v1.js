@@ -2599,17 +2599,29 @@
   // a test settles, re-reads this address's panel in place, so the panel is
   // drawn again from the server's current state; if a test is in flight
   // again, the fresh region is watched anew. A pending region is already
-  // polled.
-  window.addEventListener("pageshow", (event) => {
-    if (!event.persisted) return;
-    const follow = document.querySelector(
-      '[data-live-status="setup-test"]:not([data-live-pending]) a[data-live-follow][data-in-place]');
-    const panel = document.getElementById("setup-test-panel");
-    if (!follow || !panel) return;
+  // polled. Load parish data does the same with its hidden
+  // a[data-reread-on-show] link (#1353), since its load may have been
+  // discarded from another tab while the page was away; it also re-reads
+  // when its tab is shown again, as its progress page's status does
+  // (live-status-v1.js). Each re-read refreshes every in-place region on
+  // the page, the step bar included.
+  const reread = (selector) => {
+    const follow = document.querySelector(selector);
+    const id = follow?.getAttribute("href").replace(/^#/, "");
+    const panel = id && document.getElementById(id);
+    if (!panel) return;
     const here = new URL(window.location.href);
     here.hash = panel.id;
     follow.href = here.href;
     follow.click();
+  };
+  window.addEventListener("pageshow", (event) => {
+    if (!event.persisted) return;
+    reread('[data-live-status="setup-test"]:not([data-live-pending]) a[data-live-follow][data-in-place], '
+      + "a[data-reread-on-show][data-in-place]");
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") reread("a[data-reread-on-show][data-in-place]");
   });
 
   // A control's value for the rules below (data-show-when and
