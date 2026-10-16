@@ -1,24 +1,24 @@
 {% load i18n stewardship %}{% comment %}
   Turn off debug logging (ADM-13 PR 6b), in the Debug logging tile's
   details (#1214), after its problems and before its panel content, outside
-  the polled status region. It is always
-  drawn, and its button follows the polled state: greyed with its reason
-  while no service has debug logging in effect or the switch is set. Turn
-  off debug logging confirms in the shared review dialog (#1356;
-  system-health-debug-off-review.html, the dialog in system-health.html):
-  once the switch is set, the dialog redraws this region from Apply's
-  answer and the status line after it (outside it, so a redraw keeps it)
-  says debug logging was turned off. Allow debug logging again (PR 6c,
-  Testing only, below it) confirms the same way
+  the polled status region. It is always drawn; its controls follow the
+  polled state, and each is drawn only while it can act, with the region's
+  explanation only while Turn off debug logging is offered
+  (system-health-debug-button.html). Turn off debug logging confirms in the
+  shared review dialog (#1356; system-health-debug-off-review.html, the
+  dialog in system-health.html): once the switch is set, the dialog
+  redraws this region from Apply's answer and the status line after it
+  (outside it, so a redraw keeps it) says debug logging was turned off.
+  Allow debug logging again (PR 6c, Testing only) confirms the same way
   (system-health-debug-allow-review.html), and its answer redraws this
-  region too. The buttons are shown in a data-live-mirror-target that the
-  polled region keeps current. Once a dialog's answer redraws the region,
-  the page checks its status at once (data-live-recheck), so the tile's
-  summary and buttons follow the switch without waiting for the next poll.
-  The server checks every condition again; greying only helps the reader.
+  region too. The controls are shown in a data-live-mirror-target that the
+  polled region keeps current; it is data-live-mirror-hold, because its
+  states differ in height. Once a dialog's answer redraws the region, the
+  page checks its status at once (data-live-recheck), so the tile's
+  summary and controls follow the switch without waiting for the next
+  poll. The server checks every condition again and keeps its refusals;
+  leaving a control out only helps the reader.
 {% endcomment %}<section class="panel" id="debug-off" data-in-place-region data-live-recheck="system-health" aria-labelledby="debug-off-heading">
 <h3 id="debug-off-heading">{% translate "Turn off debug logging" %}</h3>
-{% if health.mode == "testing" %}{% translate "In Testing, Allow debug logging again on this page clears the switch. The server operator can also clear it, offline, with the services stopped, using pk-stewardship debug-off-clear. When the services start again, those whose server setting is still on log in debug form again." as clear_tip %}{% else %}{% translate "Only the server operator can clear the switch, offline, with the services stopped, using pk-stewardship debug-off-clear; this page cannot. When the services start again, those whose server setting is still on log in debug form again." as clear_tip %}{% endif %}
-<p><span id="debug-off-intro">{% translate "Turn debug logging off in every service now, without restarting them. It needs a recent Google sign-in." %}</span> {% include "stewardship/components/toggletip.html" with tip_id="debug-off-intro-tip" tip_label_id="debug-off-intro" tip_text=clear_tip %}</p>
-<div data-live-mirror-target="debug-off-button">{% include 'stewardship/system-health-debug-button.html' %}</div>
+<div data-live-mirror-target="debug-off-button" data-live-mirror-hold>{% include 'stewardship/system-health-debug-button.html' %}</div>
 </section>{% include 'stewardship/components/review-outcome.html' with outcome_id="debug-off-outcome" %}

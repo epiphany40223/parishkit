@@ -124,13 +124,13 @@ def test_preview_then_confirm_clears_the_switch_in_testing(auth_service, google)
     # The same confirmation again returns the switch and records nothing new.
     assert post(browser, action="debug_allow_confirm", key=key).status_code == 200
     assert count("debug_logging_allowed") == 1
-    # No switch is set now: the preview is refused and the button greyed.
+    # No switch is set now: the preview is refused and no button is drawn.
     refused = post(browser, action="debug_allow_preview")
     assert refused.status_code == 409
     assert '<div data-review-refusal><p data-debug-allow-refused="busy">' in (
         refused.content.decode()
     )
-    assert "The debug-off switch is not set." in page(browser)
+    assert ">Allow debug logging again<" not in page(browser)
 
 
 def test_a_switch_cleared_by_someone_else_is_stale(auth_service, google):
@@ -196,14 +196,15 @@ def test_only_an_administrator_may_allow_debug_logging(auth_service, google):
     assert switch.cleared_at is None
 
 
-def test_production_greys_the_button_and_refuses_the_step(auth_service, google):
+def test_production_draws_no_button_and_refuses_the_step(auth_service, google):
     """In Production only the server operator clears the switch."""
     switch = set_switch()
     browser, _ = signed_in()
     force_mode("production")
     body = page(browser)
     assert 'value="debug_allow_preview"' not in body
-    assert 'disabled aria-describedby="debug-allow-reason"' in body
+    assert ">Allow debug logging again<" not in body
+    assert 'data-debug-status="set"' in body
     for values in (
         {"action": "debug_allow_preview"},
         {"action": "debug_allow_confirm", "key": str(switch.pk)},

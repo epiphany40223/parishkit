@@ -1209,30 +1209,47 @@ def test_turn_off_debug_logging_is_offered_while_a_service_has_it_on():
     assert "before it first reads the switch" in page
     # The polled copy carries the same enabled button for the mirror.
     assert '<template data-live-mirror="debug-off-button">' in body
-    assert "pk-stewardship debug-off-clear" in body
-    assert "those whose server setting is still on log in debug form again" in body
+    # The intro's toggletip says what the switch does, not how a set switch
+    # is cleared, and names no Allow button (not drawn yet).
+    assert "each service reads within about a minute" in body
+    intro = section(body, 'id="debug-off"')
+    assert "Allow debug logging again" not in intro
+    assert "those whose server setting is still on" not in intro
+    testing = section(debug_page(mode="testing"), 'id="debug-off"')
+    assert "Allow debug logging again" not in testing
     # In Production the debug_logging problem says what to do; the panel
     # does not say it again.
     assert "Debug logging must be off in Production" not in body
 
 
-def test_a_set_switch_greys_the_button_and_says_who_and_when():
-    """Who set it and when (browser-local), and that the setting still says on."""
+def test_a_set_switch_shows_only_who_and_when():
+    """Who set it and when (browser-local), and that the setting still says
+    on; no Turn off button, greyed or not (Administrator, 2026-10-15)."""
     switch = DebugSwitchStatus(set_at=NOW, cleared_at=None, cleared_by=None)
     body = debug_page(switch=switch)
     assert 'value="debug_off_preview"' not in body
-    assert 'disabled aria-describedby="debug-off-reason"' in body
+    assert "debug-off-reason" not in body and "debug-allow-reason" not in body
+    assert "Turn debug logging off in every service now" not in body
+    assert 'data-debug-status="set"' in body
     assert "Debug logging was turned off by admin@example.org at" in body
     assert f'<time datetime="{NOW.isoformat()}" data-local-instant>' in body
     assert 'data-debug-switch="set"' in body
     assert "The setting on the server still says “on”." in body
-    # Once no service reports debug logging, the button stays greyed with why.
+    # Once no service reports debug logging, the line still says who and when.
     quiet = debug_page(switch=switch, debug=False)
     assert "Debug logging was turned off by admin@example.org at" in quiet
     assert 'data-debug-switch="set"' in quiet
+    # No switch and no service in debug form: the plain status line only.
     unset = debug_page(debug=False)
     assert 'value="debug_off_preview"' not in unset
-    assert 'disabled aria-describedby="debug-off-reason"' in unset
+    assert "debug-off-reason" not in unset
+    assert 'data-debug-status="off"' in unset
+    assert "Debug logging is off in every service that reports." in unset
+    assert "Turn debug logging off in every service now" not in unset
+    # The controls' target waits while the pointer is over the grid, since
+    # its states differ in height.
+    target = '<div data-live-mirror-target="debug-off-button" data-live-mirror-hold>'
+    assert target in body and target in unset
 
 
 def test_a_cleared_switch_is_named_only_while_debug_logging_is_back():
@@ -1267,7 +1284,7 @@ def debug_off_answer(**result):
 def test_the_debug_off_confirmation_and_each_refusal_answer_the_dialog():
     """The preview is one sentence naming the services with debug logging on,
     never the fixed bullets the About panel holds; Apply's answer draws the
-    region again, its button greyed; each refusal is marked for the dialog."""
+    region again, with its status line; each refusal is marked for the dialog."""
     preview = DebugOffPreview(key="k-1", processes=("the web portal",))
     text = debug_off_answer(preview=preview)
     assert (
@@ -1285,7 +1302,7 @@ def test_the_debug_off_confirmation_and_each_refusal_answer_the_dialog():
     assert "No service reports debug logging right now" in quiet
     done = debug_off_answer(requested=SimpleNamespace(set_at=NOW), created=True)
     assert 'id="debug-off"' in done and "data-review-answer" not in done
-    assert 'disabled aria-describedby="debug-off-reason"' in done
+    assert 'data-debug-status="set"' in done
     for refused, words in (
         ("reauthenticate", "For security, turning off debug logging needs a Google"),
         ("busy", "Debug logging has already been turned off"),
@@ -1845,7 +1862,8 @@ SET = DebugSwitchStatus(set_at=NOW, cleared_at=None, cleared_by=None)
 def test_allow_debug_logging_again_is_offered_only_in_testing_while_set():
     """Testing with the switch set: the button posts the preview to its
     review dialog (#1356), and the polled copy carries it. Otherwise it is
-    greyed with why."""
+    not drawn at all (Administrator, 2026-10-15): never in Production, nor
+    without a switch."""
     body = debug_page(switch=SET, debug=False, mode="testing")
     assert 'value="debug_allow_preview"' in body
     assert 'data-review-open="debug-allow-review"' in body
@@ -1859,11 +1877,14 @@ def test_allow_debug_logging_again_is_offered_only_in_testing_while_set():
     assert "In Testing, Allow debug logging again on this page clears" in body
     production = debug_page(switch=SET, debug=False)
     assert 'value="debug_allow_preview"' not in production
-    assert 'disabled aria-describedby="debug-allow-reason"' in production
-    assert "In Production only the server operator can clear" in production
+    assert ">Allow debug logging again<" not in production
+    assert "debug-allow-reason" not in production
+    # The status line's toggletip says only the server operator clears it.
+    assert "using pk-stewardship debug-off-clear; this page cannot." in production
     unset = debug_page(mode="testing")
     assert 'value="debug_allow_preview"' not in unset
-    assert "The debug-off switch is not set." in unset
+    assert ">Allow debug logging again<" not in unset
+    assert "The debug-off switch is not set." not in unset
 
 
 def debug_allow_answer(**result):
@@ -2521,7 +2542,7 @@ def test_the_debug_panel_repeats_no_sentence():
     assert details.count("turned off by admin@example.org at") == 1
     assert "The setting on the server still says “on”." in details
     assert details.count("pk-stewardship debug-off-clear") == 1  # the toggletip
-    # Off everywhere: said once, as the greyed button's reason.
+    # Off everywhere: said once, as the region's status line.
     quiet = debug_details(tiles({"health": health()}))
     assert quiet.count("Debug logging is off in every service that reports.") == 1
 
@@ -2596,14 +2617,16 @@ def test_the_backup_region_checks_the_status_again_once_answered():
 
 def test_the_debug_regions_answers_point_where_things_are_said():
     """After turning it off, nothing points to a service list the
-    Production panel no longer has; a repeated request, refused in the
-    review dialog (#1356), points to the greyed button, which says who and
-    when (no "below" in a dialog); the Testing note about the button is
-    left out while the switch greys it."""
+    Production panel no longer has; Apply's answer redraws the region with
+    its status line; a repeated request, refused in the review dialog
+    (#1356), points to that line, which says who and when (no "below" in a
+    dialog); the Testing note about the button is left out while the
+    switch is set and the button is not drawn."""
     body = debug_off_answer(requested=SimpleNamespace(set_at=NOW))
+    assert 'data-debug-status="set"' in body
     assert "details below show when" not in body
     busy = debug_off_answer(refused="busy")
-    assert "The greyed button says who did it and when." in busy
+    assert "The line under Turn off debug logging says who did it and when." in busy
     assert "below" not in busy
     assert "Turn off debug logging works here too" in debug_page(mode="testing")
     assert "works here too" not in debug_page(switch=SET, mode="testing")
