@@ -290,7 +290,8 @@ def test_an_accepted_review_clears_the_slots_refusal(page, component_origin):
     field = page.locator("#id_welcome_image")
     has_attribute(field, "aria-invalid", "true")
     welcome.get_by_role("button", name="Remove this image").click()
-    dialog = dialog_of(page)
+    # The removal opens a confirmation (#1356), titled as its question.
+    dialog = dialog_of(page, "Remove this image?")
     assert page.locator("#artwork-outcome-welcome").inner_text() == ""
     dialog.get_by_role("button", name="Cancel").click()
     hidden(dialog)

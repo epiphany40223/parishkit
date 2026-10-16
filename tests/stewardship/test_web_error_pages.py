@@ -383,10 +383,16 @@ def test_refusal_text_picks_the_fix_for_where_it_shows():
     "template,region,extra",
     [
         ("stewardship/components/restore-review-outcome.html", "step", {}),
-        ("stewardship/system-health-backup-now.html", "backup_now", {}),
+        # Take a backup now and both debug switches refuse in the review
+        # dialog (#1356), so their refusals are drawn by its fragments.
+        ("stewardship/system-health-backup-review.html", "backup_now", {}),
         ("stewardship/system-health-accept.html", "accept", {}),
-        ("stewardship/system-health-debug-off.html", "debug_off", {}),
-        ("stewardship/system-health-debug-off.html", "debug_off", {"allow": True}),
+        ("stewardship/system-health-debug-off-review.html", "debug_off", {}),
+        (
+            "stewardship/system-health-debug-allow-review.html",
+            "debug_off",
+            {"allow": True},
+        ),
     ],
 )
 def test_in_place_regions_show_a_stale_forms_refusal(template, region, extra):
