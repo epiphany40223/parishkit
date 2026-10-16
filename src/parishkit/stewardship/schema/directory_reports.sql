@@ -264,6 +264,12 @@ CREATE FUNCTION public.stewardship_directory_export_capture_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE postal boolean; phones boolean;
 BEGIN
+    -- An ended export's discard (#1398, migration 0109), run as the schema
+    -- owner, may clear the document; nothing else is ever changed.
+    IF TG_OP='UPDATE' AND stewardship_export_capture_cleared_v1(
+           TG_RELID,to_jsonb(OLD),to_jsonb(NEW)) THEN
+        RETURN NEW;
+    END IF;
     IF TG_OP<>'INSERT' THEN
         RAISE EXCEPTION 'Directory export snapshots are immutable' USING ERRCODE='23514';
     END IF;

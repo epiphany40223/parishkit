@@ -243,6 +243,8 @@ def test_complete_capture_stays_stable_after_source_promotion(response_service):
             "count": count,
             "ministry_duids": [9],
             "ministry_operational": True,
+            "report": "ministry",
+            "format": request.format,
         }
         for request, count in ((result, 52), (empty, 0))
     }

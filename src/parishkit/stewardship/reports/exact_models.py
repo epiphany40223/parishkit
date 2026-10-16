@@ -65,7 +65,11 @@ class ExactExportResolution(ImmutableRecord):
 
     request = models.OneToOneField(ExactExportRequest, on_delete=models.PROTECT)
     export = models.OneToOneField("ExportRequest", on_delete=models.PROTECT)
-    fact_set = models.ForeignKey("CampaignDailyFactSet", on_delete=models.PROTECT)
+    # Cleared when the export ends and its saved data is discarded (#1398,
+    # migration 0109), so the generation it used can be compacted.
+    fact_set = models.ForeignKey(
+        "CampaignDailyFactSet", null=True, blank=True, on_delete=models.PROTECT
+    )
     run = models.ForeignKey("stewardship_jobs.TaskRun", on_delete=models.PROTECT)
     fence = models.PositiveBigIntegerField()
     worker_id = models.UUIDField()
