@@ -9,6 +9,7 @@ resulting session is compared with, since both end in ``establish_identity``.
 
 import time
 from dataclasses import replace
+from urllib.parse import urlsplit
 
 import pytest
 from django.db.models import F
@@ -21,7 +22,7 @@ from parishkit.stewardship.accounts.sessions import revocation_epoch
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.deployment import DeploymentProfile
 
-from .auth_builders import signed_in
+from .auth_builders import signed_in, start
 from .automation_builders import two_admins  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -353,3 +354,46 @@ def test_google_sign_in_is_unchanged_under_local_urls(settings, auth_service, go
     assert page.status_code == 200
     assert b"Sign in with Google" not in page.content
     assert b"not available in the local laptop environment" in page.content
+
+
+def test_local_signs_in_with_a_real_google_client_on_localhost_only(
+    local, settings, google
+):
+    """With a real OAuth client (#1399) LOCAL runs Production's Google sign-in.
+
+    The login page offers Google beside the test sign-in, the redirect URI
+    is the localhost origin's, the Admin user list still decides who gets in,
+    and a token issued for another client (say Production's) is refused.
+    """
+    settings.STEWARDSHIP_GOOGLE_SIGN_IN = True
+    claims, _ = google
+    page = browser().get("/admin/login")
+    assert b"Sign in with Google" in page.content
+    assert b"stewardship-local.sh sign-in" in page.content
+
+    def sign_in():
+        """Run the Google sign-in from a LOCAL browser; return the callback."""
+        client = browser()
+        query = start(client)
+        redirect = urlsplit(query["redirect_uri"][0])
+        assert (redirect.netloc, redirect.path) == (HOST, "/admin/oauth/callback")
+        return client.get(
+            "/admin/oauth/callback",
+            {"code": "synthetic-code", "state": query["state"][0]},
+        )
+
+    # Someone who is not an Admin user is refused, as in Production.
+    claims["email"] = "stranger@example.org"
+    assert sign_in().status_code == 403
+    assert PortalSession.objects.count() == 0
+    # A token issued for another client is refused by its audience.
+    claims["email"] = EMAIL
+    settings.SOCIALACCOUNT_PROVIDERS["google"]["APPS"][0]["client_id"] = "other"
+    assert sign_in().status_code == 403
+    assert PortalSession.objects.count() == 0
+    settings.SOCIALACCOUNT_PROVIDERS["google"]["APPS"][0]["client_id"] = (
+        "synthetic-client"
+    )
+    response = sign_in()
+    assert (response.status_code, response["Location"]) == (302, "/admin/")
+    assert PortalUser.objects.get().google_subject == "synthetic-google-subject"

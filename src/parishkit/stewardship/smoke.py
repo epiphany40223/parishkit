@@ -257,11 +257,17 @@ def _slack_post(token, channel):
 
 
 def check_google_oauth(configuration):
-    """Validate the client document's shape and name the redirect URI to register."""
-    from .runtime_web import parse_google_client
+    """Validate the client document as web would and name the redirect URI.
 
-    parse_google_client(
-        _credential(configuration, "google_oauth"), profile=configuration.profile
+    The same admission web applies at start, including the fake-clock rule
+    for a real client in LOCAL (#1399), so a refusal shows before a restart.
+    """
+    from .runtime_web import admit_google_clock, parse_google_client
+
+    admit_google_clock(
+        parse_google_client(
+            _credential(configuration, "google_oauth"), profile=configuration.profile
+        )
     )
     return {
         "credential": "valid",
@@ -429,6 +435,12 @@ def execute_smoke(args):
             # A contact round trip interrupted after a write: its value-free
             # partial result says whether the original was put back.
             print(json.dumps({"target": args.target, **partial}, sort_keys=True))
+        from .runtime_web import GoogleClockRefused
+
+        if isinstance(error, GoogleClockRefused):
+            # Fixed text with nothing from the client document (#1399).
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
         print(
             "ERROR: smoke check refused or failed; check the target, the "
             "consumer's credential mount and the operator options",

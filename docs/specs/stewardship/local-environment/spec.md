@@ -285,14 +285,50 @@ Production in either direction.
 - **Smoke tools.** `pk-stewardship smoke` (see the
   [smoke tools guide](../../../guides/stewardship-smoke-tools.md)) runs in
   LOCAL exactly as in Production, against whatever is installed: the fake
-  ParishSoft, the mail catcher, the sentinel OAuth client and a test Slack
-  token. It sends no mail: a `--send-to` needs a Google service account,
-  which LOCAL still refuses. A Slack `--channel-id ... --send` posts the one
+  ParishSoft, the mail catcher, the sentinel or a real OAuth client and a
+  test Slack token. It sends no mail: a `--send-to` needs a Google service
+  account, which LOCAL still refuses. A Slack `--channel-id ... --send` posts the one
   fixed smoke message to the named channel, as in Production.
-- **Google sign-in.** In LOCAL the `google_oauth` installer accepts only a
-  sentinel client document that other profiles refuse, and the LOCAL login page
-  hides Google sign-in. The sentinel holds no real client ID or secret. Admin
-  sign-in in LOCAL is the [local test sign-in](#local-test-sign-in).
+- **Google sign-in.** `up` installs a sentinel `google_oauth` client
+  document (`runtime_web.LOCAL_OAUTH_SENTINEL`) that holds no real client ID
+  or secret. Every other profile refuses it, so it can never reach
+  Production. With the sentinel, LOCAL's login page and fresh-authentication
+  prompt offer only the [local test sign-in](#local-test-sign-in). A
+  developer MAY replace the sentinel with a real Google OAuth client
+  (#1399), which LOCAL admits by the same parser as every other profile.
+  That client MUST be a separate one whose only authorized redirect URI is
+  `https://localhost:8443/admin/oauth/callback`, never Production's. The
+  sign-in pages then offer Google beside the test sign-in. What keeps such a
+  sign-in on LOCAL:
+  - the redirect URI is built from the request, which the canonical-host
+    check holds to the configured origin's host, and the loader admits only
+    `https://localhost:8443` as LOCAL's origin, so the sign-in only ever
+    returns to the laptop; Google refuses a redirect URI that the client
+    does not list, so Production's client cannot complete a LOCAL sign-in;
+  - the ID token's audience is the client ID, so a token issued for one
+    deployment's client is refused by another;
+  - session and CSRF cookies name no domain, so a browser sends LOCAL's only
+    to `localhost`, and each deployment has its own signing key and session
+    table;
+  - sign-in goes through the same `complete_identity` core as in Production,
+    so only the deployment's
+    [Admin portal users](../admin-portal/spec.md#portal-user-management) get
+    in, with their roles and the same step-up rules.
+
+  A real client needs the normal [clock](#fake-clock). Google sign-in checks
+  the ID token's `iat` and `exp` and Google's TLS certificates against the
+  process's clock, which the fake clock holds in the past. Web therefore
+  refuses to start (`runtime_web.admit_google_clock`) when the installed
+  client is not the sentinel and the process runs under libfaketime (its
+  `FAKETIME_*` variables are set). This refusal's fixed text, which holds
+  nothing from the client document, is the one admission failure web start
+  shows as it is instead of its generic line, and the `google_oauth` smoke
+  check prints it too; the seeder's one-shot containers refuse the same
+  way. The operator script refuses first: every Compose selection under
+  the fake-clock override refuses a client document other than the
+  sentinel before anything starts. The sentinel runs under either clock.
+  The rule is profile-independent and inert in Production, which never
+  runs under libfaketime.
 - **ParishSoft.** The deployment setting `parishsoft_base_url`
   (`PARISHKIT_STEWARDSHIP_PARISHSOFT_BASE_URL`) picks the one ParishSoft base
   URL a deployment reaches from exactly two values
@@ -341,10 +377,11 @@ Production in either direction.
   [topology](#topology-and-web-differences)), so the guarantees above rest on
   the code checks, enforced at install and at use, and not on the network.
   Until the later #1399 changes land, those checks keep mail on the mail
-  catcher and Google sign-in on the sentinel client, so the only real
-  providers a LOCAL deployment can reach are Slack, with a token the
-  developer installs, and ParishSoft's read endpoints, when the developer
-  chose the real API. A fast test lists each of those use-time checks and
+  catcher, so the only real providers a LOCAL deployment can reach are
+  Slack, with a token the developer installs, ParishSoft's read endpoints,
+  when the developer chose the real API, and Google sign-in, when the
+  developer installed a real localhost-only OAuth client (see Google
+  sign-in above). A fast test lists each of those use-time checks and
   asserts that LOCAL refuses its real provider, defaults to the fake
   ParishSoft and never writes to ParishSoft.
   Under the [fake clock](#fake-clock), which never runs ahead of real time, a
@@ -357,10 +394,11 @@ Production in either direction.
   accepts a ParishSoft certificate that expired within the offset (and
   refuses one issued within it, so reads fail as unavailable), so the guide
   recommends the normal clock for real-API runs and the host half warns
-  when the real API is rendered under the fake clock. Before a real Google key is
-  admitted in LOCAL, the
-  Google token assertion's timestamps and Google's TLS checks running on a
-  past clock MUST be dealt with.
+  when the real API is rendered under the fake clock. A real Google OAuth
+  client is refused under the fake clock outright (see Google sign-in
+  above). Before a real Google Workspace key is admitted in LOCAL, its
+  token assertion's timestamps and Google's TLS checks running on a past
+  clock MUST be dealt with in the same way.
 
 ## Mail catcher
 
@@ -1187,7 +1225,9 @@ under [production invariants](#production-invariants).
 
 ## Local test sign-in
 
-Because LOCAL has no Google sign-in, a local-only route signs an Admin in.
+LOCAL starts with no Google sign-in (the [sentinel](#safety-guarantees)
+OAuth client), so a local-only route signs an Admin in. It stays available
+when a real OAuth client is installed.
 
 - **Minting.** `pk-stewardship local-sign-in --config
   /opt/parishkit/config/services/web.yaml --email E`, run with
@@ -1228,7 +1268,8 @@ Because LOCAL has no Google sign-in, a local-only route signs an Admin in.
     works before setup completes and during restore review, when the
     developer needs it to reach the setup wizard. In LOCAL the login page
     and the fresh-authentication prompt describe the operator command
-    instead of offering Google; a new link opened in a signed-in browser
+    (with the sentinel, instead of offering Google; with a real client,
+    after it); a new link opened in a signed-in browser
     is a step-up of that session in place. The text each page puts around
     the prompt does not mention Google in LOCAL either
     ([#619](https://github.com/epiphany40223/parishkit/issues/619)); other
@@ -1776,9 +1817,14 @@ which refines the PR sequence in #476.
   and history onto the laptop. Real ParishSoft data is a different matter,
   read through the real API when the developer chooses it
   ([ParishSoft](#safety-guarantees), #1399).
-- **A second, real Google OAuth client** registered for `localhost`. Rejected:
-  it would put a real credential in a test environment and require Google
-  egress; the local test sign-in uses the same session path instead.
+- **A real Google OAuth client as LOCAL's only Admin sign-in**, registered
+  for `localhost`. Rejected as the default: every developer would need a
+  Google Cloud client before the first sign-in, and the fake clock, on
+  which every unseeded deployment runs, cannot check Google's tokens. The
+  local test sign-in uses the same session path and needs no client. Since
+  LOCAL gained Production's egress (#1399), a real localhost-only client is
+  allowed as an option beside it (see
+  [safety guarantees](#safety-guarantees)).
 - **The Phase 0 Compose scaffold.** Rejected for running the real application:
   it is HTTP-only with no proxy and does not exercise ingress, credential
   installers or ownership.

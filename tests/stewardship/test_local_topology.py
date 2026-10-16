@@ -474,9 +474,20 @@ def test_banner_flag_is_set_only_in_local(settings, profile):
         settings.STEWARDSHIP_DEPLOYMENT_PROFILE = profile.value
     context = branding_context.local_environment(RequestFactory().get("/"))
     if profile is DeploymentProfile.LOCAL:
-        assert context == {"local_environment": True, "local_real_parishsoft": False}
+        expected = {
+            "local_environment": True,
+            "local_real_parishsoft": False,
+            "google_sign_in": False,
+        }
+        assert context == expected
+        # A real OAuth client (#1399) makes LOCAL's sign-in pages offer Google.
+        settings.STEWARDSHIP_GOOGLE_SIGN_IN = True
+        context = branding_context.local_environment(RequestFactory().get("/"))
+        assert context == expected | {"google_sign_in": True}
     else:
         assert context == {}
+        settings.STEWARDSHIP_GOOGLE_SIGN_IN = True
+        assert branding_context.local_environment(RequestFactory().get("/")) == {}
 
 
 @pytest.mark.parametrize(
@@ -492,7 +503,11 @@ def test_banner_names_the_parishsoft_the_deployment_reads(settings, choice, real
         value = DEFAULT_API_BASE_URL if choice == "real" else choice
         settings.STEWARDSHIP_PARISHSOFT_BASE_URL = value
     context = branding_context.local_environment(RequestFactory().get("/"))
-    assert context == {"local_environment": True, "local_real_parishsoft": real}
+    assert context == {
+        "local_environment": True,
+        "local_real_parishsoft": real,
+        "google_sign_in": False,
+    }
     shown = render_to_string("stewardship/base.html", context)
     synthetic = "synthetic data, no real email and no real ParishSoft."
     read_only = "real ParishSoft data, read only, and no real email."
