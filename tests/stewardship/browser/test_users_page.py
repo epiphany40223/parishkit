@@ -488,9 +488,9 @@ def test_a_filled_name_is_cleared_when_the_address_has_none(page, component_orig
 
 
 def test_edit_review_waits_for_a_change(page, component_origin):
-    """Edit user's Review is unavailable until the Name or role changes (#921)."""
+    """Edit user's Save is unavailable until the Name or role changes (#921)."""
     page.goto(component_origin + EDIT)
-    review = page.get_by_role("button", name="Review")
+    review = page.get_by_role("button", name="Save", exact=True)
     hint = page.locator("[data-unchanged-hint]")
     eventually(page, REVIEW_HELD)
     visible(hint)

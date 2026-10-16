@@ -16,6 +16,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 
 from parishkit.stewardship.accounts.user_changes import plan_changes
+from parishkit.stewardship.accounts.user_views import review_lines
 
 from .policy_factory import user
 
@@ -160,7 +161,7 @@ def review_fragment():
     )
     return render_to_string(
         "stewardship/user-review.html",
-        {"change": change, "after_role": "Staff", "preview": "signed"},
+        {"change": change, "lines": [], "preview": "signed"},
     )
 
 
@@ -194,20 +195,40 @@ def test_new_user_confirms_without_repeating_the_form():
     source = (TEMPLATES / "user-entry.html").read_text(encoding="utf-8")
     assert 'translate "Add the user" %}{% endbutton %}' in source
     assert 'translate "Add this user?" as review_title' in source
-    assert 'describedby=new|yesno:"user-review-summary,"' in source
+    assert 'describedby="user-review-summary" %}' in source
 
 
-def test_edit_user_still_reviews_each_changed_value():
-    """Edit user (class A2, a later part of #1356) keeps Now and After."""
-    records = [user(), user("ann@example.org", "staff", "Smith, Ann")]
+def test_edit_user_is_a_compact_review_of_each_changed_field():
+    """Edit user (class A2, #1356): one "Field: old → new" line per changed
+    field, the lines describing the dialog; no table and no email heading.
+    The Administrator removal warning stays, and an unchanged field has no
+    line."""
+    records = [user(), user("ann@example.org", "administrator", "Smith, Ann")]
     (change,), _patch = plan_changes(
         records, [{"id": records[1]["id"], "name": "Jones, Ann", "role": "staff"}]
     )
+    assert review_lines(change) == [
+        {"label": "Name", "before": "Smith, Ann", "after": "Jones, Ann"},
+        {"label": "Role", "before": "Administrator", "after": "Staff"},
+    ]
     text = render_to_string(
-        "stewardship/user-review.html", {"change": change, "preview": "signed"}
+        "stewardship/user-review.html",
+        {"change": change, "lines": review_lines(change), "preview": "signed"},
     )
+    assert '<ul class="compact-review" id="user-review-summary">' in text
     assert "Smith, Ann" in text and "Jones, Ann" in text
-    assert "user-review-summary" not in text
+    assert "<table" not in text and "<h3" not in text and "ann@example.org" not in text
+    assert "no longer an Administrator" in text
+    assert "Nothing changes until" not in text
+    (renamed,), _patch = plan_changes(
+        records,
+        [{"id": records[1]["id"], "name": "Jones, Ann", "role": "administrator"}],
+    )
+    assert [line["label"] for line in review_lines(renamed)] == ["Name"]
+    source = (TEMPLATES / "user-entry.html").read_text(encoding="utf-8")
+    assert 'translate "Save" %}{% endbutton %}' in source
+    assert 'translate "Save this user change?" as review_title' in source
+    assert 'describedby="user-review-summary" %}' in source
 
 
 def test_the_leader_review_offers_apply_only_with_someone_to_import():
@@ -485,3 +506,147 @@ def test_apply_may_post_another_action_and_a_drawn_refusal_is_shown():
     # Redrawn from Apply's answer itself, without reading the page again.
     assert 'data-review-redraw="body"' in dialog(redraw_body=True)
     assert 'dialog.dataset.reviewRedraw === "body"' in script
+
+
+def test_the_compact_review_draws_one_line_per_changed_field():
+    """A compact review (#1356, class A2): "Field: old → new" per change, the
+    arrow hidden from screen readers, which hear "old, becomes new"; a line
+    with no old value draws the new one alone; values are escaped."""
+    text = render_to_string(
+        "stewardship/components/compact-review.html",
+        {
+            "summary_id": "thing-summary",
+            "changes": [
+                {"label": "Role", "before": "Staff", "after": "Ministry leader"},
+                {"label": "Added", "before": None, "after": "<b>Stock</b>"},
+            ],
+        },
+    )
+    assert text.startswith('<ul class="compact-review" id="thing-summary">')
+    assert (
+        '<li><span class="compact-review-field">Role:</span> Staff '
+        '<span aria-hidden="true">→</span><span class="visually-hidden">, '
+        "becomes</span> Ministry leader</li>"
+    ) in text
+    assert (
+        '<li><span class="compact-review-field">Added:</span> '
+        "&lt;b&gt;Stock&lt;/b&gt;</li>"
+    ) in text
+    assert text.count("<li>") == 2 and "<table" not in text
+
+
+def share_option(identity, label, free_text=False):
+    """One saved share option, as the campaign's values hold it."""
+    return {"id": identity, "label": label, "free_text": free_text}
+
+
+def test_share_options_mark_only_what_changed():
+    """Share options' compact review (#1356) has one line per real change,
+    in the new order then the removed options: an addition, a relabel, a
+    free-text change and a move, but no line for the options the move or
+    the removal only shifted."""
+    from parishkit.stewardship.accounts.option_editing import option_changes
+
+    before = [
+        share_option("a", "Check"),
+        share_option("b", "Online"),
+        share_option("c", "Stock"),
+        share_option("d", "IRA"),
+        share_option("e", "Other", True),
+        share_option("f", "Cash"),
+    ]
+    after = [
+        share_option("d", "IRA gift"),
+        share_option("a", "Check"),
+        share_option("c", "Stock"),
+        share_option("e", "Other"),
+        share_option("f", "Cash"),
+        share_option("n", "Envelopes", True),
+    ]
+    assert [
+        (str(line["label"]), line["before"], str(line["after"]))
+        for line in option_changes(before, after)
+    ] == [
+        ("Label", "IRA", "IRA gift"),
+        ("Position of “IRA gift”", "4", "1"),
+        ("Free-text response for “Other”", "Yes", "No"),
+        ("Added", None, "Envelopes (with a free-text response)"),
+        ("Removed", None, "Online"),
+    ]
+    assert option_changes(before, before) == []
+    # Deleting the first option shifts every other one, but moves none.
+    assert [str(line["label"]) for line in option_changes(before, before[1:])] == [
+        "Removed"
+    ]
+    text = render_to_string(
+        "stewardship/share-options-review.html",
+        {"review": {"changes": option_changes(before, after), "preview": "signed"}},
+    )
+    assert '<ul class="compact-review" id="share-review-summary">' in text
+    assert text.count("<li>") == 5 and "<ol>" not in text
+    assert 'name="preview" value="signed" data-review-preview' in text
+    page = (TEMPLATES / "share-settings.html").read_text()
+    assert 'describedby="share-review-summary" %}' in page
+
+
+def test_share_option_reorders_name_the_first_longest_run_as_kept():
+    """Ties between equally long kept runs go to the first found (#1356):
+    swapping two neighbours names only the later-listed one as moved, and
+    swapping two blocks names the block that now comes last."""
+    from parishkit.stewardship.accounts.option_editing import option_changes
+
+    def moves(order, new_order):
+        """The review's lines, as (label, before, after), for a reorder."""
+        options = {key: share_option(key, key.upper()) for key in order}
+        return [
+            (str(line["label"]), line["before"], str(line["after"]))
+            for line in option_changes(
+                [options[key] for key in order], [options[key] for key in new_order]
+            )
+        ]
+
+    assert moves("abc", "bac") == [("Position of “A”", "1", "2")]
+    assert moves("abcd", "cdab") == [
+        ("Position of “A”", "1", "3"),
+        ("Position of “B”", "2", "4"),
+    ]
+
+
+def test_a_small_campaign_settings_change_is_a_compact_review():
+    """Campaign settings (#1356): one or two short settings changed is a
+    compact review, which names its own question and description and keeps
+    the change's notes; more settings, or a long one, keep the full table
+    under the dialog's own title."""
+    from parishkit.stewardship.accounts.campaign_views import _compact
+
+    assert _compact({"name": "Renamed"})
+    assert _compact({"name": "Renamed", "modules": ["census"]})
+    assert not _compact({"name": "A", "modules": ["census"], "end_date": "x"})
+    for key in ("ministry_duids", "financial", "share_options"):
+        assert not _compact({key: []})
+    changes = [{"label": "Campaign name", "before": "Old", "after": "New"}]
+
+    def fragment(compact, notes=()):
+        """The review fragment as campaign_views._review draws it."""
+        return render_to_string(
+            "stewardship/campaign-settings-review.html",
+            {
+                "review": {
+                    "changes": changes,
+                    "notes": list(notes),
+                    "compact": compact,
+                    "preview": "signed",
+                }
+            },
+        )
+
+    compact = fragment(True, ["Share options go."])
+    assert 'data-review-title="Save this change?"' in compact
+    assert 'data-review-describedby="campaign-review-summary"' in compact
+    assert '<ul class="compact-review" id="campaign-review-summary">' in compact
+    assert "<table" not in compact and "Nothing changes until" not in compact
+    assert '<p class="notice" role="note">Share options go.</p>' in compact
+    assert 'name="preview" value="signed" data-review-preview' in compact
+    full = fragment(False)
+    assert "data-review-title" not in full and "campaign-review-summary" not in full
+    assert "<table" in full and "Nothing changes until you choose Apply." in full

@@ -516,6 +516,26 @@ def _refusal_message(refused):
     }.get(refused.code, refused.message)
 
 
+def review_lines(change):
+    """Edit user's compact review (#1356): one line per changed field.
+
+    Each is the field's label with its old and new value in words, which
+    components/compact-review.html draws as "Field: old → new". New user's
+    confirmation draws none (``change.before`` is None).
+    """
+    if change.before is None:
+        return []
+    fields = {
+        "name": (_("Name"), lambda values: values["name"]),
+        "role": (_("Role"), lambda values: ROLE_LABELS.get(values["role"])),
+    }
+    return [
+        {"label": label, "before": shown(change.before), "after": shown(change.after)}
+        for key, (label, shown) in fields.items()
+        if key in change.changed
+    ]
+
+
 def _review(request, service, actor, configuration, changes, patch):
     """The signed review of one user change, for the review dialog.
 
@@ -534,8 +554,7 @@ def _review(request, service, actor, configuration, changes, patch):
         "stewardship/user-review.html",
         {
             "change": change,
-            "before_role": ROLE_LABELS.get((change.before or {}).get("role")),
-            "after_role": ROLE_LABELS.get((change.after or {}).get("role")),
+            "lines": review_lines(change),
             "preview": sign_preview(
                 actor=actor, configuration=configuration, patch=patch, salt=SALT
             ),

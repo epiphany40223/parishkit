@@ -40,7 +40,7 @@ REVIEW_TOP = (
     ".getBoundingClientRect().top + window.scrollY"
 )
 SAVED = "2054-10-31"
-UNCHANGED = "Change a setting to review it."
+UNCHANGED = "Change a setting to save it."
 EMPTY = "Choose the new end date first."
 CHECKED = "/campaign/settings/end-date-check/"
 COULD_NOT = (
@@ -118,7 +118,7 @@ def test_a_date_that_cannot_be_reviewed_says_why_at_the_field(
     date the check clears takes it all back."""
     checked = opened(page, component_origin)
     field = end_field(page)
-    review = page.get_by_role("button", name="Review changes")
+    review = page.get_by_role("button", name="Save", exact=True)
     error = page.locator("#id_end_date_error")
     top = page.evaluate(REVIEW_TOP)
     field.fill(typed)
@@ -150,7 +150,7 @@ def test_the_saved_date_again_needs_no_check(page, component_origin):
     unchanged, without asking the server."""
     checked = opened(page, component_origin)
     field = end_field(page)
-    review = page.get_by_role("button", name="Review changes")
+    review = page.get_by_role("button", name="Save", exact=True)
     field.fill("2026-10-05")
     visible(page.locator("#id_end_date_error"))
     field.fill(SAVED)
@@ -181,7 +181,7 @@ def test_a_check_that_cannot_answer_keeps_review_held(
     failing = {"2054-10-20": status}
     checked = opened(page, component_origin, failing=failing)
     field = end_field(page)
-    review = page.get_by_role("button", name="Review changes")
+    review = page.get_by_role("button", name="Save", exact=True)
     error = page.locator("#id_end_date_error")
     hint = page.locator("#settings-complete-hint")
     top = page.evaluate(REVIEW_TOP)
@@ -239,7 +239,7 @@ def test_a_new_date_takes_the_old_error_away_before_its_check(page, component_or
     assert PASSED not in error.inner_text()
     assert field.get_attribute("aria-invalid") != "true"
     assert hint.inner_text() == COULD_NOT
-    assert page.get_by_role("button", name="Review changes").is_disabled()
+    assert page.get_by_role("button", name="Save", exact=True).is_disabled()
 
 
 def waited(page, held):
@@ -259,7 +259,7 @@ def test_a_late_answer_for_an_earlier_date_is_ignored(page, component_origin):
     held = []
     checked = opened(page, component_origin, held=held)
     field = end_field(page)
-    review = page.get_by_role("button", name="Review changes")
+    review = page.get_by_role("button", name="Save", exact=True)
     error = page.locator("#id_end_date_error")
     # The clear date's check waits; a past date is typed and answered first.
     field.fill("2054-11-15")
@@ -293,7 +293,7 @@ def test_the_server_still_refuses_a_review_the_check_cleared(page, component_ori
     answer_reviews(page, component_origin, LIVE_REFUSED, 400, address=LIVE)
     opened(page, component_origin)
     end_field(page).fill("2054-11-15")
-    review = page.get_by_role("button", name="Review changes")
+    review = page.get_by_role("button", name="Save", exact=True)
     enabled(review)
     review.click()
     error = page.locator("#id_end_date_error")

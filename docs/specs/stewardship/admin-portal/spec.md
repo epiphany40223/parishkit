@@ -2287,7 +2287,12 @@ The campaign editor includes:
 - financial period and explicit current/comparison fund multi-select;
 - campaign Ministry multi-select, initially all active Ministries;
 - Ministry leader roles (see [Ministry leader roles](#ministry-leader-roles));
-- editable/reorderable share options with stable IDs and placeholders;
+- editable/reorderable share options with stable IDs and placeholders, on
+  Share options, whose **Save** opens a
+  [compact review](../ui-conventions/spec.md#review-dialog) (#1356) that
+  marks only what changed, one line each (an option added, removed,
+  relabelled, given or losing its free-text response, or moved, with its old
+  and new position), never both whole lists;
 - initial and repeatable reminder date/time, subject, and templates;
 - daily/weekly digest local schedules;
 - additional-information toggle;
@@ -2418,12 +2423,20 @@ every campaign state. There is no second, read-only copy of the settings.
   alone holds says it can change once that work finishes. A disabled
   setting is not sent, and the server keeps its saved value whatever is
   posted, so a locked setting never changes through this page.
-- **One Review changes.** The page has exactly one **Review changes**,
+- **One Save.** The page has exactly one **Save** (its Review),
   unavailable until the form holds a real change, with its hint after it
   ([review dialog](../ui-conventions/spec.md#review-dialog)); with nothing
   open (a closed campaign) the hint says that nothing on the page can
   change now and that each greyed-out setting's "i" says why. Review and
-  Apply happen in the review dialog, titled "Review campaign settings".
+  Apply happen in the review dialog, titled "Review campaign settings". A
+  change of one or two short settings (not the Ministries, the financial
+  periods and funds or the share options) is a
+  [compact review](../ui-conventions/spec.md#review-dialog) instead
+  (#1356), titled "Save this change?": one line per changed setting, such
+  as "Campaign name: old → new", with the change's notes (the share
+  options a removed Financial stewardship discards). Every other change,
+  including a live end date with its re-planned digests and a live Ministry
+  change, keeps the full review below.
   Once the change is applied, the form is redrawn in place at the new
   version and the status line under it says "Campaign settings changed."
   and when.
@@ -4514,14 +4527,19 @@ fields:
   the reason in a line under the roles that is reserved while empty (#563);
   the server refuses that change anyway.
 
-On Edit, **Review** shows each changed value, before and after. On New, the
+On Edit, the button reads **Save** and its dialog, "Save this user change?",
+is a [compact review](../ui-conventions/spec.md#review-dialog) (#1356): one
+line per changed field, such as "Role: Staff → Ministry leader", since the
+old value is the one thing the page no longer shows (the Email never
+changes, and the page shows it), with the warning when the change makes the
+person an Administrator or no longer one. On New, the
 button reads **Add the user** and its dialog, "Add this user?", is a
 [confirmation](../ui-conventions/spec.md#review-dialog) (#1356), since every
 value is on the form behind it: one sentence says the user is added and can
 then sign in with the account of that address, and the dialog adds only the
 warning when the new user is an Administrator. **Apply** records one
 configuration change. Review and Apply follow the [review dialog](../ui-conventions/spec.md#review-dialog):
-Edit's Review is unavailable until a value changes, and once the change is applied
+Edit's Save is unavailable until a value changes, and once the change is applied
 the reader returns to Users, whose status line says what was applied. An unknown
 `<user>` (for example, one deleted meanwhile) is refused, even from an old
 link.

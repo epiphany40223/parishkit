@@ -28,7 +28,7 @@ MODULE_HINT = (
 FINANCIAL_HINT = "Fill in both financial periods and their funds."
 OVERLAP_HINT = "Confirm the overlap with the campaign dates, or change the dates."
 SLACK_HINT = "Enter the Slack channel ID, or untick Enable Slack notifications."
-UNCHANGED_HINT = "Change a setting to review it."
+UNCHANGED_HINT = "Change a setting to save it."
 END_HINT = "Choose a campaign end date after its start date."
 
 
@@ -86,7 +86,7 @@ def test_campaign_settings_waits_for_a_module_and_the_financial_fields(
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
     page.goto(component_origin + "/campaign-settings")
-    review = page.get_by_role("button", name="Review changes")
+    review = page.get_by_role("button", name="Save", exact=True)
     hint = page.locator("#settings-complete-hint")
     census = page.locator("#id_census")
     financial = page.locator("#id_financial_enabled")
@@ -136,7 +136,7 @@ def test_campaign_settings_waits_for_a_module_and_the_financial_fields(
 def test_campaign_settings_rechecks_restored_modules(page, component_origin):
     """A module tick restored from history, without an event, is counted."""
     page.goto(component_origin + "/campaign-settings")
-    review = page.get_by_role("button", name="Review changes")
+    review = page.get_by_role("button", name="Save", exact=True)
     hint = page.locator("#settings-complete-hint")
     # A real edit first, so restoring Census below makes Review available
     # again rather than leaving the saved settings unchanged (#921).
@@ -169,7 +169,7 @@ def test_campaign_settings_review_waits_for_a_change_and_completeness(
     page.on("pageerror", lambda error: failures.append(str(error)))
     # Saved with no module: unchanged and incomplete, so both gates hold.
     page.goto(component_origin + "/campaign-settings-no-module")
-    review = page.get_by_role("button", name="Review changes")
+    review = page.get_by_role("button", name="Save", exact=True)
     hint = page.locator("#settings-complete-hint")
     name = page.get_by_label("Campaign name")
     census = page.locator("#id_census")
@@ -209,7 +209,7 @@ def test_campaign_settings_waits_for_an_end_date_after_its_start(
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
     page.goto(component_origin + "/campaign-settings")
-    review = page.get_by_role("button", name="Review changes")
+    review = page.get_by_role("button", name="Save", exact=True)
     hint = page.locator("#settings-complete-hint")
     start = page.get_by_label("Campaign start date")
     end = page.get_by_label("Campaign end date")

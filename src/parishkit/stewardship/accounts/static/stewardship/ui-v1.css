@@ -1284,6 +1284,11 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .review-dialog .dialog-body { flex: 1 1 auto; min-height: 0; overflow: auto; margin-bottom: 1rem; }
 .review-dialog .dialog-body > :first-child { margin-top: 0; }
 .review-dialog [data-confirm-accept][data-recorded] { visibility: hidden; }
+/* A compact review (#1356, components/compact-review.html): one line per
+   changed field, "Field: old → new"; a long label or value wraps. */
+.compact-review { padding-left: 1.25rem; overflow-wrap: anywhere; }
+.compact-review li + li { margin-top: 0.25rem; }
+.compact-review-field { font-weight: 600; }
 .review-outcome { min-height: 1.6em; margin: .5rem 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* The Basic / Advanced mode toggle (#1121, components/editor-mode.html): a
    segmented pair of radios with a visible label, at the top of the editor.
