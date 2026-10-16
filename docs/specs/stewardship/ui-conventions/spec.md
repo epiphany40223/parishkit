@@ -723,7 +723,11 @@ never scrolls to show it (Administrator, pk-local review of
   redraw never moves a slot. Each slot ends with its own reserved status
   line, which its upload and its Remove this image name, so the line saying
   what was applied is in the slot where the change was made and the page
-  never jumps to it. Each upload form has
+  never jumps to it. A refused upload is said in that same line
+  ([field errors stay on the form](#review-dialog)), which keeps two
+  lines of space (three on a phone), so the whole reason for a file that
+  is no usable image wraps there and nothing moves when it appears; that
+  refusal names only what the slot takes, so it fits. Each upload form has
   an id, so a file chosen while the slots are redrawn is said not to be
   kept.
 - **Review dialog: Parish logos (#750).** Parish logos reviews in the
@@ -991,7 +995,9 @@ message, with the shared error border and error-coloured message of
 pages). An error that concerns two fields (a date and a time) marks both and
 shows its message once, after them. Where a page also shows the error
 summary, the summary links to the first marked field and takes focus, as
-every Admin refusal summary does (#592).
+every Admin refusal summary does (#592). A review dialog's pane with its own
+status line says the refusal in that line instead
+([field errors stay on the form](#review-dialog), #1410).
 
 Where a rule can be checked in the browser, the page checks it too, and
 shows its error at the field the same way. The browser's own checks (a
@@ -1138,7 +1144,13 @@ section says how every Review behaves.
   form (a required field, a value out of range) does not open the dialog: the
   form shows its error summary and marks each field, as the
   [field errors](#field-errors-and-live-checks) convention says, and becomes
-  editable again.
+  editable again. Where panes share one dialog and each pane has its own
+  status line (see After Apply below), the refusal is said in that pane's
+  line instead, which takes focus without scrolling, and the field is marked
+  and described by it: no summary is placed above the heading, since moving
+  focus there would jump the page to the top, and no error line is added
+  that would move the pane's controls. The line clears on the form's next
+  edit or accepted Review (#1410).
 - **Opening the dialog.** An accepted Review opens the dialog. Its title
   names the change ("Review Parish settings") and labels the dialog
   (`aria-labelledby`); focus moves to that title, never to Apply, so the

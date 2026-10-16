@@ -12,6 +12,9 @@ and the answers its forms post for are served by the fixture server:
   the view does, with the review dialog's fragment of the staged banner;
 - ``REFUSED_UPLOAD`` (the member icon's upload address) answers 400 with the
   page again, the slot's field error and its summary;
+- ``REFUSED_IMAGE`` (the welcome icon's upload address) answers 400 the same
+  way with the real refusal of a file that is not a usable image, the
+  longest common refusal a slot's status line shows;
 - a test answers Remove this image's Review with ``REMOVAL``, the review
   dialog's fragment of removing the welcome icon (``PAGE`` takes both that
   Review and Apply, which the fixture server cannot tell apart);
@@ -22,10 +25,12 @@ and the answers its forms post for are served by the fixture server:
 from types import SimpleNamespace as Value
 from uuid import UUID
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts.admin_editing import summary_errors
 from parishkit.stewardship.accounts.artwork_views import (
+    NOT_STATIC_IMAGE,
     SLOT_LABELS,
     UNAVAILABLE,
     ArtworkForm,
@@ -38,6 +43,7 @@ BUNDLE = UUID("75000000-0000-4000-8000-0000000000b1")
 REQUEST = UUID("75000000-0000-4000-8000-0000000000c1")
 UPLOAD = f"{PAGE}banner/"
 REFUSED_UPLOAD = f"{PAGE}member/"
+REFUSED_IMAGE = f"{PAGE}welcome/"
 REMOVAL = "/artwork-removal-review"
 APPLIED = "/artwork-applied"
 SETTLED = "/artwork-settled"
@@ -122,6 +128,20 @@ def components(context, admin):
     refused.is_valid()
     POSTS[UPLOAD] = (200, None, review("banner", banner))
     POSTS[REFUSED_UPLOAD] = (400, None, page({"welcome": welcome}, {"member": refused}))
+    # A file that reads as no usable image, refused at its field as the view
+    # refuses it.
+    unusable = ArtworkForm(
+        data={"base_digest": "a" * 64},
+        files={"image": SimpleUploadedFile("notes.png", b"not an image")},
+        auto_id="id_welcome_%s",
+    )
+    unusable.is_valid()
+    unusable.add_error("image", NOT_STATIC_IMAGE["section"])
+    POSTS[REFUSED_IMAGE] = (
+        400,
+        None,
+        page({"welcome": welcome}, {"welcome": unusable}),
+    )
     return {
         PAGE: ("text/html", page({"welcome": welcome})),
         REMOVAL: ("text/html", review("welcome", None)),
