@@ -99,8 +99,9 @@ Implementation tracking: [plans](../../plans/stewardship/README.md) and
   version was started.
 - **Campaign-local day**: midnight through the instant before the following
   midnight in the Campaign's IANA timezone snapshot. Timestamps remain UTC in
-  storage. The mutable Parish timezone is only the default for a new draft and
-  for non-campaign presentation.
+  storage. The mutable Parish timezone is used for non-campaign presentation
+  and is only the fallback zone for a new draft when the browser reports none
+  it can use.
 - **Admin**: a user with the Administrator role. Administrator implies every
   other portal role.
 - **Ministry leader**: the canonical name of the role called Minister in some
@@ -219,7 +220,9 @@ closing instant is rejected. Testing activity does not lock them.
 Administrators may continue editing content, future unsent schedules, and the
 end date. An `active` campaign never unlocks structural settings.
 
-A new draft copies the current Parish IANA timezone as its campaign timezone.
+A new draft's campaign timezone is any IANA zone the Administrator chooses
+when creating it, starting on the browser's zone (see the admin portal's
+[Create the campaign](admin-portal/spec.md#create-the-campaign), #1330).
 Admins may edit that campaign value while it remains `draft`. Production
 readiness resolves boundaries and future schedule instants from it and locks it
 for the remainder of the campaign's life, including closed, archived, and

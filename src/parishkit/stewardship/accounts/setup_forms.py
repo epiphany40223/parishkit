@@ -13,6 +13,7 @@ from parishkit.stewardship.web.sender_name_field import SenderNameField
 from . import setup_help
 from .parish_views import ParishForm
 from .policy_schema import normalized_email
+from .timezone_field import browser_default
 
 
 class SetupParishForm(ParishForm):
@@ -23,9 +24,19 @@ class SetupParishForm(ParishForm):
     date_format = None
 
     def __init__(self, *args, **kwargs):
-        """Explain each profile field in plain language."""
+        """Explain each profile field; a new zone starts on the browser's."""
         super().__init__(*args, **kwargs)
-        setup_help.apply(self, setup_help.PARISH, replace=True)
+        # No zone saved yet: start on the browser's zone, or on a blank
+        # required choice, never the list's first zone (Africa/Abidjan was
+        # stored on pk-local that way, #1330), and say so in the help. A saved
+        # zone is kept, with help that does not mention the browser.
+        fresh = not self.initial.get("timezone")
+        texts = setup_help.PARISH
+        if fresh:
+            texts = texts | {"timezone": setup_help.PARISH_NEW_TIMEZONE}
+        setup_help.apply(self, texts, replace=True)
+        if fresh:
+            browser_default(self, choose=True)
 
     def clean_timezone(self):
         """Store a new setup's zone by its canonical name (#1286).
