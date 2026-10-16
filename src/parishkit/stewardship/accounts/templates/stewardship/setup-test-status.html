@@ -1,0 +1,21 @@
+{% load i18n %}{% comment %}
+  A setup test page's live status region (Test email, Test Slack; #1354): the
+  recent tests and their states. The page and the passive status fragment
+  the page polls (?format=status, never renewing idle time) both draw it, so
+  live-status-v1.js swaps in the fresh list while a test is queued or being
+  sent (data-live-pending). Only the page passes status_url. The region is
+  not itself aria-live: data-live-announce names the newest test's state,
+  read out by the page's announcer only when it changes. Once no test is in
+  flight, the hidden follow-up link (data-live-follow, data-in-place-quiet)
+  re-reads the page's panel in place, so the acknowledgement box, Send
+  another test and Continue come from the server for the settled result,
+  without a reload and without moving focus. ``empty`` is the page's own
+  words for a list with no tests yet.
+{% endcomment %}<div class="setup-test-status" data-live-status="setup-test"{% if status_url %} data-live-url="{{ status_url }}"{% endif %} data-live-announce="{% if items %}{% blocktranslate trimmed with state=items.0.label %}Latest test: {{ state }}.{% endblocktranslate %}{% endif %}"{% if pending %} data-live-pending{% endif %}>
+<h2 id="setup-tests-heading" tabindex="-1" data-in-place-focus>{% translate "Recent tests" %}</h2>
+<ul>{% for item in items %}<li data-mail-id="{{ item.id }}">
+<time data-local-instant datetime="{{ item.created_at }}">{{ item.created_at }}</time> — <span data-mail-state>{{ item.label }}</span>
+{% if not item.current %}<span>{% translate "Earlier setup revision" %}</span>{% endif %}
+</li>{% empty %}<li>{{ empty }}</li>{% endfor %}</ul>
+{% if not pending %}<a hidden data-live-follow data-in-place data-in-place-quiet href="#setup-test-panel">{% translate "Show the settled test" %}</a>{% endif %}
+</div>

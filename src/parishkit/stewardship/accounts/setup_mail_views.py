@@ -31,6 +31,8 @@ LABELS = {
     "delivery_unknown": STATE_LABELS["delivery_unknown"],
     "cancelled": STATE_LABELS["cancelled"],
 }
+# The Recent tests list before any test (setup-test-status.html).
+EMPTY = _("No test has been requested yet. Select Send test email below to send one.")
 
 
 class SetupMailForm(forms.Form):
@@ -75,6 +77,38 @@ def _status_data(draft, *, model=SetupMailDelivery, labels=LABELS):
     }
 
 
+def page_status(form, data, empty, status_url):
+    """The test page's context for its form and live status region (#1354).
+
+    An earlier test whose delivery is unknown makes the acknowledgement box
+    required, so the browser and the acknowledgement gate both hold Send.
+    """
+    if data["unknown"]:
+        form.fields["acknowledge_unknown"].widget.attrs["required"] = True
+    return data | {
+        "form": form,
+        "tested": tested(data["items"]),
+        "empty": empty,
+        "status_url": status_url,
+    }
+
+
+def status_response(request, data, empty):
+    """Answer a passive status read: JSON, or the live region (?format=status).
+
+    The JSON stays for the runtime setup probe; the open page polls the
+    region (setup-test-status.html), which draws no form and no CSRF token.
+    """
+    query = request.GET.get("format")
+    if query is None:
+        return JsonResponse(data)
+    if query != "status":
+        raise ValueError("Invalid status format.")
+    return render(
+        request, "stewardship/setup-test-status.html", data | {"empty": empty}
+    )
+
+
 def tested(items):
     """Whether a test of the current draft revision was accepted (step done).
 
@@ -111,10 +145,13 @@ def setup_mail(request):
             request,
             "stewardship/setup-mail.html",
             _context(preview.draft, "mail_test")
+            | page_status(
+                form,
+                data,
+                EMPTY,
+                reverse("admin:setup_mail_status") + "?format=status",
+            )
             | {
-                "form": form,
-                **data,
-                "tested": tested(data["items"]),
                 "testing_recipient": preview.draft.sections["testing"][
                     "testing_recipient"
                 ],
@@ -131,14 +168,19 @@ def setup_mail(request):
 
 @require_http_methods(["GET", "HEAD"])
 def setup_mail_status(request):
-    """Passive original-owner polling never renews idle expiry or creates a request."""
+    """Passive original-owner polling never renews idle expiry or creates a request.
+
+    It admits exactly the sign-in the page admits (the original owner's
+    collecting draft, through ``_checked``), and answers JSON or the page's
+    live status region (``status_response``).
+    """
     try:
-        _closed(request, set())
+        _closed(request, set(), query={"format"})
         service = runtime()
         draft = view_draft(request, service)
         if draft is None or draft.status.state != "collecting":
             raise LookupError("Original setup mail status is unavailable.")
-        response = JsonResponse(_status_data(draft))
+        response = status_response(request, _status_data(draft), EMPTY)
         return _checked(request, service, response, draft)
     except ERRORS as error:
         return error_response(error)

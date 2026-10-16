@@ -1,0 +1,11 @@
+{% load i18n stewardship %}{% comment %}
+  Finishing setup's Cancel setup section, drawn by the page and carried by
+  each status update (setup-finishing-status.html), which drops it once
+  setup is complete. ``mirrored`` (the polled copy) leaves the CSRF token
+  empty; live-status-v1.js fills it from the page's own.
+{% endcomment %}<h2>{% translate "Cancel setup" %}</h2>
+<p>{% translate "This will permanently end your initial setup attempt. Your original Administrator access will be preserved. This cannot undo a completed setup." %}</p>
+<form method="post" action="{% url 'admin:setup_cancel' %}"><input type="hidden" name="csrfmiddlewaretoken" value="{% if not mirrored %}{{ csrf_token }}{% endif %}">
+<input type="hidden" name="attempt" value="{{ attempt.attempt_id }}">
+{% button type="submit" %}{% translate "Cancel initial setup" %}{% endbutton %}
+</form>

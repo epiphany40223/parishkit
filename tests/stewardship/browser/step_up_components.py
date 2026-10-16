@@ -98,7 +98,6 @@ PAGES = {
             "reauthenticate": True,
             "next": NEXT,
             "status_url": "/setup-status.json",
-            "elapsed_minutes": 2,
         },
         (
             "For security, installing credentials needs a Google sign-in from the"

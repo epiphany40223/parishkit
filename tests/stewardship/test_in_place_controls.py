@@ -151,6 +151,9 @@ HOSTED = {
     # The held-email table by send (#757): the Restore review page draws it
     # in its default region, Held emails in its own (region_id).
     "held-email-groups.html": ("restore-review.html", "held-emails.html"),
+    # A setup test page's live status region (#1354), whose follow-up re-reads
+    # the panel each test page draws around it.
+    "setup-test-status.html": ("setup-mail.html", "setup-notification.html"),
 }
 
 

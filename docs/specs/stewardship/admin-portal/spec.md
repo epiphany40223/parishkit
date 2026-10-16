@@ -186,6 +186,24 @@ with sending another test kept as a secondary button. Finish setup's primary
 action is "Check readiness and finish setup", which still requires accepted
 tests of the exact reviewed revision.
 
+The setup wizard's status pages (Test email, Test Slack, Load parish data and
+Finishing setup) [update themselves](#background-indicators) like every other
+Admin page that follows background work
+([#1354](https://github.com/epiphany40223/parishkit/issues/1354)). Each draws
+one live status region that it re-reads from a passive status fragment of
+its own status address (`?format=status`). The fragment admits exactly the
+sign-in its page admits and never renews idle time. On a test page, Send test
+is answered in place, and the Recent tests list is watched while a test is
+queued or being sent. Once the test settles, the page re-reads its panel in
+place, without moving focus, so Continue, Send another test or the
+unknown-delivery acknowledgement come from the server. No page offers a
+manual check or asks for a reload, and a page restored from the browser's
+history checks again by itself: a settled test page re-reads its panel in
+place on `pageshow`, so Continue never outlives a change to an earlier
+step's settings. A status read the server refuses (signed
+out, no longer allowed, or a bad request such as Slack being off) stops the
+watching instead of being retried.
+
 Acknowledgment checkboxes and incomplete forms hold their submit buttons as the
 [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates) describe.
 
@@ -255,8 +273,12 @@ it never silently reinterprets an existing source result.
 Wizard progress may be kept in the authenticated session and temporary staging
 tables/files, but no staged configuration is active until installer
 finalization. While the bootstrap Admin remains on the correlated source-load
-progress page, bounded authenticated polling renews only idle expiry under the
+progress page, a bounded authenticated renewal POST, sent every 15 seconds
+while the page is visible and the load is active, renews only idle expiry
+under the
 [session-policy exception](../architecture/spec.md#identity-and-session-security).
+It is separate from the page's passive live status reads, and stops at the
+nearest deadline or once a renewal says the load is no longer active.
 Wizard pages do not list the time limits. The shared
 [inactivity dialog](../architecture/spec.md#identity-and-session-security)
 warns five minutes before sign-out and lets the Admin stay signed in, which
@@ -266,8 +288,9 @@ as done, in progress (Ministry rosters as "N of M") or waiting, with its
 record count; the saved-record bar appears once saving starts. The worker
 encodes one step per finished collection in the task's two monotonic
 progress counters and the page decodes the task's append-only event history,
-so this needs no schema change. The page also shows the elapsed time and the
-loading worker's most recent heartbeat. On success it shows a prominent
+so this needs no schema change. The page also shows when the load started and the
+loading worker's most recent heartbeat, both counting forward between status
+reads; an open Technical details stays open as they update. On success it shows a prominent
 result with Continue to the next wizard page; on failure it says what to do
 next.
 
@@ -306,9 +329,10 @@ setup" page on the original login's cancellation route. It lists each step in
 plain language (each credential's installation, the server operator's
 acknowledgement with a count of acknowledged services, applying the
 configuration, the final parish data load, and completion) with the time since
-confirmation. It polls a passive status every 15 seconds while visible,
-reloading when a step changes and showing a Continue link to the Admin home once
-setup completes. A failed step explains what to do: a credential the provider
+confirmation. Each step changes in place while setup finishes. Once setup
+completes, the page shows a Continue link to the Admin home and drops Cancel
+setup. A failed step stops the updates. The step-up notice below appears or
+goes in place as it becomes needed. A failed step explains what to do: a credential the provider
 rejected repeats the integration page's per-provider advice on what to check,
 one that did not finish in time asks the operator to check the credential
 installers, and each says to cancel and start a new setup (#456). When a credential cannot
@@ -1286,8 +1310,9 @@ not affect presence semantics or carry form answers.
 
 Every Admin page that follows background work (configuration changes,
 credential replacement, Testing cleanup, Family link preparation, chosen-Family
-tests, background task details, integration key changes, report exports and
-[Family email progress](#family-email-progress))
+tests, background task details, integration key changes, report exports,
+[Family email progress](#family-email-progress) and the
+[setup wizard's status pages](#bootstrap-and-first-admin-wizard))
 updates itself: while the work is queued or running it shows a worded running
 indicator and re-reads its passive status, backing off from 2 to 10 seconds
 (or at the fixed pace a page asks for, 2 to 60 seconds) and pausing while the

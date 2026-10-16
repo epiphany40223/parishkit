@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from django import forms
 from django.core import signing
-from django.http import HttpResponseRedirect, JsonResponse
+from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
@@ -14,7 +14,7 @@ from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
 
 from .authentication import runtime
 from .setup_drafts import view_draft
-from .setup_mail_views import LABELS, _status_data, tested
+from .setup_mail_views import LABELS, _status_data, page_status, status_response
 from .setup_notification_models import SetupSlackDelivery
 from .setup_notifications import request_notification
 from .setup_preview import PREVIEW_SALT, prepare_preview
@@ -28,6 +28,8 @@ SLACK_LABELS = LABELS | {
     "queued": _("Awaiting Slack installer"),
     "submitting": _("Still sending (handing to Slack)"),
 }
+# The Recent tests list before any test (setup-test-status.html).
+EMPTY = _("No test has been requested yet. Select Send Slack test below to send one.")
 
 
 class SetupNotificationForm(forms.Form):
@@ -78,12 +80,13 @@ def setup_notification(request):
             request,
             "stewardship/setup-notification.html",
             _context(preview.draft, "slack_test")
-            | data
-            | {
-                "form": form,
-                "tested": tested(data["items"]),
-                "channel_id": preview.draft.sections["slack"]["channel_id"],
-            },
+            | page_status(
+                form,
+                data,
+                EMPTY,
+                reverse("admin:setup_notification_status") + "?format=status",
+            )
+            | {"channel_id": preview.draft.sections["slack"]["channel_id"]},
             status=status,
         )
         return _checked(request, service, response, preview.draft)
@@ -96,13 +99,21 @@ def setup_notification(request):
 
 @require_http_methods(["GET", "HEAD"])
 def setup_notification_status(request):
-    """Passive polling never extends original-session idle expiry or retries a send."""
+    """Passive polling never extends original-session idle expiry or retries a send.
+
+    It admits the sign-in the page admits, including the page's own rule
+    that Slack is on for this setup, and answers JSON or the page's live
+    status region (``status_response``).
+    """
     try:
-        _closed(request, set())
+        _closed(request, set(), query={"format"})
         service = runtime()
         draft = view_draft(request, service)
         if draft is None or draft.status.state != "collecting":
             raise LookupError("Original setup notification status is unavailable.")
-        return _checked(request, service, JsonResponse(_data(draft)), draft)
+        if not draft.sections.get("slack", {}).get("enabled"):
+            raise ValueError("Slack is disabled for this setup.")
+        response = status_response(request, _data(draft), EMPTY)
+        return _checked(request, service, response, draft)
     except ERRORS as error:
         return error_response(error)
