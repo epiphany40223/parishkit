@@ -315,7 +315,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
 /* A card inside a card is a flat inset rather than a second floating layer. */
 .panel .panel { background: var(--paper-soft); box-shadow: none; }
 .empty-state { text-align: center; background: transparent; border-style: dashed; border-color: var(--control-border); box-shadow: none; color: var(--muted); }
-/* Report stat tiles (the response dashboard): a count per tile, wrapping. */
+/* Report stat tiles (the response dashboard, Home's Family participation): a count per tile, wrapping. */
 .stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .75rem; list-style: none; margin: 0 0 1.25rem; padding: 0; }
 .stat-tile { display: flex; flex-direction: column; gap: .2rem; padding: .85rem 1rem; border: 1px solid var(--border); border-radius: var(--radius-small); background: var(--paper-soft); }
 /* The Campaign comparison's Compare on day (#1018): a short day field with
@@ -338,6 +338,13 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
 .stat-label { font-weight: 600; }
 .stat-value { font-size: 1.75rem; font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; }
 .stat-detail { color: var(--muted); font-size: .875rem; }
+/* A tile's share bar (#720) sits at the tile's foot, so the bars of a row's tiles (stretched to one height) line up. */
+.stat-bar { display: block; margin-top: auto; padding-top: .35rem; }
+/* The empty track must read as the whole against the tile's --paper-soft:
+   the shared track token (about 1.3:1 alone) plus a --control-border edge
+   (above 3:1), so a 10% bar reads as a tenth of a bar, not a short line. */
+.stat-bar progress { display: block; background: var(--track); border: 1px solid var(--control-border); }
+.stat-bar progress::-webkit-progress-bar { background: var(--track); }
 /* A small set of links choosing one view of a page; the current one is marked. */
 .choice-links { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: .75rem; }
 .choice-links a { padding: .3rem .9rem; border: 1px solid var(--accent); border-radius: 999px; }

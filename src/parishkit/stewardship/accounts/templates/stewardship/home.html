@@ -56,9 +56,11 @@
   {% if dashboard.ministry_catalog %}{% include "stewardship/ministry-catalog-notice.html" with notice=dashboard.ministry_catalog %}{% endif %}
   {% if dashboard.families %}<section class="panel">
     <h2>{% translate "Family participation" %}</h2>
-    <p>{% translate "Active Families:" %} {{ dashboard.families.active|number }}</p>
-    <p>{% translate "Responses from Families who can use the Family form now:" %} {{ dashboard.families.participation|out_of }}</p>
-    <p>{% translate "All Families with a response (not counting Testing):" %} {{ dashboard.families.responded|number }}</p>
+    {# Tiles, visuals first (#720). Only the participation figure is a share, so only it has a bar, hidden from assistive technology because its text states the share; all Families with a response can include ones no longer active, so that count has none. #}{% with participation=dashboard.families.participation %}<ul class="stat-tiles" data-home-participation>
+      <li class="stat-tile"><span class="stat-label">{% translate "Active Families" %}</span> <span class="stat-value">{{ dashboard.families.active|number }}</span></li>
+      <li class="stat-tile"><span class="stat-label">{% translate "Responses from Families who can use the Family form now" %}</span> <span class="stat-value">{{ participation.numerator|number }}</span> <span class="stat-detail">{% blocktranslate with total=participation.denominator|number share=participation|percentage trimmed %}out of {{ total }} ({{ share }}){% endblocktranslate %}</span>{% if participation.denominator %}<span class="stat-bar" aria-hidden="true"><progress value="{{ participation.numerator }}" max="{{ participation.denominator }}"></progress></span>{% endif %}</li>
+      <li class="stat-tile"><span class="stat-label">{% translate "All Families with a response (not counting Testing)" %}</span> <span class="stat-value">{{ dashboard.families.responded|number }}</span></li>
+    </ul>{% endwith %}
     {% if configuration.mode == 'testing' %}<p>{% translate "Responses made while in Testing mode are not counted here." %}</p>{% endif %}
   </section>{% endif %}
   {% if dashboard.unreachable is not None %}<section class="panel" aria-labelledby="readiness-heading">

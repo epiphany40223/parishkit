@@ -266,6 +266,11 @@ A chart's caption never repeats figures its table, legend or drawn values
 already show; it keeps only what they don't, such as a scope note, and the
 chart keeps its accessible name and description
 ([chart engine](../reports/spec.md#chart-engine)).
+A stat tile that states a share may also draw it as a **share bar**: a plain
+progress bar at the tile's foot, so the bars of a row of tiles line up. Its
+exact figures are always printed in the tile, so it has no tooltip, and it is
+hidden from assistive technology, which reads the text instead
+([#720](https://github.com/epiphany40223/parishkit/issues/720)).
 
 ## Admin portal interaction
 

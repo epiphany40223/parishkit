@@ -674,14 +674,19 @@ only.
 
 `/admin/reports/responses/` shows the funnel of the current campaign at the
 database's current instant, labelled **Counted at**. Data comes first: a
-tile per [funnel stage](#funnel-stages) with its count and its share compared
-with Invited, the three figures reported beside the funnel, then the funnel
+tile per [funnel stage](#funnel-stages) with its count, its share compared
+with Invited and a [share bar](../ui-conventions/spec.md#charts) drawing that
+share ([#720](https://github.com/epiphany40223/parishkit/issues/720)), the
+three figures reported beside the funnel, then the funnel
 chart and the [activity chart](#response-activity-over-time) with its send
 markers, each with its summary and exact-values table. The explanation sits
 in the [About this page](../ui-conventions/spec.md#page-help) panel after the
 data. Each chart is named by its panel's heading rather than a title drawn
-inside it. Until an invitation has been delivered the tiles leave out their
-shares and the page says so in one sentence. A **Lists of Families** panel
+inside it. Invited's own bar is full, as the reference the others are read
+against, and a share past 100% (a Family can follow its link without a
+delivered invitation) fills its bar. Until an invitation has been delivered
+the tiles leave out their shares and bars and the page says so in one
+sentence. A **Lists of Families** panel
 links to the Families behind each count,
 with the number of Families on it (counted from the same read; the list of
 ParishSoft data to check has no number here, since counting it needs the
