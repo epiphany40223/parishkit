@@ -1147,32 +1147,61 @@ own checks that follow (principal, capability, object scope, mode; see
 [same checks as the page](#same-checks-as-the-page)) are part of the command,
 so a capability denial is a refusal after admission.
 
-- **Exit 1** (`denied`, `invalid`, `stale_version`, `not_available`), which
-  only happens after admission, writes the durable entry: `command`, the
-  catalog name, in place of `route`, with `codes`, `fields` (the names in
-  `error.fields`, never their values) and `reason`. Its level follows the
-  reason, as on the page: `denied` is WARNING, except
-  `FreshAuthenticationRequired`, which has reason
+- **Exit 1** (`denied`, `invalid`, `stale_version`, `not_available`) writes
+  the durable entry once the session's Administrator is known: `command`,
+  the catalog name, in place of `route`, with `codes`, `fields` and
+  `reason`. Its level follows the reason, as on the page: `denied` is
+  WARNING, except `FreshAuthenticationRequired`, which has reason
   `fresh_authentication_required` and is INFO; `invalid`, `stale_version`
   and `not_available` are INFO unless their reason is a server-state one.
-- **Exit 2** happens before any command runs, so it never writes a durable
-  entry. A usage error is found while the arguments are parsed, before
-  admission, and `configuration` and `credential_mismatch` are not input.
+  The values are found as the page finds them. `reason` is the refusal's
+  own closed reason (`web.refusals.reason_of`), else `unexpected_fields`
+  when a problem names a key or id the caller sent that the command does
+  not have, else `unclassified` with its `exception_class`. `codes` is the
+  error's code, then each field problem's code. `mode` is the global mode.
+  A scope denial (a read-only session running a full-scope command) names
+  the session's Administrator too. An exit-1 refusal before the
+  Administrator is known (a command with no session, or one refused
+  before admission) has its line only.
+- **`fields` is an allow-list.** A name is recorded only when the command
+  marked its problem with a server-owned name where it raised it: a page
+  form's own field, as `window-start_date`, `schedules-time` or
+  `campaign-name`, never the row's id or the change's label that
+  `error.fields` shows. Any other problem gives its code only, so a key,
+  a schedule or file ID or a workbook sheet name the caller sent is never
+  recorded. A problem about a key or id the command does not have (a
+  member that is not a Campaign settings, parish profile or integration
+  settings field, or a schedule id no saved schedule has) is counted in
+  `unexpected_count` with reason `unexpected_fields`, as the page counts
+  submitted names its form does not have, and never named.
+- **Exit 2** never writes a durable entry, wherever it is raised (while
+  the arguments are parsed, or by a command's own argument checks after
+  admission): a usage error is the command line's own check, not the
+  page's refusal of input, and `configuration` and `credential_mismatch`
+  are not input.
 
 Every exit-1 and exit-2 refusal first writes one structured
 `admin_input_refused` line to standard error, with the same allow-listed
-keys: exit 1 at the entry's level; exit 2 with reason `usage` (INFO),
-`configuration` or `credential_mismatch` (WARNING), never the arguments.
-A line before admission names no actor. Other exits are not input
-refusals and are not recorded as one.
+keys: exit 1 at the entry's level, naming the actor when one is known,
+even when the durable write cannot be made; exit 2 with reason `usage`
+(INFO), `configuration` or `credential_mismatch` (WARNING), never the
+arguments and never an actor, with `command` when the refusal comes from
+the command's run (not from the argument checks before it, whose document
+names no command either). Other exits are not input refusals and are not
+recorded as one. A refused automation session (exit 5) is recorded by
+`automation_session_refused`
+([audit attribution](#audit-attribution)), not by
+this entry.
 
 The actor is the session's Administrator, as for
 [audit attribution](#audit-attribution), and the correlation is the
 invocation's. The entry is written on the same kind of private
 short-lived connection the failure entry above uses, opened after the
 command's own connections are closed, so the process still holds one
-connection at a time. The failure entry's own rules are unchanged: it
-still names no actor.
+connection at a time; the mode is read before they are closed. The lock,
+the count and the insert run in one transaction on that connection, with
+the page's 2-second statement and 1-second lock limits. The failure
+entry's own rules are unchanged: it still names no actor.
 
 ## Authorization, confirmation and audit
 

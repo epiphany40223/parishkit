@@ -200,7 +200,7 @@ def recorded(monkeypatch):
     """Every RefusalRecord the middleware hands to the writer, in order."""
     records = []
     monkeypatch.setattr(refusal_log, "record_refusal", records.append)
-    monkeypatch.setattr(refusal_log, "_mode", lambda: "testing")
+    monkeypatch.setattr(refusal_log, "current_mode", lambda: "testing")
     return records
 
 
