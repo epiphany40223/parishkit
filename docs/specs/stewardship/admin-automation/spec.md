@@ -1499,8 +1499,8 @@ waiting for it once the command has finished. A command declares that it prompts
 `test_pk_admin.py` checks that list against the catalog; a prompting
 command that accepts only `--yes` is left out of it by name. PR 6b's
 `test sample`, PR 6c's `test families`, PR 9c's `delivery resend` and
-`delivery refusal-clear`, PR 7a's `portal maintenance set` and #463's `files
-delete` are prompting commands.
+`delivery refusal-clear`, PR 7a's `portal maintenance set`, PR 7b's `send
+confirm` and #463's `files delete` are prompting commands.
 
 A prompting or confirming command checks its page's capability first,
 renewing nothing, before it reads an input, looks anything up or prompts
@@ -1699,6 +1699,9 @@ signatures:
 - **PR 7:** `delivery_control_commands` onto the caller (PR 7b); its
   read, `send controls`, moved the page's status into a request-free
   `delivery_control_commands.controls`, which the page now calls. The
+  previews and `confirm` already took the caller through `principal` and
+  `require_fresh`, so the controls needed only `confirm`'s optional
+  `record` hook, which the page does not pass. The
   maintenance switch (PR 7a) needed none: `family_maintenance.current_state`
   and `set_closed` were already request-free, and the command adds the
   fresh gate in its own transaction; `set_closed` raises `AlreadySet` (a
@@ -2406,7 +2409,7 @@ PR 12 (default, pending Administrator confirmation).
 | --- | --- |
 | `family_email_progress`, `family_email_progress_status` | `send progress --watch` (PR 3a) |
 | `family_email_sends` | `send history` (PR 3a) |
-| `delivery_control` | `send controls` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the page's read (any session; no event, as the page's read records none; see below); `send pause-preview`, `send resume-preview`, `send resolve-preview`, `send confirm --token …` (PR 7b) |
+| `delivery_control` | `send controls` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the page's read (any session; no event, as the page's read records none; see below); `send pause-preview`, `send resume-preview`, `send resolve-preview` and `send confirm --token …` (PR 7b; see below) |
 | `family_portal` | `portal maintenance show` (any session; no event, as the page's read records none), `portal maintenance set --state closed\|open [--message TEXT\|-]` (PR 7a; see below) |
 
 `portal maintenance show` returns `closed`, `since`, `message` (the
@@ -2447,6 +2450,49 @@ page's fresh sign-in hint is browser chrome and the fingerprints a preview
 binds are internal, so neither prints. The
 [operator guide](../../../guides/stewardship-admin-automation.md#pause-and-resume-mail)
 lists the fields.
+
+The page's controls are `send pause-preview --reason TEXT|-`,
+`send resume-preview --reason TEXT|-`,
+`send resolve-preview --decision release|cancel|clear [--type KIND …]
+--reason TEXT|-` and `send confirm --token TOKEN|-`
+([#463](https://github.com/epiphany40223/parishkit/issues/463)), for the
+current campaign only. They run the page's own functions in
+`delivery_control_commands` with the command's caller (`preview_pause`,
+`preview_resume`, `preview_resolution` and `confirm`), so every check the
+page makes, and `stewardship_delivery_control_guard_v1` beneath `confirm`,
+apply unchanged; in particular a resume is refused while any mail is still
+being handed to the mail service or not sure it arrived. They add no send
+path: a resume or a release lets held mail go through the ordinary delivery
+workers, as the page's does. The previews need a full-scope session, as
+the page's preview posts record activity, and record no event; `--type` is
+the Resolve held messages form's message types (`receipt`, `daily_digest`,
+`weekly_digest`), which Release and Cancel need and Clear refuses (a usage
+error, as the form cannot send either). Each prints `action`, `campaign_id`, the
+`reason`, `expires_at`, the bound `inventory` as `send controls` prints it,
+a resume's `plan` (`before_start` or `family`, with `family_recovery` and
+`report_recovery`), a resolution's `resolution` (`decision`, `types` and
+each type's follow-up `coverage`) and `preview.token`, the page's own
+five-minute signed binding, so a token from either channel confirms on the
+other; the binding's fingerprints are no document member and travel only
+inside that signed (not encrypted) token, as in the page's form. A control the page does not
+offer now, a needed sender check, or uncertain mail is `stale_version`; a
+reason the page refuses is `invalid`. `send confirm` is
+[fresh-gated](#fresh-gated-actions-from-the-command-line) and always asks at
+the [prompt](#command-line-confirmation) (`--yes` answers it), naming the
+action, the reason, the counts and the page's own caution for that
+preview (for a resolution, with each type's follow-up coverage), after the role check and the token's signature check (an
+altered token is `invalid` before the prompt). The page's `confirm` then
+passes `require_fresh` in its own transaction (`automation_fresh_gate` and
+the `fresh_gated` notice) and records the control, whose effect records
+the page's own events (`campaign_pause` or `campaign_resume`; for a
+resolution `delivery_held_<decision>`, with `campaign_resume` when it ends
+the pause), and its `record` hook records
+the command's `admin_cmd_send_confirm` beside them in that transaction. An expired or out of
+date token is `stale_version`, another Administrator's `denied`, and a
+guard refusal `denied` with nothing recorded. An exact repeat returns the
+original control (`created` false) and records nothing. It returns
+`created`, `command_id`, `action` and `status`, `send controls`'s document
+read after the commit.
 
 There is no separate "cancel" action today. Stopping a send is the delivery
 pause, and closing work is the closed-campaign resolution. See
@@ -3758,7 +3804,7 @@ carry the schema changes, and PR 10 handles secrets; all three get
 security-focused reviews, and none is deployed to Production without the
 Administrator's approval of that deploy.
 
-On `main`, PR 0 to PR 6, PR 7a, PR 8a to PR 8f and PR 9 have landed; PR 7b, PR 8g,
+On `main`, PR 0 to PR 7, PR 8a to PR 8f and PR 9 have landed; PR 8g,
 PR 10, PR 11 and PR 12 have not, so their commands are pending exemptions in
 the [action inventory](#action-inventory), and the
 [ADM-11 checklist](../../../tasks/stewardship/admin-portal.md#adm-11-admin-automation-interface)
