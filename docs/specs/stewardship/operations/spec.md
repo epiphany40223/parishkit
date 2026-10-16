@@ -1563,6 +1563,17 @@ A refusal with no reason of its own has reason `unclassified`. When an
 exception refused it, `exception_class` names that exception's class; a
 form drawn again with its errors has no exception, and names its form,
 fields and codes instead. Django's CSRF reason text is never used.
+An entry that says nothing about why (reason `unclassified` with no
+`exception_class` and no codes) is a defect: under the test settings
+(`STEWARDSHIP_REFUSAL_LOG_STRICT`) the hook notes it, never raising, and the
+test hook fails the test whose answer made it once that test ends, so every
+Admin page's refusal must carry a reason, codes, a
+typed error or an exception class, and the existing page tests enforce
+it. A page drawn again with a refusal of its own, whose form may or may
+not hold errors, gives a default: the code its status stands for, which
+restates the status, and any further code the page names (such as
+`in_use`), recorded only when no typed error, code of its own or form
+error gives one. Production records such an entry as it is.
 
 **Allow-list.** The context holds closed values only, mirrored by
 `stewardship_safe_context_v1`. Anything not on the list is dropped, not

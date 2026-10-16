@@ -49,6 +49,7 @@ from parishkit.stewardship.web.refusals import (
     UserFacingStale,
     stale_page,
     unexpected_fields,
+    with_default_code,
 )
 
 from . import admin_navigation, field_tips, setup_help
@@ -581,6 +582,8 @@ def _page(
     )
     if status != 200:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return response
 
 

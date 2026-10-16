@@ -61,7 +61,11 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.dates import format_date
 from parishkit.stewardship.web.presentation import number
-from parishkit.stewardship.web.refusals import UserFacingStale, unexpected_fields
+from parishkit.stewardship.web.refusals import (
+    UserFacingStale,
+    unexpected_fields,
+    with_default_code,
+)
 from parishkit.stewardship.web.tables import Sorting, whole_table
 
 from .archive_exports import archive_offer, create_archive_export
@@ -365,6 +369,8 @@ def _render(request, actor, selected, *, status=200, problems=(), more=0):
     )
     if status != 200:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return _no_store(response)
 
 

@@ -34,7 +34,13 @@ from parishkit.stewardship.web.contracts import (
     ErrorCode,
     expected_version,
 )
-from parishkit.stewardship.web.refusals import refusal_text, unexpected_fields
+from parishkit.stewardship.web.refusals import (
+    annotate,
+    refusal_text,
+    unexpected_fields,
+    with_codes,
+    with_default_code,
+)
 from parishkit.stewardship.web.tables import (
     window_table,
 )
@@ -102,7 +108,8 @@ def _error(code, status, error=None, back=None):
     user-facing refusal (``error``, such as an unexpected-fields refusal)
     shows its own reviewed full-page text instead of the closed message
     (#1401). ``back`` is the server-owned path of the page the refused form
-    came from, which the page links to so that it can be opened again.
+    came from, which the page links to so that it can be opened again. The
+    refusal log records ``code`` and the refusal's reason (#1444).
     """
     message = refusal_text(error, page=True) or MESSAGES[code]
     response = HttpResponse(
@@ -115,7 +122,8 @@ def _error(code, status, error=None, back=None):
     response["Cache-Control"] = "no-store"
     if status == 503:
         response["Retry-After"] = "5"
-    return response
+    with_codes(response, code.value)
+    return annotate(response, error) if error is not None else response
 
 
 def _principal(request, store, *, final=False, activity=False):
@@ -189,8 +197,10 @@ def _page(request, template, load, *, subject=None, status=200):
             )
         if status != 200:
             # This page itself, with the refusal in its review region, not a
-            # bare error: the in-place handler swaps it in (#562).
+            # bare error: the in-place handler swaps it in (#562). The
+            # refusal log records its status's code (#1444).
             response.stewardship_safe_error = True
+            with_default_code(response)
         response["Cache-Control"] = "no-store"
         return response
     except PermissionError:
@@ -250,6 +260,8 @@ def delivery_list(request):
     bulk, status = _bulk(request) if request.method == "POST" else ({}, 200)
     if isinstance(bulk, HttpResponse):
         return bulk
+    # The refusal behind a refused bulk action, for the refusal log only.
+    refusal = bulk.pop("_refusal", None)
 
     def load(actor):
         """Capture one filtered page without reading any private message payload."""
@@ -276,7 +288,16 @@ def delivery_list(request):
             **bulk,
         ), len(data["rows"])
 
-    return _page(request, "stewardship/deliveries.html", load, status=status)
+    response = _page(request, "stewardship/deliveries.html", load, status=status)
+    # Only the bulk region's own refusal: a page that answered with a
+    # refusal of its own (its 400 error page) keeps that one's reason.
+    if (
+        refusal is not None
+        and response.status_code == status
+        and getattr(response, "stewardship_exception_class", None) is None
+    ):
+        annotate(response, refusal)
+    return response
 
 
 # What a refused bulk action says in the page's error summary.
@@ -301,7 +322,10 @@ def _bulk(request):
     ``bulk_errors`` (a refusal, with a 4xx status). A denial or an outage
     is answered by the fixed error page instead, returned in place of the
     context. Previewing changes nothing; applying resolves each message with
-    the ordinary per-message command (``delivery_bulk.apply_preview``).
+    the ordinary per-message command (``delivery_bulk.apply_preview``). A
+    refused input's error is returned under the private key ``_refusal``,
+    which ``delivery_list`` takes out for the refusal log; the region never
+    sees it.
     """
     try:
         service = runtime()
@@ -358,8 +382,9 @@ def _bulk(request):
         # the region's "Enter a note…" guidance (#1401).
         text = refusal_text(error)
         if text:
-            return dict(bulk_errors=[dict(message=text)]), 400
-        return _bulk_refused("invalid", 400)
+            return dict(bulk_errors=[dict(message=text)], _refusal=error), 400
+        context, status = _bulk_refused("invalid", 400)
+        return context | {"_refusal": error}, status
 
 
 def _bulk_refused(reason, status):

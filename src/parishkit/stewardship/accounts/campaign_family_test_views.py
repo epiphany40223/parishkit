@@ -14,7 +14,10 @@ from parishkit.stewardship.jobs.delivery_metadata import STATE_LABELS
 from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
 from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.refusals import unexpected_fields
+from parishkit.stewardship.web.refusals import (
+    unexpected_fields,
+    with_default_code,
+)
 
 from . import admin_navigation
 from .admin_editing import form_action, summary_errors
@@ -276,6 +279,8 @@ def _page(
         # (not the generic "Invalid request." the middleware draws for other
         # 400s), so the reader sees which DUID to fix.
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return _checked(request, service, response)
 
 

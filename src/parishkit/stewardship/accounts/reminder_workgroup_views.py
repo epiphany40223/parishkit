@@ -53,7 +53,11 @@ from parishkit.stewardship.source.workgroups import (
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.refusals import UserFacingError, stale_page
+from parishkit.stewardship.web.refusals import (
+    UserFacingError,
+    stale_page,
+    with_default_code,
+)
 
 from . import admin_navigation
 from .admin_editing import (
@@ -155,6 +159,8 @@ def _page(request, configuration, campaign, form, *, status=200):
     )
     if status != 200:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return response
 
 

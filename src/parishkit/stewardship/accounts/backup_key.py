@@ -48,7 +48,10 @@ from parishkit.stewardship.backup_sealing import (
     seal_proof,
 )
 from parishkit.stewardship.storage import StaleRecordError
-from parishkit.stewardship.web.refusals import unexpected_fields
+from parishkit.stewardship.web.refusals import (
+    unexpected_fields,
+    with_default_code,
+)
 
 from . import admin_navigation
 from .admin_editing import confirm, editable_configuration, form_action, sign_preview
@@ -293,6 +296,8 @@ def _render(request, configuration, *, status=200, **context):
     )
     if status == 400:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return response
 
 

@@ -64,6 +64,7 @@ from parishkit.stewardship.web.refusals import (
     UserFacingError,
     UserFacingMissing,
     unexpected_fields,
+    with_default_code,
 )
 from parishkit.stewardship.web.tables import paginate, table_parameters
 
@@ -483,6 +484,8 @@ def _entry_page(request, context, *, status=200):
     response = render(request, "stewardship/user-entry.html", context, status=status)
     if status == 400:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return response
 
 

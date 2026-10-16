@@ -26,7 +26,11 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.hosted_file_types import FileRefused
-from parishkit.stewardship.web.refusals import UserFacingStale, unexpected_fields
+from parishkit.stewardship.web.refusals import (
+    UserFacingStale,
+    unexpected_fields,
+    with_default_code,
+)
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
 from . import hosted_file_storage as storage
@@ -286,6 +290,8 @@ def _library(request, *, form=None, status=200, notice=None):
     )
     if status != 200:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return _no_store(response)
 
 
@@ -420,7 +426,7 @@ def rename(request, file_id):
         if row is None:
             raise LookupError("The hosted file no longer exists.")
         uses = hosted_file_uses.file_uses([row.pk]).get(row.pk, [])
-        status = 200
+        status, codes = 200, ()
         if request.method == "POST":
             if set(request.POST) - {"slug", "csrfmiddlewaretoken"}:
                 raise unexpected_fields()
@@ -432,6 +438,8 @@ def rename(request, file_id):
                     )
                 except hosted_files.HostedFileError as refusal:
                     uses = list(refusal.uses) or uses
+                    # In use is shown by the uses list, not at the field.
+                    codes = (refusal.reason,) if refusal.reason == "in_use" else ()
                     if refusal.reason != "in_use":
                         form.add_error(
                             "slug",
@@ -454,6 +462,8 @@ def rename(request, file_id):
         )
         if status != 200:
             response.stewardship_safe_error = True
+            # The refusal log's codes for this page's own refusal (#1444).
+            with_default_code(response, *codes)
         return _no_store(response)
     except ERRORS as error:
         return error_response(error)

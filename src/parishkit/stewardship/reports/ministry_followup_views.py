@@ -698,6 +698,8 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
             # security middleware keeps it rather than a generic 400 text.
             response.status_code = 400
             response.stewardship_safe_error = True
+            # The refusal log's codes for this refusal (#1444).
+            with_status_code(response, refusal.code)
         return response
     except (PermissionError, ObjectDoesNotExist):
         return denial()

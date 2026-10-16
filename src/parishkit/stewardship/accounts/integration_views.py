@@ -22,7 +22,11 @@ from parishkit.stewardship.source.refresh_status import (
 )
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.refusals import UserFacingError, unexpected_fields
+from parishkit.stewardship.web.refusals import (
+    UserFacingError,
+    unexpected_fields,
+    with_default_code,
+)
 
 from . import admin_navigation
 from .admin_editing import (
@@ -294,6 +298,8 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
     )
     if status == 400:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return response
 
 

@@ -67,6 +67,7 @@ from parishkit.stewardship.web.refusals import (
     UserFacingError,
     UserFacingMissing,
     unexpected_fields,
+    with_default_code,
 )
 
 from . import admin_navigation, schedule_email, schedule_local
@@ -581,6 +582,8 @@ def _entry_page(request, context, *, status=200):
     )
     if status == 400:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return response
 
 

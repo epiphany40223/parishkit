@@ -537,6 +537,8 @@ def _bare(status):
     debug_swallowed("find a family refused")
     response = HttpResponse(status=status, headers={"Cache-Control": "no-store"})
     response.stewardship_safe_error = True
+    # The refusal log's code for this refusal (#1444).
+    with_status_code(response)
     if status == 503:
         response["Retry-After"] = "5"
     return response

@@ -7,7 +7,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.storage import StaleRecordError
-from parishkit.stewardship.web.refusals import unexpected_fields
+from parishkit.stewardship.web.refusals import unexpected_fields, with_status_code
 
 from . import delivery_control_commands as commands
 from .authentication import runtime
@@ -96,5 +96,9 @@ def _sender_check_required(request, service, campaign_id):
     return _checked(
         request,
         service,
-        render(request, "stewardship/delivery-control.html", context, status=409),
+        # The refusal log's codes for this page's own refusal (#1444).
+        with_status_code(
+            render(request, "stewardship/delivery-control.html", context, status=409),
+            "sender_check_required",
+        ),
     )
