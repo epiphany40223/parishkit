@@ -2010,7 +2010,10 @@ The portal and the emails share one visual style
   each attribute in the order the template gives it, so in-place controls
   keep their `data-` attributes. A guard test counts raw button markup in
   every template against a list of reviewed exceptions that may only
-  shrink.
+  shrink. A button is secondary only when it is drawn so (the secondary
+  variant, or the `button-secondary` class on a button a script builds),
+  never because of where it sits or what attributes it carries, and a test
+  holds the stylesheet's secondary rule to that class alone.
 - **Email buttons:** `email_button()` renders the same primary and
   secondary buttons for email: a one-cell table with inline styles from the
   tokens, `bgcolor`, and Outlook padding. The label is real text, so the
