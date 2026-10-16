@@ -29,11 +29,9 @@ from parishkit.stewardship.archive import check
 from parishkit.stewardship.archive.workbook import read_archive
 from parishkit.stewardship.audit.models import AuditContext
 from parishkit.stewardship.campaigns.read_guards import DownloadPool, ReadLimits
-from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.dispatch import execute_hint
 from parishkit.stewardship.jobs.queues import WorkQueue
-from parishkit.stewardship.reports import export_services
 from parishkit.stewardship.reports.archive_exports import (
     BEFORE_DAY_1,
     archive_offer,
@@ -101,7 +99,8 @@ def work(harness, request, root):
 def test_download_queues_renders_and_downloads_the_partial_archive(
     scenario, settings, tmp_path, monkeypatch
 ):
-    """The page's section and form, the worker's file, the audit and regenerate."""
+    """The page's section and form, the worker's file, the audit and a second
+    export of the same day."""
     harness, ready, browser, actor = scenario
     root = tmp_path / "archive-reports"
     root.mkdir(mode=0o700)
@@ -161,22 +160,13 @@ def test_download_queues_renders_and_downloads_the_partial_archive(
         ).values_list("context", flat=True)
     )
     assert contexts == [{"outcome": "started", "count": 1}]
-    # Regeneration after expiry reuses the pins: the same fact set and day.
-    with work_transaction():
-        now = export_services.database_now()
-    monkeypatch.setattr(
-        export_services, "database_now", lambda: now + timedelta(days=8)
-    )
-    # converted_at is the request time in whole seconds: let one pass, as
-    # the days before a real regeneration (after expiry) always do.
+    # Exporting again the same day (there is no Regenerate, #1398) pins the
+    # same fact set and day. converted_at is the request time in whole
+    # seconds: let one pass.
     time.sleep(1.1)
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+    with day_two(harness), task_login(ServiceRole.WEB, exact=True, reconnect=True):
         again_key = {"request_key": str(uuid4())}
-        response = post(
-            browser,
-            reverse("admin:report_export_regenerate", args=[request.pk]),
-            again_key,
-        )
+        response = post(browser, ROUTE, again_key)
         assert response.status_code == 302, response
     again = ExportRequest.objects.get(request_key=again_key["request_key"])
     assert (again.fact_set_id, again.parameters) == (ready.pk, request.parameters)

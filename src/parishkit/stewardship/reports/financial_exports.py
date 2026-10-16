@@ -32,12 +32,10 @@ REPORT = "financial"
 
 
 def _campaign(campaign_id):
-    """The campaign with its own configuration, for a fresh capture only.
+    """The campaign with its own configuration, for a capture.
 
-    A fresh capture needs the financial module on, as the page does; SQL would
+    A capture needs the financial module on, as the page does; SQL would
     refuse the capture anyway, but as an outage rather than a denial.
-    Regenerating a retained capture renders what was captured and needs no
-    module, so a later change of modules cannot strand an expired file.
     """
     campaign = Campaign.objects.select_related("active_configuration").get(
         pk=campaign_id
@@ -56,16 +54,13 @@ def create_financial_export(
     browser_timezone,
     request_key,
     query=None,
-    snapshot=None,
 ):
-    """Capture every matching Family once; regeneration binds the retained capture.
+    """Capture every matching Family once, as the page's export form does.
 
     The campaign-work transaction serializes the capture with mutation and purge
     producers, and the capture is one statement, never a paginated series that
     could mix a submission arriving between pages. File rendering stays
-    asynchronous. `snapshot` is an internal service argument for regeneration,
-    never accepted from the web form; with it, no query is accepted either,
-    because the retained parameters, proof included, are the request.
+    asynchronous.
     """
     if any(
         not isinstance(value, UUID) for value in (user_id, campaign_id, request_key)
@@ -75,11 +70,8 @@ def create_financial_export(
         raise ValueError("Unsupported financial export format.")
     if type(browser_timezone) is not str or browser_timezone not in timezone_names():
         raise ValueError("Export timezone must be an IANA name.")
-    if snapshot is None:
-        if not isinstance(query, FinancialQuery):
-            raise ValueError("Financial export requires typed filters.")
-    elif not isinstance(snapshot, FinancialExportSnapshot) or query is not None:
-        raise ValueError("Regeneration cannot change the retained selection.")
+    if not isinstance(query, FinancialQuery):
+        raise ValueError("Financial export requires typed filters.")
 
     def admit(*args):
         """Both enqueue and its owning transaction recheck current authorization."""
@@ -89,13 +81,8 @@ def create_financial_export(
         admit_campaign(campaign_id, mutating=True)
         return True
 
-    if snapshot is None:
-        # Re-parsed, so only the closed grammar's own values are retained.
-        filters = FinancialQuery.parse(query.form_values()).form_values()
-    elif snapshot.campaign_id != campaign_id:
-        raise ValueError("Retained financial capture belongs to another campaign.")
-    else:
-        filters = snapshot.parameters["filters"]
+    # Re-parsed, so only the closed grammar's own values are retained.
+    filters = FinancialQuery.parse(query.form_values()).form_values()
 
     with export_transaction(campaign_id):
         admit()
@@ -112,39 +99,28 @@ def create_financial_export(
                 previous.parameters.get("filters"),
                 previous.format,
                 previous.browser_timezone,
-                None if snapshot is None else previous.financial_snapshot_id,
-            ) != (
-                REPORT,
-                campaign_id,
-                filters,
-                format,
-                browser_timezone,
-                None if snapshot is None else snapshot.pk,
-            ):
+            ) != (REPORT, campaign_id, filters, format, browser_timezone):
                 raise ExportRequestBound("Export request identity is already bound.")
             return previous
         configuration_id = SystemConfiguration.objects.get().active_configuration_id
         correlation_id = uuid4()
-        if snapshot is None:
-            # SQL honors the proof only for the snapshot and configuration it
-            # then selects itself, so a concurrent change withholds money.
-            parameters = {
-                "filters": filters,
-                "proof": giving_proof(_campaign(campaign_id)),
-            }
-            snapshot = FinancialExportSnapshot.objects.create(
-                campaign_id=campaign_id,
-                configuration_id=configuration_id,
-                actor_id=user_id,
-                correlation_id=correlation_id,
-                parameters=parameters,
-            )
-            # The insert trigger, never client-supplied values, owns captured
-            # data. Only the header comes back: the document itself, every
-            # Family's money, is read by the render owner, never here.
-            snapshot.refresh_from_db(fields=["created_at", "source", "row_count"])
-        else:
-            parameters = snapshot.parameters
+        # SQL honors the proof only for the snapshot and configuration it
+        # then selects itself, so a concurrent change withholds money.
+        parameters = {
+            "filters": filters,
+            "proof": giving_proof(_campaign(campaign_id)),
+        }
+        snapshot = FinancialExportSnapshot.objects.create(
+            campaign_id=campaign_id,
+            configuration_id=configuration_id,
+            actor_id=user_id,
+            correlation_id=correlation_id,
+            parameters=parameters,
+        )
+        # The insert trigger, never client-supplied values, owns captured
+        # data. Only the header comes back: the document itself, every
+        # Family's money, is read by the render owner, never here.
+        snapshot.refresh_from_db(fields=["created_at", "source", "row_count"])
         identifier = uuid4()
         task = enqueue(
             task_type=TASK_TYPE,

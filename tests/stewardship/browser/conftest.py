@@ -124,6 +124,7 @@ from .home_steps_components import components as home_steps_components
 from .hosted_file_components import IMAGE_TOKEN
 from .hosted_file_components import POSTS as HOSTED_FILE_POSTS
 from .hosted_file_components import components as hosted_file_components
+from .in_place_commands_components import GONE as IN_PLACE_GONE
 from .in_place_commands_components import components as in_place_commands_components
 from .in_place_commands_components import posts as in_place_commands_posts
 from .in_place_components import FORM as IN_PLACE_FORM
@@ -2365,7 +2366,9 @@ def component_origin():
             if path in AUTOMATION_SLOW_GETS | REPORT_SLOW_GETS:
                 time.sleep(1.5)
             kind, body = responses.get(path, ("text/plain", ""))
-            self.send_response(200 if path in responses else 404)
+            # An ended export's status page answers 410 Gone (#1398).
+            status = 410 if path in IN_PLACE_GONE else 200
+            self.send_response(status if path in responses else 404)
             self.send_header(
                 "Content-Type",
                 kind if kind == "image/png" else kind + "; charset=utf-8",

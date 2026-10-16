@@ -218,12 +218,6 @@ patterns = [
         {"action": "download"},
         name="report_export_download",
     ),
-    path(
-        "reports/exports/<uuid:request_id>/regeneration/",
-        export_ui.command,
-        {"action": "regenerate"},
-        name="report_export_regenerate",
-    ),
     # The reports sent by email: their list (ADM-12.17), then each report.
     path("reports/emailed/", emailed_views.emailed_reports, name="emailed_reports"),
     # Send a weekly report now comes before the

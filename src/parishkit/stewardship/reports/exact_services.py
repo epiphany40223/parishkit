@@ -22,6 +22,7 @@ from .export_services import (
     audit,
     authorize,
     cancel_export,
+    export_ended,
     export_status,
     retry_export,
 )
@@ -160,6 +161,20 @@ def retry_exact_export(store, user_id, request_id, *, request_key):
             correlation_id=uuid4(),
             admit=lambda action, status: admit_exact(action, status, store=store),
         )
+
+
+def exact_export_ended(request):
+    """Whether this latest-data export has ended (#1398): it was cancelled
+    before its file was made, or the file it handed off to has ended. The
+    caller has already checked the reader's access (``authorize``)."""
+    resolution = (
+        ExactExportResolution.objects.select_related("export")
+        .filter(request=request)
+        .first()
+    )
+    if resolution is not None:
+        return export_ended(resolution.export)
+    return ExactExportCancellation.objects.filter(request=request).exists()
 
 
 def exact_export_status(store, user_id, request_id):
