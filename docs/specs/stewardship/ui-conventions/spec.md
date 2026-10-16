@@ -1896,8 +1896,20 @@ The portal and the emails share one visual style
   sender says whether it sends Family mail; there is no default. A change
   to Family mail's look ships after a Testing send to real mail programs,
   on a night with no reminder the next morning.
+- **Notices:** a portal notice is one of three kinds, each a class on
+  ordinary markup. A warning (`notice`, the default) says something to be
+  careful of, or why something is unavailable; an error (`notice
+  notice-error`) says something failed or was refused; an information
+  notice (`notice notice-info`) is neutral, with nothing to beware of, such
+  as confirming what the reader just did. Testing and sample notices are
+  warnings, as the email notice is. All three share one shape and the ink
+  text colour, and take the background and border tokens of a
+  [status indicator](#status-indicators): the Warning and Error looks, and
+  the Working look for information. A test checks their contrast in the
+  light and dark schemes. Plain notices that are neutral
+  move to the information kind page by page.
 
-Portal notices, cards and headings follow in later slices of #732.
+Cards and headings follow in a later slice of #732.
 
 ### Colour scheme
 
