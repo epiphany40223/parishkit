@@ -244,7 +244,10 @@ their own renderer):
   it was drawn; charts in a region refreshed in place are drawn again, keeping
   their space until they are; a chart in a closed disclosure is drawn when
   the disclosure opens, since its panel has no width before then
-  ([#1161](https://github.com/epiphany40223/parishkit/issues/1161)). The
+  ([#1161](https://github.com/epiphany40223/parishkit/issues/1161)). On an
+  Admin page a chart is drawn in the page's
+  [colour scheme](../ui-conventions/spec.md#colour-scheme), and drawn again
+  in place when it changes. The
   Vega, Vega-Lite
   and vega-embed bundles are vendored under the static files, each pinned by
   SHA-256 with its version and source URL, with the license notices of
