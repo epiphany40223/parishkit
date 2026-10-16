@@ -367,3 +367,35 @@ def test_log_page_dates_are_browser_local():
     assert (
         'value="{{ admin_chrome.critical_since_day }}" data-zone-dependent>' in banner
     )
+
+
+@pytest.mark.parametrize(
+    ("zone", "day"),
+    [
+        # 03:30 UTC on Oct 5 is still the evening of Oct 4 in New York and
+        # Los Angeles, and already the afternoon of Oct 5 in Tokyo.
+        ("UTC", "Oct 5, 2054"),
+        ("America/New_York", "Oct 4, 2054"),
+        ("America/Los_Angeles", "Oct 4, 2054"),
+        ("Asia/Tokyo", "Oct 5, 2054"),
+    ],
+)
+def test_roster_resolved_day_is_the_browser_day(zone, day):
+    """A stale roster bulk refusal names a row's resolved day in the zone the
+    dialog posts (#558), never the parish's."""
+    from parishkit.stewardship.reports.ministry_roster_views import resolved_on
+
+    assert resolved_on(datetime(2054, 10, 5, 3, 30, tzinfo=UTC), zone) == day
+
+
+def test_roster_bulk_form_sends_the_browser_zone():
+    """The roster bulk dialog's form carries the browser zone field, and each
+    duplicate row's controls mark their instant for date-format-v1.js."""
+    page = (TEMPLATES / "ministry-roster.html").read_text()
+    assert (
+        "{% csrf_token %}"
+        '<input type="hidden" name="zone" value="" data-browser-zone>' in page
+    )
+    assert 'data-local-day="{{ row.local_day }}"' in page
+    tick = (TEMPLATES / "roster-tick-row.html").read_text()
+    assert tick.count("data-local-day=row.local_day") == 2

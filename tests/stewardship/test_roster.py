@@ -230,13 +230,14 @@ def test_the_tick_is_an_icon_button_named_for_its_row():
     from parishkit.stewardship.reports.ministry_roster_views import row_controls
 
     row = roster_row(id=str(uuid4()), roster_eligible=True, roster_entered=False)
-    row_controls([row], "UTC")
-    assert row["label"] == "Sample, Pat — Food pantry"
+    row_controls([row])
+    assert row["label"] == "Sample, Pat — Food pantry" and row["local_day"] is None
     cell = row_cell_html(row, mutable=True)
     assert cell.startswith('<td class="table-actions"><form method="post"')
     name = "Mark Sample, Pat — Food pantry entered in ParishSoft"
     assert f'aria-label="{name}"' in cell and f'title="{name}"' in cell
     assert 'class="action-icon"' in cell and 'name="entered" value="yes"' in cell
+    assert "data-local-day" not in cell
     cell = row_cell_html(row | {"roster_entered": True}, mutable=True)
     name = "Clear Entered in ParishSoft for Sample, Pat — Food pantry"
     assert f'aria-label="{name}"' in cell and 'name="entered" value="no"' in cell
@@ -270,6 +271,11 @@ def test_bulk_post_grammar_is_closed():
         {first: 1, second: 3},
         key,
     )
+    # The browser's zone, which names a stale row's day (#558), may come too.
+    assert parse(bulk_key=str(key), request=[f"{first}:1"], zone="Asia/Tokyo") == (
+        {first: 1},
+        key,
+    )
     for bad in (
         {"request": [f"{first}:1"]},
         {"bulk_key": str(key)},
@@ -278,6 +284,7 @@ def test_bulk_post_grammar_is_closed():
         {"bulk_key": str(key), "request": [f"{first}"]},
         {"bulk_key": str(key), "request": [f"{first}:0"]},
         {"bulk_key": str(key), "request": [f"{first}:1"], "show": "all"},
+        {"bulk_key": str(key), "request": [f"{first}:1"], "zone": ["UTC", "UTC"]},
         {
             "bulk_key": str(key),
             "request": [f"{uuid4()}:1" for _ in range(MAX_BULK + 1)],
@@ -290,26 +297,35 @@ def test_bulk_post_grammar_is_closed():
 def test_a_change_listed_twice_names_each_row_by_its_resolved_day():
     """The same change listed twice (a Family answered again and both
     requests were resolved) would give both rows one name; those rows add
-    their Resolved day in the parish's zone, so each icon, box and dialog
-    names its own row. A name no other row shares stays short."""
+    their Resolved day, so each icon, box and dialog names its own row. The
+    day is the browser's (#558): the name carries the UTC instant, which
+    date-format-v1.js replaces with the local day (data-local-day). A name
+    no other row shares stays short."""
     from datetime import timedelta
+    from uuid import uuid4
 
     from parishkit.stewardship.reports.ministry_roster_views import row_controls
 
     earlier = WHEN - timedelta(days=3)
     rows = [
-        roster_row(id="1", resolved_at=WHEN),
+        roster_row(id=str(uuid4()), resolved_at=WHEN, roster_eligible=True),
         roster_row(id="2", resolved_at=earlier, latest=False),
         roster_row(id="3", member_name="Other, Lee"),
     ]
-    row_controls(rows, "America/Los_Angeles")
+    row_controls(rows)
     assert [row["label"] for row in rows] == [
-        "Sample, Pat — Food pantry, resolved Oct 5, 2054",
-        "Sample, Pat — Food pantry, resolved Oct 2, 2054",
+        "Sample, Pat — Food pantry, resolved 2054-10-05T14:30:00+00:00",
+        "Sample, Pat — Food pantry, resolved 2054-10-02T14:30:00+00:00",
         "Other, Lee — Food pantry",
     ]
-    # The day is the parish's: 14:30 UTC on Oct 5 is still Oct 5 in Los
-    # Angeles, but a resolution at 02:00 UTC is the day before there.
-    late = [roster_row(id=str(n), resolved_at=WHEN.replace(hour=2)) for n in (1, 2)]
-    row_controls(late, "America/Los_Angeles")
-    assert late[0]["label"].endswith("resolved Oct 4, 2054")
+    assert [row["local_day"] for row in rows] == [
+        "2054-10-05T14:30:00+00:00",
+        "2054-10-02T14:30:00+00:00",
+        None,
+    ]
+    # The tick names the instant it marks for the page script to localize.
+    cell = row_cell_html(rows[0] | {"roster_entered": False}, mutable=True)
+    name = "Mark Sample, Pat — Food pantry, resolved 2054-10-05T14:30:00+00:00"
+    assert f'aria-label="{name} entered in ParishSoft"' in cell
+    assert f'title="{name} entered in ParishSoft"' in cell
+    assert 'data-local-day="2054-10-05T14:30:00+00:00"' in cell
