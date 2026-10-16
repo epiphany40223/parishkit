@@ -150,10 +150,18 @@ def current_evidence(values):
     Which Families are excluded meanwhile is ``applied_evidence``'s answer.
     """
     name = configured_name(values)
-    evidence = applied_evidence(values)
-    if evidence is None or evidence["name"] != name:
-        return name, None
-    return name, evidence
+    return name, evidence_for(name, applied_evidence(values))
+
+
+def evidence_for(name, applied):
+    """``applied`` when it was read for ``name``, else None (``pending``).
+
+    The pure half of ``current_evidence``, so a caller that already holds
+    ``applied_evidence``'s answer need not read the snapshot again.
+    """
+    if applied is None or applied["name"] != name:
+        return None
+    return applied
 
 
 def excluded_duids(values):

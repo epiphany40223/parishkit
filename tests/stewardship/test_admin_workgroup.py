@@ -13,6 +13,7 @@ import pytest
 from parishkit.stewardship import admin_cli, admin_workgroup
 from parishkit.stewardship.admin_parity import LEDGER
 from parishkit.stewardship.audit.log_descriptions import DESCRIPTIONS
+from parishkit.stewardship.source.workgroups import evidence_for
 
 from .test_admin_reads import FORBIDDEN
 
@@ -40,6 +41,35 @@ VERSION = "b" * 64
 def test_the_now_state_follows_the_pages_branches(name, evidence, expected):
     """The page's Now panel: off, pending, missing, or found with a count."""
     assert admin_workgroup.now_state(name, evidence) == expected
+
+
+@pytest.mark.parametrize(
+    ("name", "applied", "expected"),
+    [
+        (None, None, (0, None)),
+        ("Staff", None, (0, None)),
+        ("Staff", {"name": "Staff", "found": True, "family_duids": [7, 9]}, (2, None)),
+        # A rename waiting for a refresh: the previous WorkGroup's Families.
+        ("Staff", {"name": "Old", "found": True, "family_duids": [7]}, (1, "Old")),
+        # Missing keeps the set from before; it names no WorkGroup.
+        ("Staff", {"name": "Staff", "found": False, "family_duids": [7]}, (1, None)),
+        ("Staff", {"name": "Typo", "found": False, "family_duids": [7]}, (1, None)),
+        # A found but empty previous WorkGroup is still named (by design).
+        ("Staff", {"name": "Old", "found": True, "family_duids": []}, (0, "Old")),
+    ],
+)
+def test_the_applied_state_counts_what_reminders_skip_now(name, applied, expected):
+    """``excluding`` is the applied set's size; ``excluding_from`` names the
+    WorkGroup it was read from only when that is not the configured one."""
+    assert admin_workgroup.applied_state(name, applied) == expected
+
+
+def test_evidence_for_is_current_evidences_rule():
+    """Evidence counts as the Now panel's only when read for that name."""
+    evidence = {"name": "Staff", "found": True, "family_duids": [7]}
+    assert evidence_for("Staff", evidence) is evidence
+    assert evidence_for("Other", evidence) is None
+    assert evidence_for("Staff", None) is None
 
 
 def test_the_catalog_entries():
@@ -87,6 +117,8 @@ def test_the_documents_print_only_allowed_names():
         "name",
         "state",
         "families",
+        "excluding",
+        "excluding_from",
     }
     assert set(admin_workgroup.WorkGroupPreview.field_names()) == {
         "version",
