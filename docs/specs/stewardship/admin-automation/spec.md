@@ -2743,9 +2743,11 @@ key. A changed version or the racing second review is `stale_version`. It
 prints the review's ids, decision, version and time and the change's state,
 never the note, Family, Member or value. No preview token is used: the
 page's own protection is the version and the request key, which the command
-takes too. The page's Edit value (ADM-09.04) has no command yet; when one
-is added it calls `census_review.edit_census_change`, which refuses
-`queued` too.
+takes too. The page's Edit value (ADM-09.04) and Use the Family's value
+anyway (ADM-09.03) have no command yet
+([#1434](https://github.com/epiphany40223/parishkit/issues/1434)); when
+they are added they call `census_review.edit_census_change` and
+`census_review.resolve_census_conflict`, which refuse `queued` too.
 
 The digest commands (PR 8d) read a retained report an emailed digest
 links to from its stored snapshot, through its page's own functions

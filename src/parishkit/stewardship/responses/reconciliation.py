@@ -8,6 +8,7 @@ from parishkit.stewardship.source.snapshot_models import SourceSnapshotPin
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.workflows.models import MinistryRequest
 
+from .accepted_base import with_accepted_base
 from .baselines import _pin_admission
 from .census import FAMILY_FIELDS
 from .comparison import canonical_value
@@ -24,6 +25,29 @@ from .models import ProposedChange, Submission
 
 # The executions reconciliation still acts on.
 OPEN_EXECUTIONS = ("pending", "conflict", "queued", "failed")
+# The executions an approval resting on a now stale accepted base is sent
+# back to To review from (#528, ADM-09.03): never queued, since the publish
+# worker owns a queued change, and never final.
+RESET_EXECUTIONS = frozenset({"pending", "failed"})
+
+
+def resets_approval(row, execution):
+    """Whether reconciliation sends ``row``'s approval back to To review.
+
+    ``row`` is annotated by ``accepted_base.with_accepted_base``, and is
+    reconciled only because ParishSoft's value changed, so its accepted
+    base (if any) is stale now. An approval resting on it goes back to To
+    review while the change stays open (``execution`` pending or conflict);
+    the database requires the same (0108's derived guard). A queued change
+    keeps its approval, since the publish worker owns it: its plan, merged
+    against the Family's baseline again, can only meet a conflict.
+    """
+    if row.execution not in RESET_EXECUTIONS or execution not in {
+        "pending",
+        "conflict",
+    }:
+        return False
+    return row.decision == "approved" and row.conflict_accepted
 
 
 def reconcile_proposals(snapshot, corpus, *, campaign_id):
@@ -37,7 +61,7 @@ def reconcile_proposals(snapshot, corpus, *, campaign_id):
     """
     require_work_order()
     count = 0
-    for row, current, execution in _proposal_updates(corpus, campaign_id):
+    for row, current, execution, decision in _proposal_updates(corpus, campaign_id):
         pin_snapshot(
             snapshot.pk,
             parent_kind="submission",
@@ -49,6 +73,7 @@ def reconcile_proposals(snapshot, corpus, *, campaign_id):
             current_value=current.value,
             current_source_id=snapshot.pk,
             execution=execution,
+            decision=decision,
             version=F("version") + 1,
         )
         _release_unused_source(row.submission_id, row.current_source_id)
@@ -74,17 +99,23 @@ def proposals_current(corpus, *, campaign_id):
 
 
 def _proposal_updates(corpus, campaign_id, *, record=True):
-    """Yield ``(row, current, execution)`` for each proposal ``corpus`` changes.
+    """Yield ``(row, current, execution, decision)`` for each proposal changed.
 
     The one decision ``reconcile_proposals`` applies and ``proposals_current``
     reads. ``record`` logs an unusable source value, as reconciliation does;
     the read-only check passes False.
+
+    A row is yielded only when ParishSoft's value for it changed, so an
+    Administrator's accepted base at its old source reference (#528,
+    ADM-09.03) is stale from then on (``resets_approval``).
     """
     definitions = {field.name: field for field in (*MEMBER_FIELDS, *REQUEST_FIELDS)}
     household_definitions = {field.name: field for field in FAMILY_FIELDS}
-    proposals = ProposedChange.objects.filter(
-        submission__campaign_id=campaign_id,
-        execution__in=OPEN_EXECUTIONS,
+    proposals = with_accepted_base(
+        ProposedChange.objects.filter(
+            submission__campaign_id=campaign_id,
+            execution__in=OPEN_EXECUTIONS,
+        )
     ).annotate(family_duid=F("submission__family__family_duid"))
     for row in proposals.iterator(chunk_size=500):
         if row.entity_kind == "proposed_member" and row.field == "new_member":
@@ -187,7 +218,8 @@ def _proposal_updates(corpus, campaign_id, *, record=True):
             if unusable or result.conflict
             else "pending"
         )
-        yield row, current, execution
+        decision = "unreviewed" if resets_approval(row, execution) else row.decision
+        yield row, current, execution, decision
 
 
 def _release_unused_source(submission_id, snapshot_id):

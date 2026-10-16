@@ -25,6 +25,15 @@ or clear that edit (``edit_census_change``, ADM-09.04): the same kind of
 review row, which keeps the decision and changes only the edit fields
 (``schema/migrations/0107_proposal_review_edit.sql``). The Family's answer
 is never changed. Edit value is per change only, never in bulk.
+
+On a Conflict (ParishSoft changed after the Family answered), an
+Administrator may choose "Use the Family's value anyway"
+(``resolve_census_conflict``, ADM-09.03): a review row that accepts
+ParishSoft's current value as the base publication merges against, approves
+the change and moves it from conflict to pending
+(``schema/migrations/0108_conflict_resolution.sql``; ``accepted_base``).
+The Family's baseline is never changed. It is per change only, never in
+bulk, since each row needs its own comparison.
 """
 
 import json
@@ -48,6 +57,7 @@ from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import check_version
 from parishkit.stewardship.web.tables import PAGE_SIZES
 
+from .accepted_base import has_active_base
 from .capabilities import Handling, capability
 from .census_resolution import MAX_NOTE, by_hand
 from .comparison import ValueKind
@@ -84,6 +94,23 @@ def reviewable(proposal, decision):
     ):
         return False
     return decision != "approved" or proposal.execution != "conflict"
+
+
+def resolvable(proposal):
+    """Whether an Administrator may resolve the change's conflict now.
+
+    Only an Automatic Member change in conflict whose current ParishSoft
+    value is known: accepting it as the base needs a value to accept (a
+    change ParishSoft could not be read for waits for a refresh). It may
+    already be approved (an approval that predates the conflict) and may
+    carry an edited value, which is what publication then writes.
+    """
+    return (
+        not by_hand(proposal)
+        and proposal.entity_kind == "member"
+        and proposal.execution == "conflict"
+        and proposal.current_available
+    )
 
 
 # Each Member field's census definition, by name.
@@ -267,28 +294,36 @@ def _record(
     parish,
     *,
     edit=None,
+    resolve=False,
 ):
     """Record one locked proposal's review, its result and its audit event.
 
     The caller holds the work order and the proposal's row lock, and has
     admitted its campaign. ``edit`` is None for a decision; for an Edit
     value or Clear edit it is the resulting ``(admin_value_set,
-    admin_value)``, and ``decision`` is then None (the decision stays). The
+    admin_value)``, and ``decision`` is then None (the decision stays).
+    ``resolve`` records a conflict resolution instead (ADM-09.03): the
+    decision becomes approved, ParishSoft's current value and its source
+    are recorded as the accepted base, and the change becomes pending; a
+    later decision away from approved puts it back to conflict. The
     same ``request_key`` with the same intent returns the first review
     unchanged (a repeated submission); with a different intent it is
     refused. A proposal changed since the page was drawn is refused by
     ``check_version``, before the review rules, so the Administrator is told
     the row changed rather than that it cannot be reviewed.
     """
+    # The kind is part of the intent, so a key bound to one kind of review
+    # is never replayed as another.
     intent = dict(
         proposal_id=proposal.pk,
         expected_version=expected_version,
         note=note,
+        accepted_base=resolve,
     )
-    if edit is None:
-        intent["decision"] = decision
-    else:
+    if edit is not None:
         intent["admin_value_set"], intent["admin_value"] = edit
+    elif not resolve:
+        intent["decision"] = decision
     previous = ProposalReview.objects.filter(
         actor_id=actor_id, request_key=request_key
     ).first()
@@ -297,7 +332,9 @@ def _record(
             raise KeyRebound("This request key is already bound.")
         return previous
     check_version(proposal, expected_version)
-    if edit is None and not reviewable(proposal, decision):
+    if resolve and not resolvable(proposal):
+        raise ValueError("This census change has no conflict to resolve now.")
+    if not resolve and edit is None and not reviewable(proposal, decision):
         raise ValueError("This census change cannot be reviewed that way now.")
     if edit is not None:
         if not editable(proposal):
@@ -306,19 +343,41 @@ def _record(
             raise Unchanged("The edited value is unchanged.")
     # The row records the whole resulting review state: a decision keeps
     # the edit fields as the proposal has them, an edit keeps the decision.
+    # A resolution accepts exactly the value and source the proposal holds
+    # now, which the review guard checks against the locked row.
     state = {
         "decision": proposal.decision if edit is not None else decision,
         "admin_value_set": proposal.admin_value_set,
         "admin_value": proposal.admin_value,
     } | intent
+    # A decision that takes a resolved change (an active accepted base) away
+    # from approved undoes the resolution: the change is a Conflict again,
+    # so a later Approve, one by one or in bulk, cannot publish over
+    # ParishSoft's value; Use the Family's value anyway may be chosen again.
+    # Read before this review is recorded, since recording it ends the base.
+    undo = (
+        edit is None
+        and not resolve
+        and decision != "approved"
+        and has_active_base(proposal)
+    )
+    if resolve:
+        state |= {
+            "decision": "approved",
+            "accepted_value": proposal.current_value,
+            "accepted_source_id": proposal.current_source_id,
+        }
     review = ProposalReview.objects.create(
         actor_id=actor_id, request_key=request_key, **state
     )
-    changed = (
-        {"decision": decision}
-        if edit is None
-        else {"admin_value_set": edit[0], "admin_value": edit[1]}
-    )
+    if resolve:
+        changed = {"decision": "approved", "execution": "pending"}
+    elif edit is None:
+        changed = {"decision": decision}
+        if undo:
+            changed["execution"] = "conflict"
+    else:
+        changed = {"admin_value_set": edit[0], "admin_value": edit[1]}
     ProposedChange.objects.filter(pk=proposal.pk).update(
         version=F("version") + 1, **changed
     )
@@ -439,6 +498,49 @@ def edit_census_change(
             note,
             _parish_id(),
             edit=edit,
+        )
+
+
+def resolve_census_conflict(
+    store, actor_id, proposal_id, *, expected_version, request_key, note
+):
+    """Use the Family's value anyway on one Conflict (#528, ADM-09.03).
+
+    Records a review that accepts ParishSoft's current value as the base
+    publication merges against and approves the change, which becomes
+    pending (To do). Publication then writes the Family's answer, or the
+    Administrator's edited value, while ParishSoft still holds the accepted
+    value, and blocks it as a conflict again if ParishSoft has changed
+    since; a refresh that brings a new ParishSoft value also sends the
+    approval back to To review (``reconciliation``). The version advances,
+    so a confirmed plan that included the change no longer matches. Per
+    change only, never in bulk; see ``_record`` for replays and stale
+    versions.
+    """
+    if (
+        any(not isinstance(item, UUID) for item in (actor_id, proposal_id, request_key))
+        or type(expected_version) is not int
+        or not 1 <= expected_version < 2**63 - 1
+    ):
+        raise ValueError("Invalid census conflict resolution.")
+    _valid_note(note)
+    with work_transaction():
+        _authorize(store, actor_id)
+        proposal = (
+            ProposedChange.objects.select_for_update(of=("self",))
+            .select_related("submission")
+            .get(pk=proposal_id, submission__mode="live")
+        )
+        admit_campaign(proposal.submission.campaign_id, mutating=True)
+        return _record(
+            proposal,
+            actor_id,
+            expected_version,
+            request_key,
+            None,
+            note,
+            _parish_id(),
+            resolve=True,
         )
 
 

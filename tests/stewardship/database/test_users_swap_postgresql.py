@@ -380,6 +380,14 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # after 0089 and 0104, and makes its partial index only when missing. The
 # reruns above bring back 0089's event check and 0104's safe context, so
 # ``CLOSURE_REPLACED_LAST`` runs 0106's file after them.
+# 0108 (#528, ADM-09.03) adds the accepted base columns to 0096's review
+# table (in CLOSURE_TABLES, so dropped whole while the swap is pending; no
+# ``before_*`` undo is needed) and replaces the review guard, its effect
+# check and the derived guard in place. Once 0096's and 0107's files make
+# the table and guards again without them, ``CLOSURE_ALTERED`` runs 0108's
+# file, after 0090's rerun has put 0090's derived guard back; its bodies
+# keep the phrases ``CLOSURE_REPLACED`` (0107) and ``CLOSURE_REPLACED_ONLY``
+# (0096) look for, so neither puts an older body back afterwards.
 # 0103 (#1330) creates nothing: it replaces 0091's campaign pointer function
 # in place. No closure file installs that function again, and 0091's
 # ``CLOSURE_OLD_BODIES`` rerun touches only bodies still reading Ministry
@@ -634,6 +642,10 @@ CLOSURE_ALTERED = {
     ("stewardship_daily_digest_ready", "funnel_chart"): (
         "stewardship_reports",
         "0022_digest_funnel_charts",
+    ),
+    ("stewardship_proposal_review", "accepted_base"): (
+        "stewardship_responses",
+        "0009_conflict_resolution",
     ),
 }
 
