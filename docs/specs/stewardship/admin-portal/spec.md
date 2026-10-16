@@ -143,7 +143,12 @@ steps keep their status but are not links. The stepper is presentation only;
 each page still enforces its own prerequisites. Each page has one identical
 row of Back (secondary) and Save-and-continue (primary) controls (Save and
 continue validates, saves and opens the next applicable page, or redisplays
-the page with its errors), a short introduction, and plain-language help for
+the page with its errors; on the Parish, Parish logos, Administrative access,
+Outgoing email, Slack and Testing pages it is unavailable until every shown
+required field is valid, with a short hint after the row saying what is
+missing, as [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)
+describe; a logo file over 5 MB is refused at its field as soon as it is
+chosen, as on Parish logos), a short introduction, and plain-language help for
 every field. Revisiting a page shows its saved values; a credential page never
 shows the secret but says that one is saved (with its public scope, such as
 the ParishSoft organization), lets it be kept by leaving the key empty
@@ -194,7 +199,12 @@ one live status region that it re-reads from a passive status fragment of
 its own status address (`?format=status`). The fragment admits exactly the
 sign-in its page admits and never renews idle time. On a test page, Send test
 is answered in place, and the Recent tests list is watched while a test is
-queued or being sent. Once the test settles, the page re-reads its panel in
+queued or being sent. While it is, Send (or Send another test) is
+unavailable, named by a line after the action row saying a test is on its
+way, and, while the page cannot check the test's status, by that status line
+too ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates),
+[#1332](https://github.com/epiphany40223/parishkit/issues/1332)). Once the
+test settles, the page re-reads its panel in
 place, without moving focus, so Continue, Send another test or the
 unknown-delivery acknowledgement come from the server. No page offers a
 manual check or asks for a reload, and a page restored from the browser's
