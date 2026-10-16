@@ -74,14 +74,19 @@ never needs a copy of the repository.
 | `deploy [--schema-change]` | Build the image from this checkout, then upgrade the running deployment to it, data and all, by the Production upgrade's steps (`tools/stewardship-upgrade-host.sh` in local mode; [below](#testing-a-pull-request-on-seeded-data)). `--schema-change` is what `STEWARDSHIP_SCHEMA_CHANGE=1` is to Production: without it, a build whose upgrade check expects migration or grant changes is refused before anything stops. Refuses unless a snapshot exists to return to. |
 | `deploy --bulk on\|off` / `deploy --smtp-latency-ms N` | The same deploy, rendering the bulk Family send on or off, or the modeled Gmail latency of `N` milliseconds (0–5000; 0 turns it off). Each carries over to later deploys until changed. For [rehearsing a bulk send](#rehearsing-a-bulk-send). |
 | `deploy --rollback` | The upgrade's image-only rollback to the image the last `deploy` replaced; refused when the schema or a grant changed in between (then `reset --seeded`). |
-| `snapshot [--seeded]` | Stop the services, copy the runtime root to `/opt/parishkit-snapshots/post-setup` (or `seeded`) with numeric ownership and modes preserved, start again. |
-| `reset [--seeded]` | Stop, restore that snapshot with `rsync --delete`, recreate and start the services. With no post-setup snapshot: type the instance name, and the root is removed and `up` runs again. |
+| `snapshot [--seeded]` | Stop the services, copy the runtime root to `/opt/parishkit-snapshots/post-setup` (or `seeded`) with numeric ownership and modes preserved, start again. Replaces the earlier copy. |
+| `snapshot save NAME [--replace]` | The same for any name (1–32 of `a-z`, `0-9`, `-`), with a record of its migrations, mode and campaign state. Refused before anything stops when the Mac would keep less than 20 GiB plus twice the copy, the VM less than 5 GiB, or there are already 8 other snapshots (`PARISHKIT_LOCAL_SNAPSHOT_LIMIT`). An existing name needs `--replace`. A failed save starts the services again and leaves no half copy. |
+| `snapshot list` | Each snapshot's time, mode and campaign state, clock mode, commit, what a switch to it would do and size, then the VM's and the Mac's free space. |
+| `snapshot delete NAME` | Type the snapshot's name; it is removed and the VM disk is trimmed so the Mac gets the space back. |
+| `snapshot restore NAME` / `switch NAME` | Keep the deployed code and switch to `NAME`'s data ([below](#switching-between-testing-and-production-data)). |
+| `reset [--seeded \| NAME]` | Stop, restore that snapshot (image and data together) with `rsync --delete`, recreate and start the services. With no post-setup snapshot: type the instance name, and the root is removed and `up` runs again. |
 | `reset --reinstall` | Type the instance name; the new image is built from this checkout first, then the root is removed and `up` runs again from that image. Snapshots are kept. |
 | `seed [--response-scale M]` | Seed a campaign in progress under the fake clock ([below](#seeding-a-campaign)); refuses on a seeded deployment. Takes a lock and keeps `~/.parishkit-local/seed.log`. |
 | `reseed` | `reset` to the post-setup snapshot, then `seed`. |
+| `seed --testing` | Switch to the post-setup snapshot on the deployed code and move it to real time: a Testing-mode draft campaign ([below](#switching-between-testing-and-production-data)). |
 | `rehearse [--due-in MIN] [--send-only] [--timeout MIN] [--label NAME]` | Add a Reminder due in `MIN` minutes (default 5), measure its send and print the report ([below](#rehearsing-a-bulk-send)). Seeded deployments only. Keeps `~/.parishkit-local/rehearse.log`. |
 | `spike [--families N] [--sources S] [--during-send] [--wait MIN] [--label NAME]` | Have `N` Families (default 200) open their emailed links and submit through Caddy from `S` sources (default 8), and print the report ([below](#checking-the-launch-day-spike)). Seeded deployments only. Keeps `~/.parishkit-local/spike.log`. |
-| `status` | The VM, every service's state and health, Docker disk use, VM disk use, snapshots. |
+| `status` | The VM, every service's state and health, Docker disk use, VM disk use, and the `snapshot list` summary. |
 | `down` | Stop the services (90-second grace per container; a container Docker had to kill is named). Data is never removed. |
 | `sign-in --email E` | Print a one-time local test sign-in link for an Administrator address. |
 | `ca` | Save Caddy's local root certificate to `~/.parishkit-local/caddy-root.crt` and print the `security add-trusted-cert` command. The script never changes trust itself. |
@@ -91,8 +96,9 @@ Environment variables: `PARISHKIT_LOCAL_VM` (instance name),
 `admin@example.test`), `PARISHKIT_LOCAL_FAMILIES` (default 100),
 `PARISHKIT_LOCAL_DEBUG_LOGGING` (1 by default, as pre-launch dev deploys
 did; 0 for production-like logging), `PARISHKIT_LOCAL_ROOT` (default
-`/opt/parishkit`; must be an absolute path of at least two components) and
-`LIMA_HOME` (default `~/.lima`).
+`/opt/parishkit`; must be an absolute path of at least two components),
+`PARISHKIT_LOCAL_SNAPSHOT_LIMIT` (default 8) and `LIMA_HOME` (default
+`~/.lima`).
 
 ## First bring-up
 
@@ -202,7 +208,8 @@ Create the campaign remain the developer-facing path.
 
 After the campaign has its Families, take the post-setup snapshot:
 `tools/stewardship-local.sh snapshot`. `reset` then returns to that state in
-about half a minute. (A snapshot taken before the wizard is allowed and noted
+about half a minute, and `seed --testing` builds the Testing review state
+from it. (A snapshot taken before the wizard is allowed and noted
 as a pre-wizard snapshot; it is still useful for a fast return to a clean
 install.)
 
@@ -324,6 +331,47 @@ the VM half's `stewardship-local-deploy-*.log` and
 For a pull request that changes `up` itself (provisioning, the wizard, the
 seeder), `reset --reinstall` and the seeding recipe remain the way to test
 it, since `deploy` never reinstalls.
+
+### Switching between Testing and Production data
+
+The seeded campaign is live (Production mode), so the Testing-only pages
+cannot be reviewed on it: the Testing banner and labels, chosen-Family
+Testing sends, Testing sign-in and submissions, the Go live page, Testing
+cleanup and the structural edits only Testing allows. A Testing-mode
+snapshot holds that state, and `switch` moves between it and the seeded
+snapshot without changing the deployed code:
+
+1. Once, with the seeded snapshot saved (`snapshot --seeded`):
+   `tools/stewardship-local.sh seed --testing`. It switches to the
+   post-setup snapshot (migrating it forward when it was saved on another
+   image; one saved before snapshots recorded their migrations is first
+   recorded with `reset` and then `snapshot`), checks that it is a
+   Testing draft with an `@example.test` Testing recipient, clears Mailpit
+   and moves the clock to real time. Add the schedules and make the Testing
+   sends you want to review in the Admin portal, then
+   `tools/stewardship-local.sh snapshot save testing`.
+2. Deploy the pull request as above (`deploy`, with `--schema-change` if it
+   migrates).
+3. `tools/stewardship-local.sh switch testing` or `switch seeded`: the data
+   changes, the code stays. When the snapshot was saved on the deployed
+   image, only the data is copied, in about the time of a `reset`. When it
+   was saved on another image, the switch starts it on that image and runs
+   the Production upgrade's steps to the deployed image, as
+   `deploy --schema-change` does (set the `STEWARDSHIP_USERS_*` variables
+   for a snapshot from before the #952 conversion). A snapshot from newer
+   code is refused before anything stops and the message names its commit.
+   So is one saved before snapshots recorded their migrations on another
+   image: `reset NAME`, then `snapshot save NAME --replace`, records it.
+   After a failure the script names the `reset` that recovers.
+4. Sign in again with the link the switch prints (sessions belong to the
+   other data); Mailpit shows the snapshot's own mail.
+
+`snapshot list` shows which way each switch would go. The snapshot itself
+never changes, so a later switch to it migrates it again; `snapshot save
+testing --replace` keeps the migrated copy. `reset NAME` is still the way back
+to a snapshot's image and data together. Snapshots are full copies of the
+runtime root, a few hundred MB each: `snapshot delete NAME` removes one you no
+longer need.
 
 ## Rehearsing a bulk send
 
