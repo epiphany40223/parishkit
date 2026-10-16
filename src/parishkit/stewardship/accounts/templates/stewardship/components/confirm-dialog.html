@@ -62,7 +62,9 @@
     once the change is applied; without it the page's regions are redrawn
     in place. Either way outcome_id names that page's reserved status line
     (components/review-outcome.html), which then says what was applied and
-    when.
+    when; a form that opens the dialog may name its own line instead with
+    data-review-outcome (a page whose panes share one dialog), and then
+    outcome_id may be left out.
   - fallback is as above.
 {% endcomment %}{% if review %}<dialog id="{{ dialog_id }}" class="confirm-dialog review-dialog" aria-labelledby="{{ dialog_id }}-title" data-review-dialog data-confirm-fallback="{{ fallback }}" data-review-return="{{ return_url|default:'' }}" data-review-outcome="{{ outcome_id }}" data-working="{% translate 'Applying…' %}" data-applied="{% translate 'Applied.' %}" data-applied-at="{% translate 'Applied at {time}.' %}">
 <h2 id="{{ dialog_id }}-title" tabindex="-1" data-review-title>{{ title }}</h2>
