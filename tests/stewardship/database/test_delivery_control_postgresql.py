@@ -13,7 +13,6 @@ from django.urls import reverse
 from parishkit.stewardship.accounts import delivery_control_commands as commands
 from parishkit.stewardship.accounts.campaign_mail_models import CampaignMailTest
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.accounts.setup_drafts import save_section
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.delivery_control_models import (
     DeliveryControlCommand,
@@ -41,6 +40,7 @@ from .test_campaign_mail_postgresql import deliver
 from .test_digest_schedule_planning_postgresql import add_digest
 from .test_outbox_postgresql import claim
 from .test_setup_mail_views_postgresql import web_login
+from .test_setup_preparation_postgresql import stage
 from .test_setup_views_postgresql import post
 from .test_withdrawal_postgresql import (  # noqa: F401
     bootstrapped,
@@ -65,14 +65,6 @@ def delivery_scheduled(request, monkeypatch):
         login, status, initial, row = original(service, patch)
         reminder = content(str(status.attempt_id), kind="email", slot="reminder")
         with web_login():
-            status = save_section(
-                login,
-                service,
-                status.attempt_id,
-                step="email_reminder",
-                values=reminder,
-                expected_version=status.version,
-            )
             records = [row] + [
                 schedule(
                     str(status.attempt_id),
@@ -84,13 +76,10 @@ def delivery_scheduled(request, monkeypatch):
                 )
                 for hour in (10, 11, 12)
             ]
-            status = save_section(
+            status = stage(
                 login,
-                service,
                 status.attempt_id,
-                step="schedules",
-                values={"records": records},
-                expected_version=status.version,
+                {"email_reminder": reminder, "schedules": {"records": records}},
             )
         return login, status, initial, row
 

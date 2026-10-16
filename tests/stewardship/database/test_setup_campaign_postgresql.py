@@ -1,23 +1,29 @@
-"""First campaign stays temporary and uses only its original staged source result."""
+"""Setup's staged parish data load stays private and bound to its original attempt.
+
+Before #142 these tests also covered the first campaign's choices from the
+staged load; setup collects no campaign any more, so they check the load
+itself, which the Review and final confirmation require.
+"""
 
 # ruff: noqa: F811 -- imported pytest fixtures are injected by name.
-
-from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection, transaction
 from django.db.models import F
 from django.test import Client
 
-from parishkit.stewardship.accounts.setup_campaign import campaign_catalog
+from parishkit.stewardship.accounts.setup_campaign import (
+    require_staged_load,
+    staged_source_result,
+)
 from parishkit.stewardship.accounts.setup_drafts import save_section
 from parishkit.stewardship.accounts.setup_models import SetupAttempt, SetupDraftSection
 from parishkit.stewardship.accounts.setup_staging import cancel_setup
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
+from parishkit.stewardship.web.refusals import UserFacingMissing
 
-from ..campaign_factory import campaign, financial
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_runtime_auth_grants_postgresql import web_login
 from .test_setup_loading_postgresql import pages, prepared, run
@@ -36,83 +42,33 @@ def completed(service, monkeypatch):
     return request, SetupAttempt.objects.get()
 
 
-def test_original_web_prepares_first_campaign_without_publishing(
-    setup_service, monkeypatch
-):
-    """Temporary source choices do not require or create a current parish corpus."""
+def test_staged_load_is_private_and_unpublished(setup_service, monkeypatch):
+    """The staged load serves the Review without publishing a parish corpus."""
     request, attempt = completed(setup_service, monkeypatch)
     with web_login():
-        catalog = campaign_catalog(request, setup_service, attempt.pk)
-        assert catalog.funds == (("9", "Offertory"),)
-        assert catalog.ministries == ()
-        values = {
-            "source_result": str(catalog.result_id),
-            "campaign": campaign(timezone=catalog.timezone)["values"],
-        }
-        saved = save_section(
-            request,
-            setup_service,
-            attempt.pk,
-            step="campaign",
-            values=values,
-            expected_version=attempt.version,
-        )
-        assert saved.version == attempt.version + 1
-        assert SetupDraftSection.objects.get(step="campaign").values == values
+        require_staged_load(request, setup_service, attempt.pk)
+        with work_transaction():
+            assert staged_source_result(attempt.pk)
         with (
             pytest.raises(DatabaseError),
             transaction.atomic(),
             connection.cursor() as c,
         ):
             c.execute("SELECT ciphertext FROM stewardship_setup_source_exchange")
-        cancel_setup(request, setup_service, attempt.pk)
-        assert SetupDraftSection.objects.get(step="campaign").values == {}
     assert not Campaign.objects.exists()
     assert SourceCurrent.objects.get().snapshot_id is None
     assert not setup_service.configured()
 
 
-@pytest.mark.parametrize("invalid", ["result", "ministry", "timezone"])
-def test_campaign_save_rechecks_result_catalog_and_initial_timezone(
-    setup_service, monkeypatch, invalid
-):
-    """A source UUID or hidden field is not authority to select unrelated data."""
-    request, attempt = completed(setup_service, monkeypatch)
-    with web_login():
-        catalog = campaign_catalog(request, setup_service, attempt.pk)
-        values = campaign(timezone=catalog.timezone)["values"]
-        if invalid == "ministry":
-            values.update(modules=["census", "ministry"], ministry_duids=[999])
-        if invalid == "timezone":
-            values["timezone"] = "Pacific/Honolulu"
-        with pytest.raises(ValueError, match="catalog"):
-            save_section(
-                request,
-                setup_service,
-                attempt.pk,
-                step="campaign",
-                values={
-                    "source_result": str(uuid4())
-                    if invalid == "result"
-                    else str(catalog.result_id),
-                    "campaign": values,
-                },
-                expected_version=attempt.version,
-            )
-    assert not SetupDraftSection.objects.filter(step="campaign").exists()
-
-
-def test_other_login_cannot_read_staged_catalog(setup_service, monkeypatch):
+def test_other_login_cannot_use_staged_load(setup_service, monkeypatch):
     """Even the same Admin's new login cannot resume another wizard attempt."""
     _, attempt = completed(setup_service, monkeypatch)
     with web_login(), pytest.raises(LookupError):
-        campaign_catalog(login(setup_service), setup_service, attempt.pk)
+        require_staged_load(login(setup_service), setup_service, attempt.pk)
 
 
 @pytest.mark.parametrize("direct_sql", [False, True])
-def test_source_bound_timezone_cannot_strand_first_campaign(
-    setup_service, monkeypatch, direct_sql
-):
+def test_source_bound_timezone_stays_fixed(setup_service, monkeypatch, direct_sql):
     """Service and SQL preserve the loaded timezone while other profile edits work."""
     request, attempt = completed(setup_service, monkeypatch)
     original = SetupDraftSection.objects.get(attempt=attempt, step="parish").values
@@ -144,7 +100,9 @@ def test_source_bound_timezone_cannot_strand_first_campaign(
         )
         assert saved.version == attempt.version + 1
         assert (
-            campaign_catalog(request, setup_service, attempt.pk).timezone
+            SetupDraftSection.objects.get(attempt=attempt, step="parish").values[
+                "timezone"
+            ]
             == original["timezone"]
         )
         cancel_setup(request, setup_service, attempt.pk)
@@ -153,30 +111,12 @@ def test_source_bound_timezone_cannot_strand_first_campaign(
         )
 
 
-def test_staged_financial_funds_and_replaced_key_require_current_evidence(
-    setup_service, monkeypatch
-):
-    """Financial periods use the ready catalog; replacing its key invalidates it."""
+def test_replaced_key_invalidates_the_staged_load(setup_service, monkeypatch):
+    """Replacing the ParishSoft key after the load requires loading again."""
     from parishkit.stewardship.accounts.setup_credentials import stage_credential
-    from parishkit.stewardship.accounts.share_forms import default_share_options
 
     request, attempt = completed(setup_service, monkeypatch)
     with web_login():
-        catalog = campaign_catalog(request, setup_service, attempt.pk)
-        values = campaign(
-            modules=["financial"],
-            financial=financial(fund_duids=[9], comparison_fund_duids=[9]),
-            share_options=default_share_options(),
-            timezone=catalog.timezone,
-        )["values"]
-        saved = save_section(
-            request,
-            setup_service,
-            attempt.pk,
-            step="campaign",
-            values={"source_result": str(catalog.result_id), "campaign": values},
-            expected_version=attempt.version,
-        )
         stage_credential(
             request,
             setup_service,
@@ -184,10 +124,10 @@ def test_staged_financial_funds_and_replaced_key_require_current_evidence(
             target="parishsoft",
             candidate=b"synthetic-replacement",
             organization_id=1,
-            expected_version=saved.version,
+            expected_version=attempt.version,
         )
-        with pytest.raises(LookupError, match="Load the parish data"):
-            campaign_catalog(request, setup_service, attempt.pk)
+        with pytest.raises(UserFacingMissing, match="Load the parish data"):
+            require_staged_load(request, setup_service, attempt.pk)
     assert not Campaign.objects.exists()
 
 
