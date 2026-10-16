@@ -55,12 +55,13 @@ shares`` (PR 10, in ``admin_settings``), ``parish preview`` and
 ``parish confirm`` (PR 10, in ``admin_parish``), and ``events list`` and
 ``events acknowledge`` (PR 11, in ``admin_events``). A
 command that streams a file (``logs export``, ``export census``,
-``export limitations`` and ``export download --stream``) writes the file's
-bytes, and nothing else, to standard output, and its document to standard
-error. Other areas join the same
+``export limitations``, ``export roster`` and ``export download
+--stream``) writes the file's bytes, and nothing else, to standard output,
+and its document to standard error. Other areas join the same
 subparser tree in later pull requests, each listed in the catalog with the
 pull request that added it. ``report roster`` (in ``admin_roster``) counts
-the Roster changes to enter list, and ``report census`` (in
+the Roster changes to enter list, whose download is ``export roster`` (in
+``admin_roster_export``), and ``report census`` (in
 ``admin_census``) the Census changes list (#463), whose download is
 ``export census`` (in ``admin_census_export``). ``export limitations``
 (in ``admin_limitations_export``) is the Limitations report's download.
@@ -2283,6 +2284,21 @@ def _census_filters(args):
     }
 
 
+def export_roster(args, preamble, runtime, context):
+    """The Roster changes to enter download, streamed to standard output (#463)."""
+    from .admin_roster_export import export_roster as export
+
+    return export(
+        context["caller"],
+        runtime,
+        show=args.show,
+        ministry=args.ministry,
+        fmt=args.format,
+        zone_name=args.timezone,
+        context=context,
+    )
+
+
 def export_limitations(args, preamble, runtime, context):
     """The Limitations download, streamed to standard output (#463)."""
     from .admin_limitations_export import export_limitations as export
@@ -3579,6 +3595,27 @@ def _report_roster_options(parser):
     )
     parser.add_argument(
         "--ministry", type=_ministry_duid, help="one Ministry, by its DUID"
+    )
+
+
+def _export_roster_options(parser):
+    """Options of ``export roster``: ``report roster``'s, format and time zone.
+
+    The format choices are the page's own (``ministry_roster_views.
+    FORMATS``, which a test keeps equal), listed here because the parser is
+    built before Django is set up.
+    """
+    _report_roster_options(parser)
+    parser.add_argument(
+        "--format",
+        choices=("csv", "xlsx", "pdf"),
+        default=DEFAULT_EXPORT_FORMAT,
+        help=f"default {DEFAULT_EXPORT_FORMAT}",
+    )
+    parser.add_argument(
+        "--timezone",
+        default="UTC",
+        help="the time zone of the file's times (default UTC)",
     )
 
 
@@ -5011,6 +5048,7 @@ def _report_specs():
     )
     from .admin_reports import LogExport, LogList
     from .admin_roster import RosterReport
+    from .admin_roster_export import RosterExport
     from .admin_source_form import SourceFormReport
 
     return (
@@ -5414,6 +5452,19 @@ def _report_specs():
             8,
             options=(_report_roster_options,),
             audit_event="roster_changes_viewed",
+        ),
+        # The Roster changes to enter download (PR 8g): the page's file.
+        CommandSpec(
+            "export roster",
+            "Write the Roster changes to enter download to standard output.",
+            export_roster,
+            "full",
+            False,
+            RosterExport.field_names(),
+            8,
+            options=(_export_roster_options,),
+            audit_event="roster_changes_exported",
+            streams=True,
         ),
         # The Limitations download (PR 8h): the page's file.
         CommandSpec(

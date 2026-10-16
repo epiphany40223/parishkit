@@ -687,6 +687,25 @@ the page's choices, the choice check, the file name),
 the page's event with its count and choices, a refused choice `invalid`
 with nothing recorded, a read-only session refused, Staff, a Ministry
 leader denied, an ended session, no current campaign).
+A further follow-up (#463) adds `export roster`, the Roster changes to
+enter download (PR 8g), in `parishkit.stewardship.admin_roster_export`,
+through the page's own admission, `roster_rows` (its Show and Ministry
+choices), choice check and file writer
+(`ministry_roster_views.export_choice` and
+`ministry_roster_views.export_body`, extracted from the page's view) under
+the shared report read, recording the page's `roster_changes_exported`
+with its count, and no schema change; proven by
+`tests/stewardship/test_admin_roster_export.py` (the options against the
+page's choices, the choice check, the file name),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_exports.py`,
+`tests/stewardship/test_pk_admin.py` (the wrapper's streaming list),
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_roster_export_cli_postgresql.py`
+(the page's CSV byte for byte, XLSX, PDF, the Show and Ministry choices,
+the page's event with its count, refused choices `invalid` with nothing
+recorded, a read-only session refused, Staff, a Ministry leader denied, an
+ended session, no current campaign).
 ADM-11.08 lands in two parts. 7a adds `portal maintenance show` and
 `portal maintenance set` (fresh-gated, always prompts) in
 `parishkit.stewardship.admin_portal`, through the page's own

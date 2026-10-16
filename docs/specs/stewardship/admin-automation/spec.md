@@ -961,8 +961,8 @@ needs no database: it checks the preamble's form and prints the catalog.
 
 A command prints exactly one JSON document to standard output, unless it
 runs with `--watch`, is `login start` (whose document has `final` false) or
-streams a file (`logs export`, `export census`, `export limitations`, and
-`export download --stream` from PR 8b),
+streams a file (`logs export`, `export census`, `export limitations`,
+`export roster`, and `export download --stream` from PR 8b),
 which writes the file's bytes alone to standard output and its one document,
 success or failure, to standard error:
 
@@ -2893,7 +2893,7 @@ unknown email `not_available`, and a key used with another intent `invalid`.
 | `information_update`, `ministry_followup`, `ministry_followup_item`, `ministry_followup_update`, `ministry_followup_bulk` | `followup …` (PR 11); follow-up has no assignment ([#552](https://github.com/epiphany40223/parishkit/issues/552)); the queue's bulk outcome ([#1131](https://github.com/epiphany40223/parishkit/issues/1131)) goes through the same `workflows.followup` service |
 | `ministry_followup_export` | The queue's Export these requests ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)), the follow-up queue's filtered set with each Member's contact details: `followup export` (PR 11) |
 | `ministry_followup_roster` | A resolved join or leave's Entered in ParishSoft tick ([#528](https://github.com/epiphany40223/parishkit/issues/528)): `followup roster-entered REQUEST_ID --set\|--clear` (PR 11), through the same `workflows.roster` service |
-| `ministry_roster`, `ministry_roster_export` | Roster changes to enter ([#528](https://github.com/epiphany40223/parishkit/issues/528)): `report roster`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); rows only as `export roster` (PR 8g) |
+| `ministry_roster`, `ministry_roster_export` | Roster changes to enter ([#528](https://github.com/epiphany40223/parishkit/issues/528)): `report roster`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export roster [--show S] [--ministry DUID] [--format F] [--timezone Z]` (PR 8g, [#463](https://github.com/epiphany40223/parishkit/issues/463)), the page's download through the page's own writer (`ministry_roster_views.export_body`) |
 
 The users commands (#952) call the same service functions as the
 [Users page](../admin-portal/spec.md#portal-user-management), with its
@@ -2987,6 +2987,29 @@ page's context members and a `count` of 0, as the other report reads
 count the rows they display. The
 [operator guide](../../../guides/stewardship-admin-automation.md#reports)
 lists the fields.
+
+`export roster [--show todo|all] [--ministry DUID] [--format csv|xlsx|pdf]
+[--timezone Z]` ([#463](https://github.com/epiphany40223/parishkit/issues/463),
+PR 8g) is the list's in-memory download, streamed as `export limitations`
+is, with the same document (`campaign_id`, `file_name`, `content_type`,
+`format`, `timezone`, `size`, `sha256`, `count`) on standard error. It
+needs a full-scope session and is neither prompting nor fresh-gated, as the
+page asks for no recent sign-in. It admits with the page's own
+`ministry_roster_views._principal`, passively first, so a reader without
+the page is refused before anything is read or built, then recording
+activity as the download's post does, and reads through the shared report
+read and `roster_rows` with `report roster`'s Show and Ministry choices.
+`--format` and `--timezone` are checked by the page's own
+`ministry_roster_views.export_choice` and written by the page's own
+`ministry_roster_views.export_body` (both of which the page now calls), so
+its files are the page's. A Ministry DUID, format or time zone the page
+refuses is `invalid`, reported after the session recheck. It records the
+page's `roster_changes_exported` with the rows in the file, and no
+`admin_cmd_*` event; the row's Entered in ParishSoft tick stays owed to
+`followup roster-entered` (PR 11). The name, its options and the
+document's fields are defaults pending Administrator confirmation; the
+[operator guide](../../../guides/stewardship-admin-automation.md#roster-changes-download)
+lists them.
 
 ### Integrations and credentials
 
@@ -3573,7 +3596,8 @@ exactly the commands that exist.
   **PR 8f:** the Active parishioner family directory's exports (`export
   directory`, `export postal`). **PR 8g:** the one-Family timeline
   export (`export
-  family-timeline`, with the page's export form and migration 0063).
+  family-timeline`, with the page's export form and migration 0063), and
+  the Roster changes to enter download (`export roster`).
   **PR 8h:** the exact daily exports (`export exact …`), the Census changes
   download (`export census`), then the in-memory Limitations download
   (`export limitations`) after issue #752 (the response lists were

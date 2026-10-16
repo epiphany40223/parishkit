@@ -163,6 +163,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "census resolve",
         "export census",
         "export limitations",
+        "export roster",
         "report source-form",
         "report data-to-fix",
         "digest list",
@@ -263,7 +264,13 @@ def test_the_catalog_lists_every_command_with_its_flags():
         # Only the downloads stream a file to standard output.
         assert entry["streams"] == (
             name
-            in {"logs export", "export download", "export census", "export limitations"}
+            in {
+                "logs export",
+                "export download",
+                "export census",
+                "export limitations",
+                "export roster",
+            }
         ), name
         if name in acknowledged:
             assert entry["prompts"], name
@@ -575,6 +582,19 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert options["--show"]["choices"] == ["any", "cannot_serve", "cannot_attend"]
     assert "--search" not in options and "--campaign" not in options
     assert limitations["result_fields"] == census["result_fields"]
+    # The Roster changes to enter download (PR 8g): the same, with the
+    # page's own event and report roster's Show and Ministry choices.
+    roster = entries["export roster"]
+    assert roster["scope"] == "full" and not roster["changes_state"]
+    assert roster["audit_event"] == "roster_changes_exported"
+    assert roster["streams"] and not roster["prompts"]
+    assert not roster["fresh_gated"]
+    assert not roster["request_key"] and not roster["expected_version"]
+    options = {option["name"]: option for option in roster["options"]}
+    assert options["--format"]["choices"] == ["csv", "xlsx", "pdf"]
+    assert options["--show"]["choices"] == ["todo", "all"]
+    assert "--ministry" in options and "--campaign" not in options
+    assert roster["result_fields"] == census["result_fields"]
     # The export lifecycle: status is any session's passive read with
     # --watch and no view event; every other command needs a full-scope
     # session. The four changes are keyed (but cancel) and record their
