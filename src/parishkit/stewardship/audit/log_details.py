@@ -88,6 +88,10 @@ FAILURE_TEXT = {
         "Removing an expired report download kept failing; use "
         "Retry export cleanup on its task page after fixing the cause."
     ),
+    "export_discard": gettext_lazy(
+        "The saved data of some ended report downloads could not be "
+        "discarded this time; it is tried again every minute."
+    ),
     "fact_verification": gettext_lazy("Checking the report totals could not finish."),
     "source_retention": gettext_lazy(
         "Removing old ParishSoft copies failed this time."

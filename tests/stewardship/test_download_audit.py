@@ -76,6 +76,14 @@ DOWNLOAD_AUDIT_CASES = [
     ({"report_sort": "--family"}, False),
     ({"report_sort": "Smith"}, False),
     ({"report_sort": 1}, False),
+    # An export's report kind and file format (#1398): closed words only.
+    ({"report": "family_directory", "format": "pdf", "outcome": "started"}, True),
+    ({"report": "campaign_archive", "format": "xlsx"}, True),
+    ({"report": "anything"}, False),
+    ({"report": "Participation"}, False),
+    ({"report": 1}, False),
+    ({"format": "docx"}, False),
+    ({"format": "CSV"}, False),
 ]
 
 
