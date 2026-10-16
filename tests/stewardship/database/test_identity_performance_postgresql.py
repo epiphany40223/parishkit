@@ -165,7 +165,13 @@ def test_reference_family_population_does_not_expand_interactive_queries(
         # steps read the initial invitation's email for an Administrator's
         # Preview and test email (one small indexed query, NAV-18); its
         # Today count rides on the Family participation statement: 52.
-        "admin_shell": _measure(admin_page, query_limit=52),
+        # Home's Continue campaign setup (#1407, #1404) leads that list with
+        # the stepper's first step not done yet, which reads whether go-live
+        # has started, the patches applied since the campaign's creation
+        # (with that creation's sequence as a subquery) and the steps kept
+        # as is; it reuses the dashboard's invitation revision. Three fixed
+        # statements, none of them over the Families: 55.
+        "admin_shell": _measure(admin_page, query_limit=55),
     }
     print("Identity baseline: " + json.dumps(result, sort_keys=True))
     # A Family page reads its own session and Family, never the population.

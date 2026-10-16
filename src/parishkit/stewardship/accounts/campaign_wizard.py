@@ -278,20 +278,26 @@ def _creation_sequence(campaign_id):
     campaign that arrived any other way (a setup before #142) counts every
     applied change. The ``@>`` containment is served by the request table's
     ``config_request_patch_lookup`` GIN index (jsonb_path_ops), so it does
-    not scan every patch.
+    not scan every patch. Returned as a subquery expression, not a value,
+    so ``completed`` reads it inside its patch query: one statement, not
+    two, on every page that draws the stepper and on Home.
     """
+    from django.db.models import Subquery, Value
+    from django.db.models.functions import Coalesce
+
     from .runtime_models import ConfigurationActivation
 
-    return (
+    first = (
         ConfigurationActivation.objects.filter(
             request__patch__contains=[
                 {"operation": "add", "section": "campaigns", "id": str(campaign_id)}
             ]
         )
-        .values_list("sequence", flat=True)
-        .first()
-        or 0
+        # The same row ``.first()`` chose before: the lowest primary key.
+        .order_by("pk")
+        .values("sequence")[:1]
     )
+    return Coalesce(Subquery(first), Value(0))
 
 
 def completed(campaign, revision):
@@ -302,10 +308,10 @@ def completed(campaign, revision):
     (``CampaignSetupReview``, the whole step only), complete the page
     steps; an accepted test of ``revision`` completes Preview and test
     email. A stored review is never undone by a later change.
-    It reads every patch applied since the creation: only the step pages and
-    an applied step change's status call it, while a Testing draft is being
-    prepared, whose history is a few dozen changes, in a constant number of
-    queries.
+    It reads every patch applied since the creation: only the step pages,
+    an applied step change's status and an Administrator's Home call it,
+    while a Testing draft is being prepared, whose history is a few dozen
+    changes, in a constant number of queries.
     """
     from .campaign_mail_models import CampaignMailTest
     from .runtime_models import ConfigurationActivation
@@ -419,12 +425,19 @@ def for_request(match, campaign, configuration):
     )
 
 
-def current_wizard(configuration):
+# ``current_wizard``'s default: the caller has not read the revision.
+_UNREAD = object()
+
+
+def current_wizard(configuration, *, revision=_UNREAD):
     """The stepper over the current campaign, opened on no step, or None.
 
     None unless the stepper is shown (``shown``, read here: an
     Administrator is assumed, as the caller already checked). Home's
     Continue campaign setup and the step Continue read it (#1404).
+    ``revision`` is the invitation's current revision when the caller has
+    already read it in the same snapshot (Home's dashboard does, for its
+    test email step), so it is not read twice; left out, it is read here.
     """
     from parishkit.stewardship.campaigns.credential_models import (
         CampaignCredentialState,
@@ -441,7 +454,8 @@ def current_wizard(configuration):
         campaign, configuration and configuration.mode, admin=True, go_live=go_live
     ):
         return None
-    revision = invitation_revision(configuration, campaign.pk)
+    if revision is _UNREAD:
+        revision = invitation_revision(configuration, campaign.pk)
     return build(
         _financial(campaign),
         None,
