@@ -1420,8 +1420,11 @@ and fail-closed mismatch recovery are defined by the
 [configuration architecture](../architecture/spec.md#configuration-and-secrets).
 Every editor in this section reviews and applies through the
 [review dialog](../ui-conventions/spec.md#review-dialog), Parish settings
-included: its Review opens the dialog with each changed setting, Apply
-follows the change there, and the form is redrawn at the applied version.
+included: its **Save** opens the dialog, "Save the Parish settings?", with
+a [compact review](../ui-conventions/spec.md#review-dialog) (#1356), one
+"Setting: old → new" line per changed setting and a new timezone's note;
+Apply follows the change there, and the form is redrawn at the applied
+version.
 Parish settings' address takes no query.
 
 Outgoing email settings (the setup mail step and the post-setup outgoing

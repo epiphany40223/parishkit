@@ -227,8 +227,9 @@ def digest(response):
 def test_review_opens_the_dialog_and_apply_follows_change_status(auth_service, google):
     """Review answers the review dialog's fragment, never a page (#750).
 
-    It keeps the review's exact content (each change, before and after, and
-    the timezone note) and the signed preview; Apply answers with Change
+    It keeps the review's exact content (a compact review, #1356: one
+    "Setting: old → new" line per change, and the timezone note) and the
+    signed preview; Apply answers with Change
     status, which the dialog follows. The page draws the dialog, its status
     line and the form's region, redrawn from the page's own address, and
     takes no query: there are no legacy in-place addresses.
@@ -247,6 +248,8 @@ def test_review_opens_the_dialog_and_apply_follows_change_status(auth_service, g
     assert "data-review-answer" in shown and "data-review-preview" in shown
     assert 'id="settings-form"' not in shown and "settings-review" not in shown
     assert "Renamed Parish" in shown and "America/Los_Angeles" in shown
+    assert '<ul class="compact-review" id="parish-review-summary">' in shown
+    assert shown.count("<li>") == 2 and "Proposed:" not in shown
     assert "This timezone change is prospective." in shown
     response = post(browser, {"action": "confirm", "preview": token(review)})
     request_id = requested(response)

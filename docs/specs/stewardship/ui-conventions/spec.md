@@ -725,10 +725,13 @@ never scrolls to show it (Administrator, pk-local review of
   never move the form or the status line. The form has an id, so a file
   chosen while it is redrawn is said not to be kept.
 - **Review dialog: Parish settings (#750).** Parish settings reviews in the
-  [review dialog](#review-dialog), titled "Review Parish settings": each
-  changed setting with its current and proposed value, and a new
-  timezone's note. Its form is an in-place region, redrawn after Apply at
-  the applied version, with the status line under it. A field's refusal
+  [review dialog](#review-dialog) as a compact review (#1356): its button
+  reads **Save** and the dialog, "Save the Parish settings?", lists one
+  "Setting: old → new" line per changed setting (every Parish setting is
+  short, so no change keeps a full review), with a new timezone's note; an
+  unset online giving address reads "Not set". Its form is an in-place
+  region, redrawn after Apply at the applied version, with the status line
+  under it. A field's refusal
   (the Parish website's included) stays on the form; a stale page or an
   out-of-date preview is refused in the dialog, and the form is not
   redrawn, so it is refused again until the page is reloaded.
@@ -1152,7 +1155,7 @@ the campaign wizard in #1404 PR 4).
   that would move the pane's controls. The line clears on the form's next
   edit or accepted Review (#1410).
 - **Opening the dialog.** An accepted Review opens the dialog. Its title
-  names the change ("Review Parish settings") and labels the dialog
+  names the change ("Review campaign settings") and labels the dialog
   (`aria-labelledby`); focus moves to that title, never to Apply, so the
   reader hears what is being reviewed before reaching the buttons. Its body
   shows the review the feature specification describes: a full review (the
@@ -1304,10 +1307,11 @@ Share options, Campaign images, Parish logos, Parish settings, Create the
 campaign and No-reminders WorkGroup use the dialog; Create the campaign, New
 user and No-reminders WorkGroup are confirmations under #1356, and so are a
 one-time New scheduled email, Import selected with nobody skipped and
-Campaign images' Remove this image. Edit user, Share options and a small
-Campaign settings change are compact reviews under #1356; Parish settings
-becomes one under #1356 later, and an Integration settings edit when #750
-reaches it. The in-place review panel of #532 is retired
+Campaign images' Remove this image. Edit user, Share options, a small
+Campaign settings change and Parish settings are compact reviews under the
+same issue, and an Integration settings edit becomes one when #750 reaches
+it.
+The in-place review panel of #532 is retired
 ([#1429](https://github.com/epiphany40223/parishkit/issues/1429),
 [in-place controls](#in-place-controls)); the other editors use separate
 Review and Change status pages.

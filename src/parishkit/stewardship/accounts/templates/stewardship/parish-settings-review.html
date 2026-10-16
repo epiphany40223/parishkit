@@ -1,17 +1,18 @@
 {% load i18n %}{% comment %}
 The review of one Parish settings change (#750; parish_views._preview),
 drawn in the shared review dialog (UX conventions, "Review dialog"), never
-as a page of its own: parish-settings.html's Review changes posts without a
-page load and ui-v1.js moves this fragment's content into the dialog's body.
-It shows each changed setting's current and proposed value and the change's
-notes (a new timezone's). The signed preview (data-review-preview) is what
-the dialog's Apply posts to Parish settings, and data-review-done starts the
-status line the page shows once the change is applied.
+as a page of its own: parish-settings.html's Save posts without a page load
+and ui-v1.js moves this fragment's content into the dialog's body. It is a
+compact review (UX conventions, "A compact review when Review adds only the
+old value", #1356): every Parish setting is short and the new values are
+the form behind the dialog, so it lists one "Setting: old → new" line per
+changed setting (parish-review-summary, which describes the dialog), then
+the change's notes (a new timezone's). The signed preview
+(data-review-preview) is what the dialog's Apply posts to Parish settings,
+and data-review-done starts the status line the page shows once the change
+is applied. A review lasts fifteen minutes, as every review does.
 {% endcomment %}<div data-review-answer data-review-done="{% translate 'Parish settings changed.' %}">
+{% include "stewardship/components/compact-review.html" with changes=review.changes summary_id="parish-review-summary" %}
 {% for note in review.notes %}<p class="notice" role="note">{{ note }}</p>{% endfor %}
-{% for change in review.changes %}<section><h3>{{ change.label }}</h3>
-<p>{% translate "Current:" %} {{ change.before|default_if_none:'—'|linebreaksbr }}</p>
-<p>{% translate "Proposed:" %} {{ change.after|default_if_none:'—'|linebreaksbr }}</p></section>{% endfor %}
-<p>{% translate "Nothing changes until you choose Apply." %}</p>
 <input type="hidden" name="preview" value="{{ review.preview }}" data-review-preview>
 </div>
