@@ -2049,7 +2049,13 @@ Administrator confirmation; the
 shows the format. `schedule confirm` records `admin_cmd_schedule_confirm`
 in the request's own durable transaction, only when it creates the request;
 a repeated confirmation returns the original request and records nothing.
-Its configuration checks before intake are `unavailable` during a restore
+It checks the previewed send times again as the page's Apply does
+([New and Edit scheduled email](../admin-portal/spec.md#new-and-edit-scheduled-email),
+[#1464](https://github.com/epiphany40223/parishkit/issues/1464)): one that
+was ahead at preview and has since passed is `stale_version`, and nothing
+changes; preview again with a later time. A missed reminder a series edit
+adds again on its past date was already past at preview, so it is not
+refused. Its configuration checks before intake are `unavailable` during a restore
 review or an activating change, as for `schedule preview`. A database error
 once the request row is written is `outcome_unknown`, never `unavailable`,
 because it may have struck the commit; one before that rolled back and is
