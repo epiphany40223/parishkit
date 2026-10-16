@@ -24,7 +24,7 @@ from parishkit.stewardship.observability import (
     emit_failure,
 )
 from parishkit.stewardship.web.error_pages import ERROR_PAGE_ATTRIBUTE
-from parishkit.stewardship.web.refusals import unavailable_response
+from parishkit.stewardship.web.refusals import mark_not_input, unavailable_response
 
 from . import admin_navigation, campaign_wizard, family_maintenance
 from .authentication import runtime
@@ -336,7 +336,8 @@ def greyed_page(request, store):
         for name in ("principal", "portal_session"):
             request.__dict__.pop(name, None)
         return None
-    return unavailable_response(greyed.refusal())
+    # Opening a greyed-out page is no refusal of input (#1403).
+    return mark_not_input(unavailable_response(greyed.refusal()))
 
 
 def page_unavailable(actor, name):
@@ -362,7 +363,7 @@ def page_unavailable(actor, name):
         actor, admin, campaign, configuration, state.parishsoft_data
     )
     greyed = admin_navigation.greyed_page(name, reason, items)
-    return unavailable_response(greyed.refusal())
+    return mark_not_input(unavailable_response(greyed.refusal()))
 
 
 def first_entry_url(actor, section):

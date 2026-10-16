@@ -28,6 +28,7 @@ from django.utils.http import http_date
 
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.web.namespaces import ADMIN_PREFIX, cookie_namespace
+from parishkit.stewardship.web.refusals import TypedRefusal, mark_recorded
 
 from .admin_caller import AUTOMATION, WEB, as_caller
 from .admin_session_store import STORED_FORM, stored_key
@@ -437,6 +438,9 @@ def authenticated_admin(
     if caller.channel == WEB and caller.session.get(MARKER) is not None:
         from .automation_sessions import refuse_web_session
 
+        # The automation_session_refused record stands for this request's
+        # refusal: the refusal log adds none (#1403).
+        mark_recorded(caller._request)
         if read_only:
             # A read-only check may run inside a read-only snapshot, which
             # cannot write: the refusal is recorded as soon as that
@@ -516,12 +520,19 @@ def _automation_admitted(caller, principal):
     )
 
 
-class FreshAuthenticationRequired(PermissionError):
+# The refusal log's reason for a missing fresh sign-in (#1403).
+FRESH_AUTHENTICATION_REASON = "fresh_authentication_required"
+
+
+class FreshAuthenticationRequired(TypedRefusal, PermissionError):
     """The session is valid, but this action needs a Google sign-in within 5 min.
 
     It stays a PermissionError, so every existing denial path still refuses.
     Admin error handling can instead offer the step-up confirmation page.
+    The refusal log records it with its own reason, at INFO (#1403).
     """
+
+    reason = FRESH_AUTHENTICATION_REASON
 
 
 FRESH_SECONDS = 300

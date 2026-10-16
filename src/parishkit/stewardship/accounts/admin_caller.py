@@ -36,6 +36,7 @@ from uuid import UUID
 from django.middleware.csrf import rotate_token
 
 from parishkit.stewardship.observability import bound_correlation
+from parishkit.stewardship.web.refusals import AccessDenied
 
 WEB = "web"
 AUTOMATION = "automation"
@@ -117,7 +118,7 @@ class AdminCaller:
                 and self.scope == FULL
             )
             if coherent and self._state_changing and not _csrf_post(self._request):
-                raise PermissionError("Access is unavailable.")
+                raise AccessDenied("Access is unavailable.")
         elif self.channel == AUTOMATION:
             coherent = (
                 self._request is None
@@ -148,7 +149,7 @@ class AdminCaller:
         request's bound one, if any; none is invented.
         """
         if state_changing and not _csrf_post(request):
-            raise PermissionError("Access is unavailable.")
+            raise AccessDenied("Access is unavailable.")
         return cls(
             session=getattr(request, "session", None),
             channel=WEB,
@@ -219,7 +220,7 @@ class AdminCaller:
     def replace_session(self, session):
         """Adopt a rotated web session and rotate the CSRF token, as before."""
         if self.channel != WEB:
-            raise PermissionError("Access is unavailable.")
+            raise AccessDenied("Access is unavailable.")
         self.session = session
         self._request.session = session
         rotate_token(self._request)
@@ -241,6 +242,6 @@ def as_caller(value, *, state_changing=False):
     """
     if isinstance(value, AdminCaller):
         if state_changing and value.channel == WEB and not value.state_changing:
-            raise PermissionError("Access is unavailable.")
+            raise AccessDenied("Access is unavailable.")
         return value
     return AdminCaller.from_request(value, state_changing=state_changing)
