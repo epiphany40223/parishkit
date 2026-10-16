@@ -72,6 +72,8 @@ the Roster changes to enter list, whose download is ``export roster`` (in
 in ``admin_workgroup``) read and change the No-reminders WorkGroup.
 ``campaign show``, ``campaign preview`` and ``campaign confirm`` (PR 10, in
 ``admin_campaign``) read and change Campaign settings.
+``campaign shares-preview`` and ``campaign shares-confirm`` (PR 10, in
+``admin_shares``) change a campaign's Share options.
 ``followup list``, ``followup show``, ``followup update`` and ``followup
 bulk`` (PR 11a, in ``admin_followup``) read and record Ministry follow-up.
 """
@@ -6415,6 +6417,108 @@ def _followup_specs():
 # ------------------------------------------ end of Ministry follow-up block
 
 
+# ---------------------------------------------------- Share options (PR 10)
+#
+# ``campaign shares-preview`` and ``campaign shares-confirm`` (#463, in
+# ``admin_shares``): Share options' Review and Apply. ``campaign shares``
+# (in ``_settings_specs``) is the page's read.
+
+
+def campaign_shares_preview(args, preamble, runtime, context):
+    """Review a change to a campaign's Share options (PR 10)."""
+    from .admin_shares import CHANGES_LIMIT, preview_shares
+
+    # The role first (#1341): denied before any input is read.
+    _role_first(context, runtime)
+    return preview_shares(
+        context["caller"],
+        runtime,
+        args.campaign,
+        expected_version=args.expected_version,
+        changes=_input(args.changes, context, CHANGES_LIMIT),
+    )
+
+
+def campaign_shares_confirm(args, preamble, runtime, context):
+    """Confirm a reviewed Share options change as a request (PR 10)."""
+    from .admin_changes import TOKEN_LIMIT
+    from .admin_shares import confirm_shares
+
+    # The role first (#1341): denied before any input is read.
+    _role_first(context, runtime)
+    return confirm_shares(
+        context["caller"],
+        runtime,
+        args.campaign,
+        token=_input(args.token, context, TOKEN_LIMIT),
+        context=context,
+    )
+
+
+def _shares_preview_options(parser):
+    """Options of ``campaign shares-preview``: the campaign, version and change."""
+    _schedule_options(parser)
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_digest,
+        help="the version campaign shares printed",
+    )
+    parser.add_argument(
+        "--changes",
+        required=True,
+        help="the change document as JSON, or - to read it from standard input",
+    )
+
+
+def _shares_confirm_options(parser):
+    """Options of ``campaign shares-confirm``: the campaign and the token."""
+    _schedule_options(parser)
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from campaign shares-preview, or - for standard input",
+    )
+
+
+def _share_specs():
+    """Share options' Review and Apply (PR 10, ``admin_shares``).
+
+    As ``campaign preview`` and ``campaign confirm``: full scope, as the
+    page's posts record activity; neither is fresh-gated nor prompts, as
+    the page asks for no recent sign-in and its Apply is the reviewed token.
+    """
+    from .admin_shares import SharesConfirm, SharesPreview
+
+    return (
+        CommandSpec(
+            "campaign shares-preview",
+            "Review a change to a campaign's Share options.",
+            campaign_shares_preview,
+            "full",
+            False,
+            SharesPreview.field_names(),
+            10,
+            options=(_shares_preview_options,),
+            expected_version=True,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "campaign shares-confirm",
+            "Confirm a reviewed change to a campaign's Share options.",
+            campaign_shares_confirm,
+            "full",
+            True,
+            SharesConfirm.field_names(),
+            10,
+            options=(_shares_confirm_options,),
+        ),
+    )
+
+
+# ------------------------------------------------- end of Share options block
+
+
 COMMANDS = (
     COMMANDS
     + _read_specs()
@@ -6426,6 +6530,7 @@ COMMANDS = (
     + _settings_specs()
     + _workgroup_specs()
     + _campaign_specs()
+    + _share_specs()
     + _operation_specs()
     + _report_specs()
     + _users_specs()

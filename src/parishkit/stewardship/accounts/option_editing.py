@@ -194,7 +194,7 @@ def option_changes(before, after):
 
 def _preview(request, editor, service, actor, state, campaign, formset, salt):
     """The review dialog's fragment, the page refused (400), or a refusal raised."""
-    configuration, fingerprint = state[0], state[-1]
+    configuration = state[0]
     if request.POST.get("base_digest") != configuration.active_configuration.digest:
         raise stale_page()
     # The version check must stay first: a refused page is drawn at the
@@ -202,6 +202,23 @@ def _preview(request, editor, service, actor, state, campaign, formset, salt):
     # so the rows sent are never paired with a newer version.
     if not formset.is_valid():
         return _page(request, editor, configuration, campaign, formset, status=400)
+    review = review_options(editor, service, actor, state, campaign, formset, salt)
+    return render(request, editor.review_template, {"review": review})
+
+
+def review_options(editor, service, actor, state, campaign, formset, salt):
+    """The page's review of a valid formset, without the request (#463).
+
+    Shared by the page's Review and ``pk-admin campaign shares-preview``, so
+    the two cannot drift. ``state`` is ``campaign_views._state``'s, read in
+    the caller's work transaction, and ``formset`` is the page's own
+    ``ShareOptions``, already valid. Refuses no change (``UserFacingError``,
+    the unchanged safeguard) and a base that moved (``stale_page``); a
+    candidate the configuration refuses raises from ``build_candidate``.
+    Returns ``changes`` (the compact review's lines), ``options`` (the list
+    the change saves) and ``preview``, the signed binding Apply posts.
+    """
+    configuration, fingerprint = state[0], state[-1]
     options = formset.values()
     before = editor.current(campaign)
     if options == before:
@@ -220,8 +237,9 @@ def _preview(request, editor, service, actor, state, campaign, formset, salt):
     if base is None or base.digest != configuration.active_configuration.digest:
         raise stale_page()
     build_candidate(base, patch, candidate_id=uuid4())
-    review = {
+    return {
         "changes": option_changes(before, options),
+        "options": options,
         "preview": sign_preview(
             actor=actor,
             configuration=configuration,
@@ -230,7 +248,6 @@ def _preview(request, editor, service, actor, state, campaign, formset, salt):
             snapshot=fingerprint,
         ),
     }
-    return render(request, editor.review_template, {"review": review})
 
 
 def _unavailable(editor, configuration, campaign):
