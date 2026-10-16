@@ -8,6 +8,7 @@ from django import forms
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
+from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.content import (
     FAMILY_CREDENTIAL_PLACEHOLDERS,
     MAX_TEXT_BYTES,
@@ -137,7 +138,7 @@ def family_access_message(part, problem, names, *, generated):
     return _("%(part)s is missing %(names)s.") % {"part": label, "names": listed} + fix
 
 
-class ContentForm(forms.Form):
+class ContentForm(AdminForm):
     """HTML is sanitized before preview; plaintext can be generated or edited."""
 
     base_digest = forms.CharField(widget=forms.HiddenInput(), max_length=64)

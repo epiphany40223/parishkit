@@ -45,6 +45,7 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.configuration import ARTWORK_SLOTS
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.content import MAX_IMAGE_BYTES, prepare_artwork
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import (
@@ -218,7 +219,7 @@ def _campaign(configuration, campaign_id):
     return campaign
 
 
-class ArtworkForm(forms.Form):
+class ArtworkForm(AdminForm):
     """One bounded original image; the stored name and size are server-owned."""
 
     image = forms.FileField(

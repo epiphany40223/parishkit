@@ -1546,9 +1546,10 @@ refusal itself, which the shared refusals fix (`stale_page`,
 retired action or another campaign's address); and the Django
 error codes of a refused form (`required`, `invalid_choice`, `max_length`
 and so on), which every Admin form records through one shared form base.
-A refusal with no reason of its own has reason `unclassified` and names
-its exception's class in `exception_class`. Django's CSRF reason text is
-never used.
+A refusal with no reason of its own has reason `unclassified`. When an
+exception refused it, `exception_class` names that exception's class; a
+form drawn again with its errors has no exception, and names its form,
+fields and codes instead. Django's CSRF reason text is never used.
 
 **Allow-list.** The context holds closed values only, mirrored by
 `stewardship_safe_context_v1`. Anything not on the list is dropped, not
@@ -1559,10 +1560,15 @@ redacted:
   `command`, its catalog name. Every entry carries exactly one of `route`
   and `command`;
 - `form` and `fields`, server-owned form and field names, at most 10.
-  `fields` comes from the form's own declared fields, never from the keys a
-  request submitted. A formset field keeps its prefix and index
-  (`slots-0-time`), as `web.contracts.FieldError` field identifiers allow;
-- `codes`, the `ErrorCode` and Django error codes, at most 10;
+  `form` is the first refused form's class name in lowercase snake form
+  (`CampaignForm` is `campaign_form`). `fields` comes from the form's own
+  declared fields, never from the keys a request submitted. A formset field
+  keeps its prefix and index (`slots-0-time`), as `web.contracts.FieldError`
+  field identifiers allow;
+- `codes`, the `ErrorCode` and Django error codes, at most 10. The
+  refusal's own typed errors come first, then the errors of every Admin
+  form the request validated, as the forms hold them when the answer
+  leaves the view. A formset row marked for deletion is left out;
 - `reason`, the closed reason code, always present. It also keys the
   sentence [System logs](../admin-portal/spec.md#activity-groups) shows, so
   an entry reads the same in any language and after a message's wording
@@ -1578,8 +1584,8 @@ redacted:
   them; the database checks their shape, not their reason;
 - `unexpected_count`, for reason `unexpected_fields`, the number of
   submitted field names that are not the form's own. Those names are
-  client-supplied and are never recorded. A field of the form's own that
-  was sent twice is named in `fields`, with the code `duplicate`;
+  client-supplied and are never recorded. A field of a refused form's own
+  that was sent twice is named in `fields`, with the code `duplicate`;
 - `mode`, `testing` or `production`, the global mode when the refusal was
   made; and
 - `capped`, below.

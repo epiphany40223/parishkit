@@ -7,6 +7,7 @@ from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.schema_primitives import canonical_timezone, typed
+from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.refusals import UserFacingError
 from parishkit.stewardship.web.sender_name_field import SenderNameField
 
@@ -85,7 +86,7 @@ class IdentityLines(forms.CharField):
         return values
 
 
-class SetupAccessForm(forms.Form):
+class SetupAccessForm(AdminForm):
     """Additional users cannot remove or replace the bootstrap Administrator.
 
     Sign-in is by email address only (#952), so each address listed becomes
@@ -103,7 +104,7 @@ class SetupAccessForm(forms.Form):
         setup_help.apply(self, setup_help.ACCESS, replace=True)
 
 
-class SetupMailForm(forms.Form):
+class SetupMailForm(AdminForm):
     """Public mail scope does not imply credential installation or test delivery."""
 
     delegated_email = forms.EmailField(label=_("Delegated mailbox"), max_length=254)
@@ -117,7 +118,7 @@ class SetupMailForm(forms.Form):
         setup_help.apply(self, setup_help.MAIL)
 
 
-class SetupSlackForm(forms.Form):
+class SetupSlackForm(AdminForm):
     """An optional notification target must be explicitly enabled or left empty."""
 
     enabled = forms.BooleanField(label=_("Enable Slack notifications"), required=False)
@@ -161,7 +162,7 @@ class SetupSlackForm(forms.Form):
         return values
 
 
-class SetupTestingForm(forms.Form):
+class SetupTestingForm(AdminForm):
     """One destination applies to all test mail; no Production switch exists here."""
 
     testing_recipient = forms.EmailField(
@@ -174,7 +175,7 @@ class SetupTestingForm(forms.Form):
         setup_help.apply(self, setup_help.TESTING)
 
 
-class SetupBrandingForm(forms.Form):
+class SetupBrandingForm(AdminForm):
     """An opaque receipt reference still requires original-session ownership."""
 
     bundle_id = forms.UUIDField(widget=forms.HiddenInput)

@@ -58,6 +58,7 @@ from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import (
     UserFacingError,
@@ -137,7 +138,7 @@ OWN_DELETE = _(
 )
 
 
-class UserForm(forms.Form):
+class UserForm(AdminForm):
     """New and Edit user's three fields; Edit's Email is shown, not posted.
 
     Only shape is checked here: ``plan_changes`` decides everything else

@@ -38,6 +38,7 @@ from parishkit.stewardship.source.refresh_status import (
 )
 from parishkit.stewardship.source.requests import TASK_TYPE, request_refresh
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
+from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.contracts import filters
 
 from .admin_editing import editable_configuration, error_response, principal
@@ -54,7 +55,7 @@ RUN_KEY = "stewardship_refresh_run"
 RUN_REGION = REFRESH_RUN
 
 
-class RefreshForm(forms.Form):
+class RefreshForm(AdminForm):
     """Only the page's own request key comes in; the window is decided at admission.
 
     ``return_step`` is the Campaign setup step whose Load the campaign's

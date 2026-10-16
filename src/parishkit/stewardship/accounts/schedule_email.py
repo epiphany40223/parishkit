@@ -27,6 +27,8 @@ from django import forms
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
+from parishkit.stewardship.web.admin_forms import AdminForm
+
 from . import setup_help
 from .content_forms import ContentForm, default_values, text_is_generated
 from .schedule_forms import KINDS
@@ -49,7 +51,7 @@ NEW_TEXT_HELP = _(
 )
 
 
-class EmailToggle(forms.Form):
+class EmailToggle(AdminForm):
     """The "Edit this schedule's email" checkbox.
 
     It only shows the email's fields, so the page's change gate ignores it
