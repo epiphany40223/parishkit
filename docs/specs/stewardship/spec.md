@@ -99,8 +99,9 @@ Implementation tracking: [plans](../../plans/stewardship/README.md) and
   version was started.
 - **Campaign-local day**: midnight through the instant before the following
   midnight in the Campaign's IANA timezone snapshot. Timestamps remain UTC in
-  storage. The mutable Parish timezone is only the default for a new draft and
-  for non-campaign presentation.
+  storage. The mutable Parish timezone is used for non-campaign presentation
+  and is only the fallback zone for a new draft when the browser reports none
+  it can use.
 - **Admin**: a user with the Administrator role. Administrator implies every
   other portal role.
 - **Ministry leader**: the canonical name of the role called Minister in some

@@ -38,7 +38,7 @@ server refuses to delete or rename one anyway (hosted_file_views).
 {% endcomment %}
 <div id="{{ table.anchor }}" data-table-region data-refresh-url="{{ refresh_url }}">
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
-<form method="post" action="{% url 'admin:hosted_file_delete' %}" id="hosted-file-actions" data-select-table data-row-actions data-missing-hint="{% translate 'Select at least one file to delete.' %}">
+<form method="post" action="{% url 'admin:hosted_file_delete' %}" id="hosted-file-actions" data-select-table data-row-actions data-missing-hint="{% translate 'Select at least one file to delete.' %}" data-none-hint="{% translate 'Every file on this page is in use, so none can be deleted.' %}">
   {% csrf_token %}
   <div class="bulk-bar">
     {% button type="button" variant="secondary" data-bulk-action data-confirm-open="hosted-file-delete" %}{% translate "Delete selected" %}{% endbutton %}

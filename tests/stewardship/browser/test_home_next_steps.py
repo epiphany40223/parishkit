@@ -9,6 +9,7 @@ import pytest
 
 from .home_steps_components import PATH
 from .test_family_response import expect
+from .waits import same_place
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -17,13 +18,13 @@ AXE = """async () => (await axe.run(document, {
   runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']}
 })).violations.map(({id,impact}) => ({id,impact}))"""
 # Every step's box in page coordinates (hovering scrolls it into view),
-# to compare before and after pointing and focusing. Rounded to a tenth of
-# a pixel: Firefox's fractional scroll offset adds float noise of ~0.00001
-# px to the same box, which is not a shift.
+# to compare before and after pointing and focusing. Compared with
+# same_place (half a pixel): Firefox's fractional scroll offset adds float
+# noise to the same box, and rounding to a tenth can flip 1409.95 between
+# 1409.9 and 1410; a real shift moves at least a whole pixel.
 BOXES = """() => [...document.querySelectorAll('[data-next-step]')].map(e => {
   const r = e.getBoundingClientRect();
-  return [r.x + scrollX, r.y + scrollY, r.width, r.height].map(
-    v => Math.round(v * 10) / 10);
+  return [r.x + scrollX, r.y + scrollY, r.width, r.height];
 })"""
 
 
@@ -51,7 +52,7 @@ def test_next_steps_link_their_pages_and_never_shift(
     # Ministry stewardship is off: the step is text with the menu's reason.
     greyed = panel.locator("[data-next-step]").nth(2)
     expect(greyed).to_have_text(
-        "Ministry follow-up — This campaign does not include Ministry stewardship"
+        "Ministry requests — This campaign does not include Ministry stewardship"
     )
     assert greyed.get_by_role("link").count() == 0
     mail = panel.get_by_role("link", name="Outgoing mail", exact=True)
@@ -62,4 +63,4 @@ def test_next_steps_link_their_pages_and_never_shift(
     for step in panel.get_by_role("link").all():
         step.hover()
         step.focus()
-        assert page.evaluate(BOXES) == before
+        assert same_place(page.evaluate(BOXES), before)

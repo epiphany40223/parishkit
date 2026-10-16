@@ -19,21 +19,19 @@ pytestmark = pytest.mark.parametrize(
 def test_report_chart_scope_export_controls_and_accessibility(
     page, component_origin, axe_source, width
 ):
-    """Inspect exact facts without changing scope, then validate native export forms."""
+    """The daily chart takes focus and its exact facts are in the daily table,
+    then validate native export forms."""
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/participation")
     visible(page.get_by_role("status").filter(has_text="Updating"))
-    slider = page.get_by_role("slider", name="Inspect campaign date")
-    slider.focus()
-    page.keyboard.press("Home")
-    values = page.locator("[data-digest-values]").inner_text()
-    assert "Historical as of day" in values and "$1,234.56" in values
-    # The live text stays full for screen readers; the visible tooltip is short.
-    tip = page.locator("[data-digest-tip]")
-    assert tip.is_visible()
-    assert tip.locator("dd").all_inner_texts() == ["1", "1", "$1,235"]
-    assert "Historical" not in tip.inner_text()
+    # The daily chart (#720) is a focusable view named for the chart; the
+    # daily table under it holds every date's exact values.
+    view = page.locator("#participation-chart [data-chart-view]")
+    eventually(page, "() => !!document.querySelector('#participation-chart svg')")
+    view.focus()
+    assert page.evaluate("document.activeElement.hasAttribute('data-chart-view')")
     assert page.locator("[data-table-region] tbody tr").count() == 3
+    assert "$1,234.56" in page.locator("[data-table-region] table").inner_text()
     page.get_by_label("Export format", exact=True).select_option("xlsx")
     button = page.get_by_role("button", name="Generate export")
     button.focus()

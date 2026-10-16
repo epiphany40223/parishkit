@@ -24,7 +24,10 @@ The browser checks need no database:
   for the review dialog (#750), with one more hidden field (``extra``)
   besides its preview. Its Apply posts to ``APPLY``, which
   redirects to the Applied status page, after which both tables are
-  redrawn from ``LIST``'s refresh address.
+  redrawn from ``LIST``'s refresh address. ``LIST_CONFIRM`` is the same
+  page whose import posts to ``IMPORT_CONFIRM``, which answers as Import
+  selected does when every ticked leader is imported: a confirmation
+  (#1356) for one leader.
 - ``NEW``: New user. Its Email lookup posts to ``NAMES``, which answers two
   ParishSoft names; ``NEW_TAKEN``'s posts to ``NAMES_TAKEN``, which answers
   that the address is already a user. Review posts to ``REVIEW_POST``, which
@@ -66,6 +69,7 @@ from parishkit.stewardship.accounts.user_views import (
     PREFIX,
     UserForm,
     _entry_context,
+    review_lines,
     table_rows,
 )
 from parishkit.stewardship.web.tables import paginate
@@ -103,6 +107,10 @@ EDIT_OWN = "/user-edit-own"
 # The signed-in Administrator the pages are drawn for.
 READER = "admin@example.org"
 IMPORT = "/users/leaders/import"
+# Users whose import answers a confirmation (#1356): every ticked leader is
+# imported, nobody skipped.
+LIST_CONFIRM = "/users-import-confirm"
+IMPORT_CONFIRM = "/users/leaders/import-confirm"
 LONG_EMAIL = "a-very-long-address-for-the-parish-office-staff@stewardship.example.org"
 LONG_NAME = "Montgomery-Fitzwilliam, Bartholomew Alexander Christopher"
 SUGGESTED = ["Smith, Ann", "Smith, Bob"]
@@ -167,7 +175,14 @@ class Request:
 
 
 def _list(
-    values, records, *, sort="email", refresh=LIST, delete=DELETE, leaders=LEADERS
+    values,
+    records,
+    *,
+    sort="email",
+    refresh=LIST,
+    delete=DELETE,
+    leaders=LEADERS,
+    import_url=IMPORT,
 ):
     """The Users page for ``records``, sorted by ``sort``, with ``leaders``."""
     rows = user_list(records, IDENTITIES)
@@ -197,7 +212,7 @@ def _list(
                 "delete_reason": OWN_DELETE,
                 "leaders": leader_table,
                 "leaders_unreachable": 2 if leaders else 0,
-                "import_url": IMPORT,
+                "import_url": import_url,
                 "apply_url": APPLY,
             },
         ),
@@ -264,12 +279,7 @@ def components(context, admin):
     )
     review = render_to_string(
         "stewardship/user-review.html",
-        {
-            "change": change,
-            "before_role": None,
-            "after_role": "Staff",
-            "preview": "synthetic-preview",
-        },
+        {"change": change, "lines": [], "preview": "synthetic-preview"},
     )
     (edited,), _patch = plan_changes(
         records, [{"id": LEADER["id"], "name": "Leader, Lee", "role": "staff"}]
@@ -278,8 +288,7 @@ def components(context, admin):
         "stewardship/user-review.html",
         {
             "change": edited,
-            "before_role": "Ministry leader",
-            "after_role": "Staff",
+            "lines": review_lines(edited),
             "preview": "synthetic-preview",
         },
     )
@@ -309,6 +318,17 @@ def components(context, admin):
         "data-review-preview>",
         'data-review-preview><input type="hidden" name="extra" value="kept">',
     )
+    leader_confirm = render_to_string(
+        "stewardship/user-leader-import.html",
+        {
+            "added": LEADERS[:1],
+            "skipped": [],
+            "remaining": 0,
+            "limit": 100,
+            "preview": "synthetic-preview",
+            "confirmation": True,
+        },
+    )
     status = render_to_string(
         "stewardship/configuration-request.html",
         values | {"receipt": {"request_id": uuid4(), "state": "applied"}},
@@ -336,6 +356,7 @@ def components(context, admin):
         APPLIED: ("text/html", status),
         PENDING: ("text/html", pending),
         LIST_PENDING: _list(values, records, delete=DELETE_PENDING),
+        LIST_CONFIRM: _list(values, records, import_url=IMPORT_CONFIRM),
     }
     POSTS.update(
         {
@@ -395,6 +416,7 @@ def components(context, admin):
                 ),
             ),
             IMPORT: (200, None, leader_review),
+            IMPORT_CONFIRM: (200, None, leader_confirm),
         }
     )
     return responses

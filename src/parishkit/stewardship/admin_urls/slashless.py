@@ -83,7 +83,6 @@ SLASHLESS = (
     ("reports/information", "information_queue"),
     ("reports/information/<uuid:item_id>", "information_item"),
     ("reports/ministries", "ministry_report"),
-    ("reports/ministries/follow-up", "ministry_followup"),
     ("reports/ministries/follow-up/<uuid:request_id>", "ministry_followup_item"),
     ("reports/ministries/follow-up/roster", "ministry_roster"),
     ("reports/families", "family_directory"),

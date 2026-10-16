@@ -1,0 +1,5 @@
+{% load i18n %}{% comment %}
+  The rules of an acceptance, in a toggletip (``tip_id`` and
+  ``tip_label_id`` as for components/toggletip.html), shared by Accept this
+  change once's offer and its preview so the text is written once.
+{% endcomment %}{% translate "An acceptance lets one full refresh through only if every count is at least the “after” value reviewed and every count that was within the limit stays within it; the limit itself is not raised. It ends when a full refresh is promoted, when a new refusal is recorded, or after 24 hours, and a refusal can be accepted only once. A refresh that found no Families or no Members can never be accepted. In an emergency, the server operator can still let a change through, as “Accepting a large ParishSoft change” in the launch runbooks describes." as accept_tip %}{% include "stewardship/components/toggletip.html" with tip_text=accept_tip %}

@@ -3,7 +3,7 @@
 The page is the ``/campaign-settings`` component: Campaign settings for a
 Testing draft. Copy campaign is an unavailable control
 (components/disabled-control.html) with the #145 tip, shown and announced the
-same way as an unavailable menu entry (admin-portal spec, navigation rule 10):
+same way as an unavailable menu entry (UX conventions spec, navigation rule 10):
 on hover, keyboard focus and tap, dismissed by Escape or a tap elsewhere. The
 server's refusal is tested in ``test_clone_views_postgresql.py``.
 """

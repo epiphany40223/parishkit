@@ -8,14 +8,17 @@ them.
 
 import csv
 import io
+import json
 import re
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, IntegrityError, connection, transaction
+from django.urls import reverse
 from openpyxl import load_workbook
 
+from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
@@ -25,7 +28,7 @@ from parishkit.stewardship.workflows.roster import set_roster_entered
 
 from .auth_builders import signed_in
 from .test_background_grants_postgresql import task_login
-from .test_export_views_postgresql import restricted_download_pool
+from .test_export_views_postgresql import post, restricted_download_pool
 from .test_information_followup_postgresql import search
 from .test_ministry_exports_postgresql import leader
 from .test_ministry_followup_postgresql import edit, member_gone, requests
@@ -273,7 +276,7 @@ def test_a_leader_never_sees_the_tick_nor_the_list(response_service, google):
     Administrators keep seeing it and the "update ParishSoft yourself" help."""
     harness, admin, join, _ = resolved(response_service)
     item = f"/admin/reports/ministries/follow-up/{join.pk}/"
-    queue = "/admin/reports/ministries/follow-up/"
+    queue = "/admin/reports/ministries/"
     browser, _, _, _ = leader(harness, google)
 
     def hidden(entered):
@@ -448,6 +451,18 @@ def test_a_gated_campaign_takes_no_tick_and_draws_no_form(response_service, goog
     _, body = get(browser, "/admin/reports/ministries/follow-up/roster/?show=all")
     assert b"Other campaign work is under way" in body
     assert b"Clear Entered in ParishSoft" not in body
+    # The request's own page shows Clear unavailable, named by the locked
+    # notice, rather than leaving it out (#563); a forged POST is refused.
+    _, body = get(browser, f"/admin/reports/ministries/follow-up/{join.pk}/")
+    assert b'id="followup-locked"' in body
+    assert re.search(
+        rb'<button[^>]*disabled data-server-disabled aria-describedby="followup-locked"'
+        rb"[^>]*>Clear Entered in ParishSoft</button>",
+        body,
+    )
+    refused = dict(form, sequence="2", entered="no", request_key=str(uuid4()))
+    assert search(browser, tick_url, refused)[0].status_code != 302
+    assert MinistryRosterEntry.objects.get().entered is True
     with pytest.raises(PermissionError):
         tick(harness, admin, join, False)
 
@@ -480,3 +495,129 @@ def test_a_change_for_a_member_no_longer_in_parishsoft_stays_listed(
         )
     tick(harness, admin, join, True)
     assert MinistryRosterEntry.objects.filter(request=join, entered=True).exists()
+
+
+def test_bulk_marks_several_changes_all_or_none(response_service, google):
+    """Roster changes to enter's bulk bar (#879): the list draws a box for
+    each change not yet entered, and its dialog's post marks every chosen
+    change at once, each with its own entry and audit event, replay-safe.
+    A change someone else ticked first refuses the whole post, naming it in
+    the dialog; a malformed form or a change already marked is a 400; a
+    leader is refused. Nothing is saved by a refused post."""
+    harness, admin, join, leave = resolved(response_service)
+    edit(harness, admin, leave, state="resolved", outcome="leave_confirmed")
+    leave.refresh_from_db()
+    browser, login = signed_in()
+    assert login.status_code == 302
+    route = reverse("admin:ministry_roster_bulk")
+    _, body = get(browser, "/admin/reports/ministries/follow-up/roster/")
+    for target in (join, leave):
+        assert f'value="{target.pk}:1" form="roster-bulk"'.encode() in body
+    assert b'id="roster-bulk" method="post" action="' + route.encode() in body
+    assert b'data-refresh-url="/admin/reports/ministries/follow-up/roster/?' in body
+    form = {"bulk_key": str(uuid4()), "request": [f"{join.pk}:1", f"{leave.pk}:1"]}
+
+    def entries():
+        """Every tick row, as (request, sequence, entered), in a fixed order."""
+        return sorted(
+            MinistryRosterEntry.objects.values_list("request_id", "sequence", "entered")
+        )
+
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        for _ in range(2):  # the second post replays the first
+            response = post(browser, route, form)
+            assert response.status_code == 204, response.content
+        assert entries() == sorted([(join.pk, 1, True), (leave.pk, 1, True)])
+    assert AuditEvent.objects.filter(event_type="ministry_roster_entered").count() == 2
+    tick(harness, admin, join, False)
+    before = entries()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        # The list showed join at sequence 2; someone cleared it since.
+        stale = post(
+            browser, route, {"bulk_key": str(uuid4()), "request": [f"{join.pk}:2"]}
+        )
+        assert stale.status_code == 409
+        message = json.loads(stale.content)["refusal"]["message"]
+        assert "changed after this list was shown" in message
+        assert "nothing was marked" in message
+        # Leave is already marked, so the whole post is refused, join too.
+        mixed = {"bulk_key": str(uuid4()), "request": [f"{join.pk}:3", f"{leave.pk}:2"]}
+        assert post(browser, route, mixed).status_code == 400
+        for bad in (
+            {"request": [f"{join.pk}:3"]},
+            {"bulk_key": str(uuid4()), "request": []},
+            {"bulk_key": str(uuid4()), "request": [f"{join.pk}:3", f"{join.pk}:3"]},
+            {"bulk_key": str(uuid4()), "request": [f"{join.pk}"]},
+            {"bulk_key": "x", "request": [f"{join.pk}:3"]},
+            {"bulk_key": str(uuid4()), "request": [f"{join.pk}:3"], "extra": "1"},
+        ):
+            assert post(browser, route, bad).status_code == 400, bad
+        assert post(browser, route + "?x=1", mixed).status_code == 400
+        assert entries() == before
+    leader_browser, _, _, _ = leader(harness, google)
+    refused = post(
+        leader_browser,
+        route,
+        {"bulk_key": str(uuid4()), "request": [f"{join.pk}:3"]},
+    )
+    assert refused.status_code in {403, 404}
+    assert entries() == before
+
+
+def test_staff_bulk_mark_a_gone_members_change_as_a_single_tick_does(
+    response_service, google
+):
+    """Staff use the bulk bar as Administrators do (#879), and a change for
+    a Member ParishSoft no longer lists is marked like a single tick (#1217):
+    the roster work may still be real. A stale refusal still names that
+    Member's row, with the day it was resolved."""
+    from ..policy_factory import address
+    from .campaign_builders import change
+
+    harness = setup(response_service)
+    store = harness.service.store
+    change(
+        store,
+        store.active(),
+        uuid4(),
+        [
+            {
+                "operation": "add",
+                "section": "login_rules",
+                **address("staff@example.org", ("staff",)),
+            }
+        ],
+    )
+    staff = user("staff@example.org").pk
+    join, leave = requests()
+    edit(harness, staff, join, state="resolved", outcome="joined")
+    edit(harness, staff, leave, state="resolved", outcome="leave_confirmed")
+    member_gone(harness, "moved")
+    google[0]["email"] = "staff@example.org"
+    browser, login = signed_in()
+    assert login.status_code == 302
+    _, body = get(browser, "/admin/reports/ministries/follow-up/roster/")
+    assert f'value="{join.pk}:1" form="roster-bulk"'.encode() in body
+    route = reverse("admin:ministry_roster_bulk")
+    form = {"bulk_key": str(uuid4()), "request": [f"{join.pk}:1", f"{leave.pk}:1"]}
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert post(browser, route, form).status_code == 204
+    marked = MinistryRosterEntry.objects.filter(entered=True)
+    assert set(marked.values_list("request_id", flat=True)) == {join.pk, leave.pk}
+    # The signed-in Staff member made them (a fresh identity for the same
+    # address, as signed_in() creates one).
+    assert set(
+        PortalUser.objects.filter(
+            pk__in=marked.values_list("actor_id", flat=True)
+        ).values_list("email", flat=True)
+    ) == {"staff@example.org"}
+    assert AuditEvent.objects.filter(event_type="ministry_roster_entered").count() == 2
+    tick(harness, staff, join, False)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        stale = post(
+            browser, route, {"bulk_key": str(uuid4()), "request": [f"{join.pk}:2"]}
+        )
+    assert stale.status_code == 409
+    message = json.loads(stale.content)["refusal"]["message"]
+    assert re.search(r"^.+ — .+, resolved \w{3} \d{1,2}, \d{4} changed after", message)
+    assert MinistryRosterEntry.objects.filter(request=join).count() == 2

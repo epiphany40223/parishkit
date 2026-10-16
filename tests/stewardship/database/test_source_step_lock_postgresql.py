@@ -56,6 +56,7 @@ from .test_source_refreshing_postgresql import (  # noqa: F401
     run,
     seed_full,
     source_singletons,
+    staging_clock,
     with_extra_funds,
 )
 from .test_source_requests_postgresql import claim as claim_request
@@ -201,6 +202,41 @@ def test_fetch_and_staging_run_while_another_session_holds_the_work_order(
     assert {kind: len(rows) for kind, rows in staged.items() if rows} == {
         kind: count for kind, count in result.counts.items() if count
     }
+
+
+def test_fast_staging_steps_aside_for_one_progress_report(
+    tmp_path, monkeypatch, holder
+):
+    """Staging that outruns PROGRESS_SECONDS joins the work order only for
+    its first report (#895).
+
+    A competing session holds 736220,1 from the fetching report on and gives
+    way only for task transitions. With the clock frozen, the only staging
+    transition is the 0-row report: every batch runs while the other session
+    holds the lock, none takes it, and the next transition is the validating
+    report with the final count.
+    """
+    staging_clock(monkeypatch, 0.0)
+    credential, execution, lease, *_ = setup(tmp_path)
+    fake_provider(monkeypatch, pages())
+    with_extra_funds(monkeypatch, 1100)
+    seen = observe(monkeypatch, holder)
+    hold_outside_transitions(monkeypatch, holder)
+    reports = []
+    stepped_aside = Execution.progress
+
+    def progress(execution, current, total, *, phase=None):
+        """Record each report the holder stepped aside for."""
+        reports.append((current, phase))
+        return stepped_aside(execution, current, total, phase=phase)
+
+    monkeypatch.setattr(Execution, "progress", progress)
+    result = run(credential, execution, lease)
+    total = sum(result.counts.values())
+    batches = [entry for entry in seen if entry[0] == "stage"]
+    assert result.state == "ready" and len(batches) > total // 125
+    assert all(competing and not own for _, competing, own in seen)
+    assert reports == [(0, "fetching"), (0, "staging"), (total, "validating")]
 
 
 def test_a_staging_batch_never_holds_the_work_order(tmp_path, monkeypatch, holder):

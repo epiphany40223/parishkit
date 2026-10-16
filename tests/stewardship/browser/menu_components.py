@@ -88,7 +88,7 @@ LINKS = (
 )
 
 # Open counts on the two follow-up queues' entries (#585).
-COUNTS = {"information_queue": 3, "ministry_followup": 1250}
+COUNTS = {"information_queue": 3, "ministry_report": 1250}
 
 
 def components(context, admin):

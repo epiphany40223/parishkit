@@ -44,8 +44,9 @@ The historical measurements below describe the original increment.
 
 Issue #627 later split the slowest engine across CI jobs.
 `quality_sharding.BROWSER_JOBS` lists the jobs, and the workflow matrix runs
-one job per entry: Firefox whole, and WebKit and Chromium each split in three,
-one third of each per job (#1151; they were halved, in three jobs, before).
+one job per entry: Firefox halved, one half per job (#1380; it ran whole
+before), and WebKit and Chromium each split in three, one third of each per job
+(#1151; they were halved, in three jobs, before).
 `test_browser_ci.py` requires the matrix to match and every engine's
 partitions to appear exactly once. An engine's partitions split its cases by
 whole test file, balanced by estimated seconds for that engine (scheduling
@@ -72,6 +73,18 @@ file no fixed cost, so the halves were also 15 to 25% out of balance. With
 per-engine estimates and thirds, each paired job runs about 1,800 seconds of
 tests and Firefox about 1,650, near 60% of the budget. The fourth job adds one
 concurrent runner for about 33 minutes, against three for up to 50.
+
+Firefox then outgrew its single job. In CI run 38719928786 it ran 2,343
+seconds against a 1,838-second estimate, and in run 38731308882, on a runner
+about 27% slower throughout, it was killed at its 3,000-second budget with
+1,295 of its 1,303 cases done and no test failed (#1380). Firefox now runs in
+two halves, one per job, of about 1,200 seconds each, near 40% of the budget,
+so a runner even 50% slower still finishes. The same change refitted every
+engine's hints to run 38719928786: `test_system_health.py`, whose fixed waits
+cost about 440 seconds on every engine, had been estimated at 121. Replayed on
+that run's file times, each partition's estimate fell within about 4% of its
+actual time, where the Chromium and WebKit thirds had been off by up to 480
+seconds. The fifth job adds one concurrent runner for about 22 minutes.
 
 Each partition logs its estimate on its `CI_BROWSER_PARTITION` line and
 `CI_BROWSER_TIMING <label>: estimated N s, actual M s` when it finishes, pass

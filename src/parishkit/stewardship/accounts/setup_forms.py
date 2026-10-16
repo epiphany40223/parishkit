@@ -26,11 +26,16 @@ class SetupParishForm(ParishForm):
     def __init__(self, *args, **kwargs):
         """Explain each profile field; a new zone starts on the browser's."""
         super().__init__(*args, **kwargs)
-        setup_help.apply(self, setup_help.PARISH, replace=True)
-        if not self.initial.get("timezone"):
-            # No zone saved yet: start on the browser's zone, or on a blank
-            # required choice, never the list's first zone (Africa/Abidjan was
-            # stored on pk-local that way, #1330). A saved zone is kept.
+        # No zone saved yet: start on the browser's zone, or on a blank
+        # required choice, never the list's first zone (Africa/Abidjan was
+        # stored on pk-local that way, #1330), and say so in the help. A saved
+        # zone is kept, with help that does not mention the browser.
+        fresh = not self.initial.get("timezone")
+        texts = setup_help.PARISH
+        if fresh:
+            texts = texts | {"timezone": setup_help.PARISH_NEW_TIMEZONE}
+        setup_help.apply(self, texts, replace=True)
+        if fresh:
             browser_default(self, choose=True)
 
     def clean_timezone(self):

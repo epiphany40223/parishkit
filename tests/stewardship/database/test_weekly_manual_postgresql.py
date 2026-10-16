@@ -305,7 +305,12 @@ def test_manual_form_explains_a_missing_weekly_schedule(response_service, google
         schedules = "/admin/campaign/schedules/"
         assert schedules.encode() in page.content
         assert b"Dates and mail schedules</a>, then return here." in page.content
-        assert b"Queue new manual report" not in page.content
+        # Queue is in view but unavailable, named by why; no form (#1331).
+        assert (
+            b'disabled aria-describedby="manual-no-schedule">'
+            b"Queue new manual report</button>"
+        ) in page.content
+        assert b'name="acknowledge"' not in page.content
         assert WeeklyManualRequest.objects.count() == 0
         assert TaskRun.objects.count() == before
 

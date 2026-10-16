@@ -41,6 +41,10 @@
     data-confirm-reset go back to their defaults each time it opens.
   - plain_accept=True draws Confirm as an ordinary primary button, not a
     destructive one (the same option as #1145's).
+  - answer_page=True is for a page whose view travels only in POST bodies
+    (Census changes, #528): the form posts to the page itself with the
+    view's fields, and the page is redrawn from that answer rather than
+    read again from its address, which would show the default view.
 
   With review=True it is instead the shared review dialog of Admin editors
   (UX conventions, "Review dialog", #750): a form marked
@@ -62,23 +66,37 @@
     once the change is applied; without it the page's regions are redrawn
     in place. Either way outcome_id names that page's reserved status line
     (components/review-outcome.html), which then says what was applied and
-    when.
+    when; a form that opens the dialog may name its own line instead with
+    data-review-outcome (a page whose panes share one dialog), and then
+    outcome_id may be left out.
   - fallback is as above.
   - describedby, for a confirmation (UX conventions, "A confirmation when
     Review would only repeat the page"), is the id of the review
     fragment's one-sentence summary, which then describes the dialog.
+    An editor whose Review is a confirmation only for some changes (New
+    scheduled email, Import Ministry leaders) instead marks the answer
+    itself: data-review-title on the fragment replaces the title for that
+    answer, and data-review-describedby names its sentence; any other
+    answer gets the dialog's own title and description back.
+  - apply_action, when set, is the action Apply posts instead of
+    "confirm": System health's Turn off debug logging and Allow debug
+    logging again (#1356), whose page names each action's steps.
   - redraw_answer=True redraws the page's regions from the address Apply's
     answer ended on (the page naming its change, ?request=), not from the
     page's own address, and makes it the page's address: Create the
     campaign's own address can only be refused once the campaign exists.
-{% endcomment %}{% if review %}<dialog id="{{ dialog_id }}" class="confirm-dialog review-dialog" aria-labelledby="{{ dialog_id }}-title"{% if describedby %} aria-describedby="{{ describedby }}"{% endif %} data-review-dialog data-confirm-fallback="{{ fallback }}" data-review-return="{{ return_url|default:'' }}"{% if redraw_answer %} data-review-redraw="answer"{% endif %} data-review-outcome="{{ outcome_id }}" data-working="{% translate 'Applying…' %}" data-applied="{% translate 'Applied.' %}" data-applied-at="{% translate 'Applied at {time}.' %}">
+  - redraw_body=True instead redraws the page's regions from Apply's answer
+    itself, which then holds every region the change redraws, without
+    reading the page again: System health's actions (#1356), whose page
+    read is audited.
+{% endcomment %}{% if review %}<dialog id="{{ dialog_id }}" class="confirm-dialog review-dialog" aria-labelledby="{{ dialog_id }}-title"{% if describedby %} aria-describedby="{{ describedby }}"{% endif %} data-review-dialog data-confirm-fallback="{{ fallback }}" data-review-return="{{ return_url|default:'' }}"{% if redraw_answer %} data-review-redraw="answer"{% elif redraw_body %} data-review-redraw="body"{% endif %} data-review-outcome="{{ outcome_id }}" data-working="{% translate 'Applying…' %}" data-applied="{% translate 'Applied.' %}" data-applied-at="{% translate 'Applied at {time}.' %}">
 <h2 id="{{ dialog_id }}-title" tabindex="-1" data-review-title>{{ title }}</h2>
 <div class="dialog-body" tabindex="0" role="region" aria-labelledby="{{ dialog_id }}-title" data-review-body></div>
-<form method="post" action="{{ apply_url }}" data-review-apply>{% csrf_token %}<input type="hidden" name="action" value="confirm"></form>
+<form method="post" action="{{ apply_url }}" data-review-apply>{% csrf_token %}<input type="hidden" name="action" value="{{ apply_action|default:'confirm' }}"></form>
 <div class="dialog-actions">{% button type="button" data-confirm-accept %}{% translate "Apply" %}{% endbutton %}{% button type="button" variant="secondary" data-confirm-cancel %}{% translate "Cancel" %}{% endbutton %}</div>
 <p class="dialog-status" role="status" data-confirm-status></p>
 <div class="notice notice-error" role="alert" data-confirm-error hidden></div>
-</dialog>{% else %}<dialog id="{{ dialog_id }}" class="confirm-dialog" aria-labelledby="{{ dialog_id }}-title" aria-describedby="{{ dialog_id }}-body" data-confirm-dialog data-confirm-form="{{ form_id }}" data-confirm-fallback="{{ fallback }}" data-title-one="{{ title_one }}" data-title-many="{{ title_many }}" data-done-one="{{ done_one }}" data-done-many="{{ done_many }}" data-working="{% translate 'Working…' %}">
+</dialog>{% else %}<dialog id="{{ dialog_id }}" class="confirm-dialog" aria-labelledby="{{ dialog_id }}-title" aria-describedby="{{ dialog_id }}-body" data-confirm-dialog data-confirm-form="{{ form_id }}" data-confirm-fallback="{{ fallback }}" data-title-one="{{ title_one }}" data-title-many="{{ title_many }}" data-done-one="{{ done_one }}" data-done-many="{{ done_many }}"{% if answer_page %} data-confirm-answer-page{% endif %} data-working="{% translate 'Working…' %}">
 <h2 id="{{ dialog_id }}-title" data-confirm-title>{{ title_many }}</h2>
 <p id="{{ dialog_id }}-body" data-confirm-body>{{ body }}</p>
 {% if caution %}<p class="notice">{{ caution }}</p>{% endif %}

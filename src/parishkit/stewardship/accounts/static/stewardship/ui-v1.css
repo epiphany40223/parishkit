@@ -13,7 +13,10 @@
  *   boundaries and the focus ring meet the 3:1 non-text minimum. Re-check
  *   contrast when changing any color token.
  */
-:root {
+/* .light-card redeclares the light tokens on itself, so an email sample
+   preview stays light inside a dark Admin page and shows what is sent
+   (#1264; ui-conventions "Colour scheme"). */
+:root, .light-card {
   color-scheme: light;
   /* These values come from web/design_tokens.py, which the email components
      also read; test_design_tokens.py fails if the two disagree (#732). */
@@ -45,6 +48,13 @@
   --level-info: #1d5fbf;
   --level-critical: #7f0000;
   --level-audit: #5b3fa0;
+  /* Chrome details with their own dark value (#1264) */
+  --selection: #cfe6e2;
+  --unavailable: #646e73;
+  --accent-line: #b9d7d2;
+  --rule-strong: #c9d1cf;
+  --row-hover: #f8faf9;
+  --progress-track: #e3e8e7;
   /* Shape */
   --radius: .75rem;
   --radius-small: .5rem;
@@ -59,13 +69,65 @@
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font: 100%/1.6 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
+/* The Admin portal's dark scheme (#1264; ui-conventions "Colour scheme").
+   admin-base.html marks every Admin page's root (sign-in and setup too) with
+   admin-document, and admin-gate-v1.js, which runs in the head before the
+   body is parsed, sets data-theme to the scheme in use: the Appearance
+   choice saved in this browser, or the operating system's setting when
+   none is saved. Family pages extend base.html, never load that script and
+   stay light. In dark, the colour tokens take their values from DARK_COLORS
+   in web/design_tokens.py (test_design_tokens.py checks this block against
+   it), so every rule that reads a token follows with no per-component CSS.
+   "screen" keeps a printed page light. color-scheme makes the browser's own
+   form controls and scrollbars dark too. */
+@media screen {
+  html.admin-document[data-theme="dark"] {
+    color-scheme: dark;
+    --ink: #e4eaeb;
+    --muted: #a8b5ba;
+    --page: #121a1d;
+    --paper: #1b2529;
+    --paper-soft: #222e33;
+    --border: #34434a;
+    --track: #3b4b52;
+    --control-border: #80929a;
+    --accent: #5cc0b2;
+    --accent-strong: #86d5ca;
+    --accent-soft: #173c38;
+    --gold: #d2a54e;
+    --link: #84bdf0;
+    --focus: #f0a34a;
+    --warning-bg: #2f2611;
+    --warning-border: #d09a2c;
+    --warning-ink: #f2c66e;
+    --error-bg: #3b1c19;
+    --error-border: #f07a6a;
+    --error-ink: #ffb3a7;
+    --level-info: #7eaaf2;
+    --level-critical: #ff8f86;
+    --level-audit: #bba5ee;
+    --selection: #245a53;
+    --unavailable: #8d9ba1;
+    --accent-line: #2f6a62;
+    --rule-strong: #45555c;
+    --row-hover: #202b30;
+    --progress-track: #34434a;
+  }
+  /* The closed select's arrow is an image, so it cannot read --ink. */
+  html.admin-document[data-theme="dark"] select:not([multiple]):not([size]) { background-image: url("select-arrow-dark-v1.svg"); }
+  /* A parish logo is drawn for a light header; a white backing behind its
+     transparent parts keeps a dark logo visible. It adds no size. */
+  html.admin-document[data-theme="dark"] .brand img { background-color: #fff; border-radius: var(--radius-small); }
+  /* A light card keeps its edge clear of the email's text on the dark page. */
+  html.admin-document[data-theme="dark"] .light-card:not(.content-sample) { padding: 1rem; border-radius: var(--radius-small); }
+}
 * { box-sizing: border-box; }
 /* Always reserve the vertical scrollbar's space, so a centred page does not
    move sideways when it starts or stops needing a scrollbar, such as when
    "About this page" opens (#607). Overlay scrollbars reserve nothing. */
 html { scrollbar-gutter: stable; }
 body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; background: var(--page); color: var(--ink); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
-::selection { background: #cfe6e2; color: var(--ink); }
+::selection { background: var(--selection); color: var(--ink); }
 
 /* Links and focus */
 a { color: var(--link); text-underline-offset: .2em; text-decoration-thickness: .08em; }
@@ -75,7 +137,9 @@ a:hover { text-decoration-thickness: .15em; }
 .skip-link:focus { transform: none; }
 
 /* Header: brand row with status indicators, then a full-width navigation row. */
-.site-header { padding: 1rem var(--gutter); background: var(--paper); }
+/* --header-inline is the header's side padding, which the Admin pages widen
+   and the Appearance switch lines up with. */
+.site-header { --header-inline: var(--gutter); padding: 1rem var(--header-inline); background: var(--paper); }
 .site-header { position: relative; display: flex; flex-wrap: wrap; align-items: center; column-gap: 1rem; row-gap: 0; justify-content: space-between; border-bottom: 1px solid var(--border); box-shadow: 0 1px 3px rgb(16 24 40 / 5%); padding-top: 1.25rem; }
 .site-header::before { content: ""; position: absolute; inset: 0 0 auto; height: .3rem; background: linear-gradient(90deg, var(--accent), var(--accent) 60%, var(--gold)); }
 .brand { flex: 1 1 auto; margin: 0; font-family: var(--serif); font-size: clamp(1.15rem, 2.5vw, 1.4rem); font-weight: 600; line-height: 1.3; letter-spacing: .005em; color: var(--ink); }
@@ -118,6 +182,42 @@ a:hover { text-decoration-thickness: .15em; }
 .find-family-detail { display: block; color: var(--muted); font-size: .85rem; }
 .find-family-more { margin: .5rem .5rem .25rem; }
 @media (max-width: 40rem) { .find-family { flex: 1 0 100%; } }
+/* The Appearance switch (#1264, admin-appearance.html): three 36px icon
+   segments at the top right of every Admin header, sign-in and setup too.
+   Each native radio covers its segment, invisible, as in the Basic /
+   Advanced toggle, so the group keeps its keyboard behaviour and names. The
+   selected segment is drawn from data-theme-choice, which admin-gate-v1.js
+   sets in the head, so it is right from the first paint; choosing changes
+   only colours, never a size (no layout shift). */
+.appearance-switch { display: inline-flex; flex: none; margin-block: .25rem; padding: 2px; gap: 2px; border: 1px solid var(--control-border); border-radius: var(--radius-small); background: var(--paper-soft); }
+.appearance-switch label:has(> input[type=radio]) { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 36px; min-height: 0; height: 36px; margin: 0; padding: 0; border-radius: calc(var(--radius-small) - 2px); color: var(--muted); }
+.appearance-switch label:has(> input[type=radio]) > input { inset: 0; width: 100%; height: 100%; opacity: 0; }
+.appearance-switch svg { width: 18px; height: 18px; pointer-events: none; }
+.appearance-switch label:has(> input[type=radio]):hover { background: var(--accent-soft); color: var(--accent-strong); }
+:is(html[data-theme-choice=light] [data-choice=light], html[data-theme-choice=dark] [data-choice=dark], html[data-theme-choice=auto] [data-choice=auto]):is(.appearance-switch label) { background: var(--accent); color: var(--paper); }
+.appearance-switch label:has(> input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
+/* Forced colours drop backgrounds, so the selected segment keeps a system
+   highlight of its own. */
+@media (forced-colors: active) {
+  :is(html[data-theme-choice=light] [data-choice=light], html[data-theme-choice=dark] [data-choice=dark], html[data-theme-choice=auto] [data-choice=auto]):is(.appearance-switch label) { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+}
+/* Wider than a phone, the switch is pinned to the header's top right corner,
+   level with the first row, and the header keeps its width clear on every
+   row, so the Find a Family box and status pills wrap before reaching it
+   instead of pushing it onto a lower row. The minimum height is the first
+   row's usual height, for a header with only the parish name (sign-in). */
+@media (width > 40rem) {
+  .site-header:has(> .appearance-switch) { min-height: calc(2.25rem + 52px); padding-inline-end: calc(var(--header-inline) + 118px + 1rem); }
+  .site-header > .appearance-switch { position: absolute; top: calc(1.25rem + 5px); inset-inline-end: var(--header-inline); margin: 0; }
+}
+/* On a phone the header's items each take a row, so the switch follows the
+   parish name on the first row instead (the name wraps to make room, down
+   to a 320px screen) and everything else moves below it. */
+@media (max-width: 40rem) {
+  .site-header > .brand { flex-basis: 0; min-width: 0; }
+  .site-header > .appearance-switch { order: 1; }
+  .site-header > :not(.brand, .appearance-switch, [role=status]) { order: 2; }
+}
 
 /* Generic navigation lists (header and pagination) */
 nav ul { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 1rem; }
@@ -152,7 +252,7 @@ img { max-width: 100%; height: auto; }
 .admin-shell { flex: 1 0 auto; width: 100%; max-width: 94rem; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); }
 .admin-shell > main { max-width: none; margin: 0; min-width: 0; }
 /* Line the header up with the wider Admin shell. */
-.admin-body .site-header { padding-inline: max(1rem, calc((100% - 94rem) / 2 + 1rem)); }
+.admin-body .site-header { --header-inline: max(1rem, calc((100% - 94rem) / 2 + 1rem)); }
 .admin-sidebar { padding: 1rem 1rem 0; }
 .admin-menu > summary { display: inline-flex; align-items: center; min-height: 44px; padding: .5rem 1rem; border: 1px solid var(--control-border); border-radius: var(--radius-small); background: var(--paper); color: var(--accent); font-weight: 650; cursor: pointer; }
 .admin-sidebar ul { display: block; list-style: none; margin: 0; padding: 0; }
@@ -192,10 +292,10 @@ img { max-width: 100%; height: auto; }
 .admin-sidebar a[aria-current=page] .admin-menu-count { background: var(--paper); }
 /* An entry the role may open but that is unavailable right now: greyed out,
    still focusable, and never styled like a link that goes somewhere. Its
-   grey (#646e73) keeps 4.5:1 on the page background, so the name stays
+   grey (--unavailable) keeps 4.5:1 on the page background, so the name stays
    readable. Its reason is a small tip under it, hidden until
    admin-menu-v1.js shows it on hover, focus or tap. */
-.admin-sidebar a.admin-unavailable, .admin-sidebar a.admin-unavailable:hover, .admin-sidebar a.admin-unavailable:focus-visible { background: none; color: #646e73; cursor: not-allowed; }
+.admin-sidebar a.admin-unavailable, .admin-sidebar a.admin-unavailable:hover, .admin-sidebar a.admin-unavailable:focus-visible { background: none; color: var(--unavailable); cursor: not-allowed; }
 .admin-sidebar a.admin-unavailable[aria-current] { background: var(--paper-soft); font-weight: 400; }
 /* admin-menu-v1.js places a shown tip (fixed, so the sidebar's scroll area
    cannot clip it) beside its entry, or above it where there is no room. A
@@ -208,7 +308,7 @@ img { max-width: 100%; height: auto; }
    beside it, or above it where there is no room, never over the next
    control. */
 .disabled-control { position: relative; display: inline-block; }
-.disabled-control-link, .disabled-control-link:hover { color: #646e73; text-decoration: none; cursor: not-allowed; }
+.disabled-control-link, .disabled-control-link:hover { color: var(--unavailable); text-decoration: none; cursor: not-allowed; }
 /* Sign out is a POST button that looks like the menu's links, set apart at the end. */
 .admin-sections > li.admin-signout { margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--border); }
 .admin-signout form { margin: 0; }
@@ -256,7 +356,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
 /* A card inside a card is a flat inset rather than a second floating layer. */
 .panel .panel { background: var(--paper-soft); box-shadow: none; }
 .empty-state { text-align: center; background: transparent; border-style: dashed; border-color: var(--control-border); box-shadow: none; color: var(--muted); }
-/* Report stat tiles (the response dashboard): a count per tile, wrapping. */
+/* Report stat tiles (the response dashboard, Home's Family participation): a count per tile, wrapping. */
 .stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .75rem; list-style: none; margin: 0 0 1.25rem; padding: 0; }
 .stat-tile { display: flex; flex-direction: column; gap: .2rem; padding: .85rem 1rem; border: 1px solid var(--border); border-radius: var(--radius-small); background: var(--paper-soft); }
 /* The Campaign comparison's Compare on day (#1018): a short day field with
@@ -279,6 +379,13 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
 .stat-label { font-weight: 600; }
 .stat-value { font-size: 1.75rem; font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; }
 .stat-detail { color: var(--muted); font-size: .875rem; }
+/* A tile's share bar (#720) sits at the tile's foot, so the bars of a row's tiles (stretched to one height) line up. */
+.stat-bar { display: block; margin-top: auto; padding-top: .35rem; }
+/* The empty track must read as the whole against the tile's --paper-soft:
+   the shared track token (about 1.3:1 alone) plus a --control-border edge
+   (above 3:1), so a 10% bar reads as a tenth of a bar, not a short line. */
+.stat-bar progress { display: block; background: var(--track); border: 1px solid var(--control-border); }
+.stat-bar progress::-webkit-progress-bar { background: var(--track); }
 /* A small set of links choosing one view of a page; the current one is marked. */
 .choice-links { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: .75rem; }
 .choice-links a { padding: .3rem .9rem; border: 1px solid var(--accent); border-radius: 999px; }
@@ -325,7 +432,7 @@ fieldset.panel > legend { font-size: 1.3rem; font-weight: 650; }
 input, textarea, select, button { font: inherit; max-width: 100%; }
 input:not([type=checkbox], [type=radio], [type=hidden]), textarea, select { display: block; width: 100%; min-height: 44px; padding: .65rem .85rem; border: 1px solid var(--control-border); border-radius: var(--radius-small); background: var(--paper); color: var(--ink); box-shadow: inset 0 1px 2px rgb(16 24 40 / 6%); transition: border-color .15s, box-shadow .15s; }
 input:not([type=checkbox], [type=radio], [type=hidden]):hover, textarea:hover, select:hover { border-color: var(--ink); }
-input:not([type=checkbox], [type=radio], [type=hidden]):focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgb(17 94 86 / 22%); }
+input:not([type=checkbox], [type=radio], [type=hidden]):focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 input:not([type=checkbox], [type=radio], [type=hidden]):focus-visible, textarea:focus-visible, select:focus-visible { outline-offset: 2px; }
 textarea { min-height: 8rem; resize: vertical; }
 /* WebKit lets a long selected option overflow a width-constrained select, and
@@ -400,6 +507,13 @@ input[data-time-entry=list] { max-width: 24rem; }
    emptying then never moves the buttons below it. */
 .reserve-lines-wrap { min-height: 3.2em; min-height: 2lh; }
 @media (max-width: 40rem) { .reserve-lines-wrap { min-height: 4.8em; min-height: 3lh; } }
+/* Take a backup now's offered form has the bottom margin the disabled
+   button's paragraph has, so the button and the line under it keep their
+   places as a request starts and ends. */
+.backup-offer { margin-block: 0 1rem; }
+/* Its held line (with the toggletip and the link) takes a fourth line on a
+   phone, so every state of the line keeps four there. */
+@media (max-width: 40rem) { .backup-line { min-height: 6.4em; min-height: 4lh; } }
 select:not([multiple]):not([size]) { max-width: 26rem; }
 select[multiple], select[size] { max-width: 40rem; }
 textarea { max-width: 56rem; }
@@ -529,6 +643,10 @@ button.is-busy::after, .button.is-busy::after { content: ""; display: inline-blo
 [data-health-dashboard]:not([data-not-current]) .health-restart { visibility: hidden; }
 [data-health-dashboard]:not([data-not-current]) .health-unknown,
 [data-health-dashboard][data-not-current] .health-counted { display: none !important; }
+/* Accept this change once's offer is drawn offered and with its step-up;
+   the page's sign-in, as of when it was drawn, picks one (#1331 item 18). */
+[data-health-dashboard]:not([data-health-fresh]) .accept-when-fresh,
+[data-health-dashboard][data-health-fresh] .accept-when-stale { display: none; }
 .health-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, max(22rem, calc((100% - 1.5rem) / 3))), 1fr)); grid-auto-flow: row dense; gap: .75rem; align-items: start; }
 .health-tile { position: relative; min-width: 0; }
 .health-band { grid-column: 1 / -1; min-width: 0; padding: 1rem 1.25rem; background: var(--paper); border: 1px solid var(--status-line, var(--border)); border-inline-start-width: calc(1px + var(--status-bar, 0rem)); border-radius: var(--radius-small); }
@@ -586,7 +704,7 @@ details.about-page > summary::-webkit-details-marker { display: none; }
 details.about-page > summary::before { content: ""; flex: none; width: .5rem; height: .5rem; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); }
 details.about-page[open] > summary::before { transform: rotate(45deg); }
 details.about-page > summary::after { content: "\24D8" / ""; font-weight: 400; }
-.about-page-body { display: block; padding: .75rem 1rem; margin-block: 0 .75rem; border: 1px solid #bcd8d3; border-radius: var(--radius-small); background: var(--accent-soft); }
+.about-page-body { display: block; padding: .75rem 1rem; margin-block: 0 .75rem; border: 1px solid var(--accent-line); border-radius: var(--radius-small); background: var(--accent-soft); }
 .about-page-body > :first-child { margin-top: 0; }
 .about-page-body > :last-child { margin-bottom: 0; }
 .about-page-body .panel { box-shadow: none; }
@@ -597,9 +715,9 @@ table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nu
 caption { text-align: start; font-weight: 650; font-size: 1.05rem; padding: 1rem 1.25rem; }
 th, td { text-align: start; padding: .75rem 1rem; border-bottom: 1px solid var(--border); vertical-align: top; }
 thead { background: var(--paper-soft); }
-thead th { color: var(--muted); font-size: .875rem; font-weight: 650; letter-spacing: .01em; border-bottom-color: #c9d1cf; }
+thead th { color: var(--muted); font-size: .875rem; font-weight: 650; letter-spacing: .01em; border-bottom-color: var(--rule-strong); }
 tbody tr:last-child > * { border-bottom: 0; }
-tbody tr:hover { background: #f8faf9; }
+tbody tr:hover { background: var(--row-hover); }
 tbody th { font-weight: 600; }
 td > :last-child { margin-bottom: 0; }
 /* Shared Admin tables (web/tables.py): a compact data grid for desktop use,
@@ -700,7 +818,7 @@ td > :last-child { margin-bottom: 0; }
    line while empty; a refusal reads as an error. */
 .schedule-email-test-status.is-error { color: var(--error-ink); font-weight: 600; }
 .status-badge { display: inline-block; padding: .1rem .6rem; border-radius: 999px; background: var(--paper-soft); border: 1px solid var(--border); font-size: .8125rem; font-weight: 600; white-space: nowrap; }
-.status-badge-on { background: var(--accent-soft); border-color: #b9d7d2; color: var(--accent-strong); }
+.status-badge-on { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-strong); }
 .bulk-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin-block: 1rem .5rem; }
 .bulk-bar button { margin: 0; }
 /* The shared bulk bar (table-selection.html) never changes size as rows are
@@ -730,11 +848,18 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 .spinner { display: inline-block; width: 1em; height: 1em; margin-inline-end: .35em; vertical-align: -.15em; border: 2px solid var(--accent); border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
 /* An export panel collapsed below a report's filters. */
 details.export-panel > form { margin-top: .5rem; }
+/* A report's Filters panel (#227, the filterpanel tag). At phone width its
+   box gives up its side gutters and borders, so its filter bar keeps the
+   full width it had before the panel and a label and its "i" keep one line. */
+@media (max-width: 40rem) { details.filter-panel { padding-inline: 0; border-inline: 0; border-radius: 0; } }
 /* Compact filter bars: short fields share one row on wider screens. */
 .filter-bar { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem 1rem; }
 .filter-bar label { margin: 0 0 .25rem; font-size: .925rem; }
 .filter-bar > div { flex: 0 1 26rem; min-width: 12rem; }
 .filter-bar > div.short { flex: 0 1 9rem; }
+/* A field as wide as its longest choice, so a long option reads whole
+   (Limitations' Show, #227); it still shrinks to the row on a phone. */
+.filter-bar > div.fit { flex: 0 1 auto; }
 .filter-bar button { margin: 0; }
 /* Short form fields side by side (the Ministry follow-up request, #1014).
    Unlike a filter bar the fields align at the top, since a time field keeps
@@ -754,8 +879,8 @@ details.export-panel > form { margin-top: .5rem; }
 textarea.compact { min-height: 0; }
 
 /* Progress */
-progress { width: 100%; height: .85rem; appearance: none; border: 0; border-radius: 999px; background: #e3e8e7; color: var(--accent); accent-color: var(--accent); overflow: hidden; }
-progress::-webkit-progress-bar { background: #e3e8e7; border-radius: 999px; }
+progress { width: 100%; height: .85rem; appearance: none; border: 0; border-radius: 999px; background: var(--progress-track); color: var(--accent); accent-color: var(--accent); overflow: hidden; }
+progress::-webkit-progress-bar { background: var(--progress-track); border-radius: 999px; }
 progress::-webkit-progress-value { background: var(--accent); border-radius: 999px; }
 progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 
@@ -831,6 +956,7 @@ details.technical-details dd { overflow-wrap: anywhere; }
 /* An HTML source error is marked at the visual editor too, as a field's (#563). */
 .content-editor[aria-invalid="true"] { border: 2px solid var(--error-border); }
 .content-sample, pre { overflow-wrap: anywhere; white-space: pre-wrap; }
+.light-card { background: var(--paper); color: var(--ink); }
 .content-sample { padding: 1rem; border: 1px dashed var(--control-border); border-radius: var(--radius-small); background: var(--paper); }
 
 
@@ -886,6 +1012,15 @@ fieldset.member-section { border: 0; border-radius: 0; background: none; padding
 /* A slot's upload controls sit in a plain fieldset only so a slot whose
    Family page the campaign never shows can grey them all at once (#563). */
 fieldset.artwork-upload { border: 0; border-radius: 0; background: none; padding: 0; margin: 0; }
+/* A slot's status line (review-outcome.html) also says why an upload was
+   refused (#1410), which can be longer than one line. So it wraps, whole
+   and readable, in lines kept whether or not it says anything: two, or
+   three on a phone, enough for a file that is no usable image (the common
+   refusal), so neither it nor the one-line "Applied" status moves the
+   slots below. A longer message (a stale page's unavailable reason, on a
+   phone) grows the line rather than being cut short. */
+.artwork-slot .review-outcome { white-space: normal; min-height: 2lh; }
+@media (max-width: 40rem) { .artwork-slot .review-outcome { min-height: 3lh; } }
 .family-summary .family-name { font-size: 1.2rem; font-weight: 650; }
 .family-nav { position: sticky; bottom: 0; z-index: 1; background: var(--paper-soft, var(--paper)); padding-block: .75rem max(.75rem, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); margin-top: 1.5rem; }
 .family-nav > button { margin-block: 0; }
@@ -979,7 +1114,7 @@ label.limitation { display: block; margin-block: 1rem; font-weight: 600; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 @media print {
-  button, .skip-link, .site-header::before, .admin-sidebar, nav.breadcrumbs { display: none; }
+  button, .skip-link, .site-header::before, .admin-sidebar, nav.breadcrumbs, .appearance-switch { display: none; }
   .admin-shell { display: block; }
   body { background: white; }
   main { padding: 0; }
@@ -1076,6 +1211,11 @@ th:not([aria-sort]) .sort-indicator { opacity: .45; }
 .followup-filters > div { flex: 1 1 12rem; }
 .followup-filters > div.followup-search { flex: 2 1 26rem; }
 .followup-table .cell-ellipsis { max-width: 13rem; }
+/* Ministry requests' By Ministry counts (#1133): a long scope scrolls inside
+   its own box, with its column headings kept in view, so the queue table
+   below stays near; a scope of a few Ministries never reaches the limit. */
+.by-ministry-scroll { max-height: 18rem; overflow-y: auto; }
+.by-ministry-scroll thead th { position: sticky; top: 0; background: var(--paper-soft); }
 .cell-with-badge { position: relative; display: flex; align-items: center; gap: .4rem; }
 .cell-with-badge > .cell-ellipsis { min-width: 0; }
 .cell-with-badge > .cell-clamp { flex: 0 1 auto; }
@@ -1123,6 +1263,9 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .table-actions { white-space: nowrap; }
 .table-actions .icon-button { margin: 0 .5rem 0 0; }
 .table-actions .icon-button:last-child { margin-inline-end: 0; }
+/* A row action that posts in place (Roster changes to enter's tick) sits in
+   its own form, inline, so it lines up as a lone button does. */
+.table-actions form { display: inline; margin: 0; }
 /* A fixed square, not a minimum: a link (Edit) and a <button> (Delete) must
    draw the same size, and the `.data-table button` rule's smaller padding and
    min-height would otherwise shrink only the button. The doubled-up selector
@@ -1160,6 +1303,11 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .review-dialog .dialog-body { flex: 1 1 auto; min-height: 0; overflow: auto; margin-bottom: 1rem; }
 .review-dialog .dialog-body > :first-child { margin-top: 0; }
 .review-dialog [data-confirm-accept][data-recorded] { visibility: hidden; }
+/* A compact review (#1356, components/compact-review.html): one line per
+   changed field, "Field: old → new"; a long label or value wraps. */
+.compact-review { padding-left: 1.25rem; overflow-wrap: anywhere; }
+.compact-review li + li { margin-top: 0.25rem; }
+.compact-review-field { font-weight: 600; }
 .review-outcome { min-height: 1.6em; margin: .5rem 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* The Basic / Advanced mode toggle (#1121, components/editor-mode.html): a
    segmented pair of radios with a visible label, at the top of the editor.
@@ -1175,6 +1323,9 @@ fieldset.editor-mode > legend { float: none; width: auto; margin: 0; padding: 0;
 .editor-mode-options label:has(> input[type=radio]) > input { inset: 0; width: 100%; height: 100%; opacity: 0; }
 .editor-mode-options label:has(> input:checked) { background: var(--accent); color: var(--paper); }
 .editor-mode-options label:has(> input:focus-visible) { outline: 3px solid var(--focus); outline-offset: -6px; }
+/* The ring sits inside the segment, so on the checked (accent) segment it
+   is drawn in --paper, which keeps 3:1 on --accent in both schemes (#1264). */
+.editor-mode-options label:has(> input:checked:focus-visible) { outline-color: var(--paper); }
 /* The Basic panel is a <fieldset> so one disabled attribute keeps its
    controls unsent while Advanced is shown; it draws no box of its own. */
 fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0; background: none; }
@@ -1207,14 +1358,16 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
    border is drawn as a shadow, so marking it moves nothing (#736). A
    .field-row input (the follow-up contact Date and Time, #1014) and a
    live-checked date (Campaign settings' end date, #1119) are taller
-   than their minimum height, so a thicker border would grow them too; a select
-   is held at its minimum height and keeps the global 2px border. */
-:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input)[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
-:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input)[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px rgb(17 94 86 / 22%); }
+   than their minimum height, so a thicker border would grow them too; so
+   would a Campaign images slot's file field, moving every slot below it
+   (#1410; its scope is in :where(), so the list keeps its specificity).
+   A select is held at its minimum height and keeps the global 2px border. */
+:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file])[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
+:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file])[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 /* Forced colors draw no shadow: an outline inside the border marks it,
    except under keyboard focus, where the global 3px focus ring shows. */
 @media (forced-colors: active) {
-  :is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input)[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
+  :is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file])[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
 }
 .schedule-row-messages { padding-top: .5rem; min-height: calc(1lh + .5rem); }
 .schedule-row-messages > * { margin: 0; }
@@ -1309,7 +1462,7 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
 /* Email marked invalid by the lookup keeps its size, as invalid schedule
    row controls do: the second pixel of its error border is a shadow. */
 .user-entry input[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
-.user-entry input[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px rgb(17 94 86 / 22%); }
+.user-entry input[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 @media (forced-colors: active) {
   .user-entry input[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
 }

@@ -10,18 +10,17 @@
 <dt>{% translate "Cannot participate in ministries" %}</dt><dd>{{ summary.cannot_serve|number }}</dd>
 <dt>{% translate "Families that cannot attend Mass" %}</dt><dd>{{ summary.cannot_attend|number }}</dd>
 </dl></div>
-<form id="table-filters" data-table-sync method="post" action="{% url 'admin:limitations_report' %}">{% csrf_token %}
-<label for="limitations-search">{% translate "Search name or Family DUID" %}</label><input id="limitations-search" name="search" maxlength="200" value="{{ query.search }}">
-<label for="limitations-filter">{% translate "Show" %}</label><select id="limitations-filter" name="show"><option value="any">{% translate "Everything" %}</option><option value="cannot_serve"{% if query.show == 'cannot_serve' %} selected{% endif %}>{% translate "Cannot participate in ministries" %}</option><option value="cannot_attend"{% if query.show == 'cannot_attend' %} selected{% endif %}>{% translate "Families that cannot attend Mass" %}</option></select>
+{# Two short filters fit one row, so they need no Filters panel (#227). #}<form id="table-filters" data-table-sync method="post" action="{% url 'admin:limitations_report' %}" class="filter-bar">{% csrf_token %}
+<div><label for="limitations-search">{% translate "Search name or Family DUID" %}</label><input id="limitations-search" name="search" maxlength="200" value="{{ query.search }}"></div>
+<div class="fit"><label for="limitations-filter">{% translate "Show" %}</label><select id="limitations-filter" name="show"><option value="any">{% translate "Everything" %}</option><option value="cannot_serve"{% if query.show == 'cannot_serve' %} selected{% endif %}>{% translate "Cannot participate in ministries" %}</option><option value="cannot_attend"{% if query.show == 'cannot_attend' %} selected{% endif %}>{% translate "Families that cannot attend Mass" %}</option></select></div>
 {% for name, value in members_table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}{% for name, value in families_table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
 {% button type="submit" %}{% translate "Apply filters" %}{% endbutton %}</form>
-<section aria-labelledby="limitations-export-heading">
-<h2 id="limitations-export-heading">{% translate "Download" %}</h2>
+<details class="export-panel"><summary id="limitations-export-heading">{% translate "Download (CSV, XLSX or PDF)" %}</summary>
 <form id="table-export" data-table-sync method="post" action="{% url 'admin:limitations_export' %}">{% csrf_token %}
 {% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
 <label for="limitations-format">{% translate "Format" %}</label><select id="limitations-format" name="format">{% export_format_options "csv" "xlsx" "pdf" %}</select>
 <label for="limitations-timezone">{% translate "Timezone" %}</label><select id="limitations-timezone" name="timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
-{% button type="submit" %}{% translate "Download with these filters" %}{% endbutton %}</form></section>
+{% button type="submit" %}{% translate "Download with these filters" %}{% endbutton %}</form></details>
 <script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
 <h2>{% translate "Members who cannot participate in ministries" %}</h2>
 <div id="{{ members_table.anchor }}" data-table-region>

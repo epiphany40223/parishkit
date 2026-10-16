@@ -34,8 +34,9 @@ pytestmark = pytest.mark.django_db(transaction=True)
 MIGRATIONS = Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema"
 FROZEN = MIGRATIONS / "migrations/0096_proposal_review.sql"
 ROUTE = "/admin/reports/census/"
-# The Back to To review button's label (the page help names it too).
-BACK = b">Back to To review<"
+# A row's Back to To review button (the page help and the bulk bar name it
+# too, so its label alone does not tell them apart).
+BACK = b'name="resolve" value="to_review"'
 
 
 def review(harness, actor, proposal, decision, *, version=None, key=None, note=""):

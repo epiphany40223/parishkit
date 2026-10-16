@@ -29,10 +29,9 @@ PARISH = {
         "user name, “?” or “#” part."
     ),
     "timezone": _(
-        "The parish's local time zone, for example America/New_York. Your "
-        "browser's time zone is selected when it is on the list. Emails show "
-        "times in it. Starting the parish data load fixes it for this setup "
-        "attempt."
+        "The parish's local time zone, for example America/New_York. Emails "
+        "show times in it. Starting the parish data load fixes it for this "
+        "setup attempt."
     ),
     "phone": _(
         "The parish office's main telephone number, shown to Families who need "
@@ -262,6 +261,16 @@ CONTENT = {
 
 # One visible line for fields whose full help moves into a tip. Keep each to
 # the format, example or rule an Admin needs every time they fill it in.
+# The setup Parish step's time zone help while no zone is saved (#1330):
+# only then does the menu start on the browser's zone. A saved or fixed zone
+# keeps the PARISH text above, which says nothing about the browser.
+PARISH_NEW_TIMEZONE = _(
+    "The parish's local time zone, for example America/New_York. Your "
+    "browser's time zone is selected when it is on the list; otherwise choose "
+    "one. Emails show times in it. Starting the parish data load fixes it for "
+    "this setup attempt."
+)
+
 # Create the campaign's time zone help (#1330): its menu starts on the
 # browser's zone, unlike Campaign settings, which shows the saved one.
 CREATION_TIMEZONE = _(

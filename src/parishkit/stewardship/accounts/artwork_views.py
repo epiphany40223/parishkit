@@ -47,7 +47,12 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.content import MAX_IMAGE_BYTES, prepare_artwork
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.refusals import UserFacing, UserFacingStale, stale_page
+from parishkit.stewardship.web.refusals import (
+    UserFacing,
+    UserFacingStale,
+    stale_page,
+    unexpected_fields,
+)
 
 from . import admin_navigation
 from .admin_editing import (
@@ -106,6 +111,16 @@ UNREVIEWABLE = {
         "remove now, or the settings changed since. Reload the page, then "
         "choose Remove this image again if the slot still shows an image."
     ),
+}
+# Why an upload that is not a usable image is refused, at its field, by the
+# kind of image the slot takes. Each names only what its slot needs, so it
+# fits the slot's reserved status line (#1410); the browser tests check the
+# fit at phone and desktop width.
+NOT_STATIC_IMAGE = {
+    "banner": _(
+        "Choose a static PNG, JPEG or WebP image at least twice as wide as it is tall."
+    ),
+    "section": _("Choose a static PNG, JPEG or WebP image that is roughly square."),
 }
 SLOT_LABELS = {
     "banner": _("Banner (top of the Family emails only)"),
@@ -515,7 +530,7 @@ def artwork_upload(request, campaign_id, slot):
             or any(len(values) != 1 for _, values in request.POST.lists())
             or any(len(values) != 1 for _, values in request.FILES.lists())
         ):
-            raise ValueError("Invalid campaign image upload fields.")
+            raise unexpected_fields()
         form = ArtworkForm(request.POST, request.FILES, auto_id=f"id_{slot}_%s")
         reason = unavailable(campaign, slot)
         if reason is not None:
@@ -527,14 +542,7 @@ def artwork_upload(request, campaign_id, slot):
             try:
                 graphics = prepare_artwork(form.cleaned_data["image"], _kind(slot))
             except ValueError:
-                form.add_error(
-                    "image",
-                    _(
-                        "Choose a supported, bounded static image: a wide banner "
-                        "at least twice as wide as it is tall, or a roughly "
-                        "square icon."
-                    ),
-                )
+                form.add_error("image", NOT_STATIC_IMAGE[_kind(slot)])
             else:
                 try:
                     identifier = stage_branding(

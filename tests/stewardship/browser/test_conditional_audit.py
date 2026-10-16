@@ -279,3 +279,78 @@ def test_rename_waits_for_a_new_valid_name(page, component_origin):
     assert change.is_enabled()
     name.fill("parish-map")
     assert change.is_disabled()
+
+
+@pytest.mark.parametrize(
+    ("path", "button", "reason"),
+    [
+        ("/go-live-stale", "Start Testing cleanup", "cleanup-fresh-reason"),
+        ("/weekly-manual-no-schedule", "Queue new manual report", "manual-no-schedule"),
+        ("/delivery-held", "Confirm delivery using external evidence", "delivery-held"),
+        ("/delivery-held", "Authorize potentially duplicate resend", "delivery-held"),
+        (
+            "/delivery-refusal-busy",
+            "Clear verified refusal",
+            "refusal-clear-unavailable",
+        ),
+        ("/restore-review-stale", "Release the site", "restore-fresh-reason"),
+        ("/restore-review-stale", "Assume these were sent", "restore-fresh-reason"),
+        ("/restore-review-stale", "Send these again", "restore-fresh-reason"),
+        (
+            "/restore-review-release-blocked",
+            "Release the site",
+            "restore-release-reason",
+        ),
+        ("/held-emails-stale", "Assume these were sent", "restore-fresh-reason"),
+        ("/family-timeline-locked", "Open form", "open-form-reason"),
+        (
+            "/family-timeline-locked",
+            "Queue timeline export",
+            "timeline-export-unavailable",
+        ),
+    ],
+)
+def test_known_refusals_are_shown_unavailable_with_why(
+    page, component_origin, path, button, reason
+):
+    """An action the server would refuse for a reason the page knows is in
+    view, unavailable, named by that visible reason, also after a restore
+    from the back/forward cache (#563, #1331)."""
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.goto(component_origin + path)
+    controls = page.get_by_role("button", name=button, exact=True)
+    assert controls.count() >= 1
+    page.evaluate(RESTORE)
+    for index in range(controls.count()):
+        control = controls.nth(index)
+        assert control.is_disabled()
+        assert reason in control.get_attribute("aria-describedby").split()
+    named = page.locator(f"#{reason}")
+    visible(named)
+    assert named.inner_text().strip()
+    assert failures == []
+
+
+def test_locked_followup_bulk_bar_stays_unavailable_with_why(page, component_origin):
+    """While other campaign work holds Ministry follow-up, its bulk bar and
+    row boxes are in view, unavailable, named by the locked notice (#1331)."""
+    page.goto(component_origin + "/followup-gated")
+    actions = page.locator("[data-bulk-action]")
+    boxes = page.locator("input[data-select-row], input[data-select-all]")
+    assert actions.count() >= 1
+    assert boxes.count() >= 2
+    visible(page.locator("#followup-locked"))
+    for _ in range(2):
+        for group in (actions, boxes):
+            for index in range(group.count()):
+                control = group.nth(index)
+                assert control.is_disabled()
+                described = control.get_attribute("aria-describedby").split()
+                assert "followup-locked" in described
+                # The locked notice takes precedence: the bar's none hint
+                # (no row to tick) never names a held page's buttons.
+                assert len(described) == 1
+        hint = page.locator("[data-selection-hint]")
+        assert "No request on this page" not in (hint.text_content() or "")
+        page.evaluate(RESTORE)

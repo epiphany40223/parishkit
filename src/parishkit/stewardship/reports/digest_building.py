@@ -196,13 +196,13 @@ def retain_daily_content(claim, document, content):
     # Each section's server-drawn charts are compiled with it, unless the
     # last attempt withheld every such chart (#477), when the retained
     # comparison section has none either (``digest_comparison.withheld``).
+    # The Response funnel section has no charts since #1370.
     section_charts_expected = bool(
         document.comparison and document.comparison["charts"]
     )
     if (
         bool(content.comparison) != section_charts_expected
-        or bool(content.funnel)
-        != (document.funnel is not None and not content.charts_withheld)
+        or content.funnel
         or (content.charts_withheld and section_charts_expected)
     ):
         raise ValueError("A digest's section and its charts are compiled together.")
@@ -241,16 +241,9 @@ def retain_daily_content(claim, document, content):
                 strict=True,
             )
         ),
-        # The Response funnel section's two charts (#477 slice 2), or none.
-        **dict(
-            zip(
-                ("funnel_chart", "activity_chart"),
-                (image.data for image in content.funnel)
-                if content.funnel
-                else (None, None),
-                strict=True,
-            )
-        ),
+        # ``funnel_chart`` and ``activity_chart`` stay null: the Response
+        # funnel section has no charts since #1370 (the columns remain for
+        # ready rows compiled before it).
         run_id=claim.run_id,
         fence=claim.fence,
         worker_id=claim.worker_id,

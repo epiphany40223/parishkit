@@ -5,14 +5,15 @@ Campaign settings (campaign_views.campaign_settings): one editor (#1119).
 Every setting is drawn once, in the same place in every campaign state, by
 campaign-fields.html: open where it can change now, otherwise disabled where
 it stands with the reason in its "i" tip (UX conventions, Conditional
-fields), never in a line of its own. There is one Review changes, unavailable
-until the form holds a real change (data-require-change, #921), with its hint
-after it; on a draft it also waits for a complete form (#563), and on a live
+fields), never in a line of its own. There is one Save (its Review),
+unavailable until the form holds a real change (data-require-change, #921),
+with its hint after it; on a draft it also waits for a complete form (#563), and on a live
 campaign for the end date's live check (#944). Its hint lines keep their
 space, so nothing moves under the pointer.
 Review posts the form without a page load (data-review-open, UX conventions
 "Review dialog", #750): an accepted review opens the shared review dialog
-below with campaign-settings-review.html, whose Apply posts the signed
+below with campaign-settings-review.html (a compact review for a change of
+one or two short settings, #1356), whose Apply posts the signed
 preview here, follows the change and, once it is applied, redraws the form's
 region in place; the status line under the form says what was applied. A
 review refused for the values posted keeps the dialog shut: ui-v1.js marks
@@ -29,17 +30,17 @@ in every campaign state (navigation rule 1).
 <h1>{% translate "Campaign settings" %}</h1>
 {% aboutpage "campaign-settings" %}<p>{% translate "Campaign settings decide what the Family form asks (census, Ministries, a pledge, additional information) and when the campaign runs. Page text and email templates, mail schedules and share choices each have their own page in the Campaign setup menu: Pages and emails, Dates and mail schedules, and Share options." %}</p>
 <p>{% translate "Each setting is shown once. A setting that can't change now is greyed out where it is, and its i button says why. Once the campaign is live, only its end date, Ministry leader roles and Ministries can change here; a Ministry change is reviewed on its own." %}</p>
-<p>{% translate "Review changes shows everything you changed on this page in one review; nothing is saved until you choose Apply and it says Applied." %}</p>{% endaboutpage %}
+<p>{% translate "Save shows everything you changed on this page in one review, or one line per setting for a small change; nothing is saved until you choose Apply and it says Applied." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }} — {{ campaign.state|capfirst }}</p>
 <p>{% multi_campaign_control "copy-campaign" _("Copy campaign") %}</p>
 <p><a href="{% url 'admin:content_history' %}">{% translate "See Content history" %}</a></p>
 {% if family_test_url %}<p>{% button variant="secondary" href=family_test_url %}{% translate "Try the Family form as a chosen Family" %}{% endbutton %} <span class="help">{% translate "Sends chosen Families' invitations to the Testing recipient; their links work now." %}</span></p>{% endif %}
-<p class="notice">{% translate "These settings lock when the campaign goes live or is scheduled for Production. Dates and mail schedules use this campaign's time zone, not your computer's." %}</p>
+<p class="notice">{% translate "These settings lock when the campaign goes live or is scheduled for Production. The campaign's days are in its time zone; send times are shown and entered in your computer's." %}</p>
 <div id="settings-editor" data-in-place-region data-refresh-url="{{ refresh_url }}">
 <form id="settings-form" method="post" action="{{ page_url }}" class="panel" data-review-open="campaign-review" data-review-redirects data-require-change="base_digest" data-campaign-form data-require-complete{% if end_saved %} data-live-check="{% url 'admin:campaign_end_date_check' %}" data-live-check-field="end_date" data-live-check-saved="{{ end_saved }}" data-checking-hint="{{ end_check.checking }}" data-check-failed-hint="{{ end_check.failed }}" data-signed-out-hint="{{ end_check.signed_out }}"{% endif %}>
 {% csrf_token %}<input type="hidden" name="action" value="preview">
 {% include 'stewardship/campaign-fields.html' %}
-{% if open %}{% translate "Change a setting to review it." as unchanged_hint %}{% else %}{% translate "Nothing on this page can change now; each greyed-out setting's i button says why." as unchanged_hint %}{% endif %}<p>{% include 'stewardship/components/review-changes-button.html' with describedby="settings-complete-hint" hint=unchanged_hint %}</p><p class="help" id="settings-complete-hint" data-complete-hint hidden></p>
+{% if open %}{% translate "Change a setting to save it." as unchanged_hint %}{% else %}{% translate "Nothing on this page can change now; each greyed-out setting's i button says why." as unchanged_hint %}{% endif %}<p>{% translate "Save" as save_label %}{% include 'stewardship/components/review-changes-button.html' with describedby="settings-complete-hint" hint=unchanged_hint label=save_label %}</p><p class="help" id="settings-complete-hint" data-complete-hint hidden></p>
 </form>
 </div>
 {% include 'stewardship/components/review-outcome.html' with outcome_id="settings-outcome" %}

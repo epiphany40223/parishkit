@@ -89,7 +89,7 @@ def test_export_follows_an_in_place_apply(page, component_origin):
     assert form.locator("input[name=search]").input_value() == "Example"
     fulfil_post_with(
         page,
-        "**" + reverse("admin:ministry_followup"),
+        "**" + reverse("admin:ministry_report"),
         component_origin,
         lambda request: "/followup-all",
     )

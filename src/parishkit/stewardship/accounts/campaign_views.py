@@ -47,6 +47,7 @@ from parishkit.stewardship.web.refusals import (
     UserFacingError,
     UserFacingStale,
     stale_page,
+    unexpected_fields,
 )
 
 from . import admin_navigation, field_tips, setup_help
@@ -473,6 +474,28 @@ def lock_settings(form, *, open_fields, reason, reasons=None, live_end=False):
     return form
 
 
+def locked_refusal(name, reason, reasons):
+    """The refusal of a change to ``name``, a setting locked now.
+
+    ``reason`` is the locked fields' ``_lock_reason`` and ``reasons`` the
+    fields' own (``_openness``). ``_refuse_locked_changes`` raises it for
+    the page's Review, and ``pk-admin campaign preview`` for a document
+    naming a locked setting (#463).
+    """
+    from .campaign_end_date import END_LOCKED
+
+    why = (reasons or {}).get(name) or (END_LOCKED if name == "end_date" else reason)
+    return UserFacingStale(
+        _("Some settings you changed can no longer change now."),
+        # A reason that already says to reload is not told twice.
+        fix=why
+        if any(
+            why is said for said in (END_HELD, END_LOCKED, LOCKED_HELD, MINISTRIES_HELD)
+        )
+        else format_lazy("{} {}", why, _("Reload this page to start again.")),
+    )
+
+
 def _refuse_locked_changes(form, open_fields, reason, reasons):
     """Refuse a Review that changes a setting locked since the page loaded.
 
@@ -486,21 +509,10 @@ def _refuse_locked_changes(form, open_fields, reason, reasons):
     name, which only an open draft sends) once the draft is locked, since
     unticked boxes are not sent and their change could not be seen.
     """
-    from .campaign_end_date import END_LOCKED
 
     def refuse(name):
         """The refusal naming why ``name`` is locked now."""
-        why = reasons.get(name) or (END_LOCKED if name == "end_date" else reason)
-        return UserFacingStale(
-            _("Some settings you changed can no longer change now."),
-            # A reason that already says to reload is not told twice.
-            fix=why
-            if any(
-                why is said
-                for said in (END_HELD, END_LOCKED, LOCKED_HELD, MINISTRIES_HELD)
-            )
-            else format_lazy("{} {}", why, _("Reload this page to start again.")),
-        )
+        return locked_refusal(name, reason, reasons)
 
     if "name" in form.data and "name" not in open_fields:
         raise refuse("name")
@@ -584,11 +596,29 @@ def end_check_words():
     }
 
 
+# Settings whose words are a long list (every Ministry or fund named, every
+# share option's label): a change of one keeps the full review's table even
+# alone, since a "Field: old → new" line of two such lists is no shorter.
+LONG_FIELDS = frozenset({"ministry_duids", "financial", "share_options"})
+
+
+def _compact(changed):
+    """Whether a change's review is a compact one (#1356, class A2).
+
+    A change of one or two short settings (a name, the modules, a date)
+    repeats only the form behind the dialog, plus each old value, so it is
+    one "Field: old → new" line each. More settings, or a long one, keep the
+    full review.
+    """
+    return len(changed) <= 2 and not LONG_FIELDS.intersection(changed)
+
+
 def _review(request, review):
     """The signed review for the review dialog: a fragment, never a page.
 
     ``review`` holds each change (label, current and proposed), the change's
-    notes and its signed ``preview``, which the dialog's Apply posts here.
+    notes and its signed ``preview``, which the dialog's Apply posts here;
+    ``compact`` (``_compact``) draws the changes as one line each.
     """
     return render(
         request, "stewardship/campaign-settings-review.html", {"review": review}
@@ -606,18 +636,71 @@ def _signed(actor, configuration, patch, fingerprint):
     )
 
 
-def _draft_preview(request, service, actor, state, campaign, form, page):
-    """Review a draft's change: the dialog's review, or why it is refused.
+def review_settings(service, actor, state, campaign, editable, opened, form, reason):
+    """The page's Review of a bound settings form, without a request (#463).
 
-    ``page(status)`` draws this page again; a Review refused for the values
-    posted answers it with status 400. Nothing is requested yet. A change of
-    only the campaign's dates, while it has schedules, leads to Dates and
-    mail schedules' combined review instead, where every mailing is
-    reconciled with the new dates.
+    Campaign settings' Review post and ``pk-admin campaign preview`` both
+    call this, so the two cannot drift. ``opened`` is ``_openness``'s
+    ``(open_fields, live_at, reasons)`` and ``reason`` the locked fields'
+    ``_lock_reason``. A change to a setting locked since the page loaded,
+    or any change while nothing is open, is refused (``UserFacingStale``).
+    Returns the review: ``kind`` (``settings``, ``end_date`` or
+    ``ministries``, which confirmation it takes), ``values`` (each changed
+    stored value as ``(before, after)``), the dialog's ``changes`` and
+    ``notes``, a Ministries review's ``ministries``, an end date's
+    ``replanned`` and the signed ``preview``. Returns None when the form now
+    holds the refusal (the page answers 400 with it), or ``{"reconcile":
+    values}`` when only a draft's dates change while it has mail schedules,
+    which Dates and mail schedules reviews together. Nothing is requested.
+    """
+    open_fields, live_at, reasons = opened
+    _refuse_locked_changes(form, open_fields, reason, reasons)
+    if not open_fields:
+        raise UserFacingStale(
+            _("These campaign settings are locked."),
+            fix=_(
+                "They can be changed only for the current draft "
+                "campaign in Testing mode, before it has ever been "
+                "active, and while no background work is running. "
+                "A live campaign's end date, Ministry leader roles "
+                "and Ministries "
+                "can still change here, while no background work is "
+                "running."
+            ),
+        )
+    if editable:
+        return _draft_review(service, actor, state, campaign, form)
+    return _live_review(service, actor, state, campaign, form, (open_fields, live_at))
+
+
+def _answer(request, review, page):
+    """Answer a Review post with ``review_settings``' result.
+
+    ``page(status)`` draws this page again: a refusal held by the form is
+    status 400. A draft's dates-only change with schedules leads to Dates
+    and mail schedules' combined review, where every mailing is reconciled
+    with the new dates; any other review is the dialog's fragment.
+    """
+    if review is None:
+        return page(400)
+    if "reconcile" in review:
+        return HttpResponseRedirect(
+            reverse("admin:schedule_settings") + "?" + urlencode(review["reconcile"])
+        )
+    return _review(request, review)
+
+
+def _draft_review(service, actor, state, campaign, form):
+    """Review a draft's change: its review, or why it is refused.
+
+    None means the form holds the refusal. A change of only the campaign's
+    dates, while it has schedules, is ``{"reconcile": ...}``: Dates and
+    mail schedules' combined review, where every mailing is reconciled with
+    the new dates.
     """
     configuration, fingerprint = state[0], state[-1]
     if not form.is_valid():
-        return page(400)
+        return None
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
         raise stale_page()
     values = form.values()
@@ -642,12 +725,8 @@ def _draft_preview(request, service, actor, state, campaign, form, page):
                     "first using the schedule editor, then save other draft settings."
                 ),
             )
-            return page(400)
-        return HttpResponseRedirect(
-            reverse("admin:schedule_settings")
-            + "?"
-            + urlencode({name: values[name] for name in sorted(window_fields)})
-        )
+            return None
+        return {"reconcile": {name: values[name] for name in sorted(window_fields)}}
     patch = [
         {
             "operation": "update",
@@ -669,26 +748,31 @@ def _draft_preview(request, service, actor, state, campaign, form, page):
                 "reminder times must remain within the campaign."
             ),
         )
-        return page(400)
+        return None
     removes_share_options = (
         bool(previous.get("share_options")) and "financial" not in values["modules"]
     )
-    return _review(
-        request,
-        {
-            "changes": describe_changes(
-                previous,
-                values,
-                ministries=form.fields["ministry_duids"].choices,
-                funds=form.fields["fund_duids"].choices,
-            ),
-            "notes": [REMOVES_SHARE_OPTIONS] if removes_share_options else [],
-            "preview": _signed(actor, configuration, patch, fingerprint),
-        },
-    )
+    return {
+        "kind": "settings",
+        "values": _pairs(previous, changed),
+        "changes": describe_changes(
+            previous,
+            values,
+            ministries=form.fields["ministry_duids"].choices,
+            funds=form.fields["fund_duids"].choices,
+        ),
+        "notes": [REMOVES_SHARE_OPTIONS] if removes_share_options else [],
+        "compact": _compact(changed),
+        "preview": _signed(actor, configuration, patch, fingerprint),
+    }
 
 
-def _live_preview(request, service, actor, state, campaign, form, opened, page):
+def _pairs(previous, changed):
+    """Each changed stored value as ``(before, after)``, in the change's order."""
+    return {key: (previous.get(key), value) for key, value in changed.items()}
+
+
+def _live_review(service, actor, state, campaign, form, opened):
     """Review a live campaign's change of the settings still open (#1119).
 
     ``opened`` is ``(open_fields, live_at)`` from ``_openness``. The locked
@@ -701,7 +785,8 @@ def _live_preview(request, service, actor, state, campaign, form, opened, page):
     lock both admit while live. A refusal for the date itself (passed, before
     the start, mail it would strand) is the end date's field error. A change
     of the Ministry selections is reviewed on its own
-    (``_ministries_preview``; ``MINISTRIES_ALONE`` says why).
+    (``_ministries_review``; ``MINISTRIES_ALONE`` says why). None means the
+    form holds the refusal.
     """
     from datetime import date
 
@@ -710,7 +795,7 @@ def _live_preview(request, service, actor, state, campaign, form, opened, page):
     configuration, fingerprint = state[0], state[-1]
     open_fields, live_at = opened
     if not form.is_valid():
-        return page(400)
+        return None
     digest = form.cleaned_data["base_digest"]
     if digest != configuration.active_configuration.digest:
         raise stale_page()
@@ -726,9 +811,7 @@ def _live_preview(request, service, actor, state, campaign, form, opened, page):
     if "ministry_duids" in changed:
         if len(changed) > 1:
             raise UserFacingError(MINISTRIES_ALONE, fix=MINISTRIES_ALONE_FIX)
-        return _ministries_preview(
-            request, service, actor, state, campaign, form, changed
-        )
+        return _ministries_review(service, actor, state, campaign, form, changed)
     if "end_date" in changed:
         saved = date.fromisoformat(previous["end_date"])
         end_form = LiveEndDateForm(
@@ -745,7 +828,10 @@ def _live_preview(request, service, actor, state, campaign, form, opened, page):
             extra={key: value for key, value in changed.items() if key != "end_date"},
         )
         if "review" in region:
-            return _review(request, region["review"])
+            return region["review"] | {
+                "kind": "end_date",
+                "values": _pairs(previous, changed),
+            }
         refusal = region.get("refusal")
         if refusal is not None and refusal.message == BLOCKING:
             # Not about the date: mail is being sent now. Shown in the dialog.
@@ -758,7 +844,7 @@ def _live_preview(request, service, actor, state, campaign, form, opened, page):
             else [item for errors in end_form.errors.values() for item in errors]
         )
         form.add_error("end_date", " ".join(str(text) for text in texts if text))
-        return page(400)
+        return None
     patch = [
         {
             "operation": "update",
@@ -771,17 +857,17 @@ def _live_preview(request, service, actor, state, campaign, form, opened, page):
     if base is None or base.digest != configuration.active_configuration.digest:
         raise stale_page()
     build_candidate(base, patch, candidate_id=uuid4())
-    return _review(
-        request,
-        {
-            "changes": describe_changes(previous, changed),
-            "notes": [],
-            "preview": _signed(actor, configuration, patch, fingerprint),
-        },
-    )
+    return {
+        "kind": "settings",
+        "values": _pairs(previous, changed),
+        "changes": describe_changes(previous, changed),
+        "notes": [],
+        "compact": _compact(changed),
+        "preview": _signed(actor, configuration, patch, fingerprint),
+    }
 
 
-def _ministries_preview(request, service, actor, state, campaign, form, changed):
+def _ministries_review(service, actor, state, campaign, form, changed):
     """Review a live campaign's Ministry change and its impact (#342, #1119).
 
     The change is one campaign update of ``ministry_duids`` alone. Its
@@ -812,22 +898,21 @@ def _ministries_preview(request, service, actor, state, campaign, form, changed)
     ministries, extra = campaign_ministry_changes.review(
         campaign, dict(form.fields["ministry_duids"].choices), before, after
     )
-    return _review(
-        request,
-        {
-            "changes": [],
-            "ministries": ministries,
-            "notes": [],
-            "preview": sign_preview(
-                actor=actor,
-                configuration=configuration,
-                patch=patch,
-                salt=campaign_ministry_changes.SALT,
-                snapshot=fingerprint,
-                extra=extra,
-            ),
-        },
-    )
+    return {
+        "kind": "ministries",
+        "values": {"ministry_duids": (before, after)},
+        "changes": [],
+        "ministries": ministries,
+        "notes": [],
+        "preview": sign_preview(
+            actor=actor,
+            configuration=configuration,
+            patch=patch,
+            salt=campaign_ministry_changes.SALT,
+            snapshot=fingerprint,
+            extra=extra,
+        ),
+    }
 
 
 def _confirm(request, service, actor, campaign_id):
@@ -844,31 +929,38 @@ def _confirm(request, service, actor, campaign_id):
     out-of-date preview, settings changed elsewhere) is raised and shown
     inside the dialog.
     """
+    route = confirm_route(request.POST.get("preview", ""), campaign_id)
+    return confirm(request, service, actor, **route)
+
+
+def confirm_route(token, campaign_id):
+    """How Apply confirms ``token``: ``confirm_intent``'s salt, scope, companion.
+
+    Campaign settings' Apply and ``pk-admin campaign confirm`` both route
+    through this (#463), so a token from either channel is confirmed the
+    same way. Only the salt is tried here; ``confirm_intent`` checks the
+    token in full. Returns ``salt``, ``current_scope`` and ``attach`` (the
+    Ministry change's audit companion, else None).
+    """
     from . import campaign_ministry_changes
     from .campaign_end_date import signed_for
     from .schedule_changes import confirm_scope, preview_salt
 
-    token = request.POST.get("preview", "")
     if signed_for(token, campaign_id):
-        return confirm(
-            request,
-            service,
-            actor,
-            salt=preview_salt(campaign_id),
-            current_scope=lambda service: confirm_scope(
+        return {
+            "salt": preview_salt(campaign_id),
+            "current_scope": lambda service: confirm_scope(
                 service, campaign_id, page=True
             ),
-        )
+            "attach": None,
+        }
     if _signed_with(token, campaign_ministry_changes.SALT):
-        return confirm(
-            request,
-            service,
-            actor,
-            salt=campaign_ministry_changes.SALT,
-            current_scope=_scope,
-            attach=campaign_ministry_changes.audit,
-        )
-    return confirm(request, service, actor, salt=SALT, current_scope=_scope)
+        return {
+            "salt": campaign_ministry_changes.SALT,
+            "current_scope": _scope,
+            "attach": campaign_ministry_changes.audit,
+        }
+    return {"salt": SALT, "current_scope": _scope, "attach": None}
 
 
 def _signed_with(token, salt):
@@ -927,8 +1019,6 @@ def campaign_settings(request, campaign_id):
                 reasons=reasons,
                 live_end=live_at is not None,
             )
-            if action == "preview":
-                _refuse_locked_changes(form, open_fields, reason, reasons)
 
             def page(status=200):
                 """This page, with the form as it is now."""
@@ -945,34 +1035,18 @@ def campaign_settings(request, campaign_id):
 
             if action is None:
                 response = page()
-            elif not open_fields:
-                raise UserFacingStale(
-                    _("These campaign settings are locked."),
-                    fix=_(
-                        "They can be changed only for the current draft "
-                        "campaign in Testing mode, before it has ever been "
-                        "active, and while no background work is running. "
-                        "A live campaign's end date, Ministry leader roles "
-                        "and Ministries "
-                        "can still change here, while no background work is "
-                        "running."
-                    ),
-                )
-            elif editable:
-                response = _draft_preview(
-                    request, service, actor, state, campaign, form, page
-                )
             else:
-                response = _live_preview(
-                    request,
+                review = review_settings(
                     service,
                     actor,
                     state,
                     campaign,
+                    editable,
+                    (open_fields, live_at, reasons),
                     form,
-                    (open_fields, live_at),
-                    page,
+                    reason,
                 )
+                response = _answer(request, review, page)
         # Recheck access after the observation ends, so a GET's read-only
         # snapshot cannot hide a revocation committed while it rendered.
         if not allows(
@@ -1026,7 +1100,7 @@ def campaign_end_date_check(request, campaign_id):
                 for name, values in request.POST.lists()
             )
         ):
-            raise ValueError("Invalid end date fields.")
+            raise unexpected_fields()
         with read_transaction():
             state = _state(service)
             configuration, campaigns, _source, held = state[:4]

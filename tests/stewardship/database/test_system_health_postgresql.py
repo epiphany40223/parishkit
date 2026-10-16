@@ -284,7 +284,8 @@ def test_an_unreadable_configuration_answers_503(auth_service, google, monkeypat
 
 
 def test_home_lists_each_problem_with_the_pages_sentence(auth_service, google):
-    """Administrators see one line per problem on Home, linking the page."""
+    """Administrators see one line per problem on Home, with its state word,
+    linking the problem's tile (#1214)."""
     running_services()
     insert_row("worker", process="source", age=timedelta(minutes=10))
     browser, _ = signed_in()
@@ -292,8 +293,14 @@ def test_home_lists_each_problem_with_the_pages_sentence(auth_service, google):
         home = browser.get("/admin/").content.decode()
     assert "1 system problem needs attention" in home
     assert "The ParishSoft refresh worker has not reported since" in home
-    assert 'data-problem="not_running"' in home
-    assert 'href="/admin/system/health/"' in home
+    line = home[home.index('data-problem="not_running"') :]
+    line = line[: line.index("</li>")]
+    assert 'data-severity="error"' in line
+    assert '<span class="status-word">Error</span>' in line
+    assert (
+        'href="/admin/system/health/#health-version">'
+        "See Version and services in System health</a>"
+    ) in line
 
 
 def test_the_command_reads_the_page_and_watches_until_healthy(admin, google):  # noqa: F811

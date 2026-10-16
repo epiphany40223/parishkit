@@ -289,3 +289,51 @@ def test_switch_sends_mode_once_after_the_rehearsal_ends(page, component_origin)
         # The answer (no rehearsal notice) is in place before the next Apply.
         expect(page.locator("[data-testing-responses]")).to_have_count(0)
     assert_clean(page, errors)
+
+
+# Each stage tile's share bar, with the tile's and the bar's boxes, read from
+# the page itself so no assertion depends on content above the tiles.
+TILE_BARS = """() => [...document.querySelectorAll('.stat-tile')].map(tile => {
+  const bar = tile.querySelector('.stat-bar progress');
+  const t = tile.getBoundingClientRect(), b = bar.getBoundingClientRect();
+  return {value: bar.value, max: bar.max,
+          given: Number(bar.getAttribute('value')),
+          hidden: bar.closest('[aria-hidden=true]') !== null,
+          top: Math.round(t.top), tileBottom: t.bottom, barTop: b.top,
+          barBottom: b.bottom, barWidth: b.width, tileWidth: t.width};
+})"""
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+def test_stage_tiles_draw_their_share_bars_at_their_feet(page, component_origin, width):
+    """Every tile has a share bar of Invited, at its foot, hidden from AT (#720).
+
+    Invited's bar is full, and so is Link followed, whose share passes
+    100%: the fixture has 6 links followed for 5 invited, so the bar is
+    given 6 and the browser draws it full (its value reads back clamped to
+    5). Tiles in one row stretch to one height, so their bars line up
+    whatever their labels' wrapping.
+    """
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + "/response-dashboard")
+    bars = page.evaluate(TILE_BARS)
+    assert [(bar["value"], bar["max"]) for bar in bars] == [
+        (5, 5),
+        (5, 5),
+        (4, 5),
+        (3, 5),
+        (3, 5),
+    ]
+    assert [bar["given"] for bar in bars] == [5, 6, 4, 3, 3]
+    assert all(bar["hidden"] for bar in bars)
+    for bar in bars:
+        # Inside the tile, near its foot, and nearly as wide as the tile.
+        assert bar["barBottom"] <= bar["tileBottom"]
+        assert bar["tileBottom"] - bar["barBottom"] < 40
+        assert bar["barWidth"] > bar["tileWidth"] * 0.6
+    rows = {}
+    for bar in bars:
+        rows.setdefault(bar["top"], []).append(round(bar["barTop"]))
+    for tops in rows.values():
+        assert max(tops) - min(tops) <= 1
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")

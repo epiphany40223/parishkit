@@ -1,5 +1,6 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
 {% block title %}{% translate "Preview and test email" %}{% endblock %}
+{% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block content %}
 <h1>{% translate "Preview and test email" %}</h1>
 {% aboutpage "campaign-mail" %}<p>{% translate "The test is a fictional sample with a prominent TEST banner. It does not count as a scheduled email and does not let anyone sign in outside the campaign dates." %}</p>
@@ -7,11 +8,28 @@
 <p>{{ campaign.active_configuration.name }}</p>
 <p class="notice">{% translate "TEST — a fictional sample, not a real Family's message. You can send it even before the campaign starts. It is sent only to" %} {{ testing_recipient }}.</p>
 <section class="panel"><h2>{% translate "Reviewed email sample" %}</h2>{% include 'stewardship/content-sample.html' %}</section>
-{% if pending %}<p role="status" id="campaign-test-pending">{% translate "A test is pending. Refresh to check its result; another test cannot be queued yet." %}</p>{% endif %}
+{% comment %}
+  Send this test email posts in place (ui-v1.js, form[data-in-place], #519):
+  the view redirects back to this page, whose two regions are swapped in
+  without a reload. The first holds the pending and "may have arrived"
+  notices and the form, whose preview is new for every send. The second is
+  Recent test results, named by the form's fragment: its heading takes focus
+  (data-in-place-focus) and "Test email requested." is announced. While a
+  test is queued or being sent, live-status-v1.js re-reads this page (a
+  passive read that never renews idle time, as Send to chosen Families does)
+  and swaps in the fresh list. The list names the page's address
+  (data-live-url), because live-status-v1.js starts watching a swapped-in
+  list before the redirect's address is in the address bar. Once it settles, the hidden follow-up link
+  (data-live-follow) re-reads only the form's region, quietly, so Send, the
+  acknowledgement and a fresh preview come back from the server while focus
+  stays where it is. There is no manual refresh link. A refusal is the
+  view's error page, which draws neither region, so it is shown whole.
+{% endcomment %}<div id="campaign-test-send" data-in-place-region>{% if pending %}<p role="status" id="campaign-test-pending">{% translate "A test is pending. Its result appears below by itself; another test cannot be sent until it settles." %}</p>{% endif %}
 {% if unknown %}<p role="alert">{% translate "We are not sure the previous test arrived: it may have. It is not retried automatically. Check the Testing mailbox first; to send another test anyway, check the box below." %}</p>{% endif %}
-<form method="post" class="panel">{% csrf_token %}{{ form.preview_token }}{{ form.preview_token.errors }}{{ form.non_field_errors }}{% if unknown %}<p>{{ form.acknowledge_unknown }}<label for="{{ form.acknowledge_unknown.id_for_label }}">{{ form.acknowledge_unknown.label }}</label>{{ form.acknowledge_unknown.errors }}</p>{% endif %}{% button type="submit" disabled=pending aria-describedby=pending|yesno:"campaign-test-pending,"|default:None %}{% translate "Send this test email" %}{% endbutton %}</form>
-<section class="panel"><h2>{% translate "Recent test results" %}</h2><ul>{% for item in items %}<li>{{ item.label }} — <time data-local-instant datetime="{{ item.created_at|date:'c' }}">{{ item.created_at|date:'c' }}</time>{% if not item.current %} ({% translate "earlier configuration or template" %}){% endif %}<details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Test reference" %}</dt><dd><code>{{ item.id }}</code></dd></dl></details></li>{% empty %}<li>{% translate "No tests have been requested. Select Send this test email to send one." %}</li>{% endfor %}</ul></section>
+<form method="post" action="#campaign-tests" class="panel" data-in-place="campaign-test-send" data-in-place-message="{% translate 'Test email requested.' %}">{% csrf_token %}{{ form.preview_token }}{{ form.preview_token.errors }}{{ form.non_field_errors }}{% if unknown %}<p>{{ form.acknowledge_unknown }}<label for="{{ form.acknowledge_unknown.id_for_label }}">{{ form.acknowledge_unknown.label }}</label>{{ form.acknowledge_unknown.errors }}</p>{% endif %}{% button type="submit" disabled=pending aria-describedby=pending|yesno:"campaign-test-pending,"|default:None %}{% translate "Send this test email" %}{% endbutton %}</form></div>
+<div id="campaign-tests" data-in-place-region><section class="panel"><h2 id="campaign-tests-heading" tabindex="-1" data-in-place-focus>{% translate "Recent test results" %}</h2>
+{% translate "your browser's Reload" as reload_label %}<div aria-live="polite" data-live-status="campaign-tests"{% if page_url %} data-live-url="{{ page_url }}"{% endif %} data-live-refresh-label="{{ reload_label }}"{% if pending %} data-live-pending{% endif %}><ul>{% for item in items %}<li>{{ item.label }} — <time data-local-instant datetime="{{ item.created_at|date:'c' }}">{{ item.created_at|date:'c' }}</time>{% if not item.current %} ({% translate "earlier configuration or template" %}){% endif %}<details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Test reference" %}</dt><dd><code>{{ item.id }}</code></dd></dl></details></li>{% empty %}<li>{% translate "No tests have been requested. Select Send this test email to send one." %}</li>{% endfor %}</ul>
+{% if not pending and page_url %}<a hidden data-live-follow data-in-place data-in-place-quiet data-in-place-only href="{{ page_url }}#campaign-test-send">{% translate "Show the settled test" %}</a>{% endif %}</div></section></div>
 {% if families_url %}<p><a href="{{ families_url }}">{% translate "Send this email to chosen real Families (Testing recipient only)" %}</a></p>{% endif %}
-<p><a href="">{% translate "Refresh test results" %}</a></p>
 {% comment %}The page this test was opened from, when the breadcrumb does not already lead there (navigation rules 3 and 5).{% endcomment %}{% if return_link %}<p><a href="{{ return_link.url }}">{% blocktranslate with page=return_link.label %}Return to {{ page }}{% endblocktranslate %}</a></p>{% endif %}
 {% endblock %}

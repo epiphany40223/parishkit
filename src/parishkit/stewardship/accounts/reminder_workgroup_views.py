@@ -8,13 +8,21 @@ campaign is live, like its artwork. The page is edit, review, apply: the
 name becomes the campaign's ``reminder_workgroup`` value only through a
 confirmed configuration request. An empty name turns the exclusion off.
 
-Review, apply and the change's status happen on the page itself (#750), as
-on Campaign settings (#532): the form is ``data-table-sync``, so an answer
-fills the review region under it while the form keeps the reader's typing
-and takes only its hidden version. A refusal keeps the version that typing
-came from (the one posted, or the one a refused Apply was reviewed at), so
-a page changed elsewhere is refused until it is reloaded and can never
-quietly propose undoing that change.
+The form's Save button posts its Review without a page load and is answered
+with a confirmation in the shared review dialog (UX conventions, "Review
+dialog", #750, #1356): the name is the form's one field and the current one
+is under "Now" on the page, so the dialog repeats neither and says in one
+sentence what Apply does. The signed preview is posted back here by the
+dialog's Apply, whose answer is the change's status, which the dialog
+follows; once the change is applied it redraws the page's regions from the
+page's own address (the form at the applied version and what the newest
+refresh found). A Review refused for the name's value is the page again
+with status 400, whose errors the page script marks on the form, and the
+dialog stays shut. Any other refusal (a stale page, an out-of-date preview,
+the unchanged safeguard) is a plain refusal shown in the dialog, while the
+form keeps the reader's name at the version it came from, so a page changed
+elsewhere is refused until it is reloaded and can never quietly propose
+undoing that change.
 """
 
 from uuid import uuid4
@@ -43,7 +51,8 @@ from parishkit.stewardship.source.workgroups import (
     snapshot_evidence,
 )
 from parishkit.stewardship.storage import StaleRecordError
-from parishkit.stewardship.web.refusals import UserFacingStale, stale_page
+from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.refusals import UserFacingError, stale_page
 
 from . import admin_navigation
 from .admin_editing import (
@@ -52,11 +61,8 @@ from .admin_editing import (
     error_response,
     form_action,
     principal,
-    receipt_base,
-    requested_status,
-    review_region,
-    reviewed_base,
     sign_preview,
+    summary_errors,
 )
 from .authentication import runtime
 from .limiting import LimiterUnavailable
@@ -115,24 +121,19 @@ def workgroup_patch(campaign, name):
     ]
 
 
-def _page(request, configuration, campaign, form, *, status=200, **region):
-    """Show the form, its in-place review region and what the newest refresh found.
+def _page(request, configuration, campaign, form, *, status=200):
+    """Show the form and what the newest refresh found.
 
-    ``region`` is ``review_region``'s ``review``, ``receipt``, ``refusal`` or
-    ``message``; the step indicator follows it through edit, review and
-    apply (#196), all on this page.
+    A Review refused for the name's value (400) draws its errors' summary,
+    which the page script places above the heading. The form is drawn at
+    the applied version: a refused Review reaches here only after its posted
+    version was found to be that one.
     """
     name, evidence = current_evidence(campaign.active_configuration.values)
     # What Reminders skip now (#1305): while a rename waits for a refresh,
-    # the previous WorkGroup's Families, which the Now panel says. The review
-    # needs what any name will apply until the next refresh: the snapshot's
-    # evidence, whatever the setting is now.
+    # the previous WorkGroup's Families, which the Now panel says.
     applied = applied_evidence(campaign.active_configuration.values)
-    recorded = snapshot_evidence()
-    step = "review" if region.get("review") else "edit"
-    if region.get("receipt"):
-        step = "apply"
-    admin_navigation.place(request, flow="change", step=step)
+    admin_navigation.place(request, flow="change", step="edit")
     response = render(
         request,
         "stewardship/reminder-workgroup.html",
@@ -141,9 +142,13 @@ def _page(request, configuration, campaign, form, *, status=200, **region):
             "form": form,
             "current": name,
             "evidence": evidence,
+            # Review and the review dialog's Apply post here.
+            "page_url": request.path,
+            # Once a change is applied, the dialog redraws the page's
+            # regions from its own address.
+            "refresh_url": request.path,
+            "errors": summary_errors(form) if status == 400 else [],
             "applied": applied,
-            "recorded": recorded,
-            **review_region("reminder_workgroup", form, **region),
         },
         status=status,
     )
@@ -153,37 +158,61 @@ def _page(request, configuration, campaign, form, *, status=200, **region):
 
 
 def _preview(request, service, actor, configuration, campaign, form):
-    """Sign the reviewed name without changing configuration yet.
+    """The review dialog's confirmation, the page refused (400), or a refusal.
 
-    A stale page raises ``UserFacingStale``, which the caller shows in the
-    review region; other refusals are the page again with their summary.
+    Signs the reviewed name without changing configuration yet. A stale page
+    and an unchanged name raise their refusals, which the dialog shows.
     """
+    if form.data.get("base_digest") != configuration.active_configuration.digest:
+        raise stale_page()
+    # The version check comes first: a refused page is drawn at the current
+    # version (``_page``), which is then known to be the posted one.
     if not form.is_valid():
         return _page(request, configuration, campaign, form, status=400)
-    if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
-        raise stale_page()
-    before = campaign.active_configuration.values.get(REMINDER_WORKGROUP)
-    after = form.cleaned_data["name"] or None
-    if after == before:
-        # Review only a change (#921): refused in place, nothing requested.
-        return _page(
-            request,
-            configuration,
-            campaign,
-            form,
-            status=400,
-            message=_("The %(name)s has not changed.")
-            % {"name": _(REMINDER_WORKGROUP_NAME)},
+    review = review_change(
+        service, actor, configuration, campaign, form.cleaned_data["name"]
+    )
+    if review is None:
+        # Save is unavailable without a change (data-require-change, #921),
+        # so only a request that bypasses the page script meets this.
+        raise UserFacingError(
+            _("The %(name)s has not changed.") % {"name": _(REMINDER_WORKGROUP_NAME)},
+            fix=_("Nothing was changed."),
         )
+    # The review says when the change applies (#1305): that depends on the
+    # newest refresh's evidence, whatever the setting is now.
+    return render(
+        request,
+        "stewardship/reminder-workgroup-review.html",
+        {"review": review, "recorded": snapshot_evidence()},
+    )
+
+
+def review_change(service, actor, configuration, campaign, name):
+    """The page's review of setting the WorkGroup to ``name``, or None.
+
+    Request-free, so the page's Review and ``workgroup preview`` (ADM-11)
+    build the same review and the same signed token (the page's salt, bound
+    to the campaign). ``name`` is the form's cleaned value; empty turns the
+    setting off. None means nothing would change. A configuration that moved
+    on since ``configuration`` was read raises ``UserFacingStale``; a
+    candidate the configuration refuses raises ``ConfigError``.
+    """
+    before = campaign.active_configuration.values.get(REMINDER_WORKGROUP)
+    after = name or None
+    if after == before:
+        return None
     patch = workgroup_patch(campaign, after)
     base = service.store.active()
     if base is None or base.digest != configuration.active_configuration.digest:
         raise stale_page()
     build_candidate(base, patch, candidate_id=uuid4())
-    review = {
-        # Drawn inside settings-review.html, above its Apply.
-        "template": "stewardship/reminder-workgroup-review.html",
-        "notes": [],
+    return {
+        # The dialog's confirmation says only whether the change sets a
+        # WorkGroup or clears it: the name is the form's, and the current one
+        # is under "Now". ``before`` and ``after`` are for ``workgroup
+        # preview`` (ADM-11).
+        "clears": after is None,
         "before": before,
         "after": after,
         "preview": sign_preview(
@@ -193,67 +222,42 @@ def _preview(request, service, actor, configuration, campaign, form):
             salt=SALT + str(campaign.pk),
         ),
     }
-    return _page(request, configuration, campaign, form, review=review)
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
 def reminder_workgroup(request, campaign_id):
-    """Read, review and confirm the campaign's Reminder WorkGroup name.
+    """Read the campaign's Reminder WorkGroup name, confirm a change, apply it.
 
-    Review, apply and the change's status all happen on this page (#750). A
-    stale page or an out-of-date preview is refused in place: the page again
-    (status 409) with the explanation in its review region. The only query
-    is ``request``, naming the change Apply just made.
+    GET draws the page (it takes no query: its address is all there is); a
+    Review POST answers the review dialog's confirmation; Apply answers with
+    the change's status. Refusals are raised for the dialog (see the module
+    docstring).
     """
     try:
         service = runtime()
-        # Reading a change's status (the page's own quiet refresh once it is
-        # applied) is passive, as Change status is: it never renews idle time.
-        actor = principal(
-            request,
-            service,
-            passive=request.method != "POST" and "request" in request.GET,
-        )
-        action, refusal, digest = None, None, None
+        actor = principal(request, service)
+        filters(request.GET, allowed=set())
+        action = None
         if request.method == "POST":
             action = form_action(request.POST, preview_fields={"name", "base_digest"})
             if action == "confirm":
-                try:
-                    response = confirm(
-                        request,
-                        service,
-                        actor,
-                        salt=SALT + str(campaign_id),
-                        current_scope=lambda service: (
-                            editable_configuration(service),
-                            None,
-                        ),
-                        in_place=True,
-                    )
-                    response["Cache-Control"] = "no-store"
-                    return response
-                except UserFacingStale as error:
-                    # Drawn below with the form kept at the version the
-                    # change was reviewed at, so a page changed elsewhere
-                    # needs a reload before the next Review
-                    # (admin_editing.reviewed_base).
-                    refusal = error.refusal
-                    digest = reviewed_base(request.POST, SALT + str(campaign_id))
+                response = confirm(
+                    request,
+                    service,
+                    actor,
+                    salt=SALT + str(campaign_id),
+                    current_scope=lambda service: (
+                        editable_configuration(service),
+                        None,
+                    ),
+                )
+                response["Cache-Control"] = "no-store"
+                return response
         with (
             read_transaction()
             if request.method in {"GET", "HEAD"}
             else work_transaction()
         ):
-            receipt = (
-                requested_status(request, service, actor, request.GET)
-                if request.method != "POST"
-                else None
-            )
-            if receipt is not None:
-                # In place, the form keeps the reader's typing
-                # (admin_editing.receipt_base); a full load uses the current
-                # version, matching the current name it draws.
-                digest = receipt_base(request, receipt)
             configuration = editable_configuration(service)
             campaign = _campaign(configuration, campaign_id)
             form = WorkGroupForm(
@@ -262,34 +266,15 @@ def reminder_workgroup(request, campaign_id):
                     "name": campaign.active_configuration.values.get(
                         REMINDER_WORKGROUP, ""
                     ),
-                    "base_digest": configuration.active_configuration.digest
-                    if digest is None
-                    else digest,
+                    "base_digest": configuration.active_configuration.digest,
                 },
             )
-            if refusal is not None:
-                response = _page(
-                    request, configuration, campaign, form, status=409, refusal=refusal
+            if action == "preview":
+                response = _preview(
+                    request, service, actor, configuration, campaign, form
                 )
-            elif action == "preview":
-                try:
-                    response = _preview(
-                        request, service, actor, configuration, campaign, form
-                    )
-                except UserFacingStale as error:
-                    # The bound form keeps the version that was posted.
-                    response = _page(
-                        request,
-                        configuration,
-                        campaign,
-                        form,
-                        status=409,
-                        refusal=error.refusal,
-                    )
             else:
-                response = _page(
-                    request, configuration, campaign, form, receipt=receipt
-                )
+                response = _page(request, configuration, campaign, form)
         # Recheck access after the observation ends, so a read-only snapshot
         # cannot hide a revocation committed while the page rendered.
         if not allows(

@@ -38,7 +38,7 @@ from parishkit.stewardship.accounts.integration_forms import (
     IntegrationForm,
 )
 from parishkit.stewardship.accounts.ministry_views import CATALOG_SORTING
-from parishkit.stewardship.accounts.parish_views import TIMEZONE_NOTE, ParishForm
+from parishkit.stewardship.accounts.parish_views import ParishForm
 from parishkit.stewardship.accounts.presence import PRESENCE_SORTING
 from parishkit.stewardship.accounts.schedule_changes import describe as _describe
 from parishkit.stewardship.accounts.schedule_forms import (
@@ -86,12 +86,16 @@ from .automation_components import POSTS as AUTOMATION_POSTS
 from .automation_components import SLOW_GETS as AUTOMATION_SLOW_GETS
 from .automation_components import canonical
 from .automation_components import components as automation_components
+from .backup_test_components import components as backup_test_components
+from .backup_test_components import posts as backup_test_posts
 from .branding_components import POSTS as BRANDING_POSTS
 from .branding_components import components as branding_components
 from .campaign_create_components import POSTS as CAMPAIGN_CREATE_POSTS
 from .campaign_create_components import components as campaign_create_components
 from .campaign_settings_components import POSTS as CAMPAIGN_SETTINGS_POSTS
 from .campaign_settings_components import components as campaign_settings_components
+from .campaign_test_components import components as campaign_test_components
+from .campaign_test_components import posts as campaign_test_posts
 from .census_components import components as census_components
 from .chart_components import components as chart_components
 from .comparison_components import components as comparison_components
@@ -136,7 +140,6 @@ from .live_status_components import POSTS as LIVE_STATUS_POSTS
 from .live_status_components import components as live_status_components
 from .log_components import components as log_components
 from .menu_components import components as menu_components
-from .ministry_components import components as ministry_components
 from .my_ministries_components import components as my_ministries_components
 from .not_found_components import components as not_found_components
 from .past_campaign_components import POSTS as PAST_CAMPAIGN_POSTS
@@ -399,6 +402,8 @@ def schedule_page(
     reads from the database (schedule_preview.work_summary). With ``data``
     the formset is bound and validated, as after a refused preview.
     ``test_mail`` false is a live campaign, which admits no test mail (#923).
+    Send times are the browser's (#558); a bound post was typed in the
+    campaign's own zone, so its values read as they always have.
     """
     schedules = Schedules(
         data,
@@ -409,6 +414,9 @@ def schedule_page(
         prefix="schedules",
         email_links=True,
         test_mail=test_mail,
+        browser_times=True,
+        zone="" if data is None else owner["values"]["timezone"],
+        now=now,
     )
     if data is not None:
         schedules.is_valid()
@@ -451,6 +459,46 @@ def table_schedules(owner, emails):
     ]
 
 
+# The date-change review shows and takes send times in the browser's zone
+# (#558), as its view draws it: browser mode, at a fixed current instant.
+REVIEW_BROWSER_TIMES = {
+    "browser_times": True,
+    "now": datetime(2054, 9, 1, 12, tzinfo=UTC),
+}
+
+
+# The /schedule-dates-dst page's campaign, saved schedules and emails, for
+# its browser test to post back through the same formset (#558).
+REVIEW_DST = {}
+
+
+def review_dst_schedules(owner, emails):
+    """An invitation and two reminders either side of London's DST change.
+
+    London leaves summer time on October 25, 2054, a week before New York,
+    so the 9:00 AM New York reminders show as 14:00 on the 24th and 13:00 on
+    the 26th in a London browser.
+    """
+    by_kind = {row["values"]["slot"]: row for row in emails}
+
+    def saved(kind, **values):
+        """A saved schedule of ``kind`` that sends that type's email."""
+        email = by_kind[kind]
+        return schedule(
+            owner["id"],
+            kind=kind,
+            template_version=email["id"],
+            subject=email["values"]["subject"],
+            **values,
+        )
+
+    return [
+        saved("initial"),
+        saved("reminder", date="2054-10-24"),
+        saved("reminder", date="2054-10-26"),
+    ]
+
+
 def refused_table_data(rows):
     """The table page's post with Reminder 2 moved outside the campaign."""
     data = data_for(sorted(rows, key=schedule_order))
@@ -471,6 +519,11 @@ def component_origin():
         for kind in ("initial", "reminder", "daily_digest", "weekly_digest")
     ]
     table_rows = table_schedules(mail_campaign, mail_emails)
+    REVIEW_DST.update(
+        owner=mail_campaign,
+        templates=mail_emails,
+        previous=review_dst_schedules(mail_campaign, mail_emails),
+    )
     context = {
         "server_now": NOW,
         "deadline": NOW + timedelta(hours=1),
@@ -846,6 +899,18 @@ def component_origin():
             schedule_page(mail_campaign, [mail], now=datetime(2054, 9, 1, tzinfo=UTC)),
         ),
         (
+            # The date-change review with reminders either side of London's
+            # DST change, shown in the browser's zone (#558).
+            "/schedule-dates-dst",
+            "schedule-reconcile",
+            schedule_page(
+                mail_campaign,
+                REVIEW_DST["previous"],
+                templates=mail_emails,
+                now=REVIEW_BROWSER_TIMES["now"],
+            ),
+        ),
+        (
             # The scheduled emails table (#448): a sent invitation, two
             # upcoming reminders out of order, and a weekly digest.
             "/schedule-table",
@@ -901,6 +966,7 @@ def component_origin():
                     campaign_id=mail_campaign["id"],
                     campaign=mail_campaign["values"],
                     prefix="schedules",
+                    **REVIEW_BROWSER_TIMES,
                 ),
                 "base_digest": "a" * 64,
                 "editable": False,
@@ -1929,6 +1995,8 @@ def component_origin():
             "/parish-settings",
             "parish-settings",
             {
+                "page_url": "/parish-settings",
+                "refresh_url": "/parish-settings",
                 "configuration": {
                     "mode": "testing",
                     "testing_recipient": "testing@example.org",
@@ -1951,6 +2019,8 @@ def component_origin():
             "/parish-settings-invalid",
             "parish-settings",
             {
+                "page_url": "/parish-settings",
+                "refresh_url": "/parish-settings",
                 "configuration": {
                     "mode": "testing",
                     "testing_recipient": "testing@example.org",
@@ -1965,37 +2035,6 @@ def component_origin():
                         "base_digest": "a" * 64,
                     }
                 ),
-            },
-        ),
-        # Parish settings with its review shown in place (#532).
-        (
-            "/parish-preview",
-            "parish-settings",
-            {
-                "configuration": {
-                    "mode": "testing",
-                    "testing_recipient": "testing@example.org",
-                },
-                "form": ParishForm(
-                    initial={
-                        "name": "Sample Parish",
-                        "website": "https://example.org",
-                        "timezone": "America/Los_Angeles",
-                        "phone": "+12125551234",
-                        "base_digest": "a" * 64,
-                    }
-                ),
-                "review": {
-                    "changes": [
-                        {
-                            "label": "Parish timezone",
-                            "before": "America/New_York",
-                            "after": "America/Los_Angeles",
-                        }
-                    ],
-                    "notes": [TIMEZONE_NOTE],
-                    "preview": "synthetic-signed-intent",
-                },
             },
         ),
         (
@@ -2139,7 +2178,6 @@ def component_origin():
             ),
         )
     responses.update(directory_components(context, admin))
-    responses.update(ministry_components(context, admin))
     responses.update(followup_components(context, admin))
     responses.update(source_form_components(context, admin))
     responses.update(data_to_fix_components(context, admin))
@@ -2178,6 +2216,8 @@ def component_origin():
         setup_live_components(context, admin, NOW, SETUP_MAIL_STATUS, setup_draft)
     )
     responses.update(in_place_commands_components(context, admin))
+    responses.update(campaign_test_components(context, admin))
+    responses.update(backup_test_components(context, admin))
     responses.update(family_test_components(context, admin))
     responses.update(upload_defaults_components(context, admin))
     responses.update(settings_components(context, admin))
@@ -2200,6 +2240,8 @@ def component_origin():
         IN_PLACE_POSTS
         | DELIVERY_POSTS
         | in_place_commands_posts(context, admin)
+        | campaign_test_posts(context, admin)
+        | backup_test_posts(context, admin)
         | AUTOMATION_POSTS
         | SIGNED_IN_POSTS
         | FOLLOWUP_POSTS
@@ -2260,6 +2302,7 @@ def component_origin():
         ("setup-v1.css", "text/css"),
         ("stepper-v1.css", "text/css"),
         ("select-arrow-v1.svg", "image/svg+xml"),
+        ("select-arrow-dark-v1.svg", "image/svg+xml"),
         ("chart-v1.js", "application/javascript"),
         ("chart-v1.css", "text/css"),
     ):
@@ -2352,13 +2395,17 @@ def component_origin():
                 self.end_headers()
                 return
             if self.path in posts:
-                status, location, body = posts[self.path]
+                # An answer may name its media type (a typed error's JSON,
+                # which a script's fetch gets from the real views); a page
+                # is HTML.
+                status, location, body, *kind = posts[self.path]
                 if self.path in IN_PLACE_SLOW:
                     time.sleep(1.5)
                 self.send_response(status)
                 if location:
                     self.send_header("Location", location)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
+                media = kind[0] if kind else "text/html"
+                self.send_header("Content-Type", f"{media}; charset=utf-8")
                 self.send_header("Content-Security-Policy", CSP)
                 self.end_headers()
                 self.wfile.write(body.encode())

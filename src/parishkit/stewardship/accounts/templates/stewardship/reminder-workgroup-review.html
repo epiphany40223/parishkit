@@ -1,12 +1,20 @@
-{% load i18n %}{% comment %}
-  A Reminder WorkGroup change under review (#861), drawn inside
-  settings-review.html on Reminder WorkGroup (#750): the WorkGroup now and
-  the one proposed. The review region's own heading, notes and Apply
-  surround it.
-{% endcomment %}<dl>
-<dt>{% translate "Current WorkGroup" %}</dt><dd>{% if review.before %}{{ review.before }}{% else %}{% translate "None" %}{% endif %}</dd>
-<dt>{% translate "New WorkGroup" %}</dt><dd>{% if review.after %}{{ review.after }}{% else %}{% translate "None: every eligible Family that has not responded gets the Reminders" %}{% endif %}</dd>
-</dl>
+{% load i18n stewardship %}{% comment %}
+  The confirmation of a No-reminders WorkGroup change (#861, #1356;
+  reminder_workgroup_views._preview), drawn in the shared review dialog (UX
+  conventions, "A confirmation when Review would only repeat the page"),
+  never as a page of its own: reminder-workgroup.html's Save posts without
+  a page load and ui-v1.js moves this fragment's content into the dialog's
+  body. It repeats neither name: the new one is the form's one field and the
+  current one is under "Now" on the page behind the dialog. Its one sentence
+  says what Apply does (setting a WorkGroup, or clearing it) and describes
+  the dialog (aria-describedby). The signed preview (data-review-preview) is
+  what the dialog's Apply posts back to the page, and data-review-done
+  starts the status line the page shows once the change is applied. A
+  review lasts fifteen minutes, as every review does.
+{% endcomment %}{% reminder_workgroup_name as setting %}<div data-review-answer data-review-done="{% blocktranslate %}{{ setting }} changed.{% endblocktranslate %}">
+<p id="workgroup-review-summary">{% if review.clears %}{% translate "Every eligible Family that has not responded gets the Reminders again." %}{% else %}{% translate "From the next ParishSoft refresh, Families in this WorkGroup get no Reminder emails." %}{% endif %}</p>
 {% comment %}When the change applies (#1305): a clear at once; the name the newest refresh read at once; any other name at the next refresh, the previous WorkGroup's Families still skipped meanwhile. ``recorded`` is the current snapshot's evidence (source.workgroups.snapshot_evidence), which any name set applies until the next refresh.{% endcomment %}{% if not review.after %}<p>{% translate "Turning it off applies at once: no Family's Reminders are skipped from now on." %}</p>
 {% elif recorded and recorded.name == review.after %}<p>{% blocktranslate with name=review.after trimmed %}The newest ParishSoft refresh already read “{{ name }}”, so the change applies at once.{% endblocktranslate %}</p>
 {% else %}<p>{% translate "The change takes effect at the next ParishSoft refresh." %} {% if recorded.family_duids and recorded.found %}{% blocktranslate with previous=recorded.name count count=recorded.family_duids|length trimmed %}Until then, the {{ count }} Family the newest refresh found in “{{ previous }}” still gets no Reminders.{% plural %}Until then, the {{ count }} Families the newest refresh found in “{{ previous }}” still get no Reminders.{% endblocktranslate %}{% elif recorded.family_duids %}{% blocktranslate count count=recorded.family_duids|length trimmed %}Until then, the {{ count }} Family skipped now still gets no Reminders.{% plural %}Until then, the {{ count }} Families skipped now still get no Reminders.{% endblocktranslate %}{% else %}{% translate "Until then, no Family's Reminders are skipped." %}{% endif %}</p>{% endif %}
+<input type="hidden" name="preview" value="{{ review.preview }}" data-review-preview>
+</div>

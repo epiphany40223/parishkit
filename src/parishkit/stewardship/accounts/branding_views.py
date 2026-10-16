@@ -36,7 +36,12 @@ from parishkit.stewardship.web.contracts import (
     filters,
     validation_response,
 )
-from parishkit.stewardship.web.refusals import UserFacing, UserFacingStale, stale_page
+from parishkit.stewardship.web.refusals import (
+    UserFacing,
+    UserFacingStale,
+    stale_page,
+    unexpected_fields,
+)
 
 from . import admin_navigation, field_tips
 from .admin_editing import (
@@ -311,14 +316,21 @@ def _upload(request, service):
     the review dialog then shows with Apply. Otherwise ``(None, form)``, the
     bound form with its errors.
     """
+    # A file input left empty (in Basic, the hidden Advanced panel's sizes,
+    # which are still sent; in Advanced, each size not chosen) arrives as a
+    # part with an empty filename, which Django keeps as an empty POST value
+    # rather than a file (#1396). It means nothing was chosen there, so it
+    # is allowed; any other value under a file field's name is refused.
+    allowed = {"base_digest", "csrfmiddlewaretoken", "editor_mode"}
+    allowed |= {name for name in ("logo", *SLOTS) if request.POST.getlist(name) == [""]}
     if (
-        set(request.POST) - {"base_digest", "csrfmiddlewaretoken", "editor_mode"}
+        set(request.POST) - allowed
         or request.POST.get("editor_mode", BASIC) not in {BASIC, ADVANCED}
         or set(request.FILES) - {"logo", *SLOTS}
         or any(len(values) != 1 for _, values in request.POST.lists())
         or any(len(values) != 1 for _, values in request.FILES.lists())
     ):
-        raise ValueError("Invalid logo upload fields.")
+        raise unexpected_fields()
     form = LogoUploadForm(request.POST, request.FILES)
     if form.is_valid():
         graphics = None

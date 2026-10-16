@@ -197,6 +197,8 @@ ACTIVITY_TYPES = {
         "admin_cmd_integration_backup_probe",
         "admin_cmd_integration_dismiss",
         "admin_cmd_integration_key_finish_switching",
+        "admin_cmd_workgroup_confirm",
+        "admin_cmd_campaign_confirm",
         "user_leaders_import_requested",
         "user_leader_imported",
         "admin_cmd_users_import_leaders",
@@ -382,6 +384,7 @@ UNGROUPED_REASONS = {
     ),
     "Staff follow-up on Family requests, not a setting": (
         "admin_cmd_census_resolve",
+        "admin_cmd_census_review",
         "census_change_updated",
         "chair_review_decided",
         "information_updated",
