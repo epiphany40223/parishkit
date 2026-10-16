@@ -2534,7 +2534,10 @@ every campaign state. There is no second, read-only copy of the settings.
   as "Campaign name: old → new", with the change's notes (the share
   options a removed Financial stewardship discards). Every other change,
   including a live end date with its re-planned digests and a live Ministry
-  change, keeps the full review below.
+  change, keeps the full review below. Inside the campaign wizard the page
+  has no Save of its own: the wizard's Save and continue saves directly
+  ([guided steps](#create-the-campaign), #1404 PR 4), and Share options
+  does the same.
   Once the change is applied, the form is redrawn in place at the new
   version and the status line under it says "Campaign settings changed."
   and when.
@@ -3084,9 +3087,10 @@ Status: the page (its admission, first page and what follows confirming) and
 its guided steps are built
 ([#142](https://github.com/epiphany40223/parishkit/issues/142)), with #1404's
 quick wins ([#1407](https://github.com/epiphany40223/parishkit/pull/1407))
-and Create the campaign drawn as step 1 (#1404 PR 3).
+and Create the campaign drawn as step 1 (#1404 PR 3), and the direct save
+on Campaign settings and Share options (#1404 PR 4).
 The rest of #1404 is planned, and each part below marked "(planned, #1404
-PR n)" describes the design, not yet the pages: direct saves on draft steps and sub-pages (PR 4); Load
+PR n)" describes the design, not yet the pages: direct saves on Campaign images and the sub-pages (PR 4, its second part); Load
 ParishSoft data as a step (PR 5); the Pages and emails item states and the
 suggested schedules (PR 6); and Back asking before it discards, with
 Go-live readiness's summary lines (PR 7). Setup ends without a campaign, so
@@ -3296,11 +3300,38 @@ mail schedules and Campaign images it is **Continue to** the next step not
 done yet (on Dates and mail schedules with no schedule saved, **Continue
 without schedules for now**; Go-live readiness still lists the missing
 initial invitation schedule): it records the step kept as is and opens that
-step. While a form on the page holds a change (on Campaign images, a chosen
-image not uploaded yet), Continue is unavailable, with
-a hint after the row in a line that is always reserved, so the page's own
-Save (with its review dialog, for now) stays the way on, until a
-direct save makes it Save and continue (planned, #1404 PR 4). Preview and test
+step. On Campaign settings and Share options, once the form holds a change,
+the same control is **Save and continue** (#1404 PR 4): the two share one
+place, as wide as the longer label, so the switch moves nothing, and the
+page draws no Save of its own. Save and continue posts the form with the
+request key drawn with the page; the server checks it as a Review would and,
+while the stepper still applies, records the same configuration change at
+once, with no review dialog
+([wizard rule 5](../ui-conventions/spec.md#wizards)). The change's own
+request key comes from that page key and the values posted, so a repeat of
+the same save (a double click, a retry after a lost answer) answers with the
+same change, while a different change from the same page is never answered
+with the first one: it is recorded on its own, or refused as a stale page
+once the first change moved the version. The status line after the row says
+"Saving…", then the change's progress, and once the change is applied the
+next step not done yet opens, its status line saying what was saved and
+when ("Share options saved. Applied at 3:04 PM."), and, after Financial
+stewardship was turned off, "Its share options were removed.". A change
+that is recorded but not applied (not yet, failed or cancelled) says so
+with a link to its status, and the form keeps the values typed, at the
+version they came from, with only a new request key, so a retry is a
+request of its own and is refused as a stale page if the version moved;
+when the page cannot be read again
+(the sign-in ended), Save and continue stays unavailable and the line says
+to reload the page. A refusal (a value at
+its field, a stale page, background work, setup that ended meanwhile)
+stays on the page with its reason, and a draft's dates-only change with
+schedules still leads to Dates and mail schedules' combined review. On
+Campaign images, while a chosen image is not uploaded yet, Continue is
+unavailable, with a hint after the row in a line that is always reserved,
+so the page's own Save (with its review dialog, for now) stays the way on,
+until its direct save makes it Save and continue (planned, #1404 PR 4).
+Preview and test
 email offers Continue to Go-live readiness only once its test is accepted,
 because the test is the step's purpose; Go-live readiness, the last step,
 has Back only. Back and Continue never save, discard or submit the page's
@@ -3312,8 +3343,8 @@ history, Pages and emails' editor (with its preview), and Dates and mail
 schedules' New and Edit scheduled email and Campaign calendar. They draw the same stepper with their
 step current, and their action row is **Return to** that step. The stepper is
 an [in-place](../ui-conventions/spec.md#in-place-controls) region: after a
-[review dialog](../ui-conventions/spec.md#review-dialog)'s Apply (Share
-options, Campaign images) the page's redraw from its own address, or an
+[review dialog](../ui-conventions/spec.md#review-dialog)'s Apply (Campaign
+images, or a sub-page's editor) the page's redraw from its own address, or an
 in-place refresh, shows the new completion without a reload, and a reload
 shows the same. Change status, once a change that completes a step is
 applied, offers Return to that step for a sub-page's change (an email's
