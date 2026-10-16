@@ -7,7 +7,7 @@
 {% aboutpage "setup-source-progress" %}<p>{% translate "The system is reading your parish's Families, Members, Ministries and funds from ParishSoft with the API key you entered. It only reads; nothing in ParishSoft changes. A complete load takes several minutes, about ten for a parish of a few thousand Families. This page checks the load automatically every 15 seconds." %}</p>{% endaboutpage %}
 <div class="setup-load-result" data-progress-done{% if status_key != 'done' %} hidden{% endif %}>
 <h2>{% translate "Parish data is loaded" %}</h2>
-<p>{% translate "The load finished successfully. The first campaign can now offer your Ministries and funds." %}</p>
+<p>{% translate "The load finished successfully." %}</p>
 <div class="setup-actions"><a class="setup-continue" href="{% if wizard.next %}{{ wizard.next.href }}{% else %}{% url 'admin:setup' %}{% endif %}">{% translate "Continue to the next step" %}{% if wizard.next %}<span class="setup-sr-only">: {{ wizard.next.label }}</span>{% endif %}</a></div>
 </div>
 <div class="notice notice-error" data-progress-failed{% if status_key != 'failed' %} hidden{% endif %}>
