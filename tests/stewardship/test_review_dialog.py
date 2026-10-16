@@ -441,7 +441,7 @@ def test_create_the_campaign_confirms_without_repeating_the_form():
     assert 'describedby="campaign-create-summary"' in page
     assert "redraw_answer=True" in page
     assert 'translate "Review changes"' not in page
-    assert 'translate "Create the campaign" %}{% endbutton %}' in page
+    assert 'translate "Create the campaign and continue" %}{% endbutton %}' in page
     fragment = render_to_string(
         "stewardship/campaign-create-review.html",
         {"review": {"content": 1, "preview": "signed", "next_url": "/next/"}},

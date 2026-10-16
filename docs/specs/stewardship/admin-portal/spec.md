@@ -2948,15 +2948,15 @@ Create the campaign is step 1 of the campaign wizard, which follows the
 general [wizard rules](../ui-conventions/spec.md#wizards)
 ([#1404](https://github.com/epiphany40223/parishkit/issues/1404)): before
 the campaign exists, step 1 is this page, and once it is created, step 1 is
-Campaign settings, so no question is asked twice (planned, #1404 PR 3).
+Campaign settings, so no question is asked twice.
 
 Status: the page (its admission, first page and what follows confirming) and
 its guided steps are built
 ([#142](https://github.com/epiphany40223/parishkit/issues/142)), with #1404's
-quick wins ([#1407](https://github.com/epiphany40223/parishkit/pull/1407)).
+quick wins ([#1407](https://github.com/epiphany40223/parishkit/pull/1407))
+and Create the campaign drawn as step 1 (#1404 PR 3).
 The rest of #1404 is planned, and each part below marked "(planned, #1404
-PR n)" describes the design, not yet the pages: Create the campaign drawn
-as step 1 (PR 3); direct saves on draft steps and sub-pages (PR 4); Load
+PR n)" describes the design, not yet the pages: direct saves on draft steps and sub-pages (PR 4); Load
 ParishSoft data as a step (PR 5); the Pages and emails item states and the
 suggested schedules (PR 6); and Back asking before it discards, with
 Go-live readiness's summary lines (PR 7). Setup ends without a campaign, so
@@ -2982,13 +2982,17 @@ no-campaign text instead.
 **First page.** It collects the campaign's basics in the ordinary campaign
 form: name, modules, start and end dates, Ministries (from the loaded catalog,
 initially all active ones) and, for Financial stewardship, the financial
-period and current and comparison funds. As step 1 (planned, #1404 PR 3) it
+period and current and comparison funds. As step 1 it
 is the Campaign settings form itself, so it also asks the
 [Ministry leader roles](#ministry-leader-roles), starting on the configured
-list, and every Campaign settings question is asked here once. It draws the
+list, and every Campaign settings question is asked here once; leaving the
+configured list ticked saves no list of the campaign's own, as on Campaign
+settings. It draws the
 wizard's stepper, "Step 1 of N: Campaign settings", with every later step
-unavailable for the reason "Create the campaign first.", and its action row
-has no Back and the one primary **Create the campaign and continue**. The
+unavailable, each named "Not available yet: Create the campaign first.". N counts Share
+options, because the modules are not chosen yet; once the campaign exists
+without Financial stewardship, Share options is no longer a step. Its action
+row has no Back and the one primary **Create the campaign and continue**. The
 campaign time zone may be any
 catalog zone, not only the Parish zone (Administrator, 2026-10-15,
 [#1330](https://github.com/epiphany40223/parishkit/issues/1330)): the menu
@@ -2999,7 +3003,7 @@ browser reporting UTC (or an alias such as `Etc/UTC`) counts as reporting no
 zone, since that is usually a server, VM or privacy setting. A
 form drawn again after a refusal keeps the zone that was posted. The start and
 end dates are days in the chosen zone, and its boundaries are resolved in it.
-The form's **Create the campaign**
+The form's **Create the campaign and continue**
 button is unavailable until every required field is filled in ([prerequisite
 gates](../ui-conventions/spec.md#prerequisite-gates)). Its Review is a
 [confirmation](../ui-conventions/spec.md#review-dialog), not a full review
@@ -3064,7 +3068,7 @@ look, drawn by the same template for its
 the [wizard rules](../ui-conventions/spec.md#wizards): Campaign
 settings (its basics, Ministries and funds, one form since
 [#1119](https://github.com/epiphany40223/parishkit/issues/1119); Create the
-campaign before the campaign exists, planned, #1404 PR 3), Load ParishSoft data (planned, #1404
+campaign before the campaign exists), Load ParishSoft data (planned, #1404
 PR 5), Share
 options (shown only when the campaign's modules use it), Pages and emails,
 Dates and mail schedules, Campaign images, Preview and test email (for the
