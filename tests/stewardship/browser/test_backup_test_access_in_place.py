@@ -14,7 +14,15 @@ and Save still submits natively.
 
 import pytest
 
-from .backup_test_components import PAGE, REFUSED, REFUSED_LINKED, STATUS, TESTED
+from .backup_test_components import (
+    BAD_FOLDER,
+    BAD_LINK,
+    PAGE,
+    REFUSED,
+    REFUSED_LINKED,
+    STATUS,
+    TESTED,
+)
 from .test_export_resolve_in_place import announced, open_marked, stayed, wheel_to
 from .test_in_place import MARKED, count_requests
 from .waits import focused, visible
@@ -127,3 +135,23 @@ def test_save_still_submits_natively(page, component_origin):
     with page.expect_navigation():
         page.get_by_role("button", name="Save", exact=True).click()
     assert page.evaluate(MARKED) is None
+
+
+def test_a_refused_folder_link_is_shown_at_its_field(page, component_origin):
+    """Test access with a Drive link that names no folder: the browser's
+    pattern admits it, and the view draws the page again with the link's
+    error (400, #1330). In place, that error is shown at the field, with
+    the link the reader typed, and the page is not reloaded."""
+    from playwright.sync_api import expect  # imported late: collection needs no browser
+
+    open_marked(page, component_origin, BAD_LINK)
+    link = page.get_by_label("Google Drive folder link")
+    link.fill(BAD_FOLDER)
+    button = page.get_by_role("button", name=NAME, exact=True)
+    expect(button).to_be_enabled()
+    button.click()
+    field = page.get_by_label("Google Drive folder link")
+    expect(field).to_have_attribute("aria-invalid", "true")
+    expect(page.locator("#id_target_error")).to_contain_text("Google Drive folder")
+    assert field.input_value() == BAD_FOLDER
+    assert page.evaluate(MARKED) == "kept"

@@ -27,6 +27,10 @@ TESTED = f"{PAGE}?tested=1"
 SETTLED = f"{PAGE}?settled=1"
 REFUSED = f"{PAGE}?refused=1"
 REFUSED_LINKED = f"{PAGE}?refused=linked"
+# Test access refused at the folder link field: the view draws the page
+# again with the field's error (400, #1330).
+BAD_LINK = f"{PAGE}?bad=link"
+BAD_FOLDER = "https://drive.google.com/drive/u/0/my-drive"
 FOLDER = "https://drive.google.com/drive/folders/synthetic-folder"
 
 
@@ -41,8 +45,9 @@ def components(context, admin):
     )
     passed = SimpleNamespace(kind="passed", message="Access works.", folder_url=FOLDER)
 
-    def settings(probe=None):
-        """The settings page with ``probe`` as the reader's latest check."""
+    def settings(probe=None, form=None):
+        """The settings page with ``probe`` as the reader's latest check,
+        and ``form`` (a refused entry) in place of the saved settings."""
         return render_to_string(
             "stewardship/integration-settings.html",
             values
@@ -55,7 +60,8 @@ def components(context, admin):
                 "probe": probe,
                 "pending": probe is pending,
                 "status_url": STATUS,
-                "form": IntegrationForm(
+                "form": form
+                or IntegrationForm(
                     "backup", initial={"base_digest": "a" * 64, "target": FOLDER}
                 ),
             },
@@ -71,6 +77,7 @@ def components(context, admin):
         SETTLED: settings(passed),
         REFUSED: settings(),
         REFUSED_LINKED: settings(),
+        BAD_LINK: settings(),
         STATUS: status,
     }
     return {path: ("text/html", html) for path, html in responses.items()}
@@ -102,4 +109,27 @@ def posts(context, admin):
         PAGE: (303, TESTED, ""),
         REFUSED: refused(local),
         REFUSED_LINKED: refused(linked),
+        BAD_LINK: (400, None, bad_link(context, admin), "text/html"),
     }
+
+
+def bad_link(context, admin):
+    """The page the view draws when Test access's folder link is refused."""
+    form = IntegrationForm(
+        "backup", {"base_digest": "a" * 64, "target": BAD_FOLDER, "action": "test"}
+    )
+    assert not form.is_valid() and form.has_error("target")
+    return render_to_string(
+        "stewardship/integration-settings.html",
+        context
+        | {
+            "admin_chrome": admin,
+            "complete_gate": True,
+            "target": "backup",
+            "label": "Off-site backups (Google Drive)",
+            "configured": True,
+            "workspace_configured": True,
+            "status_url": STATUS,
+            "form": form,
+        },
+    )
