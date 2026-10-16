@@ -29,11 +29,12 @@
 #   seed-testing HOST_SCRIPT            switch to the post-setup snapshot and move it to
 #                                       real time: a Testing-mode draft campaign
 #   wipe                                remove the containers and the root (marker required)
-#   deploy TAG SCHEMA_CHANGE HOST_SCRIPT [BULK LATENCY]
+#   deploy TAG SCHEMA_CHANGE HOST_SCRIPT [BULK LATENCY [PARISHSOFT]]
 #                                       upgrade the running deployment to TAG with the
 #                                       scripted upgrade's host half in local mode (OPS-10.10);
 #                                       BULK on|off|keep and LATENCY ms|keep choose what it
-#                                       renders for BG-12's rehearsal
+#                                       renders for BG-12's rehearsal, PARISHSOFT
+#                                       real|fake|keep which ParishSoft it reads (#1399)
 #   rollback HOST_SCRIPT                its image-only rollback to the image deploy replaced
 #   seed RESPONSE_SCALE                 seed the campaign through the local seeder's
 #                                       phases under the fake clock (OPS-10.07)
@@ -958,7 +959,7 @@ switch_to() {
     # the stop is reported by the EXIT trap with the whole restore that
     # recovers (the deployment record stays truthful throughout).
     local name=$1 host_script=$2 dir="$snapshots/$1" plan snap_image clock
-    local run_image run_previous bulk latency
+    local run_image run_previous bulk latency parishsoft
     check_name "$name"
     require_marker
     load_env
@@ -1010,6 +1011,14 @@ switch_to() {
         bulk=$(jq -r '.deployment.bulk_family_send // false' "$services/worker.yaml")
         if [ "$bulk" = true ]; then bulk=on; else bulk=off; fi
         latency=$(jq -r '.deployment.local_smtp_latency_ms // 0' "$services/worker.yaml")
+        # The ParishSoft choice (#1399): unset is the fake, and the only
+        # other value the host half renders is the real API.
+        parishsoft=$(jq -r '.deployment.parishsoft_base_url // empty' "$services/worker.yaml")
+        case "$parishsoft" in
+            "") parishsoft=fake ;;
+            https://ps-fs-external-api-prod.azurewebsites.net/api/v2) parishsoft=real ;;
+            *) refuse "The running ParishSoft base URL is not the real API; refusing." ;;
+        esac
         step "Switching to the $name snapshot (taken on $snap_image): restoring it whole, then upgrading it to $run_image"
         phase=stopped
         stop_services
@@ -1022,6 +1031,7 @@ switch_to() {
         [ "$clock" = normal ] || build_faketime_images
         start_services --force-recreate
         export PARISHKIT_LOCAL_BULK_FAMILY_SEND=$bulk PARISHKIT_LOCAL_SMTP_LATENCY_MS=$latency
+        export PARISHKIT_LOCAL_PARISHSOFT=$parishsoft
         # The host half reports its own failures; the trap adds the recovery.
         phase="" phase_advice=""
         trap - EXIT
@@ -1122,11 +1132,12 @@ cmd_deploy() {
     # the local differences the host half's header lists (specification,
     # "Operator script"). load_env exported the deployment's debug-logging
     # setting, which the host half keeps. BULK and LATENCY (BG-12's
-    # rehearsal) reach the host half as the two local-mode variables it
-    # reads; "keep" carries the current value over.
+    # rehearsal) and PARISHSOFT (#1399) reach the host half as the
+    # local-mode variables it reads; "keep" carries the current value over.
     local tag=$1 schema_change=$2 host_script=$3 previous
     export PARISHKIT_LOCAL_BULK_FAMILY_SEND=${4:-keep}
     export PARISHKIT_LOCAL_SMTP_LATENCY_MS=${5:-keep}
+    export PARISHKIT_LOCAL_PARISHSOFT=${6:-keep}
     require_marker
     load_env
     [ -f "$host_script" ] || refuse "No uploaded upgrade host script at $host_script; refusing."
@@ -1943,7 +1954,8 @@ case "$command" in
     reset) cmd_reset "${1:?reset needs NAME}" ;;
     wipe) cmd_wipe ;;
     deploy)
-        [ $# -eq 3 ] || [ $# -eq 5 ] || refuse "deploy needs TAG SCHEMA_CHANGE HOST_SCRIPT [BULK LATENCY]"
+        [ $# -eq 3 ] || [ $# -eq 5 ] || [ $# -eq 6 ] ||
+            refuse "deploy needs TAG SCHEMA_CHANGE HOST_SCRIPT [BULK LATENCY [PARISHSOFT]]"
         cmd_deploy "$@" ;;
     rehearse) [ $# -eq 4 ] || refuse "rehearse needs DUE_IN SEND_ONLY TIMEOUT LABEL"; cmd_rehearse "$@" ;;
     spike) [ $# -eq 5 ] || refuse "spike needs FAMILIES SOURCES DURING_SEND WAIT LABEL"; cmd_spike "$@" ;;

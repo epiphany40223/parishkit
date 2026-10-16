@@ -315,6 +315,10 @@ def profile_settings(configuration):
         values["STEWARDSHIP_LOCAL_SMTP_LATENCY_MS"] = (
             configuration.local_smtp_latency_ms
         )
+    if configuration.parishsoft_base_url is not None:
+        # A LOCAL deployment's choice of the real ParishSoft API (#1399);
+        # absent means the profile's default (deployment.PARISHSOFT_BASE_URL_VARIABLE).
+        values["STEWARDSHIP_PARISHSOFT_BASE_URL"] = configuration.parishsoft_base_url
     return values
 
 

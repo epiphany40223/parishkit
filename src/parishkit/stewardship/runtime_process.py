@@ -368,6 +368,7 @@ def serve_credential_installer(configuration, lease):
                 configuration.credential_target,
                 check=lease.check,
                 profile=configuration.profile,
+                base_url=configuration.parishsoft_base_url,
             )
             if configuration.credential_target in TARGETS
             else None

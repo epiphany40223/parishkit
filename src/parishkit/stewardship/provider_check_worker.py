@@ -41,7 +41,7 @@ from .source.credentials import SourceCredential
 MAX_INPUT = MAX_FILE_BYTES * 2 + 4096
 MAX_RESPONSE = 65536
 OUTCOMES = frozenset({"valid", "invalid", "unavailable"})
-REQUEST_FIELDS = frozenset({"target", "settings", "candidate", "profile"})
+REQUEST_FIELDS = frozenset({"target", "settings", "candidate", "profile", "base_url"})
 FIXED_ENDPOINTS = frozenset(
     {
         ("POST", GOOGLE_TOKEN_URI),
@@ -50,20 +50,21 @@ FIXED_ENDPOINTS = frozenset(
 )
 
 
-def endpoints(profile=None):
+def endpoints(profile=None, base_url=None):
     """The exact endpoints a check may contact under one deployment profile.
 
     Without a profile (the mail deliverers' token exchanges) only the Google
     and Slack endpoints are reachable and no ParishSoft URL at all. With one,
-    the ParishSoft organization search is reachable at exactly the profile's
-    one base URL: the fake's for a ``local`` request, the real API's for every
-    other. The helper has no environment and learns the profile only from its
+    the ParishSoft organization search is reachable at exactly one base URL:
+    the deployment's ``parishsoft_base_url`` choice (``base_url``; None is the
+    profile's default), which may be the fake only for a ``local`` request
+    (#1399). The helper has no environment and learns both only from its
     request.
     """
     if profile is None:
         return FIXED_ENDPOINTS
     return FIXED_ENDPOINTS | {
-        ("POST", source_base_url(profile) + "/organizations/search")
+        ("POST", source_base_url(profile, base_url) + "/organizations/search")
     }
 
 
@@ -75,14 +76,15 @@ class CheckSession(requests.Session):
     paths, which may reach ParishSoft, bind a deployment profile.
     """
 
-    def __init__(self, profile=None):
-        """Bind the session to the request's profile and its endpoint allowlist."""
+    def __init__(self, profile=None, base_url=None):
+        """Bind the session to the request's profile, base URL and allowlist."""
         super().__init__()
         if profile is not None and not isinstance(profile, DeploymentProfile):
             raise ValueError("A provider check requires a deployment profile.")
         self.trust_env = False
         self.profile = profile
-        self.endpoints = endpoints(profile)
+        self.base_url = None if profile is None else source_base_url(profile, base_url)
+        self.endpoints = endpoints(profile, self.base_url)
 
     def request(self, method, url, **kwargs):
         """Forbid redirects/proxies; the subprocess parent supplies a hard timeout."""
@@ -124,7 +126,7 @@ def _parishsoft(value, settings, session):
             credential.api_key,
             Path("."),
             cache_enabled=False,
-            api_base_url=source_base_url(session.profile),
+            api_base_url=session.base_url,
             timeout=10,
         ),
         organization_id=settings["organization_id"],
@@ -254,29 +256,33 @@ def decode_request(raw):
     value = base64.b64decode(request["candidate"], validate=True)
     if not 0 < len(value) <= MAX_FILE_BYTES:
         raise ValueError("Invalid provider check candidate.")
-    if type(request["profile"]) is not str:
+    if type(request["profile"]) is not str or type(request["base_url"]) is not str:
         raise ValueError("Invalid provider check profile.")
-    return request["target"], settings, value, DeploymentProfile(request["profile"])
+    profile = DeploymentProfile(request["profile"])
+    # Refused here, as "invalid", when the profile may not reach the base URL.
+    base_url = source_base_url(profile, request["base_url"])
+    return request["target"], settings, value, profile, base_url
 
 
 def check_request(raw):
     """Return a fixed classification; transport outages are not rejected credentials."""
     try:
-        target, settings, value, profile = decode_request(raw)
+        target, settings, value, profile, base_url = decode_request(raw)
     except (ValueError, TypeError, ConfigError, RecursionError):
         return "invalid"
-    return classify(target, value, settings, profile=profile)
+    return classify(target, value, settings, profile=profile, base_url=base_url)
 
 
-def classify(target, value, settings, *, profile):
+def classify(target, value, settings, *, profile, base_url=None):
     """Run one provider check in the restricted session and name its outcome.
 
     The installer's helper and the human-run smoke command share this
     ladder, so "valid", "invalid" and "unavailable" mean the same in both.
-    ``profile`` selects the endpoints the check may reach.
+    ``profile`` and ``base_url`` (the deployment's ParishSoft choice; None is
+    the profile's default) select the endpoints the check may reach.
     """
     try:
-        with CheckSession(profile) as session:
+        with CheckSession(profile, base_url) as session:
             check = {
                 "parishsoft": _parishsoft,
                 "google_workspace": _workspace,

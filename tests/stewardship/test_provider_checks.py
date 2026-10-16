@@ -39,12 +39,15 @@ def payload(target="slack", **overrides):
         "parishsoft": {"organization_id": 123},
         "google_workspace": WORKSPACE,
     }[target]
+    # The profile's default ParishSoft base URL unless the case names one.
+    local = overrides.get("profile") == "local"
     return json.dumps(
         dict(
             target=target,
             settings=settings,
             candidate=base64.b64encode(b"synthetic-private").decode(),
             profile="production",
+            base_url=LOCAL_SOURCE_BASE_URL if local else DEFAULT_API_BASE_URL,
         )
         | overrides
     ).encode()
@@ -189,17 +192,45 @@ def test_local_fake_endpoint_is_admitted_only_for_a_local_request(
     assert len(calls) == 1
 
 
+def test_local_request_that_chose_the_real_api_reaches_only_it(monkeypatch, tmp_path):
+    """A LOCAL deployment that chose the real API (#1399) checks against it alone."""
+    monkeypatch.chdir(tmp_path)
+    calls = http(monkeypatch, Response(body=b'[{"organizationID":123}]'))
+    request = payload("parishsoft", profile="local", base_url=DEFAULT_API_BASE_URL)
+    assert worker.check_request(request) == "valid"
+    assert calls[0][1] == DEFAULT_API_BASE_URL + "/organizations/search"
+    local = ("POST", LOCAL_SOURCE_BASE_URL + "/organizations/search")
+    real = ("POST", DEFAULT_API_BASE_URL + "/organizations/search")
+    chosen = worker.endpoints(DeploymentProfile.LOCAL, DEFAULT_API_BASE_URL)
+    assert real in chosen and local not in chosen
+    with (
+        worker.CheckSession(DeploymentProfile.LOCAL, DEFAULT_API_BASE_URL) as session,
+        pytest.raises(ValueError),
+    ):
+        session.request(*local)
+    assert len(calls) == 1
+
+
 @pytest.mark.parametrize(
-    "overrides", [{"profile": None}, {"profile": "LOCAL"}, {"profile": "private"}]
+    "overrides",
+    [
+        {"profile": None},
+        {"profile": "LOCAL"},
+        {"profile": "private"},
+        {"base_url": None},
+        {"base_url": "https://other.example/api/v2"},
+        {"profile": "production", "base_url": LOCAL_SOURCE_BASE_URL},
+    ],
 )
 def test_request_without_a_valid_profile_is_invalid(monkeypatch, overrides):
-    """A helper request must say which profile it was made under."""
+    """A helper request must say which profile and base URL it was made under."""
     network = Mock(side_effect=AssertionError("network must not run"))
     monkeypatch.setattr(worker, "CheckSession", network)
     assert worker.check_request(payload(**overrides)) == "invalid"
-    raw = json.loads(payload())
-    del raw["profile"]
-    assert worker.check_request(json.dumps(raw).encode()) == "invalid"
+    for field in ("profile", "base_url"):
+        raw = json.loads(payload())
+        del raw[field]
+        assert worker.check_request(json.dumps(raw).encode()) == "invalid"
     network.assert_not_called()
 
 

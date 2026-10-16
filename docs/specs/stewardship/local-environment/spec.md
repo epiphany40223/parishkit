@@ -17,13 +17,19 @@ The local environment exists so that a developer can exercise an Admin or
 Family change end to end, through the real setup wizard, real Caddy, real
 background services and realistic data, before the change reaches the
 Production deployment. It answers "does this behave correctly in a real
-deployment?" without real parish data, real credentials or a shared host.
+deployment?" without a shared host and without any way to email a real
+Family or change ParishSoft.
 
 It is:
 
-- **not a production deployment.** It never holds real parish data, and it
-  can never email a real Family, even after its campaign goes to Production
-  (see [safety guarantees](#safety-guarantees));
+- **not a production deployment.** By default it holds only the
+  [synthetic parish](#synthetic-parish). The developer may choose to read
+  the real ParishSoft instead (Administrator decision, 2026-10-15, on
+  [#1399](https://github.com/epiphany40223/parishkit/issues/1399)); that
+  real parish data may stay on the laptop but is never committed or copied
+  off it. Either way it can never email a real Family or write to
+  ParishSoft, even after its campaign goes to Production (see
+  [safety guarantees](#safety-guarantees));
 - **not CI.** Nothing here runs Docker in CI. CI covers the local profile with
   fast tests, timeline tests and database tests that need no fake clock, and by
   rendering the local topology. Seed tests run in the VM (see
@@ -113,7 +119,7 @@ Line numbers are as of `main` on 2026-10-03 and are for orientation only.
 | `deployment._origin` (`deployment.py:260`) | PRODUCTION requires HTTPS; others require loopback HTTP | New LOCAL branch: exactly `https://localhost:8443` (see [origin](#origin-proxy-and-image)). Development and test unchanged. |
 | default origin (`deployment.py:536`) | none for PRODUCTION, else `http://localhost:8000` | `https://localhost:8443` |
 | proxy hops (`deployment.py:545`, `:551`) | one for PRODUCTION, else zero | one (`behind_proxy`). The "zero locally" message is reworded to name development and test. |
-| authentication-limit warning (`deployment.py:628`) | PRODUCTION only | not issued (synthetic data) |
+| authentication-limit warning (`deployment.py:628`) | PRODUCTION only | not issued (a laptop reached only on localhost) |
 | `runtime_topology._image` (`runtime_topology.py:92-101`) | GHCR digest for PRODUCTION, else `parishkit-stewardship:development` | the local tag pattern only |
 | source mounts (`runtime_topology.py:294`) | refused unless DEVELOPMENT | refused (unchanged; this existing `is not DEVELOPMENT` refuses, the safe direction) |
 | web replica networking (`runtime_topology.py:426`) | PRODUCTION joins `proxy`; others publish web's port on loopback | joins `proxy` like Production; web publishes no host port (`behind_proxy`) |
@@ -235,7 +241,9 @@ Production in either direction.
   MUST therefore carry an explicit `profile` field: `parishsoft_http_worker`
   (through `parishsoft_transport`), `provider_check_worker` (through
   `provider_checks`), the Family and readiness delivery workers, and any other
-  helper that opens SMTP or ParishSoft connections. A helper admits
+  helper that opens SMTP or ParishSoft connections. A ParishSoft request also
+  carries `base_url`, the deployment's [ParishSoft choice](#safety-guarantees),
+  and reaches that one base URL only. A helper admits
   `LOCAL_SOURCE_BASE_URL` or `LOCAL_SMTP_ENDPOINT` only when the request's
   profile is `local`, and refuses them for any other profile. A production
   helper therefore refuses the local endpoints even if a parent passed them.
@@ -250,13 +258,25 @@ Production in either direction.
   `confirmation_commands`) accept exactly `https://localhost:8443` for the
   LOCAL profile instead of requiring a resolvable public DNS name. That rule
   does not live in `deployment._origin`, and every other profile's result is
-  unchanged. The safety argument does not rest on refusing activation. Real
-  Families cannot be emailed because:
+  unchanged. The safety argument rests neither on refusing activation nor
+  on the data being synthetic: real addresses may be present once the
+  developer reads the real ParishSoft. Real Families cannot be emailed
+  because:
   - Gmail and Google service-account credentials are refused in LOCAL, at
     every intake and at every Gmail call site;
   - all mail goes to Mailpit through the mail-catcher transport, and Mailpit
-    has no route out and renders no relay;
-  - the data is synthetic, with only `@example.test` addresses.
+    has no route out and renders no relay, so a real address in a message
+    reaches only Mailpit.
+
+  These two code checks are the whole argument. Testing mode is not a
+  third guard: it is off after activation, and operational and security
+  alerts are exempt from it even before (see
+  [mode routing](../background-processing/spec.md#mode-routing)). Before a
+  later #1399 change admits real mail in LOCAL, a forced mail redirect MUST
+  replace them, with the scope the
+  [#1399 plan](https://github.com/epiphany40223/parishkit/issues/1399)
+  gives it: every routing class, in both modes, and the separate
+  `pk-stewardship smoke --send-to` connection.
 
   A test MUST show that, after LOCAL activation, every Family and
   administrative message is sent only through the mail-catcher transport.
@@ -271,9 +291,27 @@ Production in either direction.
   sentinel client document that other profiles refuse, and the LOCAL login page
   hides Google sign-in. The sentinel holds no real client ID or secret. Admin
   sign-in in LOCAL is the [local test sign-in](#local-test-sign-in).
-- **ParishSoft.** In LOCAL the only reachable ParishSoft base URL is
-  `LOCAL_SOURCE_BASE_URL`; the `parishsoft` installer and configuration refuse
-  any other. Outside LOCAL the same checks refuse that constant.
+- **ParishSoft.** The deployment setting `parishsoft_base_url`
+  (`PARISHKIT_STEWARDSHIP_PARISHSOFT_BASE_URL`) picks the one ParishSoft base
+  URL a deployment reaches from exactly two values
+  (`parishsoft_http_worker.BASE_URLS`): the real API
+  (`parishkit.parishsoft.DEFAULT_API_BASE_URL`) or the fake
+  (`LOCAL_SOURCE_BASE_URL`). Unset, each profile keeps its default: the fake
+  in LOCAL and the real API everywhere else. The fake is admitted only in
+  LOCAL, so Production cannot choose it; the loader, the recorded settings
+  reader and every helper request check that again. The setting is an
+  operational switch like the [modeled latency](#mail-catcher): it is
+  rendered into the service documents only when it differs from the
+  profile's default and never into the provisioning record, so Production's
+  documents are unchanged. A LOCAL deployment that chose the real API reads
+  real parish data; that is allowed on the laptop (#1399) and is never
+  committed. LOCAL never writes to ParishSoft, whatever it reads: the loader
+  refuses `parishsoft_publication` in LOCAL, a publication session cannot be
+  built for the `local` profile, and the read helper refuses the Member
+  contact PUT in any `local` request. The seeded campaign, `up` and the
+  setup wizard's printed values use the fake; switching an existing
+  deployment to the real API needs a real `parishsoft` key for the real
+  organization.
 - **Slack.** The `slack` credential target is admitted and checked in LOCAL
   by the same code as in every other profile (#1399). Slack carries only
   operational and readiness alerts to the configured channel, never Family
@@ -301,15 +339,24 @@ Production in either direction.
   [topology](#topology-and-web-differences)), so the guarantees above rest on
   the code checks, enforced at install and at use, and not on the network.
   Until the later #1399 changes land, those checks keep mail on the mail
-  catcher, ParishSoft on the fake and Google sign-in on the sentinel client,
-  so the only real provider a LOCAL deployment can reach is Slack, with a
-  token the developer installs. A fast test lists each of those use-time
-  checks and asserts that LOCAL refuses its real provider.
+  catcher and Google sign-in on the sentinel client, so the only real
+  providers a LOCAL deployment can reach are Slack, with a token the
+  developer installs, and ParishSoft's read endpoints, when the developer
+  chose the real API. A fast test lists each of those use-time checks and
+  asserts that LOCAL refuses its real provider, defaults to the fake
+  ParishSoft and never writes to ParishSoft.
   Under the [fake clock](#fake-clock), which never runs ahead of real time, a
   faked process checks a real provider's TLS certificate against that past
   time: it refuses a certificate issued since then and accepts one that has
-  expired since then. Today only Slack is reached this way, so the exposure
-  is a test Slack token; before a real Google key is admitted in LOCAL, the
+  expired since then. Today Slack and the real ParishSoft API are reached
+  this way, so the exposure is a test Slack token or a real ParishSoft key.
+  That key can write Member contact fields: what keeps LOCAL from writing
+  is the code above, not the key. Under the fake clock a faked process
+  accepts a ParishSoft certificate that expired within the offset (and
+  refuses one issued within it, so reads fail as unavailable), so the guide
+  recommends the normal clock for real-API runs and the host half warns
+  when the real API is rendered under the fake clock. Before a real Google key is
+  admitted in LOCAL, the
   Google token assertion's timestamps and Google's TLS checks running on a
   past clock MUST be dealt with.
 
@@ -365,11 +412,13 @@ giving and household reads all run through their real code.
   one mount: its own configuration file (below), read-only. It runs as the
   application uid, which owns that file, and joins only `backend`.
 - **Base URL.** `LOCAL_SOURCE_BASE_URL = "http://fake-parishsoft:8080/api/v2"`.
-  It is threaded through every `ParishSoftConfig` call site and both helper
-  subprocesses. Each allowlist admits exactly the profile's one base URL: this
-  constant for a `local` request and the real base URL for every other, never
-  both (see [helper subprocesses](#safety-guarantees)). The shared
-  `parishkit.parishsoft_http_worker` owns the profile-to-URL rule and the
+  It is LOCAL's default ParishSoft base URL (see
+  [ParishSoft](#safety-guarantees) for the setting that may choose the real
+  API instead), threaded through every `ParishSoftConfig` call site and both
+  helper subprocesses. Each request admits exactly the deployment's one
+  chosen base URL, never both, and this constant only for a `local` request
+  (see [helper subprocesses](#safety-guarantees)). The shared
+  `parishkit.parishsoft_http_worker` owns the base-URL rule and the
   profile names, so the helper applies it without importing application code;
   a stewardship test keeps those names aligned with `DeploymentProfile`. A
   process whose runtime assembly recorded no profile cannot read the source at
@@ -378,8 +427,9 @@ giving and household reads all run through their real code.
   constant `LOCAL_PARISHSOFT_KEY`, which `up` installs as the `parishsoft`
   credential; any other or missing key gets HTTP 401 with an empty body.
 - **Read-only.** The fake implements only the read endpoints below and has no
-  control endpoint. Any other method or path gets 404 or 405, so ParishSoft
-  publication fails as unsupported in LOCAL.
+  control endpoint. Any other method or path gets 404 or 405, and LOCAL
+  refuses ParishSoft publication before any request (see
+  [ParishSoft](#safety-guarantees)).
 
 ### Fake configuration
 
@@ -1235,7 +1285,7 @@ section is the contract.
 | `vm create` | Create the `parishkit-local` Lima instance with the [VM settings](#host-virtual-machine) and install Docker Engine |
 | `vm start` / `vm stop` | Start or stop the VM |
 | `up [--families N]` | First-time install (below), with a synthetic parish of `N` Families (default 100) |
-| `deploy [--schema-change] [--bulk on\|off] [--smtp-latency-ms N]` | Build the image from the checkout and upgrade the running deployment to it by the Production upgrade's steps (below); `--schema-change` is that upgrade's `STEWARDSHIP_SCHEMA_CHANGE=1`; `--bulk` renders the bulk Family send on or off and `--smtp-latency-ms` the [modeled latency](#mail-catcher), each carried over when not given |
+| `deploy [--schema-change] [--bulk on\|off] [--smtp-latency-ms N] [--parishsoft real\|fake]` | Build the image from the checkout and upgrade the running deployment to it by the Production upgrade's steps (below); `--schema-change` is that upgrade's `STEWARDSHIP_SCHEMA_CHANGE=1`; `--bulk` renders the bulk Family send on or off, `--smtp-latency-ms` the [modeled latency](#mail-catcher) and `--parishsoft` which [ParishSoft](#safety-guarantees) it reads, each carried over when not given |
 | `deploy --rollback` | That upgrade's image-only rollback to the image the last `deploy` replaced (below) |
 | `snapshot [--seeded]` | Stop the services and save the runtime root as the post-setup snapshot, or with `--seeded` as the seeded snapshot, preserving numeric ownership and modes, then restart; each replaces its earlier copy |
 | `snapshot save NAME [--replace]` | Save the runtime root as the named snapshot (below), after the [disk guard](#operator-script); an existing `NAME` needs `--replace` |
@@ -1526,10 +1576,13 @@ the upload and that invocation. Local mode differs in exactly these ways:
 - the retarget renders the bulk Family send as `--bulk` chose
   (`PARISHKIT_LOCAL_BULK_FAMILY_SEND=on|off` to the host half) and the
   [modeled latency](#mail-catcher) as `--smtp-latency-ms` chose
-  (`PARISHKIT_LOCAL_SMTP_LATENCY_MS`); unset, both carry over. A rollback
-  never renders the latency, since the previous release may not know the
-  setting; before a `deploy` of a build older than the setting, the
-  operator sets it to 0. Production mode never reads either variable.
+  (`PARISHKIT_LOCAL_SMTP_LATENCY_MS`), and the [ParishSoft](#safety-guarantees)
+  base URL as `--parishsoft` chose (`PARISHKIT_LOCAL_PARISHSOFT=real|fake`);
+  unset, each carries over. A rollback renders neither the latency nor the
+  real ParishSoft API, since the previous release may not know the setting;
+  before a `deploy` of a build older than the setting, the operator sets the
+  latency to 0 and the ParishSoft choice to `fake`. Production mode never
+  reads these variables.
 
 Everything else is the Production upgrade: the advisory upgrade check (an
 answer other than `t` refuses unless `--schema-change` says the change is

@@ -372,6 +372,7 @@ def parishsoft_gateway(credential_path):
         """The gateway bound to ``execution``'s ownership checks."""
         from parishkit.stewardship.source.credentials import SourceCredential
         from parishkit.stewardship.source.transport import (
+            runtime_base_url,
             runtime_profile,
             source_timeout_recorder,
         )
@@ -382,6 +383,7 @@ def parishsoft_gateway(credential_path):
             execution,
             SourceCredential.read(credential_path),
             profile=runtime_profile().value,
+            base_url=runtime_base_url(),
             on_timeout=source_timeout_recorder(execution),
         )
 
