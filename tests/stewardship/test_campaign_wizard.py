@@ -229,7 +229,9 @@ def test_template_draws_the_stepper_with_back_and_next_links():
         f'href="{reverse("admin:schedule_settings")}" data-campaign-step-next' in html
     )
     assert "Next: Dates and mail schedules" in html
-    assert html.count('aria-current="step"') == 1
+    # Once in the step bar and once in the list (#1402).
+    assert html.count('aria-current="step"') == 2
+    assert f'<a href="{reverse("admin:share_settings")}" class="setup-track-' in html
     assert "<form" not in html
 
 

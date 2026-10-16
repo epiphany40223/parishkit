@@ -1,5 +1,6 @@
 """The AdminCaller seam: construction rules, request mirroring and narrowing."""
 
+import ast
 import dataclasses
 import re
 from datetime import timedelta
@@ -257,6 +258,161 @@ def test_require_fresh_takes_a_web_caller(monkeypatch):
     monkeypatch.setattr(sessions, "database_now", lambda: instant + timedelta(0, 301))
     with pytest.raises(sessions.FreshAuthenticationRequired):
         sessions.require_fresh(caller)
+
+
+@pytest.mark.parametrize(
+    ("age", "default", "setup"),
+    [
+        (timedelta(minutes=4), True, True),
+        (timedelta(minutes=6), False, True),
+        (timedelta(minutes=59), False, True),
+        # Exactly an hour is inside, as the SQL guard's ``>=`` is (#1402).
+        (timedelta(minutes=60), False, True),
+        (timedelta(minutes=61), False, False),
+    ],
+)
+def test_only_the_setup_window_accepts_a_sign_in_up_to_an_hour_old(
+    monkeypatch, age, default, setup
+):
+    """Setup credential steps take an hour (#1402); every other action, five minutes."""
+    assert sessions.FRESH_SECONDS == 300
+    assert sessions.SETUP_FRESH_SECONDS == 3600
+    instant = timezone.now()
+    request = RequestFactory().get("/admin/")
+    request.portal_session = SimpleNamespace(authenticated_at=instant)
+    monkeypatch.setattr(sessions, "database_now", lambda: instant + age)
+    for within, admitted in ((None, default), (sessions.SETUP_FRESH_SECONDS, setup)):
+        assert sessions.freshness(request, within)[0] is admitted
+        if admitted:
+            assert sessions.require_fresh(request, within=within) == instant
+        else:
+            with pytest.raises(sessions.FreshAuthenticationRequired):
+                sessions.require_fresh(request, within=within)
+
+
+# The modules that may pass a window to each step-up check (#1402), and the
+# only window they may pass: the setup credential steps' hour.
+WINDOW_USERS = {
+    "require_fresh": {
+        "stewardship/accounts/setup_credential_views.py",
+        "stewardship/accounts/setup_credentials.py",
+    },
+    "freshness": {"stewardship/accounts/templatetags/stewardship.py"},
+}
+
+
+def _is_setup_window(node):
+    """``SETUP_FRESH_SECONDS``, or ``SETUP_FRESH_SECONDS if ... else None``."""
+    if isinstance(node, ast.IfExp):
+        return _is_setup_window(node.body) and (
+            isinstance(node.orelse, ast.Constant) and node.orelse.value is None
+        )
+    return (isinstance(node, ast.Name) and node.id == "SETUP_FRESH_SECONDS") or (
+        isinstance(node, ast.Attribute) and node.attr == "SETUP_FRESH_SECONDS"
+    )
+
+
+def _step_up_checks(tree):
+    """Yield (check name, node) for every use of a sessions step-up check.
+
+    ``freshness`` is also the name of an unrelated schedule-preview helper,
+    (and ``preview.freshness`` an unrelated attribute), so ``freshness``
+    counts only when imported from a sessions module or read as
+    ``sessions.freshness``; ``require_fresh`` counts however it is reached.
+    """
+    imported = {
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and "sessions" in (node.module or "")
+        for alias in node.names
+    }
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr in WINDOW_USERS:
+            owner = node.value
+            if node.attr == "require_fresh" or (
+                isinstance(owner, ast.Name) and owner.id == "sessions"
+            ):
+                yield node.attr, node
+        elif isinstance(node, ast.Name) and node.id in WINDOW_USERS:
+            if node.id == "require_fresh" or node.id in imported:
+                yield node.id, node
+
+
+def test_only_setup_credential_steps_pass_the_setup_window():
+    """No action after setup can widen its step-up window (#1402).
+
+    Walks the parsed source, so a call split across lines, a window held
+    in a variable, ``**kwargs`` or ``*args``, an aliased import, or a check
+    passed around uncalled (say to ``functools.partial``) is caught too.
+    The checks are defined in sessions.py, which is skipped.
+    """
+    problems = []
+    windows = []
+    for path in sorted(SOURCE.rglob("*.py")):
+        name = path.relative_to(SOURCE).as_posix()
+        if name == "stewardship/accounts/sessions.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=name)
+        for node in ast.walk(tree):
+            # No module may rename a check, which would hide its calls.
+            if isinstance(node, ast.ImportFrom) and "sessions" in (node.module or ""):
+                problems += [
+                    (name, node.lineno, f"aliased {alias.name}")
+                    for alias in node.names
+                    if alias.name in WINDOW_USERS and alias.asname
+                ]
+        calls = {
+            id(node.func): node for node in ast.walk(tree) if isinstance(node, ast.Call)
+        }
+        for check, node in _step_up_checks(tree):
+            call = calls.get(id(node))
+            if call is None:
+                # Imported, or (in this file) only referenced: an import is
+                # fine; any other uncalled use could bind a window elsewhere.
+                problems.append((name, node.lineno, f"{check} used uncalled"))
+                continue
+            if any(isinstance(arg, ast.Starred) for arg in call.args) or any(
+                keyword.arg is None for keyword in call.keywords
+            ):
+                problems.append((name, call.lineno, f"{check} given *args/**kwargs"))
+            given = [kw.value for kw in call.keywords if kw.arg == "within"]
+            if check == "freshness" and len(call.args) > 1:
+                given.append(call.args[1])
+            for window in given:
+                windows.append((check, name))
+                if name not in WINDOW_USERS[check] or not _is_setup_window(window):
+                    problems.append((name, call.lineno, f"{check} window"))
+    assert problems == []
+    assert sorted(set(windows)) == sorted(
+        (check, name) for check, names in WINDOW_USERS.items() for name in names
+    )
+
+
+def test_the_window_check_catches_what_a_line_scan_missed():
+    """Split calls, variables, ``**kwargs`` and aliases all fail the walk."""
+    sources = {
+        "split": "require_fresh(\n    request,\n    within=3600,\n)",
+        "variable": "hour = SETUP_FRESH_SECONDS\nrequire_fresh(request, within=hour)",
+        "kwargs": "require_fresh(request, **{'within': 3600})",
+        "partial": "check = functools.partial(require_fresh, within=3600)",
+        "attribute": "sessions.freshness(request, 3600)",
+    }
+    for label, source in sources.items():
+        tree = ast.parse(source)
+        calls = {id(n.func): n for n in ast.walk(tree) if isinstance(n, ast.Call)}
+        flagged = False
+        for check, node in _step_up_checks(tree):
+            call = calls.get(id(node))
+            if call is None or any(k.arg is None for k in call.keywords):
+                flagged = True
+                continue
+            given = [k.value for k in call.keywords if k.arg == "within"]
+            if check == "freshness" and len(call.args) > 1:
+                given.append(call.args[1])
+            flagged |= any(not _is_setup_window(window) for window in given)
+        assert flagged, label
+    for unrelated in ("freshness(days, margin)", "fresh = preview.freshness"):
+        assert not list(_step_up_checks(ast.parse(unrelated))), unrelated
 
 
 @pytest.mark.parametrize("scope", [FULL, READ_ONLY])

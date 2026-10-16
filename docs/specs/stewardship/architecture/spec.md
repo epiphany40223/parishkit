@@ -399,10 +399,14 @@ replacement, and purge require fresh Google re-authentication no older than
 five minutes, as do Family-directory, mail-merge and financial exports,
 integration setting changes and starting Testing cleanup ([#547](https://github.com/epiphany40223/parishkit/issues/547)),
 pausing and resuming mail, withdrawing Production, closing the Family portal
-for maintenance, backup-key changes and approving an automation session. The one exception is a full-scope
+for maintenance, backup-key changes and approving an automation session. There are two exceptions. One is a full-scope
 [automation session](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line),
 which an Administrator approved with a fresh sign-in and which stands in for it
-for the actions listed there.
+for the actions listed there. The other is the unfinished initial-setup
+wizard's credential pages, which accept a sign-in up to 60 minutes old (the
+idle timeout's length) for the setup attempt's original session only
+([setup wizard](../admin-portal/spec.md#bootstrap-and-first-admin-wizard),
+[#1402](https://github.com/epiphany40223/parishkit/issues/1402)).
 
 Fresh authentication is a step-up of the current session, not a new login.
 When a privileged action finds the session's verified Google instant too old,
