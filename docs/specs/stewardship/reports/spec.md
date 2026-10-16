@@ -838,7 +838,10 @@ both roles see:
   (Administrators).
 
 While the Family is in the campaign's No-reminders WorkGroup, both roles see
-"Reminders skipped: in ParishSoft WorkGroup" with its name.
+"Reminders skipped: in ParishSoft WorkGroup" with its name: the WorkGroup
+whose Families are skipped now, which is the previous one while a rename
+waits for a refresh (#1305); while the named WorkGroup is missing in
+ParishSoft and the earlier set is kept, it is the configured name.
 Administrators also see whether campaign email can reach the Family (or why
 not), the furthest form step reached and when the Family was last seen on the
 form (live values of the

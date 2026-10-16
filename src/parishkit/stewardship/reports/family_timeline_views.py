@@ -51,7 +51,7 @@ from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.snapshot_names import snapshot_family_facts
 from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
-from parishkit.stewardship.source.workgroups import current_evidence
+from parishkit.stewardship.source.workgroups import applied_evidence
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.report_errors import report_unavailable
@@ -273,13 +273,14 @@ def read_identity(family, *, codes, workgroup=None):
     so a rotation cannot change keys between the read and the decryption;
     the caller holds the read guard's transaction. ``workgroup`` is the
     campaign's configuration values, to tell whether its Reminder WorkGroup
-    holds this Family now.
+    holds this Family now. While a rename waits for a refresh, that is the
+    previous WorkGroup, whose name is the one shown (#1305).
     """
     workgroup_name = None
     if workgroup is not None:
-        name, evidence = current_evidence(workgroup)
+        evidence = applied_evidence(workgroup)
         if evidence is not None and family.family_duid in evidence["family_duids"]:
-            workgroup_name = name
+            workgroup_name = evidence["name"]
     snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
     # A blank surname is a data gap, worded as the name (#1216).
     facts = snapshot_family_facts(

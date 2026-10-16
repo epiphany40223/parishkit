@@ -122,3 +122,83 @@ def test_refusals_are_explained_in_place_at_the_readers_version(auth_service, go
     ).exists()
     # Only the change Apply names may be read from the address.
     assert browser.get(URL + "?extra=1").status_code == 400
+
+
+def test_now_and_review_say_which_families_are_skipped(
+    auth_service, google, monkeypatch
+):
+    """While a rename waits for a refresh, "Now" names the previous WorkGroup's
+    Families that are still skipped, and each review says when its change
+    applies (#1305): a rename at the next refresh, a clear and the name the
+    newest refresh read at once. The newest refresh's read is stood in for;
+    which Families it excludes is tested in
+    test_reminder_workgroup_rename_postgresql.py."""
+    from parishkit.stewardship.accounts import reminder_workgroup_views as views
+    from parishkit.stewardship.source import workgroups
+
+    read = {"name": NAME, "found": True, "family_duids": [1, 2]}
+    monkeypatch.setattr(workgroups, "snapshot_evidence", lambda: read)
+    monkeypatch.setattr(views, "snapshot_evidence", lambda: read)
+    store = auth_service.store
+    row = setup(store)
+    browser, _ = signed_in()
+
+    def review(name):
+        """The review region for setting the name to ``name``."""
+        page = browser.get(URL)
+        answer = post(
+            browser,
+            URL,
+            {"action": "preview", "name": name, "base_digest": digest(page)},
+        )
+        assert answer.status_code == 200, answer.content
+        return " ".join(unescape(region(answer.content)).split())
+
+    def now():
+        """The "Now" panel's text."""
+        text = unescape(browser.get(URL).content.decode())
+        start = text.index('id="workgroup-status"')
+        return " ".join(text[start : text.index("</section>", start)].split())
+
+    # Nothing set: the snapshot's read applies to nobody.
+    assert "No WorkGroup is set" in now()
+    # Setting the name the newest refresh read applies at once.
+    assert "already read “Active: Stewardship 2027”, so the change applies at once" in (
+        review(NAME)
+    )
+    patch = [
+        {
+            "operation": "update",
+            "section": "campaigns",
+            "id": str(row.pk),
+            "values": {"reminder_workgroup": "Renamed"},
+        }
+    ]
+    assert change(store, store.active(), uuid4(), patch).state == "applied"
+    shown = now()
+    assert 'data-workgroup-status="pending"' in shown
+    assert (
+        "Until then, the 2 Families the newest refresh found in "
+        "“Active: Stewardship 2027” still get no Reminders."
+    ) in shown
+    # Another rename keeps the same Families until the next refresh.
+    shown = review("Renamed again")
+    assert "The change takes effect at the next ParishSoft refresh." in shown
+    assert "the 2 Families the newest refresh found in" in shown
+    # A clear applies at once.
+    assert "Turning it off applies at once" in review("")
+    # A refresh found no WorkGroup by the new name and kept the set before.
+    read.update(name="Renamed", found=False)
+    shown = now()
+    assert 'data-workgroup-status="missing"' in shown
+    assert (
+        "Until a refresh finds it, the 2 Families skipped before still get no "
+        "Reminders."
+    ) in shown
+    assert "the 2 Families skipped now still get no Reminders" in review("Other")
+    # With no read recorded, a pending name skips nobody meanwhile.
+    read.clear()
+    monkeypatch.setattr(workgroups, "snapshot_evidence", lambda: None)
+    monkeypatch.setattr(views, "snapshot_evidence", lambda: None)
+    assert "Until then, no Family's Reminders are skipped." in now()
+    assert "Until then, no Family's Reminders are skipped." in review("Renamed again")
