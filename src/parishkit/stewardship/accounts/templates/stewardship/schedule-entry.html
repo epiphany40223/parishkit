@@ -30,7 +30,7 @@ changed email is reviewed with the schedule and saved as a new email that
 only this schedule (on New, every reminder its repeat adds) sends.
 {% endcomment %}
 <h1>{% if new %}{% translate "New scheduled email" %}{% else %}{% translate "Edit scheduled email" %}{% endif %}</h1>
-{% aboutpage "schedule-entry" %}{% include 'stewardship/schedule-guide.html' with window_text=window_text browser_times=True %}{% endaboutpage %}
+{% aboutpage "schedule-entry" %}{% include 'stewardship/schedule-guide.html' with window_text=window_text %}{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
 <p class="campaign-dates">{% blocktranslate trimmed with start=values.start_date|parish_date end=values.end_date|parish_date %}Campaign dates: {{ start }} – {{ end }}{% endblocktranslate %}</p>
 <form method="post" action="{{ post_url }}" id="schedule-entry-form" data-schedule-entry data-review-open="schedule-review" data-require-change="base_digest"{% if local_from %} data-schedule-local="{{ local_from }}"{% endif %}>{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="zone" value="" data-browser-zone>

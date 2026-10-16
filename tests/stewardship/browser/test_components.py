@@ -19,22 +19,26 @@ pytestmark = pytest.mark.parametrize(
 
 @pytest.mark.parametrize("width", [320, 1280])
 @pytest.mark.parametrize("path", ["/clone-preview"])
-def test_schedule_preview_distinguishes_parish_intent_from_browser_time(
+def test_schedule_preview_shows_send_times_only_in_browser_time(
     page, component_origin, width, path
 ):
-    """Keep parish civil time visible while converting the resolved UTC instant."""
+    """Show each send as the resolved UTC instant in the browser's zone (#558).
+
+    The campaign-local date and time a schedule saves, with the campaign's
+    zone, are not shown beside it: every Admin time is browser-local.
+    """
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + path)
     instant = page.locator("time[data-local-instant]").first
     assert instant.get_attribute("datetime") == "2054-10-01T13:00:00+00:00"
     assert "6:00" in instant.inner_text() and "PDT" in instant.inner_text()
     text = page.locator("main").inner_text()
-    # The parish's intended time uses the parish style's clock (the default
-    # style is 12-hour), computed from the same filter the template uses.
+    # The schedule's campaign-local intent (9:00 AM New York, in the parish
+    # style's clock) is no longer printed.
     with dates.using(dates.DEFAULT):
         parish_clock = parish_time("09:00:00")
     assert parish_clock == "9:00 AM"
-    assert parish_clock in text and "America/New_York" in text
+    assert parish_clock not in text
     assert "not a list of who will receive it" in text
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 

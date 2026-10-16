@@ -397,6 +397,8 @@ def schedule_page(
     reads from the database (schedule_preview.work_summary). With ``data``
     the formset is bound and validated, as after a refused preview.
     ``test_mail`` false is a live campaign, which admits no test mail (#923).
+    Send times are the browser's (#558); a bound post was typed in the
+    campaign's own zone, so its values read as they always have.
     """
     schedules = Schedules(
         data,
@@ -407,6 +409,9 @@ def schedule_page(
         prefix="schedules",
         email_links=True,
         test_mail=test_mail,
+        browser_times=True,
+        zone="" if data is None else owner["values"]["timezone"],
+        now=now,
     )
     if data is not None:
         schedules.is_valid()
@@ -449,6 +454,46 @@ def table_schedules(owner, emails):
     ]
 
 
+# The date-change review shows and takes send times in the browser's zone
+# (#558), as its view draws it: browser mode, at a fixed current instant.
+REVIEW_BROWSER_TIMES = {
+    "browser_times": True,
+    "now": datetime(2054, 9, 1, 12, tzinfo=UTC),
+}
+
+
+# The /schedule-dates-dst page's campaign, saved schedules and emails, for
+# its browser test to post back through the same formset (#558).
+REVIEW_DST = {}
+
+
+def review_dst_schedules(owner, emails):
+    """An invitation and two reminders either side of London's DST change.
+
+    London leaves summer time on October 25, 2054, a week before New York,
+    so the 9:00 AM New York reminders show as 14:00 on the 24th and 13:00 on
+    the 26th in a London browser.
+    """
+    by_kind = {row["values"]["slot"]: row for row in emails}
+
+    def saved(kind, **values):
+        """A saved schedule of ``kind`` that sends that type's email."""
+        email = by_kind[kind]
+        return schedule(
+            owner["id"],
+            kind=kind,
+            template_version=email["id"],
+            subject=email["values"]["subject"],
+            **values,
+        )
+
+    return [
+        saved("initial"),
+        saved("reminder", date="2054-10-24"),
+        saved("reminder", date="2054-10-26"),
+    ]
+
+
 def refused_table_data(rows):
     """The table page's post with Reminder 2 moved outside the campaign."""
     data = data_for(sorted(rows, key=schedule_order))
@@ -469,6 +514,11 @@ def component_origin():
         for kind in ("initial", "reminder", "daily_digest", "weekly_digest")
     ]
     table_rows = table_schedules(mail_campaign, mail_emails)
+    REVIEW_DST.update(
+        owner=mail_campaign,
+        templates=mail_emails,
+        previous=review_dst_schedules(mail_campaign, mail_emails),
+    )
     context = {
         "server_now": NOW,
         "deadline": NOW + timedelta(hours=1),
@@ -837,6 +887,18 @@ def component_origin():
             schedule_page(mail_campaign, [mail], now=datetime(2054, 9, 1, tzinfo=UTC)),
         ),
         (
+            # The date-change review with reminders either side of London's
+            # DST change, shown in the browser's zone (#558).
+            "/schedule-dates-dst",
+            "schedule-reconcile",
+            schedule_page(
+                mail_campaign,
+                REVIEW_DST["previous"],
+                templates=mail_emails,
+                now=REVIEW_BROWSER_TIMES["now"],
+            ),
+        ),
+        (
             # The scheduled emails table (#448): a sent invitation, two
             # upcoming reminders out of order, and a weekly digest.
             "/schedule-table",
@@ -892,6 +954,7 @@ def component_origin():
                     campaign_id=mail_campaign["id"],
                     campaign=mail_campaign["values"],
                     prefix="schedules",
+                    **REVIEW_BROWSER_TIMES,
                 ),
                 "base_digest": "a" * 64,
                 "editable": False,

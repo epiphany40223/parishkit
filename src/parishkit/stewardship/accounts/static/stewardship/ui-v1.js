@@ -865,9 +865,9 @@
   // (data-require-change, below) compares the form with, so Review changes
   // stays unavailable until the reader changes one (#750). Without a zone
   // Review changes stays unavailable and [data-zone-missing] says why.
-  // The first-campaign step's schedules (form[data-schedule-zoned])
-  // works the same way, row by row: each unbound saved row carries its own
-  // data-schedule-local, and Save and continue waits for a zone.
+  // The date-change review's schedules (form[data-schedule-zoned]) work the
+  // same way, row by row: each unbound saved row carries its own
+  // data-schedule-local, and Review changes waits for a zone.
   // localParts: a moment (ms) as this browser's {date, time, weekday}, the
   // time canonical as the time entry writes it and Monday 0.
   const localParts = (moment) => {
@@ -903,7 +903,8 @@
       });
     }
   });
-  // Fill one schedule's fields (New and Edit's form, or one first-campaign
+  // Fill one schedule's fields (New and Edit's form,
+  // or one date-change review repeat
   // row) from its data-schedule-local moment, in this browser's zone.
   document.querySelectorAll("form[data-schedule-entry][data-schedule-local], "
     + "[data-schedule-row][data-schedule-local]").forEach((scope) => {
@@ -4346,9 +4347,8 @@
   // Repeating reminders (#469). expandRecurrence turns a repeat rule into
   // the calendar dates it produces. Dates are civil days, computed with UTC
   // dates so the browser's own zone never shifts them; the send time is
-  // added later per date (the campaign's wall-clock time on the date-change
-  // review, the browser's on the first-campaign step and New scheduled
-  // email, #558).
+  // added later per date (the browser's wall-clock time on the date-change
+  // review and New scheduled email, #558).
   // The rule: {frequency: "daily" | "weekly" | "monthly", start,
   // end (inclusive, "YYYY-MM-DD"), weekdays: [0 (Monday) … 6] for weekly,
   // and for monthly either {day: 1–31} or {ordinal: 1–4 or -1 (last),
@@ -4422,11 +4422,10 @@
   // inside the campaign dates, strictly after the initial invitation, not at
   // the instant of another Family mailing, at most REPEAT_LIMIT dates per
   // rule and the form's MAX_NUM_FORMS rows in all. Here every comparison is
-  // of date and time text in the zone the form's rows use: the browser's on
-  // the first-campaign step (#558), the campaign's on the date-change
-  // review. The campaign-date check compares calendar days, so on the
-  // first-campaign step the server decides a time near either edge (New
-  // scheduled email compares moments instead; see repeatDates).
+  // of date and time text in the browser's zone, which the date-change
+  // review's rows use (#558). The campaign-date check compares calendar
+  // days, so the server decides a time near either edge (New scheduled
+  // email compares moments instead; see repeatDates).
   const REPEAT_LIMIT = 30;
   const REPEAT_ERRORS = {
     dates: "Choose the first and last dates to repeat on.",
@@ -4472,7 +4471,8 @@
     });
   };
   // Every date a repeat rule gives, and why any of them will not be added
-  // (shared by the first-campaign panel and New scheduled email, #878).
+  // (shared by the date-change review repeat panel and New scheduled
+  // email, #878).
   // ``existing`` is the Family mailings already scheduled, as {kind, date,
   // time} campaign-local text; ``first`` and ``last`` the campaign's dates;
   // ``room`` how many more of the ``limit`` schedules fit; ``sendTime`` the canonical send
@@ -4889,7 +4889,8 @@
   // Reminder, a Repeat checkbox swaps the send date for a repeat rule. The
   // page's own send time and Email to send apply to every date. As the Admin
   // types, the dates the rule gives are listed with the same checks as the
-  // first-campaign panel (repeatDates), against the saved invitations and
+  // date-change review repeat panel (repeatDates), against the saved
+  // invitations and
   // reminders the page carries (data-repeat-mailings) and the schedules
   // still free (data-repeat-room). Dates and the time are this browser's
   // (#558): the saved mailings and the campaign's first and last moments
