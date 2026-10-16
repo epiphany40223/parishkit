@@ -11,12 +11,13 @@ from threading import Event
 from uuid import UUID
 
 import pytest
+from matplotlib.text import Text
 from PIL import Image
 
 from parishkit.stewardship.reports import charts
 from parishkit.stewardship.reports.charts import (
     RENDERER_VERSION,
-    family_axis_top,
+    axis_top,
     participation_figure,
     participation_png,
     render_participation,
@@ -113,92 +114,135 @@ def test_table_and_csv_keep_exact_money_counts_without_internal_ids():
 
 
 def test_figure_coordinates_match_table_and_do_not_mix_units():
-    """Only plot coordinates use floats; financial table values stay exact."""
+    """Only plot coordinates use floats; financial table values stay exact.
+
+    Each series is its own panel on the shared date axis, never a second
+    y-axis (#720): the daily bars, the cumulative Families and the pledges.
+    """
     value = document()
     with participation_figure(value) as figure:
-        counts, dollars = figure.axes
-        assert list(counts.lines[0].get_ydata()) == [1, 2, 3]
-        assert [patch.get_height() for patch in counts.patches] == [1, 1, 1]
+        daily, cumulative, dollars = figure.axes
+        assert [patch.get_height() for patch in daily.patches] == [1, 1, 1]
+        assert list(cumulative.lines[0].get_ydata()) == [1, 2, 3]
         assert list(dollars.lines[0].get_ydata()) == [1234.56, 2234.56, 3234.56]
-        assert counts.get_ylabel() == "Families (count)"
-        assert dollars.get_ylabel() == "Effective annual pledges (USD)"
+        assert [axes.get_title(loc="left") for axes in figure.axes] == [
+            "First submissions that day",
+            "Cumulative participating Families",
+            "Effective annual pledges",
+        ]
+        assert [axes.get_ylabel() for axes in figure.axes] == [
+            "Families",
+            "Families",
+            "USD",
+        ]
         assert dollars.lines[0].get_linestyle() == "--"
-        assert counts.patches[0].get_hatch() == "//"
-        assert "America/New_York" in counts.get_xlabel()
-        assert counts.yaxis.get_major_formatter()(1234, 0) == "1,234"
-        assert dollars.yaxis.get_major_formatter()(1234, 0) == "$1,234"
+        assert daily.patches[0].get_hatch() == "//"
+        # One date axis: shared limits, labelled once under the last panel.
+        assert daily.get_shared_x_axes().joined(daily, dollars)
+        assert "America/New_York" in dollars.get_xlabel()
+        assert daily.get_xlabel() == cumulative.get_xlabel() == ""
+        assert not any(label.get_visible() for label in daily.get_xticklabels())
+        assert cumulative.yaxis.get_major_formatter()(1234, 0) == "1,234"
+        assert dollars.yaxis.get_major_formatter()(1234, 0) == "$1.2K"
+        # Panel titles name the series, so there is no legend.
+        assert not figure.legends and all(not axes.get_legend() for axes in figure.axes)
     assert not figure.axes
 
 
-def test_family_axis_fits_the_counts_without_drawing_provenance():
-    """The Family axis tops out near the data, not the eligible total (#575).
+def test_each_panel_fits_its_series_without_drawing_provenance():
+    """Each panel tops out near its own data, not the eligible total (#575).
 
     The fixture's eligible cohort is 1,234 Families but its largest count is 3,
-    so the old axis made the bars and line nearly flat. Both axes stay linear.
+    so an axis at the cohort made the bars and line nearly flat. All axes
+    stay linear.
     """
     with participation_figure(document()) as figure:
-        counts, dollars = figure.axes
-        assert counts.get_ylim() == pytest.approx((0, 3.3))
-        assert all(tick == int(tick) for tick in counts.get_yticks())
-        assert counts.get_yscale() == dollars.get_yscale() == "linear"
+        daily, cumulative, dollars = figure.axes
+        assert daily.get_ylim() == pytest.approx((0, 1.1))
+        assert cumulative.get_ylim() == pytest.approx((0, 3.3))
+        assert all(tick == int(tick) for tick in cumulative.get_yticks())
+        assert {axes.get_yscale() for axes in figure.axes} == {"linear"}
         assert dollars.get_ylim() == pytest.approx((0, 3234.56 * 1.1))
         texts = [text.get_text() for text in figure.texts]
         assert f"{RENDERER_VERSION} · Page 1" in texts
+        assert "Family participation — Historical as of day" in texts
         # Neither the eligible total nor the source/request provenance is drawn.
         assert not any(
             word in text
             for text in texts
             for word in ("Eligible", "Source #", "Requested")
         )
-    assert RENDERER_VERSION == "participation-v2"
+    assert RENDERER_VERSION == "participation-v3"
 
 
 @pytest.mark.parametrize("email", [False, True])
 def test_png_plot_box_is_the_hit_test_layout(email):
-    """The PNGs keep the plot box the saved digest page hit-tests (#720).
+    """The panels together fill the plot box the pages hit-test (#720).
 
-    Only the PDF moved into the shared report frame (#926); the page and
-    email PNGs still draw their plot exactly where ``PLOT_LAYOUT`` and
-    ``EMAIL_PLOT_LAYOUT`` say, at 1440 x 840 pixels.
+    The page and email PNGs draw their panels from the top of
+    ``PLOT_LAYOUT`` or ``EMAIL_PLOT_LAYOUT`` to its bottom, at 1440 x 840
+    pixels, so the hover and date slider map the box's edges to the dates.
     """
     layout = charts.EMAIL_PLOT_LAYOUT if email else charts.PLOT_LAYOUT
     with participation_figure(document(), email=email) as figure:
-        box = figure.axes[0].get_position()
-        assert (box.x0, box.x1, box.y0, box.y1) == pytest.approx(
+        boxes = [axes.get_position() for axes in figure.axes]
+        assert (
+            boxes[0].x0,
+            boxes[0].x1,
+            boxes[-1].y0,
+            boxes[0].y1,
+        ) == pytest.approx(
             (layout["left"], layout["right"], layout["bottom"], layout["top"])
         )
+        assert all(box.x0 == boxes[0].x0 and box.x1 == boxes[0].x1 for box in boxes)
         assert tuple(figure.get_size_inches() * figure.dpi) == (1440, 840)
-        # The legend and note sit where they did before #926, too.
-        [legend] = figure.legends
-        anchor = legend.get_bbox_to_anchor().transformed(figure.transFigure.inverted())
-        assert (anchor.x0, anchor.y0) == pytest.approx((0.5, 0.99 if email else 0.805))
-        assert legend.get_texts()[0].get_fontsize() == (11 if email else 8)
-        assert legend.get_frame_on() is not email
+        [title] = [
+            text
+            for text in figure.axes[0].findobj(Text)
+            if text.get_text() == "First submissions that day"
+        ]
+        assert title.get_fontsize() == (11 if email else 10)
         note = figure.texts[-2 if not email else -1]
         assert note.get_position() == pytest.approx((0.09, 0.055))
         texts = [text.get_text() for text in figure.texts]
         assert (f"{RENDERER_VERSION} · Page 1" in texts) is not email
 
 
-def test_family_axis_top_uses_the_larger_series_and_skips_gaps():
-    """Daily or cumulative, whichever is larger; unavailable days are ignored."""
-    days = document().days
-    burst = replace(days[0], first_responses=40, cumulative_responses=40)
-    assert family_axis_top((burst,)) == pytest.approx(44)
-    assert family_axis_top(days) == pytest.approx(3.3)
-    missing = replace(
-        days[2],
-        first_responses=0,
-        cumulative_responses=0,
-        cohort_denominator=0,
-        source_generation=None,
-        source_as_of=None,
-        population_available=False,
-        pledge_available=False,
-        pledge_total=None,
-    )
-    assert family_axis_top((missing,)) == pytest.approx(1.1)
-    assert family_axis_top(()) == pytest.approx(1.1)
+@pytest.mark.parametrize(
+    ("value", "label"),
+    [
+        (0, "$0"),
+        (800, "$800"),
+        (1000, "$1K"),
+        (1500, "$1.5K"),
+        (250_000, "$250K"),
+        (1_600_000, "$1.6M"),
+        (10_000_000, "$10M"),
+        # The unit is chosen after rounding, so a value is promoted.
+        (999.6, "$1K"),
+        (960_000, "$960K"),
+        (999_949, "$999.9K"),
+        (999_999, "$1M"),
+        (999_999_999, "$1B"),
+        (1_000_000_000, "$1B"),
+        (2_500_000_000_000, "$2,500B"),
+        (-250_000, "-$250K"),
+        (-800, "-$800"),
+    ],
+)
+def test_dollar_ticks_are_short(value, label):
+    """Pledge ticks read in thousands or millions, so the axis title fits."""
+    assert charts.short_dollars(value) == label
+
+
+def test_axis_top_uses_the_series_maximum_and_skips_gaps():
+    """A panel's top is its largest value plus 10%; NaN gaps are ignored."""
+    nan = float("nan")
+    assert axis_top([40, 3]) == pytest.approx(44)
+    assert axis_top([1, 2, 3]) == pytest.approx(3.3)
+    assert axis_top([nan, 2.5]) == pytest.approx(2.75)
+    assert axis_top([nan]) == pytest.approx(1.1)
+    assert axis_top([]) == pytest.approx(1.1)
 
 
 def test_round_family_ticks_for_a_realistic_campaign():
@@ -209,7 +253,7 @@ def test_round_family_ticks_for_a_realistic_campaign():
         for index, day in enumerate(value.days)
     )
     with participation_figure(replace(value, days=days)) as figure:
-        counts = figure.axes[0]
+        counts = figure.axes[1]
         top = counts.get_ylim()[1]
         assert top == pytest.approx(270 * 1.1)
         # Only the ticks inside the axis are drawn; the locator may add one past it.
@@ -354,7 +398,10 @@ def test_no_financial_column_axis_or_hidden_value_when_disabled():
     participation_csv(value, stream)
     assert b"pledge" not in stream.getvalue()
     with participation_figure(value) as figure:
-        assert len(figure.axes) == 1
+        assert [axes.get_title(loc="left") for axes in figure.axes] == [
+            "First submissions that day",
+            "Cumulative participating Families",
+        ]
 
 
 def test_unavailable_is_gap_but_observed_zero_and_empty_are_distinct():
@@ -386,8 +433,10 @@ def test_unavailable_is_gap_but_observed_zero_and_empty_are_distinct():
     assert rows[1]["participation"] == "0 out of 0 (—)"
     assert rows[1]["pledge_usd"] == "0.00"
     with participation_figure(value) as figure:
-        assert math.isnan(figure.axes[0].lines[0].get_ydata()[0])
-        assert figure.axes[0].lines[0].get_ydata()[1] == 0
+        cumulative = figure.axes[1].lines[0].get_ydata()
+        assert math.isnan(cumulative[0])
+        assert cumulative[1] == 0
+        assert math.isnan(figure.axes[0].patches[0].get_height())
         assert any("Missing observations" in text.get_text() for text in figure.texts)
     empty = replace(value, days=(), first_date=None, last_date=None)
     with participation_figure(empty) as figure:

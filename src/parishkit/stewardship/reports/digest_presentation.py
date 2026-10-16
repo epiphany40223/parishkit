@@ -7,8 +7,8 @@ from django.urls import reverse
 from PIL import Image
 
 from .charts import (
-    EMAIL_PLOT_LAYOUT,
-    EMAIL_RENDERER_VERSION,
+    DIGEST_PLOT_LAYOUTS,
+    LEGACY_PLOT_LAYOUT,
     PLOT_LAYOUT,
     participation_limits,
 )
@@ -84,17 +84,19 @@ def tooltip_point(day, row):
 def chart_layout(chart):
     """Return the plot layout of a retained digest chart from its PNG bytes.
 
-    Digests compiled since #720 carry the email drawing, named in the PNG's
-    Creator text; earlier ones carry the Participation page's drawing. The
-    retained bytes are never redrawn, so the page hit-tests the drawing it
-    actually shows. Unreadable metadata falls back to the older layout.
+    Digests compiled since #720 carry an email drawing, named in the PNG's
+    Creator text: the separate-panel one, or the earlier one with a second
+    dollar axis. Older ones carry the Participation page's drawing from
+    before #720. The retained bytes are never redrawn, so the page hit-tests
+    the drawing it actually shows. Unreadable metadata falls back to the
+    oldest layout.
     """
     try:
         with Image.open(BytesIO(chart)) as image:
             creator = image.text.get("Creator")
     except (OSError, ValueError, SyntaxError):
         creator = None
-    return EMAIL_PLOT_LAYOUT if creator == EMAIL_RENDERER_VERSION else PLOT_LAYOUT
+    return DIGEST_PLOT_LAYOUTS.get(creator, LEGACY_PLOT_LAYOUT)
 
 
 def participation_context(chart, *, plot=PLOT_LAYOUT):
