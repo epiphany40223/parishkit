@@ -3137,10 +3137,22 @@ order:
 2. the [not-current-campaign](#addresses-and-legacy-urls) 410;
 3. this page.
 
-An open status page does not change by itself when the window ends: the
-"until" time already says when, and nothing on the page moves. Its next
-load, Refresh status, Download or Retry answers the fixed page, as the
-in-place controls show any other refusal. The window's length and setting,
+When a ready file's window ends while its status page is open, Download
+becomes unavailable in place, with no reload, and the "until" line, which
+sits directly below Download with nothing between them, says instead "This
+download expired at _time_. Export it again from _report_.", in
+browser-local time, with the report linked
+([prerequisite gates](#prerequisite-gates)). The line keeps the height of
+the longer of its two sentences from the start, so nothing moves
+([no layout shift](#no-layout-shift)). The page counts to the end by the
+server's clock, and checks again when it is shown again (such as by Back)
+and whenever its status is redrawn, so a copy shown at or after the end
+shows Download unavailable at once. The server stays authoritative: after
+the end, the page's next load, Refresh status, Download or Retry answers
+the fixed page, as the in-place controls show any other refusal, so the
+server never draws the status page in that state. A failed export's Retry
+is not held this way; its "Retry is available until" time says when it
+ends. The window's length and setting,
 and what is deleted when an export ends, are the
 [point-in-time exports](../operations/spec.md#point-in-time-exports) rule.
 **Why.** The downloads are a point-in-time function: keeping their own

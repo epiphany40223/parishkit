@@ -863,6 +863,12 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 .export-live > :first-child { margin-top: 0; }
 .export-state { font-size: 1.15rem; font-weight: 650; }
 .export-state-ready { color: var(--accent-strong); }
+/* A ready export's "until" line (#1398): its two sentences share one grid
+   cell, so the line is as tall as the longer one from the start and the
+   switch when the download window ends moves nothing (#736). */
+.export-window { display: grid; }
+.export-window > span { grid-area: 1 / 1; min-width: 0; }
+.export-window > [data-window-off] { visibility: hidden; }
 .button-large { font-size: 1.1rem; padding: .8rem 1.75rem; }
 .spinner { display: inline-block; width: 1em; height: 1em; margin-inline-end: .35em; vertical-align: -.15em; border: 2px solid var(--accent); border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
 /* An export panel collapsed below a report's filters. */

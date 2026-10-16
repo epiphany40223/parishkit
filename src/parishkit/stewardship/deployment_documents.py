@@ -3,13 +3,16 @@
 from dataclasses import asdict, fields
 from pathlib import Path
 
+from .reports.export_window import DEFAULT_MINUTES
+
 
 def deployment_document(configuration, *, switches=True):
     """Serialize validated metadata only; credential values are never opened.
 
     ``switches=False`` leaves out the operational switches that are not
-    deployment inputs (the bulk Family send, #430, and the local rehearsal's
-    SMTP latency, BG-12): the provisioning record
+    deployment inputs (the bulk Family send, #430, the local rehearsal's
+    SMTP latency, BG-12, and the export download window, #1398): the
+    provisioning record
     keeps only inputs, so turning a switch on or off is never an input
     change, and an earlier release can still read the record.
     """
@@ -70,6 +73,15 @@ def deployment_document(configuration, *, switches=True):
         # Likewise written only while census publication (#528, BG-09) is
         # on, so a deployment with it off renders what it rendered before.
         result["parishsoft_publication"] = True
+    if configuration.export_download_window_minutes != DEFAULT_MINUTES and switches:
+        # An operational switch like the bulk send's (#1398): it can change
+        # after provisioning (the upgrade script carries it over), and a
+        # shorter window applies at once. Written only when it is not the
+        # default, so a default deployment renders exactly what the release
+        # before it did, and that release can load every document.
+        result["export_download_window_minutes"] = (
+            configuration.export_download_window_minutes
+        )
     if configuration.credential_target is not None:
         result["credential_target"] = configuration.credential_target
     return {"deployment": result}

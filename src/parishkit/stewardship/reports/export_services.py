@@ -24,6 +24,7 @@ from .export_models import (
     ExportPublication,
     ExportRequest,
 )
+from .export_window import download_end, retry_end
 from .facts import FactUnavailable
 from .models import CampaignDailyFactSet
 from .retention import pin_facts
@@ -276,6 +277,12 @@ def retry_export(store, user_id, request_id, *, request_key):
         authorize(store, user_id, request=request)
         admit_campaign(request.campaign_id, mutating=True)
         previous = request.task.chain_runs.filter(retry_command_id=request_key).first()
+        # A replay of a recorded key returns its result whatever happened
+        # since; a new Retry of a failed export is refused once its Retry
+        # window is over (#1398). A cancelled or published export is
+        # refused by retry_failed, as before (a conflict).
+        if previous is None and task_ended(request.task):
+            raise ExportExpired("This export's Retry window has ended.")
         latest = request.task.chain_runs.order_by("-retry_sequence").first()
         return retry_failed(
             run_id=previous.parent_id if previous is not None else latest.pk,
@@ -286,19 +293,35 @@ def retry_export(store, user_id, request_id, *, request_key):
         )
 
 
+def failed_end(task):
+    """(latest run's state, its Retry end or None) for an unpublished export."""
+    latest = task.chain_runs.order_by("-retry_sequence").first()
+    end = retry_end(latest.updated_at) if latest.state == "failed" else None
+    return latest.state, end
+
+
+def task_ended(task):
+    """Whether a failed export's task, never published, can no longer be
+    retried: its latest run failed one window ago or more (#1398)."""
+    latest = task.chain_runs.order_by("-retry_sequence").first()
+    return latest.state == "failed" and retry_end(latest.updated_at) <= database_now()
+
+
 def export_ended(request):
     """Whether ``request`` has ended, so its pages answer "no longer available".
 
     Exports are point-in-time (#1398; operations spec, "Point-in-time
-    exports"): an export ends when its published file's window is over or
-    when it was cancelled. The caller has already checked the reader's
-    access to it (``authorize``). A failed export's own end (one window
-    after its latest failed attempt) comes with the window setting.
+    exports"): an export ends when its published file's window is over, when
+    it was cancelled, or one window after its latest failed attempt if it
+    has not been retried by then (``export_window``). The caller has already
+    checked the reader's access to it (``authorize``).
     """
     publication = ExportPublication.objects.filter(request=request).first()
     if publication is not None:
-        return publication.expires_at <= database_now()
-    return ExportCancellation.objects.filter(request=request).exists()
+        return download_end(publication) <= database_now()
+    if ExportCancellation.objects.filter(request=request).exists():
+        return True
+    return task_ended(request.task)
 
 
 def export_status(store, user_id, request_id):
@@ -318,12 +341,17 @@ def export_state(store, user_id, request_id):
         authorize(store, user_id, request=request)
         admit_campaign(request.campaign_id, mutating=False)
         publication = ExportPublication.objects.filter(request=request).first()
+        # ``expires_at`` is when the export ends (export_window): a file's
+        # download end, never a later recorded expires_at, or a failed
+        # export's Retry end; None while it is being made or cancelled.
+        end = None
         if publication is not None:
-            state = "ready" if publication.expires_at > database_now() else "expired"
+            end = download_end(publication)
+            state = "ready" if end > database_now() else "expired"
         elif ExportCancellation.objects.filter(request=request).exists():
             state = "cancelled"
         else:
-            state = request.task.chain_runs.order_by("-retry_sequence").first().state
+            state, end = failed_end(request.task)
         status = {
             "id": str(request.pk),
             "campaign_id": str(request.campaign_id),
@@ -331,7 +359,7 @@ def export_state(store, user_id, request_id):
             "format": request.format,
             "state": state,
             "created_at": request.created_at.isoformat(),
-            "expires_at": publication.expires_at.isoformat() if publication else None,
+            "expires_at": end.isoformat() if end is not None else None,
         }
         return status, publication
 
@@ -343,7 +371,7 @@ def issue_download(store, user_id, request_id):
         authorize(store, user_id, request=request)
         admit_campaign(request.campaign_id, mutating=False)
         publication = ExportPublication.objects.get(request=request)
-        if publication.expires_at <= database_now():
+        if download_end(publication) <= database_now():
             raise ExportExpired("This export has expired.")
         return ExportDownloadGrant.objects.create(
             publication_id=publication.pk,
@@ -363,7 +391,7 @@ def consume_download(store, user_id, grant_id):
         request = publication.request
         authorize(store, user_id, request=request)
         admit_campaign(request.campaign_id, mutating=False)
-        if publication.expires_at <= database_now():
+        if download_end(publication) <= database_now():
             raise ExportExpired("This export has expired.")
         if grant.expires_at <= database_now():
             raise PermissionError("This download grant is unavailable.")

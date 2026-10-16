@@ -300,7 +300,8 @@ def during_startup(step):
 
 
 def profile_settings(configuration):
-    """The Django settings that record the admitted deployment profile.
+    """The Django settings that record the admitted deployment profile and
+    the deployment-wide settings every role reads.
 
     Every settings assembly (``configure_web`` and the operator assembly every
     other role uses) spreads this into ``settings.configure``. Source reads
@@ -308,7 +309,14 @@ def profile_settings(configuration):
     banner reads it too; there is no default anywhere else, so a role whose
     assembly skipped this would fail closed rather than reach the real API.
     """
-    values = {"STEWARDSHIP_DEPLOYMENT_PROFILE": configuration.profile.value}
+    values = {
+        "STEWARDSHIP_DEPLOYMENT_PROFILE": configuration.profile.value,
+        # The point-in-time export window (#1398; reports.export_window), so
+        # the web, the worker and the command line share one end.
+        "STEWARDSHIP_EXPORT_DOWNLOAD_WINDOW_MINUTES": (
+            configuration.export_download_window_minutes
+        ),
+    }
     if configuration.local_smtp_latency_ms:
         # The local rehearsal's modeled provider latency (BG-12), which the
         # loader admits only in the local profile; mail parents read it.
