@@ -1,15 +1,17 @@
 {% load i18n stewardship %}{% comment %}
   Accept this change once with no step result (ADM-13 PR 5b, #1214): the
-  section with its intro and its button, drawn only while a refusal is
-  shown (health.accept_state is not ``none``), so with nothing to accept
-  there is nothing here (batch 24a). A refusal that can be accepted offers
-  the button; an accepted, lapsed or never-acceptable one shows it greyed
-  with why. Shared by the #accept-change region and the copy the polled
-  status region carries (template[data-live-mirror="accept-offer"]), which
-  live-status-v1.js puts in place on each update, together with the
-  refusal's problem item. ``mirrored`` (the polled copy) leaves the
+  section with its intro and its button, drawn only while the refusal
+  shown can be accepted (``open``, offering the button) or was accepted
+  (``accepted``, the button greyed with who and until when). With nothing
+  to accept there is nothing here (batch 24a), and neither is there for a
+  refusal that cannot be accepted (``lapsed`` or ``empty``): its problem
+  line says why instead (Administrator, 2026-10-15). Shared by the
+  #accept-change region and the copy the polled status region carries
+  (template[data-live-mirror="accept-offer"]), which live-status-v1.js
+  puts in place on each update, together with the refusal's problem
+  item. ``mirrored`` (the polled copy) leaves the
   button's CSRF token empty.
-{% endcomment %}{% if health.accept_state != "none" %}<section class="panel" aria-labelledby="accept-change-heading">
+{% endcomment %}{% if health.accept_state == "open" or health.accept_state == "accepted" %}<section class="panel" aria-labelledby="accept-change-heading">
 <h3 id="accept-change-heading">{% translate "Accept this change once" %}</h3>
 <p><span id="accept-change-intro">{% translate "After checking in ParishSoft that a large drop is real, let the next full refresh through once. It needs a recent Google sign-in." %}</span> {% include "stewardship/system-health-accept-tip.html" with tip_id="accept-change-intro-tip" tip_label_id="accept-change-intro" %}</p>
 {% include 'stewardship/system-health-accept-button.html' %}</section>

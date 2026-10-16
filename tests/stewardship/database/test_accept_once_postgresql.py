@@ -532,18 +532,21 @@ def test_a_refresh_that_cannot_be_requested_leaves_the_acceptance(
 
 
 def test_an_empty_load_is_never_offered(parish, google):
-    """Greyed with why; a preview posted anyway is refused."""
+    """No section, and the refusal says why; a preview posted anyway is
+    refused."""
     refusal((("family", 1084, 0, True), ("member", 3000, 0, True)))
     browser, _ = signed_in()
     body = page(browser)
-    assert 'data-accept-state="empty"' in body
+    assert 'data-accept-unavailable="empty"' in body
+    assert "accept-change-heading" not in body
     assert 'value="accept_preview"' not in body
     assert post(browser, action="accept_preview").status_code == 409
 
 
 def test_a_lapsed_acceptance_offers_refresh_now(parish, google):
-    """An acceptance that ended unused greys the button: Refresh now gets a
-    new refusal, since a refusal is accepted only once."""
+    """An acceptance that ended unused draws no section, and the refusal
+    says why: Refresh now gets a new refusal, since a refusal is accepted
+    only once."""
     attempt = refusal()
     with connection.cursor() as cursor:
         cursor.execute("SELECT statement_timestamp()")
@@ -559,8 +562,9 @@ def test_a_lapsed_acceptance_offers_refresh_now(parish, google):
     )
     browser, _ = signed_in()
     body = page(browser)
-    assert 'data-accept-state="lapsed"' in body
+    assert 'data-accept-unavailable="lapsed"' in body
     assert "the acceptance ended before a full refresh used it" in body
+    assert "accept-change-heading" not in body
     assert post(browser, action="accept_preview").status_code == 409
 
 
