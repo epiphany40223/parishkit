@@ -2990,3 +2990,8 @@ print is exit 1 (`invalid`).
   pause existed. A reader that took `ready` as proof of a test must read
   `required` and `checked_at` instead. The command mirrors the Pause and
   resume mail page, and its only readers are Administrator-run assistants.
+- `pk-admin/1` (#1437): a correction, kept on version 1. A campaign
+  change with financial stewardship enabled and a required financial field
+  left empty reports that field's problem with `code` `required` (it was
+  `invalid`), as an empty field elsewhere does. The closed set of codes is
+  unchanged, and the only readers are Administrator-run assistants.

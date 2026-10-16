@@ -12,6 +12,7 @@ transaction.
 
 from uuid import uuid4
 
+from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
@@ -178,7 +179,9 @@ def build_preview(
         len(added) != len(added_forms)
         or any(index >= len(added) for item in series for index in item["added"])
     ):
-        window.add_error(None, SERIES_UNMATCHED)
+        window.add_error(
+            None, ValidationError(SERIES_UNMATCHED, code="series_unmatched")
+        )
         return None
     remembered = [
         {
@@ -222,12 +225,14 @@ def build_preview(
     if base is None or base.digest != digest:
         raise StaleRecordError("The applied configuration changed.")
     if not patch and not remembered:
-        window.add_error(None, NO_CHANGES)
+        window.add_error(None, ValidationError(NO_CHANGES, code="unchanged"))
         return None
     if any(row["operation"] == "add" for row in remembered) and not uses_users(
         base.document()
     ):
-        window.add_error(None, SERIES_NEEDS_USERS)
+        window.add_error(
+            None, ValidationError(SERIES_NEEDS_USERS, code="series_needs_users")
+        )
         return None
     # An added email comes before the schedule that sends it, and a new
     # series follows the reminders it holds.
@@ -240,7 +245,13 @@ def build_preview(
         build_candidate(base, patch, candidate_id=uuid4())
     except (ConfigError, ValueError):
         # With an added email, the email is the likelier cause (#446).
-        window.add_error(None, EMAIL_DOES_NOT_FIT if content else DOES_NOT_FIT)
+        window.add_error(
+            None,
+            ValidationError(
+                EMAIL_DOES_NOT_FIT if content else DOES_NOT_FIT,
+                code="candidate_refused",
+            ),
+        )
         return None
     summary = work_summary(campaign.pk)
     prior = {row["id"]: row["values"] for row in schedules.previous}

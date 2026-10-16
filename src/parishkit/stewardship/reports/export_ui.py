@@ -26,6 +26,7 @@ from parishkit.stewardship.jobs.storage import TaskRetryConflict
 from parishkit.stewardship.observability import debug_swallowed
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.dates import parish_zone, unasked_zone
+from parishkit.stewardship.web.refusals import with_status_code
 from parishkit.stewardship.web.responses import campaign_response
 
 from .directories import REACH, testing_codes_context
@@ -136,7 +137,14 @@ def _error(
     response["Cache-Control"] = "no-store"
     if status == 503:
         response["Retry-After"] = "5"
-    return response
+    # The refusal log's codes for this page of its own (#1403).
+    return with_status_code(
+        response,
+        *(["busy"] if busy else []),
+        *(["form_reused"] if bound else []),
+        *(["expired"] if expired else []),
+        *(["rehearsal_ended"] if rehearsal_ended else []),
+    )
 
 
 @require_POST

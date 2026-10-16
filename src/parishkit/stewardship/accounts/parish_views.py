@@ -83,7 +83,8 @@ class PhoneField(forms.CharField):
             return parse_us_phone(value)
         except ValueError:
             raise forms.ValidationError(
-                _("Enter a ten-digit US telephone number, such as (212) 555-1234.")
+                _("Enter a ten-digit US telephone number, such as (212) 555-1234."),
+                code="invalid_phone",
             ) from None
 
 
@@ -153,7 +154,8 @@ class ParishForm(AdminForm):
                 _(
                     "Use an https:// address without a user name or password, "
                     "for example https://giving.example.org/parish?tab=home."
-                )
+                ),
+                code="invalid_url",
             ) from None
         return value
 
@@ -246,7 +248,7 @@ def review_change(service, actor, configuration, form):
         # None removes the optional key; see request_patch's parish update.
         values["online_giving_url"] = values["online_giving_url"] or None
     if not values:
-        form.add_error(None, UNCHANGED)
+        form.add_error(None, forms.ValidationError(UNCHANGED, code="unchanged"))
         return None
     patch = [
         {
@@ -264,9 +266,12 @@ def review_change(service, actor, configuration, form):
     except ConfigError:
         form.add_error(
             None,
-            _(
-                "Check the settings. Website URLs cannot include credentials, "
-                "query parameters or fragments."
+            forms.ValidationError(
+                _(
+                    "Check the settings. Website URLs cannot include credentials, "
+                    "query parameters or fragments."
+                ),
+                code="candidate_refused",
             ),
         )
         return None

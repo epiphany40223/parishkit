@@ -28,6 +28,7 @@ from parishkit.stewardship.jobs.ownership import database_now
 from parishkit.stewardship.jobs.storage import TaskRetryConflict
 from parishkit.stewardship.jobs.task_retries import retry_export_cleanup_task
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web.refusals import with_status_code
 from parishkit.stewardship.web.responses import campaign_response
 
 from .artifacts import ArtifactChunks, ArtifactReceipt
@@ -133,7 +134,8 @@ def _cleanup_error(request, task_id, *, status):
     # Only fixed text and the router's parsed UUID reach this typed error page.
     response.stewardship_safe_error = True
     response["Cache-Control"] = "no-store"
-    return response
+    # The refusal log's codes for this page of its own (#1403).
+    return with_status_code(response)
 
 
 @dataclass(frozen=True)

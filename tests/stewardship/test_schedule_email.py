@@ -281,7 +281,7 @@ def test_a_whole_email_refusal_is_put_at_its_html_source():
     )
     _, form, _ = schedule_email.editor(data, records, row, CAMPAIGN)
     assert form.is_valid(), form.errors
-    schedule_email.refuse(form, "Refused.")
+    schedule_email.refuse(form, "Refused.", "candidate_refused")
     assert form.errors["html"] == ["Refused."]
     assert not form.non_field_errors()
     assert {"message": "Refused.", "field_id": "id_html"} in _summary(None, None, form)

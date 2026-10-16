@@ -262,8 +262,13 @@ def test_a_form_drawn_again_names_its_fields_and_django_codes(recorded):
     assert record.level == "INFO"
 
 
-def test_no_message_or_value_is_ever_recorded(recorded):
-    """A view's own error message and every submitted value stay out."""
+def test_no_message_or_value_is_ever_recorded(recorded, settings):
+    """A view's own error message and every submitted value stay out.
+
+    A code-less error fails a test under the strict test settings (#1437);
+    this test turns that off to show what production records for one.
+    """
+    settings.STEWARDSHIP_ERROR_CODES_STRICT = False
 
     def build(request):
         form = EntryForm(request.POST)
@@ -457,3 +462,16 @@ def test_only_bound_forms_validated_in_the_request_are_collected():
     assert validated == [bound]
     # No collector bound: validating keeps nothing anywhere.
     EntryForm({"name": "x"}).is_valid()
+
+
+def test_a_code_less_error_fails_under_the_test_settings():
+    """The test settings refuse an Admin form error with no code (#1437),
+    whether a view adds it or the form's own validation raises it."""
+    form = EntryForm({"kind": "a"})
+    form.is_valid()
+    with pytest.raises(AssertionError, match="without a closed code"):
+        form.add_error("note", "Not coded.")
+    form = EntryForm({"kind": "a"})
+    form.is_valid()
+    form.add_error("note", forms.ValidationError("Coded.", code="clash"))
+    assert form.has_error("note", "clash")

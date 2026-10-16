@@ -273,10 +273,17 @@ class _Row(AdminForm):
         value = hhmm(self.cleaned_data.get(name))
         if value is None:
             if name not in self.errors:
-                self.add_error(name, gettext("Enter a time."))
+                self.add_error(
+                    name,
+                    forms.ValidationError(
+                        gettext("Enter a time."), code="time_missing"
+                    ),
+                )
             return None
         if _off_quarter(value) and not (allow_kept and value in self.kept):
-            self.add_error(name, QUARTER_HOUR_MESSAGE)
+            self.add_error(
+                name, forms.ValidationError(QUARTER_HOUR_MESSAGE, code="quarter_hour")
+            )
             return None
         return value
 
@@ -321,14 +328,20 @@ class RuleForm(_Row):
                 self.rule = {"kind": kind, "at": at}
             return data
         if data.get("every") in (None, "") and "every" not in self.errors:
-            self.add_error("every", gettext("Choose how often."))
+            self.add_error(
+                "every",
+                forms.ValidationError(gettext("Choose how often."), code="required"),
+            )
         start, last = self._time("start"), self._time("last")
         if start is not None and last is not None and last < start:
             self.add_error(
                 None,
-                gettext(
-                    "A rule can't cross midnight. Use two rules: one up to 23:45 "
-                    "and one from 00:00."
+                forms.ValidationError(
+                    gettext(
+                        "A rule can't cross midnight. Use two rules: one up to 23:45 "
+                        "and one from 00:00."
+                    ),
+                    code="crosses_midnight",
                 ),
             )
         elif start is not None and last is not None and not self.errors:
@@ -367,11 +380,14 @@ class SkipForm(_Row):
             if start is not None and last is not None and last <= start:
                 self.add_error(
                     None,
-                    gettext(
-                        "A skip can't cross midnight, and its end (which is not "
-                        "skipped) must be after its start. Use two skips: one "
-                        "that ends at 23:45, with a skip at 23:45, and one from "
-                        "00:00."
+                    forms.ValidationError(
+                        gettext(
+                            "A skip can't cross midnight, and its end (which is not "
+                            "skipped) must be after its start. Use two skips: one "
+                            "that ends at 23:45, with a skip at 23:45, and one from "
+                            "00:00."
+                        ),
+                        code="crosses_midnight",
                     ),
                 )
             elif start is not None and last is not None and not self.errors:
@@ -727,6 +743,9 @@ def _no_full(document):
 
 
 TIME_FIELDS = frozenset({"at", "start", "last"})
+# The codes of the form's own time checks (#1437), which the row shows: any
+# other error at a time field is the time entry's own, shown at the field.
+ROW_CODES = frozenset({"time_missing", "quarter_hour"})
 
 
 def _row_errors(scope, index, form):
@@ -756,7 +775,7 @@ def _row_errors(scope, index, form):
                     index,
                     text,
                     f"{row}: {text}",
-                    at_field=name in TIME_FIELDS and error.code is not None,
+                    at_field=name in TIME_FIELDS and error.code not in ROW_CODES,
                 )
             )
     return found

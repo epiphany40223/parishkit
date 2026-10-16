@@ -98,6 +98,12 @@ def private_response(message, *, status=200):
     )
     response["Cache-Control"] = "no-store"
     response["Referrer-Policy"] = "no-referrer"
+    if status >= 400:
+        # A plain-text refusal says no more than its status: the refusal log
+        # records the code it stands for (#1403).
+        from .refusals import with_status_code
+
+        with_status_code(response)
     return response
 
 
