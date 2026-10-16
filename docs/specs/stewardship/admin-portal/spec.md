@@ -175,8 +175,7 @@ The setup email test sends one fixed, fictional message to the Testing
 recipient from the configured sender and mailbox: the subject "Stewardship
 setup test", and a short plain-text and HTML body that names the parish and
 says its outgoing email settings work. It carries no Family data, link, code
-or campaign content, and nothing in it depends on a campaign. Before #142 it
-sent a sample of the first campaign's invitation instead.
+or campaign content, and nothing in it depends on a campaign.
 
 Review, Test email, Test Slack (only when Slack is on) and Finish setup are
 ordinary steps with the same action row, not a hub: the Review page links no
@@ -1085,8 +1084,9 @@ follows them.
 11. **What should New campaign do while an archived campaign is still
     current?** Remove the New campaign control. The one campaign is created
     by [Create the campaign](#create-the-campaign), offered only while the
-    deployment has never had a campaign (#142; before #142 it was the setup
-    wizard's First campaign step).
+    deployment has never had a campaign, after
+    [setup](#bootstrap-and-first-admin-wizard), which configures only the
+    system (#142).
 12. **Should the restore-review maintenance page get a way forward?** Yes, in
     its own issue: #537 (as proposed); it is the
     [Restore review page](#restore-release).
