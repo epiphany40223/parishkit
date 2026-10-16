@@ -1137,6 +1137,7 @@ section is the contract.
 | `reset [--seeded]` | Restore the post-setup snapshot and restart in fake-clock mode, or with `--seeded` the seeded snapshot in normal mode (each snapshot carries its clock-mode marker); with no post-setup snapshot, delete the root and run `up` again |
 | `reset --reinstall` | Delete the root and run `up` again from the checkout even when a snapshot exists (snapshots are kept) |
 | `wizard` | Complete the setup wizard unattended (below) |
+| `finish-setup` | After the browser wizard stops at Finishing setup, do the runbook's post-wizard step for its frozen attempt (below) |
 | `seed [--response-scale m]` | Seed the current deployment at the current time (below) |
 | `reseed` | Restore the post-setup snapshot, then `seed` |
 | `rehearse [--due-in MIN] [--send-only] [--timeout MIN] [--label NAME]` | Measure one scheduled Family send on a seeded deployment ([bulk-send rehearsal](#operator-script)) |
@@ -1228,6 +1229,29 @@ mail schedules, so the seed's `prepare` phase adds the Initial schedule with
 the Reminders when the campaign has none. The browser wizard and Create the
 campaign remain the developer-facing path; `wizard` writes nothing those
 pages would not.
+
+**`finish-setup`.** The browser wizard stops at Finishing setup, "Waiting for
+the server operator", until the post-wizard step has run, as in Production.
+`finish-setup` is that step for the browser path, and `wizard` runs the same
+VM-half function, so LOCAL has one implementation of it. It looks up the
+frozen attempt's request ids (`pk-stewardship local-seed --step credentials`
+under `web`, which writes nothing: the ids of the attempt's unscrubbed
+`stewardship_setup_sealed_credential` rows for `parishsoft` and
+`google_workspace`, the lookup `--step wizard` reports with), waits until both
+`stewardship_secret_request` rows are `awaiting_ack`, recreates `worker` and
+`mail-dispatch` from `compose.json` (with the fake-clock override in fake
+mode), acknowledges each request inside them, waits for setup to complete and
+restarts every service under the configured topology. Unlike `wizard` it
+creates no campaign: setup collects none (#142), so Create the campaign
+follows in the browser. It is idempotent: when
+setup is already complete it says so and changes nothing, and a repeated
+acknowledgement is a no-op, so a rerun after an interruption is safe. It
+refuses, before any service is touched, when no attempt is frozen (the
+wizard's pages are not finished) or the frozen attempt lacks either
+credential. Like every long VM-half command it logs to `/var/log`. Production
+keeps its runbook step; nothing here changes the production tooling, and the
+web service never acknowledges a credential itself, so LOCAL exercises the
+same split between the wizard and the operator.
 
 **Snapshots and fast reset.** Snapshots are uncompressed copies of the runtime
 root inside the VM, under `/opt/parishkit-snapshots/<name>` together with the
