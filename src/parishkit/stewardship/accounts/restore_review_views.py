@@ -36,6 +36,7 @@ from .authentication import runtime
 from .sessions import (
     FreshAuthenticationRequired,
     authenticated_admin,
+    freshness,
     require_fresh,
 )
 
@@ -105,15 +106,22 @@ def restore_review(request):
         state = review.review_state()
         if state is None:
             return redirect("admin:index")
+    # Release is offered, unavailable with its reason, until no email still
+    # needs a hold and no purge or campaign change runs: the reasons
+    # ``release_refusal`` names, read now as the release itself reads them
+    # (the SQL refuses a release before that too, #1331).
+    refusal = "needs_holds" if state.needed else review.release_refusal()
     response = render(
         request,
         "stewardship/restore-review.html",
-        # Release is offered, unavailable with its reason, until no email
-        # still needs a hold (the SQL refuses a release before that too).
         {
             "review": state,
             "step": step,
-            "release_ready": not state.needed,
+            "release_ready": not refusal,
+            "release_refusal": refusal,
+            # Settling and releasing need a recent sign-in: until then their
+            # buttons are unavailable, named by the step-up notice (#1331).
+            "fresh": freshness(request)[0],
             "page_url": reverse("admin:maintenance"),
         },
         status=status,
@@ -275,6 +283,9 @@ def held_emails(request):
         {
             "held": state,
             "step": step,
+            # Deciding needs a recent sign-in: until then the buttons are
+            # unavailable, named by the step-up notice (#1331).
+            "fresh": freshness(request)[0],
             "page_url": reverse("admin:held_emails"),
         },
         status=status,

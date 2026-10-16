@@ -18,6 +18,7 @@ from .restore_review_components import (
     RESEND_PREVIEW,
     REVIEWING,
     SETTLED,
+    STALE,
     STEP_UP,
     SUPERSEDED,
     TESTING,
@@ -199,15 +200,21 @@ def test_refusals_answer_inside_the_region(page, component_origin):
     release = region.get_by_role("button", name="Release the site", exact=True)
     resend = region.get_by_role("button", name="Send these again", exact=True).first
     before = (_top(release), _top(resend))
+    resend.click()
+    expect(region.get_by_text("Something changed since you looked")).to_be_visible()
+    assert _top(resend) == pytest.approx(before[1], abs=1)
     release.click()
     expect(region.get_by_text("this step needs a Google sign-in")).to_be_visible()
     expect(region.get_by_role("button", name="Confirm with Google")).to_be_visible()
     # The refusal is drawn after the controls, so none of them moved.
     after = (_top(release), _top(resend))
     assert after == pytest.approx(before, abs=1)
-    resend.click()
-    expect(region.get_by_text("Something changed since you looked")).to_be_visible()
-    assert _top(resend) == pytest.approx(before[1], abs=1)
+    # The sign-in is stale now, so the redrawn decisions wait for it,
+    # named by the refusal's own step-up sentence (#1331).
+    expect(release).to_be_disabled()
+    expect(resend).to_be_disabled()
+    assert "restore-fresh-reason" in resend.get_attribute("aria-describedby")
+    expect(region.locator("#restore-fresh-reason")).to_have_count(1)
     assert kept()
 
 
@@ -373,3 +380,30 @@ def test_closing_a_preview_at_the_foot_keeps_the_page_height(
     )
     focused = page.evaluate_handle("document.activeElement")
     assert "Check again for emails" in focused.text_content()
+
+
+def test_a_sign_in_that_ages_during_a_preview_moves_nothing(page, component_origin):
+    """Cancel answered after the sign-in has aged draws the step-up notice
+    last in the region, so no control above it moves (#1331)."""
+    _routed(
+        page,
+        component_origin,
+        {"group-preview": (200, GROUP_PREVIEW), "cancel": (200, STALE)},
+        start=REVIEWING,
+    )
+    page.goto(component_origin + PAGE)
+    kept = _not_reloaded(page)
+    region = page.locator(REGION)
+    assume = region.get_by_role("button", name="Assume these were sent", exact=True)
+    check = region.get_by_role(
+        "button", name="Check again for emails that may have gone out"
+    )
+    before = (_top(assume.first), _top(assume.nth(1)), _top(check))
+    assume.first.click()
+    region.get_by_role("button", name="Cancel").click()
+    expect(region.locator("#restore-fresh-reason")).to_be_visible()
+    expect(assume.first).to_be_disabled()
+    assert (_top(assume.first), _top(assume.nth(1)), _top(check)) == pytest.approx(
+        before, abs=1
+    )
+    assert kept()
