@@ -1,5 +1,6 @@
 """Financial share-option changes pass through the real installer and web grants."""
 
+import re
 from uuid import uuid4
 
 import pytest
@@ -53,12 +54,27 @@ def test_share_option_apply_preserves_ids_and_produces_idempotent_receipt(
         "options-0-ORDER": "2",
         "options-1-ORDER": "1",
     }
+    requests = ConfigurationChangeRequest.objects.count()
     preview = post(browser, path, data)
     # Review answers the review dialog's fragment, never a page (#750).
     assert b"data-review-answer" in preview.content
     assert b"data-review-preview" in preview.content
     assert b"settings-review" not in preview.content
-    assert b"Updated option" in preview.content
+    # A compact review (#1356): the relabel and the one option moved, one
+    # line each, never both whole lists; the option shifted by the move has
+    # no line, and nothing is recorded by the Review.
+    text = preview.content.decode()
+    lines = re.findall(r"<li>(.*?)</li>", text, flags=re.S)
+    assert len(lines) == 2, lines
+    assert lines[0].startswith('<span class="compact-review-field">Label:</span>')
+    assert lines[0].endswith(" Updated option")
+    assert lines[1].startswith(
+        '<span class="compact-review-field">Position of “Updated option”:</span> 1 '
+    )
+    assert lines[1].endswith(" 2")
+    assert '<ul class="compact-review" id="share-review-summary">' in text
+    assert "<ol>" not in text
+    assert ConfigurationChangeRequest.objects.count() == requests
     proposal = token(preview)
     response = post(browser, path, {"action": "confirm", "preview": proposal})
     apply(store, response)

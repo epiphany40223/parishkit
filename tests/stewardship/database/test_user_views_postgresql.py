@@ -286,6 +286,33 @@ def test_edit_changes_name_and_role_and_grants_administrator(converted):
         assert browser.get(f"/admin/users/{uuid4()}/edit/").status_code == 404
 
 
+def test_edit_is_a_compact_review_whose_preview_applies(converted):
+    """Edit user's Review (#1356, class A2) answers one "Field: old → new"
+    line per changed field and the Administrator warning, under the web
+    role, recording nothing; Apply posts that same signed preview."""
+    store, browser = converted
+    path = edit(store, "staff@example.org")
+    reviewed = review(
+        store, browser, path, {"name": "Staff, Sam", "role": "administrator"}
+    )
+    assert reviewed.status_code == 200
+    text = reviewed.content.decode()
+    lines = re.findall(r"<li>(.*?)</li>", text, flags=re.S)
+    assert len(lines) == 2
+    assert lines[0].startswith('<span class="compact-review-field">Name:</span> staff ')
+    assert lines[0].endswith(" Staff, Sam")
+    assert lines[1].startswith('<span class="compact-review-field">Role:</span> Staff ')
+    assert lines[1].endswith(" Administrator")
+    assert '<ul class="compact-review" id="user-review-summary">' in text
+    assert "This makes the person an Administrator" in text and "<table" not in text
+    assert users(store)["staff@example.org"] == ("staff", "staff")
+    signed = token(reviewed)
+    with web():
+        response = post(browser, USERS, {"action": "confirm", "preview": signed})
+    installed(store, response)
+    assert users(store)["staff@example.org"] == ("Staff, Sam", "administrator")
+
+
 def test_the_only_administrator_cannot_be_demoted_or_deleted(auth_service, google):
     """The guard is shown and enforced on the server for Edit and Delete.
 

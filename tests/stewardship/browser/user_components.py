@@ -69,6 +69,7 @@ from parishkit.stewardship.accounts.user_views import (
     PREFIX,
     UserForm,
     _entry_context,
+    review_lines,
     table_rows,
 )
 from parishkit.stewardship.web.tables import paginate
@@ -278,12 +279,7 @@ def components(context, admin):
     )
     review = render_to_string(
         "stewardship/user-review.html",
-        {
-            "change": change,
-            "before_role": None,
-            "after_role": "Staff",
-            "preview": "synthetic-preview",
-        },
+        {"change": change, "lines": [], "preview": "synthetic-preview"},
     )
     (edited,), _patch = plan_changes(
         records, [{"id": LEADER["id"], "name": "Leader, Lee", "role": "staff"}]
@@ -292,8 +288,7 @@ def components(context, admin):
         "stewardship/user-review.html",
         {
             "change": edited,
-            "before_role": "Ministry leader",
-            "after_role": "Staff",
+            "lines": review_lines(edited),
             "preview": "synthetic-preview",
         },
     )

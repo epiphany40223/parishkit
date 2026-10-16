@@ -2,31 +2,23 @@
 The review of one New or Edit user change (#952; user_views._review), drawn
 in the shared review dialog (UX conventions, "Review dialog", #750), never
 as a page of its own: user-entry.html's Review posts without a page load and
-ui-v1.js moves this fragment's content into the dialog's body. An Edit
-shows each changed value before and after. New user's is a confirmation (UX
-conventions, "A confirmation when Review would only repeat the page",
-#1356): the Email, Name and Role are all on the form behind the dialog, so
-it repeats none of them; its one sentence (user-review-summary, the
-dialog's description) says what Apply does, and it adds only the warning
-that the user becomes an Administrator. The signed preview (data-review-preview) is
+ui-v1.js moves this fragment's content into the dialog's body. Both are
+confirmations (UX conventions, "A confirmation when Review would only repeat
+the page" and "A compact review when Review adds only the old value",
+#1356), described by user-review-summary: New user's one sentence says what
+Apply does, since the Email, Name and Role are all on the form behind the
+dialog; Edit user's compact review (user_views.review_lines) is one line
+per changed field, "Name: old → new", since the old value is the one thing
+the page no longer shows (the Email never changes and the page shows it).
+Each adds only the warning that the user becomes, or is no longer, an
+Administrator. The signed preview (data-review-preview) is
 what the dialog's Apply posts to Users, and data-review-done starts the
 status line Users shows once the change is applied. A review lasts fifteen
 minutes, as every review does.
 {% endcomment %}<div data-review-answer data-review-done="{% if change.operation == 'add' %}{% translate 'User added.' %}{% else %}{% translate 'User changed.' %}{% endif %}">
 {% if change.operation == "add" %}<p id="user-review-summary">{% translate "This adds the user, who can then sign in with the account of that address." %}</p>
-{% else %}<h3><span class="cell-ellipsis" title="{{ change.email }}">{{ change.email }}</span></h3>
-<div class="table-scroll" tabindex="0" role="region" aria-labelledby="user-review-caption">
-<table class="data-table">
-  <caption id="user-review-caption" class="visually-hidden">{% translate "What changes" %}</caption>
-  <thead><tr><th scope="col">{% translate "Field" %}</th><th scope="col">{% translate "Now" %}</th><th scope="col">{% translate "After this change" %}</th></tr></thead>
-  <tbody>
-  {% if "name" in change.changed %}<tr><th scope="row">{% translate "Name" %}</th><td>{% if change.before %}{{ change.before.name }}{% else %}{% translate "(none)" %}{% endif %}</td><td>{{ change.after.name }}</td></tr>{% endif %}
-  {% if "role" in change.changed %}<tr><th scope="row">{% translate "Role" %}</th><td>{% if before_role %}{{ before_role }}{% else %}{% translate "(none)" %}{% endif %}</td><td>{{ after_role }}</td></tr>{% endif %}
-  </tbody>
-</table>
-</div>{% endif %}
+{% else %}{% include "stewardship/components/compact-review.html" with changes=lines summary_id="user-review-summary" %}{% endif %}
 {% if change.grants_administrator %}<p class="notice">{% translate "This makes the person an Administrator, who can see and change everything, including users. Every Administrator is told by email and on their Home page." %}</p>{% endif %}
 {% if change.removes_administrator %}<p class="notice">{% translate "This person is no longer an Administrator from their next request." %}</p>{% endif %}
-{% if change.operation != "add" %}<p>{% translate "Nothing changes until you choose Apply." %}</p>{% endif %}
 <input type="hidden" name="preview" value="{{ preview }}" data-review-preview>
 </div>

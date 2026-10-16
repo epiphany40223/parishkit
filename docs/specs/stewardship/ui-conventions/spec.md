@@ -633,8 +633,8 @@ never scrolls to show it (Administrator, pk-local review of
   window too short to show the whole region, focus may scroll the status
   into view. Share options reviews in the [review dialog](#review-dialog)
   (#750); its form, a region of its own, is redrawn after Apply with the
-  applied list and a fresh blank row, which is then the saved list Review
-  changes compares with ("Change an option to review it."). A live
+  applied list and a fresh blank row, which is then the saved list its Save
+  compares with ("Change an option to save it."). A live
   campaign's Ministry selections change on
   [Campaign settings](../admin-portal/spec.md#campaign-settings-page), in the
   review dialog (#1119). The No-reminders WorkGroup's form is never
@@ -1092,6 +1092,26 @@ section says how every Review behaves.
   [#1356](https://github.com/epiphany40223/parishkit/issues/1356); the
   [Delete dialogs](#row-actions-and-confirmation) already confirm over a
   hidden server-signed preview.
+- **A compact review when Review adds only the old value.** When a Review
+  changes one or a few short fields of something that already exists, the
+  one thing it shows that the page no longer does is each field's old value.
+  The dialog is then a confirmation as above (its title asks the question,
+  the form's button carries the action's own label, such as **Save**), but
+  instead of one sentence it lists one line per changed field, "Field: old
+  → new" ("Role: Staff → Ministry leader"), with no Now and After table.
+  The lines describe the dialog (`aria-describedby`); the arrow is hidden
+  from screen readers, which hear "old, becomes new". A change to an
+  ordered list marks only what changed, one line each (an option added,
+  removed, relabelled or moved), never both whole lists. The dialog adds
+  only what the server worked out (a warning, such as granting or removing
+  Administrator), and everything else is as for a confirmation: field
+  errors stay on the form, and the signed preview, Apply and the command
+  line are unchanged. A change of many fields, or of a long value such as
+  a list of Ministries, keeps its full review under the same button. One
+  shared partial draws the lines
+  (`components/compact-review.html`). **Precedent.** The default proposed
+  on [#1356](https://github.com/epiphany40223/parishkit/issues/1356) for
+  its class-A2 Reviews, which the Administrator can override.
 - **While the dialog is open** it is a native modal `<dialog>`: the rest of
   the page, the form included, is inert and cannot be edited, and Tab stays
   inside the dialog. So the review shown is always the review of the form as
@@ -1185,7 +1205,10 @@ Share options, Campaign images, Parish logos, Parish settings, Create the
 campaign and No-reminders WorkGroup use the dialog; Create the campaign, New
 user and No-reminders WorkGroup are confirmations under #1356, and so are a
 one-time New scheduled email, Import selected with nobody skipped and
-Campaign images' Remove this image. No settings editor shows the in-place
+Campaign images' Remove this image. Edit user, Share options and a small
+Campaign settings change are compact reviews under #1356; Parish settings
+becomes one under #1356 later, and an Integration settings edit when #750
+reaches it. No settings editor shows the in-place
 review panel of #532 and #750
 ([in-place controls](#in-place-controls)); the other editors use separate
 Review and Change status pages.

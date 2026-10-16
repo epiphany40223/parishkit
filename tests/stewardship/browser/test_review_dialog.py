@@ -16,6 +16,7 @@ import re
 from urllib.parse import parse_qs
 
 import pytest
+from playwright.sync_api import expect
 
 from .test_components import axe_violations
 from .user_components import (
@@ -56,8 +57,8 @@ def fill_new(page, origin, path=NEW):
 
 
 def review(page, name="Add the user"):
-    """Choose New user's Add the user (or Edit's Review); wait for the dialog."""
-    page.get_by_role("button", name=name).click()
+    """Choose New user's Add the user (or Edit's Save); wait for the dialog."""
+    page.get_by_role("button", name=name, exact=True).click()
     dialog = page.locator("dialog[data-review-dialog]")
     visible(dialog)
     return dialog
@@ -240,22 +241,37 @@ def test_another_refusal_shows_in_the_dialog(page, component_origin):
 def test_edit_review_waits_for_a_change_and_greys_again_on_revert(
     page, component_origin
 ):
-    """No review of nothing: Review is unavailable until a real change."""
+    """No review of nothing: Save is unavailable until a real change."""
     page.goto(component_origin + EDIT)
-    button = page.get_by_role("button", name="Review")
+    button = page.get_by_role("button", name="Save", exact=True)
     assert button.is_disabled()
     roles = page.get_by_role("group", name="Role")
     roles.get_by_label("Staff").check()
     assert button.is_enabled()
     roles.get_by_label("Ministry leader").check()
     assert button.is_disabled()
-    visible(page.get_by_text("Change the Name or role to review it."))
+    visible(page.get_by_text("Change the Name or role to save it."))
     roles.get_by_label("Staff").check()
-    dialog = review(page, "Review")
-    visible(page.get_by_role("dialog", name="Review user change"))
-    # Edit keeps its review (class A2), with no confirmation sentence.
-    assert dialog.get_attribute("aria-describedby") is None
-    assert "Ministry leader" in dialog.inner_text() and "Staff" in dialog.inner_text()
+    failures = watch(page)
+    dialog = review(page, "Save")
+    visible(page.get_by_role("dialog", name="Save this user change?"))
+    assert page.evaluate(FOCUSED) == "user-review-title"
+    # A compact review (#1356, class A2): one line per changed field, which
+    # describes the dialog; no Now and After table, and no email heading.
+    assert dialog.get_attribute("aria-describedby") == "user-review-summary"
+    lines = dialog.locator("#user-review-summary li")
+    assert lines.count() == 1
+    text = lines.first.inner_text()
+    assert text.startswith("Role: Ministry leader") and text.endswith("Staff")
+    assert "→" in text and dialog.locator("table").count() == 0
+    # Screen readers hear "old, becomes new"; the arrow is hidden from them.
+    expect(dialog).to_have_accessible_description(
+        re.compile(r"^Role: Ministry leader ?, becomes Staff$")
+    )
+    dialog.get_by_role("button", name="Cancel").click()
+    hidden(dialog)
+    eventually(page, "document.activeElement.textContent.trim() === 'Save'")
+    assert not failures
 
 
 def test_the_import_applies_and_redraws_users_in_place(page, component_origin):
