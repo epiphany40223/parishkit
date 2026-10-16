@@ -52,7 +52,14 @@ from uuid import UUID
 
 from django.db import DatabaseError
 
-from .admin_changes import InvalidChange, _admit_change, _ended_or_raise, _problem
+from .admin_changes import (
+    FieldProblem,
+    InvalidChange,
+    _admit_change,
+    _ended_or_raise,
+    form_problems,
+    unexpected_problem,
+)
 from .admin_reads import NotAvailable, ReadModel, _held, _recheck, config_request
 from .admin_settings import _read
 
@@ -177,9 +184,19 @@ def parse_settings(text):
             message = None if name in NULLABLE else "Give a value."
         else:
             message = None if isinstance(item, str) else "Give a string."
-        if message:
+        if name not in names:
+            # A key the caller sent: counted in the refusal log, never named.
+            problems.append(unexpected_problem(f"campaign.{name}", message))
+        elif message:
             problems.append(
-                {"field": f"campaign.{name}", "code": "invalid", "message": message}
+                FieldProblem(
+                    {
+                        "field": f"campaign.{name}",
+                        "code": "invalid",
+                        "message": message,
+                    },
+                    logged=f"campaign-{name}",
+                )
             )
     if problems:
         raise InvalidChange(problems)
@@ -270,11 +287,7 @@ def field_errors(form):
     The field is ``campaign.<name>``, or ``campaign`` for the form as a
     whole.
     """
-    problems = []
-    for name, messages in form.errors.get_json_data().items():
-        field = "campaign" if name == "__all__" else f"campaign.{name}"
-        problems.extend(_problem(field, item) for item in messages)
-    return problems
+    return form_problems("campaign", form.errors, "campaign")
 
 
 def _refusal(error):
