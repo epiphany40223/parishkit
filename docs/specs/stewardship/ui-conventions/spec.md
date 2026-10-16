@@ -633,8 +633,7 @@ never scrolls to show it (Administrator, pk-local review of
   review dialog (#1119). Parish settings' form is never redrawn; until the
   change is applied, Apply's answer hands it the version it was reviewed at.
   [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142)
-  reviews and confirms the same way, except that its status names no
-  `in_place` page, so it never refreshes the page once applied. The other
+  confirms in the review dialog (#1356). The other
   editors keep their review and Change status pages until issue 750 reaches
   them.
 - **Selection tables keep their ticks (#750).** Ministries once reviewed an
@@ -940,7 +939,7 @@ Django-rendered ones included, through the shared page script.
 ### Review, Apply and Change status
 
 **Rule.** A change to configuration or data is made by editing, then
-**Review** (which shows each changed value, current and proposed), then
+**Review** (which shows what will change), then
 **Apply** (or **Save**), after which the change's status is followed until it
 is applied. Changes are saved by an explicit action, never
 autosaved as the reader types or ticks. A checkbox may refresh a *view* on
@@ -973,12 +972,15 @@ opens, applies, refuses and follows its change.
 ### Review dialog
 
 **Rule.** Every Admin editor reviews and applies its change in one shared
-modal dialog over the page: **Review changes** opens the dialog with the
-change and its impact, the dialog offers **Apply** and **Cancel**, and Apply's
+modal dialog over the page: **Review changes** (or the action's own label,
+such as **Create the campaign**) opens the dialog with the
+change and its impact (or, when that would only repeat the page, a
+one-sentence confirmation), the dialog offers **Apply** and **Cancel**, and Apply's
 progress and outcome show inside it. Once the change is applied the dialog
 closes, the page refreshes in place (or a New or Edit page returns to its
-table) and a short status line says what was applied. Review changes is
-unavailable until the form holds a real change, so no page ever says that
+table) and a short status line says what was applied. That button is
+unavailable until the form holds a real change (for a new item, until every
+required field is filled in), so no page ever says that
 nothing has changed. **Why.** One way to review and apply across the portal,
 instead of some editors using a second screen and others a panel under the
 form; the reader stays on the page and never loses their place, and a dialog
@@ -1032,9 +1034,36 @@ section says how every Review behaves.
   names the change ("Review Parish settings") and labels the dialog
   (`aria-labelledby`); focus moves to that title, never to Apply, so the
   reader hears what is being reviewed before reaching the buttons. Its body
-  shows the review the feature specification describes: each changed value
-  with its current and proposed value, and the change's notes and impact
-  (affected Families, counts, a generated preview).
+  shows the review the feature specification describes: a full review (the
+  changed values with their current and proposed values, and the change's
+  notes and impact: affected Families, counts, a generated preview) or a
+  confirmation (below).
+- **A confirmation when Review would only repeat the page.** When a Review
+  would show nothing the reader can't already see on the page (a new item,
+  where nothing existed before; a change of one or two fields, where the new
+  values are the form itself; or a fixed explanation), the dialog does not
+  list the values again. It states the change's effect in one sentence
+  ("This creates the campaign as a draft in Testing mode; no email is
+  sent." / "Parish telephone changes from (212) 555-1234 to
+  (212) 555-9876."), adds only what the server worked out that the page
+  doesn't show (a warning, such as granting Administrator; an affected
+  count; a refusal), and offers **Apply** and **Cancel**; the sentence
+  describes the dialog (`aria-describedby`), and its title asks the
+  question ("Create the campaign?"). The form's button then carries the
+  action's own label ("Create the campaign", "Save") rather than **Review
+  changes**, since it opens a dialog that does not review, and the dialog's
+  button stays **Apply**. Review still posts the form, so field errors stay
+  on the form and the server still validates and signs the preview, which
+  Apply posts as before: the signed preview and its lifetime, concurrency,
+  the rechecks under the work lock, the audit and the command line's
+  `preview` and `confirm` are unchanged. A Review that changes many fields,
+  computes impact (affected Families, re-planned schedules, counts), or
+  renders what Families will see (an email sample, staged images) keeps its
+  full review. Each feature specification says which kind its Review is.
+  **Precedent.** Administrator decision, 2026-10-14, on
+  [#1356](https://github.com/epiphany40223/parishkit/issues/1356); the
+  [Delete dialogs](#row-actions-and-confirmation) already confirm over a
+  hidden server-signed preview.
 - **While the dialog is open** it is a native modal `<dialog>`: the rest of
   the page, the form included, is inert and cannot be edited, and Tab stays
   inside the dialog. So the review shown is always the review of the form as
@@ -1055,7 +1084,11 @@ section says how every Review behaves.
   mail schedules), as [flows end where the reader
   started](#navigation-rules) says. A Review that the
   server answers with another page (Campaign settings' dates-only change,
-  which leads to Dates and mail schedules) ends on that page. Wherever the
+  which leads to Dates and mail schedules) ends on that page. A page whose
+  own address could only be refused once the change is applied ([Create the
+  campaign](../admin-portal/spec.md#create-the-campaign), once the campaign
+  exists) is redrawn from the address Apply's answer ended on, the page
+  naming the change, which becomes the page's address. Wherever the
   reader ends, a short status line under the form or above the table says
   what was applied and when ("Applied at 3:42 PM."), and focus moves to it.
   The line is a polite live region (`role="status"`), so a screen reader
@@ -1112,8 +1145,9 @@ dialog is decided on [#750](https://github.com/epiphany40223/parishkit/issues/75
 Current state, to be converted: Users' New user, Edit user and Import
 Ministry leaders, New and Edit scheduled email,
 [Campaign settings](../admin-portal/spec.md#campaign-settings-page) (#1119),
-Share options, Campaign images and Parish logos use the dialog. Parish
-settings and No-reminders WorkGroup show the in-place
+Share options, Campaign images, Parish logos and Create the campaign (a
+confirmation under #1356) use the dialog. Parish settings and No-reminders
+WorkGroup show the in-place
 review panel of #532 and #750
 ([in-place controls](#in-place-controls)); the other editors use separate
 Review and Change status pages.

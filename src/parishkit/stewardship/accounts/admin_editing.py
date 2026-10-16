@@ -185,7 +185,8 @@ def confirm(
     for a recent Google sign-in again under the work lock (#547). An
     ``in_place`` editor (#532) is answered with itself instead, naming the
     request, so its review region follows the change where the Administrator
-    already is.
+    already is; ``in_place`` may name that region (Create the campaign's,
+    which its review dialog follows), else it is ``REVIEW_REGION``.
     """
     receipt = confirm_intent(
         request,
@@ -204,7 +205,8 @@ def confirm(
     admin_navigation.remember_origin(request, receipt.request_id)
     if in_place:
         query = urlencode({"request": receipt.request_id})
-        return HttpResponseRedirect(f"{request.path}?{query}#{REVIEW_REGION}")
+        region = in_place if isinstance(in_place, str) else REVIEW_REGION
+        return HttpResponseRedirect(f"{request.path}?{query}#{region}")
     return HttpResponseRedirect(
         reverse("admin:configuration_request", args=[receipt.request_id])
     )
