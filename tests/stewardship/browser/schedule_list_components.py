@@ -31,6 +31,15 @@ checks need no database:
   ``TEST_SEND``, which each test answers itself (``page.route``);
   ``EDIT_CLOSED`` is Edit while the campaign admits no test mail, so the
   button is drawn unavailable with ``NOT_OPEN``.
+  ``EDIT_SERIES``: Edit for Reminder 1 as a reminder of a remembered series
+  (#469) holding both reminders ("Part of" its rule, and the scope choice);
+  its Review answers with the review of The whole series at 10:30 AM, its
+  series lines drawn by the view's own ``_edit_notes`` from
+  ``series_edits.plan``.
+  ``EDIT_SERIES_GATED``: the same Edit with The whole series drawn
+  unavailable (``GATED_REASON``), whose Review answers 400 with the page
+  drawn again with "This and following" refused at the choice
+  (``DAY_MOVED``), as the view refuses a time that moves a day.
 - ``NEW_REPEAT``: New, whose Review answers with the review of 30 repeated
   reminders (the most one rule adds), a long review; ``NEW_BLOCKED``: New,
   whose review is blocked by sends in progress, so it has no preview;
@@ -56,7 +65,7 @@ filled in by ``components``, before the server starts.
 """
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time
 from uuid import uuid4
 
 from django import forms
@@ -74,11 +83,14 @@ from parishkit.stewardship.accounts.schedule_changes import (
     describe,
 )
 from parishkit.stewardship.accounts.schedule_entry_views import (
+    DAY_MOVED,
     RepeatRule,
+    _edit_notes,
     _sends_once,
     _summary,
     entry_form,
     entry_times,
+    series_context,
 )
 from parishkit.stewardship.accounts.schedule_forms import (
     OUTSIDE_CAMPAIGN,
@@ -94,6 +106,7 @@ from parishkit.stewardship.accounts.schedule_table import (
     schedule_rows,
 )
 from parishkit.stewardship.accounts.schedule_views import _summary as dates_summary
+from parishkit.stewardship.accounts.series_edits import plan
 from parishkit.stewardship.web.tables import whole_table
 
 from ..campaign_factory import campaign, schedule
@@ -113,6 +126,12 @@ EDIT_DIGEST = "/schedule-edit-digest"
 EDIT_EMAIL_REFUSED = "/schedule-edit-email-refused"
 EDIT_INITIAL = "/schedule-edit-initial"
 EDIT_CLOSED = "/schedule-edit-closed"
+EDIT_SERIES = "/schedule-edit-series"
+EDIT_SERIES_GATED = "/schedule-edit-series-gated"
+# Both reminders' series (#469): every day of October 2054.
+SERIES_RULE = {"frequency": "daily", "start": "2054-10-01", "end": "2054-10-31"}
+GATED_REASON = "A reminder of this series has already sent."
+DAY_MOVED_TEXT = str(DAY_MOVED)
 # Where "Send a test of this text" posts (#446), and the reason it is
 # unavailable on EDIT_CLOSED.
 TEST_SEND = "/schedule-email-test"
@@ -263,37 +282,59 @@ def _entry(
     post_url,
     apply_url=APPLY,
     closed=None,
+    series=None,
+    refusals=None,
+    scope_error=None,
 ):
     """New scheduled email, or Edit scheduled email for ``schedule_row``.
 
     ``closed`` is the reason the campaign admits no test mail now, as
-    ``schedule_email.test_context`` gives it.
+    ``schedule_email.test_context`` gives it. ``series`` is the remembered
+    series ``schedule_row`` belongs to (#469), drawn as the view draws it,
+    with ``refusals`` its scopes known to be unavailable; ``scope_error``
+    draws the page refused with "This and following" chosen and that error
+    at the choice, with its summary.
     """
+    entry = entry_form(None, emails, rows, schedule_row)
+    scope_data = QueryDict("series-scope=following") if scope_error else None
+    part_of = series_context(entry, series, scope_data, refusals)
+    errors = {}
+    if scope_error:
+        part_of["form"].is_valid()
+        part_of["form"].add_error(
+            "scope", forms.ValidationError(scope_error, code="series_edit_refused")
+        )
+        errors = {"errors": _summary(entry, None, None, part_of["form"])}
     toggle, email, sources = schedule_email.editor(
         None, emails, schedule_row, owner["id"]
     )
-    context = {
-        "email_toggle": toggle,
-        "email": email,
-        "email_sources": sources,
-        "email_test": {
-            "url": TEST_SEND,
-            "no_email": schedule_email.NO_EMAIL,
-            "closed": closed,
-            "unknown": False,
-        },
-        "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
-        "values": owner["values"],
-        "entry": entry_form(None, emails, rows, schedule_row),
-        "repeat": None if schedule_row else RepeatRule(prefix="repeat"),
-        "new": schedule_row is None,
-        "schedule": schedule_row,
-        "base_digest": "a" * 64,
-        "post_url": post_url,
-        "list_url": LIST,
-        "apply_url": apply_url,
-        "window_text": window_text(owner["values"]),
-    } | entry_times(owner["values"], rows, schedule_row, NOW, bound=False)
+    context = (
+        {
+            "email_toggle": toggle,
+            "email": email,
+            "email_sources": sources,
+            "email_test": {
+                "url": TEST_SEND,
+                "no_email": schedule_email.NO_EMAIL,
+                "closed": closed,
+                "unknown": False,
+            },
+            "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
+            "values": owner["values"],
+            "entry": entry,
+            "repeat": None if schedule_row else RepeatRule(prefix="repeat"),
+            "series": part_of,
+            "new": schedule_row is None,
+            "schedule": schedule_row,
+            "base_digest": "a" * 64,
+            "post_url": post_url,
+            "list_url": LIST,
+            "apply_url": apply_url,
+            "window_text": window_text(owner["values"]),
+        }
+        | entry_times(owner["values"], rows, schedule_row, NOW, bound=False)
+        | errors
+    )
     return (
         "text/html",
         render_to_string("stewardship/schedule-entry.html", values | context),
@@ -435,7 +476,7 @@ def _dates_refused(values, owner, emails, rows):
     )
 
 
-def _review(owner, changes, *, new=True, blocking=0):
+def _review(owner, changes, *, new=True, blocking=0, series_notes=()):
     """The review dialog's fragment for ``changes`` (schedule-review.html).
 
     A New review adding one schedule that sends once is the view's
@@ -448,6 +489,7 @@ def _review(owner, changes, *, new=True, blocking=0):
         "blocking": blocking,
         "preview": None if blocking else "synthetic-preview",
         "new": new,
+        "series_notes": series_notes,
     }
     return render_to_string(
         "stewardship/schedule-review.html",
@@ -509,6 +551,14 @@ def components(context, admin):
     owner, emails, rows = _data()
     initial, first, _second, digest = rows
     reminders = [row for row in rows if row["values"]["kind"] == "reminder"]
+    series = {
+        "id": str(uuid4()),
+        "values": {
+            "campaign_id": owner["id"],
+            "rule": SERIES_RULE,
+            "schedules": sorted(row["id"] for row in reminders),
+        },
+    }
     responses = {
         LIST: _list(values, owner, emails, rows, refresh_url=f"{LIST}-one-deleted"),
         f"{LIST}?sort=-when": _list(values, owner, emails, rows, sort="-when"),
@@ -572,6 +622,25 @@ def components(context, admin):
             post_url=f"{EDIT}/review",
             closed=NOT_OPEN,
         ),
+        EDIT_SERIES: _entry(
+            values,
+            owner,
+            emails,
+            rows,
+            schedule_row=first,
+            post_url=f"{EDIT_SERIES}/review",
+            series=series,
+        ),
+        EDIT_SERIES_GATED: _entry(
+            values,
+            owner,
+            emails,
+            rows,
+            schedule_row=first,
+            post_url=f"{EDIT_SERIES_GATED}/review",
+            series=series,
+            refusals={"series": GATED_REASON},
+        ),
         PENDING: _status(values, "validating"),
         NEW_REPEAT: _entry(
             values, owner, emails, rows, post_url=f"{NEW_REPEAT}/review"
@@ -628,6 +697,24 @@ def components(context, admin):
             for day in range(2, 32)
         ],
     )
+    # "The whole series" from Reminder 1 at 10:30 AM here (1:30 PM in New
+    # York): its lines drawn by the view's own words from the command line's
+    # plan.
+    outcome = plan(
+        series,
+        {row["id"]: row["values"] for row in rows},
+        set(),
+        scope="series",
+        time_of_day="13:30:00",
+    )
+    series_review = _review(
+        owner,
+        [_added(owner, row["values"] | {"time": "13:30:00"}) for row in reminders],
+        new=False,
+        series_notes=_edit_notes(
+            outcome, first["values"]["date"], time(10, 30), changed_email=False
+        ),
+    )
     blocked = _review(
         owner,
         [
@@ -663,6 +750,22 @@ def components(context, admin):
             f"{FAILED}/deletion": (303, NOT_APPLIED, ""),
             f"{NEW}/review": (200, None, review),
             f"{EDIT}/review": (200, None, edit_review),
+            f"{EDIT_SERIES}/review": (200, None, series_review),
+            f"{EDIT_SERIES_GATED}/review": (
+                400,
+                None,
+                _entry(
+                    values,
+                    owner,
+                    emails,
+                    rows,
+                    schedule_row=first,
+                    post_url=f"{EDIT_SERIES_GATED}/review",
+                    series=series,
+                    refusals={"series": GATED_REASON},
+                    scope_error=DAY_MOVED_TEXT,
+                )[1],
+            ),
             f"{NEW_REPEAT}/review": (200, None, repeated),
             f"{NEW_BLOCKED}/review": (200, None, blocked),
             f"{NEW_INVALID}/review": (
