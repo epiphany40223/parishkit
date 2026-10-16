@@ -324,6 +324,9 @@ FROZEN = {
     "0097_resume_sender_check.sql": (
         "f2a0334f44759a9f87e7637282847a200f4cd9dcf2f5c217ffa564f94fde5285"
     ),
+    "0098_debug_off_clear_subject.sql": (
+        "5e77e47bdb4c074839c5938fa739fd1b249c12a9c7d517ab4c9dd1d0ca512a3d"
+    ),
 }
 
 

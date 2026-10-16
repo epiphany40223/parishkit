@@ -6946,8 +6946,10 @@ login can be told apart in SQL from the web login, which `pk-admin` and the
 online operator commands share. The switch records that the server
 operator cleared it, and when, and the command records
 `debug_logging_allowed` with `actor_kind` `operator` in the same
-transaction. That event names no subject: the admin-recovery login cannot
-read the switch it cleared. While debug logging is back in effect, the
+transaction. That event names the switch as its subject, as the
+Administrator's clear does: the admin-recovery login cannot read the switch
+table, so its clear returns the id of the switch it cleared (#1229). While
+debug logging is back in effect, the
 panel says when the server operator cleared the switch.
 In Testing mode the region also offers **Allow debug logging again**
 (ADM-13 PR 6c), below Turn off debug logging, while the switch is set. Its

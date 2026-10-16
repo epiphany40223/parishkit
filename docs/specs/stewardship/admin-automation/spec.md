@@ -3370,8 +3370,8 @@ as the host operator (`actor_kind` `operator`), not as a portal user:
 - debug logging: `debug-off-clear`, which clears the System health
   [debug-off switch](../admin-portal/spec.md#turn-off-debug-logging)
   (ADM-13), run offline from the admin-recovery profile; it records
-  `debug_logging_allowed` with `actor_kind` `operator` in the clear's
-  transaction;
+  `debug_logging_allowed` with `actor_kind` `operator`, naming the cleared
+  switch, in the clear's transaction;
 - smoke tests: `smoke`;
 - LOCAL and development only: `prepare-development`, `local-sign-in`,
   `local-seed`, `local-spike`, `local-spike-report`,

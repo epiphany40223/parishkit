@@ -363,6 +363,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0090's rerun puts 0090's derived guard back, ``CLOSURE_REPLACED_ONLY``
 # then runs 0096's replacement statement alone (its table cannot be made
 # twice).
+# 0098 (#1229) drops 0078's count-only operator clear and creates its v2,
+# which names the cleared switch. Its entry follows 0078's below, so once
+# 0078's file installs again (making v1 again), 0098's file runs after it
+# and drops v1 again.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -482,7 +486,6 @@ CLOSURE_CREATED = {
         (
             "public.stewardship_debug_off_switch_guard_v1()",
             "public.stewardship_debug_logging_off_v1()",
-            "public.stewardship_debug_off_clear_v1()",
         ),
         ("stewardship_jobs", "0028_debug_off_switch"),
     ),
@@ -550,6 +553,10 @@ CLOSURE_CREATED = {
             "public.stewardship_proposal_review_effect_v1()",
         ),
         ("stewardship_responses", "0006_proposal_review"),
+    ),
+    "public.stewardship_debug_off_clear_v2()": (
+        "stewardship_jobs",
+        "0032_debug_off_clear_subject",
     ),
 }
 
