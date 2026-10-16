@@ -24,6 +24,11 @@ TEMPLATES = (
     Path(__file__).parents[2]
     / "src/parishkit/stewardship/accounts/templates/stewardship"
 )
+# The shared note naming the browser's zone, hidden until the script knows
+# it (components/zone-note.html, #1129).
+ZONE_NOTE = (
+    '{% include "stewardship/components/zone-note.html" with note_text=zone_note'
+)
 
 
 @pytest.mark.parametrize(
@@ -241,15 +246,15 @@ def test_follow_up_page_labels_no_utc_entry():
     zone = re.search(r'<input type="hidden" name="contact_zone"[^>]*>', text)[0]
     assert 'value="{{ form.contact_zone }}"' in zone
     assert " data-browser-zone " in zone
-    # The note stays hidden until the script names a known zone, and both
-    # fields carry the gate marker for an unknown one.
-    assert "data-browser-zone-note hidden" in text
+    # The shared note stays hidden until the script names a known zone, and
+    # both fields carry the gate marker for an unknown one.
+    assert ZONE_NOTE in text
     assert text.count("data-browser-zone-field>") == 2
     # The queue's Export these requests (#1157) offers UTC among its zone
     # choices, as every export asking for a zone does; the follow-up itself
-    # names no fixed zone.
+    # names no fixed zone (the shared note names the browser's).
     followup = text[: text.index('<section aria-labelledby="followup-export-heading">')]
-    assert "data-browser-zone-name" in text and "UTC" not in followup
+    assert "UTC" not in followup
     # Every follow-up instant shown (the request's submitted time, history,
     # contact, the queue's last contact, source as of) is converted in the
     # browser. The queue has no Submitted column (#1064).
@@ -352,7 +357,7 @@ def test_log_page_dates_are_browser_local():
         line for line in text.splitlines() if '<option value="UTC">UTC</option>' in line
     ]
     assert 'name="zone" value="{{ query.zone }}" data-browser-zone ' in text
-    assert "data-browser-zone-note hidden" in text
+    assert ZONE_NOTE in text
     assert text.count("data-browser-zone-field>") == 2
     assert (
         '<form id="table-filters"' in text
