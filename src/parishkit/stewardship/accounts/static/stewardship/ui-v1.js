@@ -182,6 +182,27 @@
     root.querySelectorAll("[data-link-zone]").forEach((note) => {
       note.hidden = note.dataset.linkZone === zone;
     });
+    // A fresh time zone menu marked data-browser-default (Create the
+    // campaign, the setup Parish step, #1330) starts on this browser's zone
+    // when it offers it; otherwise it keeps the server's choice (the parish
+    // zone, or a blank required entry), never the list's first zone. An
+    // engine may report ICU's older name for a zone the list offers by its
+    // IANA name (Chromium says America/Louisville for
+    // America/Kentucky/Louisville), so an option this engine resolves to the
+    // reported name matches too. A browser reporting UTC (or one of its
+    // aliases) is treated like one reporting no zone: a server, VM or
+    // privacy setting reports it, rarely a parish's own clock.
+    const resolved = (name) => {
+      try { return new Intl.DateTimeFormat("en-US", {timeZone: name}).resolvedOptions().timeZone; } catch (_) { return ""; }
+    };
+    const unknownZone = !zone || zone === "Etc/Unknown"
+      || /^(Etc\/)?(UTC|UCT|Universal|Zulu)$/.test(zone);
+    root.querySelectorAll("select[data-browser-default]").forEach((select) => {
+      if (select.disabled || unknownZone) return;
+      const values = Array.from(select.options, (option) => option.value).filter(Boolean);
+      const match = values.includes(zone) ? zone : values.find((value) => resolved(value) === zone);
+      if (match) select.value = match;
+    });
     if (!zone || zone === "UTC") return;
     root.querySelectorAll("select[data-browser-timezone]").forEach((select) => {
       select.append(new Option(`${zone} (this browser)`, zone, true, true));
