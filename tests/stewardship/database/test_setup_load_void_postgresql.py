@@ -542,3 +542,6 @@ def test_do_block_refuses_each_earlier_definition():
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(text)
         cursor.execute(check)
+        # 0104 (#1402) replaces 0102's safe context again; rolling back keeps
+        # the installed (later) bodies for the tests that follow.
+        transaction.set_rollback(True)

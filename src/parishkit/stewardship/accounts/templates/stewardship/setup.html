@@ -37,7 +37,7 @@
 <li>{% translate "The parish logo image." %}</li>
 <li>{% translate "Your parish's ParishSoft API key and ParishSoft organization ID." %}</li>
 </ul>
-{% fresh_sign_in as fresh %}{% if not fresh %}{% translate "saving a credential" as step_up_action %}{% translate "Your setup is kept." as step_up_note %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action note=step_up_note later=True %}{% endif %}
+{% fresh_sign_in setup=True as fresh %}{% if not fresh %}{% translate "saving a credential" as step_up_action %}{% translate "Your setup is kept." as step_up_note %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action note=step_up_note later=True hour=True %}{% endif %}
 <p>{% translate "Complete setup using this login. Another login cannot resume your temporary settings." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="start">{% button type="submit" %}{% translate "Start setup" %}{% endbutton %}</form>
 {% endif %}

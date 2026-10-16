@@ -128,6 +128,7 @@
 !src/parishkit/stewardship/schema/migrations/0101_publication_tasks.sql
 !src/parishkit/stewardship/schema/migrations/0102_setup_load_void.sql
 !src/parishkit/stewardship/schema/migrations/0103_any_creation_timezone.sql
+!src/parishkit/stewardship/schema/migrations/0104_setup_sign_in_hour.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

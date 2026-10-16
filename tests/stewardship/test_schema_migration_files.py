@@ -342,6 +342,9 @@ FROZEN = {
     "0103_any_creation_timezone.sql": (
         "939867f48bd7966bf19fad3cf6b96339e806de9752625ec1532e40c30de106a1"
     ),
+    "0104_setup_sign_in_hour.sql": (
+        "7248a23e6fdf74141c68528d089b02ba4f112e5d9736f7f24fd0234306a1a378"
+    ),
 }
 
 
