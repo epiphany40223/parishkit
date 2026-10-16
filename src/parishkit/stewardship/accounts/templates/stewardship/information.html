@@ -1,5 +1,6 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship static %}
 {% block title %}{% if item %}{% translate "Information request" %}{% else %}{% translate "Additional information" %}{% endif %}{% endblock %}
+{% block head %}{% if not item %}{% include 'stewardship/components/chart-scripts.html' %}{% endif %}{% endblock %}
 {% block content %}
 <h1>{% if item %}{% translate "Information request" %}{% else %}{% translate "Additional information" %}{% endif %}</h1>
 {% aboutpage "information-followup" %}<p>{% translate "Requests for more information that Families wrote on their forms, with Staff follow-up." %}</p>
@@ -65,6 +66,8 @@
 {% button type="submit" aria-describedby="information-filter-hint" %}{% translate "Apply filters" %}{% endbutton %}
 <p class="help" id="information-filter-hint" data-complete-hint="reserve"></p></form>{% endfilterpanel %}
 <p id="information-matching" data-table-sync>{% translate "Matching requests:" %} {{ total|number }}.</p>
+{% comment %}Visuals first (#720): every request the filters match by follow-up state, as progress bars against them all, each bar's count and share in its axis label and tooltip (#1266), with no caption repeating them. The counts come from the same selection as the total, so they follow the filters in place (data-table-sync) and not the paging. With no matching request nothing is drawn, but the empty region stays for the next refresh.{% endcomment %}<div id="information-status" data-table-sync>{% if followup_chart %}<h2>{{ followup_chart.title }}</h2>
+{% include 'stewardship/components/chart.html' with chart=followup_chart no_table=True %}{% endif %}</div>
 <details class="export-panel"><summary id="information-export-heading">{% translate "Export complete results (CSV, XLSX or PDF)" %}</summary>
 <p id="information-export-count" data-table-sync>{{ total|number }} {% translate "estimated matching items, using the applied filters and sort above—not just this page. The file uses the text as it is when you queue the export; later changes are not included." %}</p>
 <p class="notice">{% translate "Sensitive parish information: download only to a trusted device and share only with authorized recipients." %}</p>
