@@ -1004,6 +1004,8 @@ pk-admin workgroup show
 | `name` | The WorkGroup's name, or null when no WorkGroup is set |
 | `state` | The page's **Now**: `off` (none set), `pending` (the next ParishSoft refresh reads it), `missing` (ParishSoft has no Family WorkGroup of that name: check the name) or `found` |
 | `families` | When `found`, how many Families the newest refresh found in it; otherwise null |
+| `excluding` | How many Families get no Reminders now (0 when none): after a rename, until a refresh reads the new name, the previous WorkGroup's; when `missing`, the set kept from before |
+| `excluding_from` | The WorkGroup `excluding` was read from when it is not `name` (a rename waiting for a refresh); otherwise null, and always null for a set kept from a refresh that did not find its WorkGroup |
 
 `workgroup preview` and `workgroup confirm` are the page's **Review
 changes** and **Apply changes**, as `parish preview` and `parish
@@ -1013,11 +1015,14 @@ and spaces at the ends do not matter), or `--clear` to name none, so
 every eligible Family that has not responded gets the Reminders. A blank
 `--name` is refused (exit 1, `invalid`): turning the exclusion off takes
 `--clear`. Nothing changes until the change from `workgroup confirm` is
-applied. Then the old WorkGroup stops applying at once, but a new name
-applies only from the next ParishSoft refresh that reads it: until then
-no Family is excluded, and `workgroup show` says `pending`. Do not rename
-or clear the WorkGroup shortly before a Reminder send unless every
-Family should get that Reminder; run a refresh after renaming.
+applied. Then `--clear` stops every exclusion at once, and going back to
+the name the newest refresh read applies its Families at once. Any other
+new name applies from the next ParishSoft refresh that reads it: until
+then the Families the newest refresh found in the previous WorkGroup are
+still excluded, `workgroup show` says `pending`, and `excluding` counts
+them. A name ParishSoft does not have (`missing`) keeps the earlier set
+until a refresh finds it. Run a refresh after renaming, so the new
+WorkGroup applies before the next Reminder send.
 
 ```sh
 VERSION=$(pk-admin workgroup show | jq -r .result.version)
@@ -2873,7 +2878,8 @@ print is exit 1 (`invalid`).
   confirm --token TOKEN|-`, the No-reminders WorkGroup page's read, Review
   and Apply (Administrators only; the read in any session, the others in
   a full-scope one); `workgroup confirm` records
-  `admin_cmd_workgroup_confirm`.
+  `admin_cmd_workgroup_confirm`. `workgroup show` also prints `excluding`
+  and `excluding_from`, the set Reminders skip now (#1313).
 - `pk-admin/1` (#1161): additive. `export comparison` no longer needs
   `--timezone`; without it the file uses the parish's time zone.
 - `pk-admin/1` (#1211): additive. `delivery bounce-report MESSAGE_ID

@@ -27,6 +27,7 @@ from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.source.leases import release_source
 from parishkit.stewardship.source.models import SourceMutationLease
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
+from parishkit.stewardship.source.workgroups import excluded_duids
 
 from .automation_builders import as_staff, paired
 from .campaign_builders import change
@@ -156,10 +157,13 @@ def test_show_follows_the_pages_now_panel(admin, current):
         "name": None,
         "state": "off",
         "families": None,
+        "excluding": 0,
+        "excluding_from": None,
     }
     set_name(admin, current, NAME)
     result = quiet_show(admin, reader)
     assert (result["name"], result["state"]) == (NAME, "pending")
+    assert (result["excluding"], result["excluding_from"]) == (0, None)
     assert result["version"] == admin.service.store.active().digest
     snapshot, claim = prepared()
     publish(snapshot, claim)
@@ -170,11 +174,62 @@ def test_show_follows_the_pages_now_panel(admin, current):
     record(NAME, [11, 12, 13])
     result = quiet_show(admin, reader)
     assert (result["state"], result["families"]) == ("found", 3)
-    # A count only, never a Family's DUID.
-    assert set(result) == {"version", "campaign_id", "name", "state", "families"}
-    # Evidence for another name no longer applies.
+    assert (result["excluding"], result["excluding_from"]) == (3, None)
+    # Counts only, never a Family's DUID.
+    assert set(result) == {
+        "version",
+        "campaign_id",
+        "name",
+        "state",
+        "families",
+        "excluding",
+        "excluding_from",
+    }
+    # Evidence for another name is not this name's (pending), but it is
+    # what Reminders skip until a refresh reads this name (#1305).
     record("Something else", [11])
-    assert quiet_show(admin, reader)["state"] == "pending"
+    result = quiet_show(admin, reader)
+    assert (result["state"], result["families"]) == ("pending", None)
+    assert (result["excluding"], result["excluding_from"]) == (1, "Something else")
+
+
+def skipped(row):
+    """How many Families planning skips now (``excluded_duids``)."""
+    row = Campaign.objects.get(pk=row.pk)
+    return len(excluded_duids(row.active_configuration.values))
+
+
+def test_show_reports_the_applied_set_through_a_rename(admin, current):
+    """``excluding`` follows what Reminders skip (#1313): a rename keeps the
+    previous WorkGroup's Families until a refresh reads the new name, a
+    missing name keeps the earlier set, and a clear stops at once."""
+    _, reader, _ = paired(admin.service, scope="read-only")
+    snapshot, claim = prepared()
+    publish(snapshot, claim)
+    release_source(claim)
+    set_name(admin, current, NAME)
+    record(NAME, [11, 12])
+    assert quiet_show(admin, reader)["excluding"] == 2
+    set_name(admin, current, "Active: Stewardship 2028")
+    result = quiet_show(admin, reader)
+    assert (result["state"], result["families"]) == ("pending", None)
+    assert (result["excluding"], result["excluding_from"]) == (2, NAME)
+    assert result["excluding"] == skipped(current)
+    # The refresh found no such WorkGroup: the earlier set is kept, unnamed.
+    record("Active: Stewardship 2028", [11, 12], found=False)
+    result = quiet_show(admin, reader)
+    assert (result["state"], result["families"]) == ("missing", None)
+    assert (result["excluding"], result["excluding_from"]) == (2, None)
+    assert result["excluding"] == skipped(current)
+    # A refresh that finds it applies only its own Families.
+    record("Active: Stewardship 2028", [13])
+    result = quiet_show(admin, reader)
+    assert (result["state"], result["families"]) == ("found", 1)
+    assert (result["excluding"], result["excluding_from"]) == (1, None)
+    set_name(admin, current, None)
+    result = quiet_show(admin, reader)
+    assert (result["state"], result["excluding"]) == ("off", 0)
+    assert result["excluding_from"] is None
 
 
 def test_preview_and_confirm_as_the_page(admin, current):

@@ -28,9 +28,12 @@ and what the newest refresh found (``source.workgroups.current_evidence``).
 
 None is fresh-gated or prompts, as the page asks for no recent sign-in and
 shows no confirmation dialog: the reviewed token is the confirmation. Once
-the change is applied, the old WorkGroup stops applying at once; a new name
-applies only from the next ParishSoft refresh that reads it, so until then
-no Family is excluded (``source.workgroups.current_evidence``).
+the change is applied, a clear stops every exclusion at once; a new name
+applies only from the next ParishSoft refresh that reads it, and until then
+the Families the newest refresh found in the previous WorkGroup are still
+excluded (``source.workgroups.applied_evidence``, #1305). ``workgroup show``
+reports that applied set as ``excluding`` beside the page's ``state``
+(#1313).
 """
 
 from dataclasses import dataclass
@@ -51,6 +54,13 @@ class WorkGroupShow(ReadModel):
     ``families`` is the number of Families the refresh found in it when
     ``found``, else None. ``version`` is what ``workgroup preview
     --expected-version`` takes.
+
+    ``excluding`` is how many Families get no Reminders now, the applied
+    set (``source.workgroups.applied_evidence``, #1313), which can differ
+    from ``families``: during a ``pending`` rename it is the previous
+    WorkGroup's, and when ``missing`` it is the set kept from before.
+    ``excluding_from`` names the WorkGroup that set was read from when it is
+    not ``name`` (a rename waiting for a refresh), else None.
     """
 
     version: str
@@ -58,6 +68,8 @@ class WorkGroupShow(ReadModel):
     name: str | None
     state: str
     families: int | None
+    excluding: int
+    excluding_from: str | None
 
 
 @dataclass(frozen=True)
@@ -105,6 +117,23 @@ def now_state(name, evidence):
     return "found", len(evidence["family_duids"])
 
 
+def applied_state(name, applied):
+    """``(excluding, excluding_from)``: the set Reminders skip now, as counts.
+
+    ``applied`` is ``source.workgroups.applied_evidence``'s answer. The
+    WorkGroup is named only when that refresh found it under a name other
+    than ``name``; a set kept from a refresh that did not find its name has
+    no WorkGroup to name, as the page names none then.
+    """
+    if not applied:
+        return 0, None
+    # A previous WorkGroup that was found but is empty is still named, with
+    # 0: it is the set that applies, so a reader sees where the 0 comes
+    # from (the page just says no Family's Reminders are skipped).
+    source = applied["name"] if applied["found"] else None
+    return len(applied["family_duids"]), None if source == name else source
+
+
 def _current_campaign(configuration):
     """The page's current-campaign check; none is ``not_available``."""
     from .accounts.reminder_workgroup_views import _campaign
@@ -118,20 +147,29 @@ def _current_campaign(configuration):
 def read_workgroup(caller, service):
     """``workgroup show``: the current campaign's No-reminders WorkGroup."""
     from .accounts.admin_editing import editable_configuration
-    from .source.workgroups import current_evidence
+    from .source.workgroups import applied_evidence, configured_name, evidence_for
 
     def read():
-        """The page's campaign check and its Now panel."""
+        """The page's campaign check, its Now panel and the applied set.
+
+        One snapshot read serves both: ``current_evidence`` is
+        ``evidence_for`` over the same ``applied_evidence``.
+        """
         configuration = editable_configuration(service)
         campaign = _current_campaign(configuration)
-        name, evidence = current_evidence(campaign.active_configuration.values)
-        state, families = now_state(name, evidence)
+        values = campaign.active_configuration.values
+        name = configured_name(values)
+        applied = applied_evidence(values)
+        state, families = now_state(name, evidence_for(name, applied))
+        excluding, excluding_from = applied_state(name, applied)
         return WorkGroupShow(
             version=configuration.active_configuration.digest,
             campaign_id=campaign.pk,
             name=name,
             state=state,
             families=families,
+            excluding=excluding,
+            excluding_from=excluding_from,
         )
 
     return _read(caller, service, read)
