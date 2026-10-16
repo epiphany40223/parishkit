@@ -1,6 +1,6 @@
 """The code checks that keep LOCAL's egress-capable services on their fakes (#1399).
 
-LOCAL's application services are to have Production's route out, so these
+LOCAL's application services have Production's route out, so these
 checks, not the network, keep them on their fakes. Each case below is one
 use-time check that a LOCAL deployment refuses a real provider, with the
 same input admitted (or at least not refused by that check) in Production,

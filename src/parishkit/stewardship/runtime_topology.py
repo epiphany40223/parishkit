@@ -422,7 +422,7 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
                 for path, ro in backup_targets(selected).items()
             ]
             # The off-site copy uploads the sealed set to Google Drive.
-            _join_egress(service, configuration)
+            _join_egress(service)
         else:
             service["command"] = [
                 "runtime",
@@ -443,7 +443,7 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
                 role is ServiceRole.CREDENTIAL_INSTALLER
                 and target in {"parishsoft", "google_workspace", "slack"}
             ):
-                _join_egress(service, configuration)
+                _join_egress(service)
             if role is ServiceRole.WEB:
                 service["healthcheck"] = {
                     "test": PROBE + ["web"],
@@ -498,16 +498,19 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
     }, documents
 
 
-def _join_egress(service, configuration):
-    """Give a service its route out; LOCAL has none, so it stays internal-only.
+def _join_egress(service):
+    """Give a service that reaches a provider its route out, in every profile.
 
-    LOCAL (#476) omits the ``application-egress`` network entirely: only the
-    ingress services (Caddy, and the mail catcher's UI) sit on a non-internal
-    network, and that one does no source NAT, so even a mistaken real
-    credential has no route to Google, ParishSoft or Slack.
+    LOCAL joins the same services as Production (#1399), so pk-local runs the
+    real integrations through Production's code. What a LOCAL service may
+    reach is limited by code, not by the network: the mail transport admits
+    only the mail catcher, ParishSoft only the fake and Google sign-in only
+    the sentinel client (``mail_catcher.workspace_transport``,
+    ``parishsoft_http_worker.admitted_base_url``,
+    ``runtime_web.parse_google_client``). Caddy, Mailpit and the fake
+    ParishSoft never call this, so they stay off the egress network.
     """
-    if configuration.profile is not DeploymentProfile.LOCAL:
-        service["networks"]["application-egress"] = {}
+    service["networks"]["application-egress"] = {}
 
 
 def render_faketime_override(configuration, compose):
@@ -563,14 +566,15 @@ def _project_name(configuration):
 
 
 def _networks(configuration):
-    """The Compose networks: two internal everywhere; egress and ingress by profile.
+    """The Compose networks: two internal everywhere, egress, and ingress by profile.
 
     ``backend`` and ``proxy`` are internal in every profile. Outbound traffic
-    leaves through the non-internal ``application-egress`` network, and Caddy
-    publishes through ``ingress``. LOCAL has no ``application-egress`` and
-    creates ``ingress`` without IP masquerade: Docker still forwards inbound
-    connections to the published loopback ports, but a container on
-    ``ingress`` gets no source NAT and so no route to the internet.
+    leaves through the non-internal ``application-egress`` network in every
+    profile (#1399), and Caddy publishes through ``ingress``. LOCAL creates
+    ``ingress`` without IP masquerade: Docker still forwards inbound
+    connections to the published loopback ports, but the containers on it
+    (Caddy, Mailpit, and the launch-day spike shards the operator script
+    attaches) get no source NAT and so no route to the internet.
     """
     network = configuration.runtime_network
     result = {
@@ -583,12 +587,13 @@ def _networks(configuration):
             "ipam": {"config": [{"subnet": network.proxy}]},
         },
     }
+    # Insertion order is the rendered order; Production's is unchanged.
+    result["application-egress"] = {}
     if configuration.profile is DeploymentProfile.LOCAL:
         result["ingress"] = {
             "driver_opts": {"com.docker.network.bridge.enable_ip_masquerade": "false"}
         }
     else:
-        result["application-egress"] = {}
         result["ingress"] = {}
     return result
 
@@ -753,8 +758,8 @@ def _mailpit(configuration):
             "MP_UI_BIND_ADDR": "0.0.0.0:8025",
             "MP_DATABASE": "/data/mailpit.db",
             "MP_MAX_MESSAGES": str(MAILPIT_MAX_MESSAGES),
-            # No reverse DNS on connecting containers: there is no egress and
-            # nothing to learn from it.
+            # No reverse DNS on connecting containers: Mailpit has no egress
+            # and nothing to learn from it.
             "MP_SMTP_DISABLE_RDNS": "true",
             # Mailpit relays only when told to; say so explicitly, and render
             # no relay, forward, webhook or POP3 setting (a test pins this).

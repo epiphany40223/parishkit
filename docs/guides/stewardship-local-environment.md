@@ -35,10 +35,13 @@ topology a production host runs, rendered for the `local` profile: Caddy on
 `https://localhost:8443` with its own certificate authority, the web, worker,
 scheduler, mail-dispatch and installer services, PostgreSQL and Valkey, all
 under `/opt/parishkit` with real Linux ownership. The image is built inside the
-VM from your checkout, including uncommitted edits to tracked files. Nothing in
-the VM can reach the Internet from the application networks, and nothing can
-email a real person: mail goes to Mailpit on `http://localhost:8025` and
-ParishSoft is a fake service with a synthetic parish.
+VM from your checkout, including uncommitted edits to tracked files. The
+application services have the same route out to the Internet as on a
+production host; Caddy, Mailpit and the fake ParishSoft have none. Code
+checks keep mail on Mailpit (`http://localhost:8025`), ParishSoft on a fake
+service with a synthetic parish and Google sign-in on a stand-in client, so
+nothing can email a real person. The one real provider the VM can reach is
+Slack, and only with a test token you install yourself.
 
 ## Prerequisites
 
@@ -488,11 +491,19 @@ changes the environment. The run is:
 2. From the laptop, `curl -k https://localhost:8443/` answers from gunicorn
    (`via: 1.1 Caddy`), `/health/` and `/metrics` answer 404, and nothing but
    8443 and 8025 is forwarded.
-3. No egress: inside the VM,
-   `sudo docker compose -p parishkit-local exec caddy wget -T 5 -O- http://1.1.1.1/`
-   fails, the `application-egress` network does not exist, web is on
-   `backend` and `proxy` only, and `parishkit-local_ingress` carries
-   `com.docker.network.bridge.enable_ip_masquerade: false`.
+3. Networks: inside the VM, with `dc="sudo docker compose -p parishkit-local"`:
+   - `$dc exec caddy wget -T 5 -O- http://1.1.1.1/` and
+     `$dc exec mailpit wget -T 5 -O- http://1.1.1.1/` fail;
+   - `$dc exec fake-parishsoft python3 -c "import socket; socket.create_connection(('1.1.1.1', 80), 5)"`
+     fails, and the same command run in `web` (or `worker`) succeeds (a
+     plain TCP connection, so no certificate is checked against the fake
+     clock);
+   - `for c in $($dc ps -q); do sudo docker inspect --format '{{.Name}}: {{range $n, $_ := .NetworkSettings.Networks}}{{$n}} {{end}}' "$c"; done`
+     lists each container's networks: web is on `backend`, `proxy` and
+     `application-egress`, and Caddy, Mailpit and `fake-parishsoft` are not
+     on `application-egress`;
+   - `sudo docker network inspect parishkit-local_ingress --format '{{index .Options "com.docker.network.bridge.enable_ip_masquerade"}}'`
+     prints `false`.
 4. Ownership: `/opt/parishkit` is `10001:10001` mode `0700`; credential and
    fake-configuration files are `0600` owned by `10001`.
 5. `snapshot`, `down`, `start`, `reset`, `reset --reinstall` and `status`
@@ -535,3 +546,9 @@ specification's
 [safety guarantees](../specs/stewardship/local-environment/spec.md#safety-guarantees)
 for why a LOCAL deployment cannot email a real Family, and what each
 integration can reach.
+
+Slack is the one real provider the VM can reach. Install only a separate
+test bot token whose Slack app is in a test channel, never the production
+token: nothing in the code can tell them apart, and the local environment's
+alerts carry no environment label, so with the production token they would
+post to the production channel looking much like production's own.
