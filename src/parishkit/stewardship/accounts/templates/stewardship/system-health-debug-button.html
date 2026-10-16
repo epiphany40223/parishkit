@@ -1,22 +1,33 @@
 {% load i18n stewardship %}{% comment %}
-  Turn off debug logging's button (ADM-13 PR 6b), or the same button greyed
-  with its reason: the debug-off switch is already set (who set it and
-  when), or no service reports debug logging any more. Below it, Allow
-  debug logging again's button (PR 6c), offered only in Testing while the
-  switch is set, else greyed with its reason (Production, or no switch). Shared by the Turn
-  off debug logging region and the copy the polled status region carries
-  (template[data-live-mirror]), which live-status-v1.js puts in place on
-  each update, so the button follows a switch another Administrator sets
-  and services that stop logging in debug form. ``health`` is
-  system_health.SystemHealth and ``debug_actor`` the address of who set
-  the switch. ``mirrored`` (the polled copy) leaves the CSRF token empty,
-  so the polled markup does not change on every poll; live-status-v1.js
-  fills it from the page's own token when it copies the button in. Each
-  button posts its preview step without a page load and opens its review
-  dialog (data-review-open, #1356) with its confirmation.
-{% endcomment %}{% with switch=health.debug_switch %}{% if switch.active or not health.debug_lines %}<p>{% button type="button" disabled aria-describedby="debug-off-reason" %}{% translate "Turn off debug logging" %}{% endbutton %}</p>
-<p class="help" id="debug-off-reason">{% if switch.active %}{% if debug_actor %}{% blocktranslate with actor=debug_actor trimmed %}Debug logging was turned off by {{ actor }} at{% endblocktranslate %}{% else %}{% translate "Debug logging was turned off at" %}{% endif %} <time datetime="{{ switch.set_at|instant }}" data-local-instant>{{ switch.set_at|instant }}</time>.{% else %}{% translate "Debug logging is off in every service that reports." %}{% endif %}</p>
-{% else %}<form method="post" action="{% url 'admin:system_health' %}" data-review-open="debug-off-review"><input type="hidden" name="csrfmiddlewaretoken" value="{% if not mirrored %}{{ csrf_token }}{% endif %}"><input type="hidden" name="action" value="debug_off_preview">{% button type="submit" %}{% translate "Turn off debug logging" %}{% endbutton %}</form>{% endif %}
-{% if switch.active and health.mode == "testing" %}<form method="post" action="{% url 'admin:system_health' %}" data-review-open="debug-allow-review"><input type="hidden" name="csrfmiddlewaretoken" value="{% if not mirrored %}{{ csrf_token }}{% endif %}"><input type="hidden" name="action" value="debug_allow_preview">{% button type="submit" variant="secondary" %}{% translate "Allow debug logging again" %}{% endbutton %}</form>
-{% else %}<p>{% button type="button" variant="secondary" disabled aria-describedby="debug-allow-reason" %}{% translate "Allow debug logging again" %}{% endbutton %}</p>
-<p class="help" id="debug-allow-reason">{% if health.mode != "testing" %}{% translate "In Production only the server operator can clear the debug-off switch." %}{% else %}{% translate "The debug-off switch is not set." %}{% endif %}</p>{% endif %}{% endwith %}
+  Turn off debug logging's live part (ADM-13 PR 6b; #1214, Administrator
+  decision 2026-10-15): each control is drawn only while it can act (the
+  #1295 rule), so no button is ever shown greyed here.
+  - While the debug-off switch is set: only the status line, who set it and
+    when, with how the switch is cleared in its toggletip; in Testing,
+    Allow debug logging again's button (PR 6c) follows it. Production never
+    draws that button: only the server operator clears the switch there.
+  - Else, while some service reports debug logging in effect: the region's
+    explanation (its toggletip says what the switch does, never how it is
+    cleared, which only matters once it is set) and Turn off debug
+    logging's button.
+  - Else: the plain status line that debug logging is off everywhere.
+  Shared by the Turn off debug logging region and the copy the polled
+  status region carries (template[data-live-mirror]), which
+  live-status-v1.js puts in place on each update, so the controls follow a
+  switch another Administrator sets and services that stop logging in debug
+  form. The states differ in height, so the region's target is
+  data-live-mirror-hold: it waits while the pointer is over the tile grid
+  and nothing moves under it. ``health`` is system_health.SystemHealth and
+  ``debug_actor`` the address of who set the switch. ``mirrored`` (the
+  polled copy) leaves the CSRF token empty, so the polled markup does not
+  change on every poll; live-status-v1.js fills it from the page's own
+  token when it copies the button in. Each button posts its preview step
+  without a page load and opens its review dialog (data-review-open,
+  #1356) with its confirmation. The server checks every condition
+  again and keeps its refusals.
+{% endcomment %}{% if health.mode == "testing" %}{% translate "In Testing, Allow debug logging again on this page clears the switch. The server operator can also clear it, offline, with the services stopped, using pk-stewardship debug-off-clear. When the services start again, those whose server setting is still on log in debug form again." as clear_tip %}{% else %}{% translate "Only the server operator can clear the switch, offline, with the services stopped, using pk-stewardship debug-off-clear; this page cannot. When the services start again, those whose server setting is still on log in debug form again." as clear_tip %}{% endif %}{% with switch=health.debug_switch %}{% if switch.active %}<p data-debug-status="set"><span id="debug-off-status">{% if debug_actor %}{% blocktranslate with actor=debug_actor trimmed %}Debug logging was turned off by {{ actor }} at{% endblocktranslate %}{% else %}{% translate "Debug logging was turned off at" %}{% endif %} <time datetime="{{ switch.set_at|instant }}" data-local-instant>{{ switch.set_at|instant }}</time>.</span> {% include "stewardship/components/toggletip.html" with tip_id="debug-off-status-tip" tip_label_id="debug-off-status" tip_text=clear_tip %}</p>
+{% if health.mode == "testing" %}<form method="post" action="{% url 'admin:system_health' %}" data-review-open="debug-allow-review"><input type="hidden" name="csrfmiddlewaretoken" value="{% if not mirrored %}{{ csrf_token }}{% endif %}"><input type="hidden" name="action" value="debug_allow_preview">{% button type="submit" variant="secondary" %}{% translate "Allow debug logging again" %}{% endbutton %}</form>
+{% endif %}{% elif health.debug_lines %}{% translate "It sets a debug-off switch that each service reads within about a minute, so none needs restarting. Lines already written stay in the logs. Once it is set, the help beside its status line says how it is cleared." as intro_tip %}<p><span id="debug-off-intro">{% translate "Turn debug logging off in every service now, without restarting them. It needs a recent Google sign-in." %}</span> {% include "stewardship/components/toggletip.html" with tip_id="debug-off-intro-tip" tip_label_id="debug-off-intro" tip_text=intro_tip %}</p>
+<form method="post" action="{% url 'admin:system_health' %}" data-review-open="debug-off-review"><input type="hidden" name="csrfmiddlewaretoken" value="{% if not mirrored %}{{ csrf_token }}{% endif %}"><input type="hidden" name="action" value="debug_off_preview">{% button type="submit" %}{% translate "Turn off debug logging" %}{% endbutton %}</form>
+{% else %}<p data-debug-status="off">{% translate "Debug logging is off in every service that reports." %}</p>
+{% endif %}{% endwith %}
