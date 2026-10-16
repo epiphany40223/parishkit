@@ -5,6 +5,7 @@ running, web processes are counted), the problems list, and the document
 projection, without a database.
 """
 
+import re
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import UUID, uuid4
@@ -17,6 +18,7 @@ from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.system_health import (
     INCIDENTS,
     LOADED_TILES,
+    MAIL_SUMMARIES,
     REGISTRY,
     TILES,
     AcceptPreview,
@@ -690,6 +692,200 @@ def test_a_stopped_mail_sender_links_the_deployment_runbook():
         'href="https://github.com/epiphany40223/parishkit/blob/main/docs/guides/'
         'stewardship-deployment-runbook.md"' in body
     )
+
+
+# ------------------------------------------------- the Mail tile (slice 3)
+
+
+def senders(main="running", mail="running", **values):
+    """The two mail consumers' lines in these sender states, beside the web
+    portal; ``values`` go to both rows."""
+    return group_processes(
+        [
+            row(),
+            row("mail-dispatch", sender_state=main, **values),
+            row("mail-dispatch", "mail", sender_state=mail, **values),
+        ],
+        NOW,
+    )
+
+
+def mail_said(model):
+    """The Mail tile's counted summary row text, without its markup."""
+    tile = section(whole({"health": model}), 'id="health-mail"')
+    counted = tile.split('class="health-said">', 1)[1].split("</span>", 1)[0]
+    return re.sub(r"<[^>]+>", "", counted).strip()
+
+
+def test_the_mail_summary_names_the_first_wait_that_holds():
+    """Each Working summary in MAIL_SUMMARIES's order: a pause outranks every
+    limit, a limit outranks held planning and retries, and Sending or
+    Nothing due only when nothing waits (decision 3: waits stay Working)."""
+    until = NOW + timedelta(minutes=40)
+    cases = [
+        (
+            health(
+                delivery_paused=True,
+                paused_at=NOW,
+                processes=senders("daily_limit"),
+                planning_held=True,
+            ),
+            "paused",
+            f"Paused by an Administrator since {NOW.isoformat()}",
+        ),
+        (
+            health(
+                processes=senders("gmail_held", "daily_limit", sender_until=until),
+                daily_resume_at=until,
+                retry_waiting=2,
+            ),
+            "daily_limit",
+            f"Waiting for the daily limit until about {until.isoformat()}",
+        ),
+        (
+            health(processes=senders("running", "gmail_held", sender_until=until)),
+            "gmail_held",
+            f"Held at Gmail's limit until {until.isoformat()}",
+        ),
+        (
+            health(planning_held=True, retry_waiting=3, send_active=True),
+            "planning_held",
+            "Planning is held",
+        ),
+        (
+            health(retry_waiting=1, send_active=True),
+            "retry",
+            "1 email waiting to retry",
+        ),
+        (health(retry_waiting=3), "retry", "3 emails waiting to retry"),
+        (health(send_active=True), "sending", "Sending"),
+        (health(), "idle", "Nothing due"),
+    ]
+    assert {kind for _, kind, _ in cases} == set(MAIL_SUMMARIES)
+    for model, kind, words in cases:
+        assert model.mail_summary.kind == kind
+        # Every wait is deliberate, so the tile stays Working and names it.
+        assert dashboard(model).tiles[0].state == "working", kind
+        assert mail_said(model) == words, kind
+
+
+def test_mail_summary_times_are_browser_local_clock_times():
+    """The summary's times read as a clock time (with "tomorrow" or the full
+    date when another day), never with a zone label."""
+    model = health(delivery_paused=True, paused_at=NOW)
+    tile = section(whole({"health": model}), 'id="health-mail"')
+    stamp = NOW.isoformat()
+    assert (
+        f'<time datetime="{stamp}" data-local-instant data-time-only data-time-day>'
+        in tile
+    )
+    assert "UTC" not in tile
+
+
+def test_gmails_limit_names_the_earliest_time_sending_resumes():
+    """Both senders held at Gmail's limit until different times: the summary
+    says the earlier, when sending resumes."""
+    early, late = NOW + timedelta(hours=1), NOW + timedelta(hours=2)
+    held = group_processes(
+        [
+            row("mail-dispatch", sender_state="gmail_held", sender_until=late),
+            row("mail-dispatch", "mail", sender_state="gmail_held", sender_until=early),
+        ],
+        NOW,
+    )
+    summary = health(processes=held).mail_summary
+    assert (summary.kind, summary.at) == ("gmail_held", early)
+
+
+def test_a_limit_held_by_a_stopped_sender_is_not_named():
+    """Only a running consumer's limit is a reason sends wait now."""
+    stopped = group_processes(
+        [row(), row("mail-dispatch", age=600, sender_state="gmail_held")], NOW
+    )
+    assert health(processes=stopped).mail_summary.kind == "idle"
+
+
+def tiles(context):
+    """The page's tiles alone, without the polled region's copies of them."""
+    return page(context)[1]
+
+
+def test_both_mail_senders_read_as_one_line_while_they_agree():
+    """Two consumers in one state are one line; differing ones get a line
+    each, and Why sends are waiting names a shared reason once."""
+    agreed = tiles({"health": health()})
+    assert agreed.count("data-sender=") == 1
+    assert '<li data-sender="main-mail"><strong>Both mail senders:</strong>' in agreed
+    since = NOW - timedelta(minutes=5)
+    halted = tiles(
+        {"health": health(processes=senders("halted", "halted", sender_since=since))}
+    )
+    assert "Both mail senders are halted." in halted
+    assert halted.count("are halted.") == 1 and "is halted." not in halted
+    differ = tiles({"health": health(processes=senders("halted", "running"))})
+    assert differ.count("data-sender=") == 2
+    assert "Mail sender 1 is halted." in differ
+    assert '<li data-sender="mail"><strong>Mail sender 2:</strong>' in differ
+    # Halts that began at different times are different lines.
+    apart = health(
+        processes=group_processes(
+            [
+                row("mail-dispatch", sender_state="halted", sender_since=since),
+                row("mail-dispatch", "mail", sender_state="halted", sender_since=NOW),
+            ],
+            NOW,
+        )
+    )
+    assert len(apart.sender_groups) == 2
+    # A stopped consumer is always its own line, with its own last report,
+    # even when both stopped reporting at once.
+    stopped = health(
+        processes=group_processes(
+            [row("mail-dispatch", age=600), row("mail-dispatch", "mail", age=600)],
+            NOW,
+        )
+    )
+    assert len(stopped.sender_groups) == 2
+    body = tiles({"health": stopped})
+    assert body.count("Only the server operator can start it:") == 2
+
+
+def tip_texts(body):
+    """The text of every toggletip bubble in ``body``."""
+    return re.findall(r'class="toggletip-bubble" id="[^"]+" hidden>([^<]*)<', body)
+
+
+def test_mail_explanations_sit_in_toggletips_beside_their_reason():
+    """Why each wait happens is one click away (ui-conventions "Page help");
+    the reason, its time and its links stay visible."""
+    until = NOW + timedelta(minutes=40)
+    held = tiles(
+        {
+            "health": health(
+                processes=senders("daily_limit", "outage_paused", sender_until=until),
+                planning_held=True,
+            )
+        }
+    )
+    tips = " ".join(tip_texts(held))
+    for words in (
+        "Sending resumes by itself as the last 24 hours' count falls",
+        "No new Family emails are being prepared right now",
+        "After the email provider fails, sending pauses for a while",
+    ):
+        assert words in tips, words
+        # The explanation is not also in the visible text.
+        assert held.count(words) == 1, words
+    assert "Waiting for the daily limit (Mail sender 1)." in held
+    assert 'aria-controls="mail-wait-main-tip"' in held
+    assert 'aria-describedby="mail-planning"' in held
+    # The outage pause links its runbook, as the spec asks.
+    assert "stewardship-launch-runbooks.md#mail-provider-outage" in held
+    halted = tiles({"health": health(processes=senders("halted", "running"))})
+    assert "A fault that waiting cannot fix stopped all sending" in " ".join(
+        tip_texts(halted)
+    )
+    assert 'id="mail-sender-main-tip"' in halted
 
 
 def test_an_unrecorded_follow_up_refusal_is_a_problem_linking_its_email():

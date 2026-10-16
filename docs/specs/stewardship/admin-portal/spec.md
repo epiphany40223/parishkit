@@ -5468,11 +5468,18 @@ approaches: a metrics dashboard with time-series charts, a restyle of the
 current page, a colour-only status, hiding healthy areas, and a second page
 for details.
 
-Status: the frame is built. The first dashboard pull request delivered
-slices 2a and 2b of the [delivery slices](#dashboard-delivery-slices),
-together with the parts of slice 1 the frame needs: the registry's tile and
-severity for every existing kind, the split of a grouped process problem,
-and `severity` and `tiles` in the command's document. The Administrator
+Status: the frame and the Mail tile are built. The first dashboard pull
+request delivered slices 2a and 2b of the
+[delivery slices](#dashboard-delivery-slices), together with the parts of
+slice 1 the frame needs: the registry's tile and severity for every
+existing kind, the split of a grouped process problem, and `severity` and
+`tiles` in the command's document. Slice 3 delivered the Mail tile: its
+Working summaries in a fixed order (see
+[why sends are waiting](#why-sends-are-waiting)), one line for both mail
+senders while they agree, and its explanations moved into toggletips and
+"About this page". A halt's kind and **Clear the halt** wait for ADM-13
+PR 4, which adds halt identities, so the Mail tile has no action region
+yet. The Administrator
 answered the dashboard's questions on 2026-10-13; the
 [decisions](#administrator-decisions-2026-10-13) record the answers. Until
 the rest of slice 1 lands, the frame applies these defaults:
@@ -5501,8 +5508,8 @@ the rest of slice 1 lands, the frame applies these defaults:
   the line; the Admin session's own dialog offers to sign in again.
 - **Families the form cannot open, before any ParishSoft download**, is
   Working, with the summary "No ParishSoft data yet".
-- **Working summaries** come from a first closed set, which slices 3 to 6
-  refine tile by tile.
+- **Working summaries** come from a first closed set, which slices 4 to 6
+  refine tile by tile; the Mail tile's are final (slice 3).
 
 #### Overall status line
 
@@ -5601,7 +5608,7 @@ Working with a summary that says so ("No current campaign").
 
 | Tile | Error when | Warning when | Working summary (examples) | Show details reveals | Action regions, in their fixed order after the problems |
 | --- | --- | --- | --- | --- | --- |
-| **Mail** | a mail consumer is halted (`sender_halted`); a mail consumer is not running, or mail dispatch has not reported (the `mail-dispatch` part of `not_running` and `not_reported`); the email provider is unavailable (`mail_provider_unavailable`); an address follow-up's permanent refusal could not be set aside (`refusal_unrecorded`, #1201) | a mail consumer is paused after an outage (`sender_outage`) | "Sending"; "Nothing due"; "Paused by an Administrator since 9:12 AM"; "Waiting for the daily limit until about 3:10 PM"; "Held at Gmail's limit until 4:00 PM"; "Planning is held"; "3 emails waiting to retry" | the [why sends are waiting](#why-sends-are-waiting) panel (every reason, the 24-hour count, the resume time, the Family email progress link) and the [mail sender panel](#mail-sender-panel) (each consumer's line and any open incident) | **Clear the halt** ([ADM-13 PR 4](#clear-a-halted-mail-sender), not built). The panel content keeps its links: the deployment runbook under a not-running line, Pause and resume mail beside the pause line, and Outgoing mail: waiting to retry beside the retry line. |
+| **Mail** | a mail consumer is halted (`sender_halted`); a mail consumer is not running, or mail dispatch has not reported (the `mail-dispatch` part of `not_running` and `not_reported`); the email provider is unavailable (`mail_provider_unavailable`); an address follow-up's permanent refusal could not be set aside (`refusal_unrecorded`, #1201) | a mail consumer is paused after an outage (`sender_outage`) | the first that holds, in the order [why sends are waiting](#why-sends-are-waiting) lists | the [why sends are waiting](#why-sends-are-waiting) panel (every reason, the 24-hour count, the resume time, the Family email progress link) and the [mail sender panel](#mail-sender-panel) (each consumer's line and any open incident) | **Clear the halt** ([ADM-13 PR 4](#clear-a-halted-mail-sender), not built). The panel content keeps its links: the deployment runbook under a not-running line, the mail-provider outage runbook beside an outage pause, Pause and resume mail beside the pause line, and Outgoing mail: waiting to retry beside the retry line. |
 | **ParishSoft refresh** | a refused large change (`source_destructive_change`, whose problem block holds the refused counts table); a different organization (`source_tenant_mismatch`); while the campaign has Reminders still scheduled, an unknown No-reminders WorkGroup (`workgroup_missing`, new in the shared list, the #861 concern) | the last full refresh failed (`source_failed`); ParishSoft could not be reached (`source_failing`); the data is out of date (`source_late`); old copies are not being removed (`source_retention_failing`); an unknown No-reminders WorkGroup while no Reminder is scheduled | "Data as of 6:02 AM; connection working", in the words of [ParishSoft data age and connection](../operations/spec.md#parishsoft-data-age-and-connection); "Refreshes held during the email send until about 4:30 PM" | the [ParishSoft refresh panel](#parishsoft-refresh-panel): refresh times, and held and skipped refreshes | **Accept this change once** (its tick box, preview and the example Families of #1213), directly after the refusal's counts table, as the Administrator asked on #1210. The problem sentences keep their links (the ParishSoft outage runbook, Check the No-reminders WorkGroup setting), and Refresh from ParishSoft ends the panel content. |
 | **Backups** | a backup is overdue (`backup_rpo_breach`) | an off-site copy failed (`backup_offsite_failed`); the backup key changed (`backup_key_changed`); the newest backup, finished after the configured key was activated, was sealed to another key (`backup_key_mismatch`, new); a requested backup failed, did not finish or was not picked up (`backup_request_failed`, new, until a newer request or a newer finished backup); in Production, off-site copies are not set up (`offsite_missing`, new) | "Last backup 3 hours ago; off-site copy 3 hours ago"; "Backup requested at 10:42 AM is running" | the [backups panel](#backups-panel) | **Take a backup now**. Off-site backup settings stays in the panel content beside the off-site line. |
 | **Debug logging** | none | in Production, debug logging is in effect in any service (`debug_logging`; a warning because nothing stops working, [decision 11](#administrator-decisions-2026-10-13)) | "Off"; "Turned off from this page by … at …"; "On in 4 services, as expected in Testing" | the [debug logging panel](#debug-logging-panel) | **Turn off debug logging**, then **Allow debug logging again**, which only Testing offers; in Production it stays greyed with its reason ([clearing the switch](#turn-off-debug-logging)). |
@@ -6049,7 +6056,32 @@ When nothing is waiting, the panel says "Nothing is holding Family email
 back". During a send it links Family email progress, which counts the
 send's progress; this panel does not count it again. "About this page"
 explains the daily limit (including the 200 sends kept for receipts,
-reports and alerts), Gmail's own limit, and the outage pause.
+reports and alerts), Gmail's own limit, and the outage pause, under one
+**Mail** entry named for the tile. Each reason's line keeps its data and
+links visible; why it happens (the daily limit, Gmail's limit, the outage
+pause, held planning) is in a toggletip beside it, as
+[page help](../ui-conventions/spec.md#page-help) asks. A reason that both
+mail senders share is listed once ("Waiting for the daily limit (Both
+mail senders)").
+
+While the Mail tile is Working, its summary names the first of these that
+holds, because a deliberate wait says more than "Sending" does and an
+Administrator's pause holds everything else back
+([decision 3](#administrator-decisions-2026-10-13)):
+
+1. "Paused by an Administrator since 9:12 AM";
+2. "Waiting for the daily limit until about 3:10 PM", while a running mail
+   sender is held at it;
+3. "Held at Gmail's limit until 4:00 PM", likewise, with the earliest
+   time when both mail senders are held until different times;
+4. "Planning is held";
+5. "3 emails waiting to retry";
+6. "Sending", during a Family email send;
+7. "Nothing due".
+
+Each time is a browser-local clock time, with "tomorrow" or the full date
+when it falls on another day. A limit held only by a sender that is not
+running is not named: that sender's stopped state is the tile's error.
 
 #### Mail sender panel
 
@@ -6072,7 +6104,10 @@ from its [service status record](#service-status-records):
   can start the service, linking the
   [deployment runbook](../../../guides/stewardship-deployment-runbook.md).
 
-When the two consumers differ, each has its own line. An open
+When the two consumers differ, each has its own line; while they show
+the same state (and, for a halt, an outage pause or Gmail's limit, the same
+time), one line names both ("Both mail senders: Running."). A stopped
+consumer always has its own line, with when it last reported. An open
 `mail_provider_unavailable` or `mail_provider_failed` incident is named in
 words, with when it opened. "About this page" explains each state and what
 the system does about it.
