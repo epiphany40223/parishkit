@@ -797,13 +797,18 @@
       // available only while every ticked row is of its kind. While one is
       // unavailable for that reason, the line says why: the table's
       // data-kind-hint-<kind> when the ticked rows are all of one kind, or
-      // its data-kind-hint-mixed when they mix kinds.
-      const kinds = new Set(all.filter((node) => node.checked)
-        .map((node) => node.dataset.confirmKind || ""));
+      // its data-kind-hint-mixed when they mix kinds. A row whose box lists
+      // several kinds (space-separated: the Census changes decisions a
+      // row's Review offers, #528) fits each of them; a table whose rows
+      // do so gives one data-kind-hint for every case.
+      const ticked = all.filter((node) => node.checked);
+      const kinds = new Set(ticked.map((node) => node.dataset.confirmKind || ""));
       const fits = (node) => chosen > 0 && (!node.dataset.confirmKind
-        || (kinds.size === 1 && kinds.has(node.dataset.confirmKind)));
+        || ticked.every((row) => (row.dataset.confirmKind || "").split(/\s+/)
+          .includes(node.dataset.confirmKind)));
       const kindHint = !chosen || actions.every(fits) ? ""
-        : scope.getAttribute(`data-kind-hint-${kinds.size > 1 ? "mixed" : [...kinds][0]}`) || "";
+        : scope.dataset.kindHint
+          || scope.getAttribute(`data-kind-hint-${kinds.size > 1 ? "mixed" : [...kinds][0]}`) || "";
       // With no rows at all the table itself says it is empty, unless the
       // table gave an empty-table reason, which then stays in the line.
       const none = !all.length && Boolean(noneHint)
@@ -3801,8 +3806,14 @@
     // Applied: redraw every region from the table's own address. A dialog
     // whose form sits outside the table's region (its rows tied to it by
     // their form attribute) finds the region from the button that opened it.
+    // A page whose view travels only in POST bodies (Census changes, #528)
+    // has no address that shows it again, so its dialog posts to the page
+    // itself with the view's fields, and the answer is that page, redrawn
+    // from directly (data-confirm-answer-page).
     const region = form.closest(REGIONS) || state.opener.closest(REGIONS);
-    const fresh = await freshPage(region?.dataset.refreshUrl || window.location.href);
+    const fresh = dialog.hasAttribute("data-confirm-answer-page")
+      ? new DOMParser().parseFromString(answer.text, "text/html")
+      : await freshPage(region?.dataset.refreshUrl || window.location.href);
     if (!fresh) return;
     state.done = true;
     dialog.close();
