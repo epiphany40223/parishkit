@@ -1424,24 +1424,36 @@ A [service status record](../admin-portal/spec.md#service-status-records)
 write stopped by its own statement or lock limit is a WARNING
 `task_timed_out` that names no task, even when the write ran on a task's
 thread, because no task was stopped. Each one is recorded; a process tries
-the write at most once a minute, which spaces them. There are two
+the write at most once a minute, which spaces them. There are three
 exceptions to the durable entry, which go to the process log only:
 
 - an online service's `startup_database_wait` timeout, because the database
   is what is unavailable (see [online service startup](#online-service-startup));
 - a configuration or credential installer's service status write timeout,
   because the installers' logins have no operational-log grant, and the
-  record is for display only, so it does not justify giving them one.
+  record is for display only, so it does not justify giving them one;
+- a refused Admin input's durable write stopped by its own limits
+  (`refusal_log_write`), because a second durable write would most likely
+  meet the same limit and delay the refused answer again (see
+  [Admin input refusals](#admin-input-refusals)).
 
 Each runtime login may write only the operational log entries its own code
 writes (#389). The table's writer trigger holds a closed list of (schema,
 event, level) per login: every login may record the four timeout events at
 INFO, WARNING or ERROR; web adds only an unusable source Member, a Family
-engagement failure and a failed
+engagement failure, a failed
 [Admin command-line command](../admin-automation/spec.md#correlation-and-logging)
-(#617), and never writes CRITICAL; the worker and scheduler add
-the entries of their own failure, health and lag paths. No direct entry may
-name an actor, and each gets the database's own time. Entries written inside
+(#617) and a refused Admin input (`admin_input_refused`, schema
+`refusal`, at INFO or WARNING; see
+[Admin input refusals](#admin-input-refusals)), and never writes CRITICAL;
+the worker and scheduler add the entries of their own failure, health and
+lag paths. No direct entry may name an actor, except a refused Admin
+input, which must name the user it refused: the trigger refuses those two
+web tuples with no actor, so the database itself keeps anonymous refusals
+out. That exception holds for those two tuples only, and moves no trust
+boundary, because the web login already names an actor on every audit
+record it writes. Each entry gets the
+database's own time. Entries written inside
 SECURITY DEFINER functions run as the schema owner and are not limited by it.
 A new write path therefore needs a forward migration that extends the list.
 
@@ -1501,6 +1513,191 @@ bundles, or the database.
 No health or metrics endpoint exposes parish names, Family/Member data, emails,
 tokens, campaign content, or credentials. Caddy never proxies any of these three
 internal paths, even when a caller supplies a valid metrics credential.
+
+### Admin input refusals
+
+Every Admin request whose input is refused leaves an operational log entry
+that says what was refused and why
+([#1403](https://github.com/epiphany40223/parishkit/issues/1403)). One
+event, `admin_input_refused` (schema `refusal`), covers every kind of
+refusal, with a closed reason code saying which, so a new kind needs no
+migration. A refusal is a 400, 403, 404, 409, 410 or 422 answer to a request
+that resolved to an Admin page: a field or form error, a stale page,
+unexpected or duplicated form fields, an expired or altered
+[review](../ui-conventions/spec.md#review-dialog) preview, a denial, an
+action that needs a fresh sign-in, or a CSRF failure. A 404 for an address
+that names no Admin page is not input and is not recorded. A control drawn
+[unavailable](../ui-conventions/spec.md#prerequisite-gates) is not a
+refusal, since nothing was submitted; a request forged past it is. The
+[admin command line](../admin-automation/spec.md#refusal-entry) records its
+refusals as the same event.
+
+One shared hook records them: a middleware that sees each Admin response
+before it becomes a page for people, so no view makes a logging call of its
+own. The reason comes from what the refusal already carries: its closed
+`ErrorCode` values and field identifiers; a closed reason code on the
+refusal itself, which the shared refusals fix (`stale_page`,
+`unexpected_fields`, `expired_preview`, `bad_signature`,
+`fresh_authentication_required`, `csrf_failed`, `denied`); and the Django
+error codes of a refused form (`required`, `invalid_choice`, `max_length`
+and so on), which every Admin form records through one shared form base.
+A refusal with no reason of its own has reason `unclassified` and names
+its exception's class in `exception_class`. Django's CSRF reason text is
+never used.
+
+**Allow-list.** The context holds closed values only, mirrored by
+`stewardship_safe_context_v1`. Anything not on the list is dropped, not
+redacted:
+
+- `route`, the resolved page name (such as `admin:campaign_create`), never
+  the path or query, with `method` and `status`; or, from the command line,
+  `command`, its catalog name. Every entry carries exactly one of `route`
+  and `command`;
+- `form` and `fields`, server-owned form and field names, at most 10.
+  `fields` comes from the form's own declared fields, never from the keys a
+  request submitted. A formset field keeps its prefix and index
+  (`slots-0-time`), as `web.contracts.FieldError` field identifiers allow;
+- `codes`, the `ErrorCode` and Django error codes, at most 10;
+- `reason`, the closed reason code, always present. It also keys the
+  sentence [System logs](../admin-portal/spec.md#activity-groups) shows, so
+  an entry reads the same in any language and after a message's wording
+  changes;
+- `exception_class`, only with reason `unclassified`: the exception type's
+  own class name in lowercase snake form (`ValueError` is `value_error`,
+  `StaleRecordError` is `stale_record_error`), never its module or text;
+- `expected` and `actual`, only for reasons whose values are allow-listed
+  settings: enum words, IANA zone names, counts, sizes, content types and
+  versions (for example a campaign zone refused because the parish's stored
+  zone differs). Each is at most 64 characters of `A-Z`, `a-z`, `0-9` and
+  `_+./-`, so never an `@`. Only Python decides which reasons may carry
+  them; the database checks their shape, not their reason;
+- `unexpected_count`, for reason `unexpected_fields`, the number of
+  submitted field names that are not the form's own. Those names are
+  client-supplied and are never recorded. A field of the form's own that
+  was sent twice is named in `fields`, with the code `duplicate`;
+- `mode`, `testing` or `production`, the global mode when the refusal was
+  made; and
+- `capped`, below.
+
+Identifier values (`route`, `method`, `form`, `fields`, `codes`, `reason`,
+`exception_class`) match `^[a-z][a-z0-9_:-]{0,63}$`; `method` is stored in
+lowercase. `command` is a catalog name, at most 64 characters matching
+`^[a-z][a-z-]*( [a-z][a-z-]*){0,3}$` (such as `refresh start`), the same
+shape `admin_command_failed` accepts. Python holds the closed sets, as it
+does for `failure_kind`, so a new reason code needs no migration. The
+entry's correlation is the request's. Its actor is the signed-in user's
+internal `PortalUser` id, never an address; this is the one operational
+entry written directly that names an actor, and the writer trigger refuses
+one without an actor (see the writer list above). The web code asserts that
+id; the column has no foreign key, as on every operational entry. The entry
+never holds submitted values, keys, credentials, tokens, codes, email
+addresses, names, postal addresses, phone numbers, notes or other free text,
+file contents or file names, request bodies, query strings or exception
+text.
+
+**Process-log line.** Every refusal, anonymous or capped included, writes
+one `admin_input_refused` line to the process log, at the entry's level,
+with the same allow-listed keys and nothing else. It names the actor's id
+only for a signed-in user. For a signed-in user it is written after the
+advisory lock and the count below, because it must say whether the entry
+was capped, and before the insert; when a limit stops the lock or the
+count, it is written then, without `capped`. An anonymous refusal writes it
+at once.
+It carries `capped: true` exactly when the entry does (the 30th of a
+budget, which is still written) and when the cap kept the entry out.
+
+**Levels.** The reason decides the level, not the status, so the page and
+the command line agree:
+
+| Reasons | Level |
+| --- | --- |
+| `denied` (the fixed reason of `UserFacingDenied` and of the access checks' refusals), `csrf_failed`, and each reason whose cause is server state or configuration rather than the input | WARNING |
+| `unclassified` | WARNING when the exception is a `PermissionError` or any subclass of it, INFO otherwise |
+| Every other reason, `fresh_authentication_required` included | INFO |
+
+Python keeps the WARNING reasons in one closed set. A step-up request is
+INFO although it is a 403: it is the ordinary first answer to every
+fresh-gated action. `audit.log_contract.REQUIRED` requires `reason` on a
+WARNING entry
+([what went wrong](../background-processing/spec.md#what-went-wrong-and-recovery)).
+
+**Who gets a durable entry.** Only a refusal for a signed-in Admin portal
+user is written to the operational log. An anonymous one (a CSRF failure on
+the sign-in page, an unauthenticated probe) has the process-log line only,
+so public traffic cannot allocate permanent rows, as for the sampled
+[sign-in denials](../admin-portal/spec.md#sign-in-activity).
+
+**Cap.** Each actor has two budgets of 30 durable entries per window, one
+for INFO entries and one for WARNING entries, so ordinary refusals cannot
+use up the room the denials need. A window is a fixed 10 minutes of UTC
+database time,
+`date_bin('10 minutes', statement_timestamp(), '2000-01-01 00:00+00')`, so
+it starts on the UTC hour and every 10 minutes after it whatever the
+server's zone. The count computes it from `statement_timestamp()` after the
+advisory lock is held, so it agrees with the database time the writer
+trigger stamps on the row, rather than with the transaction's start, which
+may come before a lock wait. The 30th entry of a budget in a window carries
+`capped: true`; later refusals of that
+level in that window have the process-log line only. Step-up requests count
+against the INFO budget: every durable row is kept for good, so every
+durable row is bounded, and an Administrator who meets 30 step-ups in 10
+minutes has nothing more to learn from a 31st. The count and the insert run
+in one short transaction that first takes a transaction advisory lock for
+that actor and level, so concurrent requests are serialised and the cap is
+exact. The count reads only that actor's refusal entries in the window,
+through a partial index on (`actor_id`, `created_at`) of
+`admin_input_refused` rows.
+
+**Writing.** The durable write runs after the view's transaction has ended,
+so a rolled-back view cannot take it with it: the hook writes only when the
+request's connection is in no atomic block, and otherwise leaves the
+process-log line only. It uses the request's own database connection, in a
+new short transaction of its own that sets `statement_timeout` to 2 seconds
+and `lock_timeout` to 1 second with `SET LOCAL`, the limits of
+`audit.timeouts`. It opens no second connection and does not use
+`audit.timeouts`' writer slot. The web login's connection limit allows one
+connection per request thread plus three (`database_provisioning`), and a
+private connection per refused request could go past it during a burst of
+refusals, failing other requests and the readiness probe. The request's
+connection is normally still open, because signing the user in used it;
+when it is not, Django opens it again within the deployment's
+`connect_timeout`. The transaction has three statements: the advisory lock
+(waiting at most 1 second), the count and the insert (at most 2 seconds
+each). The write therefore adds at most about 5 seconds to a refused
+answer, plus that reconnect when one is needed. It never raises, so a
+failure to record cannot change the answer. When a limit stops it, the
+entry is not written durably, and the process log records a WARNING
+`task_timed_out` naming the limit (`refusal_log_write`), the limit and the
+elapsed seconds, after the refusal's own line. That record stays in the
+process log only, one of the
+[exceptions to the durable entry](#observability-and-health) above.
+
+**Not duplicated.** Refusals that already leave a record keep it and get no
+second one: refused sign-ins (`admin_login_refused` and the sampled
+`admin_login_denied`), including a step-up sign-in by the wrong account,
+and refused automation sessions (`automation_session_refused`). The code
+that writes such a record marks the response as already recorded, and the
+hook skips a marked response, so each of those paths gives its own record
+and no `admin_input_refused` entry or line. A completed step-up stays
+recorded as `admin_step_up` or `automation_fresh_gate`; the refused request
+that asked for it is new information and is recorded, with reason
+`fresh_authentication_required`. Debug logging is unchanged, and the
+browser sends no report of its own: the server already knows every refusal
+it makes.
+
+**Not an audit event.** A refusal changed nothing. An audit record is
+written in the owning transaction, which a refused request often rolls
+back, carries ownership rules that do not fit, and is the record of
+effects, which refusals would flood.
+
+**Retention.** The operational log has no deletion path: its immutable
+guard refuses UPDATE and DELETE, and the cleanup jobs under
+[temporary retention](#temporary-retention-and-housekeeping) cover rotated
+log files only. Refusal entries are therefore kept indefinitely, like audit
+events ([retention and deletion](../data/spec.md#retention-and-deletion)).
+That is why they hold closed values only, only for signed-in users, and
+under the cap. If their volume ever needs a retention rule, that rule is a
+separate change with its own migration.
 
 ### ParishSoft data age and connection
 

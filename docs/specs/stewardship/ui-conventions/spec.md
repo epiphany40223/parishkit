@@ -1082,6 +1082,17 @@ changing it clears nothing. The summary loses the item for a field that
 clears, and goes once it lists nothing. This applies to every Admin form,
 Django-rendered ones included, through the shared page script.
 
+Every Admin refusal of input is logged with its reason
+([#1403](https://github.com/epiphany40223/parishkit/issues/1403)), whether
+it is shown at a field, in a summary or on a refusal page. The server
+records it through one shared hook, described under
+[Admin input refusals](../operations/spec.md#admin-input-refusals), so a
+page adds no logging call of its own. What a page must do is make its
+refusal carry a closed reason code or error codes: refuse through the
+shared refusal types and builders, give a new kind of refusal its own
+reason code, and build forms on the shared Admin form base. A refusal never
+logs the value it refused.
+
 ### Review, Apply and Change status
 
 **Rule.** A change to configuration or data is made by editing, then
