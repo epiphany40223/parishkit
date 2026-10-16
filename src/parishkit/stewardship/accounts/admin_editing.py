@@ -6,10 +6,11 @@ scope inside the request owner's transaction. The web process never installs
 YAML or claims that an accepted request has already applied.
 """
 
+import json
 import logging
 from datetime import datetime
 from urllib.parse import urlencode
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 from django.core import signing
 from django.core.exceptions import NON_FIELD_ERRORS
@@ -44,6 +45,7 @@ from parishkit.stewardship.web.refusals import (
     gone_response,
     load_preview,
     send_time_passed,
+    stale_page,
     unavailable_response,
     unexpected_fields,
 )
@@ -109,26 +111,54 @@ def form_action(
     preview_fields,
     multiple_fields=frozenset(),
     confirm_fields=frozenset(),
+    direct=False,
 ):
     """Reject hidden, repeated and cross-action fields before constructing intent.
 
     ``confirm_fields`` names the few explicit confirmation inputs, such as an
-    acknowledgement checkbox, that accompany the signed preview.
+    acknowledgement checkbox, that accompany the signed preview. An editor
+    that also saves directly inside the campaign wizard (``direct``, #1404
+    PR 4) accepts a third action, ``save``: the preview's fields plus the
+    page-drawn ``request_key`` (``direct_key``).
     """
     fields = {
         "preview": {"action", "csrfmiddlewaretoken", *preview_fields},
         "confirm": {"action", "csrfmiddlewaretoken", "preview", *confirm_fields},
     }
+    if direct:
+        fields["save"] = fields["preview"] | {"request_key"}
     action = parameters.get("action")
     if action not in fields:
         # No sources: an unknown action value, not an unexpected field.
         raise unexpected_fields()
-    multiple = multiple_fields if action == "preview" else ()
+    multiple = multiple_fields if action in {"preview", "save"} else ()
     if set(parameters) - fields[action] or any(
         len(values) != 1 and name not in multiple for name, values in parameters.lists()
     ):
         raise unexpected_fields(parameters, allowed=fields[action], multiple=multiple)
     return action
+
+
+def direct_key(parameters):
+    """The request key of a direct save (``form_action``'s ``save``).
+
+    The page draws a fresh ``request_key`` each time it is drawn; the
+    change's own key is derived from it and every posted value (UUID5, the
+    names sorted, each name's values in posted order; the CSRF token, which
+    may be rotated, left out). So a repeated submit of the same values from
+    the same page (a double click, a retry after a lost answer) returns the
+    first submit's receipt instead of recording the change twice, while a
+    different change from the same page is a request of its own and is
+    never answered with the first one's status (#1486 review). Raises
+    ``ValueError`` (a 400 refusal) when the page's key is not a UUID.
+    """
+    page_key = UUID(parameters.get("request_key", ""))
+    posted = sorted(
+        (name, values)
+        for name, values in parameters.lists()
+        if name not in {"csrfmiddlewaretoken", "request_key"}
+    )
+    return uuid5(page_key, json.dumps(posted, separators=(",", ":")))
 
 
 def sign_preview(
@@ -304,6 +334,7 @@ def confirm_intent(
     attach=None,
     fresh=False,
     first_campaign=False,
+    direct=False,
 ):
     """Admit one exact intent; identical retries return the original receipt.
 
@@ -323,7 +354,11 @@ def confirm_intent(
     intent must add exactly one campaign, and its ``current_scope`` refuses
     unless the deployment still has none. A preview that carries reviewed
     send times (``sign_preview``'s ``due``) is refused under the work lock
-    once any has passed (``refuse_passed_sends``, #1464). Returns the
+    once any has passed (``refuse_passed_sends``, #1464). ``direct`` is a
+    campaign wizard step's direct save (#1404 PR 4,
+    ``campaign_wizard.save_step``): its preview was signed by the same
+    request, never shown, so a version that moved since the page was drawn
+    is the stale page's refusal rather than "review again". Returns the
     request's ``RequestStatus``.
     """
     if len(token) > 256_000:
@@ -363,7 +398,7 @@ def confirm_intent(
                 != intent["snapshot"]
             ):
                 # Settings changed since the review; start a fresh one.
-                raise expired_preview(link)
+                raise stale_page() if direct else expired_preview(link)
             # Under the work lock, so the clock is read after any wait for it.
             refuse_passed_sends(intent.get("due"), link)
             return True

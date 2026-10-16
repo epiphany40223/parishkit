@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 from django.http import QueryDict
 
-from parishkit.stewardship.accounts.admin_editing import form_action
+from parishkit.stewardship.accounts.admin_editing import direct_key, form_action
 from parishkit.stewardship.accounts.campaign_forms import (
     DATE_PAIRS,
     FINANCIAL_REQUIRED,
@@ -180,6 +180,39 @@ def test_closed_action_parser_allows_only_named_multiselects():
                 preview_fields={"name", "ministry_duids"},
                 multiple_fields={"ministry_duids"},
             )
+
+
+def test_a_direct_save_is_admitted_only_where_the_editor_offers_it():
+    """``save`` (#1404 PR 4) takes the preview's fields and a request key.
+
+    An editor that does not save directly refuses it; one that does takes
+    its multi-selects as a Review does, and the page's key must be a UUID.
+    The change's key comes from the page's key and the posted values: the
+    same save (even with a rotated CSRF token) has the same key, and a
+    different change from the same page a key of its own (#1486 review).
+    """
+    key = uuid4()
+    raw = f"action=save&request_key={key}&ministry_duids=1&ministry_duids=2"
+    fields = {
+        "preview_fields": {"ministry_duids"},
+        "multiple_fields": {"ministry_duids"},
+    }
+    assert form_action(QueryDict(raw), **fields, direct=True) == "save"
+    derived = direct_key(QueryDict(raw))
+    assert derived != key
+    assert direct_key(QueryDict(f"csrfmiddlewaretoken=t&{raw}")) == derived
+    assert direct_key(QueryDict(raw.replace("=2", "=3"))) != derived
+    assert direct_key(QueryDict(raw.replace(str(key), str(uuid4())))) != derived
+    with pytest.raises(ValueError):
+        form_action(QueryDict(raw), **fields)
+    for bad in ("request_key=x", "request_key=", ""):
+        with pytest.raises(ValueError):
+            direct_key(QueryDict(f"action=save&{bad}"))
+    # The key belongs to a save only; a Review or Apply never carries one.
+    with pytest.raises(ValueError):
+        form_action(
+            QueryDict(f"action=preview&request_key={key}"), **fields, direct=True
+        )
 
 
 def test_confirmation_values_use_names_not_storage_repr():
