@@ -191,6 +191,16 @@ def components(context, admin):
             },
         ),
         "/information-item": ("information", values | {"item": item}),
+        # A request no Staff member has saved yet (#227 empty state).
+        "/information-item-new": (
+            "information",
+            values | {"item": item, "history": []},
+        ),
+        # A history page past its end, as a bookmarked ?page= can ask for.
+        "/information-item-past-end": (
+            "information",
+            values | {"item": item, "history": [], "previous_history": 1},
+        ),
         "/information-unresolved": (
             "information",
             values | {"item": item | {"correction_resolved": False}},
