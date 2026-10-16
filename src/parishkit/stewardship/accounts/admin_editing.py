@@ -7,12 +7,14 @@ YAML or claims that an accepted request has already applied.
 """
 
 import logging
+from datetime import datetime
 from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
 from django.core import signing
 from django.core.exceptions import NON_FIELD_ERRORS
 from django.core.paginator import InvalidPage
+from django.db import connection
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
@@ -41,6 +43,7 @@ from parishkit.stewardship.web.refusals import (
     expired_preview,
     gone_response,
     load_preview,
+    send_time_passed,
     unavailable_response,
     unexpected_fields,
 )
@@ -130,7 +133,7 @@ def form_action(
 
 
 def sign_preview(
-    *, actor, configuration, patch, salt, snapshot=None, key=None, extra=None
+    *, actor, configuration, patch, salt, snapshot=None, key=None, extra=None, due=()
 ):
     """A preview has one request key, one base and a fifteen-minute validity window.
 
@@ -138,18 +141,45 @@ def sign_preview(
     provenance does, chooses the key first and passes it; the rest take a
     fresh one. An editor whose request needs companion rows signs their
     content as `extra`, so confirmation records exactly what was reviewed.
+    ``due`` lists the send instants (ISO 8601) the change sets that were
+    still ahead at review; confirmation refuses once any has passed
+    (``refuse_passed_sends``, #1464). A preview without any carries no key.
     """
-    return signing.dumps(
-        {
-            "actor": str(actor.identity),
-            "key": str(key or uuid4()),
-            "base": configuration.active_configuration.digest,
-            "snapshot": str(snapshot) if snapshot is not None else None,
-            "patch": patch,
-            "extra": extra,
-        },
-        salt=salt,
-    )
+    intent = {
+        "actor": str(actor.identity),
+        "key": str(key or uuid4()),
+        "base": configuration.active_configuration.digest,
+        "snapshot": str(snapshot) if snapshot is not None else None,
+        "patch": patch,
+        "extra": extra,
+    }
+    if due:
+        intent["due"] = list(due)
+    return signing.dumps(intent, salt=salt)
+
+
+def database_now():
+    """The database's ``clock_timestamp()``, the clock dispatch sends by.
+
+    Not the transaction's start time: a confirmation may wait for the work
+    lock, and the check must see the clock after that wait (#1464).
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT clock_timestamp()")
+        return cursor.fetchone()[0]
+
+
+def refuse_passed_sends(due, link):
+    """Refuse a confirmation whose reviewed send time has since passed (#1464).
+
+    ``due`` is the signed intent's send instants (ISO 8601), each still
+    ahead when the change was reviewed. One at or before the database's
+    clock would send at once once applied, minutes after the time the
+    Administrator chose, so the confirmation is refused and nothing
+    changes. This only ever refuses: it never moves a time or sends.
+    """
+    if due and min(map(datetime.fromisoformat, due)) <= database_now():
+        raise send_time_passed(link)
 
 
 def confirm(
@@ -292,8 +322,10 @@ def confirm_intent(
     session's repeated confirm records no second fresh-gate event or notice.
     ``first_campaign`` is Create the campaign's confirmation (#142): its
     intent must add exactly one campaign, and its ``current_scope`` refuses
-    unless the deployment still has none. Returns the request's
-    ``RequestStatus``.
+    unless the deployment still has none. A preview that carries reviewed
+    send times (``sign_preview``'s ``due``) is refused under the work lock
+    once any has passed (``refuse_passed_sends``, #1464). Returns the
+    request's ``RequestStatus``.
     """
     if len(token) > 256_000:
         raise ValueError("Invalid configuration preview.")
@@ -333,6 +365,8 @@ def confirm_intent(
             ):
                 # Settings changed since the review; start a fresh one.
                 raise expired_preview(link)
+            # Under the work lock, so the clock is read after any wait for it.
+            refuse_passed_sends(intent.get("due"), link)
             return True
 
     def attach_all(created):
