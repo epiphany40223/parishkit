@@ -14,7 +14,11 @@ import pytest
 
 from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.storage import TaskStatus
-from parishkit.stewardship.responses import census_resolution, census_review
+from parishkit.stewardship.responses import (
+    census_resolution,
+    census_review,
+    reconciliation,
+)
 from parishkit.stewardship.responses import publication_tasks as tasks
 from parishkit.stewardship.responses.publication_worker import PublicationDisabled
 
@@ -116,6 +120,12 @@ GATES = {
     "responses/census_resolution.py": (
         census_resolution.allowed,
         census_resolution.OPEN_EXECUTIONS,
+    ),
+    # Reconciliation sends an approval resting on a stale accepted base back
+    # to To review (#528, ADM-09.03).
+    "responses/reconciliation.py": (
+        reconciliation.resets_approval,
+        reconciliation.RESET_EXECUTIONS,
     ),
 }
 

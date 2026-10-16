@@ -33,6 +33,7 @@ from parishkit.stewardship.responses.census_review import (
     FIELDS,
     edit_limit,
     editable,
+    resolvable,
     reviewable,
 )
 from parishkit.stewardship.responses.comparison import ADDRESS_COMPONENTS, ValueKind
@@ -471,6 +472,7 @@ def shape(row):
         field=row["field"],
         execution=row["execution"],
         decision=row["decision"],
+        current_available=row["current_available"],
     )
     shown["can_resolve"] = allowed(state, "entered")
     shown["can_reopen"] = allowed(state, "reopened")
@@ -481,6 +483,9 @@ def shape(row):
         for action, decision in REVIEW_CHOICES
         if shown["automatic"] and reviewable(state, decision)
     ]
+    # Use the Family's value anyway (ADM-09.03): on a Conflict an
+    # Administrator may approve over ParishSoft's current value.
+    shown["resolve_conflict"] = shown["automatic"] and resolvable(state)
     # Edit value (ADM-09.04): on the same rows a Review is offered on.
     shown["edit"] = (
         edit_control(row) if shown["automatic"] and editable(state) else None

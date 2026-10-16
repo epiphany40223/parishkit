@@ -354,6 +354,9 @@ FROZEN = {
     "0107_proposal_review_edit.sql": (
         "460a43df40c847fa725ac7699ba4a97a4941b3e4f1352a792b97d6d0a6fe823c"
     ),
+    "0108_conflict_resolution.sql": (
+        "13074c17577c9158b464f03462c7b69c482f62fb56d35cde2591afdd93a13d59"
+    ),
 }
 
 
