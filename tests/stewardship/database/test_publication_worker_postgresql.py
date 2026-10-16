@@ -85,6 +85,10 @@ class FakeGateway:
         record = self.records.get(member_id)
         return None if record is None else dict(record)
 
+    def close(self):
+        """Nothing to release, as the real gateway's helper would be."""
+        self.closed = True
+
     def write_member_contact(self, member_id, payload, *, timeout):
         """Store the full payload, as the contact PUT replaces the record."""
         self.writes.append((member_id, dict(payload)))
@@ -121,14 +125,14 @@ class FakeExecution:
         return nullcontext()
 
 
-def as_owner(statement):
+def as_owner(statement, params=()):
     """Run ``owner(statement)`` from inside a restricted login, then go back."""
     with connection.cursor() as cursor:
         cursor.execute("SELECT current_user")
         (role,) = cursor.fetchone()
         cursor.execute("RESET SESSION AUTHORIZATION")
     try:
-        owner(statement)
+        owner(statement, params)
     finally:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -334,17 +338,98 @@ def test_a_crash_after_the_put_is_recovered_without_a_second_put(confirmed):
 
 
 def test_plans_past_their_window_are_invalidated(confirmed):
-    """A confirmation older than the execution window is abandoned work: it
-    is invalidated without a read, and returns the change for preflight."""
+    """A confirmation older than the execution window is abandoned work: an
+    entity with nothing queued is invalidated without a read, and returns the
+    change for preflight."""
     state = confirmed
-    owner(
-        "UPDATE stewardship_publication_confirmation "
-        "SET created_at=created_at-interval '25 hours' WHERE plan_id=%s",
-        [state.plan.pk],
-    )
+    age(state)
     assert run(state).invalidated == 1
     assert state.gateway.reads == [] and state.gateway.writes == []
     assert results(state.entity) == [("invalidated", "")]
+
+
+def age(state, hours=25):
+    """Move the plan's confirmation ``hours`` into the past."""
+    owner(
+        "UPDATE stewardship_publication_confirmation "
+        f"SET created_at=created_at-interval '{int(hours)} hours' WHERE plan_id=%s",
+        [state.plan.pk],
+    )
+
+
+def test_a_crash_past_the_window_is_read_back_and_published(confirmed):
+    """Review note 3: a plan whose PUT landed before a crash, found only after
+    its window, is read back and recorded published, never written again."""
+    state = confirmed
+    before = state.first.version
+    state.gateway.crash_after_write = True
+    with pytest.raises(Crash):
+        run(state)
+    state.gateway.crash_after_write = False
+    drained()
+    age(state)
+    reads = len(state.gateway.reads)
+    assert run(state).published == 1
+    assert len(state.gateway.writes) == 1
+    assert len(state.gateway.reads) == reads + 1
+    assert results(state.entity) == [("published", "")]
+    assert proposal(state.first) == ("published", before + 2)
+
+
+def test_a_crash_past_the_window_whose_put_did_not_hold_is_invalidated(confirmed):
+    """Read back, ParishSoft no longer holds the planned payload: invalidated,
+    and the queued change goes back to pending for a new preflight."""
+    state = confirmed
+    before = state.first.version
+    state.gateway.crash_after_write = True
+    with pytest.raises(Crash):
+        run(state)
+    state.gateway.crash_after_write = False
+    state.gateway.records[state.first.entity_key]["fax"] = "555-0100"
+    drained()
+    age(state)
+    assert run(state).invalidated == 1
+    assert len(state.gateway.writes) == 1
+    assert results(state.entity) == [("invalidated", "")]
+    assert proposal(state.first) == ("pending", before + 2)
+
+
+def test_a_read_back_that_fails_invalidates(confirmed):
+    """An unreadable record past the window is invalidated, never published."""
+    state = confirmed
+    state.gateway.crash_after_write = True
+    with pytest.raises(Crash):
+        run(state)
+    state.gateway.crash_after_write = False
+    state.gateway.read_errors = ["read_unavailable"]
+    drained()
+    age(state)
+    assert run(state).invalidated == 1
+    assert results(state.entity) == [("invalidated", "")]
+
+
+def test_a_switch_inside_the_queue_transaction_stops_cleanly(confirmed, monkeypatch):
+    """Review note 1: Testing mode set after the Python check but before the
+    queue is seen inside the queue's own transaction. The run stops without
+    an error, writes nothing and returns the change to pending."""
+    from parishkit.stewardship.responses import publication_worker
+
+    state = confirmed
+    original = publication_worker.verify_source
+    switched = []
+
+    def switching(claim):
+        """Switch to Testing once, just as the queue transaction begins."""
+        if not switched:
+            switched.append(True)
+            as_owner("UPDATE stewardship_system_configuration SET mode='testing'")
+        return original(claim)
+
+    monkeypatch.setattr(publication_worker, "verify_source", switching)
+    assert run(state).invalidated == 1
+    assert switched and state.gateway.writes == []
+    assert results(state.entity) == [("invalidated", "")]
+    assert proposal(state.first)[0] == "pending"
 
 
 def worker_update(row, **values):
