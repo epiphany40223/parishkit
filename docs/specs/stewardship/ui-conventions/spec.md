@@ -2317,6 +2317,9 @@ learned once. **Shared code.**
 - `campaigns/recurrence.py`: repeat rules. Its cases
   (`tests/stewardship/fixtures/recurrence_cases.json`) also pin the page
   script's `ParishRecurrence`.
+- `components/repeat-rule.html`: the one repeat rule's controls (how often,
+  the days, the monthly choices, From and Until), with its choices from
+  New scheduled email's `RepeatRule` form.
 - `campaigns/intervals.resolve_local`: the daylight-saving rule.
 - `ParishEditorMode`: the Basic and Advanced modes.
 
@@ -2383,7 +2386,10 @@ learned once. **Shared code.**
 
 **Adoption.** The ParishSoft refresh schedule follows all of these rules
 except the browser-zone entry, which is its recorded exception
-([#1122](https://github.com/epiphany40223/parishkit/issues/1122)). Later
+([#1122](https://github.com/epiphany40223/parishkit/issues/1122)). The two mail
+repeat panels, New scheduled email's Repeat and the date-change review's
+Repeat a reminder, draw one repeat rule, so they offer the same choices in
+the same order and one page script expands both. Later
 [#1129](https://github.com/epiphany40223/parishkit/issues/1129) slices bring
 the shared zone note, preview and Basic and Advanced modes to the mail
 schedule editors, reminder repeats and digests. Until each change lands, an
