@@ -22,6 +22,7 @@ import yaml
 
 from parishkit.stewardship.cli import main
 from parishkit.stewardship.local import seed_timeline, seeder
+from parishkit.stewardship.local import seed_web as seed_web_module
 from parishkit.stewardship.local.seeder import (
     DriveReport,
     SeedFailed,
@@ -80,6 +81,7 @@ def test_command_refuses_outside_local_before_any_step(
         assert main(["local-seed", "--step", "timeline", *ARGUMENTS]) == 2
         monkeypatch.delenv("PARISHKIT_STEWARDSHIP_PROFILE")
     assert main(["local-seed", "--step", "prepare", *ARGUMENTS]) == 2
+    assert main(["local-seed", "--step", "testing", *ARGUMENTS]) == 2
     development = deployment_file(tmp_path, "development")
     assert (
         main(["local-seed", "--config", development, "--step", "check", *ARGUMENTS])
@@ -633,8 +635,9 @@ def test_constants_match_the_specification():
         "finish",
     )
     # The BG-12 rehearsal's two steps (local/rehearsal.py) follow the seed's,
-    # then finish-setup's read-only lookup (#1355).
-    assert seeder.STEPS[7:] == ("reminder", "measure", "credentials")
+    # then finish-setup's read-only lookup (#1355), then the Testing snapshot's
+    # step, which the operator script looks for.
+    assert seeder.STEPS[7:] == ("reminder", "measure", "credentials", "testing")
     assert sorted(seeder.FATAL_OCCURRENCE_STATES) == [
         "coalesced",
         "delivery_unknown",
@@ -701,3 +704,309 @@ def test_seeder_admission_refuses_root_and_other_profiles(monkeypatch):
         seeder.admit_seeder_mounts(
             replace(config, profile=DeploymentProfile.LOCAL), mounts
         )
+
+
+# The Testing snapshot's step (#1413).
+@pytest.mark.parametrize(
+    "now",
+    [
+        datetime(2026, 10, 15, 15, 30, tzinfo=UTC),
+        # Just after and just before midnight on the campaign's wall clock.
+        datetime(2026, 10, 16, 4, 1, tzinfo=UTC),
+        datetime(2026, 10, 16, 3, 59, tzinfo=UTC),
+        # Reminders on Nov 4 and Nov 8, after the Nov 1 change to standard time.
+        datetime(2026, 10, 25, 15, 0, tzinfo=UTC),
+    ],
+)
+def test_draft_calendar_contains_now_and_puts_every_schedule_after_it(now):
+    """Testing sign-ins need now inside the dates; no schedule may be due yet."""
+    from zoneinfo import ZoneInfo
+
+    zone = ZoneInfo("America/New_York")
+    cal = seeder.draft_calendar(now, "America/New_York")
+    local = now.astimezone(zone)
+    assert cal.start == local.date()
+    assert datetime.combine(cal.start, datetime.min.time(), tzinfo=zone) <= now
+    assert now < datetime.combine(cal.end, datetime.min.time(), tzinfo=zone)
+    initial = datetime.combine(cal.initial, seed_timeline.INITIAL_TIME, tzinfo=zone)
+    assert now < initial
+    assert all(initial < reminder for reminder in cal.reminders)
+    assert list(cal.reminders) == sorted(cal.reminders)
+    assert all(r.time() == seed_timeline.REMINDER_TIME for r in cal.reminders)
+    assert all(cal.start < r.date() < cal.end for r in cal.reminders)
+    assert (cal.end - cal.start).days == seeder.TESTING_CAMPAIGN_DAYS
+
+
+def test_draft_patch_puts_the_initial_on_its_own_day():
+    """``schedule_patch`` with ``initial_date`` adds the Initial on that day."""
+    campaign_id = "11111111-1111-1111-1111-111111111111"
+    document = {
+        "sections": {
+            "schedules": [],
+            "content": [
+                {
+                    "id": slot,
+                    "values": {
+                        "campaign_id": campaign_id,
+                        "kind": "email",
+                        "slot": slot,
+                        "subject": slot.title(),
+                    },
+                }
+                for slot in ("initial", "reminder")
+            ],
+        }
+    }
+    cal = seeder.draft_calendar(
+        datetime(2026, 10, 15, 15, 30, tzinfo=UTC), "America/New_York"
+    )
+    patch = schedule_patch(document, campaign_id, cal, initial_date=cal.initial)
+    assert patch[0]["values"] == {"start_date": "2026-10-15", "end_date": "2026-11-12"}
+    assert patch[1]["operation"] == "add"
+    assert patch[1]["values"]["kind"] == "initial"
+    assert patch[1]["values"]["date"] == "2026-10-22"
+    assert patch[1]["values"]["time"] == "10:00:00"
+    assert [(row["values"]["kind"], row["values"]["date"]) for row in patch[2:]] == [
+        ("reminder", "2026-10-25"),
+        ("reminder", "2026-10-29"),
+    ]
+    assert {row["values"]["template_version"] for row in patch[2:]} == {"reminder"}
+
+
+DRAFT = {
+    "mode": "testing",
+    "state": "draft",
+    "went_live": False,
+    "schedules": False,
+    "recipient": "testing@example.test",
+}
+
+
+@pytest.mark.parametrize(
+    "change, reason",
+    [
+        ({"mode": "production"}, "production mode"),
+        ({"state": "scheduled"}, "not a Testing draft"),
+        ({"state": "active"}, "not a Testing draft"),
+        ({"went_live": True}, "never went live"),
+        ({"schedules": True}, "post-setup snapshot"),
+        ({"recipient": "office@parish.example.org"}, "@example.test address"),
+        ({"recipient": "testing@example.test.example.org"}, "@example.test"),
+    ],
+)
+def test_the_testing_step_refuses_anything_but_a_fresh_synthetic_draft(change, reason):
+    """Only a Testing draft without schedules and a reserved recipient passes."""
+    assert seeder.draft_refusal(**DRAFT) is None
+    assert seeder.draft_refusal(**DRAFT | {"recipient": "Q@Example.Test"}) is None
+    refusal = seeder.draft_refusal(**DRAFT | change)
+    assert reason in refusal
+    # The refusal names no address.
+    assert "parish.example.org" not in refusal
+
+
+def test_the_testing_plan_fits_the_family_test_limit_and_its_answers():
+    """Every submitting Family has an answer set; at most ten tests at once."""
+    from parishkit.stewardship.jobs.family_mail_models import FAMILY_TEST_LIMIT
+
+    answers = seeder.draft_answers([30, 10, 20])
+    assert len(answers) == seeder.TESTING_PLAN.count("submit")
+    assert set(seeder.TESTING_PLAN) == {"submit", "open", "sent"}
+    assert len(seeder.TESTING_PLAN) <= FAMILY_TEST_LIMIT
+    assert answers[0]["ministry_interest"] == [10]
+    assert [a["census_edit"] for a in answers] == [
+        None,
+        "changed_email",
+        "proposed_member",
+    ]
+    assert seeder.draft_answers([])[0]["ministry_interest"] == []
+
+
+def test_the_testing_step_refuses_outside_local_before_any_connection():
+    """The step admits the process as web does, so another profile is refused."""
+    from parishkit.stewardship.deployment import DeploymentProfile
+
+    request = SeedRequest.parse(
+        SimpleNamespace(
+            step="testing",
+            seed="7",
+            families="100",
+            anchor_date="2026-09-20",
+            now=NOW,
+            response_scale=None,
+            clock_dir=None,
+            admin_email="admin@example.test",
+        )
+    )
+    with pytest.raises(SeedRefused, match="only in the local profile"):
+        seeder.run_step(request, SimpleNamespace(profile=DeploymentProfile.PRODUCTION))
+
+
+class FakeSeedWeb:
+    """The ``seed_web`` calls the testing step makes, recorded in order."""
+
+    SeedWebRefused = seed_web_module.SeedWebRefused
+
+    def __init__(self, calls, document):
+        self.calls = calls
+        active = SimpleNamespace(digest="digest", document=lambda: document)
+        self.service = SimpleNamespace(store=SimpleNamespace(active=lambda: active))
+        calls_ = calls
+
+        class Driver:
+            """Records each Family's sign-in, form and submission."""
+
+            def __init__(self, service, campaign, epoch_id):
+                calls_.append(("driver", epoch_id))
+
+            def session(self, family_id, data):
+                calls_.append(("session", family_id))
+
+            def baseline(self, family_id, data):
+                calls_.append(("baseline", family_id))
+
+            def submission(self, family_id, data):
+                calls_.append(("submission", family_id))
+
+        self.RehearsalFamilyWebDriver = Driver
+
+    def admin_runtime(self):
+        return self.service
+
+    def sign_in_admin(self, web, email):
+        self.calls.append("sign_in")
+
+    def request_full_refresh(self, web, service):
+        self.calls.append("refresh")
+        return SimpleNamespace(task_root_id="root")
+
+    def sample_mail(self, web, service, campaign_id, revision):
+        self.calls.append("sample")
+
+    def family_tests(self, web, service, campaign_id, revision, duids):
+        self.calls.append(("family_tests", tuple(duids)))
+        return [SimpleNamespace(pk=duid, rehearsal_epoch_id="epoch") for duid in duids]
+
+    def family_runtime(self):
+        return "family-runtime"
+
+
+def wired(monkeypatch, state):
+    """The testing step with every database and web call replaced by a recorder."""
+    calls = []
+    campaign_id = "11111111-1111-1111-1111-111111111111"
+    document = {
+        "sections": {
+            "schedules": [],
+            "content": [
+                {
+                    "id": slot,
+                    "values": {
+                        "campaign_id": campaign_id,
+                        "kind": "email",
+                        "slot": slot,
+                        "subject": slot,
+                    },
+                }
+                for slot in ("initial", "reminder")
+            ],
+        }
+    }
+    campaign = SimpleNamespace(
+        pk=campaign_id,
+        state="draft",
+        active_configuration=SimpleNamespace(
+            timezone="America/New_York", values={"ministry_duids": [7]}
+        ),
+    )
+    fake = FakeSeedWeb(calls, document)
+    monkeypatch.setattr(seeder, "seed_web", fake)
+    monkeypatch.setattr(seeder, "configure_web_process", lambda c: calls.append("web"))
+    monkeypatch.setattr(seeder, "current_campaign", lambda: campaign)
+    monkeypatch.setattr(
+        seeder,
+        "draft_state",
+        lambda c, d: calls.append(("state", d is document)) or state,
+    )
+    monkeypatch.setattr(seeder, "admin", lambda r: calls.append("admin") or "web")
+    monkeypatch.setattr(
+        seeder, "database_now", lambda: datetime(2026, 10, 15, 15, 30, tzinfo=UTC)
+    )
+    monkeypatch.setattr(
+        seeder,
+        "record_configuration",
+        lambda web, service, active, patch: calls.append(("configure", len(patch))),
+    )
+    monkeypatch.setattr(
+        seeder, "wait_until", lambda what, condition: calls.append(what) or 0.0
+    )
+    monkeypatch.setattr(seeder, "settle", lambda since: 0.0)
+    monkeypatch.setattr(seeder, "_initial_revision", lambda s, c: "revision")
+    monkeypatch.setattr(
+        seeder,
+        "testing_families",
+        lambda c: [(duid, f"family-{duid}") for duid in (1, 2, 3, 4, 5)],
+    )
+    request = SimpleNamespace(admin_email="admin@example.test")
+    return calls, lambda: seeder.testing_step(request, "configuration")
+
+
+def test_the_testing_step_refuses_before_any_write(monkeypatch):
+    """A refusal comes after the reads only: no sign-in, request or send."""
+    calls, run = wired(monkeypatch, DRAFT | {"schedules": True})
+    with pytest.raises(SeedRefused, match="post-setup snapshot"):
+        run()
+    assert calls == ["web", ("state", True)]
+
+
+def test_the_testing_step_runs_its_parts_in_order(monkeypatch):
+    """Configuration, readiness, epoch, sends, then each Family's part."""
+    calls, run = wired(monkeypatch, DRAFT)
+    document = run()
+    families = [c for c in calls if isinstance(c, tuple) and c[0] != "state"]
+    assert calls[:4] == ["web", ("state", True), "admin", ("configure", 4)]
+    order = [c if isinstance(c, str) else c[0] for c in calls]
+    expected = [
+        "configure",
+        "the configuration change request to be installed",
+        "refresh",
+        "the full ParishSoft refresh to succeed",
+        "sign_in",
+        "sample",
+        "the Initial email sample to be accepted",
+        "the active rehearsal epoch",
+        "sign_in",
+        "family_tests",
+        "the chosen-Family Testing sends to be delivered",
+        "driver",
+    ]
+    assert [o for o in order if o in set(expected)][: len(expected)] == expected
+    # The driver uses the epoch the tickets record.
+    assert ("driver", "epoch") in families
+    assert families[-8:] == [
+        ("session", "family-1"),
+        ("submission", "family-1"),
+        ("session", "family-2"),
+        ("submission", "family-2"),
+        ("session", "family-3"),
+        ("submission", "family-3"),
+        ("session", "family-4"),
+        ("baseline", "family-4"),
+    ]
+    assert (document["submitted"], document["opened"], document["sent_only"]) == (
+        [1, 2, 3],
+        [4],
+        [5],
+    )
+    assert document["rebuild_before"] == document["initial"] == "2026-10-22"
+
+
+def test_a_refused_testing_send_is_a_refusal(monkeypatch):
+    """The page's unmet precondition exits as refused, not as unexpected."""
+    calls, run = wired(monkeypatch, DRAFT)
+
+    def refused(*args):
+        raise seed_web_module.SeedWebRefused("unavailable: stale_source")
+
+    monkeypatch.setattr(seeder.seed_web, "family_tests", refused)
+    with pytest.raises(SeedRefused, match="stale_source"):
+        run()

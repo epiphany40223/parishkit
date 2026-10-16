@@ -8,7 +8,10 @@ with ``RequestFactory``; the Admin session is created and made fresh through
 test sign-in share, so sessions, audit and step-up behave as after a real
 sign-in. Family sessions are minted by ``issue_family`` from the Family's
 code, the form baseline by ``issue_baseline``, presence by the real heartbeat
-view and submissions by ``submit_family``. No row is written by anything but
+view and submissions by ``submit_family``. In Testing mode the Family signs in
+with the rehearsal code its chosen-Family Testing send carried
+(``RehearsalFamilyWebDriver``), and that send is made through the page's own
+review and confirmation (``family_tests``). No row is written by anything but
 production code.
 
 The module also drives the setup wizard through the same service layer the
@@ -359,16 +362,20 @@ class FamilyWebDriver:
         actor = self.actors.get(family_id)
         if actor is None:
             from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
-            from parishkit.stewardship.campaigns.family_identity import code_context
 
             row = FamilyCampaign.objects.get(pk=family_id, campaign=self.campaign)
-            if row.code_ciphertext is None:
-                raise SeedWebRefused(f"Family {family_id} has no code yet.")
-            code = self.service.general.decrypt(
-                row.code_ciphertext, context=code_context(row.pk)
-            ).decode()
-            actor = self.actors[family_id] = FamilyActor(family_id, code)
+            actor = self.actors[family_id] = FamilyActor(family_id, self._code(row))
         return actor
+
+    def _code(self, row):
+        """The Family's live code, decrypted with the web's own keyring."""
+        from parishkit.stewardship.campaigns.family_identity import code_context
+
+        if row.code_ciphertext is None:
+            raise SeedWebRefused(f"Family {row.pk} has no code yet.")
+        return self.service.general.decrypt(
+            row.code_ciphertext, context=code_context(row.pk)
+        ).decode()
 
     def session(self, family_id, data):
         """Sign the Family in with its code: the "link followed" event."""
@@ -447,6 +454,76 @@ class FamilyWebDriver:
             # once, as the browser would, then submit again.
             actor.form = result.refreshed
         raise SeedWebRefused(f"Family {family_id}'s submission kept needing review.")
+
+
+class RehearsalFamilyWebDriver(FamilyWebDriver):
+    """The Family driver in Testing mode, signing in with rehearsal codes (#1413).
+
+    In Testing mode the Family sign-in accepts only the rehearsal code of the
+    campaign's active rehearsal epoch, which the worker creates when it
+    prepares a chosen-Family Testing send and puts in that message. The code
+    is read from the Family's rehearsal credential and decrypted with the
+    web's keyring under the rehearsal code context, as the live code is read
+    from the campaign row; every later step is the base driver's.
+    """
+
+    def __init__(self, service, campaign, epoch_id):
+        """Drive ``campaign``'s Families with ``epoch_id``'s rehearsal codes."""
+        super().__init__(service, campaign)
+        self.epoch_id = epoch_id
+
+    def _code(self, row):
+        """The Family's rehearsal code for this epoch; refused if it has none."""
+        from parishkit.stewardship.campaigns.credential_models import (
+            RehearsalCredential,
+        )
+        from parishkit.stewardship.campaigns.rehearsals import code_context
+
+        credential = RehearsalCredential.objects.filter(
+            family=row, epoch_id=self.epoch_id
+        ).first()
+        if credential is None:
+            raise SeedWebRefused(f"Family {row.pk} has no Testing code yet.")
+        return self.service.general.decrypt(
+            credential.code_ciphertext, context=code_context(credential.pk)
+        ).decode()
+
+
+def family_tests(request, service, campaign_id, revision_id, duids):
+    """Send chosen-Family Testing sends of one email, as that page does (#1413).
+
+    The page's review (``campaign_family_test.prepare``, signed with its own
+    salt) followed by its confirmation (``request_tests``, acknowledged), so
+    each Family gets one ticket that the worker prepares with its Testing
+    code and mail-dispatch sends to the Testing recipient only. The caller
+    signs in again first: the confirmation needs a fresh sign-in. Returns
+    the tickets.
+    """
+    from django.core import signing
+
+    from parishkit.stewardship.accounts.campaign_family_test import (
+        SALT,
+        prepare,
+        request_tests,
+    )
+
+    preview = prepare(request, service, campaign_id, revision_id, tuple(duids))
+    refused = sorted(
+        {choice.reason for choice in preview.families if not choice.eligible}
+    )
+    if refused or preview.epoch_id is None or preview.held:
+        raise SeedWebRefused(
+            "The chosen-Family Testing send is unavailable: "
+            + (", ".join(refused) or "no rehearsal epoch, or campaign work held")
+        )
+    return request_tests(
+        request,
+        service,
+        campaign_id,
+        revision_id,
+        preview_token=signing.dumps(preview.binding(), salt=SALT),
+        acknowledge=True,
+    )
 
 
 # A proposed new household Member's invented first names (#498); the
