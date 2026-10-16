@@ -371,6 +371,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # place again, after 0094, so once 0064's file (``CLOSURE_CREATED``) and
 # 0094's (``CLOSURE_REPLACED``) install it again without the counts,
 # ``CLOSURE_REPLACED`` runs 0100's file again.
+# 0102 (#1353) creates nothing: it replaces the setup attempt's guards, the
+# setup disposal check and the safe context in place. Only the safe context
+# comes back older (0089's, through ``CLOSURE_REPLACED``), so
+# ``CLOSURE_REPLACED_AGAIN`` runs 0102's file after it.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -657,6 +661,18 @@ CLOSURE_REPLACED = {
             "public.stewardship_task_type_creators_v1(text)",
         ),
         (("stewardship_responses", "0007_publication_tasks"), "census_publication"),
+    ),
+}
+
+
+# Functions a ``CLOSURE_REPLACED`` file brings back with an older body that a
+# still later closure file replaces again, with that file and its phrase;
+# run after ``CLOSURE_REPLACED`` the same way. 0102 (#1353) widens 0089's
+# safe context, which 0089's rerun (for its event check) puts back.
+CLOSURE_REPLACED_AGAIN = {
+    "public.stewardship_safe_context_v1(text,jsonb)": (
+        ("stewardship_accounts", "0023_setup_load_void"),
+        "ELSIF key='void_reason' THEN",
     ),
 }
 
@@ -960,6 +976,7 @@ def swap_pending():
     assert set(CLOSURE_CREATED.values()) <= set(closure)
     assert set(CLOSURE_ALTERED.values()) <= set(closure)
     assert {key for key, _ in CLOSURE_REPLACED.values()} <= set(closure)
+    assert {key for key, _ in CLOSURE_REPLACED_AGAIN.values()} <= set(closure)
     assert set(CLOSURE_RERUN) | set(CLOSURE_RERUN.values()) <= set(closure)
     assert set(CLOSURE_OLD_BODIES) <= set(closure)
     assert {key for key, _ in CLOSURE_REPLACED_ONLY.values()} <= set(closure)
@@ -1024,7 +1041,10 @@ def swap_pending():
                     cursor.execute(Path(module.FROZEN_SQL).read_text(encoding="utf-8"))
             # After both: a created function's earlier body, made again
             # above, gets the later file's replacement back.
-            for function, (key, phrase) in CLOSURE_REPLACED.items():
+            for function, (key, phrase) in (
+                *CLOSURE_REPLACED.items(),
+                *CLOSURE_REPLACED_AGAIN.items(),
+            ):
                 cursor.execute(
                     "SELECT prosrc LIKE %s FROM pg_proc WHERE oid=to_regprocedure(%s)",
                     [f"%{phrase}%", function],

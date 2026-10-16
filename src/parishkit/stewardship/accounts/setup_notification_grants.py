@@ -20,7 +20,9 @@ def extend_slack_permissions(tables, metadata):
         ("stewardship_setup_attempt", ATTEMPT_COLUMNS | {"version"}),
         ("stewardship_portal_session", SESSION_COLUMNS),
         ("stewardship_portal_user", {"id", "disabled", "email"}),
-        ("stewardship_task_run", {"id", "created_at"}),
+        # The load's state too (#1353): the live check requires the bound
+        # load to have succeeded, since a failed one stays bound.
+        ("stewardship_task_run", {"id", "created_at", "state"}),
         ("stewardship_address_rule", {"email", "configuration_id", "roles"}),
         (
             "stewardship_setup_draft_section",
