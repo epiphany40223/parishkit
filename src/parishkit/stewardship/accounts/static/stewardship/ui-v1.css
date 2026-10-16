@@ -6,9 +6,9 @@
  *   images, so there are no web fonts, CDN frameworks or data: URI images.
  *   Typography uses system font stacks; decoration is pure CSS.
  * - Templates and tests depend on the existing class names (.panel, .notice,
- *   .notice-error, .actions, .help, .flow, .table-scroll, .changed, .brand,
- *   .site-header, .skip-link, .content-editor, ...). Restyle
- *   them; do not rename them.
+ *   .notice-error, .notice-info, .actions, .help, .flow, .table-scroll,
+ *   .changed, .brand, .site-header, .skip-link, .content-editor, ...).
+ *   Restyle them; do not rename them.
  * - Every text/background pair below meets WCAG AA (4.5:1), and control
  *   boundaries and the focus ring meet the 3:1 non-text minimum. Re-check
  *   contrast when changing any color token.
@@ -594,9 +594,14 @@ button.is-busy::after, .button.is-busy::after { content: ""; display: inline-blo
 [data-content-toolbar] { display: flex; flex-wrap: wrap; gap: .5rem; }
 [data-content-toolbar] button { margin: 0; padding-inline: .9rem; font-size: .925rem; }
 
-/* Notices keep a full border (visible in forced-colors mode) plus a status bar. */
+/* Notices keep a full border (visible in forced-colors mode) plus a status bar.
+   Three kinds (ui-conventions "Shared visual style", #732): .notice alone is
+   a warning, .notice-error a failure or refusal, and .notice-info neutral
+   information with nothing to beware of, in the "Working" status look's
+   tokens (test_design_tokens.py checks their contrast in both schemes). */
 .notice { padding: 1rem 1.25rem; background: var(--warning-bg); border: 1px solid var(--warning-border); border-inline-start-width: .35rem; border-radius: var(--radius-small); margin-block: 1rem; }
 .notice-error { background: var(--error-bg); border-color: var(--error-border); }
+.notice-info { background: var(--accent-soft); border-color: var(--accent); }
 .notice h2 { margin-top: 0; font-size: 1.1rem; }
 .notice ul { margin-bottom: 0; }
 /* System health's problems: one notice per problem, without list bullets. */
