@@ -385,7 +385,9 @@ def test_an_update_leaves_focus_outside_and_keeps_a_tables_sideways_scroll(
     table = page.locator("#health-version-details .table-scroll")
     assert table.evaluate("(node) => node.scrollWidth > node.clientWidth")
     table.evaluate("(node) => { node.scrollLeft = 40; }")
-    outside = page.get_by_role("link", name="Refresh System health")
+    # The page's "About this page" disclosure, outside the tiles and the
+    # polled region.
+    outside = page.locator("summary", has_text="About this page")
     outside.focus()
     _away(page)
     expect(
@@ -744,6 +746,89 @@ def test_a_mail_toggletip_opens_in_place_and_survives_an_unchanged_poll(
     assert kept()
 
 
+# ------------------------------------- the ParishSoft refresh tile (slice 4)
+
+
+def _said(page, tile):
+    """The tile's counted summary words."""
+    return page.locator(f"#health-{tile} .health-counted .health-said")
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_a_working_parishsoft_refresh_tile_says_how_current_the_data_is(
+    page, component_origin, axe_source, width
+):
+    """Closed and Working, its summary is the data's age in the browser's
+    clock and the connection; opened, the panel repeats no problem and ends
+    with Refresh from ParishSoft, passes axe and fits a phone."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + HEALTHY)
+    expect(_word(page, "source")).to_have_text("Working")
+    said = _said(page, "source")
+    expect(said).to_contain_text("Data as of")
+    expect(said).to_contain_text("; connection working")
+    stamp = said.locator("time")
+    expected = page.evaluate(
+        "(stamp) => ParishDates.dayTime(new Date(stamp), new Date())",
+        stamp.get_attribute("datetime"),
+    )
+    expect(stamp).to_have_text(expected)
+    band = _band(page, "source")
+    expect(band).to_be_hidden()
+    _toggle(page, "source").click()
+    expect(band).to_be_visible()
+    expect(band.locator("[data-problem]")).to_have_count(0)
+    links = band.get_by_role("link")
+    expect(links.last).to_have_text("Refresh from ParishSoft")
+    assert "UTC" not in band.inner_text()
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert _axe(page, axe_source) == []
+
+
+def test_a_refused_change_holds_its_counts_and_follows_an_acceptance(
+    page, component_origin, axe_source
+):
+    """The pk-local state of slice 4. The refusal's item holds its counts,
+    Accept this change once sits right under them, and the "Before" help is
+    a toggletip that moves no summary row. A poll that brings an acceptance
+    turns the tile Working, named for the acceptance, with the tile still
+    open and no summary row of its own row moved."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + ACCEPT_PAGE)
+    kept = _not_reloaded(page)
+    band = _band(page, "source")
+    expect(band).to_be_visible()
+    expect(_word(page, "source")).to_have_text("Error")
+    expect(_said(page, "source")).to_have_text("ParishSoft refresh refused")
+    item = band.locator('[data-problem="source_destructive_change"]')
+    expect(item.locator("[data-refused-change] table")).to_be_visible()
+    _beside_the_refusal(page)
+    tops = page.evaluate(TOPS)
+    button = item.locator(".toggletip-button")
+    button.click()
+    bubble = item.locator(".toggletip-bubble")
+    expect(bubble).to_contain_text("highest value over the full refreshes")
+    assert same_place(page.evaluate(TOPS), tops)
+    assert _axe(page, axe_source) == []
+    page.keyboard.press("Escape")
+    # A target holding focus waits, as does one under the pointer.
+    page.evaluate("document.activeElement.blur()")
+    _away(page)
+    # The next poll: another Administrator accepted the change once.
+    expect(_word(page, "source")).to_have_text("Working", timeout=30000)
+    expect(_said(page, "source")).to_have_text(
+        "Change accepted once; waiting for the next full refresh"
+    )
+    expect(band).to_be_visible()
+    expect(item).to_have_attribute("data-problem-handled", "")
+    # The tile's own row stays put; only rows after its band may move, as
+    # its details changed height (the tile grid's rule).
+    row = [top for top in tops if top <= tops[1] + 0.5]
+    assert same_place(page.evaluate(TOPS)[: len(row)], row)
+    _beside_the_refusal(page)
+    assert kept()
+
+
 def _not_reloaded(page):
     """Mark the document, so a reload or a rewritten document loses the mark."""
     page.evaluate("document.body.dataset.notReloaded = 'yes'")
@@ -1046,15 +1131,20 @@ def test_accept_this_change_once_previews_and_confirms_in_place(
 
 def _beside_the_refusal(page):
     """#accept-change is in the ParishSoft refresh tile's details, directly
-    after its problems, which end with the refused change's counts (#1214),
-    and starts within a line of them."""
+    after its problems, which end with the refused change's item and its
+    counts (#1214), and starts within a line of them."""
     assert page.evaluate("""() => {
         const notice = document.querySelector('[data-refused-change]');
-        const problems = notice.parentElement;
+        const problems = notice.closest(
+            '[data-live-mirror-target="health-source-problems"]');
         const keyed = problems.nextElementSibling;
-        return problems.matches(
-                '[data-live-mirror-target="health-source-problems"]')
-            && notice === problems.lastElementChild
+        // The counts are the last thing in the problems: each element from
+        // them up to the problems' target is its parent's last child.
+        let last = true;
+        for (let node = notice; node !== problems; node = node.parentElement) {
+            last = last && node === node.parentElement.lastElementChild;
+        }
+        return last
             && keyed.matches('[data-live-keyed="accept-change"]')
             && keyed.firstElementChild === document.getElementById('accept-change')
             && keyed.parentElement.id === 'health-source-details';
@@ -1169,19 +1259,26 @@ def test_an_open_preview_of_an_older_refusal_is_marked_changed(page, component_o
 
 
 def test_a_refusal_shown_by_a_poll_brings_its_accept_button(page, component_origin):
-    """A page drawn before the refusal shows the region greyed with why; the
-    poll that shows the refusal brings its counts and the button, right
-    under them; no reload needed, and the tile is not opened for the reader."""
+    """A page drawn before the refusal shows no Accept this change once
+    (batch 24a); the poll that shows the refusal brings its counts and the
+    section together, the button right under them; no reload needed, and
+    the tile is not opened for the reader."""
     page.goto(component_origin + ACCEPT_LATE + "#health-source")
     region = page.locator("#accept-change")
+    expect(region).to_be_attached()
+    assert region.evaluate("e => e.innerText.trim()") == ""
     button = region.get_by_role("button", name="Accept this change once", exact=True)
-    expect(button).to_be_disabled()
-    expect(region.locator("#accept-change-reason")).to_have_text(
-        "No refused ParishSoft refresh is waiting to be accepted."
-    )
+    expect(button).to_have_count(0)
     _away(page)
-    expect(button).to_be_enabled(timeout=30000)
-    expect(page.locator("[data-refused-change]")).to_be_visible(timeout=30000)
+    # The same poll brings both: never the counts without the section.
+    eventually(
+        page,
+        """() => !!document.querySelector('[data-refused-change]')""",
+    )
+    assert page.evaluate("""() => !!document.querySelector(
+        '#accept-change [data-in-place="accept-preview"]')""")
+    expect(button).to_be_enabled()
+    expect(page.locator("[data-refused-change]")).to_be_visible()
     _beside_the_refusal(page)
 
 

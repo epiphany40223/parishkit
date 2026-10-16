@@ -197,12 +197,13 @@ def live():
 
 
 def test_the_control_is_offered_only_while_a_refusal_is_shown(parish, google):
-    """Always drawn in its tile (#1214): greyed with why without a refusal,
-    the button once one is recorded."""
+    """Drawn in its tile (#1214) only once a refusal is recorded: before
+    that, only its empty region (batch 24a)."""
     browser, _ = signed_in()
     empty = page(browser)
     assert 'id="accept-change"' in empty
-    assert 'data-accept-state="none"' in empty
+    assert "accept-change-heading" not in empty
+    assert '<template data-live-mirror="accept-offer"></template>' in empty
     assert 'value="accept_preview"' not in empty
     refusal()
     body = page(browser)

@@ -221,17 +221,25 @@ def included_in_region(path, fragment):
     either name it or be a polled fragment that carries the partial only as
     a template[data-live-mirror] copy for that page: with every such
     <template> element removed, the includer no longer names the partial.
+    An includer that is itself a partial counts as naming the region when
+    it is, in turn, included in it (Accept this change once's button, inside
+    its offer, inside #accept-change).
     """
     name = f"stewardship/{path.name}"
     includers = [
-        other.read_text()
+        (other, other.read_text())
         for other in TEMPLATES.rglob("*.html")
         if other != path and name in other.read_text()
     ]
     mirrors = re.compile(r"<template\b[^>]*\bdata-live-mirror=.*?</template>", re.S)
-    return any(names_region(text, fragment) for text in includers) and all(
-        names_region(text, fragment) or name not in mirrors.sub("", text)
-        for text in includers
+
+    def names(other, text):
+        """The includer names the region, or sits inside one that does."""
+        return names_region(text, fragment) or included_in_region(other, fragment)
+
+    return any(names(other, text) for other, text in includers) and all(
+        names(other, text) or name not in mirrors.sub("", text)
+        for other, text in includers
     )
 
 

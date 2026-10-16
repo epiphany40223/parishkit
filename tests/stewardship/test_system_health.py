@@ -20,6 +20,7 @@ from parishkit.stewardship.system_health import (
     LOADED_TILES,
     MAIL_SUMMARIES,
     REGISTRY,
+    SOURCE_SUMMARIES,
     TILES,
     AcceptPreview,
     DebugAllowPreview,
@@ -1313,8 +1314,8 @@ def test_accept_this_change_once_is_offered_for_an_open_refusal():
     assert 'value="accept_preview"' in body
     assert 'data-in-place="accept-preview"' in body
     assert 'action="/admin/system/health/#accept-change"' in body
-    assert '<template data-live-mirror="accept-button">' in body
-    assert 'data-live-mirror-target="accept-button"' in body
+    assert '<template data-live-mirror="accept-offer">' in body
+    assert 'data-live-mirror-target="accept-offer"' in body
     assert 'aria-controls="accept-change-intro-tip"' in body
     assert "accepted once with Accept this change once just below" in body
     assert "reload System health" not in body
@@ -1326,8 +1327,9 @@ def test_the_accept_region_sits_right_under_the_refusal():
     """In the ParishSoft refresh tile's details, directly after its problems,
     which end with the refused change's counts (#1214), outside the polled
     region; its heading is a subheading of the tile's. The polled copy of
-    its button carries no CSRF token, so polls compare equal; the page's
-    own copy does. It is drawn even with no refusal, greyed with why."""
+    its section carries no CSRF token, so polls compare equal; the page's
+    own copy does. With no refusal only the empty region and its mirror
+    target are drawn, for a poll to fill (batch 24a)."""
     import re
 
     from django.test import RequestFactory
@@ -1343,27 +1345,48 @@ def test_the_accept_region_sits_right_under_the_refusal():
     )
     details = tiles[tiles.index('id="health-source-details"') :]
     before, after = details.split('<div data-live-keyed="accept-change">', 1)
-    # The refusal's last line ends the problems, then at once the region.
-    assert before.rstrip().endswith(
-        "every later refresh is refused too.</p>\n</div>\n</div>"
-    )
+    # The refusal's counts end the problems, then at once the region.
+    assert before.rstrip().endswith("</tbody></table></div>\n</div>\n</div>\n</div>")
     assert "data-refused-change" in before
-    assert after.startswith('<section class="panel" id="accept-change"')
+    assert after.startswith(
+        '<div id="accept-change" data-in-place-region>'
+        '<div data-live-mirror-target="accept-offer" data-live-mirror-hold>'
+        '<section class="panel" aria-labelledby="accept-change-heading">'
+    )
     assert '<h3 id="accept-change-heading">Accept this change once</h3>' in after
     assert tiles.count('id="accept-change"') == 1
     assert 'id="accept-change"' not in region
     token = r'name="csrfmiddlewaretoken" value="([^"]*)"'
     assert re.search(token, section(tiles, 'id="accept-change"')).group(1)
-    polled = region[region.index('<template data-live-mirror="accept-button">') :]
+    polled = region[region.index('<template data-live-mirror="accept-offer">') :]
     assert re.search(token, polled).group(1) == ""
     # The region names the refusal shown, for an open preview's check.
     assert f'data-live-key-value="{REFUSED_ATTEMPT}"' in region
-    # With no refusal the region is still drawn, its button greyed with why.
+    # With no refusal nothing is drawn: the region and its target are empty,
+    # and so is the polled copy, until a poll shows a refusal.
     empty = accept_page(counts=())
-    assert 'id="accept-change"' in empty
-    assert 'data-accept-state="none"' in empty
+    assert (
+        '<div id="accept-change" data-in-place-region>'
+        '<div data-live-mirror-target="accept-offer" data-live-mirror-hold></div>'
+    ) in empty
+    assert '<template data-live-mirror="accept-offer"></template>' in empty
+    shown = empty[: empty.index('<template data-live-mirror="accept-button">')]
+    shown += empty[empty.index('<template data-live-mirror="backup-now-button">') :]
+    assert "accept-change-heading" not in shown
+    assert "data-accept-state" not in shown
     assert 'data-live-key="accept-change" data-live-key-value=""' in empty
     assert "data-refused-change" not in empty
+
+
+def test_no_accept_section_while_parishsoft_is_healthy():
+    """A healthy ParishSoft refresh has nothing to accept, so neither the
+    page nor the polled copy draws Accept this change once (batch 24a)."""
+    region, tiles = page({"health": health()})
+    assert '<template data-live-mirror="accept-offer"></template>' in region
+    assert "Accept this change once" not in tiles
+    assert "accept-change-heading" not in tiles
+    assert "data-accept-state" not in tiles
+    assert 'value="accept_preview"' not in tiles
 
 
 def test_an_accepted_refusal_is_listed_but_not_counted():
@@ -1673,3 +1696,305 @@ def test_the_allow_preview_result_and_refusals_read_in_the_region():
         answer = debug_page(debug_off={"allow": True, "refused": refused})
         assert f'data-debug-allow-refused="{refused}"' in answer
         assert words in answer, refused
+
+
+# ------------------------------------- the ParishSoft refresh tile (slice 4)
+
+
+def source_said(model, **context):
+    """The ParishSoft refresh tile's counted summary row text, without markup."""
+    tile = section(whole({"health": model} | context), 'id="health-source"')
+    counted = tile.split('class="health-said">', 1)[1].split("</span>", 1)[0]
+    return re.sub(r"<[^>]+>", "", counted).strip()
+
+
+def test_the_source_summary_names_the_first_that_holds():
+    """Each Working summary in SOURCE_SUMMARIES's order: an accepted refusal
+    outranks a hold, a hold catching up after its send outranks one still
+    held, a hold a running refresh, and the data's age with the
+    connection comes only when nothing else holds."""
+    before = NOW - timedelta(hours=2)
+    until = NOW + timedelta(hours=1)
+    working = Connection("working", NOW)
+
+    def status(**values):
+        """A refresh status with data as of ``before`` and these values."""
+        running = values.pop("running", False)
+        return FullRefreshStatus(
+            before, None, running, data_as_of=before, connection=working, **values
+        )
+
+    cases = [
+        (
+            health(
+                refresh=status(held_for_send=True, resume_at=until, running=True),
+                refused_counts=FAILED,
+                problems=(DROP_PROBLEM,),
+                drop_acceptance=accepted(),
+            ),
+            "accepted",
+            "Change accepted once; waiting for the next full refresh",
+        ),
+        (
+            health(
+                refresh=status(
+                    held_for_send=True,
+                    out_of_date=True,
+                    overdue_at=before,
+                    resume_at=until,
+                    running=True,
+                )
+            ),
+            "held",
+            f"Refreshes held during the email send until about {until.isoformat()}",
+        ),
+        (
+            health(
+                refresh=status(
+                    held_for_send=True,
+                    catching_up=True,
+                    out_of_date=True,
+                    overdue_at=before,
+                    # The resume time has passed, so it is never named.
+                    resume_at=NOW - timedelta(minutes=5),
+                    running=True,
+                )
+            ),
+            "catching_up",
+            "Catching up after the email send",
+        ),
+        (health(refresh=status(running=True)), "running", "Full refresh running"),
+        (
+            health(refresh=status()),
+            "data",
+            f"Data as of {before.isoformat()}; connection working",
+        ),
+        (
+            health(refresh=FullRefreshStatus(None, None, False)),
+            "none",
+            "No ParishSoft data yet",
+        ),
+    ]
+    assert {kind for _, kind, _ in cases} == set(SOURCE_SUMMARIES)
+    for model, kind, words in cases:
+        assert model.source_summary.kind == kind
+        assert dashboard(model).tiles[1].state == "working", kind
+        assert source_said(model) == words, kind
+    assert health(refresh=None).source_summary.kind == "none"
+    # A lapsed acceptance is no answer: the refusal counts again, so the
+    # summary is the refusal's own words.
+    lapsed = health(
+        refused_counts=FAILED,
+        problems=(DROP_PROBLEM,),
+        drop_acceptance=accepted(live=False),
+    )
+    assert lapsed.source_summary.kind != "accepted"
+    assert dashboard(lapsed).tiles[1].state == "error"
+
+
+def test_the_source_summary_states_the_connection_line():
+    """The data's age carries the connection line's state in words, or
+    nothing when the status has none."""
+    since = NOW - timedelta(hours=5)
+
+    def said(connection):
+        """The summary for data as of NOW with this connection."""
+        refresh = FullRefreshStatus(
+            NOW, None, False, data_as_of=NOW, connection=connection
+        )
+        return source_said(health(refresh=refresh))
+
+    stamp = NOW.isoformat()
+    assert said(Connection("not_checked", since)) == (
+        f"Data as of {stamp}; connection not checked since {since.isoformat()}"
+    )
+    assert said(Connection("unknown")) == (
+        f"Data as of {stamp}; connection not checked yet"
+    )
+    assert said(Connection("failing", since)) == (
+        f"Data as of {stamp}; connection failing since {since.isoformat()}"
+    )
+    assert said(None) == f"Data as of {stamp}"
+
+
+def test_source_summary_times_are_browser_local_clock_times():
+    """ "Data as of 6:02 AM": a clock time today, the full date otherwise,
+    never a zone label."""
+    refresh = FullRefreshStatus(
+        NOW, None, False, data_as_of=NOW, connection=Connection("working", NOW)
+    )
+    tile = section(whole({"health": health(refresh=refresh)}), 'id="health-source"')
+    assert (
+        f'<time datetime="{NOW.isoformat()}" data-local-instant data-time-only '
+        "data-time-day>" in tile
+    )
+    assert "UTC" not in tile
+
+
+def source_details(body):
+    """The ParishSoft refresh tile's details band, up to the next tile."""
+    start = body.index('id="health-source-details"')
+    return body[start : body.index('id="health-backups"', start)]
+
+
+def test_the_refusal_holds_its_counts_and_ends_the_problems():
+    """The refused change's item holds the counts table and comes after the
+    other problems and the unknown WorkGroup, so Accept this change once
+    follows the counts directly; its explanations sit in a toggletip and
+    the page drops the item's self-link."""
+    listed = (
+        DROP_PROBLEM,
+        LATE_PROBLEM,
+        Problem("source_tenant_mismatch", at=NOW),
+        Problem("source_retention_failing", at=NOW),
+    )
+    model = health(refused_at=NOW, refused_counts=FAILED, problems=listed)
+    (_, source, *_) = dashboard(model, findings=("workgroup_missing",)).tiles
+    assert [part.problem.kind for part in source.listed] == [
+        "source_late",
+        "source_tenant_mismatch",
+        "source_retention_failing",
+    ]
+    assert source.refusal.problem == DROP_PROBLEM
+    details = source_details(
+        tiles(
+            {
+                "health": model,
+                "workgroup_missing": "No reminders",
+                "refused_attempt": REFUSED_ATTEMPT,
+            }
+        )
+    )
+    order = re.findall(r'data-problem="([a-z_]+)"', details)
+    assert order == [
+        "source_late",
+        "source_tenant_mismatch",
+        "source_retention_failing",
+        "workgroup_missing",
+        "source_destructive_change",
+    ]
+    item = details[details.index('data-problem="source_destructive_change"') :]
+    item, after = item.split("</li>", 1)
+    assert "data-refused-change" in item and "Families with an email address" in item
+    assert after.lstrip().startswith(
+        '</ul>\n\n</div>\n<div data-live-keyed="accept-change">'
+    )
+    # The WorkGroup item matches its tile's Warning, with its setting's link.
+    workgroup = details[details.index('data-problem="workgroup_missing"') :]
+    workgroup = workgroup[: workgroup.index("</li>")]
+    assert '<li class="notice" data-problem="workgroup_missing"' in details
+    assert "Check the No-reminders WorkGroup setting" in workgroup
+    # Said once: the sentence states the refusal and what to do.
+    assert details.count("refused because some counts fell too far") == 1
+    assert "Check these numbers" not in details
+    assert "See the counts" not in details
+    tip = " ".join(tip_texts(details))
+    assert "highest value over the full refreshes of the past week" in tip
+    assert "the system keeps using the data it had" in tip
+    assert details.count("highest value over") == 1
+    assert 'aria-describedby="refused-counts-caption"' in details
+
+
+def test_home_keeps_the_refusals_link_to_its_counts():
+    """Home's sentence, drawn without the page's model, still links the tile."""
+    line = render_to_string(
+        "stewardship/system-health-problem.html", {"problem": DROP_PROBLEM}
+    )
+    assert 'href="/admin/system/health/#health-source">See the counts</a>' in line
+
+
+def test_the_source_panel_repeats_no_problem_sentence():
+    """A refused organization, old copies not removed, a failed and a late
+    refresh are each said once, by the tile's problems; the panel links the
+    runbook those sentences name and keeps the failure's details link."""
+    task = uuid4()
+    refresh = FullRefreshStatus(
+        NOW - timedelta(days=1),
+        NOW - timedelta(hours=1),
+        False,
+        failed_task_id=task,
+        overdue_at=NOW - timedelta(hours=2),
+        out_of_date=True,
+        late_minutes=90,
+    )
+    model = health(
+        refresh=refresh,
+        incidents={
+            "source_tenant_mismatch": NOW,
+            "source_retention_failing": NOW,
+        },
+        problems=find_problems(
+            mode="production",
+            processes=(),
+            missing=(),
+            schema_current=True,
+            incidents={
+                "source_tenant_mismatch": NOW,
+                "source_retention_failing": NOW,
+            },
+            refresh=refresh,
+            backup_at=NOW,
+        ),
+    )
+    details = source_details(tiles({"health": model}))
+    for words in (
+        "reaches a different organization than before",
+        "Old ParishSoft copies are not being removed",
+        "did not finish",
+        "is late",
+    ):
+        assert details.count(words) == 1, words
+    assert "minutes late" not in details
+    assert "stewardship-launch-runbooks.md#parishsoft-outage" in details
+    assert f"/admin/system/background/{task}/" in details
+    assert "appear after the next one" in details
+    # Elsewhere the shared refresh status keeps its notices.
+    shared = render_to_string(
+        "stewardship/full-refresh-status.html",
+        {"status": refresh, "can_view_task": True},
+    )
+    assert "did not finish" in shared and "minutes late" in shared
+    # Without either incident, no runbook line.
+    assert "parishsoft-outage" not in source_details(tiles({"health": health()}))
+
+
+def test_a_failed_refresh_stays_in_the_tile_while_parishsoft_is_not_answering():
+    """With the connection failing, ``source_failing`` is listed instead of
+    ``source_failed``, so the panel keeps the failed refresh's own notice;
+    once only the failure is listed, the panel shortens it."""
+    task = uuid4()
+    failed_at = NOW.replace(hour=2)
+
+    def details(connection):
+        """The ParishSoft refresh tile's details for a 2 AM failure."""
+        refresh = FullRefreshStatus(
+            NOW - timedelta(days=1),
+            failed_at,
+            False,
+            failed_task_id=task,
+            connection=connection,
+        )
+        found = find_problems(
+            mode="production",
+            processes=(),
+            missing=(),
+            schema_current=True,
+            incidents={},
+            refresh=refresh,
+            backup_at=NOW,
+        )
+        model = health(refresh=refresh, problems=found)
+        return model, source_details(tiles({"health": model}))
+
+    model, failing = details(Connection("failing", failed_at))
+    assert [problem.kind for problem in model.problems] == ["source_failing"]
+    assert not model.failed_listed
+    assert "ParishSoft has not answered since" in failing
+    assert failing.count("did not finish") == 1
+    assert 'class="notice notice-error" role="status"' in failing
+    assert f"/admin/system/background/{task}/" in failing
+    model, failed = details(Connection("working", NOW))
+    assert model.failed_listed
+    assert failed.count("did not finish") == 1
+    assert 'class="notice notice-error" role="status"' not in failed
+    assert f"/admin/system/background/{task}/" in failed

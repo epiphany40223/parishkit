@@ -5468,7 +5468,8 @@ approaches: a metrics dashboard with time-series charts, a restyle of the
 current page, a colour-only status, hiding healthy areas, and a second page
 for details.
 
-Status: the frame and the Mail tile are built. The first dashboard pull
+Status: the frame, the Mail tile and the ParishSoft refresh tile are
+built. The first dashboard pull
 request delivered slices 2a and 2b of the
 [delivery slices](#dashboard-delivery-slices), together with the parts of
 slice 1 the frame needs: the registry's tile and severity for every
@@ -5479,7 +5480,12 @@ Working summaries in a fixed order (see
 senders while they agree, and its explanations moved into toggletips and
 "About this page". A halt's kind and **Clear the halt** wait for ADM-13
 PR 4, which adds halt identities, so the Mail tile has no action region
-yet. The Administrator
+yet. Slice 4 delivered the ParishSoft refresh tile: its Working summaries
+in a fixed order (see the
+[ParishSoft refresh panel](#parishsoft-refresh-panel)), the refused
+counts inside the refusal's own problem item, listed last so Accept this
+change once follows them, and a panel that repeats none of the tile's
+problems. The Administrator
 answered the dashboard's questions on 2026-10-13; the
 [decisions](#administrator-decisions-2026-10-13) record the answers. Until
 the rest of slice 1 lands, the frame applies these defaults:
@@ -5492,7 +5498,9 @@ the rest of slice 1 lands, the frame applies these defaults:
   Slice 1 makes them registry kinds, so Home lists them too and an unknown
   WorkGroup becomes an error while Reminders are scheduled.
 - **The refusal's counts end the ParishSoft refresh tile's problems**, and
-  Accept this change once follows them directly, as the table asks.
+  Accept this change once follows them directly, as the table asks. The
+  refusal's item comes after the tile's other problems and the unknown
+  No-reminders WorkGroup, whatever the registry order.
 - **The overall line on a narrow screen.** The Not current form ("Not
   current. Not checked since 3:42 PM", then the button) cannot fit one
   320-pixel line, nor one line beside the menu on a window just wide
@@ -5508,8 +5516,9 @@ the rest of slice 1 lands, the frame applies these defaults:
   the line; the Admin session's own dialog offers to sign in again.
 - **Families the form cannot open, before any ParishSoft download**, is
   Working, with the summary "No ParishSoft data yet".
-- **Working summaries** come from a first closed set, which slices 4 to 6
-  refine tile by tile; the Mail tile's are final (slice 3).
+- **Working summaries** come from a first closed set, which slices 5 and
+  6 refine tile by tile; the Mail tile's (slice 3) and the ParishSoft
+  refresh tile's (slice 4) are final.
 
 #### Overall status line
 
@@ -5609,7 +5618,7 @@ Working with a summary that says so ("No current campaign").
 | Tile | Error when | Warning when | Working summary (examples) | Show details reveals | Action regions, in their fixed order after the problems |
 | --- | --- | --- | --- | --- | --- |
 | **Mail** | a mail consumer is halted (`sender_halted`); a mail consumer is not running, or mail dispatch has not reported (the `mail-dispatch` part of `not_running` and `not_reported`); the email provider is unavailable (`mail_provider_unavailable`); an address follow-up's permanent refusal could not be set aside (`refusal_unrecorded`, #1201) | a mail consumer is paused after an outage (`sender_outage`) | the first that holds, in the order [why sends are waiting](#why-sends-are-waiting) lists | the [why sends are waiting](#why-sends-are-waiting) panel (every reason, the 24-hour count, the resume time, the Family email progress link) and the [mail sender panel](#mail-sender-panel) (each consumer's line and any open incident) | **Clear the halt** ([ADM-13 PR 4](#clear-a-halted-mail-sender), not built). The panel content keeps its links: the deployment runbook under a not-running line, the mail-provider outage runbook beside an outage pause, Pause and resume mail beside the pause line, and Outgoing mail: waiting to retry beside the retry line. |
-| **ParishSoft refresh** | a refused large change (`source_destructive_change`, whose problem block holds the refused counts table); a different organization (`source_tenant_mismatch`); while the campaign has Reminders still scheduled, an unknown No-reminders WorkGroup (`workgroup_missing`, new in the shared list, the #861 concern) | the last full refresh failed (`source_failed`); ParishSoft could not be reached (`source_failing`); the data is out of date (`source_late`); old copies are not being removed (`source_retention_failing`); an unknown No-reminders WorkGroup while no Reminder is scheduled | "Data as of 6:02 AM; connection working", in the words of [ParishSoft data age and connection](../operations/spec.md#parishsoft-data-age-and-connection); "Refreshes held during the email send until about 4:30 PM" | the [ParishSoft refresh panel](#parishsoft-refresh-panel): refresh times, and held and skipped refreshes | **Accept this change once** (its tick box, preview and the example Families of #1213), directly after the refusal's counts table, as the Administrator asked on #1210. The problem sentences keep their links (the ParishSoft outage runbook, Check the No-reminders WorkGroup setting), and Refresh from ParishSoft ends the panel content. |
+| **ParishSoft refresh** | a refused large change (`source_destructive_change`, whose problem block holds the refused counts table); a different organization (`source_tenant_mismatch`); while the campaign has Reminders still scheduled, an unknown No-reminders WorkGroup (`workgroup_missing`, new in the shared list, the #861 concern) | the last full refresh failed (`source_failed`); ParishSoft could not be reached (`source_failing`); the data is out of date (`source_late`); old copies are not being removed (`source_retention_failing`); an unknown No-reminders WorkGroup while no Reminder is scheduled | the first that holds, in the order the [ParishSoft refresh panel](#parishsoft-refresh-panel) lists | the [ParishSoft refresh panel](#parishsoft-refresh-panel): refresh times, and held and skipped refreshes | **Accept this change once** (its tick box, preview and the example Families of #1213), directly after the refusal's counts table, as the Administrator asked on #1210. The problem sentences keep their links (the ParishSoft outage runbook, Check the No-reminders WorkGroup setting), and Refresh from ParishSoft ends the panel content. |
 | **Backups** | a backup is overdue (`backup_rpo_breach`) | an off-site copy failed (`backup_offsite_failed`); the backup key changed (`backup_key_changed`); the newest backup, finished after the configured key was activated, was sealed to another key (`backup_key_mismatch`, new); a requested backup failed, did not finish or was not picked up (`backup_request_failed`, new, until a newer request or a newer finished backup); in Production, off-site copies are not set up (`offsite_missing`, new) | "Last backup 3 hours ago; off-site copy 3 hours ago"; "Backup requested at 10:42 AM is running" | the [backups panel](#backups-panel) | **Take a backup now**. Off-site backup settings stays in the panel content beside the off-site line. |
 | **Debug logging** | none | in Production, debug logging is in effect in any service (`debug_logging`; a warning because nothing stops working, [decision 11](#administrator-decisions-2026-10-13)) | "Off"; "Turned off from this page by … at …"; "On in 4 services, as expected in Testing" | the [debug logging panel](#debug-logging-panel) | **Turn off debug logging**, then **Allow debug logging again**, which only Testing offers; in Production it stays greyed with its reason ([clearing the switch](#turn-off-debug-logging)). |
 | **Families the form cannot open** | none | at least one Family cannot open the form; the check could not run | "Every Family can open the form"; "No current campaign" | the sentence and the link of [Families the form cannot open](#system-health-page) | none; the list's link is in the sentence |
@@ -5618,11 +5627,17 @@ Working with a summary that says so ("No current campaign").
 
 Each action region is drawn when the page loads, whatever the tile's
 state, and never removed: when its action does not apply it stays greyed
-with its reason ("No refused refresh to accept", "Debug logging is off in
-every service"), as [unavailable buttons](#shared-rules-for-health-actions)
-already do. Pull requests 1206 and 1210 draw their regions only while
-their problem is current; slice 2b draws them always. "Refresh System
-health" stays at the end of the page, after the tiles.
+with its reason ("Debug logging is off in every service"), as
+[unavailable buttons](#shared-rules-for-health-actions) already do. Pull
+requests 1206 and 1210 draw their regions only while their problem is
+current; slice 2b draws them always. The exception is
+[Accept this change once](#accept-a-large-parishsoft-change-once), which
+answers the refused change and is not a standing control: it is drawn
+only while a refusal is shown, or while a step's result is (Administrator,
+pk-local batch 24a). The page has no plain "Refresh System health" link at
+its end (Administrator, pk-local batch 24a): it refreshes itself, and the
+line's [Not current](#overall-status-line) button checks again when it
+stops.
 
 #### Health problem registry
 
@@ -5929,7 +5944,8 @@ requests 1206, 1210 and 1213 have merged.
      the mirror targets and the pointer hold,
      [tiles while not current](#tiles-while-not-current), and the controls
      of pull requests 1206, 1210 and 1213 moved into their fixed places
-     and always drawn. pk-local: opening and closing tiles in one row of
+     and always drawn (Accept this change once only while a refusal is
+     shown, since slice 4). pk-local: opening and closing tiles in one row of
      the grid, a poll that changes state while a tile is open, an open
      preview across a poll, a poll left to give up with tiles open, and
      phone width.
@@ -6141,14 +6157,20 @@ might be held back:
   (and the current data, for the eligibility counts), not only the last
   full refresh. In the example, 1,084 may come from a full refresh three days
   ago that the last two refreshes each fell below by less than the limit. A
-  caption under the table says so. The counts come from the refusal's
-  durable record, not the worker's log.
+  toggletip beside the table's caption says so, and that the system keeps
+  the data it had. The counts come from the refusal's durable record, not
+  the worker's log. On the dashboard the table is part of the refusal's
+  own problem item, after its sentence, and that item ends the tile's
+  problems; on the page the sentence drops its "See the counts" link,
+  which Home keeps.
 - **A refused organization** (`source_tenant_mismatch`): no button. The
-  panel says to stop and check with the parish before changing anything,
-  linking the
-  [ParishSoft outage runbook](../../../guides/stewardship-launch-runbooks.md#parishsoft-outage).
-- **Old copies not being removed** (`source_retention_failing`), linking the
-  same runbook section. It opens when the last three refreshes skipped their
+  tile's problem says to stop and check with the parish before changing
+  anything, and the panel links the
+  [ParishSoft outage runbook](../../../guides/stewardship-launch-runbooks.md#parishsoft-outage)
+  it names.
+- **Old copies not being removed** (`source_retention_failing`): the
+  tile's problem says so, and the panel links the same runbook section.
+  It opens when the last three refreshes skipped their
   retention, or when the last 12 all ended it at a lock, statement or time
   limit, removed nothing, and old work was left undone: a compacted copy
   not reclaimed, or a report generation superseded by one created more than
@@ -6159,9 +6181,38 @@ might be held back:
   ParishSoft Family WorkGroup with the campaign's
   [No-reminders WorkGroup](#parish-and-integration-configuration) name, so no
   Family's Reminders are being skipped. The notice names the setting and
-  links its page; the refresh itself logs a WARNING. It is a panel notice,
-  not one of the problems listed first, and it clears when a refresh finds
-  the name or the setting is cleared.
+  links its page; the refresh itself logs a WARNING. Until the registry
+  slice makes it a shared kind, it is listed with the tile's problems as a
+  Warning item, after the others and before a refused change, and it
+  clears when a refresh finds the name or the setting is cleared.
+
+The panel repeats none of the tile's problems: in the tile, the shared
+refresh status leaves out its late notice, which `source_late` already
+states, and, while `source_failed` is listed, its failed notice, keeping a
+failure's "See what went wrong" link and when changes appear. While
+ParishSoft is not answering, `source_failing` is listed instead of
+`source_failed`, so the failed notice stays in full. Home and the refresh pages keep those
+notices.
+
+While the ParishSoft refresh tile is Working, its summary names the first
+of these that holds:
+
+1. "Change accepted once; waiting for the next full refresh", while the
+   refusal shown has a live acceptance (it is listed, not counted);
+2. "Catching up after the email send", while a held refresh runs or is
+   about to because its send ended or its resume time passed (no time is
+   named, since it may already be past);
+3. "Refreshes held during the email send until about 4:30 PM";
+4. "Full refresh running";
+5. "Data as of 6:02 AM", in the words of
+   [ParishSoft data age and connection](../operations/spec.md#parishsoft-data-age-and-connection),
+   followed by the connection line: "; connection working", "; connection
+   not checked since 2:00 AM", "; connection failing since 9:15 AM" or
+   "; connection not checked yet";
+6. "No ParishSoft data yet".
+
+Each time is a browser-local clock time, with the full date when it falls
+on another day.
 
 "About this page" explains what a full refresh reads, why daytime full
 refreshes pause during a send, and that every later refresh is refused
@@ -6288,7 +6339,10 @@ checks.
   announced the same way as an unavailable menu entry's (see
   [stable menu shape](#stable-menu-shape)). Each action lists its reasons.
   Greying only helps the reader: every check also runs on the server, in
-  the service function and inside the action's transaction.
+  the service function and inside the action's transaction. Accept this
+  change once's whole section is drawn only while a refusal is shown
+  ([where it appears](#accept-a-large-parishsoft-change-once)); while it
+  is drawn, its button follows this rule.
 - **Audit:** each action records one audit event, with the Administrator as
   actor and its request, signal, acceptance or switch row as subject, in the
   same transaction as the change. Its context holds only `outcome`, and each
@@ -6640,12 +6694,19 @@ requires.
 **Where it appears.** In the [ParishSoft refresh tile](#health-tiles)'s
 details, directly after the refused change's counts table that ends its
 problems (Administrator, pk-local check of #1210: not at the foot of the
-page), and before the panel content. The page always draws the region,
-whatever the tile's state; while no refusal can be accepted, its button is
-greyed with its reason ("No refused ParishSoft refresh is waiting to be
-accepted"), and the 10-second status brings the button, in place, once a
-refusal shows. The region is outside the part the status updates replace,
-so an open preview, its tick box and the headings above it never move or
+page), and before the panel content. The section is drawn only while a
+refusal is shown: one that can be accepted offers the button, and an
+accepted, lapsed or never-acceptable one shows it greyed with its reason.
+With no refusal shown, and no step's result to show, it is left out
+entirely (Administrator, pk-local batch 24a: with nothing to accept, the
+[conditional fields](../ui-conventions/spec.md#conditional-fields) rule leaves the control
+out). The 10-second status brings the section and takes it away in place,
+in the same update as the refusal's problem item and its counts, so it
+comes and goes with the problem it answers and moves nothing else. While
+a step's result shows (a preview, the acceptance just recorded, or a
+refusal of the step), the section stays, and only its button follows the
+status. The section is outside the part the status updates replace, so
+an open preview, its tick box and the headings above it never move or
 disappear when the status changes. If a status update shows another
 refusal than the one an open preview reviews, or none (the status names
 its refusal for the region, see
