@@ -97,7 +97,8 @@ def test_a_draft_change_is_reviewed_and_applied_in_the_dialog(page, component_or
     """Review opens the dialog on its title; Apply closes it, redraws the
     form in place at the applied version, says what was applied in the
     status line and leaves Review waiting for the next change. The redrawn
-    form's module scripts work, and nothing reloads."""
+    form's module scripts work, nothing reloads, the status line does not
+    move, and no line claims that typing was lost (it was reviewed)."""
     reviews = answer_reviews(page, component_origin, DRAFT_REVIEW, address=DRAFT)
     page.goto(component_origin + DRAFT)
     failures = watch(page)
@@ -109,9 +110,12 @@ def test_a_draft_change_is_reviewed_and_applied_in_the_dialog(page, component_or
     assert page.evaluate(FOCUSED) == "campaign-review-title"
     assert "Renamed campaign" in dialog.inner_text()
     assert len(reviews) == 1 and "name=Renamed+campaign" in reviews[0]
+    outcome = page.locator("#settings-outcome").evaluate(PLACE)
     dialog.get_by_role("button", name="Apply").click()
     hidden(dialog)
     eventually(page, "document.getElementById('settings-outcome').textContent !== ''")
+    assert page.locator("[data-edits-lost]").count() == 0
+    assert same_place(page.locator("#settings-outcome").evaluate(PLACE), outcome)
     line = page.locator("#settings-outcome")
     assert APPLIED_LINE.search(line.inner_text()), line.inner_text()
     assert page.evaluate(FOCUSED) == "settings-outcome"

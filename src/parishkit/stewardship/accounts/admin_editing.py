@@ -54,13 +54,12 @@ from .sessions import FreshAuthenticationRequired, authenticated_admin, require_
 # its refusals and the change's status fill this region under the form, and
 # confirmation answers with the page again rather than Change status. The
 # names are the pages' URL names; Change status's in-place follow-up may lead
-# only to one of them. Campaign settings reviews in the review dialog instead
-# (#1119), which follows Change status itself.
+# only to one of them. Campaign settings (#1119) and Share options review in
+# the review dialog instead, which follows Change status itself.
 REVIEW_REGION = "settings-review"
 IN_PLACE_PAGES = frozenset(
     {
         "parish_settings",
-        "share_settings",
         "reminder_workgroup",
         "artwork_settings",
         "branding_settings",
@@ -266,12 +265,15 @@ def reviewed_base(parameters, salt):
 
 
 def summary_errors(form):
-    """A refused form's errors for the in-place review region's summary.
+    """A refused form's (or formset's) errors for an error summary.
 
-    The form itself may not be replaced in place (its scripts and the
-    reader's typing stay), so the summary names each field and links to it.
-    A hidden field's error (a stale version) has nothing to link to. A
-    formset's errors are its own, then each row's.
+    The summary is drawn in an in-place review region, or, for a review
+    dialog's editor, on the page a Review refused for its values answers
+    with (status 400), which the page script places above the heading. The
+    form itself is never replaced (its scripts and the reader's typing
+    stay), so the summary names each field and links to it. A hidden
+    field's error (a stale version) has nothing to link to. A formset's
+    errors are its own, then each row's.
     """
     if hasattr(form, "forms"):
         # A formset: its own errors, then each row's.
