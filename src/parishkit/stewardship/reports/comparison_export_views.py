@@ -29,6 +29,7 @@ from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.observability import debug_swallowed
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.dates import parish_zone, unasked_zone
+from parishkit.stewardship.web.refusals import with_status_code
 
 from .comparison_exports import create_comparison_export, read_capture
 from .comparison_reads import DayOutOfRange
@@ -55,7 +56,8 @@ def _error(*, status):
     response.stewardship_safe_error = True
     if status == 503:
         response["Retry-After"] = "5"
-    return response
+    # The refusal log's codes for this page of its own (#1403).
+    return with_status_code(response)
 
 
 def form_day(value):

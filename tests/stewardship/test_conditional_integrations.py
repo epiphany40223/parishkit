@@ -157,9 +157,13 @@ def test_a_refused_key_is_shown_at_the_key_field(monkeypatch):
     assert missing.errors["candidate"] == ["Paste the Slack bot token to set up Slack."]
     message = "Nothing was saved: save the schedule change first."
     paired = integration_views._refused_key(
-        configuration, request, "parishsoft", message
+        configuration, request, "parishsoft", message, code="key_with_schedule_change"
     )
     assert paired.errors["candidate"] == [message]
+    assert paired.has_error("candidate", "key_with_schedule_change")
+    # A message needs its closed code (#1437).
+    with pytest.raises(TypeError):
+        integration_views._refused_key(configuration, request, "parishsoft", message)
     html = str(paired["candidate"])
     assert 'aria-invalid="true"' in html and "value=" not in html
     assert paired["intent"].value()

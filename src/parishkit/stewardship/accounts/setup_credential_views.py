@@ -208,7 +208,9 @@ def setup_credential(request, target):
                 raise StaleRecordError("Reload this setup form.")
             form = SetupCredentialForm(target, request.POST, **options)
             if form.is_valid() and blocked:
-                form.add_error(None, blocked[0])
+                form.add_error(
+                    None, forms.ValidationError(blocked[0], code="prerequisite")
+                )
             elif form.is_valid() and not form.cleaned_data["candidate"]:
                 # Keep the saved credential: nothing is staged or re-sealed.
                 refusal = _keep_refusal(form, current, organization)
@@ -218,7 +220,10 @@ def setup_credential(request, target):
                         service,
                         continue_after(request, service, STEP[target]),
                     )
-                form.add_error("candidate", refusal)
+                form.add_error(
+                    "candidate",
+                    forms.ValidationError(refusal, code="kept_credential_refused"),
+                )
             elif form.is_valid():
                 candidate = form.cleaned_data.pop("candidate").encode("utf-8")
                 try:
@@ -236,7 +241,12 @@ def setup_credential(request, target):
                         raise
                     # A malformed candidate is a field error on this page. The
                     # staging transaction has already rolled back.
-                    form.add_error("candidate", INVALID[target])
+                    form.add_error(
+                        "candidate",
+                        forms.ValidationError(
+                            INVALID[target], code="invalid_credential"
+                        ),
+                    )
                 else:
                     return _checked(
                         request,

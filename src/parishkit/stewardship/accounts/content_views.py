@@ -3,6 +3,7 @@
 from uuid import uuid4
 
 from django.core import signing
+from django.core.exceptions import ValidationError
 from django.db import DatabaseError
 from django.http import JsonResponse
 from django.shortcuts import render
@@ -496,7 +497,7 @@ def _preview(
         except UserFacingError as error:
             # A correctable refusal (removing a template that a schedule
             # still sends) is shown beside the form, which keeps its input.
-            form.add_error(None, error.refusal.message)
+            form.add_error(None, ValidationError(error.refusal.message, code="refused"))
             return _page(
                 request,
                 form,
@@ -507,7 +508,9 @@ def _preview(
                 refusal=error.refusal,
             )
         if not patch:
-            form.add_error(None, "No content has changed.")
+            form.add_error(
+                None, ValidationError("No content has changed.", code="unchanged")
+            )
             return _page(request, form, campaign, label, status=400, stale=stale)
         build_candidate(base, patch, candidate_id=uuid4())
         parish = document_parish(base.document())
@@ -549,9 +552,12 @@ def _preview(
     except (ConfigError, ValueError):
         form.add_error(
             None,
-            "Check the content and placeholders. Referenced email templates cannot "
-            "be removed. Large content or many affected schedules may need "
-            "smaller edits.",
+            ValidationError(
+                "Check the content and placeholders. Referenced email templates cannot "
+                "be removed. Large content or many affected schedules may need "
+                "smaller edits.",
+                code="candidate_refused",
+            ),
         )
         return _page(request, form, campaign, label, status=400, stale=stale)
     admin_navigation.place(request, flow="change", step="review")

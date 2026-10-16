@@ -50,7 +50,8 @@ class ShareOptionForm(AdminForm):
                 _(
                     "Use visible text and parish_name, pronoun, campaign_year, "
                     "financial_period, financial_start or financial_end placeholders."
-                )
+                ),
+                code="invalid_label",
             ) from None
         return value
 
@@ -89,7 +90,9 @@ class ShareOptionsBase(AdminFormSet):
         if any(self.errors):
             return
         if self.management_form.cleaned_data.get("INITIAL_FORMS") != len(self.previous):
-            raise forms.ValidationError(_("Reload the share options before saving."))
+            raise forms.ValidationError(
+                _("Reload the share options before saving."), code="reload"
+            )
         allowed = {row["id"] for row in self.previous}
         seen = set()
         for form in self.forms:
@@ -99,14 +102,16 @@ class ShareOptionsBase(AdminFormSet):
             identifier = str(identifier)
             if identifier not in allowed or identifier in seen:
                 raise forms.ValidationError(
-                    _("Share option identities have changed. Reload before saving.")
+                    _("Share option identities have changed. Reload before saving."),
+                    code="identity_changed",
                 )
             seen.add(identifier)
         # Deleted rows retain original identities: omitting a saved row is not
         # an explicit deletion or a way to manufacture replacement identities.
         if seen != allowed:
             raise forms.ValidationError(
-                _("Every saved option must be retained or explicitly deleted.")
+                _("Every saved option must be retained or explicitly deleted."),
+                code="missing_rows",
             )
 
     def values(self):

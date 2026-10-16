@@ -56,7 +56,7 @@ from parishkit.stewardship.web.exports import (
     download_headers,
     page_download,
 )
-from parishkit.stewardship.web.refusals import Refusal
+from parishkit.stewardship.web.refusals import Refusal, with_status_code
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
@@ -178,7 +178,8 @@ def _error(campaign_id, *, status):
     response.stewardship_safe_error = True
     if status == 503:
         response["Retry-After"] = "5"
-    return response
+    # The refusal log's codes for this page of its own (#1403).
+    return with_status_code(response)
 
 
 def _audit(action, principal, campaign_id, outcome, count=0):

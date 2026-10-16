@@ -1525,7 +1525,10 @@ migration. A refusal is a 400, 403, 404, 409, 410 or 422 answer to a request
 that resolved to an Admin page: a field or form error, a stale page,
 unexpected or duplicated form fields, an expired or altered
 [review](../ui-conventions/spec.md#review-dialog) preview, a denial, an
-action that needs a fresh sign-in, or a CSRF failure. A 404 for an address
+action that needs a fresh sign-in, or a CSRF failure. A page that answers
+a refusal in place with 200 (an action's region showing the step-up
+notice, or Automation access refusing a pairing code) marks its answer as
+a refusal, and it is recorded without a status. A 404 for an address
 that names no Admin page is not input and is not recorded. A control drawn
 [unavailable](../ui-conventions/spec.md#prerequisite-gates) is not a
 refusal, since nothing was submitted, and neither is opening a page its
@@ -1543,9 +1546,19 @@ own. The reason comes from what the refusal already carries: its closed
 refusal itself, which the shared refusals fix (`stale_page`,
 `unexpected_fields`, `expired_preview`, `bad_signature`,
 `fresh_authentication_required`, `csrf_failed`, `denied`, and `gone` for a
-retired action or another campaign's address); and the Django
-error codes of a refused form (`required`, `invalid_choice`, `max_length`
-and so on), which every Admin form records through one shared form base.
+retired action or another campaign's address), or which a refusal names
+for itself (such as `campaign_zone_not_parish`, `image_too_large` or the
+Off-site backups page's Test access refusals); and the error codes of a
+refused form: Django's own (`required`, `invalid_choice`, `max_length`
+and so on) and the closed code every validation error of the package's
+own forms carries (`too_large`, `quarter_hour`, `overlap_unconfirmed` and
+so on), which every Admin form records through one shared form base. A
+page that answers a refusal with a body of its own (a report's error page,
+a page script's JSON answer, an in-place region's refused step) gives that
+answer its closed codes, at least the code its status stands for
+(`invalid` for 400, `denied` for 403, `stale_version` for 409 and `gone`
+for 410; a 404 or 422 has no such code and records its status and any
+codes of its own).
 A refusal with no reason of its own has reason `unclassified`. When an
 exception refused it, `exception_class` names that exception's class; a
 form drawn again with its errors has no exception, and names its form,
@@ -1581,11 +1594,16 @@ redacted:
   versions (for example a campaign zone refused because the parish's stored
   zone differs). Each is at most 64 characters of `A-Z`, `a-z`, `0-9` and
   `_+./-`, so never an `@`. Only Python decides which reasons may carry
-  them; the database checks their shape, not their reason;
+  them; the database checks their shape, not their reason. Two reasons
+  carry them: `campaign_zone_not_parish` (the parish's zone and the zone
+  chosen, both from the server's zone catalog) and `image_too_large` (the
+  limit and the file's size, in bytes);
 - `unexpected_count`, for reason `unexpected_fields`, the number of
-  submitted field names that are not the form's own. Those names are
-  client-supplied and are never recorded. A field of a refused form's own
-  that was sent twice is named in `fields`, with the code `duplicate`;
+  submitted field names that are not the form's own, when the check that
+  refused them passes what was sent and the names it allows. Those names
+  are client-supplied and are never recorded. A field of a refused form's
+  own (or one such a check allows) that was sent twice is named in
+  `fields`, with the code `duplicate`;
 - `mode`, `testing` or `production`, the global mode when the refusal was
   made; and
 - `capped`, below.
