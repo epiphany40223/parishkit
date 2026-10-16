@@ -1155,6 +1155,9 @@ CREATE INDEX operational_created_id ON public.stewardship_operational_log USING 
 -- INDEX: operational_level_time
 CREATE INDEX operational_level_time ON public.stewardship_operational_log USING btree (level, created_at);
 
+-- INDEX: operational_refusal_actor_time
+CREATE INDEX operational_refusal_actor_time ON public.stewardship_operational_log USING btree (actor_id, created_at) WHERE ((event)::text = 'admin_input_refused'::text);
+
 -- INDEX: operator_recovery_operation
 CREATE UNIQUE INDEX operator_recovery_operation ON public.stewardship_config_request USING btree (request_key) WHERE ((authority)::text = 'operator_recovery'::text);
 

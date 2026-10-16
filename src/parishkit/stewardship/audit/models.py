@@ -78,6 +78,13 @@ class OperationalLog(ImmutableRecord):
             models.Index(fields=["level", "created_at"], name="operational_level_time"),
             # System logs order newest first by (created_at, id) (#308).
             models.Index(fields=["created_at", "id"], name="operational_created_id"),
+            # The refusal writer's per-actor cap counts one actor's refused
+            # Admin inputs in the current window (#1403, audit.refusals).
+            models.Index(
+                fields=["actor_id", "created_at"],
+                condition=models.Q(event="admin_input_refused"),
+                name="operational_refusal_actor_time",
+            ),
         ]
         constraints = [
             models.CheckConstraint(

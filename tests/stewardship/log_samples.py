@@ -126,6 +126,16 @@ SAMPLES = {
             "outcome": Outcome.FAILED,
         },
     ),
+    Event.ADMIN_INPUT_REFUSED: (
+        ContextKind.REFUSAL,
+        {
+            "route": "admin:campaign_create",
+            "method": "post",
+            "status": 403,
+            "reason": "denied",
+            "mode": "testing",
+        },
+    ),
     Event.CONFIG_MISMATCH: (ContextKind.EXCEPTION, {"outcome": Outcome.CHANGED}),
     Event.TASK_TIMED_OUT: (ContextKind.TIMEOUT, {"what": "lease"}),
     Event.HELPER_TIMED_OUT: (ContextKind.TIMEOUT, {"what": "mail_helper"}),

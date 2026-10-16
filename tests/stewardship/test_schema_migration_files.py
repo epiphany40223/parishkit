@@ -348,6 +348,9 @@ FROZEN = {
     "0105_campaign_setup_review.sql": (
         "c49eb82e252a0588ec584b530ed228011d134b7f29bc26650b5871993f80c0b5"
     ),
+    "0106_admin_input_refusal_log.sql": (
+        "a7eda23b477757f1155947c7c8fbef02d1d5dc5c7d6c5cc55c481cf034c82de4"
+    ),
 }
 
 

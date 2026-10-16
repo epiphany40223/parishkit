@@ -3818,15 +3818,19 @@ BEGIN
     -- Each runtime login that writes directly may record only the entries
     -- its own code writes (#293 for mail dispatch and backup, #389 L2 for
     -- web, worker and scheduler): a closed (schema, event, level) list, no
-    -- actor to impersonate, and the database's own time. Web never writes
-    -- CRITICAL, which pages and opens incidents. The schema owner, and so
-    -- every SECURITY DEFINER writer, is not limited here; no other login
-    -- holds INSERT.
+    -- actor to impersonate, and the database's own time. The one exception
+    -- is web's refused Admin input (#1403), which must name the signed-in
+    -- user it refused, so no anonymous refusal is kept; every other entry
+    -- names none. That actor is a bare id web supplies and is taken on
+    -- trust, as on every audit record web writes: a compromised web login
+    -- could name another user here. Web never writes CRITICAL, which pages
+    -- and opens incidents. The schema owner, and so every SECURITY DEFINER
+    -- writer, is not limited here; no other login holds INSERT.
     IF pg_has_role(current_user,
         (SELECT nspowner FROM pg_namespace WHERE nspname='public'),'USAGE') THEN
         RETURN NEW;
     END IF;
-    IF NEW.actor_id IS NOT NULL OR NOT (
+    IF (NEW.actor_id IS NOT NULL)<>(NEW.event='admin_input_refused') OR NOT (
         -- Work stopped by a time limit, from any runtime login.
         (current_user IN ('pk_stewardship_web','pk_stewardship_worker',
                 'pk_stewardship_scheduler','pk_stewardship_mail_dispatch',
@@ -3836,13 +3840,16 @@ BEGIN
                 'work_budget_reached','task_lease_lost')
          AND NEW.level IN ('INFO','WARNING','ERROR'))
         -- Web: an unusable source Member on a Family form, a Family
-        -- engagement record that could not be written, and an Admin
-        -- command-line command that failed unexpectedly (#617).
+        -- engagement record that could not be written, an Admin
+        -- command-line command that failed unexpectedly (#617) and a
+        -- refused Admin input (#1403).
         OR (current_user='pk_stewardship_web' AND (
             (NEW.schema,NEW.event,NEW.level) IN (
                 ('member_source','source_member_unusable','WARNING'),
                 ('failure','family_engagement_failed','ERROR'),
-                ('failure','admin_command_failed','ERROR'))))
+                ('failure','admin_command_failed','ERROR'),
+                ('refusal','admin_input_refused','INFO'),
+                ('refusal','admin_input_refused','WARNING'))))
         -- Worker: source refresh, setup load and finalize failures; source
         -- retention; operational collection; fact verification and export
         -- cleanup failures.
@@ -5585,7 +5592,7 @@ CREATE FUNCTION public.stewardship_safe_context_v1(schema_name text, payload jso
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $_$
 DECLARE allowed text[]; key text; value jsonb; text_value text;
-        ministry jsonb; previous_ministry bigint;
+        ministry jsonb; previous_ministry bigint; item jsonb;
 BEGIN
     allowed=CASE schema_name
         WHEN 'request' THEN ARRAY['method','status','outcome','source_fingerprint']
@@ -5623,13 +5630,53 @@ BEGIN
         -- An operational incident that ended (#633): the incident, its kind,
         -- the entry that opened it, how long it lasted and how often it was seen.
         WHEN 'recovery' THEN ARRAY['incident_id','incident_kind','log_id','elapsed_seconds','count']
+        -- A refused Admin input (#1403): its page or command, server-owned
+        -- form and field names, error codes and the reason, never what was
+        -- submitted (audit.refusal_context).
+        WHEN 'refusal' THEN ARRAY['route','command','method','status','form','fields','codes',
+            'reason','exception_class','expected','actual','unexpected_count','mode','capped']
         ELSE NULL END;
     IF allowed IS NULL OR jsonb_typeof(payload) IS DISTINCT FROM 'object' THEN RETURN false; END IF;
     IF schema_name IN ('member_source','boundary') AND NOT payload ?& allowed THEN RETURN false; END IF;
+    -- A refusal always says why and names exactly one of its page and its
+    -- command; an exception class and an unexpected-field count belong
+    -- only to their own reasons.
+    IF schema_name='refusal' AND (NOT payload ? 'reason'
+        OR (payload ? 'route')=(payload ? 'command')
+        OR (payload ? 'exception_class' AND payload->>'reason' IS DISTINCT FROM 'unclassified')
+        OR (payload ? 'unexpected_count' AND payload->>'reason' IS DISTINCT FROM 'unexpected_fields')) THEN
+        RETURN false;
+    END IF;
     FOR key,value IN SELECT * FROM jsonb_each(payload) LOOP
         IF NOT key=ANY(allowed) THEN RETURN false; END IF;
         text_value=value#>>'{}';
-        IF key='outcome' THEN
+        -- A refused Admin input (#1403), checked by its own rules: these keys
+        -- mean something else in the other schemas. Identifiers share one
+        -- shape (Python holds their closed sets); expected and actual are
+        -- setting values such as zone names, never an address.
+        IF schema_name='refusal' THEN
+            IF key IN ('route','method','form','reason','exception_class') THEN
+                IF jsonb_typeof(value)<>'string' OR text_value!~'^[a-z][a-z0-9_:-]{0,63}$' THEN RETURN false; END IF;
+            ELSIF key='command' THEN
+                IF jsonb_typeof(value)<>'string' OR length(text_value)>64
+                   OR text_value!~'^[a-z][a-z-]*( [a-z][a-z-]*){0,3}$' THEN RETURN false; END IF;
+            ELSIF key IN ('fields','codes') THEN
+                IF jsonb_typeof(value)<>'array' OR jsonb_array_length(value) NOT BETWEEN 1 AND 10 THEN RETURN false; END IF;
+                FOR item IN SELECT * FROM jsonb_array_elements(value) LOOP
+                    IF jsonb_typeof(item)<>'string' OR item#>>'{}'!~'^[a-z][a-z0-9_:-]{0,63}$' THEN RETURN false; END IF;
+                END LOOP;
+            ELSIF key IN ('expected','actual') THEN
+                IF jsonb_typeof(value)<>'string' OR text_value!~'^[A-Za-z0-9_+./-]{1,64}$' THEN RETURN false; END IF;
+            ELSIF key='mode' THEN
+                IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('testing','production') THEN RETURN false; END IF;
+            ELSIF key='capped' THEN
+                IF jsonb_typeof(value)<>'boolean' THEN RETURN false; END IF;
+            ELSIF key='status' THEN
+                IF jsonb_typeof(value)<>'number' OR text_value NOT IN ('400','403','404','409','410','422') THEN RETURN false; END IF;
+            ELSE
+                IF jsonb_typeof(value)<>'number' OR text_value!~'^[0-9]{1,4}$' THEN RETURN false; END IF;
+            END IF;
+        ELSIF key='outcome' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('started','succeeded','denied','failed','retry','cancelled','changed') THEN RETURN false; END IF;
         ELSIF key='reason' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('no_deliverable_recipient',
