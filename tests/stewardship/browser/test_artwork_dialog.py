@@ -2,10 +2,11 @@
 
 The pages are artwork_components', served at Campaign images' real address.
 An upload posts its image (multipart) without a page load and opens the
-dialog with the image as it will appear; Remove this image opens it with the
-removal. Once Apply is applied, the dialog closes, the slots are redrawn in
-place with the new current image and the status line under them says what
-was applied, with no reload and no slot moving. A refused upload stays on
+dialog with the image as it will appear; Remove this image opens it with a
+confirmation of the removal (#1356). Once Apply is applied, the dialog
+closes, the slots are redrawn in place with the new current image and the
+status line under them says what was applied, with no reload and no slot
+moving. A refused upload stays on
 the slot's field; a refused Apply shows in the dialog. Each test sets a mark
 outside every region, which only a full page load could lose.
 """
@@ -67,9 +68,9 @@ def watch(page):
     return failures
 
 
-def dialog_of(page):
-    """The review dialog, once it is open."""
-    dialog = page.get_by_role("dialog", name="Review campaign image")
+def dialog_of(page, name="Review campaign image"):
+    """The review dialog, once it is open, named ``name``."""
+    dialog = page.get_by_role("dialog", name=name)
     visible(dialog)
     return dialog
 
@@ -97,6 +98,8 @@ def test_an_upload_is_reviewed_and_applied_in_the_dialog(page, component_origin)
     dialog = dialog_of(page)
     assert page.evaluate(FOCUSED) == "artwork-review-title"
     assert "not yet in use" in dialog.inner_text()
+    # An upload keeps its full review (class C, #1356): no confirmation.
+    assert dialog.get_attribute("aria-describedby") is None
     # The staged image as it will appear (the fixture server has no file).
     assert dialog.locator("img.branding-preview.artwork-banner").count() == 1
     assert banner.get_by_text("Current image").count() == 0
@@ -115,11 +118,12 @@ def test_an_upload_is_reviewed_and_applied_in_the_dialog(page, component_origin)
     assert not failures
 
 
-def test_remove_this_image_is_reviewed_in_the_dialog(page, component_origin):
+def test_remove_this_image_is_confirmed_in_the_dialog(page, component_origin):
     """Remove this image, offered only where a slot has an image, opens the
-    dialog with the removal; Apply closes it, and the status line says the
-    image was removed and takes focus. Nothing reloads, and neither a slot
-    nor the status line moves when the slots are redrawn."""
+    dialog as a confirmation (#1356): "Remove this image?", described by its
+    one sentence. Apply closes it, and the status line says the image was
+    removed and takes focus. Nothing reloads, and neither a slot nor the
+    status line moves when the slots are redrawn."""
     reviews = answer_reviews(page, component_origin, REMOVAL, address=PAGE)
     page.goto(component_origin + PAGE)
     failures = watch(page)
@@ -128,8 +132,15 @@ def test_remove_this_image_is_reviewed_in_the_dialog(page, component_origin):
     slot(page, "Welcome page icon").get_by_role(
         "button", name="Remove this image"
     ).click()
-    dialog = dialog_of(page)
-    assert "Stop showing an image for: Welcome page icon" in dialog.inner_text()
+    dialog = dialog_of(page, "Remove this image?")
+    assert page.evaluate(FOCUSED) == "artwork-review-title"
+    assert dialog.get_attribute("aria-describedby") == "artwork-review-summary"
+    summary = dialog.locator("#artwork-review-summary").inner_text()
+    assert summary == (
+        "Welcome page icon: Families will see no image there until you upload"
+        " a new one."
+    )
+    assert "Nothing changes until" not in dialog.inner_text()
     assert len(reviews) == 1 and "slot=welcome" in reviews[0]
     dialog.get_by_role("button", name="Apply").click()
     hidden(dialog)
@@ -163,12 +174,15 @@ def test_the_status_line_is_in_the_slot_and_the_page_never_jumps(
     if change == "upload":
         changed, start, name = "banner", "Campaign image changed.", "Banner"
         upload_banner(page)
+        title = "Review campaign image"
     else:
         changed, start, name = "welcome", "Campaign image removed.", "Welcome"
         slot(page, "Welcome page icon").get_by_role(
             "button", name="Remove this image"
         ).click()
-    dialog = dialog_of(page)
+        # Remove this image is a confirmation (#1356).
+        title = "Remove this image?"
+    dialog = dialog_of(page, title)
     scrolled = page.evaluate("window.scrollY")
     dialog.get_by_role("button", name="Apply").click()
     hidden(dialog)

@@ -889,7 +889,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `campaign_mail` | Preview and test email | _email name_ | Administrator | Campaign email test | `/admin/campaign/content/test/<revision>/` | (same) | Returns to the page it was opened from (Go-live readiness, Pause and resume mail). |
 | `campaign_mail_families` | Send to chosen Families | Preview and test email | Administrator | Send this email to chosen Families | `/admin/campaign/content/test/<revision>/families/` | (same) |  |
 | `artwork_settings` | Campaign images | Menu: Campaign images | Administrator | (same) | `/admin/campaign/images/` | (same) |  |
-| `artwork_upload` | Campaign images | Campaign images | Administrator | Campaign images (upload error); Campaign image upload | `/admin/campaign/images/<slot>/` (POST only) | (same) | POST-only: a staged upload answers with the review dialog's review of it (#750); a refused one re-renders Campaign images (status 400). Review campaign image and Remove campaign image are reviews in Campaign images' review dialog; their old addresses are gone. |
+| `artwork_upload` | Campaign images | Campaign images | Administrator | Campaign images (upload error); Campaign image upload | `/admin/campaign/images/<slot>/` (POST only) | (same) | POST-only: a staged upload answers with the review dialog's review of it (#750); a refused one re-renders Campaign images (status 400). Review campaign image is a review, and Remove campaign image a confirmation (#1356), in Campaign images' review dialog; their old addresses are gone. |
 | `schedule_settings` | Dates and mail schedules | Menu: Dates and mail schedules | Administrator | Mail schedules and campaign dates; Mail schedules | `/admin/campaign/schedules/` | (same) |  |
 | `schedule_new` | New scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/addition/` | (same) | Its review confirms through Dates and mail schedules. |
 | `schedule_edit` | Edit scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/<schedule>/` | (same) | The New page filled in; refuses a read-only schedule. |
@@ -1504,8 +1504,11 @@ a reason to offer the upload.
 An upload and Remove this image (offered only for a slot with an image) are
 reviewed and applied in the
 [review dialog](../ui-conventions/spec.md#review-dialog) (#750): a staged
-upload opens it with the image as it will appear, a removal with what
-Families will see instead, and Apply posts the signed preview, with the slot
+upload opens it with the image as it will appear. A removal is a
+[confirmation](../ui-conventions/spec.md#review-dialog) (#1356), "Remove
+this image?", since the slot and its image are on the page behind it: one
+sentence names the slot and says Families will see no image there until a
+new one is uploaded. Apply posts the signed preview, with the slot
 (and staged image) it names, to Campaign images; the page takes no query. A
 refused upload keeps its error on the slot's field. An upload that expired,
 or was staged against settings changed since, is refused in the dialog with
@@ -6547,7 +6550,19 @@ checks.
   can change (a halt, a refusal), the confirmation carries the signed
   preview binding that other Admin previews use, and the server refuses it
   when that state has changed ("This changed since you looked; review it
-  again"). A repeated click returns the first result.
+  again"). A repeated click returns the first result. **Take a backup
+  now**, **Turn off debug logging** and **Allow debug logging again**
+  confirm in the shared
+  [review dialog](../ui-conventions/spec.md#review-dialog) as a
+  confirmation (#1356): their previews would only repeat what the page
+  shows (the last backup in the Backups details, the services with debug
+  logging on and when the switch was set in its panel, the actions' rules
+  in "About this page"), so the
+  dialog says in one sentence what Apply does and adds only what the server
+  worked out. Their refusals, the step-up included, show in the dialog, and
+  Apply's answer redraws the action's region, its button greyed with the
+  reason. The server's checks, the preview's key and the
+  audit are unchanged.
 - **Unavailable buttons are greyed, never hidden.** A button that cannot be
   used right now stays in place, unavailable, with its reason shown and
   announced the same way as an unavailable menu entry's (see
@@ -6656,10 +6671,14 @@ the backup login. Instead:
    `created_at`), so a restored request is never run and the page shows it
    as cancelled by a restore, not as not picked up.
 
-**Preview.** When the last backup finished, whether off-site copies are on,
-and the last backup's size; that the new backup follows the usual retention
-rules and adds to disk use until they remove it; and, during a bulk send,
-that the backup will wait until the send finishes.
+**Preview.** A confirmation in the review dialog (#1356), "Take a backup
+now?": one sentence says the server takes one backup soon, of the same kind
+as the scheduled ones, and whether it is copied off-site or stays on the
+server; during a bulk send, it adds that the backup will wait until the send
+finishes, with the send's progress link. When the last backup finished and
+its size are in the Backups details behind the dialog, and that a requested
+backup follows the usual retention rules and adds to disk use until they
+remove it is in "About this page".
 
 **Unavailable when** (greyed, with the reason): a request is already waiting
 or running ("A backup was requested at 10:42 AM and is running; it started
@@ -7043,12 +7062,15 @@ switch stays set until it is cleared.
    apply the switch. The debug logging banner, which reads only the web
    process's own state, ends when that process applies the switch.
 5. Lines written before a process first reads the switch at startup are not
-   covered. The preview says so.
+   covered. "About this page" says so.
 
-**Preview.** The services with debug logging in effect; that lines already
-written stay in the logs; that the setting on the server still says "on"
-until the server operator recreates the services; and the startup gap
-above.
+**Preview.** A confirmation in the review dialog (#1356), "Turn off debug
+logging?": one sentence says debug logging is turned off now, without
+restarting them, in the services the server found with it on (named), until
+the switch is cleared. That lines already written stay in the logs, the
+startup gap above, and that the setting on the server still says "on" until
+the server operator recreates the services are in "About this page", the
+region's toggletip and the panel, so the dialog does not repeat them.
 
 **Where it appears.** In the [Debug logging tile](#health-tiles)'s
 details, after its problems and before the panel content. The page always
@@ -7090,14 +7112,17 @@ debug logging is back in effect, the
 panel says when the server operator cleared the switch.
 In Testing mode the region also offers **Allow debug logging again**
 (ADM-13 PR 6c), below Turn off debug logging, while the switch is set. Its
-preview says when the switch was set, that services started with debug
-logging on log in debug form again within about a minute (never one started
-without it), and that debug logs can hold personal data; confirming clears
+preview is a confirmation in the review dialog (#1356), "Allow debug logging
+again?": when the switch was set is on the page behind it (the button's
+reason and the panel), so one sentence says that clearing it lets services
+started with debug logging on (never one started without it) log in debug
+form again within about a minute, which can record Families' personal
+information; confirming clears
 the switch (`cleared_by` `administrator`, the Administrator recorded), under
 the [shared rules](#shared-rules-for-health-actions), and records
 `debug_logging_allowed` naming the switch (from the command line also
 `admin_cmd_system_debug_allow`, `pk-admin system debug-allow`). Each step is
-answered in place, with the same fresh sign-in step-up. A repeated
+answered in the dialog, with the same fresh sign-in step-up. A repeated
 confirmation returns the switch already cleared; one another Administrator
 or the server operator cleared first is refused as stale. It is greyed,
 with the reason, while no switch is set, and in Production ("In Production

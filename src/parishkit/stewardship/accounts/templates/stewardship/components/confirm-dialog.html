@@ -74,14 +74,21 @@
     itself: data-review-title on the fragment replaces the title for that
     answer, and data-review-describedby names its sentence; any other
     answer gets the dialog's own title and description back.
+  - apply_action, when set, is the action Apply posts instead of
+    "confirm": System health's Turn off debug logging and Allow debug
+    logging again (#1356), whose page names each action's steps.
   - redraw_answer=True redraws the page's regions from the address Apply's
     answer ended on (the page naming its change, ?request=), not from the
     page's own address, and makes it the page's address: Create the
     campaign's own address can only be refused once the campaign exists.
-{% endcomment %}{% if review %}<dialog id="{{ dialog_id }}" class="confirm-dialog review-dialog" aria-labelledby="{{ dialog_id }}-title"{% if describedby %} aria-describedby="{{ describedby }}"{% endif %} data-review-dialog data-confirm-fallback="{{ fallback }}" data-review-return="{{ return_url|default:'' }}"{% if redraw_answer %} data-review-redraw="answer"{% endif %} data-review-outcome="{{ outcome_id }}" data-working="{% translate 'Applying…' %}" data-applied="{% translate 'Applied.' %}" data-applied-at="{% translate 'Applied at {time}.' %}">
+  - redraw_body=True instead redraws the page's regions from Apply's answer
+    itself, which then holds every region the change redraws, without
+    reading the page again: System health's actions (#1356), whose page
+    read is audited.
+{% endcomment %}{% if review %}<dialog id="{{ dialog_id }}" class="confirm-dialog review-dialog" aria-labelledby="{{ dialog_id }}-title"{% if describedby %} aria-describedby="{{ describedby }}"{% endif %} data-review-dialog data-confirm-fallback="{{ fallback }}" data-review-return="{{ return_url|default:'' }}"{% if redraw_answer %} data-review-redraw="answer"{% elif redraw_body %} data-review-redraw="body"{% endif %} data-review-outcome="{{ outcome_id }}" data-working="{% translate 'Applying…' %}" data-applied="{% translate 'Applied.' %}" data-applied-at="{% translate 'Applied at {time}.' %}">
 <h2 id="{{ dialog_id }}-title" tabindex="-1" data-review-title>{{ title }}</h2>
 <div class="dialog-body" tabindex="0" role="region" aria-labelledby="{{ dialog_id }}-title" data-review-body></div>
-<form method="post" action="{{ apply_url }}" data-review-apply>{% csrf_token %}<input type="hidden" name="action" value="confirm"></form>
+<form method="post" action="{{ apply_url }}" data-review-apply>{% csrf_token %}<input type="hidden" name="action" value="{{ apply_action|default:'confirm' }}"></form>
 <div class="dialog-actions">{% button type="button" data-confirm-accept %}{% translate "Apply" %}{% endbutton %}{% button type="button" variant="secondary" data-confirm-cancel %}{% translate "Cancel" %}{% endbutton %}</div>
 <p class="dialog-status" role="status" data-confirm-status></p>
 <div class="notice notice-error" role="alert" data-confirm-error hidden></div>

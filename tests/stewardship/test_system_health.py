@@ -7,11 +7,13 @@ projection, without a database.
 
 import re
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from parishkit.stewardship.source.data_age import Connection
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
@@ -25,6 +27,7 @@ from parishkit.stewardship.system_health import (
     SOURCE_SUMMARIES,
     TILES,
     AcceptPreview,
+    BackupPreview,
     BackupRequestStatus,
     DebugAllowPreview,
     DebugOffPreview,
@@ -47,6 +50,10 @@ from parishkit.stewardship.system_health import (
 )
 
 NOW = datetime(2026, 10, 6, 15, 0, tzinfo=UTC)
+TEMPLATES = (
+    Path(__file__).parents[2]
+    / "src/parishkit/stewardship/accounts/templates/stewardship"
+)
 
 
 def row(service="web", process="main", *, age=0, started=600, **values):
@@ -1092,6 +1099,79 @@ def test_a_requested_backup_reads_as_the_page_words_it():
     assert "Its size is 3.0" in body and "taken by version 1.4.2" in body
 
 
+def backup_answer(**result):
+    """Take a backup now's review dialog fragment for one step's result."""
+    return render_to_string(
+        "stewardship/system-health-backup-review.html",
+        {"health": health(), "poll_interval": 10000, "backup_now": result},
+    )
+
+
+def test_take_a_backup_now_opens_its_confirmation_in_the_review_dialog():
+    """The button posts the preview step to the page's review dialog (#1356),
+    not in place, and the page draws that dialog, a confirmation redrawn from
+    Apply's answer, with the region's status line after the region."""
+    body = whole({"health": health()})
+    region = section(body, 'id="backup-now"')
+    assert 'data-review-open="backup-review"' in region
+    assert 'value="preview"' in region and "data-in-place=" not in region
+    assert 'action="/admin/system/health/"' in region
+    assert 'id="backup-now-outcome"' in body
+    assert body.index('id="backup-now-outcome"') > body.index('id="backup-now"')
+    page = (TEMPLATES / "system-health.html").read_text()
+    assert 'dialog_id="backup-review"' in page and "review=True" in page
+    assert 'describedby="backup-review-summary"' in page
+    assert 'outcome_id="backup-now-outcome"' in page and "redraw_body=True" in page
+    assert 'translate "Take a backup now?" as backup_title' in page
+    # The request's retention moved to the page's help, out of the preview.
+    assert "follows the usual retention rules" in page
+
+
+def test_the_backup_confirmation_says_only_what_the_page_does_not():
+    """One sentence, off-site or not; the held-send warning only when a send
+    is in progress; the key Apply posts. Never the last backup's time or
+    size, which the Backups details show."""
+    preview = BackupPreview(
+        key="k-9", backup_at=NOW, backup_bytes=1024, offsite=True, held=False
+    )
+    text = backup_answer(preview=preview)
+    assert '<div data-review-answer data-review-done="Backup requested.">' in text
+    assert (
+        '<p id="backup-review-summary">This asks the server to take one backup soon,'
+        " of the same kind as the scheduled ones, and to copy it off-site to"
+        " Google Drive.</p>"
+    ) in text
+    assert 'name="key" value="k-9" data-review-preview' in text
+    assert "The last backup finished" not in text and "1.0" not in text
+    assert "Family email send is in progress" not in text
+    held = backup_answer(
+        preview=BackupPreview(
+            key="k-9", backup_at=None, backup_bytes=None, offsite=False, held=True
+        )
+    )
+    assert "off-site copies are not set up, so it stays on the server only" in held
+    assert "A Family email send is in progress, so the backup will wait" in held
+    assert f'<a href="{reverse("admin:family_email_progress")}">' in held
+
+
+def test_the_backup_request_and_refusals_answer_the_dialog():
+    """Apply's answer draws the region again; each refusal is marked for the
+    dialog to show as drawn, the step-up's Confirm with Google included."""
+    done = backup_answer(requested=SimpleNamespace(created_at=NOW), created=True)
+    assert 'id="backup-now"' in done and "data-review-answer" not in done
+    for refused, words in (
+        ("reauthenticate", "For security, taking a backup now needs a Google"),
+        ("busy", "A backup is already requested"),
+        ("denied", "The server refused this backup request"),
+        ("invalid", "That request could not be read."),
+    ):
+        text = backup_answer(refused=refused)
+        assert text.strip().startswith("<div data-review-refusal>"), refused
+        assert f'data-backup-refused="{refused}"' in text and words in text
+        assert 'id="backup-now"' not in text
+    assert "Confirm with Google" in backup_answer(refused="reauthenticate")
+
+
 def debug_page(
     *, switch=None, debug=True, actor="admin@example.org", mode="production", **values
 ):
@@ -1113,11 +1193,20 @@ def debug_page(
 
 
 def test_turn_off_debug_logging_is_offered_while_a_service_has_it_on():
-    """The button posts the preview step in place; help says who clears it."""
+    """The button posts the preview step to the page's review dialog
+    (#1356); help says who clears it."""
     body = debug_page()
     assert 'value="debug_off_preview"' in body
-    assert 'data-in-place="debug-off-preview"' in body
-    assert 'action="/admin/system/health/#debug-off"' in body
+    assert 'data-review-open="debug-off-review"' in body
+    assert 'data-in-place="debug-off-preview"' not in body
+    assert body.index('id="debug-off-outcome"') > body.index('id="debug-off"')
+    page = (TEMPLATES / "system-health.html").read_text()
+    assert 'dialog_id="debug-off-review"' in page
+    assert 'apply_action="debug_off_confirm"' in page
+    assert 'describedby="debug-off-review-summary"' in page
+    assert 'translate "Turn off debug logging?" as debug_off_title' in page
+    # What the switch leaves alone moved to the page's help.
+    assert "before it first reads the switch" in page
     # The polled copy carries the same enabled button for the mirror.
     assert '<template data-live-mirror="debug-off-button">' in body
     assert "pk-stewardship debug-off-clear" in body
@@ -1157,35 +1246,54 @@ def test_a_cleared_switch_is_named_only_while_debug_logging_is_back():
     assert "cleared the debug-off switch" not in debug_page(switch=cleared, debug=False)
 
 
-def test_the_preview_and_each_refusal_read_in_the_region():
-    """Preview, result and refusals are drawn inside #debug-off."""
-    preview = DebugOffPreview(key="k-1", processes=("the web portal",))
-    body = debug_page(debug_off={"preview": preview})
-    for words in (
-        "Debug logging is on in: the web portal.",
-        "Lines already written stay in the logs",
-        "still says “on” until the server operator recreates the services",
-        "Only the server operator can clear the switch.",
-        "Confirm: turn off debug logging",
-    ):
-        assert words in body, words
-    assert 'name="key" value="k-1"' in body
-    assert 'value="debug_off_confirm"' in body and 'value="debug_off_cancel"' in body
-    # The preview replaces the region's button, so a poll cannot discard it.
-    region = section(body, 'id="debug-off"')
-    assert "data-live-mirror-target" not in region
-    done = debug_page(
-        switch=DebugSwitchStatus(set_at=NOW, cleared_at=None, cleared_by=None),
-        debug_off={"requested": SimpleNamespace(set_at=NOW), "created": True},
+def debug_off_answer(**result):
+    """Turn off debug logging's review dialog fragment for one step's result."""
+    return render_to_string(
+        "stewardship/system-health-debug-off-review.html",
+        {
+            "health": health(
+                processes=group_processes([row(debug_logging=True)], NOW),
+                debug_switch=DebugSwitchStatus(
+                    set_at=NOW, cleared_at=None, cleared_by=None
+                ),
+            ),
+            "debug_actor": "admin@example.org",
+            "poll_interval": 10000,
+            "debug_off": result,
+        },
     )
-    assert "data-debug-off-set" in done and "Debug logging turned off at" in done
+
+
+def test_the_debug_off_confirmation_and_each_refusal_answer_the_dialog():
+    """The preview is one sentence naming the services with debug logging on,
+    never the fixed bullets the About panel holds; Apply's answer draws the
+    region again, its button greyed; each refusal is marked for the dialog."""
+    preview = DebugOffPreview(key="k-1", processes=("the web portal",))
+    text = debug_off_answer(preview=preview)
+    assert (
+        '<div data-review-answer data-review-done="Debug logging turned off.">'
+    ) in text
+    assert (
+        '<p id="debug-off-review-summary">This turns debug logging off now in the'
+        " services that have it on (the web portal), without restarting them,"
+        " until the debug-off switch is cleared.</p>"
+    ) in text
+    assert 'name="key" value="k-1" data-review-preview' in text
+    for words in ("Lines already written", "still says", "Confirm: turn off"):
+        assert words not in text, words
+    quiet = debug_off_answer(preview=DebugOffPreview(key="k-1", processes=()))
+    assert "No service reports debug logging right now" in quiet
+    done = debug_off_answer(requested=SimpleNamespace(set_at=NOW), created=True)
+    assert 'id="debug-off"' in done and "data-review-answer" not in done
+    assert 'disabled aria-describedby="debug-off-reason"' in done
     for refused, words in (
         ("reauthenticate", "For security, turning off debug logging needs a Google"),
         ("busy", "Debug logging has already been turned off"),
         ("denied", "The server refused to turn off debug logging"),
         ("invalid", "That request could not be read."),
     ):
-        answer = debug_page(debug_off={"refused": refused})
+        answer = debug_off_answer(refused=refused)
+        assert answer.strip().startswith("<div data-review-refusal>"), refused
         assert f'data-debug-off-refused="{refused}"' in answer
         assert words in answer, refused
 
@@ -1735,11 +1843,18 @@ SET = DebugSwitchStatus(set_at=NOW, cleared_at=None, cleared_by=None)
 
 
 def test_allow_debug_logging_again_is_offered_only_in_testing_while_set():
-    """Testing with the switch set: the button posts the preview in place,
-    and the polled copy carries it. Otherwise it is greyed with why."""
+    """Testing with the switch set: the button posts the preview to its
+    review dialog (#1356), and the polled copy carries it. Otherwise it is
+    greyed with why."""
     body = debug_page(switch=SET, debug=False, mode="testing")
     assert 'value="debug_allow_preview"' in body
-    assert 'data-in-place="debug-allow-preview"' in body
+    assert 'data-review-open="debug-allow-review"' in body
+    assert "data-in-place=" not in section(body, 'id="debug-off"')
+    page = (TEMPLATES / "system-health.html").read_text()
+    assert 'dialog_id="debug-allow-review"' in page
+    assert 'apply_action="debug_allow_confirm"' in page
+    assert 'describedby="debug-allow-review-summary"' in page
+    assert 'translate "Allow debug logging again?" as debug_allow_title' in page
     assert body.count('value="debug_allow_preview"') == 2  # region and mirror
     assert "In Testing, Allow debug logging again on this page clears" in body
     production = debug_page(switch=SET, debug=False)
@@ -1751,36 +1866,43 @@ def test_allow_debug_logging_again_is_offered_only_in_testing_while_set():
     assert "The debug-off switch is not set." in unset
 
 
-def test_the_allow_preview_result_and_refusals_read_in_the_region():
-    """Allow debug logging again answers inside #debug-off, in its own words."""
-    preview = DebugAllowPreview(key="k-2", set_at=NOW)
-    body = debug_page(
-        switch=SET, mode="testing", debug_off={"allow": True, "preview": preview}
-    )
-    for words in (
-        "This clears the debug-off switch set at",
-        "never turns debug logging on in a service started without it",
-        "Confirm: allow debug logging again",
-    ):
-        assert words in body, words
-    assert 'name="key" value="k-2"' in body
-    assert 'value="debug_allow_confirm"' in body
-    assert 'value="debug_allow_cancel"' in body
-    # The region alone: the tile's panel content follows it, in its own
-    # mirror target.
-    start = body.index('id="debug-off"')
-    region = body[start : body.index("</section>", start)]
-    assert "data-live-mirror-target" not in region
-    assert "Confirm: turn off debug logging" not in body
+def debug_allow_answer(**result):
+    """Allow debug logging again's review dialog fragment for one result."""
     cleared = DebugSwitchStatus(
         set_at=NOW - timedelta(hours=1), cleared_at=NOW, cleared_by="administrator"
     )
-    done = debug_page(
-        switch=cleared,
-        mode="testing",
-        debug_off={"allow": True, "allowed": cleared, "created": True},
+    return render_to_string(
+        "stewardship/system-health-debug-allow-review.html",
+        {
+            "health": health(debug_switch=cleared, mode="testing"),
+            "debug_actor": None,
+            "poll_interval": 10000,
+            "debug_off": {"allow": True} | result,
+        },
     )
-    assert "data-debug-allowed" in done and "Debug-off switch cleared at" in done
+
+
+def test_the_allow_confirmation_result_and_refusals_answer_the_dialog():
+    """Allow debug logging again's preview is one sentence that keeps the
+    personal-information caution, never the switch's set time the page
+    shows; Apply's answer draws Turn off debug logging's region again; each
+    refusal is marked for the dialog, in its own words."""
+    preview = DebugAllowPreview(key="k-2", set_at=NOW)
+    text = debug_allow_answer(preview=preview)
+    assert (
+        '<div data-review-answer data-review-done="Debug logging allowed again.">'
+    ) in text
+    assert (
+        '<p id="debug-allow-review-summary">This clears the debug-off switch:'
+        " within about a minute, services started with debug logging on log in"
+        " debug form again, which can record Families' personal"
+        " information.</p>"
+    ) in text
+    assert 'name="key" value="k-2" data-review-preview' in text
+    assert "set at" not in text and NOW.isoformat() not in text
+    assert "Confirm: allow debug logging again" not in text
+    done = debug_allow_answer(allowed=SimpleNamespace(cleared_at=NOW), created=True)
+    assert 'id="debug-off"' in done and "data-review-answer" not in done
     for refused, words in (
         ("reauthenticate", "allowing debug logging again needs a Google sign-in"),
         ("busy", "The debug-off switch is no longer set"),
@@ -1788,7 +1910,8 @@ def test_the_allow_preview_result_and_refusals_read_in_the_region():
         ("denied", "The server refused to allow debug logging again"),
         ("invalid", "That request could not be read."),
     ):
-        answer = debug_page(debug_off={"allow": True, "refused": refused})
+        answer = debug_allow_answer(refused=refused)
+        assert answer.strip().startswith("<div data-review-refusal>"), refused
         assert f'data-debug-allow-refused="{refused}"' in answer
         assert words in answer, refused
 
@@ -2406,7 +2529,9 @@ def test_the_debug_panel_repeats_no_sentence():
 def test_a_live_request_is_stated_once_in_the_band():
     """The request's progress is one line, under Take a backup now's button
     (#1317): when it was made and its state (and when it started); the
-    panel does not repeat it, and the confirmation points to the line."""
+    panel does not repeat it, nor does Apply's answer, the region drawn
+    again for the review dialog (#1356), whose status line says only that
+    the backup was requested."""
     made = NOW - timedelta(minutes=12)
     started = NOW - timedelta(minutes=2)
     for status in ("waiting", "held", "running"):
@@ -2432,10 +2557,6 @@ def test_a_live_request_is_stated_once_in_the_band():
             )
         )
         assert confirmed.count(f'datetime="{made.isoformat()}"') == 1, status
-        assert (
-            "Backup requested. The line under the button follows its progress"
-            in confirmed
-        )
         assert details.count("data-backup-request=") == 1, status
         line = confirmed[confirmed.index('id="backup-now-reason"') :]
         assert f'data-backup-request="{status}"' in line[: line.index(">")]
@@ -2475,14 +2596,15 @@ def test_the_backup_region_checks_the_status_again_once_answered():
 
 def test_the_debug_regions_answers_point_where_things_are_said():
     """After turning it off, nothing points to a service list the
-    Production panel no longer has; a repeated request points to the greyed
-    button, which says who and when; the Testing note about the button is
+    Production panel no longer has; a repeated request, refused in the
+    review dialog (#1356), points to the greyed button, which says who and
+    when (no "below" in a dialog); the Testing note about the button is
     left out while the switch greys it."""
-    body = debug_page(debug_off={"requested": SimpleNamespace(set_at=NOW)})
-    assert "Each service stops logging in debug form within about a minute." in body
+    body = debug_off_answer(requested=SimpleNamespace(set_at=NOW))
     assert "details below show when" not in body
-    busy = debug_page(switch=SET, debug_off={"refused": "busy"})
-    assert "The greyed button below says who did it and when." in busy
+    busy = debug_off_answer(refused="busy")
+    assert "The greyed button says who did it and when." in busy
+    assert "below" not in busy
     assert "Turn off debug logging works here too" in debug_page(mode="testing")
     assert "works here too" not in debug_page(switch=SET, mode="testing")
 
