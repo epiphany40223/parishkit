@@ -10,6 +10,7 @@ from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.campaigns.production_models import ProductionTransitionEvent
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.web.refusals import unexpected_fields
 
 from . import admin_navigation, confirmation_commands, confirmation_progress
 from .admin_caller import AdminCaller, is_automation
@@ -77,7 +78,7 @@ def confirmation(request, campaign_id, request_id, preparation_id):
             preview, verified, token = confirmation_commands.verify_preview(*arguments)
             state = preview.readiness
         elif request.method == "POST":
-            raise ValueError("Invalid Production confirmation action.")
+            raise unexpected_fields()
         else:
             with work_transaction():
                 state = collect_readiness(*arguments)

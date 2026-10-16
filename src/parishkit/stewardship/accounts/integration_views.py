@@ -21,7 +21,7 @@ from parishkit.stewardship.source.refresh_status import (
 )
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.refusals import UserFacingError
+from parishkit.stewardship.web.refusals import UserFacingError, unexpected_fields
 
 from . import admin_navigation
 from .admin_editing import (
@@ -380,7 +380,7 @@ def _test_access(request, configuration, actor):
         "target",
         "base_digest",
     } or any(len(values) != 1 for _, values in request.POST.lists()):
-        raise ValueError("Invalid configuration action or fields.")
+        raise unexpected_fields()
     queue_probe(configuration, actor, request.POST.get("target", ""))
     return HttpResponseRedirect(request.path)
 
@@ -732,7 +732,7 @@ def _remove(request, service, configuration, actor, target):
     if set(request.POST) - {"action", "csrfmiddlewaretoken"} or any(
         len(values) != 1 for _, values in request.POST.lists()
     ):
-        raise ValueError("Invalid configuration action or fields.")
+        raise unexpected_fields()
     preview = review_removal(service, actor, configuration, target)
     admin_navigation.place(request, flow="change", step="review")
     return render(
@@ -912,13 +912,13 @@ def refresh_schedule_check(request, target):
         if set(request.POST) - posted_names() - {"csrfmiddlewaretoken"} or any(
             len(values) != 1 for _, values in request.POST.lists()
         ):
-            raise ValueError("Invalid refresh schedule fields.")
+            raise unexpected_fields()
         with read_transaction():
             configuration = editable_configuration(service)
             record = _selected(configuration, target)
             editor = ScheduleEditor(request.POST, stored=record["values"]["settings"])
             if not editor.posted:
-                raise ValueError("Invalid refresh schedule fields.")
+                raise unexpected_fields()
             context = _schedule_context(configuration, editor)
         response = render(request, "stewardship/refresh-schedule-check.html", context)
         return _checked(request, service, response)

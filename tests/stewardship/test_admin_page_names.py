@@ -246,11 +246,14 @@ def test_title_and_heading_use_the_page_name(name):
 
 
 # "Return to" links whose target has no fixed name (navigation rule 4): the
-# shared error page returns to whatever page the reader came from, and the
-# export error page, which reads nothing from the database, cannot name the
-# export it returns to.
+# shared error page returns to whatever page the reader came from, as does
+# the delivery error page for a refused form (#1401: the outgoing mail list,
+# a message, a refused address or a background task), and the export error
+# page, which reads nothing from the database, cannot name the export it
+# returns to.
 UNNAMED_RETURNS = {
     ("error.html", "the previous page"),
+    ("delivery-error.html", "the previous page"),
     ("report-export-error.html", "the export status page"),
 }
 # "Return to {{ … }}" links, by template, and the variable each names its

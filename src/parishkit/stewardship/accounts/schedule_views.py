@@ -30,7 +30,7 @@ from parishkit.stewardship.campaigns.work_locks import (
 )
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.refusals import UserFacingError
+from parishkit.stewardship.web.refusals import UserFacingError, unexpected_fields
 from parishkit.stewardship.web.tables import whole_table
 
 from . import admin_navigation
@@ -237,7 +237,7 @@ def schedule_settings(request, campaign_id):
         actor = principal(request, service)
         salt = preview_salt(campaign_id)
         if request.FILES or (request.method == "POST" and request.GET):
-            raise ValueError("Invalid schedule parameters.")
+            raise unexpected_fields()
         proposed = filters(
             request.GET, allowed={"start_date", "end_date", "timezone", "sort"}
         )

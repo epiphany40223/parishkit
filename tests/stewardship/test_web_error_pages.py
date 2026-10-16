@@ -305,7 +305,7 @@ def test_standard_refusals_and_link_validation():
     assert stale.status_code == 409
     assert "another tab" in json.loads(stale.content)["refusal"]["message"]
     invalid = json.loads(error_response(unexpected_fields()).content)
-    assert invalid["refusal"]["fix"] == "Reload the page and try again."
+    assert invalid["refusal"]["fix"] == "Reload the page, then try again."
     assert invalid["refusal"]["link"] is None
     for link, label in (
         ("https://example.org/", "Elsewhere"),
@@ -315,6 +315,100 @@ def test_standard_refusals_and_link_validation():
     ):
         with pytest.raises(TypeError):
             UserFacingError("Message", link=link, link_label=label)
+
+
+def test_unexpected_fields_say_the_page_is_out_of_date():
+    """A form posted with fields it does not have (#1401): the page says what
+    happened and to reload, not "Check your entries" as if a value were
+    wrong; the refusal itself (400, code ``invalid``) is unchanged."""
+    from parishkit.stewardship.web.refusals import unexpected_fields
+
+    response = error_response(unexpected_fields())
+    assert response.status_code == 400
+    data = json.loads(response.content)
+    assert [error["code"] for error in data["errors"]] == ["invalid"]
+    assert data["refusal"]["message"] == (
+        "Nothing was done: this page sent something the server did not "
+        "expect, which usually means the page changed after you opened it."
+    )
+    # A dialog or in-place region, still on the page, is told to reload.
+    assert data["refusal"]["fix"] == "Reload the page, then try again."
+    # The full page answering the POST is told to open the page again, by
+    # its link: Reload there would send the same refused form again.
+    page = through(RequestFactory().post("/admin/setup/branding", **PAGE), response)
+    body = page.content.decode()
+    assert page.status_code == 400 and page.stewardship_safe_error
+    assert "<h1>This page is out of date</h1>" in body
+    assert "the page changed after you opened it" in body
+    assert "Open the page again, then try again." in body
+    assert '<a href="/admin/setup/branding">Return to the previous page</a>' in body
+    for generic in (
+        "Reload the page",
+        "Check your entries",
+        "Check this value.",
+        "correct the entries",
+        "unexpected data",
+    ):
+        assert generic not in body
+
+
+def test_refusal_text_picks_the_fix_for_where_it_shows():
+    """Pages and regions with their own fixed text show a refusal's text
+    instead (#1401): a region the in-place fix, a full page the page fix;
+    any other error has none, so its closed text stays."""
+    from parishkit.stewardship.web.refusals import (
+        refusal_text,
+        stale_page,
+        unexpected_fields,
+    )
+
+    message = (
+        "Nothing was done: this page sent something the server did not "
+        "expect, which usually means the page changed after you opened it."
+    )
+    assert refusal_text(unexpected_fields()) == (
+        message + " Reload the page, then try again."
+    )
+    assert refusal_text(unexpected_fields(), page=True) == (
+        message + " Open the page again, then try again."
+    )
+    # Without a page fix, a full page shows the ordinary fix.
+    assert refusal_text(stale_page(), page=True).endswith(
+        "then make your change again."
+    )
+    assert refusal_text(ValueError("secret detail")) is None
+
+
+@pytest.mark.parametrize(
+    "template,region,extra",
+    [
+        ("stewardship/components/restore-review-outcome.html", "step", {}),
+        ("stewardship/system-health-backup-now.html", "backup_now", {}),
+        ("stewardship/system-health-accept.html", "accept", {}),
+        ("stewardship/system-health-debug-off.html", "debug_off", {}),
+        ("stewardship/system-health-debug-off.html", "debug_off", {"allow": True}),
+    ],
+)
+def test_in_place_regions_show_a_stale_forms_refusal(template, region, extra):
+    """A region's "invalid" answer shows a stale form's refusal text when
+    there is one, and its own closed text otherwise (#1401)."""
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.web.refusals import refusal_text, unexpected_fields
+
+    text = refusal_text(unexpected_fields())
+
+    def render(answer):
+        """The region's markup for one refused answer."""
+        return render_to_string(template, {region: answer | extra})
+
+    stale = render({"refused": "invalid", "refusal_text": text})
+    assert "the page changed after you opened it" in stale
+    assert "Reload the page, then try again." in stale
+    assert "could not be read" not in stale
+    plain = render({"refused": "invalid", "refusal_text": None})
+    assert "could not be read" in plain
+    assert "the page changed after you opened it" not in plain
 
 
 # Untyped 404s on portal addresses (#927): an unknown address or Http404.

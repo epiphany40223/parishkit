@@ -16,7 +16,7 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.admission import _scope
 from parishkit.stewardship.source.readiness import source_readiness
 from parishkit.stewardship.web.contracts import PageWindow, expected_version, filters
-from parishkit.stewardship.web.refusals import UserFacingGone
+from parishkit.stewardship.web.refusals import UserFacingGone, unexpected_fields
 from parishkit.stewardship.web.tables import window_table
 
 from . import admin_navigation
@@ -128,7 +128,7 @@ def readiness(request, campaign_id):
                     ),
                 )
             if action != "verify":
-                raise ValueError("Invalid readiness action.")
+                raise unexpected_fields()
             preview, verified, token = verify_preview(request, service, campaign_id)
         else:
             _closed(request, set())
