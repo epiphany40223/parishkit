@@ -13,7 +13,7 @@ from threading import Event, Lock, Thread
 
 from .accounts.integration_candidates import _object
 from .accounts.key_files import MAX_FILE_BYTES
-from .deployment import DeploymentProfile, recorded_profile
+from .deployment import DeploymentProfile, recorded_mail_redirect, recorded_profile
 from .family_delivery import (
     FamilyDeliveryMail,
     FamilyDeliveryResult,
@@ -27,6 +27,7 @@ from .family_delivery_worker import (
     SESSION_MESSAGES,
     SESSION_SECONDS,
 )
+from .mail_catcher import redirect_field
 from .provider_checks import (
     ProviderCheckDrainFailure,
     ProviderCheckOwnershipLost,
@@ -111,6 +112,8 @@ def _submit_mail(value, settings, mail, *, seconds, check, helper, limit, sessio
     the environment-free helper can admit the LOCAL mail-catcher transport
     only for a LOCAL parent. A process with no recorded profile cannot send:
     that is a SYSTEMIC configuration fault, like any other local rejection.
+    A LOCAL deployment's mail redirect (#1399) rides beside the profile, and
+    only when it is set, so every other request is exactly as before.
     """
     count = len(mail.recipients)
     unknown = FamilyDeliveryResult(FamilyDeliveryStatus.UNKNOWN, count)
@@ -129,13 +132,15 @@ def _submit_mail(value, settings, mail, *, seconds, check, helper, limit, sessio
         ):
             raise ValueError("Invalid private Family submission invocation.")
         profile = recorded_profile()
+        redirect = recorded_mail_redirect()
         payload = json.dumps(
             {
                 "candidate": base64.b64encode(value).decode("ascii"),
                 "settings": settings,
                 "mail": mail.payload(),
                 "profile": profile.value,
-            },
+            }
+            | redirect_field(redirect),
             ensure_ascii=False,
         ).encode("utf-8")
     except (ValueError, TypeError):
@@ -176,6 +181,7 @@ def _submit_mail(value, settings, mail, *, seconds, check, helper, limit, sessio
             seconds=seconds,
             check=check,
             profile=profile,
+            redirect=redirect,
         )
     else:
         result = _submit_private(
@@ -317,14 +323,17 @@ class FamilyMailSession:
             stats, self.last = self.last, {}
         return stats
 
-    def submit(self, value, settings, mail, *, count, seconds, check, profile):
+    def submit(
+        self, value, settings, mail, *, count, seconds, check, profile, redirect=None
+    ):
         """Submit one admitted mail payload; return a result or DeliveryOutcome.
 
         The deadline starts on entry: ``seconds`` is what remains of the
         message's provider deadline, so time spent waiting for the session
         lock (held briefly by the reaper) must come out of it, never extend
         it. Rotation itself never waits for a helper. ``profile`` is the
-        parent's deployment profile, sent in the helper's header line.
+        parent's deployment profile and ``redirect`` its mail redirect
+        (#1399, None when unset), both sent in the helper's header line.
         """
         deadline = time.monotonic() + seconds
         with self.lock:
@@ -346,6 +355,7 @@ class FamilyMailSession:
                     check,
                     stats,
                     profile,
+                    redirect,
                 )
             finally:
                 # A retirement caused by this message's own outcome is its
@@ -354,17 +364,29 @@ class FamilyMailSession:
                     stats["helper_end"], self.ended = self.ended, None
 
     def _submit(
-        self, value, settings, mail, count, deadline, seconds, check, stats, profile
+        self,
+        value,
+        settings,
+        mail,
+        count,
+        deadline,
+        seconds,
+        check,
+        stats,
+        profile,
+        redirect,
     ):
         """The body of ``submit``, under the session lock."""
         _check_owner(check)
         candidate = base64.b64encode(value).decode("ascii")
-        # A helper serves one key, one Workspace identity and one profile; a
-        # change in any of them rotates to a fresh helper.
+        # A helper serves one key, one Workspace identity, one profile and one
+        # redirect; a change in any of them rotates to a fresh helper.
         key = hashlib.sha256(
-            json.dumps([candidate, settings, profile.value], sort_keys=True).encode(
-                "utf-8"
-            )
+            json.dumps(
+                [candidate, settings, profile.value]
+                + ([] if redirect is None else [redirect]),
+                sort_keys=True,
+            ).encode("utf-8")
         ).digest()
         self._rotate(key)
         if self.ended is not None:
@@ -394,6 +416,7 @@ class FamilyMailSession:
                         "settings": settings,
                         "profile": profile.value,
                     }
+                    | redirect_field(redirect)
                 )
                 self._start_reaper()
             self.seq += 1

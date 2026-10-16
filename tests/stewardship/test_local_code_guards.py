@@ -46,6 +46,18 @@ def mail(profile, monkeypatch, tmp_path):
     workspace_transport(account(), profile)
 
 
+def mail_route(profile, monkeypatch, tmp_path):
+    """A real mailbox is reachable from LOCAL only through the mail redirect."""
+    from parishkit.stewardship.mail_catcher import MailTransport, envelope
+
+    envelope(
+        ("family@example.org",),
+        profile=profile,
+        transport=MailTransport.GMAIL,
+        redirect=None,
+    )
+
+
 def parishsoft(profile, monkeypatch, tmp_path):
     """Unless it chose the real API, a LOCAL helper request reaches only the fake."""
     validate_request(
@@ -223,6 +235,7 @@ def drive_smoke(profile, monkeypatch, tmp_path):
 # Each case and what it raises when LOCAL refuses.
 CASES = {
     "mail": (mail, ConfigError),
+    "mail_route": (mail_route, ConfigError),
     "parishsoft": (parishsoft, ValueError),
     "parishsoft_check": (parishsoft_check, ValueError),
     "parishsoft_write": (parishsoft_write, ValueError),
