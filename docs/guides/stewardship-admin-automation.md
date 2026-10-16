@@ -533,7 +533,7 @@ The document is JSON with two optional members:
 | Member | What it holds |
 | --- | --- |
 | `window` | Any of `start_date`, `end_date` (`YYYY-MM-DD`), `timezone` and `overlap_confirmed` (true or false, only for a campaign with a financial period). Members you leave out keep their values. Changing the dates once they are locked is exit 1 (`stale_version`), as on the page, except that a live campaign (scheduled or open in Production, before it closes) may change `end_date` alone. Family codes and links keep working until the new end date. |
-| `schedules` | A list of entries, each one of the four below. Saved schedules you do not name stay as they are; leaving one out never removes it. |
+| `schedules` | A list of entries, each one of the six below. Saved schedules you do not name stay as they are; leaving one out never removes it. |
 
 | Entry | Members |
 | --- | --- |
@@ -541,6 +541,8 @@ The document is JSON with two optional members:
 | Remove a saved schedule | `id` and `"delete": true`, nothing else. |
 | Add a schedule | `kind` (`initial`, `reminder`, `daily_digest` or `weekly_digest`) and the members its kind needs: `date` for `initial` and `reminder`, `weekday` (0 is Monday) for `weekly_digest`, and `time` (in the campaign's time zone) and `template_version` for all. A `daily_digest` may add `"comparison": true`; it is off without it. A `time` may be written in any form the page accepts, such as `09:00:00`, `9:00`, `9am` or `21:00`, and is stored as `HH:MM:SS`. |
 | Add repeating reminders | `repeat` (the rule below), `time` and `template_version`, as for one reminder, and nothing else. It adds one ordinary reminder per date the rule gives, as if you listed each one. Every date must fit: unlike the page, which leaves out a date that does not fit, the command refuses the whole change. A problem with one date alone, such as a date after the campaign closes, names that date; a conflict between schedules, such as a date at the same moment as a saved reminder or not after the initial invitation, comes back as a plain `schedules` error, as for reminders listed one by one. A rule that gives no dates or more than 30, or skips a month, is exit 1 (`invalid`). The rule itself is not saved unless you add `"remember": true`, which also saves it as a reminder series holding exactly the reminders this repeat adds, so later changes can treat them as one. The reminders are the same either way, and they send as ordinary reminders. |
+| Change a remembered series | `series` (a series `id` from `schedule show`) and `scope`: `"following"` with `from` (one of its reminder ids) changes that reminder and the later ones ("this and following"); `"series"` changes the whole series from its first reminder that has not sent. Optionally a new `repeat` rule (checked as above), `time` and `template_version`. The rules for what stays, what is replaced and what is refused are in the [admin-automation spec](../specs/stewardship/admin-automation/spec.md#schedules-and-configuration) (a reminder whose time has passed without any work yet can start a whole-series edit and, if its time or email changes, may send right after confirm). |
+| Delete a remembered series | `series` and `"delete": true`, nothing else. Its reminders that have not sent are removed with it; ones that sent stay as ordinary reminders. |
 
 | `repeat` member | What it holds |
 | --- | --- |
@@ -562,7 +564,8 @@ the page and email templates (a command for those arrives later).
 | `changes` | Each change's `id`, `operation` (`add`, `update` or `remove`), `kind`, its values and first send times `before` and `after` (as in `schedule show`; `null` when added or removed), and its `impact`: `delivered`, `cancellable`, `failed`, `blocking`, `occurrences` and `outboxes`, the page's counts |
 | `blocking` | Sends in progress or with an uncertain result. While it is above zero, `preview` is `null`, as the page offers no **Confirm** |
 | `preview` | `token`, which `schedule confirm` takes |
-| `series` | Each reminder series the change remembers (a repeat with `"remember": true`): its new `id`, its `rule` and its reminders' ids (`schedules`); empty otherwise |
+| `series` | Each reminder series the change remembers (a repeat with `"remember": true`): its new `id`, its `rule` and its reminders' ids (`schedules`); empty otherwise. A series edit lists here the new series it starts |
+| `series_changes` | Each remembered series a `series` entry updates or removes: its `id`, `operation` (`update` or `remove`) and, for an update, its new `rule` and `schedules`; empty otherwise |
 
 Each `error.fields` entry has `field` (`window.<name>`,
 `schedules.<id>.<name>`, `schedules.new<n>.<name>` for the n-th added
@@ -2814,3 +2817,6 @@ print is exit 1 (`invalid`).
   [--ministry DUID] [--format csv|xlsx|pdf] [--timezone ZONE]`, the Roster
   changes to enter download (full scope, Administrators and Staff, the
   page's `roster_changes_exported`), streamed as `export limitations` is.
+- `pk-admin/1` (#469): additive. `schedule preview`'s change document
+  takes `series` entries ("this and following", the whole series, or
+  delete a remembered series), and the preview gains `series_changes`.
