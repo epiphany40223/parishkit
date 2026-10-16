@@ -1852,7 +1852,7 @@ then:
 - **Recorded by**, **Recorded at** and **Note**: the latest *Entered in
   ParishSoft*, *Ignore* or *Reopen* on the row
   ([manual census resolution](#manual-census-resolution)), or *Approve*,
-  *Ignore* or *Back to To review* on an Automatic row
+  *Ignore*, *Back to To review*, *Save value* or *Clear edit* on an Automatic row
   ([automatic census review](#automatic-census-review)): the person's
   sign-in address, the time in the parish's compact date format and
   browser-local time, and the note they left. Blank until someone records
@@ -1988,12 +1988,46 @@ buttons the row allows. A review is reversible, so none asks first. The form
 posts with the page's filters and table choices, and the answer is the same
 page, refreshed in place, with the notice naming the row; a row someone else
 changed first is left as it is, and the notice says so. While other campaign
-work holds the campaign, no Review is offered. An Administrator's edited
-value, conflict resolution
+work holds the campaign, no Review is offered. Conflict resolution
 ([ADM-09](../../../plans/stewardship/admin-portal.md#adm-09-census-review-and-parishsoft-publication-ui))
-come later. On the command line, `pk-admin census review` records the same
+comes later. On the command line, `pk-admin census review` records the same
 review through the same service
 ([admin automation](../admin-automation/spec.md#reports-and-exports)).
+
+The same *Review* disclosure has **Edit value**
+([#528](https://github.com/epiphany40223/parishkit/issues/528), ADM-09.04):
+the value publication writes instead of the Family's answer. The Family's
+answer is never changed and stays in its column, with the edit in *Edited
+value* beside it. The field starts with the value publication would write
+now (the edit, else the Family's answer): a date field no later than the
+campaign's today for a birth or death date, the census choices for Gender,
+and otherwise text no longer than ParishSoft's request schema takes for the
+field (First name 30 characters, Email address 150, a phone 25). **Save
+value** is unavailable until the value differs from the one shown, with its
+reason in a reserved line ([prerequisite
+gates](../ui-conventions/spec.md#prerequisite-gates)); **Clear edit**
+appears only while an edit is set. Each takes an optional note and, being
+reversible, asks nothing; the answer is the page, refreshed in place, with
+the notice naming the row. The value is read as the Family form reads its
+own answer (a phone must be a whole number, email addresses are checked and
+joined, a required name cannot be blank) and must fit ParishSoft's request
+schema as publication will send it; Gender is held to its census choices
+only, since its ParishSoft encoding is not settled yet. Save value is also
+unavailable, with its reason, while the browser can tell the value is not
+allowed (blank, too long, or a date after today). A value the server refuses
+answers in place after the form with the reason, and the field is marked in
+error until it is edited
+([field errors](../ui-conventions/spec.md#field-errors-and-live-checks));
+nothing is recorded. A blank value is refused: Ignore leaves ParishSoft as it
+is. A value equal to
+the Family's answer clears the edit, so Edited value never repeats it.
+Edit value is offered on the rows Review is (Automatic, open, an
+Administrator's, while no other campaign work holds the campaign), a
+Conflict included. It keeps the decision, so an approved change stays
+approved, whoever edits it; its new version means a publication plan that
+included the change must be confirmed again, with the edited value in view.
+It is per change only, never part of bulk review, and has no command-line
+counterpart yet.
 
 An Administrator may also give several Automatic changes one decision at
 once, with the shared selection column, bulk bar and confirmation dialog
@@ -2024,7 +2058,15 @@ may change an Automatic proposal's decision only with such a row, and the
 row's own guard checks again that the actor is a current Administrator, the
 campaign admits changes, the version is current, the change is Automatic and
 open, and the decision changes. The row records the whole resulting review
-state, so the later edited value needs only a wider guard for the row.
+state. Forward migration 0107 widens that guard for Edit value: a review
+row is exactly one of a decision (the edit fields stay) and an edit (the
+decision stays). It also adds an edit guard on the proposal: the web role
+may change the edit fields only as a review row at the current version
+records them, whatever else it updates. An edit's value must have its field's shape (a
+phone record for a phone, text otherwise, at most 1,024 bytes), must not be
+blank and must differ from the Family's answer, as the census compares
+values; clearing needs an edit to be set. The value's full rules stay in the
+service.
 
 ## Financial stewardship detail
 

@@ -1041,6 +1041,15 @@ the same file. The reverse proxy refuses an oversized request before the
 page could explain it, so this check is what keeps such a refusal on the
 form. First use: Parish logos (#1062).
 
+An in-place form refused with a typed JSON answer shows the refusal as one
+line after its buttons ([in-place controls](#in-place-controls)). When the
+answer's errors name a field of that form (`FieldError` field identifiers),
+that field is marked the same way: `aria-invalid="true"` and described by
+the line. Like any server-only error, the mark and the line clear on the
+field's first edit (`ui-v1.js` `showRefusal`; first used by Census changes'
+Edit value,
+[#528](https://github.com/epiphany40223/parishkit/issues/528)).
+
 A mark clears as soon as its error does, without waiting for Save (#592). An
 error the browser checks clears once the value is valid. One only the
 server can check (an outcome that doesn't fit the request, for example)
