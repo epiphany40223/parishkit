@@ -2,8 +2,9 @@
 
 Golden files pin the LOCAL Compose document and Caddyfile, and each property
 the local environment specification's "topology and web differences" section
-names is asserted directly: loopback-only publication, no application-egress,
-an ingress network without IP masquerade joined only by Caddy and Mailpit,
+names is asserted directly: loopback-only publication, Production's
+application-egress joins (#1399) and none for Caddy, Mailpit or the fake
+ParishSoft, an ingress network without IP masquerade joined only by Caddy and Mailpit,
 ``tls internal`` on ``localhost``, the local image tag with no GHCR reference,
 the ``parishkit-local`` project name, the Mailpit mail catcher with its UI on
 ``127.0.0.1:8025`` only, the fake ParishSoft on ``backend`` alone, and the
@@ -113,26 +114,46 @@ def test_local_rendering_matches_the_golden_files():
 
 
 @pytest.mark.parametrize("mode", PROVIDER_MODES)
-def test_local_topology_has_no_egress_and_a_loopback_only_ingress(tmp_path, mode):
-    """No application-egress at all; ingress without masquerade, Caddy and Mailpit.
+def test_local_egress_matches_production_and_ingress_is_loopback_only(tmp_path, mode):
+    """Production's egress joins (#1399); ingress without masquerade, Caddy and Mailpit.
 
-    In every provider mount mode: the egress joins are per service and mode
-    independent, but a mode must not be able to bring one back.
+    In every provider mount mode, exactly the services that join
+    ``application-egress`` in Production join it in LOCAL, and the services
+    LOCAL adds (Mailpit, the fake ParishSoft) and Caddy never do: what a LOCAL
+    service may reach is limited by code, not by the network.
     """
     configuration, compose, _, _ = local_rendering(tmp_path, provider_mode=mode)
+    production, _ = render_runtime(
+        configuration_for(DeploymentProfile.PRODUCTION, tmp_path),
+        image=PRODUCTION_IMAGE,
+        provider_mode=mode,
+    )
     assert compose["name"] == "parishkit-local"
     networks = compose["networks"]
-    assert set(networks) == {"backend", "proxy", "ingress"}
+    assert set(networks) == {"backend", "proxy", "application-egress", "ingress"}
     assert networks["backend"]["internal"] is True
     assert networks["proxy"]["internal"] is True
+    assert (
+        networks["application-egress"] == production["networks"]["application-egress"]
+    )
     assert networks["ingress"] == {
         "driver_opts": {"com.docker.network.bridge.enable_ip_masquerade": "false"}
     }
     services = compose["services"]
     on_ingress = {name for name, s in services.items() if "ingress" in s["networks"]}
     assert on_ingress == INGRESS_SERVICES
+
+    def on_egress(rendered):
+        return {
+            name
+            for name, service in rendered["services"].items()
+            if "application-egress" in service["networks"]
+        }
+
+    assert on_egress(compose) == on_egress(production)
+    assert on_egress(compose).isdisjoint({"caddy", "mailpit", "fake-parishsoft"})
+    assert {"web", "worker", "mail-dispatch"} <= on_egress(compose)
     for name, service in services.items():
-        assert "application-egress" not in service["networks"], name
         for port in service.get("ports", []):
             assert port.startswith("127.0.0.1:"), (name, port)
             assert "0.0.0.0" not in port

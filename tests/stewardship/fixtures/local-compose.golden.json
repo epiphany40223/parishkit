@@ -1,6 +1,7 @@
 {
  "name": "parishkit-local",
  "networks": {
+  "application-egress": {},
   "backend": {
    "internal": true,
    "ipam": {
@@ -133,6 +134,7 @@
     }
    },
    "networks": {
+    "application-egress": {},
     "backend": {}
    },
    "oom_score_adj": 500,
@@ -1346,6 +1348,7 @@
     }
    },
    "networks": {
+    "application-egress": {},
     "backend": {}
    },
    "oom_score_adj": 500,
@@ -1564,6 +1567,7 @@
     }
    },
    "networks": {
+    "application-egress": {},
     "backend": {}
    },
    "oom_score_adj": 500,
@@ -1673,6 +1677,7 @@
     }
    },
    "networks": {
+    "application-egress": {},
     "backend": {}
    },
    "oom_score_adj": 500,
@@ -2336,6 +2341,7 @@
     }
    },
    "networks": {
+    "application-egress": {},
     "backend": {}
    },
    "oom_score_adj": 500,
@@ -2846,6 +2852,7 @@
     }
    },
    "networks": {
+    "application-egress": {},
     "backend": {},
     "proxy": {
      "ipv4_address": "172.29.241.10"
@@ -3030,6 +3037,7 @@
     }
    },
    "networks": {
+    "application-egress": {},
     "backend": {}
    },
    "oom_score_adj": 500,
