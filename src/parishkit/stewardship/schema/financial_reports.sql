@@ -314,9 +314,15 @@ CREATE INDEX financial_export_campaign ON stewardship_financial_export_snapshot(
 CREATE INDEX financial_export_source ON stewardship_financial_export_snapshot(source_id);
 CREATE INDEX financial_export_config ON stewardship_financial_export_snapshot(configuration_id);
 
-CREATE FUNCTION stewardship_financial_export_capture_v1() RETURNS trigger
+CREATE FUNCTION public.stewardship_financial_export_capture_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
+    -- An ended export's discard (#1398, migration 0109), run as the schema
+    -- owner, may clear the document; nothing else is ever changed.
+    IF TG_OP='UPDATE' AND stewardship_export_capture_cleared_v1(
+           TG_RELID,to_jsonb(OLD),to_jsonb(NEW)) THEN
+        RETURN NEW;
+    END IF;
     IF TG_OP<>'INSERT' THEN
         RAISE EXCEPTION 'Financial export snapshots are immutable' USING ERRCODE='23514';
     END IF;
