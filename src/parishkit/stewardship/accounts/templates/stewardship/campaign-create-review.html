@@ -1,0 +1,20 @@
+{% load i18n %}{% comment %}
+The confirmation of Create the campaign (#142, #1356;
+campaign_create_views._preview), drawn in the shared review dialog (UX
+conventions, "Review dialog": a confirmation when Review would only repeat
+the page), never as a page of its own: campaign-create.html's Create the
+campaign button posts without a page load and ui-v1.js moves this
+fragment's content into the dialog's body. It repeats none of the form's
+values, which are all on the page behind the dialog. Its first sentence
+says what Apply does and describes the dialog (aria-describedby); the
+second is the one thing the server worked out that the page doesn't show:
+how many pages and emails the campaign starts with, in the default text.
+The signed preview (data-review-preview) is what the dialog's Apply posts
+to Create the campaign, and data-review-done starts the status line the
+page shows once the change is applied. A review lasts fifteen minutes, as
+every review does.
+{% endcomment %}<div data-review-answer data-review-done="{% translate 'Campaign created.' %}">
+<p id="campaign-create-summary">{% translate "This creates the campaign as a draft in Testing mode; no email is sent." %}</p>
+{% if review.content %}<p>{% blocktranslate trimmed count count=review.content %}It starts with {{ count }} page or email in the default text.{% plural %}It starts with {{ count }} pages and emails in the default text.{% endblocktranslate %}</p>{% endif %}
+<input type="hidden" name="preview" value="{{ review.preview }}" data-review-preview>
+</div>

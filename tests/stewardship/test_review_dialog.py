@@ -278,3 +278,36 @@ def test_new_and_edit_scheduled_email_review_in_the_dialog():
     assert "data-unchanged-hint data-idle" in source
     listing = (TEMPLATES / "schedule-settings.html").read_text(encoding="utf-8")
     assert 'review-outcome.html" with outcome_id="schedules-outcome"' in listing
+
+
+def test_a_confirmation_is_described_by_its_sentence():
+    """A confirmation (#1356) names its one-sentence summary as the dialog's
+    description, and a page whose own address cannot be read once the change
+    applies redraws from Apply's answer; an ordinary review does neither."""
+    text = dialog(describedby="thing-summary", redraw_answer=True)
+    assert 'aria-describedby="thing-summary"' in text
+    assert 'data-review-redraw="answer"' in text
+    plain = dialog()
+    assert "aria-describedby" not in plain and "data-review-redraw" not in plain
+
+
+def test_create_the_campaign_confirms_without_repeating_the_form():
+    """Create the campaign's Review is a confirmation (#1356): its form's
+    button carries the action's label, and its fragment holds the summary the
+    dialog names, the server's page-and-email count and the signed preview,
+    and no changed values."""
+    page = (TEMPLATES / "campaign-create.html").read_text()
+    assert 'data-review-open="campaign-create-review"' in page
+    assert 'describedby="campaign-create-summary"' in page
+    assert "redraw_answer=True" in page
+    assert 'translate "Review changes"' not in page
+    assert 'translate "Create the campaign" %}{% endbutton %}' in page
+    fragment = render_to_string(
+        "stewardship/campaign-create-review.html",
+        {"review": {"content": 1, "preview": "signed"}},
+    )
+    assert re.search(r'<div data-review-answer data-review-done="[^"]+">', fragment)
+    assert '<p id="campaign-create-summary">' in fragment
+    assert "It starts with 1 page or email in the default text." in fragment
+    assert 'name="preview" value="signed" data-review-preview' in fragment
+    assert "Current" not in fragment and "Proposed" not in fragment
