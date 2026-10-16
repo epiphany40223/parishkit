@@ -152,10 +152,12 @@ def test_report_and_export_pages_offer_their_actions(page, component_origin):
     visible(page.get_by_role("button", name="Download export"))
     page.goto(component_origin + "/report-exact")
     visible(page.get_by_role("button", name="Cancel export"))
-    # Exports are point-in-time (#1398): an expired one offers no Regenerate.
+    # Exports are point-in-time (#1398): an ended one is the fixed page,
+    # with a way back to its report and no Regenerate.
     page.goto(component_origin + "/report-export-expired")
-    visible(page.get_by_text("Export it again from its report"))
-    assert page.get_by_role("button", name="Regenerate expired file").count() == 0
+    visible(page.get_by_text("This export is no longer available."))
+    visible(page.locator("main").get_by_role("link", name="Participation"))
+    assert page.get_by_role("button").filter(has_text="Regenerate").count() == 0
 
 
 def test_export_status_updates_itself_and_downloads_once(page, component_origin):
@@ -193,6 +195,68 @@ def test_export_status_updates_itself_and_downloads_once(page, component_origin)
     assert downloads == ["POST"]
     visible(page.get_by_role("button", name="Download export"))
     assert set(reads) == {"GET"}
+
+
+def test_an_export_cancelled_elsewhere_settles_its_open_page(page, component_origin):
+    """A preparing page whose export ended elsewhere (another Administrator's
+    Cancel, ``pk-admin export cancel``, another tab; #1398) reads the 410
+    "no longer available" page once: its sentence takes the status panel's
+    place, polling stops, and nothing above the panel moves."""
+    gone = page.request.get(component_origin + "/report-export-expired").text()
+    reads = []
+
+    def status(route):
+        """The page's own passive status re-read: queued once, then 410."""
+        reads.append(route.request.method)
+        if len(reads) < 2:
+            route.continue_()
+        else:
+            route.fulfill(status=410, body=gone, content_type="text/html")
+
+    page.route("**/report-export-pending", status)
+    page.goto(component_origin + "/report-export-pending")
+    visible(page.get_by_text("Preparing your file"))
+    panel = page.locator("[data-live-status=export]")
+    top = panel.evaluate("node => node.getBoundingClientRect().top")
+    page.locator("[data-live-state=gone]").wait_for()
+    visible(panel.get_by_text("This export is no longer available."))
+    visible(panel.get_by_role("link", name="Participation"))
+    assert page.get_by_role("button", name="Cancel export").count() == 0
+    assert panel.evaluate("node => node.getBoundingClientRect().top") == top
+    settled = len(reads)
+    # Polling has stopped: no further read, and no "Couldn't check" line.
+    page.wait_for_timeout(4000)
+    assert len(reads) == settled == 2
+    assert page.get_by_text("Couldn't check status").count() == 0
+
+
+def test_a_410_without_a_gone_sentence_stops_polling(page, component_origin):
+    """Any other 410 (such as a latest-data export whose campaign is no
+    longer current) is settled too: polling stops with the refusal line
+    rather than retrying a permanent answer."""
+    reads = []
+
+    def status(route):
+        """Queued once, then a 410 page with no [data-live-gone] sentence."""
+        reads.append(route.request.method)
+        if len(reads) < 2:
+            route.continue_()
+        else:
+            route.fulfill(
+                status=410,
+                body="<!doctype html><title>Gone</title><p>No longer current.</p>",
+                content_type="text/html",
+            )
+
+    page.route("**/report-export-pending", status)
+    page.goto(component_origin + "/report-export-pending")
+    visible(
+        page.get_by_text("Couldn't check status. Refresh the page or sign in again.")
+    )
+    settled = len(reads)
+    page.wait_for_timeout(4000)
+    assert len(reads) == settled == 2
+    assert page.get_by_text("Couldn't check status — retrying.").count() == 0
 
 
 def test_queued_export_shows_what_it_waits_for(page, component_origin):

@@ -31,13 +31,6 @@
 {% elif status.state == 'failed' or status.state == 'abandoned' %}
   <p class="notice notice-error export-state" role="alert">{% translate "The file could not be created. Try again; if it fails again, check System logs or ask your system administrator." %}</p>
   <form method="post" action="{% url 'admin:report_export_retry' job.pk %}#export-status" data-in-place="export-retry" data-in-place-fallback="refresh" data-in-place-message="{% translate 'Export retry started.' %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ retry_key }}">{% button type="submit" enabled=mutable aria-describedby=mutable|yesno:",export-locked" %}{% translate "Retry export" %}{% endbutton %}</form>
-{% elif status.state == 'cancelled' %}
-  <p class="export-state" role="status">{% translate "This export was cancelled." %}</p>
-{% elif status.state == 'expired' %}
-  <p class="export-state" role="status">{% translate "The generated file has expired." %}</p>
-  <p>{% translate "Export it again from its report to get a new file. Exports are not kept." %}</p>
-{% else %}
-  <p class="export-state" role="status">{{ status.state }}</p>
 {% endif %}
 {% if can_cancel %}<form method="post" action="{% url 'admin:report_export_cancel' job.pk %}#export-status" data-in-place="export-cancel" data-in-place-fallback="refresh" data-in-place-message="{% translate 'Export cancel requested.' %}">{% csrf_token %}{% button type="submit" variant="secondary" enabled=mutable aria-describedby=mutable|yesno:",export-locked" %}{% translate "Cancel export" %}{% endbutton %}</form>{% endif %}
 {% if status.expires_at %}<p class="help">{% translate "File available until" %} <time datetime="{{ status.expires_at }}" data-local-instant>{{ status.expires_at }}</time>.</p>{% endif %}

@@ -309,6 +309,16 @@ def test_native_leader_exports_worker_and_download(
             if format == "csv":
                 assert b"Not published" in body and b"valid@example.org" not in body
                 assert b"1960-01-01" not in body and b"+1 (202) 555-0123" in body
+    # Once its window is over, the leader's own export is the fixed 410 page,
+    # linking back to Ministry requests (#1398).
+    from .test_export_cleanup_postgresql import expire_publication
+
+    expire_publication(result)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read(browser, job_route)
+    assert response.status_code == 410
+    assert b"This export is no longer available." in body
+    assert f'href="{reverse("admin:ministry_report")}"'.encode() in body
     # One more export, still queued when the leader loses the Ministry.
     pending = create(harness, actor, format="csv", request_key=uuid4())
     store = harness.service.store

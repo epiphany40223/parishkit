@@ -286,6 +286,21 @@ def retry_export(store, user_id, request_id, *, request_key):
         )
 
 
+def export_ended(request):
+    """Whether ``request`` has ended, so its pages answer "no longer available".
+
+    Exports are point-in-time (#1398; operations spec, "Point-in-time
+    exports"): an export ends when its published file's window is over or
+    when it was cancelled. The caller has already checked the reader's
+    access to it (``authorize``). A failed export's own end (one window
+    after its latest failed attempt) comes with the window setting.
+    """
+    publication = ExportPublication.objects.filter(request=request).first()
+    if publication is not None:
+        return publication.expires_at <= database_now()
+    return ExportCancellation.objects.filter(request=request).exists()
+
+
 def export_status(store, user_id, request_id):
     """Return only this authorized request, never another operational task's fields."""
     return export_state(store, user_id, request_id)[0]

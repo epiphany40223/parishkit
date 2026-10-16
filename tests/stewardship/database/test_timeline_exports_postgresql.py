@@ -493,6 +493,16 @@ def test_a_production_export_matches_its_page(
             connection.cursor() as cursor,
         ):
             cursor.execute(statement, [capture.pk])
+    # Once its window is over the export is the fixed 410 page, linking back
+    # to the Family's timeline from the request's own parameters (#1398).
+    from .test_export_cleanup_postgresql import expire_publication
+
+    expire_publication(made)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, status = get(browser, reverse("admin:report_export", args=[made.pk]))
+    assert response.status_code == 410
+    assert b"This export is no longer available." in status
+    assert f'href="{page}"'.encode() in status
 
 
 def test_a_family_of_another_campaign_is_refused(

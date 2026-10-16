@@ -132,8 +132,13 @@ def test_native_exact_retry_handoff_and_expiry(
     # Exports are point-in-time (#1398): an expired one offers no Regenerate.
     expire_publication(resolution.export)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        _, expired = read(browser, rendered_path)
-    assert b"has expired" in expired and b"Regenerate" not in expired
+        response, expired = read(browser, rendered_path)
+    # It has ended: the fixed "no longer available" page, 410.
+    assert (
+        response.status_code == 410
+        and b"This export is no longer available." in expired
+    )
+    assert b"Regenerate" not in expired
     # A later request can reuse ready facts but still owns a distinct renderer.
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         waiting = post(browser, path, values | {"request_key": str(uuid4())})[
@@ -149,7 +154,14 @@ def test_native_exact_retry_handoff_and_expiry(
         )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert post(browser, export_action(waiting, "cancel")).status_code == 302
-        assert b"cancelled" in read(browser, waiting)[1]
+        # A cancelled export has ended (#1398).
+        response, body = read(browser, waiting)
+        assert (
+            response.status_code == 410
+            and b"This export is no longer available." in body
+        )
+        # One still queued, whose page and commands the gate below holds.
+        held = post(browser, path, values | {"request_key": str(uuid4())})["Location"]
 
     from django.db import connection, transaction
 
@@ -170,11 +182,11 @@ def test_native_exact_retry_handoff_and_expiry(
         cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
         cursor.execute("ALTER TABLE stewardship_campaign_work_gate ENABLE TRIGGER USER")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        assert b"Other campaign work" in read(browser, status_path)[1]
+        assert b"Other campaign work" in read(browser, held)[1]
         for endpoint, payload in (
             (path, values | {"request_key": str(uuid4())}),
-            (export_action(status_path, "cancel"), {}),
-            (export_action(status_path, "retry"), {"request_key": str(uuid4())}),
+            (export_action(held, "cancel"), {}),
+            (export_action(held, "retry"), {"request_key": str(uuid4())}),
         ):
             assert post(browser, endpoint, payload).status_code == 403
 
@@ -219,14 +231,25 @@ def test_native_exact_cancel_and_other_requester_denial(
             == 403
         )
         assert post(browser, export_action(owned, "cancel")).status_code == 302
-        assert b"cancelled" in read(browser, owned)[1]
+        response, body = read(browser, owned)
+        assert (
+            response.status_code == 410
+            and b"This export is no longer available." in body
+        )
+        # Its Retry answers the same page; an Administrator, who may see
+        # every export, gets it too.
         assert (
             post(
                 browser, export_action(owned, "retry"), {"request_key": str(uuid4())}
             ).status_code
-            == 409
+            == 410
         )
-        assert read(admin, owned)[0].status_code == 200
+        assert read(admin, owned)[0].status_code == 410
+        # Another requester's ended export stays a plain denial: the owner
+        # check runs first, so it reveals nothing.
+        assert post(admin, export_action(other, "cancel")).status_code == 302
+        assert read(browser, other)[0].status_code == 403
+        assert post(browser, export_action(other, "cancel")).status_code == 403
     change(
         store,
         store.active(),

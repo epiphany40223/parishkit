@@ -338,6 +338,16 @@ def test_native_directory_exports_render_and_download(
                 assert harness.code.encode() in body
                 assert b"1 Example Street" not in body
                 assert body.endswith(b",Member Example: valid@example.org\r\n")
+    # Once its window is over the export is the fixed 410 page, linking back
+    # to the directory (#1398).
+    from .test_export_cleanup_postgresql import expire_publication
+
+    expire_publication(request)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read(browser, job_route)
+    assert response.status_code == 410
+    assert b"This export is no longer available." in body
+    assert f'href="{route}"'.encode() in body and harness.code.encode() not in body
 
 
 def test_directory_export_staff_gates_and_service_boundaries(
