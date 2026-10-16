@@ -38,6 +38,7 @@ from parishkit.config import ConfigError
 from parishkit.parishsoft_transport import SourceTransportDrainFailure
 
 from .capabilities import MEMBER_CAPABILITIES, Handling
+from .contact_schema import sendable
 from .publication import (
     MEMBER_CONTACT_FIELDS,
     decode_member_value,
@@ -62,28 +63,6 @@ MARKERS = {
     "fax": "(555) 555-0198",
 }
 DEFAULT_FIELD = "pager"
-# The recorded MemberContactUpdateRequestModel constraints (a test pins them
-# to tests/stewardship/fixtures/parishsoft_contact_capabilities.json): every
-# field is a nullable string with these (minimum, maximum) lengths; the two
-# dates are ``format: date``.
-PUT_SCHEMA = {
-    "firstName": (0, 30),
-    "nickName": (0, 30),
-    "middleName": (0, 30),
-    "lastName": (0, 50),
-    "maidenName": (0, 50),
-    "dateOfBirth": (0, None),
-    "dateOfDeath": (0, None),
-    "language": (0, 50),
-    "emailAddress": (0, 150),
-    "homePhone": (10, 25),
-    "cellPhone": (10, 25),
-    "workPhone": (10, 25),
-    "pager": (10, 25),
-    "fax": (10, 25),
-    "gender": (0, 1),
-}
-DATE_FIELDS = frozenset({"dateOfBirth", "dateOfDeath"})
 # Fields whose encoding is still provisional in the publication encoder: a
 # blank one on the test Member leaves its encoding unsettled.
 ENCODING_FIELDS = (
@@ -171,22 +150,6 @@ def _encoder_matches(name, value):
         return encode_member_value(census, decode_member_value(census, value)) == value
     except ValueError:
         return "unreadable"
-
-
-def sendable(name, value):
-    """Whether one value as read satisfies the recorded PUT schema.
-
-    An Administrator's edited census value is held to the same check
-    (``census_review.edited_value``), so the two never disagree.
-    """
-    if value is None:
-        return True
-    if type(value) is not str:
-        return False
-    if name in DATE_FIELDS:
-        return re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value) is not None
-    minimum, maximum = PUT_SCHEMA[name]
-    return minimum <= len(value) and (maximum is None or len(value) <= maximum)
 
 
 def map_record(record):

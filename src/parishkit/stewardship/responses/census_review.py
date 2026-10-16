@@ -51,7 +51,7 @@ from parishkit.stewardship.web.tables import PAGE_SIZES
 from .capabilities import Handling, capability
 from .census_resolution import MAX_NOTE, by_hand
 from .comparison import ValueKind
-from .contact_smoke import PUT_SCHEMA, sendable
+from .contact_schema import PUT_SCHEMA, sendable
 from .member_census import InvalidMemberValue, validate_member_value
 from .member_requests import REQUEST_FIELDS
 from .models import REVIEW_DECISIONS, ProposalReview, ProposedChange
@@ -174,7 +174,7 @@ def edited_value(field, raw, *, today):
     are joined as the form joins them. It must then encode for ParishSoft
     exactly as publication will send it and fit the recorded request
     schema, checked as the smoke tool checks a value
-    (``contact_smoke.sendable``), so an edit publication would refuse is
+    (``contact_schema.sendable``), so an edit publication would refuse is
     never stored. A blank value is refused: Ignore leaves ParishSoft as it
     is. Raises ``InvalidEdit`` with a static message.
     """
