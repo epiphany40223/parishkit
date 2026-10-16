@@ -3,6 +3,7 @@
 import pytest
 from django.urls import reverse
 
+from .test_charts import assert_clean, watch
 from .waits import hidden, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -136,3 +137,173 @@ def test_staff_follow_up_edit_posts_privately(page, component_origin):
     assert "confirm_clear=yes" in sent.value.post_data
     assert "followed_up=" not in sent.value.post_data
     assert "Reopened" not in sent.value.url
+
+
+ORDER = (
+    "Enter a Submitted on or before date no earlier than Submitted on or "
+    "after, or clear it."
+)
+# Apply's top in page coordinates.
+APPLY_BOX = (
+    "document.querySelector('#table-filters [type=submit]')"
+    ".getBoundingClientRect().y + scrollY"
+)
+
+
+def assert_refused_at_the_dates(page):
+    """Both dates are marked and share one message; the summary links the end.
+
+    Each date keeps its zone note before the message (#1047), in one
+    aria-describedby.
+    """
+    from playwright.sync_api import expect
+
+    for end in ("#start", "#end"):
+        field = page.locator(end)
+        expect(field).to_have_attribute("aria-invalid", "true")
+        described = field.get_attribute("aria-describedby").split()
+        assert described == ["information-zone-help", "submitted-dates_error"]
+    expect(page.locator("#submitted-dates_error")).to_have_text(ORDER)
+    expect(page.locator("#submitted-dates_error")).to_be_visible()
+    summary = page.locator("[data-error-summary]")
+    expect(summary).to_have_count(1)
+    expect(summary.get_by_role("link", name=ORDER)).to_have_attribute("href", "#end")
+    assert page.locator("[data-filter-panel]").evaluate("node => node.open")
+
+
+def assert_dates_cleared(page):
+    """No mark, message or summary item is left on either date."""
+    from playwright.sync_api import expect
+
+    for end in ("#start", "#end"):
+        expect(page.locator(end)).not_to_have_attribute("aria-invalid", "true")
+        assert "submitted-dates_error" not in (
+            page.locator(end).get_attribute("aria-describedby") or ""
+        )
+    expect(page.locator("#submitted-dates_error")).to_be_hidden()
+    expect(page.locator("[data-error-summary]")).to_have_count(0)
+
+
+@pytest.mark.parametrize("end", ["#end", "#start"])
+def test_refused_dates_are_shown_at_their_fields(page, component_origin, end):
+    """Dates the server refused are drawn again with the error at both (#1332).
+
+    The dates keep the values sent, the summary takes focus and its link
+    moves focus to Submitted on or before, and an edit of either date
+    clears the mark from both.
+    """
+    from playwright.sync_api import expect
+
+    errors = watch(page)
+    page.goto(component_origin + "/information-refused-dates")
+    assert_refused_at_the_dates(page)
+    expect(page.locator("[data-error-summary]")).to_be_focused()
+    expect(page.locator("#start")).to_have_value("2026-11-05")
+    expect(page.locator("#end")).to_have_value("2026-11-01")
+    page.locator("[data-error-summary] a").click()
+    expect(page.locator("#end")).to_be_focused()
+    page.locator(end).fill("2026-10-01" if end == "#start" else "2026-11-30")
+    assert_dates_cleared(page)
+    # The zone note still describes both dates.
+    for date in ("#start", "#end"):
+        assert page.locator(date).get_attribute("aria-describedby") == (
+            "information-zone-help"
+        )
+    assert_clean(page, errors)
+
+
+def test_fixing_the_other_date_and_applying_clears_the_mark(page, component_origin):
+    """A successful in-place Apply clears the server marks it does not repeat.
+
+    The reader fixes the order at Submitted on or after, the other end
+    (whose edit clears the shared mark at once), and Apply's answer marks
+    nothing: no mark, message or summary is left (#1332).
+    """
+    from playwright.sync_api import expect
+
+    errors = watch(page)
+    answer = page.request.get(component_origin + "/information-withdrawn").text()
+    page.goto(component_origin + "/information-refused-dates")
+    page.route(
+        "**/information/",
+        lambda route: route.fulfill(body=answer, content_type="text/html"),
+    )
+    page.locator("#start").fill("2026-10-01")
+    # A mark a later answer must clear, set as an earlier answer would have
+    # left it had the edit not cleared it (on the date not touched).
+    page.evaluate("""() => {
+        const field = document.getElementById("end");
+        field.setAttribute("aria-invalid", "true");
+        field.setAttribute("data-field-error", "");
+        field.setAttribute(
+            "aria-describedby", "information-zone-help submitted-dates_error");
+        const line = document.getElementById("submitted-dates_error");
+        line.hidden = false;
+        line.querySelector("li").textContent = "stale";
+    }""")
+    page.get_by_role("button", name="Apply filters").click()
+    expect(page.locator("#information-matching")).to_have_text("Matching requests: 3.")
+    assert_dates_cleared(page)
+    assert_clean(page, errors)
+
+
+def test_in_place_apply_refused_marks_the_kept_dates(page, component_origin):
+    """A refused in-place Apply marks the dates on the form it kept (#1332).
+
+    No reload and no shift: the form keeps what was typed and takes the
+    marks and message from the 400 answer into its reserved line, so Apply
+    stays under the pointer, and focus goes straight from Apply to the
+    summary in the results, never through a date.
+    """
+    from playwright.sync_api import expect
+
+    errors = watch(page)
+    answer = page.request.get(component_origin + "/information-refused-dates").text()
+    page.goto(component_origin + "/information")
+    page.evaluate("window.__informationMarker = 1")
+    page.route(
+        "**/information/",
+        lambda route: route.fulfill(status=400, body=answer, content_type="text/html"),
+    )
+    # The dates typed are in order: the complete gate holds Apply while they
+    # are out of order, so the out-of-order refusal can only be the answer's
+    # here, standing in for a hand-built request that reached the server.
+    page.locator("#start").fill("2026-11-01")
+    page.locator("#end").fill("2026-11-02")
+    before = page.evaluate(APPLY_BOX)
+    page.evaluate("""() => {
+        window.__focused = [];
+        document.addEventListener("focusin", (event) => {
+            window.__focused.push(event.target.id || event.target.tagName);
+        });
+    }""")
+    page.get_by_role("button", name="Apply filters").click()
+    assert_refused_at_the_dates(page)
+    summary = page.locator("[data-table-region] [data-error-summary]")
+    expect(summary).to_be_focused()
+    focused = page.evaluate("window.__focused")
+    assert "start" not in focused and "end" not in focused
+    assert abs(page.evaluate(APPLY_BOX) - before) < 1
+    assert page.evaluate("window.__informationMarker") == 1
+    # What was typed stays; the answer's own values are not written over it.
+    expect(page.locator("#start")).to_have_value("2026-11-01")
+    expect(page.locator("#end")).to_have_value("2026-11-02")
+    page.locator("#end").fill("2026-11-03")
+    assert_dates_cleared(page)
+    # The browser reports the answer's 400 itself; nothing else may appear.
+    assert_clean(page, [error for error in errors if "status of 400" not in error])
+
+
+def test_refused_hostile_date_stays_text(page, component_origin):
+    """A hostile value sent back into a refused date is never markup (#1332)."""
+    from playwright.sync_api import expect
+
+    errors = watch(page)
+    page.goto(component_origin + "/information-refused-hostile")
+    expect(page.locator("#start")).to_have_attribute("aria-invalid", "true")
+    assert page.locator("#start").get_attribute("value") == (
+        '"><script>window.__pwned = 1</script>'
+    )
+    assert page.evaluate("window.__pwned") is None
+    assert page.locator("#table-filters script").count() == 0
+    assert_clean(page, errors)
