@@ -56,6 +56,10 @@ def test_source_work_routes_to_the_source_queue_and_short_work_does_not():
         TASK_TYPE as REPORT_EXPORT,
     )
     from parishkit.stewardship.reports.fact_tasks import TASK_TYPE as REPORT_FACTS
+    from parishkit.stewardship.responses.publication_tasks import (
+        PREFLIGHT_TASK_TYPE,
+        PUBLICATION_TASK_TYPE,
+    )
     from parishkit.stewardship.runtime_background import scheduler_handlers
     from parishkit.stewardship.source.requests import TASK_TYPE as REFRESH
     from parishkit.stewardship.source.setup_admission import TASK_TYPE as SETUP_LOAD
@@ -65,7 +69,15 @@ def test_source_work_routes_to_the_source_queue_and_short_work_does_not():
     )
 
     handlers = scheduler_handlers()
-    source = {REFRESH, SETUP_LOAD, CLEANUP}
+    # Census publication reads and writes ParishSoft, so it shares the
+    # source queue with the other ParishSoft-bound work (#528).
+    source = {
+        REFRESH,
+        SETUP_LOAD,
+        CLEANUP,
+        PREFLIGHT_TASK_TYPE,
+        PUBLICATION_TASK_TYPE,
+    }
     assert {name for name, h in handlers.items() if h.queue is WorkQueue.SOURCE} == (
         source
     )

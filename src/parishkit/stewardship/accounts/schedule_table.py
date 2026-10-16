@@ -220,12 +220,13 @@ def changed(form):
     with typed values and so reports every saved row as changed. Each field's
     saved value is cleaned the way the post was instead, and the two compared;
     a field that did not clean has an error, which opens the editor anyway.
-    The hidden schedule ID is the row's identity, not an edit.
+    The hidden schedule ID is the row's identity, and its drawn moment
+    (``drawn_at``, #558) how the page was drawn; neither is an edit.
     """
     if not form.is_bound or form.errors:
         return False
     for name, field in form.fields.items():
-        if name == "id":
+        if name in {"id", "drawn_at"}:
             continue
         saved = form.get_initial_for_field(field, name)
         try:

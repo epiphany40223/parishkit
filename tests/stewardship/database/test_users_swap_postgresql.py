@@ -367,6 +367,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # which names the cleared switch. Its entry follows 0078's below, so once
 # 0078's file installs again (making v1 again), 0098's file runs after it
 # and drops v1 again.
+# 0100 (#720) creates nothing: it replaces 0064's information selection in
+# place again, after 0094, so once 0064's file (``CLOSURE_CREATED``) and
+# 0094's (``CLOSURE_REPLACED``) install it again without the counts,
+# ``CLOSURE_REPLACED`` runs 0100's file again.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -618,6 +622,10 @@ CLOSURE_ALTERED = {
 # puts back the Ministry selections 0092's and 0093's files ran again
 # (``CLOSURE_RERUN``) with older bodies, as it runs after them. 0095 (#1286)
 # replaces the comparison function 0067's and 0072's files bring back.
+# 0100 (#720) replaces the information selection 0094 also replaces, so its
+# entry comes after 0094's: 0094's file, run again for the limitations
+# report, puts that selection back without the counts first.
+# 0101 (#528) replaces the task-type maps 0077's file brings back.
 CLOSURE_REPLACED = {
     "public.stewardship_debug_off_switch_guard_v1()": (
         ("stewardship_jobs", "0031_debug_allow"),
@@ -630,7 +638,6 @@ CLOSURE_REPLACED = {
     **dict.fromkeys(
         (
             "public.stewardship_limitations_report_v1(uuid,jsonb)",
-            "public.stewardship_information_report_v2(uuid,jsonb,integer,uuid,integer)",
             "public.stewardship_ministry_report_v3"
             "(uuid,jsonb,boolean,bigint[],integer,text,integer,integer)",
         ),
@@ -639,6 +646,17 @@ CLOSURE_REPLACED = {
     "public.stewardship_campaign_comparison_v1(uuid,date,numeric[],uuid)": (
         ("stewardship_reports", "0027_canonical_timezone"),
         "stewardship_timezone_name_v1(selected.timezone)",
+    ),
+    "public.stewardship_information_report_v2(uuid,jsonb,integer,uuid,integer)": (
+        ("stewardship_reports", "0028_information_status_counts"),
+        "'counts',(SELECT jsonb_build_object(",
+    ),
+    **dict.fromkeys(
+        (
+            "public.stewardship_task_type_login_v1(text)",
+            "public.stewardship_task_type_creators_v1(text)",
+        ),
+        (("stewardship_responses", "0007_publication_tasks"), "census_publication"),
     ),
 }
 

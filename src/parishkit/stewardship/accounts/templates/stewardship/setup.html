@@ -31,10 +31,11 @@
 {% else %}
 <h2>{% translate "Have these ready before you start" %}</h2>
 <ul class="setup-checklist">
-<li>{% translate "Your parish's ParishSoft API key and ParishSoft organization ID." %}</li>
 <li>{% translate "A Google Workspace mailbox to send from, and the JSON key of a Google Cloud service account authorized for domain-wide delegation with the scope https://mail.google.com/." %}</li>
+<li>{% translate "A staff mailbox for Testing mode." %}</li>
 <li>{% translate "Optionally, a Slack app bot token (xoxb-…) and the ID of the alert channel." %}</li>
-<li>{% translate "A staff mailbox for Testing mode, and the parish logo image." %}</li>
+<li>{% translate "The parish logo image." %}</li>
+<li>{% translate "Your parish's ParishSoft API key and ParishSoft organization ID." %}</li>
 </ul>
 {% fresh_sign_in as fresh %}{% if not fresh %}{% translate "saving a credential" as step_up_action %}{% translate "Your setup is kept." as step_up_note %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action note=step_up_note later=True %}{% endif %}
 <p>{% translate "Complete setup using this login. Another login cannot resume your temporary settings." %}</p>

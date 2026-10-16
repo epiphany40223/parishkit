@@ -256,3 +256,50 @@ def test_create_campaign_fields_fill_the_real_form_and_validator():
     # year, as Production labels Stewardship 2027 (held in autumn 2026).
     assert values["year_label"] == "2027"
     assert values["financial"]["start"].startswith(values["year_label"])
+
+
+def test_unattended_wizard_saves_its_pages_in_the_wizards_order(monkeypatch):
+    """`wizard` follows setup_wizard.PAGES, ending with the source load (#1353).
+
+    The page services are recorded instead of run, so this pins only the
+    order in which the unattended wizard calls them.
+    """
+    from parishkit.stewardship.accounts import (
+        setup_credentials,
+        setup_drafts,
+        setup_source,
+        setup_staging,
+    )
+    from parishkit.stewardship.accounts.setup_wizard import PAGES
+    from parishkit.stewardship.local import seed_web
+
+    calls = []
+    status = SimpleNamespace(attempt_id="attempt", version=1)
+
+    def save_section(request, service, attempt_id, *, step, **_):
+        """Record a public settings page save."""
+        calls.append(step)
+        return status
+
+    def stage_credential(request, service, attempt_id, *, target, **_):
+        """Record a credential page save."""
+        calls.append(target)
+        return status, None
+
+    def started(*_, **__):
+        """Record the source load."""
+        calls.append("source")
+
+    monkeypatch.setattr(setup_staging, "begin_setup", lambda *_: status)
+    monkeypatch.setattr(setup_drafts, "save_section", save_section)
+    monkeypatch.setattr(
+        setup_drafts, "view_draft", lambda *_: SimpleNamespace(status=status)
+    )
+    monkeypatch.setattr(setup_credentials, "stage_credential", stage_credential)
+    monkeypatch.setattr(setup_source, "start_source_load", started)
+    monkeypatch.setattr(seed_web, "stage_logo", lambda *_: "bundle")
+    assert seed_web.wizard_collect(None, None) == "attempt"
+    # Slack is off, so its connection page is skipped; Review onwards follow
+    # the load in wizard_confirm.
+    pages = [page.key for page in PAGES if page.key != "slack_credential"]
+    assert calls == pages[: pages.index("source") + 1]
