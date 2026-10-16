@@ -448,7 +448,20 @@ never scrolls to show it (Administrator, pk-local review of
   whose heading takes focus, and lists the state and recipient lines,
   history, forms and bounce panel to replace too. An export's Retry and
   Cancel swap its status panel and hand focus to Refresh status below.
-  Regenerate, whose answer is a new export's page, stays a navigation. One
+  Regenerate, whose answer is a new export's page, stays a navigation.
+  Preview and test email's Send this test email posts in place too: its
+  notices and form are one region and Recent test results another, whose
+  heading takes focus. The list updates by itself while a test is on its
+  way, and once the test settles a quiet follow-up re-reads only the
+  form's region, so Send, the acknowledgement and a fresh preview come
+  back without moving focus; the page has no manual refresh link.
+  Off-site backups' Test access posts in place as well: its status line
+  is swapped in and watched while the check runs, focus stays on Test
+  access, and the settled check re-reads that line in place, so a folder
+  link typed but not saved is kept. Save in the same form is marked
+  `data-in-place-native` and submits natively; the Integrations Save and
+  Remove forms stay ordinary forms until they move to the review dialog
+  ([#750](https://github.com/epiphany40223/parishkit/issues/750)). One
   request is in flight at a time: a newer choice cancels an older
   read, but a POST that saves a change is never cancelled, and other
   in-place controls and repeats are ignored (the live region says "Still
@@ -493,7 +506,15 @@ never scrolls to show it (Administrator, pk-local review of
   there is none), the fields it names are marked in error beside their
   message as the fetched page draws them, and the live region reads the
   summary's messages, or says
-  the server did not accept the change when there is no summary. Any other
+  the server did not accept the change when there is no summary. A refused
+  POST answered as JSON (a typed error, which the view sends to every
+  script's fetch: a user-facing refusal, a stale page, a denial or an
+  outage) is never shown as the page, since that would be raw JSON (#519).
+  It is shown in place as one alert line after the control's buttons, so
+  nothing above it moves: the refusal's message and fix in plain words
+  (without them, the confirm dialogs' wording for its status) and its link
+  when it has one. The page, the address and focus stay, and the next
+  answer to that form replaces the line or removes it. Any other
   refusal, and a POST's own answer that is not this page, is shown as the
   whole page, as a native submission would show it. That page keeps the
   window, so the old page is first told it is going away (a `pagehide` that
@@ -886,7 +907,8 @@ no longer a draft, Testing cleanup is unfinished, other inputs (such as a
 ParishSoft refresh) are not ready, earlier links still need Cancel, or
 cancelled links are still being discarded. On the Off-site backups page,
 Test access is unavailable until Google Workspace mail is set up, since the
-check signs in as its mailbox user. In the Pages and emails editor, "Remove
+check signs in as its mailbox user, and always in the local environment,
+which never reaches Google Drive. In the Pages and emails editor, "Remove
 this selected content" is unavailable, with its reason as the box's help,
 while nothing is saved there or while mail schedules still send the email.
 The box is an action, not a setting, so its reason stays visible rather than

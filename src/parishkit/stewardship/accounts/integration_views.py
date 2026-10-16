@@ -307,8 +307,14 @@ def _saved_folder_id(link):
 
 
 def _backup_context(request, configuration):
-    """Off-site copy status and the viewer's latest access check."""
-    return backup_state(configuration, request.portal_session.principal_id)
+    """Off-site copy status, the viewer's latest access check, and LOCAL.
+
+    ``drive_in_local`` draws Test access unavailable, with why, in LOCAL
+    (#563), where the view would only refuse it (``_refuse_drive_in_local``).
+    """
+    return backup_state(configuration, request.portal_session.principal_id) | {
+        "drive_in_local": _drive_in_local()
+    }
 
 
 def backup_state(configuration, actor_id):
@@ -335,16 +341,22 @@ def backup_state(configuration, actor_id):
     }
 
 
+def _drive_in_local():
+    """Whether this is LOCAL (#476), which never reaches Google Drive."""
+    from parishkit.stewardship.deployment import DeploymentProfile, recorded_profile
+
+    return recorded_profile() is DeploymentProfile.LOCAL
+
+
 def _refuse_drive_in_local():
     """LOCAL (#476) never reaches Google Drive: no off-site folder is set or tested.
 
     The Workspace credential in LOCAL is the mail-catcher document, which the
     Drive session refuses anyway; this refusal says so before anything is
-    queued or saved.
+    queued or saved. The page draws Test access unavailable there already;
+    this is the server's own check.
     """
-    from parishkit.stewardship.deployment import DeploymentProfile, recorded_profile
-
-    if recorded_profile() is DeploymentProfile.LOCAL:
+    if _drive_in_local():
         raise UserFacingError(
             _(
                 "Off-site Google Drive copies are not available in the local "

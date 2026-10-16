@@ -85,12 +85,16 @@ from .automation_components import POSTS as AUTOMATION_POSTS
 from .automation_components import SLOW_GETS as AUTOMATION_SLOW_GETS
 from .automation_components import canonical
 from .automation_components import components as automation_components
+from .backup_test_components import components as backup_test_components
+from .backup_test_components import posts as backup_test_posts
 from .branding_components import POSTS as BRANDING_POSTS
 from .branding_components import components as branding_components
 from .campaign_create_components import POSTS as CAMPAIGN_CREATE_POSTS
 from .campaign_create_components import components as campaign_create_components
 from .campaign_settings_components import POSTS as CAMPAIGN_SETTINGS_POSTS
 from .campaign_settings_components import components as campaign_settings_components
+from .campaign_test_components import components as campaign_test_components
+from .campaign_test_components import posts as campaign_test_posts
 from .census_components import components as census_components
 from .chart_components import components as chart_components
 from .comparison_components import components as comparison_components
@@ -2176,6 +2180,8 @@ def component_origin():
         setup_live_components(context, admin, NOW, SETUP_MAIL_STATUS, setup_draft)
     )
     responses.update(in_place_commands_components(context, admin))
+    responses.update(campaign_test_components(context, admin))
+    responses.update(backup_test_components(context, admin))
     responses.update(family_test_components(context, admin))
     responses.update(upload_defaults_components(context, admin))
     responses.update(settings_components(context, admin))
@@ -2198,6 +2204,8 @@ def component_origin():
         IN_PLACE_POSTS
         | DELIVERY_POSTS
         | in_place_commands_posts(context, admin)
+        | campaign_test_posts(context, admin)
+        | backup_test_posts(context, admin)
         | AUTOMATION_POSTS
         | SIGNED_IN_POSTS
         | FOLLOWUP_POSTS
@@ -2351,13 +2359,17 @@ def component_origin():
                 self.end_headers()
                 return
             if self.path in posts:
-                status, location, body = posts[self.path]
+                # An answer may name its media type (a typed error's JSON,
+                # which a script's fetch gets from the real views); a page
+                # is HTML.
+                status, location, body, *kind = posts[self.path]
                 if self.path in IN_PLACE_SLOW:
                     time.sleep(1.5)
                 self.send_response(status)
                 if location:
                     self.send_header("Location", location)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
+                media = kind[0] if kind else "text/html"
+                self.send_header("Content-Type", f"{media}; charset=utf-8")
                 self.send_header("Content-Security-Policy", CSP)
                 self.end_headers()
                 self.wfile.write(body.encode())
