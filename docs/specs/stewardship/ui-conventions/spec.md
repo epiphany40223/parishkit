@@ -118,8 +118,8 @@ conversion the reader has to do in their head. **Shared code.**
 `web/dates.py` and the `parish_date` and `parish_time` template filters
 (`accounts/templatetags/stewardship.py`); the hidden
 browser-zone field (`data-browser-zone`) that `ui-v1.js` fills; the
-`test_browser_local_times.py` guard. **Precedent.** #558 (Administrator
-decision, 2026-10-04).
+`test_browser_local_times.py` and `test_browser_zone_guard.py` guards.
+**Precedent.** #558 (Administrator decision, 2026-10-04).
 
 The rule covers schedule send times, campaign and financial date-times and
 report day buckets too (Administrator decision, 2026-10-04,
@@ -159,7 +159,7 @@ portal](../admin-portal/spec.md#dates-and-mail-schedules)). A schedule review
 shows each send only as a moment in the browser's zone, never as the saved
 campaign-local date and time with the campaign's zone.
 Until a page's PR lands, it keeps its current zone, including the campaign
-zone for the retired Copy campaign page, campaign dates and report day buckets (the
+zone for the retired Copy campaign page, campaign date-times and report day buckets (the
 participation chart still buckets by campaign time). One field is a recorded
 exception that stays in the refresh schedule's own time zone (the current
 campaign's, else the parish's, as the scheduler reads it) after every #558 PR:
