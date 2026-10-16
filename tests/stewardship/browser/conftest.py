@@ -2374,6 +2374,21 @@ def component_origin():
             )
         ),
     )
+    # Every fixture page with a change-gated form (#921, #1330), so the
+    # change gate's guard (test_editor_gates.py) checks each one's hidden
+    # fields, including fixtures added later.
+    responses["/change-gate-index"] = (
+        "text/plain",
+        "\n".join(
+            sorted(
+                path
+                for path, (kind, body) in responses.items()
+                if kind == "text/html"
+                and isinstance(body, str)
+                and "data-require-change=" in body
+            )
+        ),
+    )
 
     class Handler(BaseHTTPRequestHandler):
         """Suppress raw request logging; unknown routes are intentionally empty."""

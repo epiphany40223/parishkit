@@ -12,6 +12,8 @@ need one ticked. Pages are the real templates (the components modules and
 conftest); the server's own checks are covered beside the views.
 """
 
+import re
+
 import pytest
 
 from .automation_components import APPROVAL
@@ -332,3 +334,55 @@ def test_leader_roles_need_one_ticked(page, component_origin):
         page.locator("#settings-form button[type=submit][data-complete-gated]")
     ).to_have_count(0)
     assert not failures
+
+
+# The hidden fields of a change-gated form that carry no setting, so the
+# change gate leaves them unmarked (ui-v1.js formState; #1334 re-review),
+# each with why: a pattern for the field's name.
+NOT_SETTINGS = {
+    r"csrfmiddlewaretoken": "the security token",
+    r"action": "which step the post asks for, the same every time",
+    r".*-(TOTAL|INITIAL|MIN_NUM|MAX_NUM)_FORMS": "a formset's row counts",
+    r"request_key": "a one-time request key a restored page renews",
+    r"(.*-)?intent": "a signed one-time intent, drawn anew on every draw",
+    r".*-drawn_at": "the send moment a row was drawn from, never saved",
+    r"repeat-dates": "written by the script from the repeat rule's controls",
+    r"proposal": "the census row the form edits",
+    r"search|status|history|route|kind|start|end|zone|page|size|sort": (
+        "the census table's filters (a filter's zone too), page, size and sort"
+    ),
+}
+
+
+def test_every_hidden_setting_is_marked(page, component_origin):
+    """Every hidden field of every change-gated fixture page is either marked
+    data-change-setting, so the gate counts it, or one known to carry no
+    setting (NOT_SETTINGS): the gate's own version field, the browser's
+    zone or a field above. A new hidden field must be classified here, so
+    the opt-in can never miss a setting silently (#1334 re-review)."""
+    known = re.compile("|".join(f"(?:{pattern})" for pattern in NOT_SETTINGS))
+    page.goto(component_origin + "/change-gate-index")
+    paths = page.inner_text("body").split()
+    assert len(paths) >= 10, paths
+    unknown = {}
+    marked = 0
+    for path in paths:
+        page.goto(component_origin + path)
+        marked += page.locator(
+            "form[data-require-change] input[type=hidden][data-change-setting]"
+        ).count()
+        names = page.evaluate(
+            """() => [...document.querySelectorAll("form[data-require-change]")]
+              .flatMap((form) => [...form.elements].filter((node) =>
+                node instanceof HTMLInputElement && node.type === "hidden" && node.name
+                && !node.hasAttribute("data-change-setting")
+                && !node.hasAttribute("data-browser-zone")
+                && node.name !== form.dataset.requireChange)
+              .map((node) => node.name))"""
+        )
+        if missed := sorted({name for name in names if not known.fullmatch(name)}):
+            unknown[path] = missed
+    assert unknown == {}
+    # The marks are there to find (the share and schedule rows' identities,
+    # the refresh rules' kind, ParishSoft's stored quick updates).
+    assert marked > 0

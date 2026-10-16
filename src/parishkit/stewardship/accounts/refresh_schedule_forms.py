@@ -299,7 +299,8 @@ class RuleForm(_Row):
         label=_("Kind"),
         choices=KIND_CHOICES,
         initial="full",
-        widget=forms.HiddenInput,
+        # A setting, though hidden: the change gate counts it (ui-v1.js).
+        widget=forms.HiddenInput(attrs={"data-change-setting": True}),
     )
     shape = forms.ChoiceField(label=_("Repeat"), choices=RULE_SHAPES, initial="at")
     every = forms.TypedChoiceField(

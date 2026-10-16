@@ -33,7 +33,10 @@ def default_share_options():
 class ShareOptionForm(AdminForm):
     """Identity is retained only from this campaign; order/deletion are explicit."""
 
-    id = forms.UUIDField(required=False, widget=forms.HiddenInput)
+    # A saved option's identity: the change gate counts it (ui-v1.js formState).
+    id = forms.UUIDField(
+        required=False, widget=forms.HiddenInput(attrs={"data-change-setting": True})
+    )
     label = forms.CharField(label=_("Option label"), max_length=1024)
     free_text = forms.BooleanField(
         label=_("Include a free-text response"), required=False
