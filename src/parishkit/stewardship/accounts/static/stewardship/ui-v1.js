@@ -1887,6 +1887,16 @@
         });
       }
     }
+    // Likewise a refused POST from an in-place form that no swap replaced
+    // (Off-site backups' Test access, whose folder link the view refuses at
+    // its field, #1330; its form is in no region, or in one only its own
+    // control redraws): the form keeps its element and the link typed, so
+    // the answer's marks and messages are copied onto it. A form a swap
+    // replaced is no longer connected, and its fresh copy has them already.
+    if (refused && !anywhere && owner instanceof HTMLFormElement && owner !== filterForm
+      && owner.isConnected && owner.id && parsed.getElementById(owner.id)) {
+      showFieldErrors(owner, parsed, {focus: false});
+    }
     // Every swap and the synced hidden version are in place: a Review that
     // was applied makes its values the saved ones (the change gate, #921).
     gateChanges();
