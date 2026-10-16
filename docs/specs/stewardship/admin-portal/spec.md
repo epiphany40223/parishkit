@@ -901,7 +901,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `weekly_digest_item` | Weekly report item | Weekly report | Administrator | Weekly information report (one item); Weekly summary item | `/admin/reports/emailed/weekly/<snapshot>/items/<item>/` | (same) | Links the live Additional information request. |
 | `daily_digest_snapshot` | Daily report | Emailed reports | Administrator, Staff | (report document title) daily report | `/admin/reports/emailed/daily/<snapshot>/` | (same) | Its old address, which daily report emails sent before NAV-12 link, is gone, with no redirect (#864). |
 | `parish_settings` | Parish settings | Menu: Parish settings | Administrator | (same) | `/admin/parish/settings/` | (same) | Hand-written Administration link removed. |
-| `branding_settings` | Parish logos | Menu: Parish logos | Administrator | (same) | `/admin/parish/logos/` | (same) | Uploads, the review of staged logos (`?review=<bundle>`) and Apply all happen here (#750); the old Review parish logos address is gone. |
+| `branding_settings` | Parish logos | Menu: Parish logos | Administrator | (same) | `/admin/parish/logos/` | (same) | An upload answers with the review dialog's review of the staged logos, and the dialog's Apply posts here (#750); a refused upload re-renders Parish logos (status 400). The page takes no query: the old Review parish logos address and the `?review=` and `?request=` addresses are gone. |
 | `ministries` | Ministries | Menu: Ministries | Administrator | Ministry activity | `/admin/parish/ministries/` | (same) | A read-only catalog: no Activity column, sort, filter or Review activation / inactivation, and every POST is refused (Administrator, 2026-10-13, #1267). |
 | `hosted_files` | Hosted files | Menu: Hosted files | Administrator | (same) | `/admin/parish/files/` | (same) |  |
 | `hosted_file_delete` | Delete hosted files | Hosted files | Administrator | (same) | `/admin/parish/files/deletion/` (POST only) | (same) | The table's confirmation dialog posts here (#879); it answers with a redirect or a refusal, never a page. |
@@ -1362,13 +1362,15 @@ lacks the aliases (#1286).
 Logo management previews every generated size. Uploads remain staged until the
 YAML version referencing their immutable branding version is applied;
 historical email/page previews retain their campaign version. The upload's
-review, Apply and the change's status happen
-[in place](../ui-conventions/spec.md#in-place-controls) under the upload
-form (#750): an upload answers with Parish logos naming the staged logos
-(`?review=<bundle>`), Apply posts to that address, and the current logos,
-below the review region, refresh once the change is applied. An upload
-from a page whose settings changed elsewhere, and an Apply of logos that
-expired or were staged against settings changed since, are refused there.
+review and Apply happen in the
+[review dialog](../ui-conventions/spec.md#review-dialog) (#750): an upload
+answers with the dialog's review of the staged logos, and Apply posts the
+signed preview, with the staged bundle it was signed for, to Parish logos.
+Once the change is applied, the form and the current logos below it are
+redrawn. An upload from a page whose settings changed elsewhere, and an
+Apply of logos that expired, belong to another sign-in or were staged
+against settings changed since, are refused in the dialog, which says to
+reload the page first.
 
 Parish logos take either one image, resized into all four sizes, or each
 size uploaded separately (#1062): the large
