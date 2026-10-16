@@ -2389,7 +2389,14 @@ inventory on #879 lists.
   only to one kind of row is a [prerequisite gate](#prerequisite-gates): it
   is available only while every ticked row is of its kind, and the bulk
   bar's reason line says why otherwise (Administrator, 2026-10-13,
-  [#1131](https://github.com/epiphany40223/parishkit/issues/1131)). A dialog
+  [#1131](https://github.com/epiphany40223/parishkit/issues/1131)). A row may
+  be of several kinds at once (a census change whose Review offers both
+  Approve and Ignore,
+  [#528](https://github.com/epiphany40223/parishkit/issues/528)); a button
+  then fits it when its kind is one of them. On a page whose view travels
+  only in POST bodies, the dialog posts with the view's fields to the page
+  itself and redraws from that answer, since its address would show the
+  default view. A dialog
   may hold fields, such as an
   optional note applied to each row; its confirm button then waits for them
   as a form's Save does, and they return to their defaults each time it
