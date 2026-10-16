@@ -1490,12 +1490,57 @@
   // again) or, when it is not such a refusal, removes it. Keyed by the form
   // (or the control, outside any form) so a submitter outside its form
   // (form="…") still finds its own line.
+  //
+  // A typed refusal whose errors name a field of that form (FieldError's
+  // field_id, such as Census changes' Edit value, #528) also marks the field
+  // as a server field error is marked (#592): aria-invalid="true" and
+  // described by the line. As the server's rule cannot be checked again
+  // here, the mark and the line clear on the field's first edit (input or
+  // change), and whenever the line goes.
   const refusalNotes = new WeakMap();
+  const refusedFields = new WeakMap(); // key → [{field, clear}]
+  const unmarkRefused = (key) => {
+    (refusedFields.get(key) || []).forEach(({field, clear}) => {
+      field.removeEventListener("input", clear);
+      field.removeEventListener("change", clear);
+      field.removeAttribute("data-refused");
+      field.setAttribute("aria-invalid", "false");
+      const ids = (field.getAttribute("aria-describedby") || "").split(/\s+/)
+        .filter((id) => id && id !== refusalNotes.get(key)?.id);
+      if (ids.length) field.setAttribute("aria-describedby", ids.join(" "));
+      else field.removeAttribute("aria-describedby");
+    });
+    refusedFields.delete(key);
+  };
   const clearRefusal = (key) => {
+    unmarkRefused(key);
     refusalNotes.get(key)?.remove();
     refusalNotes.delete(key);
   };
+  const markRefused = (key, note, text) => {
+    if (!(key instanceof HTMLFormElement)) return;
+    let errors = [];
+    try { errors = JSON.parse(text)?.errors || []; } catch { return; }
+    const fields = errors.map((error) => error?.field_id
+      && key.elements.namedItem(error.field_id))
+      .filter((field) => field instanceof HTMLElement && field.matches("input, select, textarea"));
+    if (!fields.length) return;
+    note.id = `${key.id || "form"}-refusal`;
+    const marked = [];
+    fields.forEach((field) => {
+      const clear = () => clearRefusal(key);
+      field.setAttribute("aria-invalid", "true");
+      field.setAttribute("data-refused", "");
+      const ids = (field.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean);
+      field.setAttribute("aria-describedby", [note.id, ...ids.filter((id) => id !== note.id)].join(" "));
+      field.addEventListener("input", clear);
+      field.addEventListener("change", clear);
+      marked.push({field, clear});
+    });
+    refusedFields.set(key, marked);
+  };
   const showRefusal = (key, control, status, text) => {
+    unmarkRefused(key);
     const note = document.createElement("p");
     note.className = "notice notice-error";
     note.setAttribute("role", "alert");
@@ -1518,6 +1563,7 @@
       (control.closest(".actions, p") || control).after(note);
     }
     refusalNotes.set(key, note);
+    markRefused(key, note, text);
   };
   // Load the page a control leads to and bring this page up to date from it.
   // Success: every region present in both pages is swapped (the one the

@@ -22,6 +22,7 @@ from parishkit.stewardship.reports.census_change_views import (
     row_controls,
 )
 from parishkit.stewardship.reports.census_changes import CensusQuery, select, shape
+from parishkit.stewardship.responses.comparison import phone_record
 from parishkit.stewardship.web.tables import paginate
 
 CAMPAIGN = UUID(int=528)
@@ -41,6 +42,11 @@ APPROVED = "Mobile phone for Member DUID 100 in Family DUID 1000 approved."
 # the notice the view answers an Administrator's bulk Approve of two with.
 BULK = "/census-changes-bulk"
 BULK_APPROVED = "2 changes approved."
+# The notice the view answers Save value on the first Automatic row with, the
+# value saved, and the page after it, where that row has the edit (ADM-09.04).
+EDITED = "Mobile phone for Member DUID 100 in Family DUID 1000 now has an edited value."
+EDITED_VALUE = "(317) 555-0199"
+EDITED_PAGE = "/census-changes-edited"
 STALE = (
     "Mobile phone for Member DUID 100 in Family DUID 1000 was updated by "
     "someone else, so nothing was recorded. The list shows its current status."
@@ -51,9 +57,11 @@ def components(context, admin):
     """The page at each table choice the test steps through."""
     when = datetime(2054, 10, 5, 12, tzinfo=UTC)
 
-    def shaped(index, automatic, approved=0):
+    def shaped(index, automatic, approved=0, edited=False):
         """One shaped row; the first ``automatic`` rows are Automatic, and the
-        first ``approved`` of them approved (one version on)."""
+        first ``approved`` of them approved (one version on); with ``edited``,
+        the first has an Administrator's edited value (one version on)."""
+        edit = edited and index == 0
         return shape(
             {
                 "id": str(index),
@@ -62,11 +70,12 @@ def components(context, admin):
                 "field": "mobile_phone",
                 "baseline_available": True,
                 "baseline_value": "555-0100",
-                "submitted_value": f"555-{index:04d}",
+                # Stored as the Family form stores a phone: a record.
+                "submitted_value": phone_record(f"555-{index:04d}"),
                 "current_available": True,
                 "current_value": "555-0100",
-                "admin_value_set": False,
-                "admin_value": None,
+                "admin_value_set": edit,
+                "admin_value": phone_record(EDITED_VALUE) if edit else None,
                 "handling": "api" if index < automatic else "manual",
                 "decision": "approved" if index < approved else "unreviewed",
                 "execution": "pending",
@@ -75,21 +84,24 @@ def components(context, admin):
                 "family_duid": 1000 + index,
                 "family_name": f"Family {index:02d}",
                 "member_name": f"Member {index:02d}",
-                "version": 2 if index < approved else 1,
+                "version": 2 if index < approved or edit else 1,
             }
         )
 
     query = CensusQuery()
 
-    def page(paging, notice=None, *, automatic=False, bulk=False, approved=0):
+    def page(
+        paging, notice=None, *, automatic=False, bulk=False, approved=0, edited=False
+    ):
         """Render the page with the table paged and sorted as ``paging`` says,
         and ``notice`` (a resolution's answer) above it; with ``automatic``,
         its first row is an Automatic change an Administrator reviews, and
         its forms post to ``AUTOMATIC``; with ``bulk``, its first three rows
-        are, it offers bulk review, and its forms post to ``BULK``."""
+        are, it offers bulk review, and its forms post to ``BULK``; with
+        ``edited``, its first (Automatic) row has an edited value."""
         path = BULK if bulk else AUTOMATIC if automatic else PATH
         count = 3 if bulk else int(automatic)
-        rows = [shaped(index, count, approved) for index in range(ROWS)]
+        rows = [shaped(index, count, approved, edited) for index in range(ROWS)]
         result = select(rows, query, administrator=True)
         table = paginate(
             result["rows"],
@@ -121,6 +133,7 @@ def components(context, admin):
                     "bulk_actions": bulk_actions(),
                     # A fresh key per drawn page, as the view draws one.
                     "bulk_key": uuid4(),
+                    "edit_today": "2054-10-06",
                 },
             ),
         )
@@ -141,6 +154,8 @@ def components(context, admin):
         "/census-changes-approved": page(
             {"size": "25"}, notice=APPROVED, automatic=True
         ),
+        # The answer to Save value on the first (Automatic) row.
+        EDITED_PAGE: page({"size": "25"}, notice=EDITED, automatic=True, edited=True),
         # Three Automatic rows with bulk review; and the answer to Approve.
         BULK: page({"size": "25"}, bulk=True),
         "/census-changes-bulk-approved": page(

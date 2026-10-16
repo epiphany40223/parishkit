@@ -173,8 +173,12 @@ def _encoder_matches(name, value):
         return "unreadable"
 
 
-def _sendable(name, value):
-    """Whether one value as read satisfies the recorded PUT schema."""
+def sendable(name, value):
+    """Whether one value as read satisfies the recorded PUT schema.
+
+    An Administrator's edited census value is held to the same check
+    (``census_review.edited_value``), so the two never disagree.
+    """
     if value is None:
         return True
     if type(value) is not str:
@@ -222,7 +226,7 @@ def map_record(record):
             )
         if value not in (None, ""):
             report["encoder_matches_read"] = _encoder_matches(name, value)
-        report["sendable"] = _sendable(name, value)
+        report["sendable"] = sendable(name, value)
         fields[name] = report
     return payload, fields
 

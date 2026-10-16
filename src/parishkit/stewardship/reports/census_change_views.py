@@ -9,9 +9,9 @@ audited as a count only.
 
 A row's Entered in ParishSoft, Ignore or Reopen (#528), and an
 Administrator's Approve, Ignore or Back to To review on an Automatic row
-(ADM-09), post to the page itself with the page's filters and table choices,
-so the answer is the same page, refreshed in place, with a notice naming the
-row.
+(ADM-09), and Edit value or Clear edit on one (ADM-09.04), post to the page
+itself with the page's filters and table choices, so the answer is the same
+page, refreshed in place, with a notice naming the row.
 """
 
 from dataclasses import replace
@@ -38,7 +38,11 @@ from parishkit.stewardship.responses.census_resolution import resolve_census_cha
 from parishkit.stewardship.responses.census_review import (
     MAX_BULK,
     BulkStale,
+    InvalidEdit,
     KeyRebound,
+    Unchanged,
+    campaign_today,
+    edit_census_change,
     review_census_change,
     review_census_changes,
 )
@@ -233,6 +237,15 @@ REVIEWED = {
     "ignore_automatic": "marked ignored.",
     "to_review": "sent back to To review.",
 }
+# An Administrator's Edit value and Clear edit on an Automatic row (#528,
+# ADM-09.04), and how the notice words each; an edit equal to the Family's
+# answer clears the edit, and says why.
+EDITS = {
+    "edit": "now has an edited value.",
+    "clear_edit": "no longer has an edited value.",
+}
+EDIT_MATCHED = "no longer has an edited value: it matched the Family's answer."
+EDIT_UNCHANGED = "already has that value to publish, so nothing was recorded."
 # PostgreSQL's SQLSTATE for a unique violation.
 UNIQUE_VIOLATION = "23505"
 STALE = (
@@ -248,18 +261,32 @@ def _resolution(parameters):
     the answer is the same page, refreshed in place.
     """
     found = {name: parameters.pop(name, None) for name in RESOLUTION_FIELDS}
-    if all(value is None for value in found.values()):
+    # Edit value's field (ADM-09.04): its form sends it with Save value and
+    # with Clear edit, which ignores it; no other form has it.
+    edited = parameters.pop("value", None)
+    if edited is None and all(value is None for value in found.values()):
         return None
     if any(value is None or len(value) != 1 for value in found.values()):
         raise ValueError("A census change resolution needs every field once.")
     values = {name: value[0] for name, value in found.items()}
-    return {
+    if (
+        (edited is None and values["resolve"] == "edit")
+        or (edited is not None and values["resolve"] not in EDITS)
+        or (edited is not None and len(edited) != 1)
+    ):
+        raise ValueError("Only Edit value's form sends an edited value, once.")
+    if values["resolve"] == "clear_edit":
+        edited = None
+    resolution = {
         "action": values["resolve"],
         "proposal_id": UUID(values["proposal"]),
         "expected_version": int(values["version"]),
         "request_key": UUID(values["request_key"]),
         "note": values["note"].strip(),
     }
+    if values["resolve"] in EDITS:
+        resolution["value"] = edited[0] if edited is not None else None
+    return resolution
 
 
 # The fields the bulk review dialog adds to the page's own POST (#528,
@@ -361,6 +388,16 @@ def _resolve(service, principal, campaign_id, resolution):
         raise PermissionError("This census change is unavailable.")
     name = _row_name(proposal)
     try:
+        if action in EDITS:
+            try:
+                review = edit_census_change(
+                    service.store, principal.identity, proposal_id, **resolution
+                )
+            except Unchanged:
+                return f"{name} {EDIT_UNCHANGED}"
+            if action == "edit" and not review.admin_value_set:
+                return f"{name} {EDIT_MATCHED}"
+            return f"{name} {EDITS[action]}"
         if action in REVIEWS:
             review_census_change(
                 service.store,
@@ -480,8 +517,13 @@ def row_controls(rows):
     """
     for row in rows:
         row["request_key"] = uuid4()
+        # Edit value's form has its own key, so its replay is never taken
+        # for the Review form's (ADM-09.04).
+        row["edit_key"] = uuid4()
         row["describedby"] = f"who-{row['id']} what-{row['id']}"
         row["final_describedby"] = f"{row['describedby']} final-{row['id']}"
+        # Save value is also described by its complete-gate hint.
+        row["edit_describedby"] = f"{row['describedby']} edit-complete-{row['id']}"
         # How the confirmation dialog names the row: what changed, and whose.
         row["confirm_name"] = f"{row['label']} for {row['who']}"
 
@@ -527,6 +569,14 @@ def _respond(request, campaign_id, *, export, render):
             # fresh forms with fresh keys.
             return validation_response(
                 [FieldError(ErrorCode.STALE)], status=409, refusal=REBOUND
+            )
+        except InvalidEdit as error:
+            # An edited value the change cannot take (ADM-09.04): its static
+            # reason, shown in place after the row's Edit value form, and
+            # logged by the shared refusal hook with the field's name only.
+            return validation_response(
+                [FieldError(ErrorCode.INVALID, "value")],
+                refusal=Refusal(str(error), "Correct the value, then save it again."),
             )
         except ValueError:
             return _error(campaign_id, status=400)
@@ -632,6 +682,13 @@ def report(request, campaign_id):
                 "export_timezones": sorted(timezone_names()),
                 "notice": extra.get("notice"),
                 "action": action,
+                # The latest date an edited birth or death date may hold:
+                # the campaign's today, as the server checks it.
+                "edit_today": campaign_today(
+                    Campaign.objects.select_related("active_configuration").get(
+                        pk=campaign_id
+                    )
+                ).isoformat(),
                 "mutable": mutable,
                 # Bulk review is the Administrator's, on rows a Review is
                 # offered for, while the page shows no more rows than one
