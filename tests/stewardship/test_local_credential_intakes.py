@@ -1,10 +1,11 @@
-"""LOCAL refusals at the Workspace, Slack and Drive intakes (#476, OPS-10.05).
+"""LOCAL rules at the Workspace, Slack and Drive intakes (#476, OPS-10.05).
 
 The web intakes (setup wizard and settings page) share one profile-aware
-admission: LOCAL takes only the mail-catcher document and no Slack token;
-every other profile refuses the mail-catcher document. The off-site Google
-Drive target cannot be set or tested in LOCAL, and the backup worker's Drive
-session never accepts the mail-catcher document as a key.
+admission: LOCAL takes only the mail-catcher document and every other
+profile refuses it; a Slack token is parsed alike in every profile (#1399).
+The off-site Google Drive target cannot be set or tested in LOCAL, and the
+backup worker's Drive session never accepts the mail-catcher document as a
+key.
 """
 
 import pytest
@@ -27,15 +28,16 @@ def test_admit_candidate_applies_the_rule_at_the_web_intakes(profile):
         admit_candidate("google_workspace", MAIL_CATCHER_DOCUMENT, profile)
         with pytest.raises(ConfigError):
             admit_candidate("google_workspace", account(), profile)
-        with pytest.raises(ConfigError, match="Slack is not available"):
-            admit_candidate("slack", b"xoxb-synthetic", profile)
     else:
         admit_candidate("google_workspace", account(), profile)
         with pytest.raises(ConfigError):
             admit_candidate("google_workspace", MAIL_CATCHER_DOCUMENT, profile)
         with pytest.raises(ConfigError, match="Google Workspace credential"):
             admit_candidate("google_workspace", b"not a key", profile)
-        admit_candidate("slack", b"xoxb-synthetic", profile)
+    # A Slack token is parsed alike in every profile, LOCAL included (#1399).
+    admit_candidate("slack", b"xoxb-synthetic", profile)
+    with pytest.raises(ConfigError):
+        admit_candidate("slack", b"not a token", profile)
 
 
 @pytest.mark.parametrize("profile", PROFILES)
