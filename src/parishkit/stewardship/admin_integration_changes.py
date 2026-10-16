@@ -59,7 +59,14 @@ from dataclasses import dataclass
 
 from django.db import DatabaseError
 
-from .admin_changes import InvalidChange, _admit_change, _ended_or_raise, _problem
+from .admin_changes import (
+    InvalidChange,
+    _admit_change,
+    _ended_or_raise,
+    _problem,
+    form_problems,
+    unexpected_problem,
+)
 from .admin_reads import NotAvailable, ReadModel, _held, _recheck, config_request
 
 CHANGES_LIMIT = 64_000
@@ -102,11 +109,9 @@ def parse_settings(text, target):
         raise ValueError("The change document's settings are not valid.")
     names = setting_names(target)
     problems = [
-        {
-            "field": f"settings.{name}",
-            "code": "invalid",
-            "message": "This is not one of this integration's settings.",
-        }
+        unexpected_problem(
+            f"settings.{name}", "This is not one of this integration's settings."
+        )
         for name in sorted(set(fields) - set(names))
     ]
     problems += [
@@ -366,11 +371,7 @@ def field_errors(form):
     The field is ``settings.<name>``, or ``settings`` for the form as a
     whole (no change).
     """
-    problems = []
-    for name, messages in form.errors.get_json_data().items():
-        field = "settings" if name == "__all__" else f"settings.{name}"
-        problems.extend(_problem(field, item) for item in messages)
-    return problems
+    return form_problems("settings", form.errors, "settings")
 
 
 @dataclass(frozen=True)

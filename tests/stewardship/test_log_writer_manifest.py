@@ -107,7 +107,8 @@ RAW_WRITERS = {
     # on the web login.
     "admin_cli.py": [({"web"}, "failure", {"admin_command_failed"}, {"ERROR"})],
     # record_refusal: a refused Admin input (#1403), on the request's own
-    # connection as the web login, always naming the refused user.
+    # connection (or a refused command's private one) as the web login,
+    # always naming the refused user.
     "audit/refusals.py": [
         ({"web"}, "refusal", {"admin_input_refused"}, {"INFO", "WARNING"})
     ],

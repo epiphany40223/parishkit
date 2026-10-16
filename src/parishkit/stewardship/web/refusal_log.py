@@ -153,7 +153,7 @@ def refusal_record(request, response, validated=()):
         expected=getattr(response, "stewardship_expected", None),
         actual=getattr(response, "stewardship_actual", None),
         unexpected_count=getattr(response, "stewardship_unexpected_count", None),
-        mode=_mode(),
+        mode=current_mode(),
         error=(
             getattr(response, "stewardship_exception_class", None)
             or getattr(request, _EXCEPTION, None)
@@ -272,7 +272,7 @@ def _actor(request):
         return None
 
 
-def _mode():
+def current_mode():
     """The global mode, ``testing`` or ``production``; None when unreadable."""
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 

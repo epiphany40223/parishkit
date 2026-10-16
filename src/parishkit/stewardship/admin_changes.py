@@ -113,6 +113,35 @@ FIELD_TYPES = {
 }
 
 
+class FieldProblem(dict):
+    """One problem in an error's ``fields``, with what the refusal log may keep.
+
+    In the error document it is the plain ``{"field", "code", "message"}``
+    dict. The refusal log (#1403; admin-automation spec, Refusal entry)
+    records a problem's field name only from one of these, and only its
+    ``logged`` name: a server-owned name in the identifier shape, such as
+    ``window-start_date`` or ``schedules-time``, never a key or id the
+    caller sent. ``unexpected`` marks a problem about a key or id the caller
+    sent that the command does not have; the log counts those
+    (``unexpected_fields``) and never names them. A plain dict problem
+    gives the log only its code.
+    """
+
+    def __init__(self, problem, *, logged=None, unexpected=False):
+        """Keep the document's problem and the refusal log's view of it."""
+        super().__init__(problem)
+        self.logged = logged
+        self.unexpected = unexpected
+
+
+def unexpected_problem(field, message):
+    """An ``invalid`` problem about a key or id the caller sent that the
+    command does not have; the refusal log counts it and never names it."""
+    return FieldProblem(
+        {"field": field, "code": "invalid", "message": message}, unexpected=True
+    )
+
+
 class InvalidChange(ValueError):
     """The change is not valid; nothing changed (``invalid``, exit 1).
 
@@ -455,11 +484,10 @@ def form_data(changes, previous, campaign, *, editable, base_digest, end_only=Fa
     if set(named) - saved:
         raise InvalidChange(
             [
-                {
-                    "field": f"schedules.{identifier}",
-                    "code": "invalid",
-                    "message": "No saved schedule of this campaign has this id.",
-                }
+                unexpected_problem(
+                    f"schedules.{identifier}",
+                    "No saved schedule of this campaign has this id.",
+                )
                 for identifier in sorted(set(named) - saved)
             ]
         )
@@ -516,33 +544,52 @@ def form_data(changes, previous, campaign, *, editable, base_digest, end_only=Fa
     return data, identifiers
 
 
-def _problem(field, item):
+def _problem(field, item, logged=None):
     """One field problem: the closed error code and the page's message.
 
     Django's ``required`` is ``ErrorCode.REQUIRED``; every other form
-    error is ``ErrorCode.INVALID``.
+    error is ``ErrorCode.INVALID``. ``logged`` is the server-owned name the
+    refusal log may record for it (see ``FieldProblem``), if any.
     """
     from .web.contracts import ErrorCode
 
     code = ErrorCode.REQUIRED if item["code"] == "required" else ErrorCode.INVALID
-    return {"field": field, "code": code.value, "message": str(item["message"])}
+    return FieldProblem(
+        {"field": field, "code": code.value, "message": str(item["message"])},
+        logged=logged,
+    )
+
+
+def form_problems(prefix, errors, logged):
+    """Each problem of one form's ``errors``, at ``prefix.<name>`` (or
+    ``prefix`` for the form as a whole), one per message.
+
+    ``logged`` is the server-owned name the refusal log records in place of
+    ``prefix``, which may hold a row's id: the field's name is the form's
+    own, so ``logged-<name>`` names it without the id.
+    """
+    return [
+        _problem(
+            prefix if name == "__all__" else f"{prefix}.{name}",
+            item,
+            logged if name == "__all__" else f"{logged}-{name}",
+        )
+        for name, messages in errors.get_json_data().items()
+        for item in messages
+    ]
 
 
 def field_errors(window, schedules, identifiers):
     """Every problem the page's forms found, with the page's messages."""
-    problems = []
-
-    def add(prefix, errors):
-        """One entry per message; ``__all__`` is the form as a whole."""
-        for name, messages in errors.get_json_data().items():
-            field = prefix if name == "__all__" else f"{prefix}.{name}"
-            problems.extend(_problem(field, item) for item in messages)
-
-    add("window", window.errors)
+    # A schedule row's identifier is its id or the change's own label, so
+    # the refusal log names its fields as "schedules-<name>" without it.
+    problems = form_problems("window", window.errors, "window")
     for index, form in enumerate(schedules.forms):
-        add(f"schedules.{identifiers[index]}", form.errors)
+        problems += form_problems(
+            f"schedules.{identifiers[index]}", form.errors, "schedules"
+        )
     problems.extend(
-        _problem("schedules", item)
+        _problem("schedules", item, "schedules")
         for item in schedules.non_form_errors().get_json_data()
     )
     return problems
