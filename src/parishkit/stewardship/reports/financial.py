@@ -24,7 +24,7 @@ from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSn
 from parishkit.stewardship.source.snapshot_names import name_file_rows
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.filter_errors import FilterError
+from parishkit.stewardship.web.filter_errors import FilterError, iso_date
 from parishkit.stewardship.web.tables import Sorting
 
 from .financial_documents import period_years
@@ -171,16 +171,6 @@ class FinancialQuery:
             for key in self.__dataclass_fields__
             if key != "page"
         }
-
-
-def iso_date(value):
-    """Whether ``value`` is blank or one canonical ISO date (YYYY-MM-DD)."""
-    if not value:
-        return True
-    try:
-        return date.fromisoformat(value).isoformat() == value
-    except ValueError:
-        return False
 
 
 def parse_money(value):
