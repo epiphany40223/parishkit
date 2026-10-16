@@ -363,13 +363,7 @@ def _former_names():
     return names
 
 
-# Links still using a former name because an open PR edits the same line
-# (#520 tracks the rename). Renamed once that PR lands: Home's off-site
-# backups line waits for #1296 and System health's problem line for #1295.
-FORMER_NAME_LINKS = {
-    ("home.html", "Off-site backup settings"),
-    ("system-health-problem.html", "Off-site backup settings"),
-}
+FORMER_NAME_LINKS: set[tuple[str, str]] = set()
 
 
 def test_page_links_do_not_use_a_former_name():
