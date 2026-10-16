@@ -10,6 +10,7 @@ from . import field_tips, setup_help
 from .key_files import MAX_FILE_BYTES
 from .policy_schema import normalized_email
 from .refresh_schedule_forms import ScheduleEditor
+from .secret_input import SecretInput
 
 LABELS = {
     "parishsoft": _("ParishSoft"),
@@ -260,16 +261,6 @@ KEY_FIELDS = {
 }
 
 
-class WriteOnlyPasswordInput(forms.PasswordInput):
-    """A single-line secret field that never redisplays a submitted value."""
-
-    def __init__(self):
-        super().__init__(
-            render_value=False,
-            attrs={"autocomplete": "off", "spellcheck": "false"},
-        )
-
-
 # Label, help and missing-key message for an optional integration that is not
 # set up yet, whose key is then required (#563): without one, Save could only
 # be refused.
@@ -316,7 +307,7 @@ class InlineCredentialForm(AdminForm):
                     attrs={"autocomplete": "off", "spellcheck": "false", "rows": 5}
                 )
                 if target == "google_workspace"
-                else WriteOnlyPasswordInput()
+                else SecretInput(target)
             ),
         )
         if missing:
