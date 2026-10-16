@@ -19,7 +19,7 @@ from .followup_components import (
 from .test_campaign_comparison import COLLISIONS
 from .test_charts import assert_clean, watch
 from .test_response_dashboard import FITTED
-from .waits import eventually, visible
+from .waits import eventually, painted, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -90,6 +90,9 @@ def test_a_count_filters_the_table_in_place(page, component_origin):
     page.mouse.move(640, 350)
     page.mouse.wheel(0, link.bounding_box()["y"] - 350)
     eventually(page, "() => window.scrollY > 0")
+    # Linux WebKit animates the wheel: measure where the scroll lands,
+    # not its first frame.
+    painted(page)
     scrolled = page.evaluate("window.scrollY")
     before = link.bounding_box()
     apply = page.get_by_role("button", name="Apply filters").bounding_box()
@@ -185,6 +188,9 @@ def test_an_empty_search_keeps_the_chart_so_a_count_moves_nothing(
     page.mouse.move(640, 350)
     page.mouse.wheel(0, link.bounding_box()["y"] - 350)
     eventually(page, "() => window.scrollY > 0")
+    # Linux WebKit animates the wheel: measure where the scroll lands,
+    # not its first frame.
+    painted(page)
     before = link.bounding_box()
     link.click()
     expect(totals.locator(".stat-value")).to_have_text(["51", "0"])
@@ -281,7 +287,9 @@ def test_packet_waits_while_too_many_ministries_are_ticked(page, component_origi
     boxes = page.locator("#ministry-packet-choices input[name=ministries]")
     assert boxes.count() == 2 and queue.is_enabled()
     assert "ministry-packet-hint" in queue.get_attribute("aria-describedby").split()
-    # Page coordinates: ticking a box scrolls it into view.
+    # Page coordinates: ticking a box scrolls it into view. Compared within
+    # half a pixel, as same_place does: Linux Firefox adds float noise of
+    # ~0.00005 px to an unmoved box; a real shift moves a whole pixel.
     where = (
         "e => { const r = e.getBoundingClientRect();"
         " return [r.left + scrollX, r.top + scrollY]; }"
@@ -296,7 +304,7 @@ def test_packet_waits_while_too_many_ministries_are_ticked(page, component_origi
         "2 Ministries are ticked, more than 1. Untick some, or untick them all "
         "to include every Ministry."
     )
-    assert queue.evaluate(where) == place
+    assert queue.evaluate(where) == pytest.approx(place, abs=0.5)
     boxes.nth(0).uncheck()
     assert queue.is_enabled() and hint.inner_text() == ""
     assert hint.bounding_box()["height"] == height

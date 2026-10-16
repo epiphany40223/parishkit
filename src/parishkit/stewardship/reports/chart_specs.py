@@ -996,7 +996,10 @@ def participation_chart(document):
     # ends. The title names the campaign's time zone, as the static page
     # drawing did, on its own line so it fits a phone-width plot. The axis
     # is hidden from assistive technology, which would otherwise read every
-    # date of the campaign; the daily table lists them.
+    # date of the campaign; the daily table lists them. Vega's default
+    # 4-pixel title gap leaves Firefox's taller text boxes overlapping the
+    # end date labels at phone width, so the title gets more room, as the
+    # progress chart's does.
     labelled = x | {
         "title": ["Campaign date", f"({document.campaign_timezone})"],
         "axis": {
@@ -1005,6 +1008,7 @@ def participation_chart(document):
             "labelAngle": 0,
             "labelOverlap": True,
             "labelBound": True,
+            "titlePadding": 8,
         },
     }
     panels = [
