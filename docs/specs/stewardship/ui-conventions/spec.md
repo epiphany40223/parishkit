@@ -106,10 +106,10 @@ denominator displays an em dash rather than a misleading percentage.
 
 **Rule.** Every Admin page shows and takes dates and times in the browser's
 own time zone, stored as UTC; no page labels a time "UTC" or asks the reader
-to think in the campaign's or the parish's zone. Exceptions: the ParishSoft
-refresh times stay in the refresh schedule's time zone (permanent, below); and the
-date-change review still takes send times in the campaign's time zone, a dated
-exception (Administrator decision, 2026-10-10) until it is fixed under
+to think in the campaign's or the parish's zone. Exception: the ParishSoft
+refresh times stay in the refresh schedule's time zone (permanent, below). The
+date-change review's dated exception (Administrator decision, 2026-10-10)
+ended when it moved to the browser's zone under
 [#558](https://github.com/epiphany40223/parishkit/issues/558). **Why.** Staff read
 and type their own wall-clock time; a campaign-zone or UTC time on a page is a
 conversion the reader has to do in their head. **Shared code.**
@@ -152,9 +152,13 @@ logs date filters the second ([Admin portal](../admin-portal/spec.md#logs)),
 New and Edit scheduled email the third ([Admin
 portal](../admin-portal/spec.md#new-and-edit-scheduled-email)), and the
 submitted-date filters of the Additional information and Ministry reports the
-fourth ([Reports](../reports/spec.md#additional-information)).
-Until a page's PR lands, it keeps its current zone, including the campaign zone
-for the other schedule pages, campaign dates and report day buckets (the
+fourth ([Reports](../reports/spec.md#additional-information)), then the
+date-change review ([Admin
+portal](../admin-portal/spec.md#dates-and-mail-schedules)). A schedule review
+shows each send only as a moment in the browser's zone, never as the saved
+campaign-local date and time with the campaign's zone.
+Until a page's PR lands, it keeps its current zone, including the campaign
+zone for the retired Copy campaign page, campaign dates and report day buckets (the
 participation chart still buckets by campaign time). One field is a recorded
 exception that stays in the refresh schedule's own time zone (the current
 campaign's, else the parish's, as the scheduler reads it) after every #558 PR:
@@ -544,7 +548,10 @@ never scrolls to show it (Administrator, pk-local review of
   status region an in-place refresh replaced, and watches the fresh one
   while it is still pending, so a Refresh or Dismiss that brings back work
   in progress keeps updating by itself; there is always one watcher per
-  status region. A control that must sit inside a status region, next to
+  status region. A quiet follow-up refresh (a settled status re-reading its
+  page in place) keeps focus: a focused element in a region it replaces is
+  focused again in the fresh copy, by its id or else by its link and text,
+  without scrolling ([#1354](https://github.com/epiphany40223/parishkit/issues/1354)). A control that must sit inside a status region, next to
   the status it answers, goes in an element marked `data-live-keep`: once
   it has contents, each status update puts the live element back in place
   of its fresh copy and ignores its contents when comparing, so an open
@@ -567,7 +574,7 @@ never scrolls to show it (Administrator, pk-local review of
 - **In-place review (#532, #750).** This panel is being replaced by the
   [review dialog](#review-dialog) (Administrator decision, 2026-10-11); it
   describes the pages that still use it until #750 converts them.
-  Parish settings
+  The No-reminders WorkGroup editor
   reviews, applies and follows a change on the page itself, not on
   separate Review and Change status pages. The settings form is a
   `form[data-in-place]` marked
@@ -630,8 +637,9 @@ never scrolls to show it (Administrator, pk-local review of
   changes compares with ("Change an option to review it."). A live
   campaign's Ministry selections change on
   [Campaign settings](../admin-portal/spec.md#campaign-settings-page), in the
-  review dialog (#1119). Parish settings' form is never redrawn; until the
-  change is applied, Apply's answer hands it the version it was reviewed at.
+  review dialog (#1119). The No-reminders WorkGroup's form is never
+  redrawn; until the change is applied, Apply's answer hands it the version
+  it was reviewed at.
   [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142)
   confirms in the review dialog (#1356). The other
   editors keep their review and Change status pages until issue 750 reaches
@@ -683,6 +691,14 @@ never scrolls to show it (Administrator, pk-local review of
   logos are a region of their own below the status line, so logos appearing
   never move the form or the status line. The form has an id, so a file
   chosen while it is redrawn is said not to be kept.
+- **Review dialog: Parish settings (#750).** Parish settings reviews in the
+  [review dialog](#review-dialog), titled "Review Parish settings": each
+  changed setting with its current and proposed value, and a new
+  timezone's note. Its form is an in-place region, redrawn after Apply at
+  the applied version, with the status line under it. A field's refusal
+  (the Parish website's included) stays on the form; a stale page or an
+  out-of-date preview is refused in the dialog, and the form is not
+  redrawn, so it is refused again until the page is reloaded.
 
 ### No layout shift
 
@@ -1165,12 +1181,11 @@ in-place preview of the counts.
 Current state, to be converted: Users' New user, Edit user and Import
 Ministry leaders, New and Edit scheduled email,
 [Campaign settings](../admin-portal/spec.md#campaign-settings-page) (#1119),
-Share options, Campaign images, Parish logos, Create the campaign and
-No-reminders WorkGroup use the dialog; Create the campaign, New user and
-No-reminders WorkGroup are confirmations under #1356, and so are a one-time
-New scheduled email, Import selected with nobody skipped and Campaign
-images' Remove this image. Parish
-settings shows the in-place
+Share options, Campaign images, Parish logos, Parish settings, Create the
+campaign and No-reminders WorkGroup use the dialog; Create the campaign, New
+user and No-reminders WorkGroup are confirmations under #1356, and so are a
+one-time New scheduled email, Import selected with nobody skipped and
+Campaign images' Remove this image. No settings editor shows the in-place
 review panel of #532 and #750
 ([in-place controls](#in-place-controls)); the other editors use separate
 Review and Change status pages.
@@ -1973,12 +1988,9 @@ the two cannot drift.
 
 **Time zones.** The fields read wall-clock times; each keeps its page's zone
 rule under the [global presentation rules](#dates-and-times).
-New and Edit scheduled email take send times in
+New and Edit scheduled email and the date-change review take send times in
 the browser's zone (see [New and Edit scheduled
-email](../admin-portal/spec.md#new-and-edit-scheduled-email)); the date-change
-review still takes them in the campaign's time zone, the dated exception
-(2026-10-10) in [dates and times](#dates-and-times), until it is fixed under
-[#558](https://github.com/epiphany40223/parishkit/issues/558). The ParishSoft refresh times
+email](../admin-portal/spec.md#new-and-edit-scheduled-email)). The ParishSoft refresh times
 are in the refresh schedule's time zone (the current campaign's, else the
 parish's), the recorded exception to the browser-local rule that those rules
 describe (see also
@@ -1995,7 +2007,7 @@ without the mark ([#1117](https://github.com/epiphany40223/parishkit/issues/1117
 | ParishSoft refresh schedule | Each rule's At, From and To; each skip's At, From and To | One time, refresh schedule time |
 | ParishSoft refresh schedule, Edit as text | Full refresh times | List, refresh schedule time |
 | New and Edit scheduled email | Send time | One time, browser time |
-| The date-change review | Send time | One time, campaign time |
+| The date-change review | Send time | One time, browser time |
 | Ministry requests' follow-up request | Contact attempt time | One time, browser time zone |
 | Logs, reports | Date filters | Dates only, no time of day |
 

@@ -264,3 +264,84 @@ def test_slack_channel_shows_and_is_required_only_while_enabled(page, component_
     visible(channel)
     waits_with(save, hint, SLACK_HINT)
     assert not failures
+
+
+TESTING_HINT = "Enter a valid Testing email address to save."
+MAIL_HINT = "Enter a valid mailbox, From address and Reply-to address to save."
+
+
+def test_setup_testing_step_waits_for_a_valid_address(page, component_origin):
+    """Setup › Testing's Save waits for a valid address, with its hint after
+    the action row, so the line coming or going never moves Save (#1332
+    item 27). A history restore is worked out again."""
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.goto(component_origin + "/setup-testing")
+    save = page.get_by_role("button", name="Save and continue")
+    hint = page.locator("#setup-complete-hint")
+    address = page.get_by_label("Testing email address")
+    waits_with(save, hint, TESTING_HINT)
+    place = spot(save)
+    address.fill("not an address")
+    waits_with(save, hint, TESTING_HINT)
+    address.fill("testing@example.org")
+    ready(save, hint)
+    assert spot(save) == place
+    restore(address, "field => { field.value = ''; }")
+    waits_with(save, hint, TESTING_HINT)
+    assert not failures
+
+
+def test_setup_mail_step_waits_for_every_address(page, component_origin):
+    """Setup › Outgoing email's Save waits for all three addresses (#1332
+    item 27); the optional From name does not hold it."""
+    page.goto(component_origin + "/setup-mail")
+    save = page.get_by_role("button", name="Save and continue")
+    hint = page.locator("#setup-complete-hint")
+    waits_with(save, hint, MAIL_HINT)
+    page.get_by_label("Delegated mailbox").fill("stewardship@example.org")
+    page.get_by_label("From address").fill("stewardship@example.org")
+    waits_with(save, hint, MAIL_HINT)
+    page.get_by_label("Reply-to address").fill("office@example.org")
+    ready(save, hint)
+
+
+LOGO_HINT = "Choose the parish logo image to save."
+LOGO_LIMIT = 5 * 1024 * 1024
+
+
+def logo_file(size):
+    """A file for the logo field, ``size`` bytes long (the fixture server
+    never reads it; the page checks only its size)."""
+    return {"name": "logo.png", "mimeType": "image/png", "buffer": b"\0" * size}
+
+
+def test_setup_logo_is_refused_at_its_field_when_too_large(page, component_origin):
+    """Setup › Parish logos refuses a file over 5 MB at its field as soon as
+    it is chosen, in the server's words, and Save waits for a file that fits
+    (#1332 item 29). The error line keeps its height, so a message coming
+    or going moves nothing; only the shared error border marks the field."""
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.goto(component_origin + "/setup-branding")
+    save = page.get_by_role("button", name="Save and continue")
+    hint = page.locator("#setup-complete-hint")
+    field = page.locator("#id_logo")
+    error = page.locator("#id_logo_error")
+    line = page.locator("#id_logo_error").locator("xpath=..")
+    height = line.evaluate("node => node.getBoundingClientRect().height")
+    waits_with(save, hint, LOGO_HINT)
+    field.set_input_files(logo_file(LOGO_LIMIT + 1))
+    visible(error)
+    assert error.inner_text().startswith("Parish logo: the file is ")
+    assert error.inner_text().endswith("the limit is 5 MB.")
+    assert field.get_attribute("aria-invalid") == "true"
+    assert save.is_disabled()
+    assert hint.text_content() == error.inner_text()
+    assert line.evaluate("node => node.getBoundingClientRect().height") == height
+    field.set_input_files(logo_file(1024))
+    ready(save, hint)
+    hidden(error)
+    assert field.get_attribute("aria-invalid") != "true"
+    assert line.evaluate("node => node.getBoundingClientRect().height") == height
+    assert not failures

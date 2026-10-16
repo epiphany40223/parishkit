@@ -1,20 +1,25 @@
 """A settings change is reviewed, applied and followed in place (#532).
 
-Parish settings is served by ``settings_components`` (Share options reviews
-in the review dialog: test_share_options_dialog.py): a page route answers
-the form's Review POST with the review (or a refusal), and passes Apply's
-POST on to the fixture server, which redirects back to the page naming the
-change. Each test sets a mark outside every region, which only a full page
-load could lose.
+The shared in-place review panel is served by ``settings_components`` with
+the No-reminders WorkGroup page, the last page that uses it (#750; Parish
+settings and Share options review in the review dialog:
+test_parish_settings_dialog.py and test_share_options_dialog.py): a page
+route answers the form's Review POST with the review (or a refusal), and
+passes Apply's POST on to the fixture server, which redirects back to the
+page naming the change. Each test sets a mark outside every region, which
+only a full page load could lose.
 """
 
 import pytest
 
 from .settings_components import (
+    FIELD,
     PENDING,
     REFUSED,
+    RENAMED,
     REQUEST,
     REVIEW,
+    SAVED,
     SETTINGS,
     STATUS,
 )
@@ -59,6 +64,8 @@ def answer_reviews(page, origin, fixture=REVIEW, status=200, address=SETTINGS):
 
 RESTORE = "window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))"
 HINT = "#settings-form-unchanged-hint"
+# The panel page's (No-reminders WorkGroup's) hint after Review changes.
+NAME_HINT = "Change the WorkGroup name to review it."
 
 
 def expect_review(page, *, enabled, hint="Change a setting to review it."):
@@ -86,10 +93,10 @@ def current_step(page):
 
 
 def review(page, component_origin):
-    """Open Parish settings, rename the parish and review the change."""
+    """Open the panel page, rename the WorkGroup and review the change."""
     page.goto(component_origin + SETTINGS)
     page.evaluate(MARK)
-    page.get_by_label("Parish name").fill("Renamed Parish")
+    page.get_by_label(FIELD).fill(RENAMED)
     page.get_by_role("button", name="Review changes").click()
     visible(page.get_by_role("heading", name="Review your changes"))
 
@@ -102,11 +109,11 @@ def test_review_apply_and_status_happen_in_place(page, component_origin):
     reviews = answer_reviews(page, component_origin)
     posts = count_requests(page, "POST", SETTINGS)
     review(page, component_origin)
-    assert len(reviews) == 1 and "name=Renamed+Parish" in reviews[0]
+    assert len(reviews) == 1 and "name=Renamed+WorkGroup" in reviews[0]
     assert page.evaluate(FOCUSED, "#settings-review-title")
     panel = page.locator("#settings-review")
-    assert "Sample Parish" in panel.inner_text()
-    assert "This timezone change is prospective." in panel.inner_text()
+    assert SAVED in panel.inner_text()
+    assert "A sample note, drawn above the review." in panel.inner_text()
     has_text(
         page.get_by_role("status").filter(has_text="Review ready."), "Review ready."
     )
@@ -123,12 +130,12 @@ def test_review_apply_and_status_happen_in_place(page, component_origin):
     # place: the form takes the applied version, keeping the typed name.
     visible(panel.get_by_role("heading", name="Applied: your change is saved"))
     has_attribute(page.locator(DIGEST), "value", "b" * 64)
-    assert page.get_by_label("Parish name").input_value() == "Renamed Parish"
+    assert page.get_by_label(FIELD).input_value() == RENAMED
     # The applied values are now the saved ones, so there is nothing left
     # to review until the reader changes something again (#921).
-    expect_review(page, enabled=False)
-    page.get_by_label("Parish name").fill("Renamed once more")
-    expect_review(page, enabled=True)
+    expect_review(page, enabled=False, hint=NAME_HINT)
+    page.get_by_label(FIELD).fill("Renamed once more")
+    expect_review(page, enabled=True, hint=NAME_HINT)
     assert page.evaluate(MARKED) == "kept"
     assert str(REQUEST) in page.url and "settled=1" in page.url
     assert len(posts) == 2
@@ -145,7 +152,7 @@ def test_editing_after_a_review_withdraws_it(page, component_origin):
     page.set_viewport_size({"width": 800, "height": 400})
     page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")
     before = page.evaluate(FORM_TOP)
-    page.get_by_label("Parish name").evaluate(
+    page.get_by_label(FIELD).evaluate(
         """field => {
             field.value = "Renamed again";
             field.dispatchEvent(new Event("input", {bubbles: true}));
@@ -169,15 +176,15 @@ def test_a_refused_review_is_explained_in_place(page, component_origin):
     answer_reviews(page, component_origin, REFUSED, status=400)
     page.goto(component_origin + SETTINGS)
     page.evaluate(MARK)
-    page.get_by_label("Parish telephone").fill("123")
+    page.get_by_label(FIELD).fill("Too long")
     page.get_by_role("button", name="Review changes").click()
     summary = page.locator("#settings-review [data-error-summary]")
     visible(summary)
     assert page.evaluate(FOCUSED, "#settings-review [data-error-summary]")
-    link = summary.get_by_role("link", name="Parish telephone: Enter a ten-digit")
+    link = summary.get_by_role("link", name=f"{FIELD}: Ensure this value")
     link.click()
-    assert page.evaluate("document.activeElement.id") == "id_phone"
-    assert page.get_by_label("Parish telephone").input_value() == "123"
+    assert page.evaluate("document.activeElement.id") == "id_name"
+    assert page.get_by_label(FIELD).input_value() == "Too long"
     assert page.evaluate(MARKED) == "kept"
     assert current_step(page) == "Make changes"
 
@@ -195,16 +202,16 @@ def test_an_edit_while_review_is_in_flight_withdraws_its_review(page, component_
         ),
     )
     page.goto(component_origin + SETTINGS)
-    page.get_by_label("Parish name").fill("Renamed Parish")
+    page.get_by_label(FIELD).fill(RENAMED)
     page.get_by_role("button", name="Review changes").click()
     recorded(page, held, 1)
-    page.get_by_label("Parish name").fill("Renamed during review")
-    page.get_by_label("Parish name").press("Enter")
+    page.get_by_label(FIELD).fill("Renamed during review")
+    page.get_by_label(FIELD).press("Enter")
     fetched = held[0].fetch(url=component_origin + REVIEW, method="GET")
     held[0].fulfill(response=fetched)
     visible(page.get_by_text("Choose Review changes again"))
     assert page.get_by_role("button", name="Apply changes").count() == 0
-    assert page.get_by_label("Parish name").input_value() == "Renamed during review"
+    assert page.get_by_label(FIELD).input_value() == "Renamed during review"
     assert len(held) == 1
 
 
@@ -226,45 +233,9 @@ def test_a_review_that_leads_to_another_page_drops_the_region_fragment(
 
     page.route(lambda url: url.split("#")[0] == component_origin + SETTINGS, elsewhere)
     page.goto(component_origin + SETTINGS)
-    page.get_by_label("Parish name").fill("Renamed Parish")
+    page.get_by_label(FIELD).fill(RENAMED)
     page.get_by_role("button", name="Review changes").click()
     page.wait_for_url(component_origin + "/in-place-other")
-
-
-def test_parish_settings_review_waits_for_a_change(page, component_origin):
-    """Review changes is unavailable until the form differs from the saved
-    settings, available after an edit, unavailable again once the edit is
-    undone, and checked again when a page restored from history is shown
-    with values that came back without events (#921). Its hint keeps its
-    space, so the form never moves."""
-    reviews = answer_reviews(page, component_origin)
-    page.goto(component_origin + SETTINGS)
-    expect_review(page, enabled=False)
-    before = page.evaluate(FORM_TOP)
-    name = page.get_by_label("Parish name")
-    # Pressing Enter in a field cannot submit an unchanged form either.
-    name.press("Enter")
-    name.fill("Renamed Parish")
-    expect_review(page, enabled=True)
-    assert page.evaluate(FORM_TOP) == before
-    name.fill("Sample Parish")
-    expect_review(page, enabled=False)
-    # Spaces the server trims are no change; a choice is.
-    name.fill("Sample Parish ")
-    expect_review(page, enabled=False)
-    page.get_by_label("Parish timezone").select_option("America/Chicago")
-    expect_review(page, enabled=True)
-    page.get_by_label("Parish timezone").select_option("America/New_York")
-    expect_review(page, enabled=False)
-    # A restore without events, then pageshow: the gate follows the values.
-    name.evaluate("field => { field.value = 'Restored name'; }")
-    page.evaluate(RESTORE)
-    expect_review(page, enabled=True)
-    name.evaluate("field => { field.value = 'Sample Parish'; }")
-    page.evaluate(RESTORE)
-    expect_review(page, enabled=False)
-    assert page.evaluate(FORM_TOP) == before
-    assert reviews == []
 
 
 def hold_status(page, component_origin):

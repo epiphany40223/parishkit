@@ -10220,6 +10220,8 @@ CREATE FUNCTION public.stewardship_task_type_login_v1(task_type text) RETURNS te
             'automation_maintenance',
             'branding_cleanup',
             'campaign_boundary',
+            'census_publication',
+            'census_publication_preflight',
             'daily_digest_finalize',
             'daily_digest_prepare',
             'family_mail_prepare',

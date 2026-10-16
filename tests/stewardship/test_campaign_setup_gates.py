@@ -1,4 +1,4 @@
-"""Campaign and Slack setup forms say what their action waits for (#563).
+"""Campaign and setup forms say what their action waits for (#563).
 
 The page script's complete gate (ui-v1.js, data-require-complete) keeps an
 action unavailable until the form's shown required fields are filled in.
@@ -10,17 +10,21 @@ browser/test_campaign_setup_gates.py.
 
 import re
 
+import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts.campaign_forms import (
     FINANCIAL_REQUIRED,
     CampaignForm,
 )
+from parishkit.stewardship.accounts.setup_branding_views import SetupLogoForm
 from parishkit.stewardship.accounts.setup_confirmation_views import (
     SetupConfirmationForm,
 )
 from parishkit.stewardship.accounts.setup_forms import FORMS
 from parishkit.stewardship.accounts.setup_wizard import BY_KEY as SETUP_STEPS
+from parishkit.stewardship.web.content import MAX_IMAGE_BYTES
 
 from .test_setup_final_steps import page
 
@@ -64,18 +68,79 @@ def test_slack_channel_shows_and_is_required_only_while_slack_is_enabled():
     )
 
 
-def test_other_setup_steps_and_finish_keep_their_plain_action_row():
-    """Only the forms this slice gates opt in; the rest render as before."""
+# Each form step's own hint, used for a missing field without a hint of its
+# own (#1332 item 27).
+STEP_HINTS = {
+    "parish": "Fill in the parish name, website, time zone and telephone correctly",
+    "access": "Fill in every required field correctly to save.",
+    "mail": "Enter a valid mailbox, From address and Reply-to address to save.",
+    "testing": "Enter a valid Testing email address to save.",
+}
+
+
+@pytest.mark.parametrize("step", sorted(STEP_HINTS))
+def test_every_setup_form_step_waits_for_its_required_fields(step):
+    """Every form step's Save waits for its fields, as Slack's does, with its
+    own hint after the action row (#1332 item 27)."""
     html = page(
         "setup-step.html",
-        "testing",
-        form=FORMS["testing"](),
-        step="testing",
-        step_label=SETUP_STEPS["testing"].label,
+        step,
+        form=FORMS[step](),
+        step=step,
+        step_label=SETUP_STEPS[step].label,
     )
-    assert "data-require-complete" not in form_tag(html)
-    assert "data-complete-hint" not in html
-    assert "aria-describedby" not in after_actions(html)
+    tag = form_tag(html)
+    assert "data-require-complete" in tag
+    assert f'data-missing-hint="{STEP_HINTS[step]}' in tag
+    tail = after_actions(html)
+    assert re.search(SAVE_NAMES_HINT, tail)
+    assert (
+        '<p class="help" id="setup-complete-hint" data-complete-hint hidden>'
+        in (tail.split("</div>", 1)[1])
+    )
+
+
+def test_setup_logo_checks_its_size_and_waits_for_a_file():
+    """Setup › Parish logos' field carries the page's size check, in the
+    server's words, with its reserved error line, and Save waits for a file
+    only until a logo is saved (#1332 item 29)."""
+    html = page(
+        "setup-branding.html",
+        "branding",
+        form=SetupLogoForm(),
+        assets=[],
+    )
+    (tag,) = re.findall(r'<form method="post" enctype[^>]*>', html)
+    assert "data-require-complete" in tag
+    assert 'data-missing-hint="Choose the parish logo image to save."' in tag
+    (field,) = re.findall(r'<input type="file"[^>]*>', html)
+    assert f'data-max-bytes="{MAX_IMAGE_BYTES}"' in field
+    assert 'data-max-bytes-message="Parish logo: the file is {size}' in field
+    assert " required" in field
+    assert '<ul class="errorlist" id="id_logo_error" hidden>' in html
+    tail = after_actions(html)
+    assert re.search(SAVE_NAMES_HINT, tail)
+    assert '<p class="help" id="setup-complete-hint" data-complete-hint hidden>' in tail
+    saved = SetupLogoForm(saved=True)
+    (field,) = re.findall(r'<input type="file"[^>]*>', str(saved["logo"]))
+    assert " required" not in field
+
+
+def test_setup_logo_refuses_a_large_file_in_the_pages_words():
+    """A hand-built upload over 5 MB is still refused by the server, in the
+    words the page shows for it (#1332 item 29)."""
+    upload = SimpleUploadedFile(
+        "logo.png", b"\0" * (MAX_IMAGE_BYTES + 1), content_type="image/png"
+    )
+    form = SetupLogoForm({"version": "1"}, {"logo": upload})
+    assert not form.is_valid()
+    (message,) = form.errors["logo"]
+    assert message.startswith("Parish logo: the file is ")
+    assert message.endswith("the limit is 5 MB.")
+
+
+def test_finish_setup_keeps_its_plain_action_row():
+    """Finish setup has its own gates, not the complete gate."""
     finish = page(
         "setup-confirmation.html",
         "confirmation",

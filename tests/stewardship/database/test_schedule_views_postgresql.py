@@ -59,7 +59,9 @@ def fields(store, campaign, *, editable=True):
     """Post every server-selected logical ID in the order the page shows them.
 
     The page lists saved schedules in sending order (#448), and a browser
-    posts its rows in that order, so the test does the same.
+    posts its rows in that order, so the test does the same. Send times are
+    the browser's (#558); this browser is in the campaign's own zone, so the
+    saved campaign-local values are also what the page shows.
     """
     document = store.active().document()
     rows = sorted(
@@ -70,7 +72,10 @@ def fields(store, campaign, *, editable=True):
         ),
         key=schedule_order,
     )
-    values = data_for(rows) | {"base_digest": store.active().digest}
+    values = data_for(rows) | {
+        "base_digest": store.active().digest,
+        "zone": campaign.active_configuration.values["timezone"],
+    }
     if editable:
         values.update(
             {
@@ -375,6 +380,117 @@ def test_proposed_dates_page_posts_to_its_clean_path(auth_service, google):
     preview = post(browser, path, data)
     assert b"data-review-answer" in preview.content
     token(preview)
+
+
+def test_date_change_review_takes_send_times_in_the_browser_zone(auth_service, google):
+    """The review fills and reads each send time in the browser's zone (#558).
+
+    Each saved row carries its UTC moment for the page script; the form
+    posts the browser's zone. A reminder typed as 7:00 AM in Los Angeles is
+    saved as 10:00 AM New York, while the invitation posted as shown (6:00 AM
+    there) is unchanged. Without a usable zone the review is refused.
+    """
+    store = auth_service.store
+    campaign, path = setup(store)
+    browser, _ = signed_in()
+    page = browser.get(f"{path}?end_date=2054-10-28").content.decode()
+    assert "data-schedule-zoned" in page
+    assert '<input type="hidden" name="zone" value="" data-browser-zone>' in page
+    assert 'data-schedule-local="2054-10-01T13:00:00+00:00"' in page
+    assert 'data-schedule-local="2054-10-25T13:00:00+00:00"' in page
+    assert "data-zone-missing" in page and "data-browser-zone-note" in page
+    text = unescape(page)
+    assert "in this computer's time zone" in text
+    assert "not your computer's" not in text
+    data, indexes = fields(store, campaign)
+    data |= {
+        "zone": "America/Los_Angeles",
+        f"schedules-{indexes['initial']}-time": "06:00",
+        f"schedules-{indexes['reminder']}-time": "7:00 AM",
+    }
+    for zone in ("", "Etc/Unknown"):
+        refused = post(browser, path, data | {"zone": zone})
+        assert refused.status_code == 400
+        assert "didn't report a time zone" in unescape(refused.content.decode())
+    preview = post(browser, path, data)
+    assert preview.status_code == 200, preview.content
+    review = unescape(preview.content.decode())
+    # The proposed reminder is shown only as its moment, never as the saved
+    # campaign-local date and time with the campaign's zone.
+    assert 'datetime="2054-10-25T14:00:00+00:00"' in review
+    assert "(America/New_York)</p>" not in review
+    apply(store, post(browser, path, {"action": "confirm", "preview": token(preview)}))
+    rows = {
+        row["values"]["kind"]: row["values"]
+        for row in store.active().document()["sections"]["schedules"]
+    }
+    assert rows["reminder"]["time"] == "10:00:00"
+    assert rows["initial"]["time"] == "09:00:00"
+
+
+def test_a_proposed_time_zone_keeps_shown_rows_and_converts_changed_ones(
+    auth_service, google
+):
+    """Campaign settings proposes Chicago; the browser is in Los Angeles (#558).
+
+    The page draws each saved row from its New York moment. The invitation
+    posted as shown (6:00 AM there) keeps its 9:00 AM wall-clock time, now in
+    Chicago, so it moves an hour later; the reminder typed as 7:00 AM Los
+    Angeles converts into Chicago (9:00 AM) and keeps the moment typed. Both
+    rows then read 9:00 AM in Chicago, yet the review shows each one's moment.
+    """
+    store = auth_service.store
+    campaign, path = setup(store)
+    browser, _ = signed_in()
+    page = browser.get(f"{path}?timezone=America/Chicago").content.decode()
+    assert 'data-schedule-local="2054-10-01T13:00:00+00:00"' in page
+    data, indexes = fields(store, campaign)
+    data |= {
+        "zone": "America/Los_Angeles",
+        "window-timezone": "America/Chicago",
+        f"schedules-{indexes['initial']}-time": "06:00",
+        f"schedules-{indexes['reminder']}-time": "7:00 AM",
+    }
+    preview = post(browser, path, data)
+    assert preview.status_code == 200, preview.content
+    review = unescape(preview.content.decode())
+    assert 'datetime="2054-10-01T14:00:00+00:00"' in review
+    assert 'datetime="2054-10-25T14:00:00+00:00"' in review
+    apply(store, post(browser, path, {"action": "confirm", "preview": token(preview)}))
+    campaign.refresh_from_db()
+    assert campaign.active_configuration.values["timezone"] == "America/Chicago"
+    rows = {
+        row["values"]["kind"]: row["values"]
+        for row in store.active().document()["sections"]["schedules"]
+    }
+    assert rows["initial"]["time"] == rows["reminder"]["time"] == "09:00:00"
+
+
+def test_a_send_in_the_campaign_repeated_hour_is_refused_on_its_field(
+    auth_service, google
+):
+    """6:30 AM London on November 1, 2054 is New York's second 1:30 AM.
+
+    A schedule keeps only its wall-clock time, which would send at the first
+    1:30, an hour early, so the review is refused on that send time.
+    """
+    store = auth_service.store
+    campaign, path = setup(store)
+    browser, _ = signed_in()
+    data, indexes = fields(store, campaign)
+    reminder = indexes["reminder"]
+    data |= {
+        "zone": "Europe/London",
+        "window-end_date": "2054-11-15",
+        f"schedules-{indexes['initial']}-time": "14:00",
+        f"schedules-{reminder}-date": "2054-11-01",
+        f"schedules-{reminder}-time": "06:30",
+    }
+    refused = post(browser, path, data)
+    assert refused.status_code == 400
+    text = unescape(refused.content.decode())
+    assert "falls in the hour that repeats when clocks fall back" in text
+    assert f'id="id_schedules-{reminder}-time_error"' in text
 
 
 def test_date_change_review_opens_the_review_dialog(auth_service, google):

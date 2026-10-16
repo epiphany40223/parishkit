@@ -10,8 +10,13 @@ from uuid import UUID, uuid4
 
 import pytest
 from django.template.loader import render_to_string
+from django.urls import reverse
 
-from parishkit.stewardship.accounts.admin_editing import in_place_follow, review_region
+from parishkit.stewardship.accounts.admin_editing import (
+    IN_PLACE_PAGES,
+    in_place_follow,
+    review_region,
+)
 from parishkit.stewardship.accounts.presence import PRESENCE_SORTING
 from parishkit.stewardship.jobs.views import EVENT_SORTING, TASK_SORTING
 from parishkit.stewardship.web.contracts import PageWindow
@@ -121,10 +126,11 @@ def test_presence_refresh_refreshes_the_list_in_place():
 # reads, whose answer never holds the page's regions.
 # The in-place settings pages (#532) draw their review region around
 # settings-review.html, whose Apply names it, and around the change status a
-# confirmed change shows, whose follow-up link names it too.
-SETTINGS_PAGES = ("parish-settings.html",)
-# Campaign images, Parish logos and No-reminders WorkGroup review in the
-# review dialog (#750, #1356).
+# confirmed change shows, whose follow-up link names it too. None is left in
+# this build: Share options, Campaign images, Parish logos, Parish settings
+# (#750) and No-reminders WorkGroup (#750, #1356) review in the review
+# dialog; Create the campaign draws the panel but names no in_place page.
+SETTINGS_PAGES = ()
 # Ministries changes nothing any more (#1267).
 REVIEW_PAGES = SETTINGS_PAGES
 HOSTED = {
@@ -145,6 +151,9 @@ HOSTED = {
     # The held-email table by send (#757): the Restore review page draws it
     # in its default region, Held emails in its own (region_id).
     "held-email-groups.html": ("restore-review.html", "held-emails.html"),
+    # A setup test page's live status region (#1354), whose follow-up re-reads
+    # the panel each test page draws around it.
+    "setup-test-status.html": ("setup-mail.html", "setup-notification.html"),
 }
 
 
@@ -568,7 +577,11 @@ def test_only_an_applied_change_refreshes_its_settings_page(state):
     receipt = SimpleNamespace(state=state, request_id=uuid4(), failure_code="")
     html = render_to_string(
         "stewardship/configuration-request-status.html",
-        {"receipt": receipt, "follow_url": "/admin/parish/settings/?request=x"},
+        # A page that still reads ?request= (the last in_place page).
+        {
+            "receipt": receipt,
+            "follow_url": reverse("admin:reminder_workgroup") + "?request=x",
+        },
     )
     assert ("data-live-follow" in html) == (state == "applied")
 
@@ -731,18 +744,40 @@ def test_parish_logos_review_in_the_dialog():
     assert 'name="bundle"' in review
 
 
+def test_parish_settings_review_in_the_dialog():
+    """Parish settings' form opens the shared review dialog (#750) and
+    waits for a real change (#921); it sits in a region redrawn from the
+    page's address once a change is applied, the page draws no in-place
+    review region, and the review fragment carries the signed preview."""
+    text = (TEMPLATES / "parish-settings.html").read_text()
+    forms = re.findall(r"<form\b[^>]*>", text)
+    assert len(forms) == 1
+    assert 'data-review-open="parish-review"' in forms[0]
+    assert 'data-require-change="base_digest"' in forms[0]
+    assert "data-in-place" not in forms[0] and "data-table-sync" not in forms[0]
+    assert 'data-refresh-url="{{ refresh_url }}"' in text
+    assert 'id="settings-review"' not in text and "live-status-v1.js" not in text
+    assert 'dialog_id="parish-review"' in text and "review=True" in text
+    review = (TEMPLATES / "parish-settings-review.html").read_text()
+    assert "data-review-answer" in review and "data-review-preview" in review
+    assert "parish_settings" not in IN_PLACE_PAGES
+
+
 def test_the_follow_up_carries_only_the_change():
     """Change status's read and its quiet follow-up name only the in-place
     page and the change. Ministries is no in-place page any more (#1267):
-    it changes nothing, so a follow-up never leads there."""
+    it changes nothing, so a follow-up never leads there, and Parish
+    settings reviews in the dialog."""
     receipt = SimpleNamespace(request_id="53200000-0000-4000-8000-000000000532")
-    status = review_region("parish_settings", receipt=receipt)["status_url"]
+    status = review_region("reminder_workgroup", receipt=receipt)["status_url"]
     read = {key: values[0] for key, values in parse_qs(urlsplit(status).query).items()}
-    assert read == {"in_place": "parish_settings"}
+    assert read == {"in_place": "reminder_workgroup"}
     follow = in_place_follow(read | {"q": "choir", "next": "/x"}, receipt.request_id)
-    assert urlsplit(follow).path == "/admin/parish/settings/"
+    assert urlsplit(follow).path == reverse("admin:reminder_workgroup")
     assert parse_qs(urlsplit(follow).query) == {"request": [receipt.request_id]}
-    assert in_place_follow({"in_place": "ministries"}, receipt.request_id) is None
+    # Nor to a page that reviews in the dialog (#750).
+    for page in ("ministries", "parish_settings"):
+        assert in_place_follow({"in_place": page}, receipt.request_id) is None
 
 
 def test_go_live_and_production_refreshes_are_in_place():

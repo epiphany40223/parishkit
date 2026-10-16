@@ -865,9 +865,9 @@
   // (data-require-change, below) compares the form with, so Review changes
   // stays unavailable until the reader changes one (#750). Without a zone
   // Review changes stays unavailable and [data-zone-missing] says why.
-  // The first-campaign step's schedules (form[data-schedule-zoned])
-  // works the same way, row by row: each unbound saved row carries its own
-  // data-schedule-local, and Save and continue waits for a zone.
+  // The date-change review's schedules (form[data-schedule-zoned]) work the
+  // same way, row by row: each unbound saved row carries its own
+  // data-schedule-local, and Review changes waits for a zone.
   // localParts: a moment (ms) as this browser's {date, time, weekday}, the
   // time canonical as the time entry writes it and Monday 0.
   const localParts = (moment) => {
@@ -903,7 +903,8 @@
       });
     }
   });
-  // Fill one schedule's fields (New and Edit's form, or one first-campaign
+  // Fill one schedule's fields (New and Edit's form,
+  // or one date-change review repeat
   // row) from its data-schedule-local moment, in this browser's zone.
   document.querySelectorAll("form[data-schedule-entry][data-schedule-local], "
     + "[data-schedule-row][data-schedule-local]").forEach((scope) => {
@@ -1558,6 +1559,24 @@
   window.addEventListener("pageshow", (event) => {
     if (event.persisted) unloading = false;
   });
+  // How to find the focused element again after a quiet refresh replaces
+  // the region it is in: its id, else its tag, link target and text. Null
+  // when focus is not in an in-place region.
+  const heldFocus = () => {
+    const node = document.activeElement;
+    if (!(node instanceof Element) || !node.closest(REGIONS)) return null;
+    return node.id ? {id: node.id}
+      : {tag: node.tagName, href: node.getAttribute("href"), text: node.textContent};
+  };
+  // Focus the fresh element matching ``held`` without scrolling, unless
+  // focus already moved somewhere still on the page.
+  const refocusHeld = (held) => {
+    if (!held || (document.activeElement && document.activeElement !== document.body)) return;
+    const match = held.id ? document.getElementById(held.id)
+      : [...document.querySelectorAll(held.tag)].find((node) => node.closest(REGIONS)
+        && node.getAttribute("href") === held.href && node.textContent === held.text);
+    match?.focus({preventScroll: true});
+  };
   const refreshRegions = async (region, control, url, init, fallback, options, controller, form) => {
     const owner = options.owner || null;
     // Every way out below that hands the page to the browser (a full load,
@@ -1666,6 +1685,10 @@
     const only = anywhere || Boolean(owner?.hasAttribute("data-in-place-only"));
     const alsoSwapped = anywhere ? []
       : (owner?.getAttribute("data-in-place-only") || "").split(/\s+/).filter(Boolean);
+    // A quiet refresh happens without the reader acting (a status that
+    // settled, #869, #1354), so it must not take their focus away: a focused
+    // element in a region it replaces is found again in the fresh copy.
+    const held = options.quiet ? heldFocus() : null;
     swappingFor = control instanceof Element ? control : null;
     try {
       document.querySelectorAll(REGIONS).forEach((other) => {
@@ -1717,7 +1740,10 @@
       const view = parsed.querySelector("[data-queue-address]")?.getAttribute("data-queue-address");
       if (view && sameOrigin(view)) window.history.replaceState(window.history.state, "", keepHash(view));
     }
-    if (options.quiet && !refused) return;
+    if (options.quiet && !refused) {
+      refocusHeld(held);
+      return;
+    }
     // A refusal's summary (now in the region) takes focus, as it does on an
     // ordinary load; without one the control does, as after a success. A
     // control that is gone (a save that closed a follow-up request leaves no
@@ -2323,311 +2349,60 @@
     document.querySelectorAll("form").forEach(gateAcknowledgments);
   });
 
-  // Readiness status is a passive GET, never the source-load idle-renewal
-  // exception. No message content, key or answer is retained by this poller.
-  document.querySelectorAll("[data-setup-mail]").forEach((panel) => {
-    const button = panel.querySelector("[data-mail-send]");
-    const warning = panel.querySelector("[data-mail-status-error]");
-    const uncertain = panel.querySelector("[data-mail-uncertain]");
-    const acknowledgement = uncertain?.querySelector("input");
-    // Until this revision's test is accepted the send button is the page's
-    // primary action and Continue waits hidden (setup-test-actions.html).
-    const onward = panel.querySelector("[data-mail-continue]");
-    const states = new Set([
-      "queued", "submitting", "accepted", "not_sent", "delivery_unknown", "cancelled"
-    ]);
-    if (!button || !warning || !uncertain || !acknowledgement) return;
-    acknowledgement.required = !uncertain.hidden;
-    let pending = panel.dataset.mailPending === "true";
-    let inFlight = false;
-    let stopped = false;
-    let activeRequest = null;
-    async function refresh() {
-      if (!pending || inFlight || stopped || document.hidden) return;
-      inFlight = true;
-      const controller = new AbortController();
-      activeRequest = controller;
-      const timeout = window.setTimeout(() => controller.abort(), 10000);
-      try {
-        const response = await fetch(panel.dataset.mailStatusUrl, {
-          method: "GET", credentials: "same-origin", cache: "no-store",
-          headers: {"Accept": "application/json"}, signal: controller.signal
-        });
-        if (!response.ok) throw new Error("status unavailable");
-        const data = await response.json();
-        if (!Number.isSafeInteger(data.revision) ||
-            String(data.revision) !== panel.dataset.mailRevision ||
-            typeof data.pending !== "boolean" || typeof data.unknown !== "boolean" ||
-            !Array.isArray(data.items) || data.items.length > 25) {
-          throw new Error("status changed");
-        }
-        const nodes = new Map([...panel.querySelectorAll("[data-mail-id]")]
-          .map((node) => [node.dataset.mailId, node.querySelector("[data-mail-state]")]));
-        for (const item of data.items) {
-          if (!states.has(item.state) || typeof item.label !== "string" ||
-              item.label.length > 512 || !nodes.get(item.id)) {
-            throw new Error("status changed");
-          }
-        }
-        for (const item of data.items) nodes.get(item.id).textContent = item.label;
-        if (onward?.hidden && data.items.some((item) =>
-          item.current === true && item.state === "accepted")) {
-          onward.hidden = false;
-          button.hidden = true;
-        }
-        pending = data.pending;
-        // This poller owns the send button's pending state; take it back from
-        // the acknowledgment gate, then let the gate apply the new prompt.
-        button.removeAttribute("data-acknowledgment-gated");
-        button.disabled = pending;
-        uncertain.hidden = !data.unknown;
-        acknowledgement.required = data.unknown;
-        gateAcknowledgments(acknowledgement.form);
-      } catch {
-        stopped = true;
-        button.removeAttribute("data-acknowledgment-gated");
-        button.disabled = true;
-        warning.hidden = false;
-        // The button is held by the failure now, not by the box: drop the hint.
-        gateAcknowledgments(acknowledgement.form);
-      } finally {
-        window.clearTimeout(timeout);
-        activeRequest = null;
-        inFlight = false;
-      }
-    }
-    const timer = window.setInterval(refresh, 5000);
-    document.addEventListener("visibilitychange", refresh);
-    window.addEventListener("pagehide", () => {
-      stopped = true;
-      window.clearInterval(timer);
-      activeRequest?.abort();
-    });
-    refresh();
-  });
-
-  // "Finishing setup" polls a passive GET status (it never renews the setup
-  // login) every 15 seconds while visible. The server returns only a short
-  // signature of what the page shows: a change reloads the page, and
-  // completion reveals the Continue link instead of leaving the page.
-  document.querySelectorAll("[data-finishing]").forEach((panel) => {
-    const done = document.querySelector("[data-finishing-done]");
-    const warning = panel.querySelector("[data-finishing-unavailable]");
-    let stopped = false;
-    let inFlight = false;
-    let timer = null;
-    let controller = null; // the status request in flight, aborted on pagehide
-    async function refresh() {
-      if (stopped || inFlight || document.hidden) return;
-      inFlight = true;
-      controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 10000);
-      try {
-        const response = await fetch(panel.dataset.finishingUrl, {
-          method: "GET", credentials: "same-origin", cache: "no-store",
-          headers: {"Accept": "application/json"}, signal: controller.signal
-        });
-        if (!response.ok) throw new Error("status unavailable");
-        const data = await response.json();
-        // A reply that arrives after pagehide must not reload or reveal.
-        if (stopped) return;
-        if (typeof data.signature !== "string" || typeof data.overall !== "string") {
-          throw new Error("status changed");
-        }
-        warning.hidden = true;
-        if (data.overall === "completed") {
-          stopped = true;
-          if (done) done.hidden = false;
-          panel.hidden = true;
-        } else if (data.signature !== panel.dataset.finishingSignature) {
-          stopped = true;
-          window.location.reload();
-        }
-      } catch {
-        if (!stopped) warning.hidden = false;
-      } finally {
-        window.clearTimeout(timeout);
-        inFlight = false;
-        controller = null;
-        if (!stopped) timer = window.setTimeout(refresh, 15000);
-      }
-    }
-    document.addEventListener("visibilitychange", () => {
-      if (!document.hidden && !inFlight) {
-        window.clearTimeout(timer);
-        refresh();
-      }
-    });
-    window.addEventListener("pagehide", () => {
-      stopped = true;
-      window.clearTimeout(timer);
-      controller?.abort();
-    });
-    timer = window.setTimeout(refresh, 15000);
-  });
-
-  // Only the exact source-progress page posts this renewal exception. The
-  // server checks the original login, task/source leases and five-minute limit;
-  // visibility and local deadlines merely stop unnecessary browser requests.
-  document.querySelectorAll("[data-setup-progress]").forEach((panel) => {
-    const form = panel.querySelector("form");
-    const warning = panel.querySelector("[data-progress-unavailable]");
-    const deadlines = [...panel.querySelectorAll("[data-progress-deadline]")];
-    const number = new Intl.NumberFormat("en-US");
-    const localTime = {format: (date) => window.ParishDates ?
-      window.ParishDates.instant(date) : date.toISOString()};
-    let active = panel.dataset.progressActive === "true";
+  // The setup wizard's status pages (Test email, Test Slack, Load parish
+  // data, Finishing setup) follow their work through live-status-v1.js
+  // regions (#1354). Only the source-load idle renewal stays here: while the
+  // exact source-progress page is visible and its load is active, a
+  // CSRF-only POST renews the setup's idle deadline every 15 seconds. The
+  // server checks the original login, task/source leases and five-minute
+  // limit; visibility and local deadlines merely stop unnecessary requests.
+  // The renewal draws no status (the live region does); it only keeps the
+  // deadlines it stops at current and says when it could not renew.
+  document.querySelectorAll("form[data-setup-renew]").forEach((form) => {
+    const warning = document.querySelector("[data-progress-unavailable]");
+    const deadlines = [...form.querySelectorAll("[data-progress-deadline]")];
+    let active = form.dataset.progressActive === "true";
     let closed = false, pending = false, timer = null, controller = null;
     // Anchor server instants to monotonic elapsed time, not the browser's wall
     // clock. Clock skew or a later system-clock correction must not stop renewal.
-    let serverAt = Date.parse(panel.dataset.progressNow), observedAt = performance.now();
-    // Liveness display: elapsed time and the worker's last report tick locally
-    // between checks, so a download whose totals are not yet known (0 of 0)
-    // still visibly progresses. These are display-only; nothing is posted.
-    const texts = Object.fromEntries([...panel.querySelectorAll("[data-progress-text]")]
-      .map(node => [node.dataset.progressText, node.textContent]));
-    const summary = panel.querySelector("[data-progress-summary]");
-    const bar = panel.querySelector("[data-progress-bar]");
-    const elapsed = panel.querySelector("[data-progress-elapsed]");
-    const quiet = panel.querySelector("[data-progress-quiet]");
-    const checked = panel.querySelector("[data-progress-checked]");
-    const done = document.querySelector("[data-progress-done]");
-    const failed = document.querySelector("[data-progress-failed]");
-    const records = panel.querySelector("[data-load-records]");
-    const phaseList = panel.querySelector(".setup-load-phases");
-    const collectionList = panel.querySelector("[data-load-collections]");
-    const phaseOrder = ["fetching", "staging", "validating"];
-    // Fill a server-rendered wording template such as "{count} loaded".
-    const fill = (template, values) => template.replace(/\{(\w+)\}/g,
-      (match, name) => (name in values ? number.format(values[name]) : match));
-    const mark = (node, state, text) => {
-      node.classList.remove("setup-load-done", "setup-load-active", "setup-load-waiting");
-      node.classList.add(`setup-load-${state}`);
-      const status = node.querySelector("[data-load-status]");
-      if (status && status.textContent !== text) status.textContent = text;
-    };
-    // Mirrors setup_progress_views.phases() and collections().
-    const showLoad = (data, key) => {
-      const index = phaseOrder.indexOf(data.phase);
-      phaseList?.querySelectorAll("[data-load-phase]").forEach((node) => {
-        const position = phaseOrder.indexOf(node.dataset.loadPhase);
-        const state = key === "done" || position < index ? "done"
-          : position === index && data.active ? "active" : "waiting";
-        mark(node, state, phaseList.dataset[`status${state[0].toUpperCase()}${state.slice(1)}`]);
-      });
-      if (collectionList) {
-        const text = collectionList.dataset;
-        const fetching = data.phase === "fetching" && data.active;
-        let waiting = false;
-        data.collections.forEach((item) => {
-          const node = collectionList.querySelector(`[data-collection="${item.key}"]`);
-          let state = "waiting";
-          if (item.done) state = "done";
-          else if (fetching && !waiting) { state = "active"; waiting = true; }
-          const rosters = item.key === "ministry_roster" && item.expected !== null;
-          mark(node, state, rosters && state !== "waiting" ? fill(text.textRosters, item)
-            : state === "done" ? fill(text.textDone, item)
-            : state === "active" ? text.textActive : text.textWaiting);
-        });
-      }
-      if (records) records.hidden = !["staging", "validating"].includes(data.phase);
-    };
-    const validCollections = (items) => Array.isArray(items) && items.length <= 20
-      && items.every((item) => item && typeof item.key === "string" && /^[a-z_]{1,40}$/.test(item.key)
-        && collectionList?.querySelector(`[data-collection="${item.key}"]`)
-        && Number.isSafeInteger(item.count) && item.count >= 0 && typeof item.done === "boolean"
-        && [item.finished, item.expected].every((value) => value === null
-          || (Number.isSafeInteger(value) && value >= 0)));
-    let startedAt = Date.parse(panel.dataset.progressStarted || "");
-    let heartbeatAt = Date.parse(panel.dataset.progressHeartbeat || "");
-    const duration = (milliseconds) => {
-      const seconds = Math.max(0, Math.floor(milliseconds / 1000));
-      return seconds < 60 ? `${seconds} seconds`
-        : `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
-    };
-    // Mirrors the server's summary() choice of plain-language status text.
-    const statusKey = (data) => {
-      if (data.setup_state === "expired"
-          || ["failed", "cancelled", "abandoned"].includes(data.task_state)) return "failed";
-      if (data.task_state === "succeeded" || data.setup_state === "collecting") return "done";
-      if (["queued", "retry_wait"].includes(data.task_state)) return data.task_state;
-      return data.phase in texts ? data.phase : "working";
-    };
-    const tick = () => {
-      const now = serverAt + performance.now() - observedAt;
-      if (elapsed && Number.isFinite(startedAt) && active) elapsed.textContent = duration(now - startedAt);
-      if (quiet && Number.isFinite(heartbeatAt) && active) quiet.textContent = `${duration(now - heartbeatAt)} ago`;
-    };
-    const ticker = window.setInterval(tick, 1000);
+    let serverAt = Date.parse(form.dataset.progressNow), observedAt = performance.now();
     const live = () => {
-      const until = Math.min(...deadlines.map(node => Date.parse(node.dateTime)));
+      const until = Math.min(...deadlines.map((node) => Date.parse(node.dateTime)));
       const now = serverAt + performance.now() - observedAt;
       return !closed && active && Number.isFinite(until) && Number.isFinite(now) && now < until;
     };
     const schedule = () => {
       window.clearTimeout(timer);
-      if (live()) timer = window.setTimeout(refresh, 15000);
+      if (live()) timer = window.setTimeout(renew, 15000);
     };
-    async function refresh() {
+    async function renew() {
       if (!live() || pending) return;
       if (document.hidden) { schedule(); return; }
       pending = true;
       controller = new AbortController();
       const timeout = window.setTimeout(() => controller.abort(), 5000);
       try {
-        const response = await fetch(panel.dataset.progressUrl, {
+        const response = await fetch(form.dataset.progressUrl, {
           method: "POST", credentials: "same-origin", cache: "no-store",
           headers: {"Content-Type": "application/x-www-form-urlencoded"},
           body: new URLSearchParams(new FormData(form)), signal: controller.signal
         });
         if (!response.ok) throw new Error("unavailable");
         const data = await response.json();
-        if (data.task_id !== panel.dataset.progressTask || typeof data.active !== "boolean"
+        if (data.task_id !== form.dataset.progressTask || typeof data.active !== "boolean"
             || !Number.isFinite(Date.parse(data.server_now))
-            || !Number.isSafeInteger(data.current) || !Number.isSafeInteger(data.total)
-            || data.current < 0 || data.total < data.current
-            || !["queued", "running", "retry_wait", "abandoned", "succeeded", "failed", "cancelled"].includes(data.task_state)
-            || !["collecting", "loading", "frozen", "completed", "expired"].includes(data.setup_state)
-            || typeof data.phase !== "string" || !validCollections(data.collections)
-            || deadlines.some(node => !Number.isFinite(Date.parse(data[node.dataset.progressDeadline])))) {
+            || deadlines.some((node) => !Number.isFinite(Date.parse(data[node.dataset.progressDeadline])))) {
           throw new Error("unavailable");
         }
-        if (closed || document.hidden) return;
+        if (closed) return;
         serverAt = Date.parse(data.server_now);
         observedAt = performance.now();
         active = data.active;
-        panel.querySelector("[data-task-state]").textContent = data.task_state;
-        panel.querySelector("[data-setup-state]").textContent = data.setup_state;
-        panel.querySelector("[data-task-phase]").textContent = data.phase;
-        const percentage = data.total ? Math.round(data.current * 100 / data.total) : 0;
-        panel.querySelector("[data-task-counts]").textContent =
-          `${number.format(data.current)} of ${number.format(data.total)} (${percentage}%)`;
-        // Unknown totals show an indeterminate bar rather than a stuck 0%.
-        if (bar && data.total) { bar.max = data.total; bar.value = data.current; }
-        else if (bar) bar.removeAttribute("value");
-        if (typeof data.started_at === "string" && Number.isFinite(Date.parse(data.started_at))) {
-          startedAt = Date.parse(data.started_at);
-        }
-        if (typeof data.heartbeat_at === "string" && Number.isFinite(Date.parse(data.heartbeat_at))) {
-          heartbeatAt = Date.parse(data.heartbeat_at);
-        }
-        const key = statusKey(data);
-        if (summary && texts[key] && summary.textContent !== texts[key]) summary.textContent = texts[key];
-        showLoad(data, key);
-        if (done) done.hidden = key !== "done";
-        if (failed) failed.hidden = key !== "failed";
-        if (checked) {
-          checked.dateTime = data.server_now;
-          checked.textContent = localTime.format(new Date(serverAt));
-        }
-        tick();
-        deadlines.forEach(node => {
-          node.dateTime = data[node.dataset.progressDeadline];
-          node.textContent = localTime.format(new Date(node.dateTime));
-        });
-        warning.hidden = true;
+        deadlines.forEach((node) => { node.dateTime = data[node.dataset.progressDeadline]; });
+        if (warning) warning.hidden = true;
       } catch (_) {
-        if (!closed && !document.hidden) warning.hidden = false;
+        // Tried again on the next turn while the load is still live.
+        if (!closed && !document.hidden && warning) warning.hidden = false;
       } finally {
         window.clearTimeout(timeout);
         pending = false;
@@ -2635,33 +2410,46 @@
         schedule();
       }
     }
-    form.addEventListener("submit", event => {
-      // A stopped automatic poller must not disable the normal manual form.
-      if (live()) { event.preventDefault(); refresh(); }
-    });
+    // A page kept in the back/forward cache (persisted) renews again when
+    // it is shown; one that goes away for good stops.
+    // Either way the page is marked closed while it is away, so a renewal
+    // aborted by leaving shows no "could not be reached" warning; showing
+    // the page again reopens it.
     window.addEventListener("pagehide", () => {
-      closed = true;
       window.clearTimeout(timer);
-      window.clearInterval(ticker);
       if (controller) controller.abort();
+      closed = true;
+    });
+    window.addEventListener("pageshow", (event) => {
+      closed = false;
+      if (event.persisted) renew();
     });
     document.addEventListener("visibilitychange", () => {
       if (document.hidden && controller) controller.abort();
-      if (!document.hidden) refresh();
+      if (!document.hidden) renew();
     });
-    tick();
-    refresh();
+    renew();
   });
 
-  // The setup pollers above (test mail and Slack, Finishing setup, source
-  // progress) stop for good on pagehide. A page the browser brings back from
-  // its history (Back or Forward) would show their last reading with nothing
-  // polling, so it is loaded again instead and shows the current state (#563).
-  if (document.querySelector("[data-setup-mail], [data-finishing], [data-setup-progress]")) {
-    window.addEventListener("pageshow", (event) => {
-      if (event.persisted) window.location.reload();
-    });
-  }
+  // A settled Test email / Test Slack page restored from the back/forward
+  // cache (#563) still shows what it showed when it was left, such as
+  // Continue, although an earlier step's settings may have changed since.
+  // Its hidden follow-up link, followed as live-status-v1.js follows it once
+  // a test settles, re-reads this address's panel in place, so the panel is
+  // drawn again from the server's current state; if a test is in flight
+  // again, the fresh region is watched anew. A pending region is already
+  // polled.
+  window.addEventListener("pageshow", (event) => {
+    if (!event.persisted) return;
+    const follow = document.querySelector(
+      '[data-live-status="setup-test"]:not([data-live-pending]) a[data-live-follow][data-in-place]');
+    const panel = document.getElementById("setup-test-panel");
+    if (!follow || !panel) return;
+    const here = new URL(window.location.href);
+    here.hash = panel.id;
+    follow.href = here.href;
+    follow.click();
+  });
 
   // A control's value for the rules below (data-show-when and
   // data-required-when). A checkbox counts as its value only while it is
@@ -3030,8 +2818,15 @@
       const ordered = !start.value || !end.value || start.validity.patternMismatch
         || end.validity.patternMismatch || Number(end.value) >= Number(start.value);
       end.setCustomValidity(ordered ? "" : (end.dataset.missingHint || "Out of order."));
-    } else if (start.value) end.min = start.value;
-    else end.removeAttribute("min");
+    } else if (end.min !== start.value) {
+      // Written only when it changes (#1419). Rewriting min, even to the
+      // same value, makes Chromium rebuild the date's fields; the end's own
+      // input event fires once its first year digit makes a whole date, so
+      // a rewrite there dropped the year being typed and the next digit
+      // cleared the field.
+      if (start.value) end.min = start.value;
+      else end.removeAttribute("min");
+    }
   };
   const wireNotBefore = (root) => within(root, "input[data-not-before]").forEach(checkNotBefore);
   // One listener for every page, in the capture phase, so the order is set
@@ -4068,7 +3863,7 @@
   // marked data-review-open="<dialog id>" (New and Edit user, Import
   // Ministry leaders, New and Edit scheduled email, Campaign settings, its
   // date change on Dates and mail schedules, Share options, Campaign images,
-  // Parish logos and Create the campaign's confirmation).
+  // Parish logos, Parish settings and Create the campaign's confirmation).
   //
   // Review posts the form, submitter included, without a page load. Until
   // the answer arrives the form is inert and aria-busy, and its Review
@@ -4602,9 +4397,8 @@
   // Repeating reminders (#469). expandRecurrence turns a repeat rule into
   // the calendar dates it produces. Dates are civil days, computed with UTC
   // dates so the browser's own zone never shifts them; the send time is
-  // added later per date (the campaign's wall-clock time on the date-change
-  // review, the browser's on the first-campaign step and New scheduled
-  // email, #558).
+  // added later per date (the browser's wall-clock time on the date-change
+  // review and New scheduled email, #558).
   // The rule: {frequency: "daily" | "weekly" | "monthly", start,
   // end (inclusive, "YYYY-MM-DD"), weekdays: [0 (Monday) … 6] for weekly,
   // and for monthly either {day: 1–31} or {ordinal: 1–4 or -1 (last),
@@ -4678,11 +4472,10 @@
   // inside the campaign dates, strictly after the initial invitation, not at
   // the instant of another Family mailing, at most REPEAT_LIMIT dates per
   // rule and the form's MAX_NUM_FORMS rows in all. Here every comparison is
-  // of date and time text in the zone the form's rows use: the browser's on
-  // the first-campaign step (#558), the campaign's on the date-change
-  // review. The campaign-date check compares calendar days, so on the
-  // first-campaign step the server decides a time near either edge (New
-  // scheduled email compares moments instead; see repeatDates).
+  // of date and time text in the browser's zone, which the date-change
+  // review's rows use (#558). The campaign-date check compares calendar
+  // days, so the server decides a time near either edge (New scheduled
+  // email compares moments instead; see repeatDates).
   const REPEAT_LIMIT = 30;
   const REPEAT_ERRORS = {
     dates: "Choose the first and last dates to repeat on.",
@@ -4728,7 +4521,8 @@
     });
   };
   // Every date a repeat rule gives, and why any of them will not be added
-  // (shared by the first-campaign panel and New scheduled email, #878).
+  // (shared by the date-change review repeat panel and New scheduled
+  // email, #878).
   // ``existing`` is the Family mailings already scheduled, as {kind, date,
   // time} campaign-local text; ``first`` and ``last`` the campaign's dates;
   // ``room`` how many more of the ``limit`` schedules fit; ``sendTime`` the canonical send
@@ -5145,7 +4939,8 @@
   // Reminder, a Repeat checkbox swaps the send date for a repeat rule. The
   // page's own send time and Email to send apply to every date. As the Admin
   // types, the dates the rule gives are listed with the same checks as the
-  // first-campaign panel (repeatDates), against the saved invitations and
+  // date-change review repeat panel (repeatDates), against the saved
+  // invitations and
   // reminders the page carries (data-repeat-mailings) and the schedules
   // still free (data-repeat-room). Dates and the time are this browser's
   // (#558): the saved mailings and the campaign's first and last moments

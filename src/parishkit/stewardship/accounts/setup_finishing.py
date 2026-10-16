@@ -264,7 +264,6 @@ def finishing(status, *, completed=False):
         "overall": overall,
         "reauthenticate": reauthenticate,
         "elapsed": elapsed,
-        "elapsed_minutes": elapsed // 60,
         "signature": signature(rows, overall, reauthenticate),
     }
 
