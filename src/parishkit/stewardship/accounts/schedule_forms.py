@@ -700,6 +700,21 @@ class ScheduleSet(AdminFormSet):
         return schedulable(self.templates)
 
     @property
+    def repeat_rule(self):
+        """A blank repeat rule for the date-change review's Repeat a reminder.
+
+        The panel draws the shared rule controls
+        (``components/repeat-rule.html``) from New scheduled email's own
+        ``RepeatRule``, so both repeat panels offer the same choices (#1129).
+        The panel posts nothing, so the form is never bound. It is imported
+        here, not at the top, because ``schedule_entry_views`` imports this
+        module.
+        """
+        from .schedule_entry_views import RepeatRule
+
+        return RepeatRule()
+
+    @property
     def window(self):
         """The campaign's first and last local days.
 
