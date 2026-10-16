@@ -193,8 +193,10 @@ The LOCAL rendering differs from Production only as follows:
   secure cookies and the HTTPS redirect stay; HSTS is 0, so a browser does not
   pin HTTPS for every `localhost` service the developer runs.
 - **Banner.** Every Admin and Family page shows a persistent, non-color-only
-  LOCAL banner. Emails are not altered, so what Mailpit shows is what a Family
-  would receive.
+  LOCAL banner. It names the data: synthetic with no real ParishSoft by
+  default, or real ParishSoft data, read only, when the deployment chose the
+  real API ([ParishSoft](#safety-guarantees)). Emails are not altered, so
+  what Mailpit shows is what a Family would receive.
 
 ### Production invariants
 
@@ -1769,8 +1771,11 @@ which refines the PR sequence in #476.
   (see [host virtual machine](#host-virtual-machine)).
 - **Reworking the topology around named volumes** to suit Docker Desktop.
   Rejected: a large divergence from Production in the very code being tested.
-- **Real data or backups.** The local environment never loads a production
-  backup or real ParishSoft data; it uses only the synthetic parish.
+- **Production backups.** The local environment never restores a
+  Production backup: that would bring Production's credentials, sessions
+  and history onto the laptop. Real ParishSoft data is a different matter,
+  read through the real API when the developer chooses it
+  ([ParishSoft](#safety-guarantees), #1399).
 - **A second, real Google OAuth client** registered for `localhost`. Rejected:
   it would put a real credential in a test environment and require Google
   egress; the local test sign-in uses the same session path instead.
