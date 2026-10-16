@@ -750,7 +750,6 @@ NON_PAGES = frozenset(
         "report_export_cancel",
         "report_export_create",
         "report_export_download",
-        "report_export_regenerate",
         "report_export_retry",
         "retry_daily_digest",
         "retry_export_cleanup",

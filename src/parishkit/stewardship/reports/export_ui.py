@@ -13,13 +13,8 @@ from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET, require_POST
 
 from parishkit.stewardship.accounts import admin_navigation
-from parishkit.stewardship.accounts.admin_editing import step_up_response
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
-from parishkit.stewardship.accounts.sessions import (
-    FreshAuthenticationRequired,
-    require_fresh,
-)
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.queue_wait import queue_wait
 from parishkit.stewardship.jobs.storage import TaskRetryConflict
@@ -41,53 +36,11 @@ from .export_services import (
     create_export,
     export_status,
     issue_download,
-    regenerate_export,
     retry_export,
 )
 from .export_views import SAFE_FAILURES, _body, _principal, download_with_grant
 from .models import CampaignDailyFactSet
-from .timeline_exports import RehearsalEnded, rehearsal_ended
 from .workspace import ReportQuery
-
-# Exports whose new file needs a fresh Google sign-in (#547): the directory
-# files and a Family's timeline carry live Family codes and the financial
-# file financial detail.
-FRESH_REPORTS = frozenset(
-    {
-        "family_directory",
-        "postal_outreach",
-        "financial",
-        "family_timeline",
-        # The campaign archive holds each Family's giving (#1018).
-        "campaign_archive",
-    }
-)
-
-
-def _regenerate_step_up(request, store, principal, request_id):
-    """The step-up page when regenerating this export needs a fresh sign-in.
-
-    A regenerated directory or financial file is a new copy of the same codes
-    or financial detail, so it needs the same fresh sign-in as creating one
-    (#547); the step-up returns to this export's status page. The export's
-    owner and capability are checked first (``authorize``), so its kind is
-    never revealed to anyone else. Returns None when it may be regenerated
-    now; ``regenerate_export`` still rechecks everything under its lock.
-    """
-    export = ExportRequest.objects.only(
-        "report", "requester_id", "authorization_scope"
-    ).get(pk=request_id)
-    authorize(store, principal.identity, request=export)
-    if export.report not in FRESH_REPORTS:
-        return None
-    try:
-        require_fresh(request)
-    except FreshAuthenticationRequired:
-        return step_up_response(
-            reverse("admin:report_export", args=(request_id,)),
-            admin_navigation.PAGES["report_export"].label,
-        )
-    return None
 
 
 def _redirect(identifier):
@@ -106,14 +59,11 @@ def _error(
     busy=False,
     bound=False,
     expired=False,
-    rehearsal_ended=False,
 ):
     """Fixed-text recovery never reflects a submitted value or internal failure.
 
-    ``bound`` explains a reused one-time form (``ExportRequestBound``),
-    ``expired`` an authorized download of an expired file (``ExportExpired``)
-    and ``rehearsal_ended`` a Testing timeline export whose rehearsal ended
-    (``RehearsalEnded``), which is made again rather than regenerated.
+    ``bound`` explains a reused one-time form (``ExportRequestBound``) and
+    ``expired`` an authorized download of an expired file (``ExportExpired``).
     """
     debug_swallowed("report request refused")
     # No request context processors: a database outage must not trigger another
@@ -127,7 +77,6 @@ def _error(
                 "busy": busy,
                 "bound": bound,
                 "expired": expired,
-                "rehearsal_ended": rehearsal_ended,
                 "temporary": status == 503,
             },
         ),
@@ -143,7 +92,6 @@ def _error(
         *(["busy"] if busy else []),
         *(["form_reused"] if bound else []),
         *(["expired"] if expired else []),
-        *(["rehearsal_ended"] if rehearsal_ended else []),
     )
 
 
@@ -373,14 +321,6 @@ def detail(request, request_id):
                 # (#1345).
                 "report_name": admin_navigation.PAGES[source].label,
                 "can_cancel": state["state"] in {"queued", "running", "retry_wait"},
-                # A Testing timeline export is bound to its rehearsal: once
-                # that ended, Regenerate is unavailable, with the reason.
-                "rehearsal_ended": rehearsal_ended(job),
-                # The Ministry summary export was removed (#1126); an old
-                # one stays downloadable until it expires, but is not made
-                # again, so Regenerate is unavailable, with the reason.
-                "summary_removed": job.report == "ministry"
-                and job.parameters.get("action") == "summary",
                 # Why a still-queued export has not started (#340). Ministry
                 # leaders may open their own exports but not background work,
                 # so only a reader who may see that work learns what runs ahead.
@@ -416,9 +356,7 @@ def command(request, request_id, *, action):
     try:
         service = runtime()
         principal = _principal(request, service.store, ministry_jobs=True)
-        values = _body(
-            request, {"request_key"} if action in {"retry", "regenerate"} else set()
-        )
+        values = _body(request, {"request_key"} if action == "retry" else set())
         if action == "cancel":
             cancel_export(service.store, principal.identity, request_id)
         elif action == "retry":
@@ -435,30 +373,14 @@ def command(request, request_id, *, action):
                 response.close()
                 return _error(request, request_id=request_id, status=503, busy=True)
             return response
-        elif action == "regenerate":
-            # A malformed key is refused before the export is even looked up.
-            key = UUID(values["request_key"])
-            refused = _regenerate_step_up(request, service.store, principal, request_id)
-            if refused is not None:
-                return refused
-            result = regenerate_export(
-                service.store, principal.identity, request_id, request_key=key
-            )
-            return _redirect(result.pk)
         else:
             raise ValueError("Unknown report action.")
         return _redirect(request_id)
-    except RehearsalEnded:
-        return _error(request, request_id=request_id, rehearsal_ended=True)
     except (ExportConflict, TaskRetryConflict):
         return _error(request, request_id=request_id)
-    except ExportRequestBound:
-        # A stale Regenerate form on the status page; the shared notice's
-        # "reload the page" means that page here, not the report.
-        return _error(request, request_id=request_id, status=409, bound=True)
     except ExportExpired:
-        # Only the authorized requester reaches this; tell them to regenerate
-        # rather than showing a sign-in denial they cannot act on.
+        # Only the authorized requester reaches this; tell them the file is
+        # gone rather than showing a sign-in denial they cannot act on.
         return _error(request, request_id=request_id, status=410, expired=True)
     except (PermissionError, ObjectDoesNotExist):
         return denial()

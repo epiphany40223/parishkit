@@ -1,7 +1,7 @@
 """Export refusals say what happened, not a sign-in denial (#388 L3 and L4).
 
 A reused one-time export form is a 409 on every export page, and an authorized
-download of an expired file is a 410 that points at regeneration.
+download of an expired file is a 410 that says it is no longer available.
 """
 
 from unittest.mock import Mock
@@ -53,19 +53,7 @@ def test_every_export_form_reuse_is_a_conflict(monkeypatch, name):
     assert b"private detail" not in response.content
 
 
-def test_regeneration_form_reuse_is_a_conflict(monkeypatch):
-    """Regeneration allocates through the same keyed services."""
-    identifier = uuid4()
-    _failing(monkeypatch, export_ui, ExportRequestBound("private detail"))
-    response = export_ui.command(
-        RequestFactory().post("/"), identifier, action="regenerate"
-    )
-    assert response.status_code == 409 and BOUND in response.content
-    page = reverse("admin:report_export", args=[identifier])
-    assert page.encode() in response.content
-
-
-def test_native_expired_download_points_to_regeneration(monkeypatch):
+def test_native_expired_download_says_the_file_is_gone(monkeypatch):
     """The requester sees expiry and a way back, not the sign-in denial."""
     identifier = uuid4()
     _failing(monkeypatch, export_ui, ExportExpired("This export has expired."))

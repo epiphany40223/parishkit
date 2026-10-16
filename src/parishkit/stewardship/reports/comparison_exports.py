@@ -23,8 +23,8 @@ it in an immutable ``ComparisonExportSnapshot`` (frozen migration 0071),
 whose SQL capture guard checks who may capture it, the campaign, the
 configuration and the document's closed shape. The shared export lifecycle
 then renders it (``comparison_documents``) and publishes, downloads,
-cancels, retries and regenerates it like every other export. A regenerated
-file renders the same capture: it never reads newer figures.
+cancels and retries it like every other export. A retried file renders the
+same capture: it never reads newer figures.
 
 The capture's table is the page's **Every number** table: the same
 columns, names and order (UX conventions, "Downloaded files"), counts as
@@ -313,14 +313,12 @@ def create_comparison_export(
     format,
     browser_timezone,
     request_key,
-    document=None,
-    snapshot=None,
+    document,
 ):
     """Store a comparison capture and queue its file, as the page's form does.
 
     ``day`` is the comparison day the capture ``document`` shows (from
-    ``read_capture``), or the retained ``snapshot`` an expired export is
-    regenerated from, never a form's. Administrators and Staff may export,
+    ``read_capture``), never a form's. Administrators and Staff may export,
     as both see the page (``CAMPAIGN_REPORT``). A request key already used
     for the same export returns it; for another it is ``ExportRequestBound``
     (the page's 409). Records ``campaign_comparison_exported`` with the day
@@ -336,10 +334,8 @@ def create_comparison_export(
         raise ValueError("Unsupported comparison export format.")
     if type(browser_timezone) is not str or browser_timezone not in timezone_names():
         raise ValueError("Export timezone must be an IANA name.")
-    if (document is None) == (snapshot is None):
-        raise ValueError("An export needs a fresh capture or a retained one.")
-    if snapshot is not None and not isinstance(snapshot, ComparisonExportSnapshot):
-        raise TypeError("Regeneration requires a retained comparison capture.")
+    if document is None:
+        raise ValueError("An export needs a fresh capture.")
     parameters = {"day": day}
 
     def admit(*args):
@@ -360,26 +356,21 @@ def create_comparison_export(
                 previous.parameters,
                 previous.format,
                 previous.browser_timezone,
-            ) != (REPORT, campaign_id, parameters, format, browser_timezone) or (
-                snapshot is not None and previous.comparison_snapshot_id != snapshot.pk
-            ):
+            ) != (REPORT, campaign_id, parameters, format, browser_timezone):
                 raise ExportRequestBound("Export request identity is already bound.")
             return previous
         configuration_id = SystemConfiguration.objects.get().active_configuration_id
         correlation_id = uuid4()
-        if snapshot is None:
-            snapshot = ComparisonExportSnapshot.objects.create(
-                campaign_id=campaign_id,
-                configuration_id=configuration_id,
-                actor_id=user_id,
-                correlation_id=correlation_id,
-                parameters=parameters,
-                document=document,
-            )
-            # The insert trigger sets the time and the row count.
-            snapshot.refresh_from_db(fields=["created_at", "row_count"])
-        elif snapshot.campaign_id != campaign_id or snapshot.parameters != parameters:
-            raise ValueError("Retained comparison scope differs from the request.")
+        snapshot = ComparisonExportSnapshot.objects.create(
+            campaign_id=campaign_id,
+            configuration_id=configuration_id,
+            actor_id=user_id,
+            correlation_id=correlation_id,
+            parameters=parameters,
+            document=document,
+        )
+        # The insert trigger sets the time and the row count.
+        snapshot.refresh_from_db(fields=["created_at", "row_count"])
         identifier = uuid4()
         task = enqueue(
             task_type=TASK_TYPE,

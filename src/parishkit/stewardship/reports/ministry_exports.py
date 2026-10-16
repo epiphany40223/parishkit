@@ -109,20 +109,17 @@ def create_ministry_export(
     query=None,
     ministry_id=None,
     action=None,
-    snapshot=None,
     ministries=None,
     history=False,
 ):
-    """Capture complete results atomically, or bind a trusted retained capture.
+    """Capture complete results atomically.
 
     SQL derives the source, privacy projection and exact authorized Ministry set.
     Neither HTTP fields nor a caller-supplied document choose those authorities.
 
     ``action`` is ``join`` or ``leave`` (one Ministry's list) or ``packet``.
     The campaign-wide summary export was removed (#1126): its file held only
-    the counts the page shows, so neither a new request nor a regeneration of
-    an old summary capture is accepted. A regeneration passes ``snapshot``
-    and no ``action``; the retained capture fixes what it was.
+    the counts the page shows, so a new request for it is not accepted.
     """
     if any(
         not isinstance(value, UUID) for value in (user_id, campaign_id, request_key)
@@ -132,21 +129,7 @@ def create_ministry_export(
         raise ValueError("Unsupported Ministry export format.")
     if type(browser_timezone) is not str or browser_timezone not in timezone_names():
         raise ValueError("Export timezone must be an IANA name.")
-    if snapshot is not None:
-        if (
-            not isinstance(snapshot, MinistryExportSnapshot)
-            or snapshot.campaign_id != campaign_id
-            or query is not None
-            or ministry_id is not None
-            or action is not None
-            or ministries is not None
-            or history
-        ):
-            raise ValueError("Regeneration cannot change retained selection.")
-        if snapshot.parameters.get("action") == "summary":
-            raise ValueError("The Ministry summary export was removed.")
-        parameters = snapshot.parameters
-    elif action == "packet":
+    if action == "packet":
         if query is not None or ministry_id is not None:
             raise ValueError("A Ministry packet has no report filters.")
         parameters = packet_parameters(ministries, history=history)
@@ -170,18 +153,11 @@ def create_ministry_export(
     def admit(*args):
         """Reload coherent policy and gates under the owning work transaction."""
         actor = current_principal(store, user_id)
-        if (
-            not can_report(actor)
-            or (
-                snapshot is not None
-                and not scope_authorized(actor, snapshot.authorization_scope)
-            )
-            or any(
-                not allows(actor, Capability.MINISTRY_REPORT, ministry_id=value)
-                for value in (
-                    *(() if ministry_id is None else (ministry_id,)),
-                    *(ministries or ()),
-                )
+        if not can_report(actor) or any(
+            not allows(actor, Capability.MINISTRY_REPORT, ministry_id=value)
+            for value in (
+                *(() if ministry_id is None else (ministry_id,)),
+                *(ministries or ()),
             )
         ):
             raise PermissionError("Ministry export is unavailable.")
@@ -206,24 +182,19 @@ def create_ministry_export(
                 previous.parameters,
                 previous.format,
                 previous.browser_timezone,
-            ) != ("ministry", campaign_id, parameters, format, browser_timezone) or (
-                snapshot is not None and previous.ministry_snapshot_id != snapshot.pk
-            ):
+            ) != ("ministry", campaign_id, parameters, format, browser_timezone):
                 raise ExportRequestBound("Export request identity is already bound.")
             return previous
         configuration_id = SystemConfiguration.objects.get().active_configuration_id
         correlation_id = uuid4()
-        if snapshot is None:
-            snapshot = MinistryExportSnapshot.objects.create(
-                campaign_id=campaign_id,
-                configuration_id=configuration_id,
-                actor_id=user_id,
-                correlation_id=correlation_id,
-                parameters=parameters,
-            )
-            snapshot.refresh_from_db(
-                fields=["source", "row_count", "authorization_scope"]
-            )
+        snapshot = MinistryExportSnapshot.objects.create(
+            campaign_id=campaign_id,
+            configuration_id=configuration_id,
+            actor_id=user_id,
+            correlation_id=correlation_id,
+            parameters=parameters,
+        )
+        snapshot.refresh_from_db(fields=["source", "row_count", "authorization_scope"])
         identifier = uuid4()
         task = enqueue(
             task_type=TASK_TYPE,

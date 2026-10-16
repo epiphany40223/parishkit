@@ -432,16 +432,15 @@ def test_the_capture_refuses_what_the_web_must_not_store(request, auth_service):
     assert not TimelineExportSnapshot.objects.exists()
 
 
-def test_a_production_export_matches_its_page_and_regenerates(
+def test_a_production_export_matches_its_page(
     request,
     auth_service,
     google,
     cli,  # noqa: F811
     reports_root,  # noqa: F811
 ):
-    """The file's lines are the page's; a regeneration reuses the capture, which
-    nothing may change or delete."""
-    from .test_export_cleanup_postgresql import expire_publication
+    """The file's lines are the page's, from a capture nothing may change or
+    delete."""
     from .test_family_timeline_postgresql import lines
 
     harness, families = rehearsed_timeline(request)
@@ -494,16 +493,6 @@ def test_a_production_export_matches_its_page_and_regenerates(
             connection.cursor() as cursor,
         ):
             cursor.execute(statement, [capture.pk])
-    # An expired file is regenerated from the same capture.
-    expire_publication(made)
-    # A timeline file is fresh-gated to regenerate too, as on its page.
-    regenerate = ("export", "regenerate", str(made.pk), "--request-key", str(uuid4()))
-    code, document = run(*regenerate)
-    assert code == 4 and document["error"]["code"] == "confirmation_required"
-    code, document = run(*regenerate, "--yes")
-    assert code == 0, document
-    again = ExportRequest.objects.get(pk=document["result"]["export"]["id"])
-    assert again.pk != made.pk and again.timeline_snapshot_id == capture.pk
 
 
 def test_a_family_of_another_campaign_is_refused(
@@ -640,75 +629,6 @@ def test_migration_check_refuses_the_previous_definitions(old):
             cursor.execute(check)
         cursor.execute(check)  # Rolled back to the installed definitions.
         transaction.set_rollback(True)
-
-
-def test_an_ended_rehearsals_export_is_made_again_not_regenerated(
-    request,
-    auth_service,
-    google,
-    cli,  # noqa: F811
-    reports_root,  # noqa: F811
-):
-    """Once its rehearsal ended, a Testing export's Regenerate is unavailable.
-
-    The status page names the reason beside a greyed-out Regenerate (and the
-    mode as the page does, "Testing rehearsal"); a posted regeneration gets
-    the same plain reason, and the command line ``not_available``. Nothing is
-    made.
-    """
-    from parishkit.stewardship.campaigns.credential_models import RehearsalEpoch
-
-    from .auth_builders import unguarded
-    from .test_export_cleanup_postgresql import expire_publication
-
-    harness, families = rehearsed_timeline(request)
-    browser, _ = signed_in()
-    run = cli()
-    code, document = run(
-        "export",
-        "family-timeline",
-        str(families[1]),
-        "--mode",
-        "testing",
-        "--format",
-        "csv",
-        "--timezone",
-        "UTC",
-        "--yes",
-    )
-    assert code == 0, document
-    made = ExportRequest.objects.get(pk=document["result"]["export"]["id"])
-    render(harness, reports_root, made.pk)
-    expire_publication(made)
-    status_page = reverse("admin:report_export", args=[made.pk])
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        _, body = get(browser, status_page)
-    assert b"Testing rehearsal" in body and b"data-regenerate-unavailable" not in body
-    # The rehearsal ends (as a new rehearsal or the return to Production does).
-    with unguarded(), connection.cursor() as cursor:
-        cursor.execute(
-            "UPDATE stewardship_rehearsal_epoch SET state='invalidated',"
-            "invalidated_at=statement_timestamp() WHERE state='active'"
-        )
-    assert not RehearsalEpoch.objects.filter(state="active").exists()
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        _, body = get(browser, status_page)
-        text = body.decode()
-        assert "data-regenerate-unavailable" in text
-        assert "rehearsal this export was made in has ended" in text
-        refused = post(
-            browser,
-            reverse("admin:report_export_regenerate", args=[made.pk]),
-            {"request_key": str(uuid4())},
-            HTTP_ACCEPT="text/html",
-        )
-    assert refused.status_code == 409
-    assert b"Testing rehearsal that has ended" in refused.content
-    code, document = run(
-        "export", "regenerate", str(made.pk), "--request-key", str(uuid4()), "--yes"
-    )
-    assert code == 1 and document["error"]["code"] == "not_available", document
-    assert ExportRequest.objects.filter(report="family_timeline").count() == 1
 
 
 def test_the_command_needs_a_live_administrator_session(

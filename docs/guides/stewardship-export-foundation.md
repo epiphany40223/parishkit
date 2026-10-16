@@ -1,5 +1,10 @@
 # Stewardship export and chart foundation
 
+> **Superseded:** exports are now point-in-time, with no kept copies and no
+> Regenerate ([point-in-time exports](../specs/stewardship/operations/spec.md#point-in-time-exports),
+> [#1398](https://github.com/epiphany40223/parishkit/issues/1398)). This
+> record describes the increment as it was delivered.
+
 Branch `pr/stewardship-export-foundation` starts from verified PR #35 merge
 `e1e575ddb4971de9bfd5247a54dd2d95180af28f` on September 16, 2026 UTC. See the
 [preceding protected-delivery evidence](stewardship-activation-catchup.md#protected-delivery).

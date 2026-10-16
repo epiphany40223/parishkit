@@ -339,7 +339,8 @@ DESCRIPTIONS = {
     ),
     "admin_cmd_export_regenerate": _(
         "An automation session requested an expired report export again, "
-        "as the export's Regenerate button does."
+        "as the export's Regenerate button did before exports became "
+        "point-in-time."
     ),
     "admin_cmd_export_financial": _(
         "An automation session requested a financial report export, as the "

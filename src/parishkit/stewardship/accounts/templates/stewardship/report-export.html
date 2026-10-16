@@ -16,7 +16,7 @@
   The button is usually gone then, so focus falls back to Refresh status
   just below (data-in-place-fallback) rather than up to the page heading. A
   refusal is the fixed error page, which draws no panel, so it is shown
-  whole. Regenerate stays a navigation: it answers with a new export's page.
+  whole.
   While the export's task is still queued (not yet claimed by a worker),
   ``wait`` says why it has not started and how long it has waited (#340).
 {% endcomment %}
@@ -35,10 +35,7 @@
   <p class="export-state" role="status">{% translate "This export was cancelled." %}</p>
 {% elif status.state == 'expired' %}
   <p class="export-state" role="status">{% translate "The generated file has expired." %}</p>
-  <p>{% translate "Select Regenerate to make the file again from the same data, filters, format and time zone as the original, with the current parish logo. It does not pick up newer campaign data." %}</p>
-  <p class="notice">{% translate "Sensitive parish report: download only to a trusted device and share only with authorized recipients." %}</p>
-  {% if rehearsal_ended or summary_removed %}<form method="post" action="{% url 'admin:report_export_regenerate' job.pk %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ retry_key }}">{% button type="submit" enabled=False aria-describedby="regenerate-unavailable" %}{% translate "Regenerate expired file" %}{% endbutton %}</form>
-  <p class="help" id="regenerate-unavailable" data-regenerate-unavailable>{% if summary_removed %}{% translate "Unavailable: the Ministry summary export was removed. The same counts are on the Ministry requests page." %}{% else %}{% translate "Unavailable: the Testing rehearsal this export was made in has ended. Export the timeline again from the Family's timeline page." %}{% endif %}</p>{% else %}<form method="post" action="{% url 'admin:report_export_regenerate' job.pk %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ retry_key }}">{% button type="submit" enabled=mutable aria-describedby=mutable|yesno:",export-locked" %}{% translate "Regenerate expired file" %}{% endbutton %}</form>{% endif %}
+  <p>{% translate "Export it again from its report to get a new file. Exports are not kept." %}</p>
 {% else %}
   <p class="export-state" role="status">{{ status.state }}</p>
 {% endif %}

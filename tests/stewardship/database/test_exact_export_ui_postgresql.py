@@ -17,7 +17,6 @@ from parishkit.stewardship.reports.exact_models import (
     ExactExportResolution,
 )
 from parishkit.stewardship.reports.exact_tasks import exact_handler
-from parishkit.stewardship.reports.export_models import ExportPublication, ExportRequest
 from parishkit.stewardship.reports.export_tasks import export_handler
 
 from ..export_urls import export_action
@@ -31,7 +30,7 @@ from .test_taskrun_postgresql import act
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def test_native_exact_retry_handoff_and_expired_regeneration(
+def test_native_exact_retry_handoff_and_expiry(
     http_scenario,
     monkeypatch,
     settings,
@@ -129,51 +128,12 @@ def test_native_exact_retry_handoff_and_expired_regeneration(
         )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert b"ready" in read(browser, status_path)[1]
-        assert (
-            post(
-                browser,
-                export_action(rendered_path, "regenerate"),
-                {"request_key": str(uuid4())},
-            ).status_code
-            == 409
-        )
         assert post(browser, export_action(status_path, "cancel")).status_code == 409
+    # Exports are point-in-time (#1398): an expired one offers no Regenerate.
     expire_publication(resolution.export)
-    publication = ExportPublication.objects.get(request=resolution.export)
-    regeneration_key = uuid4()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         _, expired = read(browser, rendered_path)
-        assert b"Regenerate expired file" in expired
-        regenerated = post(
-            browser,
-            export_action(rendered_path, "regenerate"),
-            {"request_key": str(regeneration_key)},
-        )
-        assert regenerated.status_code == 302
-        assert (
-            post(
-                browser,
-                export_action(rendered_path, "regenerate"),
-                {"request_key": str(regeneration_key)},
-            )["Location"]
-            == regenerated["Location"]
-        )
-    replacement = ExportRequest.objects.get(request_key=regeneration_key)
-    assert replacement.pk != resolution.export_id
-    assert replacement.fact_set_id == resolution.fact_set_id
-    assert replacement.format == job.format
-    assert replacement.browser_timezone == job.browser_timezone
-    assert replacement.created_at > resolution.export.created_at
-    publication.refresh_from_db()
-    assert publication.request_id == resolution.export_id
-    with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
-        assert execute_hint(
-            replacement.task_id,
-            queue=WorkQueue.GENERAL,
-            worker_id=uuid4(),
-            handlers={"report_export": export_handler(store=store, root=root)},
-        )
-    assert ExportPublication.objects.filter(request=replacement).exists()
+    assert b"has expired" in expired and b"Regenerate" not in expired
     # A later request can reuse ready facts but still owns a distinct renderer.
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         waiting = post(browser, path, values | {"request_key": str(uuid4())})[
@@ -215,7 +175,6 @@ def test_native_exact_retry_handoff_and_expired_regeneration(
             (path, values | {"request_key": str(uuid4())}),
             (export_action(status_path, "cancel"), {}),
             (export_action(status_path, "retry"), {"request_key": str(uuid4())}),
-            (export_action(rendered_path, "regenerate"), {"request_key": str(uuid4())}),
         ):
             assert post(browser, endpoint, payload).status_code == 403
 

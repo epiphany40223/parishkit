@@ -2,7 +2,6 @@
 
 import io
 import json
-from datetime import timedelta
 from uuid import uuid4
 
 import pytest
@@ -256,7 +255,7 @@ def test_complete_capture_stays_stable_after_source_promotion(response_service):
     assert page(harness, ministry=9)["metadata"]["source_id"] != str(retained.source_id)
 
 
-def test_native_leader_exports_worker_download_and_regeneration(
+def test_native_leader_exports_worker_and_download(
     response_service,
     google,
     settings,
@@ -272,7 +271,7 @@ def test_native_leader_exports_worker_download_and_regeneration(
     settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(ReadLimits(process_pool_size=1))
     first = None
     # One Ministry's joining export is no longer offered on a page (#1157):
-    # the host command (and a regeneration) still captures one, through the
+    # the host command still captures one, through the
     # same service, so it is created here as the command does.
     for format in ("csv", "xlsx", "pdf"):
         key = uuid4()
@@ -310,22 +309,8 @@ def test_native_leader_exports_worker_download_and_regeneration(
             if format == "csv":
                 assert b"Not published" in body and b"valid@example.org" not in body
                 assert b"1960-01-01" not in body and b"+1 (202) 555-0123" in body
-    from parishkit.stewardship.reports import export_services
-
-    with work_transaction():
-        now = export_services.database_now()
-    with monkeypatch.context() as patch:
-        patch.setattr(export_services, "database_now", lambda: now + timedelta(days=8))
-        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            fields = {"request_key": str(uuid4())}
-            response = post(
-                browser,
-                reverse("admin:report_export_regenerate", args=[first.pk]),
-                fields,
-            )
-            assert response.status_code == 302
-            regenerated = ExportRequest.objects.get(request_key=fields["request_key"])
-            assert regenerated.ministry_snapshot_id == first.ministry_snapshot_id
+    # One more export, still queued when the leader loses the Ministry.
+    pending = create(harness, actor, format="csv", request_key=uuid4())
     store = harness.service.store
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         grant = issue_download(store, actor, first.pk)
@@ -348,7 +333,7 @@ def test_native_leader_exports_worker_download_and_regeneration(
         pytest.raises(PermissionError),
     ):
         execute_hint(
-            regenerated.task_id,
+            pending.task_id,
             queue=WorkQueue.GENERAL,
             worker_id=uuid4(),
             handlers={TASK_TYPE: export_handler(store=store, root=root)},

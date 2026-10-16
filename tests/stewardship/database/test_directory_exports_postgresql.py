@@ -211,10 +211,10 @@ def test_complete_directory_capture_is_private_immutable_and_source_pinned(
     assert page(harness)["metadata"]["source_id"] != str(retained.source_id)
 
 
-def test_native_directory_exports_render_download_and_regenerate_retained_inputs(
-    live_response_service, google, tmp_path, settings, monkeypatch
+def test_native_directory_exports_render_and_download(
+    live_response_service, google, tmp_path, settings
 ):
-    """One fixture covers all formats, guarded download and source-change replay."""
+    """One fixture covers all formats and the guarded download."""
     harness = live_response_service
     browser, login = signed_in()
     assert login.status_code == 302
@@ -224,7 +224,6 @@ def test_native_directory_exports_render_download_and_regenerate_retained_inputs
     settings.STEWARDSHIP_REPORTS_ROOT = root
     settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(ReadLimits(process_pool_size=1))
     route = reverse("admin:family_directory")
-    first = None
     for format in ("csv", "xlsx", "pdf"):
         fields = DirectoryQuery(exact_code=harness.code).form_values() | dict(
             format=format, browser_timezone="UTC", request_key=str(uuid4())
@@ -261,7 +260,6 @@ def test_native_directory_exports_render_download_and_regenerate_retained_inputs
             response = post(browser, reverse("admin:family_directory_export"), fields)
             assert response.status_code == 302
             request = ExportRequest.objects.get(request_key=fields["request_key"])
-            first = first or request
             assert (
                 post(browser, reverse("admin:family_directory_export"), fields)[
                     "Location"
@@ -340,29 +338,6 @@ def test_native_directory_exports_render_download_and_regenerate_retained_inputs
                 assert harness.code.encode() in body
                 assert b"1 Example Street" not in body
                 assert body.endswith(b",Member Example: valid@example.org\r\n")
-    data = response_source()
-    data.families[1]["lastName"] = "Later changed name"
-    snapshot, claim = prepare(data)
-    promote(snapshot, claim, harness.campaign, harness.rings)
-    from parishkit.stewardship.reports import export_services
-
-    with work_transaction():
-        now = export_services.database_now()
-    monkeypatch.setattr(
-        export_services, "database_now", lambda: now + timedelta(days=8)
-    )
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        fields = {"request_key": str(uuid4())}
-        response = post(
-            browser, reverse("admin:report_export_regenerate", args=[first.pk]), fields
-        )
-        assert response.status_code == 302
-        regenerated = ExportRequest.objects.get(request_key=fields["request_key"])
-        assert regenerated.directory_snapshot_id == first.directory_snapshot_id
-        assert (
-            regenerated.directory_snapshot.document["rows"][0]["family_name"]
-            == "Example"
-        )
 
 
 def test_directory_export_staff_gates_and_service_boundaries(
@@ -715,13 +690,13 @@ def _compact(monkeypatch, snapshot_id):
     assert SourceSnapshot.objects.get(pk=snapshot_id).compacted_at is not None
 
 
-def test_regenerated_and_retried_exports_read_current_head_emails_after_compaction(
+def test_retried_exports_read_current_head_emails_after_compaction(
     live_response_service, google, tmp_path, settings, monkeypatch
 ):
-    """Regeneration and retry still render once the capture's source is gone.
+    """A retry still renders once the capture's source is gone.
 
-    The 15-minute refresh compacts a capture's source long before a file
-    expires (7 days). The same Families, names and codes are rendered from
+    The 15-minute refresh can compact a capture's source before a failed
+    export is retried. The same Families, names and codes are rendered from
     the capture; the same heads' emails come from the current ParishSoft data,
     and the file's report details say "Head emails as of" its refresh (#604).
     """
@@ -729,7 +704,7 @@ def test_regenerated_and_retried_exports_read_current_head_emails_after_compacti
 
     from parishkit.stewardship.jobs.models import TaskRun
     from parishkit.stewardship.jobs.storage import _status
-    from parishkit.stewardship.reports import export_services, export_tasks
+    from parishkit.stewardship.reports import export_tasks
     from parishkit.stewardship.reports.directory_documents import HEAD_EMAILS_DETAIL
     from parishkit.stewardship.reports.export_services import retry_export
     from parishkit.stewardship.source.snapshot_models import SourceCurrent
@@ -826,41 +801,13 @@ def test_regenerated_and_retried_exports_read_current_head_emails_after_compacti
     # The refresh that promoted the current data (XLSX keeps milliseconds).
     as_of = current.promoted_at.replace(tzinfo=None)
     assert abs(details[HEAD_EMAILS_DETAIL] - as_of) < timedelta(milliseconds=1)
-    # Regenerating the expired first file renders the same way.
-    with work_transaction():
-        now = export_services.database_now()
-    # Only the regeneration request sees the clock past the first file's
-    # expiry; its new file is then fresh at the real time.
-    with (
-        monkeypatch.context() as patched,
-        task_login(ServiceRole.WEB, exact=True, reconnect=True),
-    ):
-        patched.setattr(
-            export_services, "database_now", lambda: now + timedelta(days=8)
-        )
-        fields = {"request_key": str(uuid4())}
-        response = post(
-            browser, reverse("admin:report_export_regenerate", args=[first.pk]), fields
-        )
-    assert response.status_code == 302
-    regenerated = ExportRequest.objects.get(request_key=fields["request_key"])
-    assert regenerated.directory_snapshot_id == first.directory_snapshot_id
-    assert render(regenerated.task_id)
-    rows, details = download(response["Location"])
-    assert rows[1][:5] == ["Example, Member", None, "1", None, harness.code]
-    assert rows[1][-1] == "Member Example: changed@example.org"
-    assert HEAD_EMAILS_DETAIL in details
 
 
-def test_directory_export_and_regenerate_need_a_fresh_sign_in(
-    live_response_service, google, tmp_path, settings, monkeypatch
-):
+def test_directory_export_needs_a_fresh_sign_in(live_response_service, google):
     """A stale sign-in queues nothing and returns to the page the form came from.
 
     After the step-up the same form queues exactly one export, and posting it
-    again returns that export rather than a second one (#547). Regenerate of a
-    directory export asks for the same fresh sign-in, returning to the
-    export's status page.
+    again returns that export rather than a second one (#547).
     """
     harness = live_response_service
     browser, _ = signed_in()
@@ -893,51 +840,3 @@ def test_directory_export_and_regenerate_need_a_fresh_sign_in(
         assert created.status_code == 302
         assert post(browser, export, fields)["Location"] == created["Location"]
         assert ExportRequest.objects.count() == 1
-        request = ExportRequest.objects.get()
-    stale_sign_in()
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        refused = post(
-            browser,
-            reverse("admin:report_export_regenerate", args=[request.pk]),
-            {"request_key": str(uuid4())},
-            HTTP_ACCEPT="text/html",
-        )
-        assert refused.status_code == 403
-        page = refused.content.decode()
-        assert f'name="next" value="/admin/reports/exports/{request.pk}/"' in page
-        assert "you will then return to Report export." in page
-        assert ExportRequest.objects.count() == 1
-    # Render the file and let it expire; after the step-up, regenerating works.
-    root = tmp_path / "directory-reports"
-    root.mkdir(mode=0o700)
-    settings.STEWARDSHIP_REPORTS_ROOT = root
-    with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
-        assert execute_hint(
-            request.task_id,
-            queue=WorkQueue.GENERAL,
-            worker_id=uuid4(),
-            handlers={
-                TASK_TYPE: export_handler(
-                    store=harness.service.store,
-                    root=root,
-                    general=harness.rings.general,
-                )
-            },
-        )
-    from parishkit.stewardship.reports import export_services
-
-    with work_transaction():
-        now = export_services.database_now()
-    monkeypatch.setattr(
-        export_services, "database_now", lambda: now + timedelta(days=8)
-    )
-    signed_in(browser)
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        key = str(uuid4())
-        regenerated = post(
-            browser,
-            reverse("admin:report_export_regenerate", args=[request.pk]),
-            {"request_key": key},
-        )
-        assert regenerated.status_code == 302
-        assert ExportRequest.objects.get(request_key=key).pk != request.pk

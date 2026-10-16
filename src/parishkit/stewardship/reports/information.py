@@ -121,16 +121,16 @@ class InformationQuery:
 
     @classmethod
     def retained(cls, values):
-        """Rebuild the filters of a retained export capture for its retry.
+        """Rebuild filters recorded without a ``zone`` key, unchanged.
 
-        A capture made before migration 0064 has no ``zone`` key: its days
-        were the campaign's zone, and its retry must ask for exactly the same
-        filters, so the zone stays None and :meth:`form_values` leaves it out.
+        Filters from before migration 0064 (an older release, as a rollback
+        would write them) have no zone: their days are the campaign's, so
+        the zone stays None and :meth:`form_values` leaves it out.
         """
         if "zone" in values:
             return cls.parse(values)
         # Any catalog zone lets the old dates through validation; it is then
-        # dropped, so the retry's filters equal the retained ones.
+        # dropped, so the rebuilt filters equal the recorded ones.
         return replace(cls.parse(values | {"zone": "Etc/UTC"}), zone=None)
 
     def form_values(self):

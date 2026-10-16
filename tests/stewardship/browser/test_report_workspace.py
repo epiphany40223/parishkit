@@ -152,8 +152,10 @@ def test_report_and_export_pages_offer_their_actions(page, component_origin):
     visible(page.get_by_role("button", name="Download export"))
     page.goto(component_origin + "/report-exact")
     visible(page.get_by_role("button", name="Cancel export"))
+    # Exports are point-in-time (#1398): an expired one offers no Regenerate.
     page.goto(component_origin + "/report-export-expired")
-    visible(page.get_by_role("button", name="Regenerate expired file"))
+    visible(page.get_by_text("Export it again from its report"))
+    assert page.get_by_role("button", name="Regenerate expired file").count() == 0
 
 
 def test_export_status_updates_itself_and_downloads_once(page, component_origin):

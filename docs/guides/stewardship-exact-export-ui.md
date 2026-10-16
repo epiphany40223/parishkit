@@ -1,5 +1,10 @@
 # Native queued exports and regeneration
 
+> **Superseded:** exports are now point-in-time, with no kept copies and no
+> Regenerate ([point-in-time exports](../specs/stewardship/operations/spec.md#point-in-time-exports),
+> [#1398](https://github.com/epiphany40223/parishkit/issues/1398)). This
+> record describes the increment as it was delivered.
+
 This Phase 5 slice starts on fresh main `351cf375` after PR #63's verified
 protected delivery. Follow [RPT-01](../plans/stewardship/reports.md#rpt-01-shared-report-framework-and-campaign-selection),
 [BG-08](../plans/stewardship/background-processing.md#bg-08-export-and-graph-workers)
