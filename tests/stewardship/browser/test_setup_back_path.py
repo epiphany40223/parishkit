@@ -65,7 +65,7 @@ def test_a_failed_load_links_back_to_the_connection(
     assert axe_violations(page, axe_source) == []
 
 
-REVIEW = '.setup-track a[data-tip*="Review"]'
+REVIEW = '.setup-track a[data-tip*="Test email"]'
 
 
 def test_an_open_progress_page_shows_a_discarded_load_in_place(page, component_origin):

@@ -737,8 +737,8 @@ def run_wizard(
     (off), a generated parish logo through the real branding staging, the
     access lists, the ParishSoft credential (the fake's key and organization),
     the source load (the worker loads from the fake; ``wait`` blocks until the
-    attempt collects again), the preview, the fixed setup test mail (sent to
-    Mailpit by mail-dispatch) and the final confirmation. The caller then
+    attempt collects again), the fixed setup test mail (sent to Mailpit by
+    mail-dispatch), the preview and the final confirmation. The caller then
     waits for ``setup_is_complete``. Setup collects no campaign (#142); the
     seeder's ``campaign`` step creates it afterwards (``create_campaign``).
     """
@@ -947,7 +947,8 @@ def preview_token(request, service):
 
 
 def wizard_confirm(request, service, attempt_id, *, wait):
-    """Review, send the sample mail, wait for the catcher to take it, confirm."""
+    """Send the sample mail, wait for the catcher to take it, then confirm the
+    current preview (the wizard's Test email, Review and Finish setup, #1476)."""
     from parishkit.stewardship.accounts.setup_confirmation import freeze_setup
     from parishkit.stewardship.accounts.setup_delivery_models import SetupMailDelivery
     from parishkit.stewardship.accounts.setup_mail import request_sample
