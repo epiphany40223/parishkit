@@ -284,6 +284,8 @@ class Action(StrEnum):
     ADMIN_CMD_DELIVERY_BOUNCE_REPORT = "admin_cmd_delivery_bounce_report"
     # portal maintenance set: the Family portal switch (ADM-11 PR 7a).
     ADMIN_CMD_PORTAL_MAINTENANCE_SET = "admin_cmd_portal_maintenance_set"
+    # send confirm: Pause and resume mail's Confirm (ADM-11 PR 7b, #463).
+    ADMIN_CMD_SEND_CONFIRM = "admin_cmd_send_confirm"
     # system backup-now: System health's Take a backup now (ADM-13 PR 3b).
     ADMIN_CMD_SYSTEM_BACKUP_NOW = "admin_cmd_system_backup_now"
     # system debug-off: System health's Turn off debug logging (ADM-13 PR 6b).
