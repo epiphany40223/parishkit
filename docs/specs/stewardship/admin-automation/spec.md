@@ -1131,6 +1131,49 @@ standard error, and the document and exit code are unchanged. A failure
 before admission has no admitted database login and stays on standard error
 only.
 
+#### Refusal entry
+
+A refused command leaves the same
+[`admin_input_refused`](../operations/spec.md#admin-input-refusals) entry a
+refused Admin page does
+([#1403](https://github.com/epiphany40223/parishkit/issues/1403)), with the
+same allow-list, levels, cap, write limits and never-raise rule, so both
+surfaces read alike in the
+[system logs](../admin-portal/spec.md#activity-groups).
+
+Here admission means the process's startup admission: the admitted web
+profile and its database login, and the command session loaded. The page's
+own checks that follow (principal, capability, object scope, mode; see
+[same checks as the page](#same-checks-as-the-page)) are part of the command,
+so a capability denial is a refusal after admission.
+
+- **Exit 1** (`denied`, `invalid`, `stale_version`, `not_available`), which
+  only happens after admission, writes the durable entry: `command`, the
+  catalog name, in place of `route`, with `codes`, `fields` (the names in
+  `error.fields`, never their values) and `reason`. Its level follows the
+  reason, as on the page: `denied` is WARNING, except
+  `FreshAuthenticationRequired`, which has reason
+  `fresh_authentication_required` and is INFO; `invalid`, `stale_version`
+  and `not_available` are INFO unless their reason is a server-state one.
+- **Exit 2** happens before any command runs, so it never writes a durable
+  entry. A usage error is found while the arguments are parsed, before
+  admission, and `configuration` and `credential_mismatch` are not input.
+
+Every exit-1 and exit-2 refusal first writes one structured
+`admin_input_refused` line to standard error, with the same allow-listed
+keys: exit 1 at the entry's level; exit 2 with reason `usage` (INFO),
+`configuration` or `credential_mismatch` (WARNING), never the arguments.
+A line before admission names no actor. Other exits are not input
+refusals and are not recorded as one.
+
+The actor is the session's Administrator, as for
+[audit attribution](#audit-attribution), and the correlation is the
+invocation's. The entry is written on the same kind of private
+short-lived connection the failure entry above uses, opened after the
+command's own connections are closed, so the process still holds one
+connection at a time. The failure entry's own rules are unchanged: it
+still names no actor.
+
 ## Authorization, confirmation and audit
 
 ### Same checks as the page
