@@ -16,14 +16,14 @@ each step of the view renders:
   ``"b" * 64``.
 
 Every page draws the Make changes / Review / Apply indicator at its step, so
-a test can see the indicator follow along. Share options is served at
-``SHARE`` and ``SHARE_REVIEW``: its form is a region of its
-own, redrawn by the answer with the values sent (#750). ``SHARE_REFUSED`` is
-a refused Apply's answer, as the view draws it: the list changed elsewhere,
-at a newer version, with the refusal in the review region (#768). Apply's
-answer on Share options is ``SHARE_PENDING`` (polling ``SHARE_STATUS``, which
-answers Applied and follows to ``SHARE_SETTLED``, the applied list at version
-``"b" * 64``), or, when the change has already settled, ``SHARE_APPLIED``.
+a test can see the indicator follow along. Share options reviews in the
+review dialog (#750): ``SHARE`` is the page at version ``"a" * 64``, posting
+to itself; a test answers its Review with ``SHARE_REVIEW`` (the real review
+fragment of a renamed first option) or ``SHARE_REFUSED`` (the page drawn
+again with a row's error, status 400). Its Apply is redirected by the
+fixture server to ``SHARE_APPLIED``, the change's status page, Applied; the
+form's region is then redrawn from ``SHARE_SETTLED``, the applied list at
+version ``"b" * 64``.
 Campaign settings reviews in the review dialog (#1119) and is served by
 ``campaign_settings_components``; the live end date's check (#944) there is
 answered, by date, with one of ``END_CHECKS``' answers (the real check
@@ -36,7 +36,10 @@ from uuid import UUID
 
 from django.template.loader import render_to_string
 
-from parishkit.stewardship.accounts.admin_editing import review_region
+from parishkit.stewardship.accounts.admin_editing import (
+    review_region,
+    summary_errors,
+)
 from parishkit.stewardship.accounts.parish_views import TIMEZONE_NOTE, ParishForm
 from parishkit.stewardship.accounts.share_forms import (
     ShareOptions,
@@ -54,9 +57,7 @@ SHARE = "/share-in-place"
 SHARE_REVIEW = "/share-in-place-review"
 SHARE_REFUSED = "/share-in-place-refused"
 SHARE_APPLIED = "/share-in-place-applied"
-SHARE_STATUS = "/share-in-place-status"
-SHARE_PENDING = f"{SHARE}?request={REQUEST}"
-SHARE_SETTLED = f"{SHARE}?request={REQUEST}&settled=1"
+SHARE_SETTLED = "/share-in-place-settled"
 # The live check's answers (#944), by the end date the browser test types.
 STRANDING = "Some scheduled emails would no longer fit the campaign."
 PASSED = "Choose an end date that has not already passed."
@@ -72,7 +73,7 @@ COMBINED_REVIEW = "/admin/campaign/schedules/?end_date=2054-10-20"
 # The confirmation's answer: back to this page, naming the change.
 POSTS = {
     SETTINGS: (303, PENDING, ""),
-    SHARE: (303, SHARE_PENDING, ""),
+    SHARE: (303, SHARE_APPLIED, ""),
     # A Review answered with a redirect to another page, which does not draw
     # the review region (Campaign settings' dates-only change, #532).
     "/settings-in-place-elsewhere": (303, "/in-place-other", ""),
@@ -139,39 +140,32 @@ def components(context, admin):
 
     options = default_share_options()
 
-    def share(
-        data,
-        step,
-        previous=None,
-        digest="a" * 64,
-        template="stewardship/share-settings.html",
-        **region,
-    ):
-        """Share options at ``step``, its formset bound to ``data`` if given.
+    def share(data=None, previous=None, digest="a" * 64):
+        """Share options, its formset bound to ``data`` if given.
 
         ``previous`` (default the stock options) is the saved list, at
-        version ``digest``; ``template`` draws the page.
+        version ``digest``. A bound formset is a refused Review's page, with
+        its errors' summary. Review and Apply post to ``SHARE``; the form's
+        region is redrawn from ``SHARE_SETTLED``.
         """
         formset = ShareOptions(data, prefix="options", previous=previous or options)
-        values = review_region("share_settings", None, **region)
-        if region.get("receipt"):
-            # The fixture server serves Share options' Change status here.
-            values["status_url"] = SHARE_STATUS
         return (
             "text/html",
             render_to_string(
-                template,
+                "stewardship/share-settings.html",
                 context
                 | {
-                    "admin_chrome": admin | {"flow_steps": _steps(step)},
+                    "admin_chrome": admin | {"flow_steps": _steps(0)},
                     "campaign": {
                         "pk": REQUEST,
                         "active_configuration": {"name": "Sample campaign"},
                     },
                     "formset": formset,
                     "base_digest": digest,
-                }
-                | values,
+                    "page_url": SHARE,
+                    "refresh_url": SHARE_SETTLED,
+                    "errors": summary_errors(formset) if data else [],
+                },
             ),
         )
 
@@ -235,19 +229,22 @@ def components(context, admin):
             ),
         ),
         SETTLED: page(editor("b" * 64), 2, receipt=applied),
-        SHARE: share(None, 0),
-        SHARE_REVIEW: share(
-            sent,
-            1,
-            review={
-                "template": "stewardship/option-review.html",
-                "before": options,
-                "after": renamed,
-                "preview": "synthetic-signed-intent",
-            },
+        SHARE: share(),
+        SHARE_REVIEW: (
+            "text/html",
+            render_to_string(
+                "stewardship/share-options-review.html",
+                {
+                    "review": {
+                        "before": options,
+                        "after": renamed,
+                        "preview": "synthetic-signed-intent",
+                    }
+                },
+            ),
         ),
-        SHARE_PENDING: share(None, 2, receipt=pending),
-        SHARE_STATUS: (
+        SHARE_REFUSED: share(sent | {"options-0-label": "{{ family_code }}"}),
+        SHARE_APPLIED: (
             "text/html",
             render_to_string(
                 "stewardship/configuration-request.html",
@@ -255,23 +252,11 @@ def components(context, admin):
                 | {
                     "admin_chrome": admin,
                     "receipt": applied,
-                    "follow_url": SHARE_SETTLED,
+                    "follow_url": None,
                 },
             ),
         ),
-        SHARE_SETTLED: share(
-            None, 2, previous=renamed, digest="b" * 64, receipt=applied
-        ),
-        SHARE_APPLIED: share(
-            None, 2, previous=renamed, digest="b" * 64, receipt=applied
-        ),
-        SHARE_REFUSED: share(
-            None,
-            0,
-            previous=[dict(options[0], label="Changed elsewhere"), *options[1:]],
-            digest="c" * 64,
-            message="This preview is out of date.",
-        ),
+        SHARE_SETTLED: share(previous=renamed, digest="b" * 64),
         END_CHECKS["2054-11-15"]: check(),
         END_CHECKS["2026-10-05"]: check(PASSED),
         END_CHECKS["2054-09-30"]: check(BEFORE_START),

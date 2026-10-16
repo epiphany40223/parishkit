@@ -1,25 +1,24 @@
-"""The ordered-option editor (Share options), reviewed in place.
+"""The ordered-option editor (Share options), reviewed in the review dialog.
 
 It edits one ordered list of labelled options on the current draft campaign
 with the share formset (``share_forms.ShareOptions``): an unlocked Testing
 draft only, with the module the list belongs to. ``OptionEditor`` names the
 values key, the module, the page and its words; the Member talents editor
-that once shared it was removed with talents (#970). Review, apply and the
-change's status happen on the page itself (#532, #750): the page answers its
-own POSTs, with the review, a refusal or the change's status in its review
-region.
+that once shared it was removed with talents (#970).
 
-The form is an in-place region of its own (no script is bound to it), so an
-answer redraws it with the values the Administrator sent, its field errors
-beside each field, and, once a change has been applied, the applied list and
-a fresh blank row. A refusal never pairs older values with a newer version
-(which would let the next Review quietly undo a change made elsewhere): a
-stale Review keeps the values and the version that were posted, so the next
-Review is refused until the page is reloaded. A refused Apply's page draws
-the current list at the current version, as a reload would; in place only
-its review region and step indicator are taken (Apply is
-``data-in-place-only``, #768), so the reader's rows stay, with the version
-they were reviewed at, and the next Review is refused until a reload.
+Review posts the form without a page load and is answered with the shared
+review dialog's fragment (UX conventions, "Review dialog", #750): the current
+and proposed order and labels and the signed preview, which the dialog's
+Apply posts back to the page. Apply is answered with the change's status,
+which the dialog follows; once the change is applied it redraws the form's
+region from the page's own address (the applied list and a fresh blank row).
+A Review refused for a row's value (or the formset's own) is the page again
+with status 400, whose field errors and summary the page script marks on the
+form it shows; the dialog stays shut. Any other refusal (a stale page, an
+out-of-date preview, a draft that can no longer change, the unchanged
+safeguard) is a plain refusal shown in the dialog, while the form keeps the
+reader's rows at the version they came from, so the next Review is refused
+until the page is reloaded and never quietly undoes a change made elsewhere.
 """
 
 from collections.abc import Callable
@@ -29,6 +28,7 @@ from uuid import uuid4
 from django.core import signing
 from django.db import DatabaseError
 from django.shortcuts import render
+from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import (
@@ -36,16 +36,16 @@ from parishkit.stewardship.campaigns.work_locks import (
     work_transaction,
 )
 from parishkit.stewardship.storage import StaleRecordError
-from parishkit.stewardship.web.refusals import UserFacingStale, stale_page
+from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.refusals import UserFacingError, stale_page
 
 from . import admin_context, admin_navigation
 from .admin_editing import (
     confirm,
     error_response,
     principal,
-    requested_status,
-    review_region,
     sign_preview,
+    summary_errors,
 )
 from .authentication import runtime
 from .campaign_views import _scope, _state, _target
@@ -64,26 +64,20 @@ class OptionEditor:
     module: str  # the module the list belongs to
     page: str  # the page's URL name
     template: str  # the page's template
+    review_template: str  # the review dialog's fragment
     salt: str  # the signed preview's salt, before ":<campaign id>"
     unchanged: str  # the refusal when nothing changed
     unavailable: str  # the refusal when the list cannot be edited now
     current: Callable  # campaign -> the list it shows today
 
 
-def _page(request, editor, configuration, campaign, formset, **page):
-    """Render the editor and its review region (``review_region``'s values).
+def _page(request, editor, configuration, campaign, formset, *, status=200):
+    """Render the editor; a Review refused for its values (400) has its errors.
 
-    ``status`` (default 200) and ``digest`` (default the applied version)
-    may be given; a stale refusal keeps the version the page was loaded at,
-    so the Administrator reloads before changing anything.
+    The form is drawn at the applied version: a refused Review reaches here
+    only after its posted version was found to be that one.
     """
-    status = page.pop("status", 200)
-    digest = page.pop("digest", configuration.active_configuration.digest)
-    step = "review" if page.get("review") else "edit"
-    if page.get("receipt"):
-        step = "apply"
-    # Edit, review, apply (#196), all on this page.
-    admin_navigation.place(request, flow="change", step=step)
+    admin_navigation.place(request, flow="change", step="edit")
     response = render(
         request,
         editor.template,
@@ -91,8 +85,13 @@ def _page(request, editor, configuration, campaign, formset, **page):
             "configuration": configuration,
             "campaign": campaign,
             "formset": formset,
-            "base_digest": digest,
-            **review_region(editor.page, formset, **page),
+            "base_digest": configuration.active_configuration.digest,
+            # Review and the review dialog's Apply post here.
+            "page_url": request.path,
+            # Once a change is applied, the dialog redraws the form's region
+            # from this page's own address.
+            "refresh_url": request.path,
+            "errors": summary_errors(formset) if status == 400 else [],
         },
         status=status,
     )
@@ -102,28 +101,21 @@ def _page(request, editor, configuration, campaign, formset, **page):
 
 
 def _preview(request, editor, service, actor, state, campaign, formset, salt):
-    """Sign the reviewed ordered options without directly changing configuration."""
+    """The review dialog's fragment, the page refused (400), or a refusal raised."""
     configuration, fingerprint = state[0], state[-1]
     if request.POST.get("base_digest") != configuration.active_configuration.digest:
         raise stale_page()
-    # The version check must stay first: the refusals below are drawn at the
-    # current version (``_page``'s default), which is then known to be the
-    # posted one, so the rows sent are never paired with a newer version.
+    # The version check must stay first: a refused page is drawn at the
+    # current version (``_page``), which is then known to be the posted one,
+    # so the rows sent are never paired with a newer version.
     if not formset.is_valid():
         return _page(request, editor, configuration, campaign, formset, status=400)
     options = formset.values()
     before = editor.current(campaign)
     if options == before:
-        # A clear, non-mutating refusal; no empty configuration request.
-        return _page(
-            request,
-            editor,
-            configuration,
-            campaign,
-            formset,
-            status=400,
-            message=editor.unchanged,
-        )
+        # Review is unavailable without a change (data-require-change), so
+        # only a request that bypasses the page script meets this safeguard.
+        raise UserFacingError(editor.unchanged, fix=_("Nothing was changed."))
     patch = [
         {
             "operation": "update",
@@ -137,7 +129,6 @@ def _preview(request, editor, service, actor, state, campaign, formset, salt):
         raise stale_page()
     build_candidate(base, patch, candidate_id=uuid4())
     review = {
-        "template": "stewardship/option-review.html",
         "before": before,
         "after": options,
         "preview": sign_preview(
@@ -148,7 +139,7 @@ def _preview(request, editor, service, actor, state, campaign, formset, salt):
             snapshot=fingerprint,
         ),
     }
-    return _page(request, editor, configuration, campaign, formset, review=review)
+    return render(request, editor.review_template, {"review": review})
 
 
 def _unavailable(editor, configuration, campaign):
@@ -171,49 +162,30 @@ def _unavailable(editor, configuration, campaign):
 def option_settings(request, campaign_id, editor):
     """Current Admins may review and request changes only for an unlocked draft.
 
-    A stale page or an out-of-date preview is refused in place: the page
-    again (status 409) with the explanation in its review region.
+    GET draws the editor (it takes no query: its address is all there is);
+    a Review POST answers the review dialog's fragment; Apply answers with
+    the change's status. Refusals are raised for the dialog (see the module
+    docstring).
     """
     try:
         service = runtime()
-        # Reading a change's status (the page's own quiet refresh once it is
-        # applied) is passive, as Change status is: it never renews idle time.
-        actor = principal(
-            request,
-            service,
-            passive=request.method != "POST" and "request" in request.GET,
-        )
+        actor = principal(request, service)
+        filters(request.GET, allowed=set())
         salt = f"{editor.salt}:{campaign_id}"
-        action, refusal = None, None
+        action = None
         if request.method == "POST":
             action = share_action(request.POST)
             if action == "confirm":
-                try:
-                    response = confirm(
-                        request,
-                        service,
-                        actor,
-                        salt=salt,
-                        current_scope=_scope,
-                        in_place=True,
-                    )
-                    response["Cache-Control"] = "no-store"
-                    return response
-                except UserFacingStale as error:
-                    # Drawn below with the current list and its version
-                    # together; in place only the review region is taken
-                    # (see the module docstring).
-                    refusal = error.refusal
+                response = confirm(
+                    request, service, actor, salt=salt, current_scope=_scope
+                )
+                response["Cache-Control"] = "no-store"
+                return response
         with (
             read_transaction()
             if request.method in {"GET", "HEAD"}
             else work_transaction()
         ):
-            receipt = (
-                requested_status(request, service, actor, request.GET)
-                if request.method != "POST"
-                else None
-            )
             state = _state(service)
             configuration, campaigns, held = state[0], state[1], state[3]
             campaign, editable = _target(configuration, campaigns, held, campaign_id)
@@ -227,36 +199,12 @@ def option_settings(request, campaign_id, editor):
                 prefix="options",
                 previous=editor.current(campaign),
             )
-            if refusal is not None:
-                response = _page(
-                    request,
-                    editor,
-                    configuration,
-                    campaign,
-                    formset,
-                    status=409,
-                    refusal=refusal,
+            if action == "preview":
+                response = _preview(
+                    request, editor, service, actor, state, campaign, formset, salt
                 )
-            elif action == "preview":
-                try:
-                    response = _preview(
-                        request, editor, service, actor, state, campaign, formset, salt
-                    )
-                except UserFacingStale as error:
-                    response = _page(
-                        request,
-                        editor,
-                        configuration,
-                        campaign,
-                        formset,
-                        status=409,
-                        refusal=error.refusal,
-                        digest=request.POST.get("base_digest", ""),
-                    )
             else:
-                response = _page(
-                    request, editor, configuration, campaign, formset, receipt=receipt
-                )
+                response = _page(request, editor, configuration, campaign, formset)
         # Recheck access after the observation ends, so a GET's read-only
         # snapshot cannot hide a revocation committed while it rendered.
         if not allows(

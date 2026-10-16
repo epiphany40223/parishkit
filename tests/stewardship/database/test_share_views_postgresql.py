@@ -5,7 +5,6 @@ from uuid import uuid4
 import pytest
 from django.urls import reverse
 
-from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.accounts.share_forms import default_share_options
 from parishkit.stewardship.campaigns.lifecycle import Action
@@ -19,7 +18,7 @@ from .campaign_builders import add_draft, change, command
 from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_background_grants_postgresql import task_login
 from .test_campaign_views_postgresql import apply, fields, post, requested
-from .test_parish_views_postgresql import digest, region, token
+from .test_parish_views_postgresql import token
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -55,20 +54,19 @@ def test_share_option_apply_preserves_ids_and_produces_idempotent_receipt(
         "options-1-ORDER": "1",
     }
     preview = post(browser, path, data)
-    assert flow_steps(preview.content) == (STEPS, "Review")
+    # Review answers the review dialog's fragment, never a page (#750).
+    assert b"data-review-answer" in preview.content
+    assert b"data-review-preview" in preview.content
+    assert b"settings-review" not in preview.content
+    assert b"Updated option" in preview.content
     proposal = token(preview)
     response = post(browser, path, {"action": "confirm", "preview": proposal})
     apply(store, response)
-    # Share options applies in place (#750); Change status still leads back.
+    # Apply answers with the change's status, which the dialog follows.
     status_url = reverse("admin:configuration_request", args=[requested(response)])
-    # Reading the change's status (the page's own quiet refresh once it is
-    # applied) is passive: it never renews idle time, as Change status.
-    activity = PortalSession.objects.get().last_activity_at
-    assert "Applied: your change is saved" in region(
-        browser.get(response["Location"]).content
-    )
-    assert PortalSession.objects.get().last_activity_at == activity
+    assert response["Location"] == status_url
     status = browser.get(status_url).content
+    assert b"Applied: your change is saved" in status
     assert f'<a href="{path}">Return to Share options</a>'.encode() in status
     row.refresh_from_db()
     options = row.active_configuration.values["share_options"]
@@ -161,18 +159,20 @@ def test_share_noop_stale_base_and_wrong_route_cannot_apply(auth_service, google
     browser, _ = signed_in()
     data = data_for(previous) | {"base_digest": store.active().digest}
     response = post(browser, path, data)
-    # Refused in place (#750): the page again, with the reason in its review
-    # region and no Apply.
+    # A plain refusal for the review dialog (#750); the page's change gate
+    # keeps it out of reach, so only a request bypassing the script meets it.
     assert response.status_code == 400
-    assert "No share options have changed." in region(response.content)
-    assert b"Apply changes" not in response.content
+    assert response.json()["refusal"]["message"] == "No share options have changed."
     stale = post(browser, path, data | {"base_digest": "a" * 64})
     assert stale.status_code == 409
-    assert "This page changed in another tab or session." in region(stale.content)
-    # The refusal keeps the version the page was loaded at: reload first.
-    assert b'name="base_digest" value="' + b"a" * 64 in stale.content
+    assert stale.json()["refusal"]["message"] == (
+        "This page changed in another tab or session."
+    )
     assert token(post(browser, path, data | {"options-0-label": "Changed"}))
+    # The page takes no query, not even an old in-place status (no legacy
+    # addresses).
     assert browser.get(path + "?extra=1").status_code == 400
+    assert browser.get(f"{path}?request={uuid4()}").status_code == 400
     assert post(browser, path, fields(store, row)).status_code == 400
 
 
@@ -184,11 +184,10 @@ def test_census_only_has_no_share_controls(auth_service, google):
     assert browser.get("/admin/campaign/share-options/").status_code == 409
 
 
-def test_a_refused_apply_shows_the_current_list_at_its_version(auth_service, google):
-    """A confirmation refused because the settings changed elsewhere redraws
-    the form (its own in-place region, #750) with the current list at the
-    current version: what is shown is what is saved, so the next Review can
-    never quietly undo the other change."""
+def test_a_refused_apply_is_a_plain_refusal(auth_service, google):
+    """A confirmation refused because the settings changed elsewhere is a
+    plain refusal, which the review dialog shows (#750); nothing is
+    recorded, and the page the reader returns to is unchanged by it."""
     store = auth_service.store
     row, previous, path = setup(store)
     browser, _ = signed_in()
@@ -212,9 +211,8 @@ def test_a_refused_apply_shows_the_current_list_at_its_version(auth_service, goo
             }
         ],
     )
+    before = ConfigurationChangeRequest.objects.count()
     refused = post(browser, path, {"action": "confirm", "preview": proposal})
     assert refused.status_code == 409
-    assert "This preview is out of date." in region(refused.content)
-    assert b'value="Changed elsewhere"' in refused.content
-    assert b'value="Reviewed label"' not in refused.content
-    assert digest(refused) == store.active().digest
+    assert "This preview is out of date." in refused.json()["refusal"]["message"]
+    assert ConfigurationChangeRequest.objects.count() == before
