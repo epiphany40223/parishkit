@@ -1008,6 +1008,23 @@ The server stays the authority: it checks every save, and its refusal is
 shown at the field as above, even when the browser would have allowed the
 value (a wrong computer clock, for example).
 
+A report's filters follow the same rule (#1332). A filter the server
+refuses at one field (a request built by hand, or a browser whose check did
+not run) draws the report again, answered 400: the filters show the values
+sent, with the error at that field and in the summary, and the results are
+those for no filters, as Campaign comparison shows its current day for a
+refused day. A refusal no field can show (an unknown or repeated field, a
+choice no form offers, a sort or page size the table does not accept) keeps
+the report's error page. A range out of order is refused at its end with
+both ends marked, and its message is shown once, after them, in a line
+the form reserves so that a refusal shown in place moves nothing. An
+in-place Apply keeps the filter form and what was typed, and takes the
+marks and message from the answer. The server's mark clears, with its
+message and summary item, on the first edit of a field it marks (either
+end of a range), or when an in-place Apply is answered without it.
+**Shared code.** `web/filter_errors.py` (`FilterError`), the `filter_mark`
+and `filter_line` template tags; first use: Financial stewardship.
+
 A file field marked `data-max-bytes` (with `data-max-bytes-message`, the
 server's own words) is refused at the field as soon as a file over that
 size is chosen, and the form is not sent until a smaller file is chosen; a
