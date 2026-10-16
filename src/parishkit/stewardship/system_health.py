@@ -517,6 +517,51 @@ DEBUG_SUMMARIES = ("switch", "testing", "off")
 
 
 @dataclass(frozen=True)
+class VersionSummary:
+    """What the Version and services tile's Working summary names
+    (``SystemHealth.version_summary``): ``kind`` is one of
+    ``VERSION_SUMMARIES``, ``version`` the one version every running service
+    reports, and ``mode`` the deployment mode."""
+
+    kind: str
+    version: str | None = None
+    mode: str | None = None
+
+
+# The Version and services tile's Working summaries, in the order the first
+# that holds is named (admin-portal spec, "Version panel"): the one version
+# with the mode, else that no service has reported one. A stopped core
+# service or different versions are errors, so they never reach it.
+VERSION_SUMMARIES = ("version", "none")
+
+
+@dataclass(frozen=True)
+class LoadedSummary:
+    """A page-load tile's summary and state (``source_form_tile`` and
+    ``resave_tile``), chosen in one place so the words and the state agree.
+
+    ``kind`` is one of the tile's summaries (``SOURCE_FORM_SUMMARIES`` or
+    ``RESAVE_SUMMARIES``), ``state`` the tile's state, ``count`` the number
+    the words state, and ``more`` how many other items to re-save follow
+    the blocked ones ("and 2 more").
+    """
+
+    kind: str
+    state: str = "working"
+    count: int = 0
+    more: int = 0
+
+
+# Families the form cannot open's summaries, in the order the first that
+# holds is named: a check that could not run and Families listed are
+# warnings; then the Working reasons the list has nothing to show.
+SOURCE_FORM_SUMMARIES = ("unchecked", "families", "no_data", "no_campaign", "none")
+# Pages and emails to re-save's summaries, likewise: a blocked email (an
+# error) outranks items only recommended for re-saving (a warning).
+RESAVE_SUMMARIES = ("unchecked", "blocked", "recommended", "no_campaign", "none")
+
+
+@dataclass(frozen=True)
 class DropCount:
     """One count a refused ParishSoft load was checked on."""
 
@@ -1042,6 +1087,14 @@ class SystemHealth(ReadModel):
         return DebugSummary("off")
 
     @property
+    def version_summary(self):
+        """The Version and services tile's Working summary: the first of
+        ``VERSION_SUMMARIES`` that holds."""
+        if len(self.versions) == 1:
+            return VersionSummary("version", self.versions[0], self.mode)
+        return VersionSummary("none", mode=self.mode)
+
+    @property
     def live_request(self):
         """Whether a requested backup is waiting, held or running."""
         request = self.backup_request
@@ -1088,25 +1141,59 @@ def page_findings(health, *, workgroup_missing=None):
     return tuple(kind for kind in FINDINGS if held[kind])
 
 
+def source_form_tile(answer):
+    """Families the form cannot open's summary: the first of
+    ``SOURCE_FORM_SUMMARIES`` that holds.
+
+    ``answer`` is ``source_form_summary``'s: a count, None when the check
+    could not run, or "no_data" / "no_campaign". A Family that cannot open
+    the form, or a check that could not run, is a warning.
+    """
+    if answer is None:
+        return LoadedSummary("unchecked", "warning")
+    if answer in {"no_data", "no_campaign"}:
+        return LoadedSummary(answer)
+    if answer:
+        return LoadedSummary("families", "warning", count=answer)
+    return LoadedSummary("none")
+
+
+def resave_tile(answer):
+    """Pages and emails to re-save's summary: the first of
+    ``RESAVE_SUMMARIES`` that holds.
+
+    ``answer`` is ``resave_summary``'s: the flagged items, None when the
+    read could not run, or "no_campaign". An email that cannot be sent
+    until it is fixed (``blocked``) is an error, named with how many other
+    items follow it; any other item to re-save, or a read that could not
+    run, is a warning.
+    """
+    if answer is None:
+        return LoadedSummary("unchecked", "warning")
+    if answer == "no_campaign":
+        return LoadedSummary("no_campaign")
+    if not answer:
+        return LoadedSummary("none")
+    blocked = sum(1 for item in answer if item["blocked"])
+    if blocked:
+        return LoadedSummary("blocked", "error", blocked, len(answer) - blocked)
+    return LoadedSummary("recommended", "warning", len(answer))
+
+
 def loaded_states(source_form, resave):
     """The page-load tiles' states that are not Working, by tile.
 
-    ``source_form`` is ``source_form_summary``'s answer (a count, None when
-    the check could not run, or "no_data" / "no_campaign") and ``resave``
-    ``resave_summary``'s (the flagged items, None, or "no_campaign"). A
-    Family that cannot open the form, or a check that could not run, is a
-    warning; an item that cannot be sent until it is fixed (``blocked``) is
-    an error, any other item to re-save a warning.
+    ``source_form`` and ``resave`` are the page's reads, as
+    ``source_form_tile`` and ``resave_tile`` take them, so a tile's state
+    always matches its summary.
     """
-    states = {}
-    if source_form is None or (isinstance(source_form, int) and source_form > 0):
-        states["source-form"] = "warning"
-    if resave is None:
-        states["resave"] = "warning"
-    elif resave and resave != "no_campaign":
-        blocked = any(item["blocked"] for item in resave)
-        states["resave"] = "error" if blocked else "warning"
-    return states
+    summaries = {"source-form": source_form_tile(source_form)}
+    summaries["resave"] = resave_tile(resave)
+    return {
+        tile: summary.state
+        for tile, summary in summaries.items()
+        if summary.state != "working"
+    }
 
 
 def parse_loaded(value):
