@@ -16,7 +16,6 @@ import re
 from urllib.parse import parse_qs
 
 import pytest
-from playwright.sync_api import expect
 
 from .test_components import axe_violations
 from .user_components import (
@@ -242,6 +241,8 @@ def test_edit_review_waits_for_a_change_and_greys_again_on_revert(
     page, component_origin
 ):
     """No review of nothing: Save is unavailable until a real change."""
+    from playwright.sync_api import expect
+
     page.goto(component_origin + EDIT)
     button = page.get_by_role("button", name="Save", exact=True)
     assert button.is_disabled()

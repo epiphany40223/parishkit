@@ -14,7 +14,6 @@ import json
 import re
 
 import pytest
-from playwright.sync_api import expect
 
 from .review_helpers import RESTORE, answer_reviews, expect_review
 from .settings_components import SHARE, SHARE_REFUSED, SHARE_REVIEW
@@ -59,6 +58,8 @@ def test_a_change_is_reviewed_and_applied_in_the_dialog(page, component_origin):
     leaves Review waiting for the next change. Nothing reloads, the window
     does not jump to the top, the form and the status line do not move, and
     no line claims that typing was lost (what was typed was reviewed)."""
+    from playwright.sync_api import expect
+
     reviews = answer_reviews(page, component_origin, SHARE_REVIEW, address=SHARE)
     page.goto(component_origin + SHARE)
     failures = watch(page)

@@ -12,7 +12,6 @@ answers each Review POST.
 import re
 
 import pytest
-from playwright.sync_api import expect
 
 from parishkit.stewardship.accounts.campaign_views import (
     LOCKED_CLOSED,
@@ -108,6 +107,8 @@ def test_a_draft_change_is_reviewed_and_applied_in_the_dialog(page, component_or
     status line and leaves Review waiting for the next change. The redrawn
     form's module scripts work, nothing reloads, the status line does not
     move, and no line claims that typing was lost (it was reviewed)."""
+    from playwright.sync_api import expect
+
     reviews = answer_reviews(page, component_origin, DRAFT_REVIEW, address=DRAFT)
     page.goto(component_origin + DRAFT)
     failures = watch(page)
