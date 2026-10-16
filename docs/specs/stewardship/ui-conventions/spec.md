@@ -2345,6 +2345,10 @@ learned once. **Shared code.**
   New scheduled email's `RepeatRule` form.
 - `campaigns/intervals.resolve_local`: the daylight-saving rule.
 - `ParishEditorMode`: the Basic and Advanced modes.
+- `components/zone-note.html`: the note that names the browser's zone
+  beside typed dates and times, hidden until the page script knows the
+  zone. `test_zone_note_component.py` lists the pages that still write it
+  by hand.
 
 **Precedent.** [#1129](https://github.com/epiphany40223/parishkit/issues/1129)
 (Administrator, 2026-10-12).
@@ -2375,7 +2379,8 @@ learned once. **Shared code.**
   when there is no campaign. The page converts a typed time through the
   schedule's next occurrence, as
   [New and Edit scheduled email](../admin-portal/spec.md#new-and-edit-scheduled-email)
-  does. A note beside the fields names the zone the times are typed in. The
+  does. The shared zone note beside the fields names the zone the times
+  are typed in. The
   [ParishSoft refresh schedule](../admin-portal/spec.md#parishsoft-refresh-schedule-settings)
   is the recorded exception: its times are typed and shown in its schedule
   zone (decision 18).
@@ -2409,13 +2414,16 @@ learned once. **Shared code.**
 
 **Adoption.** The ParishSoft refresh schedule follows all of these rules
 except the browser-zone entry, which is its recorded exception
-([#1122](https://github.com/epiphany40223/parishkit/issues/1122)). The two mail
+([#1122](https://github.com/epiphany40223/parishkit/issues/1122)), so its
+note names its schedule zone instead. The date-change review draws the
+shared zone note, as do System logs and Ministry requests; New and Edit
+scheduled email follows once its open changes land. The two mail
 repeat panels, New scheduled email's Repeat and the date-change review's
 Repeat a reminder, draw one repeat rule, so they offer the same choices in
 the same order and one page script expands both. Later
 [#1129](https://github.com/epiphany40223/parishkit/issues/1129) slices bring
-the shared zone note, preview and Basic and Advanced modes to the mail
-schedule editors, reminder repeats and digests. Until each change lands, an
+the shared preview and Basic and Advanced modes to the mail schedule
+editors, reminder repeats and digests. Until each change lands, an
 editor keeps the behavior its feature spec describes.
 
 ## Tables

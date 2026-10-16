@@ -1,0 +1,12 @@
+{% comment %}
+  The browser zone note (ui-conventions "Schedules", #1129): the one line
+  beside typed dates and times that names the zone they are read in. It
+  stays hidden until ui-v1.js (wireBrowserTimezone) learns a known zone from
+  the browser, then fills data-browser-zone-name with it; with no zone it
+  stays hidden and the zone-missing hint speaks instead. Pass note_text, the
+  sentence before the zone name, ending in a colon, from the translate
+  tag's "as note_text" form, so it is escaped like any other text;
+  note_id is optional, for fields that are aria-describedby the note. It
+  renders no final newline (none in this file), so an include drops in
+  where the hand-written line was.
+{% endcomment %}<p class="help"{% if note_id %} id="{{ note_id }}"{% endif %} data-browser-zone-note hidden>{{ note_text }} <span data-browser-zone-name></span>.</p>
