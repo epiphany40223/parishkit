@@ -1514,6 +1514,12 @@ def component_origin():
             {"draft": setup_draft, "form": SetupLogoForm(), "assets": []},
         ),
         (
+            # The setup logo step once a logo is saved: its previews.
+            "/setup-branding-saved",
+            "setup-branding",
+            {"draft": setup_draft, "form": SetupLogoForm(), "assets": [branding_asset]},
+        ),
+        (
             "/setup-credential",
             "setup-credential",
             {
@@ -2319,7 +2325,11 @@ def component_origin():
 
     logo = BytesIO()
     Image.new("RGB", (1024, 512), "blue").save(logo, format="PNG")
-    for prefix in ("/branding/", "/admin/parish/logos/assets/"):
+    for prefix in (
+        "/branding/",
+        "/admin/parish/logos/assets/",
+        "/admin/setup/branding/assets/",
+    ):
         responses[f"{prefix}{branding_asset['pk']}.png"] = (
             "image/png",
             logo.getvalue(),

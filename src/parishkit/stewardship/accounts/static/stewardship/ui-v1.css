@@ -115,9 +115,10 @@
   }
   /* The closed select's arrow is an image, so it cannot read --ink. */
   html.admin-document[data-theme="dark"] select:not([multiple]):not([size]) { background-image: url("select-arrow-dark-v1.svg"); }
-  /* A parish logo is drawn for a light header; a white backing behind its
-     transparent parts keeps a dark logo visible. It adds no size. */
-  html.admin-document[data-theme="dark"] .brand img { background-color: #fff; border-radius: var(--radius-small); }
+  /* An uploaded image (the parish logo, a Campaign image, a hosted image)
+     is drawn for the light Family pages and emails; a white backing behind
+     its transparent parts keeps a dark logo visible. It adds no size. */
+  html.admin-document[data-theme="dark"] :is(.brand img, img.branding-preview, .branding-preview img, .hosted-file-thumbnail) { background-color: #fff; border-radius: var(--radius-small); }
   /* A light card keeps its edge clear of the email's text on the dark page. */
   html.admin-document[data-theme="dark"] .light-card:not(.content-sample) { padding: 1rem; border-radius: var(--radius-small); }
 }
