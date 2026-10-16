@@ -29,6 +29,11 @@ existing service identity, driven by the operator script::
   one ParishSoft Ministry leader as a Ministry leader user through the Users
   page's import, so a Ministry leader can sign in to a non-empty follow-up
   queue (#1150).
+- ``testing`` (web): for ``seed --testing``'s Testing snapshot (#1413), on
+  a Testing-mode draft that never went live: dates that contain now and mail
+  schedules all in the future, readiness's refresh and sample, chosen-Family
+  Testing sends, then Testing sign-ins and submissions with their rehearsal
+  codes. It stops short of go-live.
 
 Every step refuses unless the admitted deployment is LOCAL, before opening
 any connection. Every wait has a limit; on expiry the seeder logs which
@@ -59,7 +64,9 @@ from .synthetic_parish import MAXIMUM_FAMILIES, generate
 
 LOGGER = logging.getLogger(__name__)
 # The seed's own phases, the BG-12 rehearsal's two steps (local/rehearsal.py),
-# then the read-only lookup `finish-setup` uses after the browser wizard.
+# the read-only lookup `finish-setup` uses after the browser wizard, then the
+# Testing snapshot's step. The operator script runs ``testing`` only when the
+# deployed image lists it here (``image_constant``).
 STEPS = (
     "timeline",
     "wizard",
@@ -71,6 +78,7 @@ STEPS = (
     "reminder",
     "measure",
     "credentials",
+    "testing",
 )
 # The rehearsal steps that need --due-at.
 DUE_STEPS = frozenset({"reminder", "measure"})
@@ -454,7 +462,7 @@ def drive_timeline(timeline, clock, *, settle, driver, evidence, log=LOGGER.info
 
 
 # Phase 1 helpers: configuration through the real change-request path.
-def schedule_patch(document, campaign_id, calendar):
+def schedule_patch(document, campaign_id, calendar, *, initial_date=None):
     """The one configuration patch that applies the real dates and schedules.
 
     The campaign's dates become the calendar's; the Initial schedule is at
@@ -463,7 +471,8 @@ def schedule_patch(document, campaign_id, calendar):
     it); every existing Reminder schedule is removed and the calendar's
     Tuesday and Thursday 09:00 Reminders are added, each with the Reminder
     email revision already in use (or the Initial's when the campaign has no
-    Reminder email). Digest schedules are untouched.
+    Reminder email). Digest schedules are untouched. ``initial_date`` puts
+    the Initial on another day than the start (the ``testing`` step's).
     """
     campaign_id = str(campaign_id)
     initials, reminders = campaign_schedules(document, campaign_id)
@@ -471,7 +480,7 @@ def schedule_patch(document, campaign_id, calendar):
         document, campaign_id, schedules=(initials, reminders)
     )
     when = {
-        "date": calendar.start.isoformat(),
+        "date": (initial_date or calendar.start).isoformat(),
         "time": seed_timeline.INITIAL_TIME.isoformat(timespec="seconds"),
     }
     patch = [
@@ -1012,6 +1021,7 @@ def run_step(request, configuration):
         "finish": finish_step,
         "reminder": reminder_step,
         "measure": measure_step,
+        "testing": testing_step,
     }[request.step](request, configuration)
 
 
@@ -1249,6 +1259,26 @@ def _initial_revision(service, campaign):
     return UUID(rows[0]["values"]["template_version"])
 
 
+def sample_accepted(campaign_id, since=None):
+    """A wait condition: the campaign's latest email sample reached the catcher.
+
+    The sample goes to the Testing recipient through mail-dispatch; any
+    final state but ``accepted`` ends the seed at once. ``since`` ignores
+    samples requested before it (an earlier step's).
+    """
+    from parishkit.stewardship.accounts.campaign_mail_models import CampaignMailTest
+
+    rows = CampaignMailTest.objects.filter(campaign_id=campaign_id)
+    if since is not None:
+        rows = rows.filter(created_at__gte=since)
+    row = rows.order_by("-created_at").first()
+    if row is not None and row.state == "accepted":
+        return True
+    if row is not None and row.state not in {"queued", "submitting"}:
+        raise SeedFailed(f"The email sample ended in {row.state}.")
+    return "the Initial email sample"
+
+
 def prepare_step(request, configuration):
     """Phase 1: configure, meet readiness and run the real go-live (scheduled).
 
@@ -1266,7 +1296,6 @@ def prepare_step(request, configuration):
     configure_web_process(configuration)
     # Model imports only after Django is configured.
     from parishkit.stewardship.accounts.admin_editing import principal
-    from parishkit.stewardship.accounts.campaign_mail_models import CampaignMailTest
     from parishkit.stewardship.accounts.configuration_requests import record_request
     from parishkit.stewardship.campaigns.activation_models import (
         ProductionTokenPreparation,
@@ -1334,21 +1363,11 @@ def prepare_step(request, configuration):
     seed_web.sample_mail(
         web, service, campaign.pk, _initial_revision(service, campaign)
     )
-
-    def tested():
-        """The sample reached the catcher through mail-dispatch (or failed)."""
-        row = (
-            CampaignMailTest.objects.filter(campaign_id=campaign.pk)
-            .order_by("-created_at")
-            .first()
-        )
-        if row is not None and row.state == "accepted":
-            return True
-        if row is not None and row.state not in {"queued", "submitting"}:
-            raise SeedFailed(f"The email sample ended in {row.state}.")
-        return "the Initial email sample"
-
-    timed("sample_mail", "the Initial email sample to be accepted", tested)
+    timed(
+        "sample_mail",
+        "the Initial email sample to be accepted",
+        lambda: sample_accepted(campaign.pk),
+    )
     settle(since)
     # 3. The real go-live: readiness and cleanup.
     seed_web.sign_in_admin(web, request.admin_email)
@@ -1560,6 +1579,391 @@ def finish_step(request, configuration):
         "step": "finish",
         "refresh_wait_seconds": round(waited, 1),
         "leader_user": import_leader_user(request, web, service),
+    }
+
+
+# The Testing snapshot's step (#1413).
+# Mail is sent only to a Testing recipient at this reserved domain, which no
+# real mailbox can have, whichever mail transport the deployment uses.
+TESTING_RECIPIENT_DOMAIN = "@example.test"
+# The campaign runs from today for four weeks, so the Family portal admits
+# Testing sign-ins now; the Initial is a week ahead and the Reminders follow
+# it, so no schedule is due and the Testing scheduler sends nothing by itself.
+# A saved snapshot of the result is therefore good for under a week: then the
+# Initial falls due (one Testing message per Family to the Testing recipient),
+# and after the four weeks Testing sign-ins stop (``testing_step``).
+TESTING_CAMPAIGN_DAYS = 28
+TESTING_INITIAL_DAYS = 7
+TESTING_REMINDER_DAYS = (10, 14)
+# What each chosen Family does after its Testing send, in DUID order: three
+# submit a Testing response, one opens the form only and one never signs in.
+# Five stays within the ten tests a campaign may have in progress.
+TESTING_PLAN = ("submit", "submit", "submit", "open", "sent")
+
+
+@dataclass(frozen=True)
+class DraftCalendar:
+    """The Testing draft's dates and mail schedules (``draft_calendar``).
+
+    ``reminders`` are instants on the campaign's wall clock, as
+    ``seed_timeline.calendar`` gives them, so ``schedule_patch`` takes it.
+    """
+
+    start: date
+    end: date
+    initial: date
+    reminders: tuple[datetime, ...]
+
+
+def draft_calendar(now, timezone):
+    """The ``testing`` step's calendar: dates around ``now``, mail after it.
+
+    The campaign starts today on its wall clock, so ``now`` lies inside its
+    dates and the Family portal admits Testing sign-ins. The Initial
+    (10:00) and the Reminders (09:00) are whole days ahead, so all of them
+    are in the future and the Testing scheduler plans nothing yet.
+    """
+    zone = ZoneInfo(timezone)
+    today = now.astimezone(zone).date()
+    return DraftCalendar(
+        start=today,
+        end=today + timedelta(days=TESTING_CAMPAIGN_DAYS),
+        initial=today + timedelta(days=TESTING_INITIAL_DAYS),
+        reminders=tuple(
+            datetime.combine(
+                today + timedelta(days=days), seed_timeline.REMINDER_TIME, tzinfo=zone
+            )
+            for days in TESTING_REMINDER_DAYS
+        ),
+    )
+
+
+def draft_refusal(*, mode, state, went_live, schedules, recipient):
+    """Why the ``testing`` step must not run, or None when it may.
+
+    It needs the global Testing mode, a ``draft`` campaign that never went
+    live (``went_live``: it was active once, or a go-live was started), no
+    Initial or Reminder schedule yet (an existing one could be due, and a
+    due schedule in Testing mode sends to every Family), and a Testing
+    recipient at the reserved domain, so nothing can reach a real mailbox.
+    Messages name no address.
+    """
+    if mode != "testing":
+        return f"The deployment is in {mode} mode; the testing step needs Testing."
+    if state != "draft" or went_live:
+        return "The campaign is not a Testing draft that never went live."
+    if schedules:
+        return (
+            "The campaign already has an Initial or Reminder schedule; "
+            "start from the post-setup snapshot."
+        )
+    if not recipient.lower().endswith(TESTING_RECIPIENT_DOMAIN):
+        return f"The Testing recipient is not a {TESTING_RECIPIENT_DOMAIN} address."
+    return None
+
+
+def draft_answers(ministries):
+    """The Testing submissions' answers, one per ``submit`` in TESTING_PLAN.
+
+    Fixed, so every Testing snapshot shows the same variety: a pledge with
+    Ministry interest and a note, a pledge with a changed email, and no
+    pledge with a proposed new household Member and a note.
+    """
+    texts = seed_timeline.INFORMATION_TEXTS
+    return (
+        {
+            "pledge": 1200,
+            "ministry_interest": sorted(ministries)[:1],
+            "census_edit": None,
+            "email_opt_out": False,
+            "information": texts[4],
+        },
+        {
+            "pledge": 500,
+            "ministry_interest": [],
+            "census_edit": "changed_email",
+            "email_opt_out": False,
+            "information": "",
+        },
+        {
+            "pledge": None,
+            "ministry_interest": [],
+            "census_edit": "proposed_member",
+            "email_opt_out": False,
+            "information": texts[0],
+        },
+    )
+
+
+def rehearsal_epoch(campaign_id):
+    """The campaign's active rehearsal epoch id, or None while there is none.
+
+    The scheduler creates the epoch in Testing mode once the Families are
+    loaded; Testing sends and Testing sign-ins both need it, and the
+    population must be current (not dirty) and not held by a go-live.
+    """
+    from parishkit.stewardship.campaigns.credential_models import (
+        CampaignCredentialState,
+    )
+
+    return (
+        CampaignCredentialState.objects.filter(
+            campaign_id=campaign_id,
+            go_live_gate=False,
+            population_dirty=False,
+            rehearsal_epoch__state="active",
+        )
+        .values_list("rehearsal_epoch_id", flat=True)
+        .first()
+    )
+
+
+def family_tests_sent(ticket_ids):
+    """A wait condition: every chosen-Family Testing send has been delivered.
+
+    A ticket is queued until the worker prepares its message; the message
+    is then followed until mail-dispatch delivers it to the Testing
+    recipient. A cancelled or failed ticket, or a fatal message state, ends
+    the seed at once.
+    """
+    from parishkit.stewardship.jobs.family_mail_models import FamilyMailTest
+    from parishkit.stewardship.jobs.outbox_models import OutboxMessage
+
+    rows = list(
+        FamilyMailTest.objects.filter(pk__in=ticket_ids).values_list(
+            "state", "outbox_id"
+        )
+    )
+    failed = sorted({state for state, _ in rows if state in {"cancelled", "failed"}})
+    if failed:
+        raise SeedFailed("A Testing send ended in " + ", ".join(failed) + ".")
+    queued = sum(1 for state, _ in rows if state == "queued")
+    if queued:
+        return f"{queued} Testing send(s) still queued"
+    states = list(
+        OutboxMessage.objects.filter(pk__in=[outbox for _, outbox in rows]).values_list(
+            "state", flat=True
+        )
+    )
+    fatal = sorted(set(states) & (FATAL_OUTBOX_STATES | {"cancelled"}))
+    if fatal:
+        raise SeedFailed("A Testing message ended in " + ", ".join(fatal) + ".")
+    waiting = sum(1 for state in states if state != "delivered")
+    return True if not waiting else f"{waiting} Testing message(s) not yet delivered"
+
+
+def draft_state(campaign, document):
+    """The ``draft_refusal`` inputs, read without writing anything.
+
+    Setup must be complete. The global mode and the Testing recipient come
+    from the system configuration; ``went_live`` from the campaign's own
+    record and any go-live request (even a cancelled one); ``schedules``
+    from the applied configuration ``document``.
+    """
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+    from parishkit.stewardship.accounts.setup_completion import setup_is_complete
+    from parishkit.stewardship.campaigns.production_models import (
+        ProductionTransitionRequest,
+    )
+
+    if not setup_is_complete():
+        raise SeedRefused("Setup must be complete before the testing step.")
+    mode, recipient = SystemConfiguration.objects.values_list(
+        "mode", "testing_recipient"
+    ).get()
+    initials, reminders = campaign_schedules(document, campaign.pk)
+    return {
+        "mode": mode,
+        "state": campaign.state,
+        "went_live": campaign.ever_active
+        or ProductionTransitionRequest.objects.filter(campaign=campaign).exists(),
+        "schedules": bool(initials or reminders),
+        "recipient": recipient,
+    }
+
+
+def record_configuration(web, service, active, patch):
+    """Record one configuration change request as the signed-in Admin.
+
+    As ``prepare`` records its own: the applied configuration ``active``
+    is the base, and the running configuration installer applies it.
+    """
+    from parishkit.stewardship.accounts.admin_editing import principal
+    from parishkit.stewardship.accounts.configuration_requests import record_request
+    from parishkit.stewardship.observability import current_correlation
+
+    return record_request(
+        base_digest=active.digest,
+        patch=patch,
+        actor_id=principal(web, service).identity,
+        request_key=uuid4(),
+        correlation_id=current_correlation(),
+    )
+
+
+def testing_families(campaign):
+    """The chosen Families: (DUID, FamilyCampaign id), one per TESTING_PLAN part.
+
+    The first Families by DUID that a chosen-Family Testing send accepts:
+    active, Portal-eligible and with a deliverable email.
+    """
+    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+
+    return list(
+        FamilyCampaign.objects.filter(
+            campaign=campaign,
+            active=True,
+            portal_eligible=True,
+            email_eligible=True,
+            email_deliverable=True,
+        )
+        .order_by("family_duid")
+        .values_list("family_duid", "pk")[: len(TESTING_PLAN)]
+    )
+
+
+def testing_step(request, configuration):
+    """The Testing snapshot's activity, through the pages' own code (#1413).
+
+    Runs as the web service runs (``configure_web_process``, LOCAL only) on
+    the Testing-mode draft that ``seed --testing`` restores, and refuses
+    anything else (``draft_state``, ``draft_refusal``) before it writes
+    anything, even the Admin sign-in. Then, as an Administrator and
+    Families would in the browser:
+
+    1. one configuration change request (as ``prepare`` records it): the
+       ``draft_calendar`` dates and the Initial and Reminder schedules;
+    2. readiness's full refresh against the fake ParishSoft and the Initial
+       email's sample to the Testing recipient;
+    3. once the scheduler's rehearsal epoch exists, a chosen-Family Testing
+       send of the Initial to the first Families by DUID
+       (``seed_web.family_tests``), waited until delivered;
+    4. each Family's part in TESTING_PLAN through the real Family sign-in,
+       form and submission, with the rehearsal code its send carried (the
+       epoch the tickets record).
+
+    Every message goes only to the Testing recipient. The step stops short
+    of go-live, so the Go live page, Testing cleanup and Cancel go-live stay
+    available for review.
+
+    A snapshot saved after this step is good for under a week of real time:
+    once the Initial (TESTING_INITIAL_DAYS ahead) falls due, the Testing
+    scheduler sends one Testing message per Family to the Testing
+    recipient, and after TESTING_CAMPAIGN_DAYS the dates no longer contain
+    now, so Testing sign-ins stop. Rebuild it with ``seed --testing`` then.
+    The answer names the limit as ``rebuild_before``.
+    """
+    configure_web_process(configuration)
+    campaign = current_campaign()
+    service = seed_web.admin_runtime()
+    active = service.store.active()
+    refusal = draft_refusal(**draft_state(campaign, active.document()))
+    if refusal is not None:
+        raise SeedRefused(refusal)
+    web = admin(request)
+    since = database_now()
+    cal = draft_calendar(since, campaign.active_configuration.timezone)
+    timings = {}
+
+    def timed(name, what, condition):
+        """Wait for a condition and keep how long it took."""
+        timings[name] = round(wait_until(what, condition), 1)
+
+    # 1. The dates and the mail schedules, as one change request.
+    record_configuration(
+        web,
+        service,
+        active,
+        schedule_patch(active.document(), campaign.pk, cal, initial_date=cal.initial),
+    )
+    timed(
+        "configuration",
+        "the configuration change request to be installed",
+        lambda: (
+            pending_configuration_requests(since) == 0
+            or "a configuration request is still pending"
+        ),
+    )
+    campaign = current_campaign()
+    # 2. Readiness: a full refresh against the fake, then the Initial sample.
+    receipt = seed_web.request_full_refresh(web, service)
+    timed(
+        "refresh",
+        "the full ParishSoft refresh to succeed",
+        lambda: task_root_finished(receipt.task_root_id, "the full refresh"),
+    )
+    settle(since)
+    revision = _initial_revision(service, campaign)
+    # Sending needs a fresh sign-in (five minutes); the waits may have aged it.
+    seed_web.sign_in_admin(web, request.admin_email)
+    seed_web.sample_mail(web, service, campaign.pk, revision)
+    timed(
+        "sample_mail",
+        "the Initial email sample to be accepted",
+        lambda: sample_accepted(campaign.pk, since),
+    )
+    timed(
+        "epoch",
+        "the active rehearsal epoch",
+        lambda: (
+            rehearsal_epoch(campaign.pk) is not None
+            or "the scheduler's rehearsal epoch"
+        ),
+    )
+    settle(since)
+    # 3. The chosen-Family Testing send.
+    chosen = testing_families(campaign)
+    if not chosen:
+        raise SeedRefused("No Portal-eligible Family with an email was found.")
+    seed_web.sign_in_admin(web, request.admin_email)
+    try:
+        tickets = seed_web.family_tests(
+            web, service, campaign.pk, revision, [duid for duid, _ in chosen]
+        )
+    except seed_web.SeedWebRefused as error:
+        # An unmet precondition of the page, not an unexpected error.
+        raise SeedRefused(str(error)) from error
+    # The epoch the sends were made under is the one whose codes they carry.
+    epochs = {ticket.rehearsal_epoch_id for ticket in tickets}
+    if len(epochs) != 1:
+        raise SeedFailed("The Testing sends do not share one rehearsal epoch.")
+    timed(
+        "testing_sends",
+        "the chosen-Family Testing sends to be delivered",
+        lambda: family_tests_sent([ticket.pk for ticket in tickets]),
+    )
+    settle(since)
+    # 4. Testing sign-ins, forms and submissions with the rehearsal codes.
+    driver = seed_web.RehearsalFamilyWebDriver(
+        seed_web.family_runtime(), campaign, epochs.pop()
+    )
+    answers = iter(
+        draft_answers(campaign.active_configuration.values.get("ministry_duids", []))
+    )
+    outcome = {part: [] for part in TESTING_PLAN}
+    for (duid, family_id), part in zip(chosen, TESTING_PLAN, strict=False):
+        if part != "sent":
+            driver.session(family_id, {})
+        if part == "open":
+            driver.baseline(family_id, {})
+        elif part == "submit":
+            driver.submission(family_id, {"answers": next(answers)})
+        outcome[part].append(duid)
+    timings["final_settle"] = round(settle(since), 1)
+    return {
+        "step": "testing",
+        "campaign": str(campaign.pk),
+        "start": cal.start.isoformat(),
+        "end": cal.end.isoformat(),
+        "initial": cal.initial.isoformat(),
+        "reminders": [r.isoformat(timespec="seconds") for r in cal.reminders],
+        # A snapshot of this state must be rebuilt before the Initial is due.
+        "rebuild_before": cal.initial.isoformat(),
+        "testing_sends": len(tickets),
+        "submitted": outcome["submit"],
+        "opened": outcome["open"],
+        "sent_only": outcome["sent"],
+        "timings": timings,
     }
 
 
