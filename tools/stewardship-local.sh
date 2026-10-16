@@ -23,11 +23,21 @@
 #                                    (deploy also passes the STEWARDSHIP_USERS_* variables
 #                                    of the users upgrade, #952, to the host half)
 #   snapshot [--seeded]              save the root as the post-setup or seeded snapshot
-#   reset [--seeded]                 restore that snapshot; with no post-setup
-#                                    snapshot, wipe the root and run `up` again
+#   snapshot save NAME [--replace]   save the root as the named snapshot (refused when
+#                                    the disks or the snapshot cap would not allow it)
+#   snapshot list                    the snapshots, what a switch to each would do,
+#                                    and the VM's and the Mac's free space
+#   snapshot delete NAME             delete one snapshot (type its name to confirm)
+#   snapshot restore NAME | switch NAME
+#                                    keep the deployed code and switch to NAME's data,
+#                                    migrating it forward when it is older
+#   reset [--seeded | NAME]          restore that snapshot whole, image and data; with
+#                                    no post-setup snapshot, wipe the root and run `up` again
 #   reset --reinstall                build from this checkout, then wipe the root
 #                                    and run `up` again, keeping the snapshots
 #   seed [--response-scale M]        seed the campaign (the fake-clock seeder)
+#   seed --testing                   switch to the post-setup snapshot and move it to real
+#                                    time: a Testing-mode draft campaign to review
 #   reseed [--response-scale M]      reset to the post-setup snapshot, then seed
 #   rehearse [--due-in MIN] [--send-only] [--timeout MIN] [--label NAME]
 #                                    add a Reminder due in MIN minutes (default 5),
@@ -53,10 +63,11 @@
 #   PARISHKIT_LOCAL_DEBUG_LOGGING  1 (default) starts the services with debug
 #                                  logging, as pre-launch dev deploys did; 0 turns it off
 #   PARISHKIT_LOCAL_ROOT           runtime root in the VM (default /opt/parishkit)
+#   PARISHKIT_LOCAL_SNAPSHOT_LIMIT how many snapshots a save allows (default 8)
 #   LIMA_HOME                      where Lima keeps its instances (default ~/.lima)
 #
 # This half runs under macOS's own bash 3.2; it needs only Lima
-# (brew install lima), git, tar and ssh. The script never targets a host
+# (brew install lima), git, tar, ssh and df. The script never targets a host
 # other than the Lima instance's ssh alias. It packs the checkout that
 # contains the current directory, so a pull request is tested by running it
 # from that pull request's checkout.
@@ -68,6 +79,7 @@ admin=${PARISHKIT_LOCAL_ADMIN_EMAIL:-admin@example.test}
 families=${PARISHKIT_LOCAL_FAMILIES:-100}
 debug=${PARISHKIT_LOCAL_DEBUG_LOGGING:-1}
 root=${PARISHKIT_LOCAL_ROOT:-/opt/parishkit}
+snapshot_limit=${PARISHKIT_LOCAL_SNAPSHOT_LIMIT:-8}
 lima_home=${LIMA_HOME:-$HOME/.lima}
 project=parishkit-local
 yaml=/etc/parishkit/stewardship-deployment.yaml
@@ -174,6 +186,72 @@ confirm_instance_name() {
     [ "$typed" = "$vm" ] || refuse "Not confirmed; nothing changed."
 }
 
+mac_free_kb() {
+    # Free KiB on the Mac volume that holds the Lima instances, where the
+    # VM's sparse disk file grows; the VM half's disk guard reads it. Run in
+    # $(...), where bash 3.2 does not stop on a failure, so an answer that
+    # is not a number is refused here rather than skipping the check.
+    local dir=$lima_home kb
+    [ -d "$dir" ] || dir=$HOME
+    kb=$(df -Pk "$dir" 2>/dev/null | awk 'NR == 2 { print $4 }')
+    case "$kb" in
+        ''|*[!0-9]*) refuse "Could not read the Mac's free space on $dir; refusing." ;;
+    esac
+    printf '%s' "$kb"
+}
+
+users_env_prefix() {
+    # The users upgrade's four STEWARDSHIP_USERS_* variables (#952) as an
+    # `env NAME=value ...` prefix for run_remote, or nothing; the host half
+    # validates them. A deploy passes them, and so does a switch or
+    # `seed --testing` whose upgrade path converts a snapshot from before
+    # the conversion.
+    local name prefix=""
+    for name in STEWARDSHIP_USERS_OPERATION STEWARDSHIP_USERS_OPERATOR \
+        STEWARDSHIP_USERS_REASON STEWARDSHIP_USERS_ADMINISTRATORS; do
+        [ -z "${!name-}" ] || prefix+="$name=$(printf '%q' "${!name}") "
+    done
+    [ -z "$prefix" ] || printf 'env %s' "$prefix"
+}
+
+check_snapshot_name() {
+    # The VM half checks the name too; this refuses before any ssh.
+    [[ $1 =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]] ||
+        refuse "A snapshot name is 1-32 lowercase letters, digits or '-', starting with a letter or digit: '$1'."
+}
+
+save_snapshot() {
+    # save_snapshot NAME REPLACE: the VM half checks the space and the cap
+    # before it stops anything.
+    local kb
+    require_running
+    kb=$(mac_free_kb) || exit 1
+    run_remote snapshot "$1" "$2" "$kb" "$snapshot_limit"
+}
+
+switch_snapshot() {
+    # The data-only switch; its upgrade path runs the scripted upgrade's
+    # host half, so that is uploaded first, as for a deploy.
+    check_snapshot_name "$1"
+    require_running
+    upload_host_script
+    remote_env=$(users_env_prefix)
+    run_remote snapshot-restore "$1" "$host_remote"
+    remote_env=""
+}
+
+delete_snapshot() {
+    # A snapshot is a deliberate return point: the operator types its name.
+    local typed
+    check_snapshot_name "$1"
+    require_running
+    run_remote has-snapshot "$1" || refuse "No $1 snapshot; '$0 snapshot list' lists them."
+    printf 'Type the snapshot name (%s) to delete it: ' "$1" >&2
+    read -r typed
+    [ "$typed" = "$1" ] || refuse "Not confirmed; nothing changed."
+    run_remote snapshot-delete "$1"
+}
+
 check_families() {
     if ! [[ $families =~ ^[0-9]+$ ]] || [ "$families" -lt 1 ]; then refuse "--families must be a positive integer."; fi
 }
@@ -245,12 +323,8 @@ case "$command" in
         # The users upgrade's four STEWARDSHIP_USERS_* variables (#952) are
         # passed through as Production's laptop half passes them; the host
         # half validates them.
-        schema_change=0 rollback=0 bulk=keep latency=keep users_env=""
-        for name in STEWARDSHIP_USERS_OPERATION STEWARDSHIP_USERS_OPERATOR \
-            STEWARDSHIP_USERS_REASON STEWARDSHIP_USERS_ADMINISTRATORS; do
-            [ -z "${!name-}" ] || users_env+="$name=$(printf '%q' "${!name}") "
-        done
-        [ -z "$users_env" ] || users_env="env $users_env"
+        schema_change=0 rollback=0 bulk=keep latency=keep
+        users_env=$(users_env_prefix)
         while [ $# -gt 0 ]; do
             case "$1" in
                 --schema-change) schema_change=1 ;;
@@ -345,39 +419,70 @@ case "$command" in
         require_running
         mkdir -p "$state"
         run_remote spike "$spike_families" "$sources" "$during_send" "$wait" "$label" 2>&1 | tee -a "$state/spike.log" ;;
-    snapshot|reset)
-        name=post-setup
-        case "$command:$#:${1-}" in
-            *:0:) ;;
-            *:1:--seeded) name=seeded ;;
-            reset:1:--reinstall) name=reinstall ;;
+    snapshot)
+        # The two original forms keep overwriting their fixed names.
+        case "$#:${1-}" in
+            0:) save_snapshot post-setup 1 ;;
+            1:--seeded) save_snapshot seeded 1 ;;
+            2:save) check_snapshot_name "$2"; save_snapshot "$2" 0 ;;
+            3:save)
+                [ "$3" = --replace ] || usage
+                check_snapshot_name "$2"
+                save_snapshot "$2" 1 ;;
+            1:list)
+                require_running
+                kb=$(mac_free_kb) || exit 1
+                run_remote snapshot-list "$kb" ;;
+            2:delete) delete_snapshot "$2" ;;
+            2:restore) switch_snapshot "$2" ;;
+            *) usage ;;
+        esac ;;
+    switch)
+        [ $# -eq 1 ] || usage
+        switch_snapshot "$1" ;;
+    reset)
+        # A flag of its own, so a snapshot named "reinstall" never means --reinstall.
+        name=post-setup reinstall=0
+        case "$#:${1-}" in
+            0:) ;;
+            1:--seeded) name=seeded ;;
+            1:--reinstall) reinstall=1 ;;
+            1:-*) usage ;;
+            1:*) check_snapshot_name "$1"; name=$1 ;;
             *) usage ;;
         esac
-        if [ "$name" = reinstall ]; then
+        if [ "$reinstall" = 1 ]; then
             do_reinstall
             exit 0
         fi
         require_running
-        if [ "$command" = snapshot ]; then
-            run_remote snapshot "$name"
-        elif run_remote has-snapshot "$name"; then
+        if run_remote has-snapshot "$name"; then
             run_remote reset "$name"
         elif [ "$name" = seeded ]; then
             refuse "No seeded snapshot. Seed first, then: $0 snapshot --seeded"
+        elif [ "$name" != post-setup ]; then
+            refuse "No $name snapshot; '$0 snapshot list' lists them."
         else
             echo "No post-setup snapshot: the root will be removed and installed again."
             do_reinstall
         fi ;;
     seed)
-        scale=1
+        scale=1 testing=0
         case "$#:${1-}" in
             0:) ;;
+            1:--testing) testing=1 ;;
             2:--response-scale) scale=${2-} ;;
             *) usage ;;
         esac
         require_running
         mkdir -p "$state"
-        run_remote seed "$scale" 2>&1 | tee -a "$state/seed.log" ;;
+        if [ "$testing" = 1 ]; then
+            upload_host_script
+            remote_env=$(users_env_prefix)
+            run_remote seed-testing "$host_remote" 2>&1 | tee -a "$state/seed.log"
+        else
+            run_remote seed "$scale" 2>&1 | tee -a "$state/seed.log"
+        fi ;;
     reseed)
         scale=1
         case "$#:${1-}" in
@@ -402,7 +507,8 @@ case "$command" in
         [ $# -eq 0 ] || usage
         limactl list "$vm" 2>/dev/null || echo "No Lima instance '$vm'."
         if [ "$(vm_status)" = Running ]; then
-            run_remote status
+            # status still reports without the Mac's figure.
+            run_remote status "$(mac_free_kb 2>/dev/null || true)"
         fi ;;
     down)
         [ $# -eq 0 ] || usage
