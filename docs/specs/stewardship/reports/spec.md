@@ -229,8 +229,9 @@ Vega-Lite specification, built by a pure function of the report's query
 result (`reports/chart_specs.py`) together with a plain-language summary and
 a table of its exact values. The same JSON is drawn two ways, so the portal
 and the emails cannot disagree (the
-[participation graph](#participation-graph) predates the engine and keeps its
-own renderer):
+[participation graph](#participation-graph) predates the engine: only its
+Participation page chart is drawn by it, and its files and email image keep
+their own renderer):
 
 - **In the browser**, `chart-v1.js` reads the specification embedded in the
   page and draws it as SVG with the vendored Vega runtime, within the
@@ -259,9 +260,7 @@ own renderer):
   the engine's two formats; how a report page offers the downloads above is
   specified in a later increment (the [response dashboard](#response-dashboard)
   does not offer them yet). The daily digest's participation chart is the
-  participation graph's renderer. The daily digest's
-  [response funnel](../background-processing/spec.md#daily-campaign-digest)
-  charts and its optional
+  participation graph's renderer. The daily digest's optional
   [Compared with past campaigns](../campaign-history/spec.md#digest-section)
   section's two charts are drawn by this renderer at the email's width (the
   axes and legend inside it) under the timeout name `digest_chart`, and
@@ -291,22 +290,32 @@ caption. A chart that draws its values in the chart itself leaves that table
 out ([#1266](https://github.com/epiphany40223/parishkit/issues/1266)) and does
 not show its summary, which stays its view's description and shows only if
 the chart cannot be drawn
-([caption rule](../ui-conventions/spec.md#charts)); its feature spec says so
-(Campaign comparison's
+([caption rule](../ui-conventions/spec.md#charts)); so does a chart that the
+page's own table of the same values directly follows (the
+[participation graph](#participation-graph)'s daily table). Its feature spec
+says so (Campaign comparison's
 [pledge bands](../campaign-history/spec.md#page-layout) are one): each bar, or
 each band of a stacked bar, shows its figures (its count or dollars, and its
 share where the chart gives one) on or after the mark or in its axis label, a
 band too narrow for its label having them in the chart's legend instead, and
 its tooltip and accessible
-name carry the same figures. A pointer shows exact values in tooltips; the
+name carry the same figures. A pointer shows exact values in tooltips, and so
+does a tap (`chart-v1.js` replays a tap on a chart as a pointer move, which is
+what Vega's tooltips follow; a tap elsewhere closes the tooltip); the
 view takes keyboard focus so a keyboard or screen-reader user hears its name
 and summary, and gets the exact values from the table, or without one from
 the marks' names, not the tooltips. Series are told apart by dash pattern as
 well as color. A layer with nothing to draw (no activity yet,
 or no send to mark) is hidden from assistive technology rather than announced
-as an unnamed graphic. In an email the PNG carries the summary as its alt text
-and the table follows it. Times on an axis are the campaign's wall clock
-whatever time zone draws the chart, and the axis names the campaign's zone.
+as an unnamed graphic, and an activity chart with no activity still draws
+its axes on explicit scales (its sends' span, or the last day by hour or
+week by day, and a Families axis labelled only 0) rather than from empty
+data, which Vega warns about on every draw
+([#1327](https://github.com/epiphany40223/parishkit/issues/1327)); its
+Families axis labels whole numbers only, never one twice. In an email the
+PNG carries the summary as its alt text and the table follows it. Times on
+an axis are the campaign's wall clock whatever time zone draws the chart, and
+the axis names the campaign's zone.
 
 ## Population and calculation rules
 
@@ -352,19 +361,27 @@ invalid, absent, and suppressed head email without showing credential/link data.
 
 The x-axis is every campaign-local date from campaign start through the lesser
 of campaign end and today, using the Campaign's immutable timezone snapshot.
-The graph shows:
+The graph is stacked panels on that one shared date axis, top to bottom, each
+named by its own title (so there is no legend):
 
-- bars: Families making their first live submission that day;
-- line: cumulative Families that have submitted under the selected population
-  scope; and
-- line on a dollar axis, when financial is enabled: effective annual pledge
-  total at each day end.
+- **First submissions that day:** bars of Families making their first live
+  submission that day;
+- **Cumulative participating Families:** a line of cumulative Families that
+  have submitted under the selected population scope; and
+- **Effective annual pledges,** when financial is enabled: a line of the
+  effective annual pledge total at each day end, its ticks in short dollars
+  ("$250K", "$1.6M").
 
-Both axes are linear. The Families axis is scaled to the plotted counts: its
-top is the largest daily or cumulative count with about 10% headroom, and its
-ticks step by round 1, 2 or 5 multiples. It does not stretch to the eligible
-Family total, which would flatten the bars and line; the eligible total is not
-drawn (the table's participation column still states it per day).
+By Administrator decision
+([#720](https://github.com/epiphany40223/parishkit/issues/720), question 7)
+there is no second y-axis. Two independently scaled axes made any two growing
+totals draw almost the same curve, and a shared Families axis dwarfed the
+daily bars under the running total. Every panel's axis is linear and starts at
+zero. It is scaled to that panel's own values, with a top at the largest value
+plus about 10% headroom, and its ticks step by round 1, 2 or 5 multiples. No
+axis stretches to the eligible Family total, which would flatten the bars and
+line; the eligible total is not drawn (the table's participation column still
+states it per day). The date labels appear once, under the last panel.
 
 The chart image draws no source snapshot, request time or other provenance
 text. By Administrator decision
@@ -391,20 +408,25 @@ or the submission cutoff
 and PDF are the chart, not a table.
 The daily digest email states a plain as-of line instead
 ([daily campaign digest](../background-processing/spec.md#daily-campaign-digest)),
-and its chart PNG keeps the metadata. The same plot is used on
-the Participation page, in PNG and PDF exports, and in the daily digest email;
-the PDF sets it in the shared report page frame ([file design](#file-design)),
-while the page and email PNGs keep their own titles and layout.
+and its chart PNG keeps the metadata. The PNG and PDF exports and the daily
+digest email draw this plot with matplotlib; the PDF sets it in the shared
+report page frame ([file design](#file-design)), while the export and email
+PNGs keep their own titles and layout. Each process draws one matplotlib file
+at a time, because matplotlib's style settings are process-global; only
+workers and export tasks draw one.
 
-Each process draws one matplotlib file at a time, because matplotlib's style
-settings are process-global, so a web process's chart image can wait behind a
-PDF that the same process is rendering. The Participation page's chart is drawn
-from an immutable fact set, so each web process keeps its most recent page
-chart PNGs in memory, keyed by the exact drawing inputs (the document and the
-date format). A repeat view returns the stored image without waiting. Only the
-first view of a newly calculated chart can wait, behind the other renderings
-in that process, within the read guard's deadline
-([#905](https://github.com/epiphany40223/parishkit/issues/905)).
+The Participation page draws the same design in the browser with the
+[chart engine](#chart-engine)
+([#720](https://github.com/epiphany40223/parishkit/issues/720)): the same
+panels, titles, colors, zero-based axes and round ticks, each campaign date one
+band of the shared date axis, and as many date labels under the last panel as
+fit without overlapping, in the parish's compact date style as the exports'
+ticks are. The page's daily table directly follows the chart and is its exact
+values, so the chart adds no exact-values table of its own and does not show
+its summary, which would only repeat that table. Its marks and axes are hidden
+from assistive technology, since their automatic names would read raw values
+(ISO dates, unrounded dollars) unlike the table's. There is no
+page image, so a page view draws nothing on the server.
 
 For **Historical as of day**, the source cutoff is the last promoted source
 generation at or before the resolved end instant of that local day, selected
@@ -480,7 +502,7 @@ the last complete generation only together with a conspicuous, non-blocking
 it never labels stale facts current. By Administrator decision
 ([#575](https://github.com/epiphany40223/parishkit/issues/575)), the
 Participation page's chart block shows no "data as of", campaign time zone or
-technical-details header, and no instruction line above the date slider; the
+technical-details header, and no instruction line above the chart; the
 chart's as-of values are in the chart file's metadata and in its exports, and
 the x-axis label names the campaign time zone. The user can refresh after the
 queued generation publishes. A pinned export or digest waits/retries for its
@@ -496,16 +518,23 @@ atomic reference/read guards; no consumer assumes an unpinned old generation
 will remain available indefinitely.
 
 The UI defaults to Historical as of day and offers a clearly labeled scope
-toggle. Changing scope updates every series together. Pointing at or tapping a
-date, or choosing it with the date slider, shows a short tooltip: the local date
-as a small heading, then "Families" (cumulative count), "New today" (daily
-count) and, when financial is enabled, "Pledges", aligned on the colon and with
-no explanatory text. The tooltip's pledge is whole dollars (halves round up,
-such as $760,410); everything else keeps exact cents. On a narrow screen the
-tooltip sits under the chart in reserved space, so the slider does not move. The
-screen-reader live text and the slider's value text keep the fuller form: scope,
-local date, daily count, cumulative count out of the scoped population with
-percentage, and exact pledge. Report URLs, pinned digest inputs, equivalent data
+toggle. Changing scope updates every series together. On the Participation
+page, pointing at or tapping anywhere in a date's column, in any panel, shows
+that date's tooltip: the local date as its heading, then "First submissions",
+"Families that have responded" (out of the scoped population, with
+percentage) and, when financial is enabled, "Effective annual pledges", with no
+explanatory text. A keyboard or screen-reader user gets every date's figures
+from the daily table ([chart engine](#chart-engine)). A saved daily digest's
+page shows its retained chart image instead: pointing at or tapping a date, or
+choosing it with the date slider, shows a short tooltip: the local date as a
+small heading, then "Families" (cumulative count), "New today" (daily count)
+and, when financial is enabled, "Pledges", aligned on the colon. On a narrow
+screen that tooltip sits under the chart in reserved space, so the slider does
+not move; the screen-reader live text and the slider's value text keep the
+fuller form: scope, local date, daily count, cumulative count out of the scoped
+population with percentage, and exact pledge. Either tooltip's pledge is whole
+dollars (halves round up, such as $760,410); everything else keeps exact
+cents. Report URLs, pinned digest inputs, equivalent data
 tables, PNG/PDF output, and structured downloads record the scope and exactly
 match the displayed values. A scope note explains why the historical endpoint
 may differ from current-statistics cards.
@@ -674,14 +703,19 @@ only.
 
 `/admin/reports/responses/` shows the funnel of the current campaign at the
 database's current instant, labelled **Counted at**. Data comes first: a
-tile per [funnel stage](#funnel-stages) with its count and its share compared
-with Invited, the three figures reported beside the funnel, then the funnel
+tile per [funnel stage](#funnel-stages) with its count, its share compared
+with Invited and a [share bar](../ui-conventions/spec.md#charts) drawing that
+share ([#720](https://github.com/epiphany40223/parishkit/issues/720)), the
+three figures reported beside the funnel, then the funnel
 chart and the [activity chart](#response-activity-over-time) with its send
 markers, each with its summary and exact-values table. The explanation sits
 in the [About this page](../ui-conventions/spec.md#page-help) panel after the
 data. Each chart is named by its panel's heading rather than a title drawn
-inside it. Until an invitation has been delivered the tiles leave out their
-shares and the page says so in one sentence. A **Lists of Families** panel
+inside it. Invited's own bar is full, as the reference the others are read
+against, and a share past 100% (a Family can follow its link without a
+delivered invitation) fills its bar. Until an invitation has been delivered
+the tiles leave out their shares and bars and the page says so in one
+sentence. A **Lists of Families** panel
 links to the Families behind each count,
 with the number of Families on it (counted from the same read; the list of
 ParishSoft data to check has no number here, since counting it needs the
@@ -795,8 +829,11 @@ both roles see:
   directory, the page shows no notice beside it (the Administrator's choice
   on #590). Open form is a
   disabled button with its reason beside it while the system is in Testing
-  mode (the Family sign-in then accepts only rehearsal codes) or when the
-  Family has no code for the campaign. In Testing mode the reason links "Try
+  mode (the Family sign-in then accepts only rehearsal codes), when the
+  Family has no code for the campaign, when the campaign is not the current
+  one, or when ParishSoft no longer lists the Family as active and
+  registered (#1331), the refusals Open form's hand-off makes (below). In
+  Testing mode the reason links "Try
   the Family form as a chosen Family" for roles that may open that page
   (Administrators).
 
@@ -1430,9 +1467,10 @@ never includes the opaque email-link token.
 **Access:** Admin/Staff for all selected campaign Ministries; leaders for the
 campaign Ministries they lead in ParishSoft only.
 
-The database enforces this scope, not only the application. The summary, the
-Member contact details on each follow-up request and in its export, and the
-[Ministry follow-up](../admin-portal/spec.md#follow-up-workflows) queue read
+The database enforces this scope, not only the application. The Ministry
+requests page (its By Ministry counts and its
+[follow-up](../admin-portal/spec.md#follow-up-workflows) queue), the
+Member contact details on each follow-up request and in its export read
 through `stewardship_ministry_report_v2` and
 `stewardship_ministry_followup_v2` (migration 0040). These take the signed-in
 user and derive the scope from that user's current roles and the Ministries
@@ -1448,48 +1486,123 @@ rather than shown an empty report. The Admin Home's My Ministries panel and the
 follow-up menu count read through the same function and cross-check, so neither
 shows more than the queue would.
 
-The sorted summary has the Ministry name (the row header, with its
-ParishSoft and campaign notes for Admin/Staff; no Ministry DUID,
-[#1123](https://github.com/epiphany40223/parishkit/issues/1123)),
-join-request count, leave-request count, unresolved count, and follow-up
-progress. Counts use latest live request state while retaining links to
-superseded/history views. Requests for
+**One page** ([#1133](https://github.com/epiphany40223/parishkit/issues/1133)
+step 2b, Administrator approval 2026-10-14). The Ministry requests summary and
+the Ministry follow-up queue are one page and one menu entry, **Ministry
+requests**, at `/admin/reports/ministries/`. It is built on the
+[follow-up queue](../admin-portal/spec.md#follow-up-workflows), because
+recording happens per request. The queue's old address,
+`/admin/reports/ministries/follow-up/` (and its slashless form), answers 404
+with no redirect
+([legacy URLs](../ui-conventions/spec.md#addresses-and-legacy-urls)). The
+request pages, the bulk outcome, Export these requests and Roster changes to
+enter keep their addresses under `follow-up/`. The separate summary page is
+retired, along with its Ministry-name search, its paging and sort, its per-row
+Follow-up progress column and bars, and its "Follow up these requests" link.
+Its totals and its follow-up packet move to the one page. Rejected: keeping
+two pages with links only (step 1 did that, and two pages still listed the
+same requests), making the summary the base, and a separate leader portal
+(rejected in #533). The host `report ministry` command is unchanged.
+
+From the top, the page shows:
+
+1. The heading, the page help, the ParishSoft data date, the Roster changes
+   to enter link (Admin/Staff only), and the notice shown while other
+   campaign work locks edits.
+2. The queue's filter bar (Search Member or Ministry name, Ministry, Request,
+   Status, Outcome). It comes first so the totals below can change without
+   moving Apply filters
+   ([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
+3. **Totals**, which are visual first
+   ([#720](https://github.com/epiphany40223/parishkit/issues/720)). Two tiles,
+   Join requests and Leave requests, count the requests the filters select,
+   on every page of the table and within the reader's scope. Then one
+   [chart engine](#chart-engine) chart, "Follow-up progress", draws a
+   progress bar for the resolved or closed requests and one for the
+   unresolved requests, against all those requests; the two always add up to
+   the whole. The chart counts the same requests **regardless of the Status
+   and Outcome filters**, because progress is about status: otherwise the
+   default Unresolved view would always show every request unresolved. This
+   is an implementation default pending Administrator confirmation on #1133.
+   The chart draws its values the way the
+   [Participation statistics](#campaign-statistics) chart does, in each
+   bar's axis label, so it has no exact-values table. The chart is always
+   drawn, so its box never appears or disappears and By Ministry below never
+   moves ([no layout shift](../ui-conventions/spec.md#no-layout-shift)): when
+   there is no request, and for the Staff-only "Members no longer in
+   ParishSoft" status choice, which has nothing to record, its bars read zero
+   out of zero. The totals follow
+   every filter change, sort and page change
+   [in place](../ui-conventions/spec.md#in-place-controls) (#519).
+4. **By Ministry**, a compact table described below.
+5. The queue table, exactly as described in
+   [follow-up workflows](../admin-portal/spec.md#follow-up-workflows): its
+   selection column and bulk outcomes (#1131), row links to request pages,
+   the remembered view, navigators and sort. Then **Export these requests**,
+   unchanged, and then the
+   [follow-up packet](#multi-ministry-follow-up-packet). The packet's choices
+   are still every Ministry in the reader's scope.
+
+**By Ministry** has the columns Ministry, Join requests, Leave requests and
+Unresolved, with one row for every Ministry in the reader's scope. It does
+not follow the filters, because it is the way to choose one Ministry. The
+Ministry name is the row header and shows no Ministry DUID
+([#1123](https://github.com/epiphany40223/parishkit/issues/1123)). Its
+counts are the summary selection's current counts: join requests and leave
+requests of any status, and unresolved requests of either kind. Counts use
+the latest live request state. Requests for
 [Members no longer in ParishSoft](../admin-portal/spec.md#follow-up-workflows)
-are left out of the counts and lists for everyone (#1217).
+are left out for everyone (#1217).
+
+Each count that is not zero applies that Ministry and request type to the
+table below in place, when the reader may follow up that Ministry. It does
+not reload the page or jump to the top, and the filter bar then shows the
+filters it applied. A join count sets Request to Join, and a leave count sets
+it to Leave; both set Status to Any status. An Unresolved count sets Request
+to Join or leave and Status to Unresolved. Each count also clears the search
+and sets Outcome to Any outcome. A count is also an ordinary link carrying
+only the queue's closed link filters (`?ministry=<DUID>&action=join&state=any`
+and the like; see
+[follow-up workflows](../admin-portal/spec.md#follow-up-workflows)), so
+opening it in a new tab shows the same view. A Ministry leader gets links only
+for the Ministries they lead. A zero count is plain text, and each link's
+accessible name names its Ministry ("3 join requests for Choir"), as
+[count links](../ui-conventions/spec.md#admin-tables) ask.
+
+A reader whose scope holds one Ministry sees a single line instead of a
+table. A long list scrolls inside a bounded box, so the queue stays near the
+top of the page. By Ministry is redrawn with every in-place refresh, so the
+change a bulk outcome makes shows in its counts.
 
 "Not in ParishSoft data" and "No longer in this campaign" are the
 Administrator's concern and change nothing a leader does with a request, so
-only Admin/Staff see them: each Ministry's notes and the page help about
-them ([#1135](https://github.com/epiphany40223/parishkit/issues/1135)).
+only Admin/Staff see them: each Ministry's notes in By Ministry and the page
+help about them
+([#1135](https://github.com/epiphany40223/parishkit/issues/1135)).
 There is no Ministry activity filter (Active, Inactive) any more
-([#1267](https://github.com/epiphany40223/parishkit/issues/1267)): the page,
-its export and the command line refuse an `activity` field from anyone, and
-always send the neutral `any` that the installed selection and the export
-capture still take. The [follow-up
-queue](../admin-portal/spec.md#follow-up-workflows) likewise explains its
-"Removed" badge only to Admin/Staff; a leader never meets one, since a leader
-leads only the Ministries the campaign asks about (#922).
+([#1267](https://github.com/epiphany40223/parishkit/issues/1267)): the
+page's packet, the export and the command line refuse an `activity` field
+from anyone, and they always send the neutral `any` that the installed
+selection and the export capture still take. The queue likewise explains its
+"Removed" badge only to Admin/Staff. A leader never meets one, since a
+leader leads only the Ministries the campaign asks about (#922).
 
-Each count that is not zero links to the
-[Ministry follow-up](../admin-portal/spec.md#follow-up-workflows) queue
-showing exactly the requests it counts
-([#1133](https://github.com/epiphany40223/parishkit/issues/1133)): the
-join-request count opens that Ministry's join requests of any status, the
-leave-request count its leave requests of any status, and the unresolved
-count its unresolved requests of either kind, the queue's default status.
-The filter controls show those choices. A count links only when the reader
-may follow up that Ministry, so a Ministry leader gets links only for the
-Ministries they lead; a zero count is plain text, and each link's accessible
-name names its Ministry ("3 join requests for Choir"), as
-[count links](../ui-conventions/spec.md#admin-tables) ask.
+The page reads its rows, totals and export through the follow-up selection
+with its cross-check. By Ministry and the packet's choices read the Ministry
+report selection with its own cross-check, so a reader needs both scopes,
+which the same roles hold. No migration was needed. The page's view audit is
+the queue's `ministry_followup_viewed`; it no longer records
+`ministry_report_viewed`, which the host `report ministry` command still
+records.
 
-The summary table follows the Admin table
+One Ministry's join or leave list, which the host `export ministry` command
+still writes, follows the Admin table
 [column order](../admin-portal/spec.md#table-column-order), leading with the
-Member or the Ministry: a list's Member DUID has its
+Member: a list's Member DUID has its
 own column next to the Member's name, and a Member added on the form, who has
 no ParishSoft DUID yet, shows "New Member" there, followed by the note that
 the Member was added on the form and the proposed Member's reference under
-technical details; the row header is just the name. The summary names each
+technical details; the row header is just the name. By Ministry names each
 Ministry and shows no Ministry DUID. The Member DUID column sorts in the
 installed selection's order
 ([#960](https://github.com/epiphany40223/parishkit/issues/960)), with a
@@ -1564,10 +1677,10 @@ contact. Mailing address/demographics are visible to a Ministry's leaders as
 explicitly authorized for this workflow. Birth date itself is not shown when
 age suffices.
 
-The campaign-wide summary has no export
-([#1126](https://github.com/epiphany40223/parishkit/issues/1126)): its rows
-are counts per Ministry, with no parishioner data, and the page already shows
-them, so its only download is the
+The per-Ministry counts have no export
+([#1126](https://github.com/epiphany40223/parishkit/issues/1126)): they hold
+no parishioner data, and the page already shows them. The page's downloads
+are Export these requests and the
 [follow-up packet](#multi-ministry-follow-up-packet). A request for a summary
 export, including regenerating an expired one made before the removal, is
 refused as an invalid selection; an existing summary file stays downloadable
@@ -1592,23 +1705,28 @@ This representation does not change current-policy checks or report columns.
 
 ## Multi-Ministry follow-up packet
 
-**Access:** same Ministry scoping as the summary.
+**Access:** same Ministry scoping as
+[Ministry requests](#ministry-change-summary).
 
 The request offers multi-select plus Select all authorized Ministries: one
 box per Ministry, and no box ticked selects every Ministry the requester is
-authorized for. The boxes list every Ministry in the requester's
-[summary](#ministry-change-summary) scope by name, whatever page, sort or
-search the summary table shows, so a leader of many Ministries can choose a
-subset across pages; paging, sorting or searching the table keeps the ticks
+authorized for. The form sits at the foot of
+[Ministry requests](#ministry-change-summary). The boxes list every Ministry
+in the requester's scope by name, whatever the page's filters, sort or page
+show, so a leader of many Ministries can choose a subset; filtering, paging
+or sorting the table keeps the ticks
 ([#533](https://github.com/epiphany40223/parishkit/issues/533)). At most
-200 Ministries may be ticked for one packet, as the form's help says; more
-are refused with a message saying to tick fewer or leave every box unticked,
-which includes them all. The list is
-read through the same scoped selection as the summary (once more only when
-the page shown does not already hold the whole unfiltered summary). It shows
+200 Ministries may be ticked for one packet, as the form's help says. While
+more are ticked, Queue is unavailable and its reason line gives the count and
+says to untick some or all
+([#1332](https://github.com/epiphany40223/parishkit/issues/1332)); the server
+still refuses more with a message saying to tick fewer or leave every box
+unticked, which includes them all. The list is
+read through the same scoped Ministry report selection as By Ministry, whose
+whole-scope read it reuses. It shows
 only each Ministry's full name (no DUID,
-[#1123](https://github.com/epiphany40223/parishkit/issues/1123)) and no request data, so the report-view audit
-still records the Ministries of the summary rows shown. For each
+[#1123](https://github.com/epiphany40223/parishkit/issues/1123)) and no
+request data. For each
 Ministry, output its name (never its DUID), chair names, stewardship period/year, and one row for
 each latest effective `join` or `leave` MinistryRequest in that Ministry,
 including resolved/cancelled history only when the requester selects the
@@ -1644,7 +1762,7 @@ Outcome filter offers it; a request already resolved that way keeps its label
 ([#1131](https://github.com/epiphany40223/parishkit/issues/1131)).
 
 For Ministry leaders, every email and phone value in the packet follows the
-summary report's ParishSoft publish-flag rule and renders `Not published`
+Ministry report selection's ParishSoft publish-flag rule and renders `Not published`
 instead of the source value. Admin/Staff retain the operational-contact access
 defined by that rule. This privacy policy applies identically to screen, CSV,
 XLSX, and PDF output.
@@ -1846,8 +1964,9 @@ changed first is left as it is, and the notice says so. While other campaign
 work holds the campaign, no Review is offered. Bulk review of the selected
 rows with exact counts, an Administrator's edited value
 ([ADM-09](../../../plans/stewardship/admin-portal.md#adm-09-census-review-and-parishsoft-publication-ui))
-and `pk-admin` review commands come later; the command line keeps its
-*Reopen* of an ignored row meanwhile.
+come later. On the command line, `pk-admin census review` records the same
+review through the same service
+([admin automation](../admin-automation/spec.md#reports-and-exports)).
 
 Each review is one immutable review row (who, when, the note and the
 resulting decision and edit fields), added by forward migration 0096 under
@@ -1993,7 +2112,8 @@ keep the names they had as Talents and limitations
 (`talents_report_viewed` and `talents_report_exported`), and System logs
 still word older events' `option` choice and `talent_option_id`. The search
 text itself is never recorded, because it can name a Family. These answers
-are never written to ParishSoft. The Ministry follow-up queue also notes when
+are never written to ParishSoft. The follow-up queue on Ministry requests
+also notes when
 a leave comes from a Member who cannot participate in any ministries.
 
 ## System logs

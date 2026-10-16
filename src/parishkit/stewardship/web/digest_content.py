@@ -28,14 +28,16 @@ COMPARISON_CHART_IDS = (
     "comparison-pledges@parishkit",
 )
 # The Response funnel section's charts (#477 slice 2): the funnel and the
-# activity series, both or neither, before the section's table.
+# activity series, both or neither, before the section's table. No digest
+# compiled since #1370 has them; they are still accepted so a ready row
+# compiled earlier can be delivered or retried unchanged.
 FUNNEL_CHART_IDS = (
     "response-funnel@parishkit",
     "response-activity@parishkit",
 )
-# Every chart drawn by the chart engine's server renderer, in the email's
-# order: at most one of each, each its own inline image beside the
-# participation chart.
+# Every chart a retained digest may carry from the chart engine's server
+# renderer, in the email's order: at most one of each, each its own inline
+# image beside the participation chart.
 SERVER_CHART_IDS = FUNNEL_CHART_IDS + COMPARISON_CHART_IDS
 # Their PNGs are the email width at the renderer's scale (2); the height
 # follows the legend's rows or the funnel's stages, within a bound.

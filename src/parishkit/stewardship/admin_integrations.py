@@ -14,8 +14,14 @@ Administrators only, and a read-only session reads), reads in one read
 snapshot, rechecks the session before reporting, and records nothing, as the
 pages' GETs record nothing. Only the configuration's public, non-secret
 settings print, as the page shows them: never a key, a key file or a
-fingerprint. Saving, removing, the backup folder check, the refresh schedule
-preview, dismissal and every key step are still owed by PR 10.
+fingerprint.
+
+``integration schedule-preview`` is the ParishSoft page's live check of its
+refresh schedule editor (``admin:refresh_schedule_check``, #632): the
+applied schedule, or a proposed one in the stored ``refresh_rules`` shape,
+read by the page's own ``ScheduleEditor`` and previewed by the page's own
+``_schedule_context``, so it prints the page's problems, seven days, cost
+and freshness. It admits and records nothing like the reads above.
 """
 
 from dataclasses import dataclass
@@ -269,3 +275,134 @@ def read_integration_status(caller, service, target):
         return IntegrationStatus(target, pending, key_document(key), None, None)
 
     return _read(caller, service, read)
+
+
+@dataclass(frozen=True)
+class SchedulePreview(ReadModel):
+    """The ParishSoft page's live check of a refresh schedule (#632).
+
+    ``proposed`` is whether ``--refresh-schedule`` gave the schedule (else
+    the applied one, as the page shows it); ``changed`` whether it differs
+    from the applied one. ``schedule`` is the checked document in the
+    stored ``refresh_rules`` shape, with wall times in ``timezone`` (None
+    while a row cannot be read). ``problems`` are every problem the page's
+    editor finds, at ``refresh_schedule.rules[N]``, ``.skips[N]`` or
+    ``refresh_schedule``, with the page's words; ``blocking`` is whether
+    they keep a save of this schedule from going through (only a changed
+    schedule's do), and ``status`` the line beside Save. ``preview`` is the
+    page's seven days, cost and freshness, None when there is nothing to
+    preview (a row cannot be read, or no full refresh).
+    """
+
+    version: str
+    timezone: str
+    proposed: bool
+    changed: bool
+    schedule: dict | None
+    problems: list
+    blocking: bool
+    status: str
+    preview: dict | None
+
+
+def preview_document(preview):
+    """The page's per-day list and summary (``preview_context``) as a document.
+
+    The seven-day grid's quarter-hour cells draw the same days as the list,
+    so they are left out; the list's words are the page's.
+    """
+    if preview is None:
+        return None
+    return {
+        "days": [
+            {
+                "day": day["day"],
+                "weekday": str(day["weekday"]),
+                "today": day["today"],
+                "change": day["change"],
+                "counts": str(day["counts"]),
+                "times": [
+                    {
+                        "text": str(entry["text"]),
+                        "struck": entry["struck"],
+                        "kind": entry["kind"],
+                        "due_at": entry["due_at"],
+                    }
+                    for entry in day["times"]
+                ],
+            }
+            for day in preview["days"]
+        ],
+        "line": str(preview["line"]),
+        "summary": str(preview["summary"]),
+        "warning": preview["warning"],
+        "freshness": str(preview["freshness"]),
+        "estimated_windows": preview["estimated_windows"],
+    }
+
+
+def schedule_model(configuration, view, *, proposed):
+    """``integration schedule-preview``'s document from the page's editor view.
+
+    ``view`` is the ``EditorView`` the page's live check draws
+    (``_schedule_context``'s ``schedule``).
+    """
+    from .admin_integration_changes import editor_problems
+
+    editor = view.editor
+    return SchedulePreview(
+        version=configuration.active_configuration.digest,
+        timezone=view.timezone,
+        proposed=proposed,
+        changed=editor.changed,
+        schedule=editor.document(),
+        # Only where and what: the refusal's closed ``code`` belongs to a
+        # refusal (5b), and these problems are answered, not refused.
+        problems=[
+            {"field": problem["field"], "message": problem["message"]}
+            for problem in editor_problems(editor)
+        ],
+        blocking=editor.blocking,
+        status=str(view.status),
+        preview=preview_document(view.preview),
+    )
+
+
+def read_schedule_preview(caller, service, refresh_schedule=None):
+    """``integration schedule-preview``: the page's live schedule check.
+
+    ``refresh_schedule`` is the proposed document's text, or None for the
+    applied schedule. It is parsed as ``integration preview
+    --refresh-schedule`` parses it (a malformed document, or an added quick
+    rule, is ``invalid`` without echoing it) and posted as the page
+    editor's rows; the page's own problems are reported, never refused, as
+    the live check reports them. ParishSoft not set up is ``not_available``.
+    """
+    from .accounts.integration_views import _schedule_context, _selected
+    from .accounts.refresh_schedule_forms import ScheduleEditor
+    from .admin_integration_changes import (
+        InvalidChange,
+        parse_schedule,
+        quick_problems,
+        schedule_rows,
+    )
+
+    document = None if refresh_schedule is None else parse_schedule(refresh_schedule)
+
+    def read(configuration, actor):
+        """Read the page's editor of the applied or proposed schedule."""
+        stored = _selected(configuration, "parishsoft")["values"]["settings"]
+        editor = ScheduleEditor(stored=stored)
+        if document is not None:
+            # Raised as a result, after the recheck (``_read``).
+            problems = quick_problems(document, editor)
+            if problems:
+                return InvalidChange(problems)
+            editor = ScheduleEditor(schedule_rows(document, editor), stored=stored)
+        view = _schedule_context(configuration, editor)["schedule"]
+        return schedule_model(configuration, view, proposed=document is not None)
+
+    model = _read(caller, service, read, missing="ParishSoft is not set up.")
+    if isinstance(model, InvalidChange):
+        raise model
+    return model

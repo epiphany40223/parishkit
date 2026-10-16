@@ -16,13 +16,13 @@ from .quality_pytest import failures_path
 from .quality_sharding import BROWSER_ENGINES, browser_label, parse_browser_runs
 
 # 50 minutes for all of one job's partitions together; a job's tests usually
-# take about 28 to 31 (#1151). Setup usually takes 1 to 2 minutes, so this
-# leaves 10 minutes of the 60-minute job limit for setup and post-job steps,
-# and this bounded
-# timeout, not the job cancel, reports a hang. (One 2026-09-30 mirror outage
-# spent 17 minutes installing; only a long hang in that same run would now
-# reach the job cancel.) Raised from 38 minutes when slow runners ran a
-# partition 60% over its estimate (#1112).
+# take about 20 (a Firefox half, #1380) to 31 (#1151). Setup usually takes
+# 1 to 2 minutes, so this leaves 10 minutes of the 60-minute job limit for
+# setup and post-job steps, and this bounded timeout, not the job cancel,
+# reports a hang. (One 2026-09-30 mirror outage spent 17 minutes installing;
+# only a long hang in that same run would now reach the job cancel.) Raised
+# from 38 minutes when slow runners ran a partition 60% over its estimate
+# (#1112).
 JOB_SECONDS = 3000
 
 

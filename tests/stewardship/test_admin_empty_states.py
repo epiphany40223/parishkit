@@ -52,7 +52,6 @@ ALLOWED = {
     "information.html": {"No Staff edits yet."},
     "limitations-report.html": {"No matching Members.", "No matching Families."},
     "ministry-followup.html": {"No follow-up edits yet."},
-    "ministry-report.html": {"No matching authorized Ministries."},
     "ministry-roster.html": {"No roster changes to enter."},
     "participation.html": {"No campaign dates to show."},
     "source-form.html": {"Every Family that can use the portal can open the form."},

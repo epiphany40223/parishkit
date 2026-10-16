@@ -7,24 +7,30 @@ import pytest
 from .system_health_components import (
     ACCEPT_CHANGED,
     ACCEPT_DONE,
+    ACCEPT_LAPSED,
     ACCEPT_LATE,
     ACCEPT_PAGE,
     ACCEPT_PREVIEW,
+    ACCEPT_SETTLED,
     ACCEPT_STALE,
     ALLOW_CLEARED,
     ALLOW_PAGE,
     ALLOW_PREVIEW,
     BACKUP_BUSY,
+    BACKUP_LIVE,
     BACKUP_PAGE,
     BACKUP_PREVIEW,
     BACKUP_REQUESTED,
     BACKUP_STEP_UP,
     DATED,
+    DEBUG_LIVE,
     DEBUG_PAGE,
     DEBUG_PREVIEW,
     DEBUG_SET,
     DEBUG_STEP_UP,
+    DEBUG_TILE,
     HEALTHY,
+    MAIL,
     PAGE,
     STALE,
     STALE_STATUS,
@@ -44,6 +50,38 @@ def expect(locator):
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
+
+
+@pytest.fixture(autouse=True)
+def background_counts(page):
+    """Answer the header's Background work poll as the page drew it.
+
+    The component server does not serve that endpoint, so the header's 30 s
+    poll fails and shows "Background status unavailable", which wraps the
+    header to a second row at 1280 px and moves the whole page down. The
+    Not current tests wait about 30 s for three failed checks, so whether
+    that line had appeared by the time they measured was a race (seen in
+    all three engines in CI). The counts match the fixture's "1 (running:
+    1)", so the poll changes nothing, and the dashboard's own layout is
+    measured alone.
+    """
+    page.route(
+        "**/admin/background/counts",
+        lambda route: route.fulfill(
+            json={
+                "counts": {
+                    "queued": 0,
+                    "running": 1,
+                    "retry_wait": 0,
+                    "abandoned": 0,
+                    "active": 1,
+                },
+                "delivery_unknown": 0,
+            }
+        ),
+    )
+
+
 REGION = '[data-live-status="system-health"]'
 ANNOUNCER = '[data-live-announcer="system-health"]'
 
@@ -384,7 +422,9 @@ def test_an_update_leaves_focus_outside_and_keeps_a_tables_sideways_scroll(
     table = page.locator("#health-version-details .table-scroll")
     assert table.evaluate("(node) => node.scrollWidth > node.clientWidth")
     table.evaluate("(node) => { node.scrollLeft = 40; }")
-    outside = page.get_by_role("link", name="Refresh System health")
+    # The page's "About this page" disclosure, outside the tiles and the
+    # polled region.
+    outside = page.locator("summary", has_text="About this page")
     outside.focus()
     _away(page)
     expect(
@@ -652,6 +692,180 @@ def _routed(page, component_origin, answers, shown=None):
     page.route(f"{component_origin}{BACKUP_PAGE}", respond)
 
 
+# ------------------------------------------------- the Mail tile (slice 3)
+
+
+@pytest.mark.parametrize(
+    "state, word, said, shown",
+    [
+        ("sending", "Working", "Sending", "A Family email send is in progress."),
+        ("paused", "Working", "Paused by an Administrator since", "Mail is paused"),
+        (
+            "daily",
+            "Working",
+            "Waiting for the daily limit until about",
+            "Waiting for the daily limit (Both mail senders).",
+        ),
+        (
+            "stopped",
+            "Error",
+            "Mail sender 1 not running",
+            "Mail sender 1: Not running.",
+        ),
+    ],
+)
+def test_the_mail_tile_says_what_mail_is_doing(
+    page, component_origin, axe_source, state, word, said, shown
+):
+    """The pk-local states of slice 3: a send, a pause and the daily limit
+    are Working tiles that name the wait (decision 3) and start closed; a
+    stopped mail sender is an Error tile that starts open. Opened, the band
+    shows the reason with its data and links, passes axe and fits a
+    phone."""
+    page.set_viewport_size({"width": 320, "height": 900})
+    page.goto(component_origin + MAIL + state)
+    expect(_word(page, "mail")).to_have_text(word)
+    summary = page.locator("#health-mail .health-counted .health-said")
+    expect(summary).to_contain_text(said)
+    band = _band(page, "mail")
+    if word == "Working":
+        expect(band).to_be_hidden()
+        _toggle(page, "mail").click()
+    expect(band).to_be_visible()
+    visible(band.get_by_text(shown))
+    # Each time reads in the browser's own clock, never with a zone label.
+    for time in summary.locator("time").all():
+        expected = page.evaluate(
+            "(stamp) => ParishDates.dayTime(new Date(stamp), new Date())",
+            time.get_attribute("datetime"),
+        )
+        expect(time).to_have_text(expected)
+    assert "UTC" not in band.inner_text()
+    senders = band.locator("[data-sender]")
+    if state == "stopped":
+        # The two senders differ, so each has its own line; only the server
+        # operator can start the stopped one.
+        expect(senders).to_have_count(2)
+        expect(band.get_by_role("link", name="deployment runbook")).to_be_visible()
+    else:
+        expect(senders).to_have_count(1)
+        expect(senders).to_contain_text("Both mail senders:")
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert _axe(page, axe_source) == []
+
+
+def test_a_mail_toggletip_opens_in_place_and_survives_an_unchanged_poll(
+    page, component_origin
+):
+    """Why a wait happens is one click away: the toggletip floats over the
+    band, so no summary row moves, and an unchanged poll leaves it open."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + MAIL + "daily")
+    kept = _not_reloaded(page)
+    _toggle(page, "mail").click()
+    band = _band(page, "mail")
+    tops = page.evaluate(TOPS)
+    height = band.bounding_box()["height"]
+    button = band.locator(".toggletip-button").first
+    button.click()
+    bubble = band.locator(".toggletip-bubble").first
+    expect(bubble).to_be_visible()
+    expect(bubble).to_contain_text("Sending resumes by itself")
+    expect(button).to_have_attribute("aria-expanded", "true")
+    assert same_place(page.evaluate(TOPS), tops)
+    assert same_place(band.bounding_box()["height"], height)
+    # Two polls bring the same state; the open tip and its band stay put.
+    checked = page.locator("time[data-live-checked]")
+    first = checked.get_attribute("datetime")
+    expect(checked).not_to_have_attribute("datetime", first, timeout=30000)
+    expect(bubble).to_be_visible()
+    assert same_place(page.evaluate(TOPS), tops)
+    assert kept()
+
+
+# ------------------------------------- the ParishSoft refresh tile (slice 4)
+
+
+def _said(page, tile):
+    """The tile's counted summary words."""
+    return page.locator(f"#health-{tile} .health-counted .health-said")
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_a_working_parishsoft_refresh_tile_says_how_current_the_data_is(
+    page, component_origin, axe_source, width
+):
+    """Closed and Working, its summary is the data's age in the browser's
+    clock and the connection; opened, the panel repeats no problem and ends
+    with Refresh from ParishSoft, passes axe and fits a phone."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + HEALTHY)
+    expect(_word(page, "source")).to_have_text("Working")
+    said = _said(page, "source")
+    expect(said).to_contain_text("Data as of")
+    expect(said).to_contain_text("; connection working")
+    stamp = said.locator("time")
+    expected = page.evaluate(
+        "(stamp) => ParishDates.dayTime(new Date(stamp), new Date())",
+        stamp.get_attribute("datetime"),
+    )
+    expect(stamp).to_have_text(expected)
+    band = _band(page, "source")
+    expect(band).to_be_hidden()
+    _toggle(page, "source").click()
+    expect(band).to_be_visible()
+    expect(band.locator("[data-problem]")).to_have_count(0)
+    links = band.get_by_role("link")
+    expect(links.last).to_have_text("Refresh from ParishSoft")
+    assert "UTC" not in band.inner_text()
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert _axe(page, axe_source) == []
+
+
+def test_a_refused_change_holds_its_counts_and_follows_an_acceptance(
+    page, component_origin, axe_source
+):
+    """The pk-local state of slice 4. The refusal's item holds its counts,
+    Accept this change once sits right under them, and the "Before" help is
+    a toggletip that moves no summary row. A poll that brings an acceptance
+    turns the tile Working, named for the acceptance, with the tile still
+    open and no summary row of its own row moved."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + ACCEPT_PAGE)
+    kept = _not_reloaded(page)
+    band = _band(page, "source")
+    expect(band).to_be_visible()
+    expect(_word(page, "source")).to_have_text("Error")
+    expect(_said(page, "source")).to_have_text("ParishSoft refresh refused")
+    item = band.locator('[data-problem="source_destructive_change"]')
+    expect(item.locator("[data-refused-change] table")).to_be_visible()
+    _beside_the_refusal(page)
+    tops = page.evaluate(TOPS)
+    button = item.locator(".toggletip-button")
+    button.click()
+    bubble = item.locator(".toggletip-bubble")
+    expect(bubble).to_contain_text("highest value over the full refreshes")
+    assert same_place(page.evaluate(TOPS), tops)
+    assert _axe(page, axe_source) == []
+    page.keyboard.press("Escape")
+    # A target holding focus waits, as does one under the pointer.
+    page.evaluate("document.activeElement.blur()")
+    _away(page)
+    # The next poll: another Administrator accepted the change once.
+    expect(_word(page, "source")).to_have_text("Working", timeout=30000)
+    expect(_said(page, "source")).to_have_text(
+        "Change accepted once; waiting for the next full refresh"
+    )
+    expect(band).to_be_visible()
+    expect(item).to_have_attribute("data-problem-handled", "")
+    # The tile's own row stays put; only rows after its band may move, as
+    # its details changed height (the tile grid's rule).
+    row = [top for top in tops if top <= tops[1] + 0.5]
+    assert same_place(page.evaluate(TOPS)[: len(row)], row)
+    _beside_the_refusal(page)
+    assert kept()
+
+
 def _not_reloaded(page):
     """Mark the document, so a reload or a rewritten document loses the mark."""
     page.evaluate("document.body.dataset.notReloaded = 'yes'")
@@ -688,11 +902,94 @@ def test_take_a_backup_now_previews_and_confirms_in_place(
         == []
     )
     confirm.click()
-    expect(page.get_by_text("Backup requested at")).to_be_visible()
+    # The tile's summary says so too once a poll brings the request.
+    expect(page.locator("#backup-now [data-backup-requested]")).to_be_visible()
     assert kept()
     assert page.evaluate(
         "document.getElementById('backup-now').contains(document.activeElement)"
     )
+
+
+def test_a_requested_backups_progress_follows_under_its_button(page, component_origin):
+    """Confirming shows the request waiting under the greyed button, where
+    the confirmation points; the status then shows it running, then
+    finished with the button offered again, in place, while the pointer
+    stays on the tile grid (#1317)."""
+    from urllib.request import urlopen
+
+    def body(path):
+        """The component at ``path``, as text."""
+        with urlopen(component_origin + path) as response:
+            return response.read().decode()
+
+    answers = {
+        "preview": body(BACKUP_PREVIEW),
+        "confirm": body(BACKUP_LIVE + "/requested"),
+    }
+    shown = body(BACKUP_LIVE)
+    states = [
+        body(f"{BACKUP_LIVE}/status-{state}") for state in ("running", "finished")
+    ]
+    before = body(BACKUP_LIVE + "/status")
+    confirmed = {"done": False, "away": False, "checks": 0}
+
+    def respond(route):
+        """The page for a GET; for a POST, the answer to its action."""
+        if route.request.method != "POST":
+            route.fulfill(status=200, content_type="text/html", body=shown)
+            return
+        action = re.search(r"(^|&)action=([a-z]+)", route.request.post_data).group(2)
+        confirmed["done"] = confirmed["done"] or action == "confirm"
+        route.fulfill(status=200, content_type="text/html", body=answers[action])
+
+    def status(route):
+        """No request until it is confirmed; then running, then finished.
+
+        The held copy waits while the pointer is over the grid, so the
+        states advance only once the test has moved the pointer away.
+        """
+        if not confirmed["done"]:
+            text = before
+        else:
+            text = states[min(confirmed["checks"], 1)]
+            confirmed["checks"] += confirmed["away"]
+        route.fulfill(status=200, content_type="text/html", body=text)
+
+    page.route(f"{component_origin}{BACKUP_PAGE}", respond)
+    page.route(f"{component_origin}{BACKUP_LIVE}/status", status)
+    page.goto(component_origin + BACKUP_PAGE + "#health-backups")
+    kept = _not_reloaded(page)
+    region = page.locator("#backup-now")
+    # The progress line keeps its room (reserve-lines-wrap), so the region
+    # keeps its height as the line changes (measured below).
+    button = region.get_by_role("button", name="Take a backup now", exact=True)
+    button.click()
+    confirm = region.get_by_role("button", name="Confirm: take a backup now")
+    expect(confirm).to_be_focused()
+    confirm.click()
+    expect(region.locator("[data-backup-requested]")).to_contain_text(
+        "The line under the button follows its progress"
+    )
+    line = region.locator("[data-backup-request]")
+    # The polled line waits while the pointer is over the grid
+    # (data-live-mirror-hold); once the pointer is away it follows.
+    page.mouse.move(0, 0)
+    confirmed["away"] = True
+    expect(line).to_have_attribute("data-backup-request", "running")
+    running_height = region.bounding_box()["height"]
+    expect(line).to_contain_text("and is running; it started at")
+    expect(
+        region.get_by_role("button", name="Take a backup now", exact=True)
+    ).to_be_disabled()
+    expect(line).to_have_attribute("data-backup-request", "finished", timeout=15000)
+    expect(line).to_contain_text("finished at")
+    expect(
+        region.get_by_role("button", name="Take a backup now", exact=True)
+    ).to_be_enabled()
+    assert "UTC" not in region.inner_text()
+    # Running to finished moves nothing under the pointer.
+    assert same_place(region.bounding_box()["height"], running_height)
+    assert kept()
 
 
 def test_refusals_answer_inside_the_region(page, component_origin):
@@ -728,7 +1025,7 @@ def test_the_button_follows_a_request_made_elsewhere(page, component_origin):
     expect(
         region.get_by_role("button", name="Take a backup now", exact=True)
     ).to_be_disabled(timeout=30000)
-    visible(region.get_by_text("and is waiting."))
+    visible(region.get_by_text("and is held while a Family email send is in progress."))
 
 
 def test_an_unchanged_poll_leaves_the_button_in_place(page, component_origin):
@@ -773,7 +1070,7 @@ def test_the_button_catches_up_once_the_reader_leaves_it(page, component_origin)
     expect(button).to_be_focused()
     page.evaluate("document.activeElement.blur()")
     expect(button).to_be_disabled(timeout=30000)
-    visible(region.get_by_text("and is waiting."))
+    visible(region.get_by_text("and is held while a Family email send is in progress."))
 
 
 def test_turn_off_debug_logging_previews_and_confirms_in_place(
@@ -832,6 +1129,96 @@ def test_turn_off_debug_logging_previews_and_confirms_in_place(
     )
 
 
+def _answered_then_set(page, component_origin, base, answers):
+    """Serve ``base`` at the page's real address and answer its POSTs from
+    ``answers`` (action to component path), as ``_routed`` does; the page's
+    status reads ``base``'s ``/status`` until the confirmation is answered,
+    then ``/status-set``, as the server's would once the switch is set."""
+    from urllib.request import urlopen
+
+    def body(path):
+        """The component at ``path``, as text."""
+        with urlopen(component_origin + path) as response:
+            return response.read().decode()
+
+    bodies = {action: body(path) for action, path in answers.items()}
+    shown, before, after = (body(base + end) for end in ("", "/status", "/status-set"))
+    state = {"set": False}
+
+    def respond(route):
+        """The page for a GET; for a POST, the answer to its action."""
+        data = route.request.post_data or ""
+        if route.request.method != "POST":
+            route.fulfill(status=200, content_type="text/html", body=shown)
+            return
+        action = next(
+            name for name in bodies if re.search(rf"(^|&)action={name}(&|$)", data)
+        )
+        state["set"] = state["set"] or action.endswith("_confirm")
+        route.fulfill(status=200, content_type="text/html", body=bodies[action])
+
+    def status(route):
+        """The status as of now: the switch is set once confirmed."""
+        text = after if state["set"] else before
+        route.fulfill(status=200, content_type="text/html", body=text)
+
+    page.route(f"{component_origin}{BACKUP_PAGE}", respond)
+    page.route(f"{component_origin}{base}/status", status)
+
+
+@pytest.mark.parametrize("mode", ["production", "testing"])
+def test_turning_off_debug_logging_updates_the_tile_and_both_buttons_at_once(
+    page, component_origin, mode
+):
+    """Confirming updates the Debug logging tile's word and summary, the
+    overall line and both buttons without a reload, and without waiting for
+    the next poll (a minute away here): the answer checks the status at once
+    (#1317). Allow debug logging again becomes available in Testing only;
+    in Production it stays greyed, saying why."""
+    base = DEBUG_LIVE + mode
+    _answered_then_set(
+        page,
+        component_origin,
+        base,
+        {"debug_off_preview": DEBUG_PREVIEW, "debug_off_confirm": base + "/set"},
+    )
+    page.goto(component_origin + BACKUP_PAGE)
+    kept = _not_reloaded(page)
+    region = page.locator("#debug-off")
+    word = _word(page, "debug")
+    if mode == "production":
+        expect(word).to_have_text("Warning")
+    region.get_by_role("button", name="Turn off debug logging", exact=True).click()
+    confirm = region.get_by_role("button", name="Confirm: turn off debug logging")
+    expect(confirm).to_be_focused()
+    # The preview's own check found the switch not yet set.
+    if mode == "production":
+        expect(word).to_have_text("Warning")
+    confirm.click()
+    expect(region.locator("[data-debug-off-set]")).to_be_visible()
+    # The pointer stays on the tile grid: the summary row and the buttons
+    # still follow at once.
+    expect(word).to_have_text("Working", timeout=5000)
+    expect(_said(page, "debug")).to_contain_text(
+        "Turned off from this page by other@example.org at"
+    )
+    expect(page.locator(LINE)).to_contain_text("All working")
+    turn_off = region.get_by_role("button", name="Turn off debug logging", exact=True)
+    expect(turn_off).to_be_disabled()
+    expect(region.locator("#debug-off-reason")).to_contain_text(
+        "Debug logging was turned off by other@example.org at"
+    )
+    allow = region.get_by_role("button", name="Allow debug logging again")
+    if mode == "testing":
+        expect(allow).to_be_enabled()
+    else:
+        expect(allow).to_be_disabled()
+        expect(region.locator("#debug-allow-reason")).to_have_text(
+            "In Production only the server operator can clear the debug-off switch."
+        )
+    assert kept()
+
+
 def test_a_stale_sign_in_offers_the_step_up_in_the_debug_region(page, component_origin):
     """The shared "For security" notice and Confirm with Google, in place."""
     _routed(
@@ -861,7 +1248,7 @@ def test_the_debug_button_follows_a_switch_set_elsewhere(page, component_origin)
     expect(reason).to_contain_text("Debug logging was turned off by other@example.org")
     stamp = reason.locator("time").get_attribute("datetime")
     expect(reason.locator("time")).not_to_have_text(stamp)
-    # The tile's details say the same, and that the server's setting is on.
+    # The tile's details add that the server's setting is still on.
     panel = page.locator('[data-debug-switch="set"]')
     expect(panel).to_contain_text("still says “on”")
 
@@ -954,15 +1341,20 @@ def test_accept_this_change_once_previews_and_confirms_in_place(
 
 def _beside_the_refusal(page):
     """#accept-change is in the ParishSoft refresh tile's details, directly
-    after its problems, which end with the refused change's counts (#1214),
-    and starts within a line of them."""
+    after its problems, which end with the refused change's item and its
+    counts (#1214), and starts within a line of them."""
     assert page.evaluate("""() => {
         const notice = document.querySelector('[data-refused-change]');
-        const problems = notice.parentElement;
+        const problems = notice.closest(
+            '[data-live-mirror-target="health-source-problems"]');
         const keyed = problems.nextElementSibling;
-        return problems.matches(
-                '[data-live-mirror-target="health-source-problems"]')
-            && notice === problems.lastElementChild
+        // The counts are the last thing in the problems: each element from
+        // them up to the problems' target is its parent's last child.
+        let last = true;
+        for (let node = notice; node !== problems; node = node.parentElement) {
+            last = last && node === node.parentElement.lastElementChild;
+        }
+        return last
             && keyed.matches('[data-live-keyed="accept-change"]')
             && keyed.firstElementChild === document.getElementById('accept-change')
             && keyed.parentElement.id === 'health-source-details';
@@ -1077,20 +1469,83 @@ def test_an_open_preview_of_an_older_refusal_is_marked_changed(page, component_o
 
 
 def test_a_refusal_shown_by_a_poll_brings_its_accept_button(page, component_origin):
-    """A page drawn before the refusal shows the region greyed with why; the
-    poll that shows the refusal brings its counts and the button, right
-    under them; no reload needed, and the tile is not opened for the reader."""
+    """A page drawn before the refusal shows no Accept this change once
+    (batch 24a); the poll that shows the refusal brings its counts and the
+    section together, the button right under them; no reload needed, and
+    the tile is not opened for the reader."""
     page.goto(component_origin + ACCEPT_LATE + "#health-source")
     region = page.locator("#accept-change")
+    expect(region).to_be_attached()
+    assert region.evaluate("e => e.innerText.trim()") == ""
     button = region.get_by_role("button", name="Accept this change once", exact=True)
-    expect(button).to_be_disabled()
-    expect(region.locator("#accept-change-reason")).to_have_text(
-        "No refused ParishSoft refresh is waiting to be accepted."
-    )
+    expect(button).to_have_count(0)
     _away(page)
-    expect(button).to_be_enabled(timeout=30000)
-    expect(page.locator("[data-refused-change]")).to_be_visible(timeout=30000)
+    # The same poll brings both: never the counts without the section.
+    eventually(
+        page,
+        """() => !!document.querySelector('[data-refused-change]')""",
+    )
+    assert page.evaluate("""() => !!document.querySelector(
+        '#accept-change [data-in-place="accept-preview"]')""")
+    expect(button).to_be_enabled()
+    expect(page.locator("[data-refused-change]")).to_be_visible()
     _beside_the_refusal(page)
+
+
+def test_a_refusal_settled_by_a_poll_takes_its_accept_button_with_it(
+    page, component_origin
+):
+    """The reverse of the test above: the poll in which the refusal goes away
+    removes the Accept this change once section and the refused counts in
+    the same update, never one without the other."""
+    page.goto(component_origin + ACCEPT_SETTLED + "#health-source")
+    region = page.locator("#accept-change")
+    button = region.get_by_role("button", name="Accept this change once", exact=True)
+    expect(button).to_be_enabled()
+    expect(page.locator("[data-refused-change]")).to_be_visible()
+    _away(page)
+    eventually(
+        page,
+        """() => !document.querySelector('[data-refused-change]')""",
+    )
+    # Both went in the one update: the section is gone when the counts are.
+    expect(button).to_have_count(0)
+    assert page.evaluate("""() => !document.querySelector(
+        '#accept-change [data-in-place="accept-preview"]')""")
+    assert region.evaluate("e => e.innerText.trim()") == ""
+
+
+def test_a_lapsed_acceptance_takes_the_section_away_and_says_why(
+    page, component_origin
+):
+    """A refusal accepted once whose acceptance lapses on the next poll can
+    never be accepted again, so that poll removes the section and the
+    problem line says why, in the same update; nothing above the tile's
+    details moves and the page is not reloaded (Administrator, 2026-10-15)."""
+    page.goto(component_origin + ACCEPT_LAPSED + "#health-source")
+    kept = _not_reloaded(page)
+    region = page.locator("#accept-change")
+    expect(region.locator("#accept-change-reason")).to_contain_text("Accepted by")
+    places = _places(page, page.locator("#health-source-name"))
+    _away(page)
+    eventually(
+        page,
+        """() => !!document.querySelector(
+            '#health-source-details [data-accept-unavailable="lapsed"]')""",
+    )
+    # Both in the one update: the reason is there once the section is gone.
+    assert region.evaluate("e => e.innerText.trim()") == ""
+    expect(region.get_by_role("button")).to_have_count(0)
+    reason = page.locator('#health-source-details [data-accept-unavailable="lapsed"]')
+    expect(reason).to_contain_text("can be accepted only once")
+    expect(
+        page.locator("#health-source-details").get_by_role(
+            "link", name="Refresh from ParishSoft"
+        )
+    ).not_to_have_count(0)
+    expect(page.locator("[data-refused-change]")).to_be_visible()
+    assert kept()
+    assert places() == []
 
 
 def test_a_changed_refusal_is_said_in_the_region(page, component_origin):
@@ -1222,3 +1677,170 @@ def test_the_allow_region_is_accessible_at_phone_and_desktop_widths(
         })).violations.map(({id,impact}) => ({id,impact}))""")
             == []
         )
+
+
+# ------------------------------ the Backups and Debug logging tiles (slice 5)
+
+
+def _row_of(tops, index):
+    """The summary rows' places up to and including the row holding tile
+    ``index``: what opening or growing that tile's band must never move."""
+    return [top for top in tops if top <= tops[index] + 0.5]
+
+
+def test_take_a_backup_now_from_its_tile(page, component_origin):
+    """The pk-local state of slice 5. Closed and Working, the tile names the
+    last backup and its off-site copy; opened, Take a backup now previews
+    and confirms in its band without moving its row, and the next poll's
+    request is named in the summary with the tile still open."""
+    _routed(
+        page,
+        component_origin,
+        {"preview": (200, BACKUP_PREVIEW), "confirm": (200, BACKUP_REQUESTED)},
+    )
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + BACKUP_PAGE)
+    kept = _not_reloaded(page)
+    expect(_word(page, "backups")).to_have_text("Working")
+    said = _said(page, "backups")
+    expect(said).to_contain_text("Last backup")
+    expect(said).to_contain_text("; off-site copy")
+    band = _band(page, "backups")
+    expect(band).to_be_hidden()
+    _toggle(page, "backups").click()
+    expect(band).to_be_visible()
+    expect(band.locator("[data-problem]")).to_have_count(0)
+    tops = page.evaluate(TOPS)
+    row = _row_of(tops, 2)
+    region = band.locator("#backup-now")
+    region.get_by_role("button", name="Take a backup now", exact=True).click()
+    confirm = region.get_by_role("button", name="Confirm: take a backup now")
+    expect(confirm).to_be_focused()
+    assert same_place(page.evaluate(TOPS)[: len(row)], row)
+    confirm.click()
+    expect(region.locator("[data-backup-requested]")).to_be_visible()
+    page.evaluate("document.activeElement.blur()")
+    _away(page)
+    # The next poll: the request waits for the Family email send.
+    expect(said).to_contain_text("is held during the email send", timeout=30000)
+    expect(said).to_contain_text("Backup requested at")
+    stamp = said.locator("time")
+    expected = page.evaluate(
+        "(stamp) => ParishDates.dayTime(new Date(stamp), new Date())",
+        stamp.get_attribute("datetime"),
+    )
+    expect(stamp).to_have_text(expected)
+    expect(_word(page, "backups")).to_have_text("Working")
+    expect(band).to_be_visible()
+    assert same_place(page.evaluate(TOPS)[: len(row)], row)
+    assert kept()
+
+
+def test_turn_off_debug_logging_from_its_tile(page, component_origin):
+    """The pk-local state of slice 5. In Production debug logging in effect
+    opens the tile as a Warning whose problem says it once; Turn off debug
+    logging previews and confirms in its band without moving its row, and
+    the next poll turns the tile Working, named for the switch, still
+    open."""
+    _routed(
+        page,
+        component_origin,
+        {
+            "debug_off_preview": (200, DEBUG_PREVIEW),
+            "debug_off_confirm": (200, DEBUG_SET),
+        },
+        shown=DEBUG_TILE,
+    )
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + BACKUP_PAGE)
+    kept = _not_reloaded(page)
+    band = _band(page, "debug")
+    expect(band).to_be_visible()
+    expect(_word(page, "debug")).to_have_text("Warning")
+    expect(band.locator('[data-problem="debug_logging"]')).to_have_count(1)
+    assert "Debug logging must be off in Production" not in band.inner_text()
+    tops = page.evaluate(TOPS)
+    row = _row_of(tops, 3)
+    region = band.locator("#debug-off")
+    region.get_by_role("button", name="Turn off debug logging", exact=True).click()
+    confirm = region.get_by_role("button", name="Confirm: turn off debug logging")
+    expect(confirm).to_be_focused()
+    assert same_place(page.evaluate(TOPS)[: len(row)], row)
+    confirm.click()
+    expect(region.locator("[data-debug-off-set]")).to_be_visible()
+    page.evaluate("document.activeElement.blur()")
+    _away(page)
+    # The next poll: the switch is set and no service logs in debug form.
+    expect(_word(page, "debug")).to_have_text("Working", timeout=30000)
+    said = _said(page, "debug")
+    expect(said).to_contain_text("Turned off from this page by other@example.org at")
+    stamp = said.locator("time")
+    expect(stamp).not_to_have_text(stamp.get_attribute("datetime"))
+    expect(band).to_be_visible()
+    # The answer's own check came while the pointer was over the grid, so
+    # the problems follow on the first poll after it left (#1317).
+    expect(band.locator("[data-problem]")).to_have_count(0, timeout=30000)
+    assert same_place(page.evaluate(TOPS)[: len(row)], row)
+    assert "UTC" not in band.inner_text()
+    assert kept()
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_working_backups_and_debug_tiles_fit_and_pass_axe(
+    page, component_origin, axe_source, width
+):
+    """Opened while Working, both bands pass axe and fit a phone; a held
+    request's help is a toggletip that moves no summary row and stays inside
+    the viewport."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + BACKUP_PAGE)
+    for tile in ("backups", "debug"):
+        _toggle(page, tile).click()
+        expect(_band(page, tile)).to_be_visible()
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert _axe(page, axe_source) == []
+    _away(page)
+    # The next poll brings a held request, with its toggletip.
+    panel = _band(page, "backups").locator('[data-backup-request="held"]')
+    expect(panel).to_be_visible(timeout=30000)
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    tops = page.evaluate(TOPS)
+    panel.locator(".toggletip-button").click()
+    bubble = panel.locator(".toggletip-bubble")
+    expect(bubble).to_contain_text(
+        "can still show for a few minutes after the send ends"
+    )
+    assert same_place(page.evaluate(TOPS), tops)
+    box = bubble.bounding_box()
+    assert box["x"] >= 0 and box["x"] + box["width"] <= width
+    assert _axe(page, axe_source) == []
+
+
+def test_the_held_request_toggletip_survives_an_unchanged_poll(page, component_origin):
+    """Why a held request can outlast the send is one click away; the tip
+    floats over the band, so no summary row moves, and polls that bring the
+    same state leave it open."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + BACKUP_REQUESTED)
+    kept = _not_reloaded(page)
+    _toggle(page, "backups").click()
+    band = _band(page, "backups")
+    panel = band.locator('[data-backup-request="held"]')
+    expect(panel).to_be_visible()
+    tops = page.evaluate(TOPS)
+    height = band.bounding_box()["height"]
+    button = panel.locator(".toggletip-button")
+    button.click()
+    bubble = panel.locator(".toggletip-bubble")
+    expect(bubble).to_contain_text("can still show for a few minutes")
+    expect(button).to_have_attribute("aria-expanded", "true")
+    assert same_place(page.evaluate(TOPS), tops)
+    assert same_place(band.bounding_box()["height"], height)
+    # Two polls bring the same state; the open tip and its band stay put.
+    checked = page.locator("time[data-live-checked]")
+    for _ in range(2):
+        first = checked.get_attribute("datetime")
+        expect(checked).not_to_have_attribute("datetime", first, timeout=30000)
+    expect(bubble).to_be_visible()
+    assert same_place(page.evaluate(TOPS), tops)
+    assert kept()

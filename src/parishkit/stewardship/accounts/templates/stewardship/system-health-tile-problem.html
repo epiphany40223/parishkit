@@ -1,0 +1,7 @@
+{% load i18n stewardship %}{% comment %}
+  One problem item of a tile's problems (system-health-tile-problems.html):
+  ``part`` is a system_health.TilePart of ``tile``. A refused large change's
+  item also holds the refused counts (system-health-refused-counts.html),
+  as the spec's tile table says.
+{% endcomment %}<li class="notice{% if part in tile.counted and part.severity == 'error' %} notice-error{% endif %}" data-problem="{{ part.problem.kind }}" data-severity="{{ part.severity }}"{% if part not in tile.counted %} data-problem-handled{% endif %}>
+{% include "stewardship/system-health-problem.html" with problem=part.problem %}{% if part.problem.kind == "source_destructive_change" and health.refused_counts %}{% include "stewardship/system-health-refused-counts.html" %}{% endif %}</li>

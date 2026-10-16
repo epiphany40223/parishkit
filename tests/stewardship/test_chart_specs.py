@@ -6,14 +6,19 @@ counts, and times are the campaign's wall clock whatever zone renders them.
 """
 
 import json
+import re
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import pytest
+import vl_convert
 
+from parishkit.stewardship.archive.workbook import BAND_EDGES
 from parishkit.stewardship.jobs.send_history import SendKey
+from parishkit.stewardship.reports import comparison_charts as charts
 from parishkit.stewardship.reports.chart_assets import VEGA_LITE_SCHEMA
 from parishkit.stewardship.reports.chart_specs import (
     WIDTH,
@@ -22,12 +27,17 @@ from parishkit.stewardship.reports.chart_specs import (
     financial_charts,
     funnel_chart,
     label_room,
+    ministry_followup,
+    participation_chart,
     population_progress,
     quiet_slots,
+    round_ticks,
     share,
     stage_label,
+    whole_dollars,
 )
 from parishkit.stewardship.reports.money import MoneyAmount
+from parishkit.stewardship.reports.participation import ParticipationDay
 from parishkit.stewardship.reports.response_metrics import (
     ActivityBucket,
     ResponseMetrics,
@@ -41,6 +51,8 @@ from parishkit.stewardship.reports.statistics import PopulationStatistics
 from parishkit.stewardship.web.dates import using
 from parishkit.stewardship.web.report_markup import TRACK
 
+from .test_comparison_charts import comparison
+from .test_participation_rendering import document as participation
 from .test_response_metrics import ROWS, START
 
 NEW_YORK = "America/New_York"
@@ -331,51 +343,6 @@ def test_empty_activity_layers_stay_out_of_the_accessibility_tree():
     assert all("aria" not in layer["mark"] for layer in full.spec["layer"])
 
 
-def test_digest_charts_are_trimmed_like_the_digest_table():
-    """The digest's charts drop Link followed and name Invited as it does (#1016)."""
-    from parishkit.stewardship.reports.digest_funnel import digest_charts
-
-    with using("us_long"):
-        funnel, activity = digest_charts(metrics())
-    rows = funnel.spec["data"]["values"]
-    assert [row["stage"] for row in rows] == [
-        "Email invites sent",
-        "Form opened",
-        "Progressed past the first step",
-        "Submitted",
-    ]
-    assert [row["share"] for row in rows] == ["100%", "100%", "75%", "75%"]
-    assert funnel.table.headings == (
-        "Stage",
-        "Families",
-        "Compared with email invites sent",
-    )
-    assert funnel.summary == (
-        "Families by stage: 4 were sent an email invite, 4 opened the form, "
-        "3 progressed past the first step, 3 submitted."
-    )
-    lines, _rules, _labels = activity.spec["layer"]
-    assert {row["series"] for row in lines["data"]["values"]} == {
-        "Form opened",
-        "Submitted",
-    }
-    assert activity.table.headings == ("Campaign time", "Form opened", "Submitted")
-    assert activity.summary.startswith("Form opens and submissions per hour in ")
-    # The dashboard's own charts are unchanged: five stages, three lines.
-    assert len(funnel_chart(metrics()).spec["data"]["values"]) == 5
-    assert activity_chart(metrics()).table.headings[1] == "Link followed"
-
-
-def test_digest_activity_follows_the_dashboards_automatic_grain():
-    """Hourly while the activity spans three days or less, daily after that."""
-    from parishkit.stewardship.reports.digest_funnel import digest_charts
-
-    value = metrics()
-    assert digest_charts(value)[1].title == "Response activity by hour"
-    later = replace(value, as_of=value.as_of + timedelta(days=5))
-    assert digest_charts(later)[1].title == "Response activity by day"
-
-
 def test_activity_chart_refuses_unknown_series():
     """Only the known lines can be drawn, and at least one of them."""
     for series in ((), (("other", "Other", "#000000", [1, 0]),)):
@@ -570,3 +537,406 @@ def test_population_progress_without_families_or_observation():
     assert {row[2] for row in chart.table.rows} == {"—"}
     assert chart.spec["data"]["values"][0]["text"] == "0 out of 0 (—)"
     assert population_progress(None) is None
+
+
+def test_ministry_followup_draws_each_state_against_all_requests():
+    """Resolved or closed and Unresolved are progress bars against every
+    current request of the matching Ministries (#720), each bar's value on
+    its axis label's second line, as the Participation chart draws it."""
+    totals = {
+        "joining": 30,
+        "leaving": 10,
+        "unresolved": 28,
+        "completed": 12,
+        "requests": 40,
+    }
+    chart = ministry_followup(totals)
+    assert (chart.key, chart.title) == ("ministry-followup", "Follow-up progress")
+    spec = json.loads(json.dumps(chart.spec))
+    assert spec["encoding"]["x"]["scale"] == {"domain": [0, 40], "nice": False}
+    assert spec["encoding"]["x"]["title"] == "Requests"
+    assert [row["tick"] for row in spec["data"]["values"]] == [
+        "Resolved or closed — 12 out of 40 (30%)",
+        "Unresolved — 28 out of 40 (70%)",
+    ]
+    assert chart.summary == (
+        "Follow-up progress: Resolved or closed 12 out of 40 (30%), "
+        "Unresolved 28 out of 40 (70%)."
+    )
+    assert chart.table.headings == (
+        "Follow-up progress",
+        "Requests",
+        "Share of all requests",
+    )
+
+
+def test_ministry_followup_without_progress_draws_zero_bars():
+    """With no request, or no progress at all (Members no longer in
+    ParishSoft), the chart still draws, its bars at zero, so its box never
+    appears or disappears under the reader (no layout shift, #736)."""
+    empty = dict.fromkeys(
+        ("joining", "leaving", "unresolved", "completed", "requests"), 0
+    )
+    gone = {"joining": 2, "leaving": 1, "requests": None}
+    for totals in (empty, gone):
+        chart = ministry_followup(totals)
+        assert chart.key == "ministry-followup"
+        assert [row["count"] for row in chart.spec["data"]["values"]] == [0, 0]
+        assert chart.spec["encoding"]["x"]["scale"]["domain"] == [0, 1]
+
+
+def test_participation_chart_is_panels_on_one_date_axis():
+    """The Participation page's daily chart (#720 slice 2c) is the static
+    drawing's design in the chart engine: titled panels on one shared date
+    axis, each with its own value axis from zero, no legend, no second
+    y-axis, and the dates labelled only under the last panel."""
+    chart = participation_chart(participation())
+    spec = chart.spec
+    assert spec["$schema"] == VEGA_LITE_SCHEMA
+    assert chart.key == "daily-participation"
+    assert chart.title == "Daily participation — Historical as of day"
+    assert spec["resolve"] == {"scale": {"x": "shared"}}
+    assert spec["autosize"] == {"type": "fit-x", "contains": "padding"}
+    panels = spec["vconcat"]
+    assert [panel["title"]["text"] for panel in panels] == [
+        "First submissions that day",
+        "Cumulative participating Families",
+        "Effective annual pledges",
+    ]
+    marks = [panel["layer"][0]["mark"] for panel in panels]
+    assert [mark["type"] for mark in marks] == ["bar", "line", "line"]
+    assert marks[2]["strokeDash"] == [6, 3] and "strokeDash" not in marks[1]
+    ys = [panel["layer"][0]["encoding"]["y"] for panel in panels]
+    assert [y["field"] for y in ys] == ["first", "families", "pledges"]
+    assert [y["title"] for y in ys] == ["Families", "Families", "USD"]
+    # Each panel is scaled to its own values plus 10%, with whole round ticks.
+    assert [y["scale"]["domain"][0] for y in ys] == [0, 0, 0]
+    assert ys[1]["scale"]["domain"][1] == pytest.approx(3.3)
+    assert ys[1]["axis"]["values"] == [0, 1, 2, 3]
+    assert ys[2]["axis"]["values"] == [0, 1000, 2000, 3000]
+    assert "format" not in ys[2]["axis"] and "$~s" in ys[2]["axis"]["labelExpr"]
+    # Never a second y-axis or a legend: no layer has its own y axis or a
+    # color or dash encoded by a field.
+    for panel in panels:
+        assert all(
+            "color" not in layer["encoding"] and "strokeDash" not in layer["encoding"]
+            for layer in panel["layer"]
+        )
+    xs = [panel["encoding"]["x"] for panel in panels]
+    assert all(x["field"] == "tick" and x["type"] == "ordinal" for x in xs)
+    # Dates in order, whatever their text order, by an explicit domain.
+    assert xs[0]["scale"]["domain"] == [row["tick"] for row in spec["data"]["values"]]
+    assert [x["axis"].get("labels", True) for x in xs] == [False, False, True]
+    assert xs[-1]["title"] == ["Campaign date", "(America/New_York)"]
+    # Room between the end date labels and the two-line title.
+    assert xs[-1]["axis"]["titlePadding"] == 8
+    assert xs[-1]["axis"]["labelOverlap"] and "labelExpr" not in xs[-1]["axis"]
+    # Vega's own accessible names would read raw fields (ISO dates,
+    # unrounded dollars), so the marks and axes are hidden; the view's name,
+    # summary and the daily table are the accessible path.
+    for panel in panels:
+        drawn = panel["layer"][0]
+        assert drawn["mark"]["aria"] is False
+        assert drawn["mark"].get("point", {"aria": False})["aria"] is False
+        assert drawn["encoding"]["y"]["axis"]["aria"] is False
+        assert panel["encoding"]["x"]["axis"]["aria"] is False
+    # The hover column per date, on top and hidden from assistive technology.
+    for panel in panels:
+        hover = panel["layer"][-1]
+        assert hover["mark"] == {"type": "bar", "opacity": 0, "aria": False}
+        assert hover["encoding"]["tooltip"] == {"field": "tip"}
+    assert json.loads(json.dumps(spec)) == spec
+
+
+@pytest.mark.parametrize(
+    ("style", "first", "heading"),
+    [
+        ("us_long", "Oct 31, 2026", "November 2, 2026"),
+        ("eu_dot", "31.10.26", "02.11.2026"),
+        ("iso", "2026-10-31", "2026-11-02"),
+    ],
+)
+def test_participation_chart_dates_follow_the_parish_style(style, first, heading):
+    """The date axis and the tooltips write dates in the parish's style, as
+    the static drawing, the daily table and the exports do."""
+    with using(style):
+        chart = participation_chart(participation())
+    rows = chart.spec["data"]["values"]
+    assert rows[0]["tick"] == first
+    assert rows[-1]["tip"]["title"] == heading
+    assert chart.spec["vconcat"][0]["encoding"]["x"]["scale"]["domain"][0] == first
+
+
+def test_participation_chart_rows_tooltips_and_summary():
+    """Each date's tooltip has its date as the heading and its figures in
+    whole dollars; the summary gives the range and the last date's figures."""
+    chart = participation_chart(participation())
+    rows = chart.spec["data"]["values"]
+    assert [row["day"] for row in rows] == ["2026-10-31", "2026-11-01", "2026-11-02"]
+    assert rows[-1]["tip"] == {
+        "title": "November 2, 2026",
+        "First submissions": "1",
+        "Families that have responded": "3 out of 1,234 (0.2%)",
+        "Effective annual pledges": "$3,235",
+    }
+    assert rows[0]["pledges"] == pytest.approx(1234.56)
+    assert chart.summary == (
+        "Daily participation, Historical as of day, from October 31, 2026 to "
+        "November 2, 2026; by the last date 3 out of 1,234 (0.2%) Families had "
+        "responded, 1 of them for the first time that day, with $3,235 in "
+        "effective annual pledges."
+    )
+    assert chart.spec["description"] == chart.summary
+    assert chart.table.headings[-1] == "Effective annual pledges"
+    assert chart.table.rows[0] == (
+        "October 31, 2026",
+        "1",
+        "1 out of 1,234 (0.1%)",
+        "$1,235",
+    )
+
+
+def test_participation_chart_gaps_and_without_financial():
+    """An unavailable date is a gap (None) with Unavailable in its tooltip,
+    never zero; without financial there is no pledges panel or figure."""
+    value = participation()
+    gap = ParticipationDay(
+        value.days[1].local_date, 0, 0, 0, None, None, False, False, None
+    )
+    chart = participation_chart(
+        replace(value, days=(value.days[0], gap, value.days[2]))
+    )
+    row = chart.spec["data"]["values"][1]
+    assert (row["first"], row["families"], row["pledges"]) == (None, None, None)
+    assert row["tip"]["Families that have responded"] == "Unavailable"
+    assert row["tip"]["Effective annual pledges"] == "Unavailable"
+    for panel in chart.spec["vconcat"][1:]:
+        assert panel["layer"][0]["mark"]["invalid"] == "break-paths-show-domains"
+    plain = participation_chart(replace(value, financial_enabled=False))
+    assert len(plain.spec["vconcat"]) == 2
+    assert "Effective annual pledges" not in plain.spec["data"]["values"][0]["tip"]
+    assert "pledges" not in plain.summary
+    assert len(plain.table.headings) == 3
+    assert plain.spec["vconcat"][-1]["encoding"]["x"]["axis"]["labelOverlap"]
+    last = replace(
+        value, days=(*value.days[:2], replace(gap, local_date=value.days[2].local_date))
+    )
+    assert participation_chart(last).summary.endswith(
+        "; the last date's figures are unavailable."
+    )
+
+
+def page_warnings(spec, capfd):
+    """Vega-Lite's compile warnings for ``spec`` as the page draws it.
+
+    chart-v1.js gives the spec (or each stacked panel) the container's
+    width, so that is compiled here; vl-convert prints the warnings, which
+    ``capfd`` reads from the process's output.
+    """
+    spec = json.loads(json.dumps(spec))
+    for part in spec.get("vconcat", [spec]):
+        part["width"] = "container"
+    capfd.readouterr()
+    vl_convert.vegalite_to_vega(spec, show_warnings=True)
+    captured = capfd.readouterr()
+    return [line for line in (captured.out + captured.err).splitlines() if line]
+
+
+def page_charts():
+    """Every chart the app builds, as its page draws it.
+
+    The response dashboard's funnel and activity (by hour and by day), the
+    Financial stewardship summary's count bars,
+    the Participation page's progress bars and daily chart, and the
+    Campaign comparison's day-by-day, final-figures and pledge-band charts.
+    """
+    built = comparison()
+    bands = (
+        charts.distribution_chart(found, BAND_EDGES)
+        for found in (built.current, *built.imported)
+    )
+    return [
+        funnel_chart(metrics()),
+        activity_chart(metrics()),
+        activity_chart(metrics(grain="day")),
+        *financial_charts(financial_summary(), CHOICES),
+        population_progress(PopulationStatistics(4, 2, 1, 1, 0, MoneyAmount(0))),
+        participation_chart(participation()),
+        *charts.day_charts(built),
+        *charts.final_charts(built),
+        *(chart for chart in bands if chart is not None),
+    ]
+
+
+def test_every_page_chart_compiles_without_warnings(capfd):
+    """Every chart compiles, as the page draws it, without a Vega-Lite
+    warning: the browser logs each one on every draw (a step height beside
+    the container width warned that fit-y was dropped, #1325). A step
+    height still warns, so the check can fail."""
+    documents = page_charts()
+    # Every kind of chart is here: 2 + 1 + 2 + 1 + 1 + 3 + 2 + 3.
+    assert len(documents) == 15
+    for document in documents:
+        assert page_warnings(document.spec, capfd) == [], document.key
+    # A bar chart (here the funnel and the final figures) given back a step
+    # height warns again. The loop above covers the other three fixes: the
+    # name sorts, the line width's sort and the merged series legend.
+    finals = next(d for d in documents if d.key == "comparison-final-families")
+    for document in (documents[0], finals):
+        stepped = document.spec | {"height": {"step": 36}}
+        assert any("fit-y" in line for line in page_warnings(stepped, capfd))
+
+
+def empty_activity_charts():
+    """The activity charts of a campaign with no activity, with and without
+    sends, as the dashboard draws them (by hour and by day)."""
+    return [
+        activity_chart(found)
+        for sends in (False, True)
+        for found in (metrics((), sends=sends), metrics((), grain="day", sends=sends))
+    ]
+
+
+def data_domains(spec):
+    """The scales of ``spec``'s compiled Vega whose domain reads a dataset.
+
+    A literal domain compiles to a list, or for a temporal scale to a
+    ``fields`` list of constant signals; a data-derived one names its
+    dataset (``{"data": ..., "field": ...}``, alone or in ``fields``).
+    """
+    found = set()
+    for scale in vl_convert.vegalite_to_vega(spec)["scales"]:
+        domain = scale["domain"]
+        if isinstance(domain, dict):
+            refs = domain.get("fields", [domain])
+            if any(isinstance(ref, dict) and "data" in ref for ref in refs):
+                found.add(scale["name"])
+    return found
+
+
+def axis_labels(spec):
+    """The tick labels of each axis of ``spec``'s drawn SVG (x, then y)."""
+    svg = vl_convert.vegalite_to_svg(spec)
+    groups = re.findall(r'<g class="mark-text role-axis-label"[^>]*>(.*?)</g>', svg)
+    return [re.findall(r">([^<]*)</text>", group) for group in groups]
+
+
+def test_empty_activity_charts_draw_without_warnings(capfd):
+    """An empty activity chart compiles without a warning, no scale of its
+    compiled Vega takes its domain from data (an empty layer's extent is
+    infinite, which Vega warns about on every draw, #1327), and both of its
+    axes draw tick labels (the y axis only its "0" baseline: a "1" would
+    read as a real count). A chart with
+    activity still takes its domains from its rows, so the check can fail.
+    (Vega's runtime warnings are caught by the browser tests' console
+    watch: vl-convert does not report them, and an epoch-number x domain,
+    which warned in the browser, drew here.)"""
+    for document in empty_activity_charts():
+        assert page_warnings(document.spec, capfd) == []
+        assert data_domains(document.spec) == set(), document.summary
+        x, y = axis_labels(document.spec)
+        assert x and y == ["0"], (document.summary, x, y)
+    assert data_domains(activity_chart(metrics()).spec) == {"x", "y"}
+
+
+def test_empty_activity_scales_span_the_sends_or_a_trailing_window():
+    """The x axis spans the sends as their markers drew it, or with fewer
+    than two a day (by hour) or a week (by day) up to ``as_of``; the y axis
+    is 0 to 1, so its axis keeps the ticks of a count (#1327)."""
+
+    def domains(found):
+        spec = activity_chart(found).spec
+        x = spec["encoding"]["x"]["scale"]["domain"]
+        return [
+            datetime(
+                at["year"],
+                at["month"],
+                at["date"],
+                at["hours"],
+                at["minutes"],
+                tzinfo=UTC,
+            )
+            for at in x
+        ], spec["layer"][0]["encoding"]["y"]["scale"]["domain"]
+
+    wall = START.astimezone(ZoneInfo(NEW_YORK)).replace(tzinfo=UTC)
+    x, y = domains(metrics(()))
+    assert x == [wall - timedelta(minutes=5), wall + timedelta(hours=20)]
+    assert y == [0, 1]
+    as_of = wall + timedelta(days=1)
+    assert domains(metrics((), sends=False))[0] == [as_of - timedelta(days=1), as_of]
+    week = domains(metrics((), grain="day", sends=False))[0]
+    assert week == [as_of - timedelta(days=7), as_of]
+    assert "domain" not in activity_chart(metrics()).spec["encoding"]["x"]["scale"]
+
+
+def test_activity_counts_are_labelled_once_each():
+    """The activity chart's Families axis labels whole numbers, each once:
+    Vega's own ticks step by halves up to a peak of 2, which the whole-number
+    format showed as "0, 1, 1" (#1327). Up to a peak of 5 every whole number
+    is labelled; above it Vega's own whole steps stay."""
+    for peak in (1, 2, 3, 4, 5, 7, 12, 37):
+        activity = (
+            ActivityBucket(START, peak, 0, 0),
+            ActivityBucket(START + timedelta(hours=1), 0, 1, 0),
+        )
+        document = activity_chart(replace(metrics(), activity=activity))
+        _x, y = axis_labels(document.spec)
+        assert len(set(y)) == len(y), (peak, y)
+        if peak <= 5:
+            assert y == [str(count) for count in range(peak + 1)], (peak, y)
+        assert y[0] == "0" and int(y[-1]) >= peak, (peak, y)
+
+
+def test_empty_activity_window_is_campaign_wall_time():
+    """The trailing window is a day of the campaign's wall clock, so across
+    the autumn change it is 24 axis hours, not the 25 an absolute day spans."""
+    as_of = datetime(2026, 11, 1, 12, tzinfo=UTC)  # 7 AM EST, after the change
+    found = replace(metrics((), sends=False), as_of=as_of)
+    start, end = activity_chart(found).spec["encoding"]["x"]["scale"]["domain"]
+    assert (start["date"], start["hours"]) == (31, 7)
+    assert (end["date"], end["hours"]) == (1, 7)
+
+
+def test_bar_chart_heights_match_their_old_step_heights():
+    """Each bar chart's fixed height is its bar count times the step height
+    it had (#1325), so every bar and label keeps its room."""
+    steps = {"response-funnel": 36, "comparison-final-": 26, "comparison-bands": 40}
+    checked = []
+    for document in page_charts():
+        step = next(
+            (step for key, step in steps.items() if document.key.startswith(key)),
+            None,
+        )
+        if step is None:
+            continue
+        bars = {
+            row.get("stage", row.get("name")) for row in document.spec["data"]["values"]
+        }
+        assert document.spec["height"] == step * len(bars), document.key
+        checked.append(document.key)
+    # The dashboard's funnel, two final-figure charts and
+    # three years' pledge bands.
+    assert len(checked) == 6
+
+
+@pytest.mark.parametrize(
+    ("top", "ticks"),
+    [
+        (1.1, [0, 1]),
+        (3.3, [0, 1, 2, 3]),
+        (9.9, [0, 2, 4, 6, 8]),
+        (55, [0, 20, 40]),
+        (3557.4, [0, 1000, 2000, 3000]),
+        (1_760_000, [0, 500_000, 1_000_000, 1_500_000]),
+    ],
+)
+def test_round_ticks(top, ticks):
+    """Whole 1, 2 or 5 steps from zero, at most five ticks up to the top."""
+    assert round_ticks(top) == ticks
+
+
+def test_whole_dollars_rounds_halves_up():
+    """Tooltip pledges are whole dollars, a half rounding up."""
+    assert whole_dollars(Decimal("760409.50")) == "$760,410"
+    assert whole_dollars(Decimal("0.49")) == "$0"

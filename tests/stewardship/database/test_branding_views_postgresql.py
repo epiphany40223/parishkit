@@ -11,6 +11,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from PIL import Image
 
 from parishkit.stewardship.accounts.branding_models import BrandingAsset, BrandingBundle
+from parishkit.stewardship.accounts.branding_slots import SLOTS
 from parishkit.stewardship.accounts.branding_staging import cleanup_branding
 from parishkit.stewardship.accounts.configuration_installation import install_request
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
@@ -490,6 +491,75 @@ def test_each_size_upload_without_stored_logos_generates_from_large(
         "icon": (128, 64),
         "favicon": (32, 32),
     }
+
+
+def browser_post(browser, fields, files, url=URL):
+    """Post a logo form (Parish logos' unless ``url``) as a browser does:
+    each ``files`` item is a (name, filename, bytes) part, and a file input
+    left empty is a part with an empty filename, which Django's test client
+    cannot send."""
+    boundary = "pk-browser-boundary"
+    fields = fields | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value}
+    parts = [
+        f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n'
+        f"{value}\r\n".encode()
+        for name, value in fields.items()
+    ]
+    for name, filename, content in files:
+        kind = "image/png" if filename else "application/octet-stream"
+        parts.append(
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"; '
+            f'filename="{filename}"\r\nContent-Type: {kind}\r\n\r\n'.encode()
+            + content
+            + b"\r\n"
+        )
+    return browser.post(
+        url,
+        b"".join(parts) + f"--{boundary}--\r\n".encode(),
+        content_type=f"multipart/form-data; boundary={boundary}",
+    )
+
+
+def test_empty_file_inputs_a_browser_sends_are_not_refused(auth_service, google, media):
+    """A browser sends each empty file input as a part with an empty
+    filename, which Django keeps as an empty POST value (#1396): Basic's
+    hidden Advanced panel sends four, an Advanced upload one per size not
+    chosen. Neither is refused; any other value under a file field's name
+    still is."""
+    browser, _ = signed_in()
+    image = png(600, 300).read()
+    with task_login(ServiceRole.WEB):
+        digest = auth_service.store.active().digest
+        basic = browser_post(
+            browser,
+            {"base_digest": digest, "editor_mode": "basic"},
+            [("logo", "logo.png", image)] + [(name, "", b"") for name in SLOTS],
+        )
+        assert basic.status_code < 400, basic.content
+        advanced = browser_post(
+            browser,
+            {"base_digest": digest, "editor_mode": "advanced"},
+            [("logo", "", b""), ("large", "large.png", image)]
+            + [(name, "", b"") for name in ("menu", "icon", "favicon")],
+        )
+        assert advanced.status_code < 400, advanced.content
+        crafted = browser_post(
+            browser,
+            {"base_digest": digest, "editor_mode": "basic", "menu": "x"},
+            [("logo", "logo.png", image)],
+        )
+        assert crafted.status_code == 400
+        # An empty part is allowed only under a file field's name, and only
+        # once.
+        for extra in ([("path", "", b"")], [("large", "", b""), ("large", "", b"")]):
+            refused = browser_post(
+                browser,
+                {"base_digest": digest, "editor_mode": "basic"},
+                [("logo", "logo.png", image)] + extra,
+            )
+            assert refused.status_code == 400
+    modes = sorted(BrandingBundle.objects.values_list("mode", flat=True))
+    assert modes == ["advanced", "basic"]
 
 
 def test_each_size_upload_and_apply_are_refused_after_settings_change(

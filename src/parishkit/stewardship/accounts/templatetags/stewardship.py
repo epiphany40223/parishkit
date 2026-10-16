@@ -8,6 +8,7 @@ from django.urls import reverse
 from django.utils.html import conditional_escape, format_html, format_html_join
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _
+from django.utils.translation import ngettext
 
 from parishkit.stewardship.accounts import admin_navigation
 from parishkit.stewardship.accounts.sessions import freshness
@@ -220,6 +221,96 @@ class AboutPageNode(template.Node):
             '<summary>{}</summary><div class="about-page-body">{}</div></details>',
             key,
             _("About this page"),
+            # Template output is already escaped and marked safe.
+            self.nodelist.render(context),
+        )
+
+
+# Query fields that order, page or place the results rather than filter them:
+# a report's sort, its page number and the browser's time zone.
+NOT_FILTERS = frozenset({"sort", "page", "zone"})
+
+
+def applied_filters(query, ignore=()):
+    """Count a report query's fields that differ from its dataclass defaults.
+
+    A report's query is a frozen dataclass whose defaults are the page's
+    unfiltered view (an Additional information default such as "Current
+    actionable requests" is the page's normal list, so it does not count).
+    Sort, page and zone are left out (``NOT_FILTERS``), as is any field
+    named in ``ignore``: one another choice currently overrides.
+    """
+    return sum(
+        getattr(query, name) != field.default
+        for name, field in query.__dataclass_fields__.items()
+        if name not in NOT_FILTERS and name not in ignore
+    )
+
+
+@register.tag
+def filterpanel(parser, token):
+    """Wrap a report's filter form in a collapsible "Filters" panel (#227).
+
+    Usage: ``{% filterpanel query %}<form id="table-filters" …>…</form>
+    {% endfilterpanel %}``, or ``{% filterpanel query extra %}`` where
+    ``extra`` counts a choice kept outside the query (the Family directory's
+    Include mailing columns), or ``{% filterpanel query extra "field" %}``
+    where, while that choice is on, the named query field is not counted
+    because the choice overrides it (mailing columns always use "By postal
+    mail only", so the reader's own Campaign mail can reach is not applied,
+    #951). A final bare ``open`` word opens the panel by default; only
+    the Family directory passes it (Administrator decision, #227). Otherwise
+    the panel starts closed so the report's data
+    comes first, and renders open whenever any filter is applied, so an
+    applied filter is never hidden behind it. Its summary names how many are
+    applied; that count is a data-table-sync node with a stable id, so it
+    follows an in-place Apply while the panel and the form keep their
+    elements (ui-v1.js ``syncControls``).
+    """
+    bits = token.split_contents()
+    # A trailing bare ``open`` makes the panel open by default.
+    default_open = bits[-1] == "open"
+    if default_open:
+        bits.pop()
+    if len(bits) not in (2, 3, 4):
+        raise template.TemplateSyntaxError(
+            "filterpanel takes a query, an optional extra choice, the "
+            "query field that choice overrides and an optional final open."
+        )
+    nodelist = parser.parse(("endfilterpanel",))
+    parser.delete_first_token()
+    return FilterPanelNode(
+        [parser.compile_filter(bit) for bit in bits[1:]], nodelist, default_open
+    )
+
+
+class FilterPanelNode(template.Node):
+    """Render the panel, open with its count when any filter is applied."""
+
+    def __init__(self, arguments, nodelist, default_open=False):
+        self.arguments = arguments
+        self.nodelist = nodelist
+        self.default_open = default_open
+
+    def render(self, context):
+        query, extra, overridden = (
+            [argument.resolve(context) for argument in self.arguments] + [False, None]
+        )[:3]
+        ignore = (overridden,) if extra and overridden else ()
+        count = applied_filters(query, ignore) + int(bool(extra))
+        if count:
+            label = ngettext("%(count)s applied", "%(count)s applied", count) % {
+                "count": presentation.number(count)
+            }
+        else:
+            label = _("none applied")
+        return format_html(
+            '<details class="filter-panel" data-filter-panel{}>'
+            '<summary>{}: <span id="table-filters-applied" data-table-sync>{}</span>'
+            "</summary>{}</details>",
+            mark_safe(" open") if count or self.default_open else "",
+            _("Filters"),
+            label,
             # Template output is already escaped and marked safe.
             self.nodelist.render(context),
         )

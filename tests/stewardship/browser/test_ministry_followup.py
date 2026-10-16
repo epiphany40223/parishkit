@@ -16,6 +16,7 @@ from parishkit.stewardship.reports.report_paging import pop_navigation
 
 from .followup_components import (
     BULK_CLOSED,
+    BULK_CLOSED_QUEUE,
     BULK_JOIN,
     BULK_KEY,
     BULK_LEAVE,
@@ -25,6 +26,7 @@ from .followup_components import (
     GONE_QUEUE,
 )
 from .test_components import axe_violations
+from .test_family_response import expect
 from .waits import available, eventually, greyed, has_text, hidden, same_place, visible
 
 # The instant every follow-up fixture shows (followup_components.py).
@@ -280,7 +282,7 @@ def test_followup_filters_post_privately(page, component_origin):
     page.goto(component_origin + "/followup-queue")
     page.get_by_label("Search Member or Ministry name").fill("Private name")
     page.get_by_label("Status").select_option("in_progress")
-    page.route("**/follow-up/", lambda route: route.fulfill(body="Filtered"))
+    page.route("**/reports/ministries/", lambda route: route.fulfill(body="Filtered"))
     with page.expect_request(lambda request: request.method == "POST") as sent:
         page.get_by_role("button", name="Apply filters").click()
     assert "search=Private+name" in sent.value.post_data
@@ -407,8 +409,8 @@ def test_followup_sort_heading_posts_privately(page, component_origin):
     default order (newest first) has no column to show it (#1064), so no
     heading is marked sorted."""
     page.goto(component_origin + "/followup-queue")
-    assert page.locator("thead th[aria-sort]").count() == 0
-    page.route("**/follow-up/", lambda route: route.fulfill(body="Sorted"))
+    assert page.locator("#followup-table thead th[aria-sort]").count() == 0
+    page.route("**/reports/ministries/", lambda route: route.fulfill(body="Sorted"))
     # "Member" alone would also match the Member DUID heading.
     member = page.locator("th[data-sort-column='member']")
     with page.expect_request(lambda request: request.method == "POST") as sent:
@@ -430,7 +432,7 @@ def test_clipped_name_tip_never_swallows_the_next_tap(browser_engine, component_
     try:
         page = context.new_page()
         page.goto(component_origin + "/followup-all")
-        name = page.locator("tbody tr").nth(1).locator(".cell-clamp")
+        name = page.locator("#followup-table tbody tr").nth(1).locator(".cell-clamp")
         name.tap()
         tip = page.locator(".admin-tip.is-shown")
         expect(tip).to_have_text(name.text_content())
@@ -471,7 +473,7 @@ def test_followup_columns_follow_the_shared_order(page, component_origin):
 
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + "/followup-all")
-    headings = page.locator("thead th").all_inner_texts()
+    headings = page.locator("#followup-table thead th").all_inner_texts()
     # A sort heading's text also holds its button's arrow and hint lines. The
     # selection box for bulk outcomes leads (#1131), as the shared order puts
     # it.
@@ -484,7 +486,7 @@ def test_followup_columns_follow_the_shared_order(page, component_origin):
         "Status",
         "Last contact",
     ]
-    rows = page.locator("tbody tr")
+    rows = page.locator("#followup-table tbody tr")
     first, second = (rows.nth(n).locator("th, td") for n in (0, 1))
     assert first.nth(1).inner_text() == "Example <Member>"
     assert first.nth(2).inner_text() == "12345"
@@ -517,6 +519,8 @@ def bulk_page(page, component_origin):
     """Open the bulk outcome queue; fail on script errors; mark against reloads."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + BULK_QUEUE)
+    # The totals' chart (#1133) is drawn after load; measure once it is.
+    expect(page.locator("[data-chart][data-chart-state=pending]")).to_have_count(0)
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
     page.evaluate("window.notReloaded = true")
@@ -564,7 +568,14 @@ def test_bulk_outcome_buttons_follow_the_kind_of_the_ticked_requests(
     assert page.locator(f"input[value^='{BULK_CLOSED}:']").count() == 0
     buttons = page.locator(".bulk-bar [data-bulk-action]")
     assert buttons.all_inner_texts() == BULK_NAMES
-    place = "node => JSON.stringify(node.getBoundingClientRect())"
+    # Page positions, not window ones: ticking a box below the fold (the
+    # totals and By Ministry sit above the table, #1133) scrolls it in.
+    # Compared with same_place: Linux Firefox's fractional scroll offset
+    # adds ~0.00003 px of float noise to an unmoved box.
+    place = """node => {
+      const box = node.getBoundingClientRect();
+      return [box.x + scrollX, box.y + scrollY, box.width, box.height];
+    }"""
     before = [buttons.nth(i).evaluate(place) for i in range(buttons.count())]
     table_top = page.locator("#followup-table").evaluate(place)
     states, line = bulk_gate(page)
@@ -576,8 +587,10 @@ def test_bulk_outcome_buttons_follow_the_kind_of_the_ticked_requests(
     page.locator(f"input[data-select-row][value^='{BULK_JOIN}:']").uncheck()
     assert bulk_gate(page) == ([False, False, True, True], BULK_KIND_HINTS["leave"])
     # Ticking never moves a control or the table (no layout shift).
-    assert [buttons.nth(i).evaluate(place) for i in range(buttons.count())] == before
-    assert page.locator("#followup-table").evaluate(place) == table_top
+    assert same_place(
+        [buttons.nth(i).evaluate(place) for i in range(buttons.count())], before
+    )
+    assert same_place(page.locator("#followup-table").evaluate(place), table_top)
     # A restored selection without change events: the join instead.
     page.evaluate(
         f"""() => {{
@@ -644,9 +657,9 @@ def test_bulk_outcome_records_the_ticked_requests_in_place(
     )
     # The table is redrawn from the remembered view: the join is resolved.
     visible(
-        page.locator("tbody tr", has_text="Joining <Member>").get_by_text(
-            "Resolved: Joined the Ministry"
-        )
+        page.locator(
+            "#followup-table tbody tr", has_text="Joining <Member>"
+        ).get_by_text("Resolved: Joined the Ministry")
     )
     assert page.locator(f"input[value^='{BULK_JOIN}:']").count() == 0
     assert page.evaluate("window.notReloaded === true")
@@ -784,3 +797,106 @@ def test_members_no_longer_in_parishsoft_are_marked_with_nothing_to_record(
     assert page.get_by_role("button", name="Save follow-up").count() == 0
     assert page.get_by_text("This request is closed", exact=False).count() == 0
     visible(page.get_by_text("Left a <private> voicemail", exact=True).first)
+
+
+def test_a_queue_page_with_no_open_request_says_why_nothing_can_be_ticked(
+    page, component_origin
+):
+    """Rows but none selectable (#1332): the reserved line says why every
+    bulk button is unavailable, and each button names it."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + BULK_CLOSED_QUEUE)
+    assert page.locator("input[data-select-row]").count() == 0
+    assert bulk_gate(page) == (
+        [False] * 4,
+        "No request on this page has an outcome to record.",
+    )
+
+
+FUTURE_REFUSAL = (
+    "The contact attempt's date and time can't be in the future. "
+    "If they aren't, check your computer's clock."
+)
+
+
+def refused_at_fields(page, component_origin):
+    """Open Mark as Joined with a contact attempt the server refuses at Date
+    and Time (as the bulk view does for a future time by its clock), and
+    return the dialog, the Date and Time fields and Record outcome."""
+
+    def refuse(route):
+        """Answer as the bulk view does for a contact attempt in the future."""
+        route.fulfill(
+            status=400,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "errors": [
+                        {"code": "invalid", "field_id": "bulk-contact-date"},
+                        {"code": "invalid", "field_id": "bulk-contact-time"},
+                    ],
+                    "refusal": {"message": FUTURE_REFUSAL, "fix": None},
+                }
+            ),
+        )
+
+    page.route(component_origin + BULK_POST, refuse)
+    tick(page, BULK_JOIN)
+    page.get_by_role("button", name="Mark as Joined").click()
+    dialog = bulk_dialog(page)
+    visible(dialog)
+    dialog.get_by_label("How").select_option("phone")
+    date = dialog.get_by_label("Date", exact=True)
+    time = dialog.get_by_label("Time", exact=True)
+    date.fill("2026-09-19")
+    time.fill("3:04 PM")
+    record = dialog.get_by_role("button", name="Record outcome")
+    available(record)
+    record.click()
+    # The answer has arrived once the message shows at the fields.
+    visible(dialog.locator("#bulk-contact-error"))
+    return dialog, date, time, record
+
+
+def test_a_refused_bulk_contact_time_is_shown_at_the_fields(page, component_origin):
+    """A contact date and time refusal names its fields (#1332): the message
+    fills the fields' error line, not the box below the buttons; Date and
+    Time are marked; Record outcome waits, naming the line, until the form
+    changes, which clears the mark (and never marks the button invalid)."""
+    failures = bulk_page(page, component_origin)
+    dialog, date, time, record = refused_at_fields(page, component_origin)
+    line = dialog.locator("#bulk-contact-error")
+    visible(line)
+    assert line.inner_text().strip() == FUTURE_REFUSAL
+    assert dialog.locator("[data-confirm-error]").is_hidden()
+    for field in (date, time):
+        assert field.get_attribute("aria-invalid") == "true"
+        assert "bulk-contact-error" in field.get_attribute("aria-describedby").split()
+    assert record.is_disabled()
+    assert "bulk-contact-error" in record.get_attribute("aria-describedby").split()
+    time.fill("3:05 PM")
+    hidden(line)
+    assert date.get_attribute("aria-invalid") == "false"
+    available(record)
+    assert "bulk-contact-error" not in (record.get_attribute("aria-describedby") or "")
+    assert record.get_attribute("aria-invalid") is None
+    assert page.evaluate("window.notReloaded === true")
+    assert not failures
+
+
+def test_choosing_no_contact_attempt_after_a_field_refusal_frees_record(
+    page, component_origin
+):
+    """Choosing "No contact attempt to record" after a refusal at Date and
+    Time greys them without an event on them; Record outcome still comes
+    back, with the message gone and no stale reason named."""
+    failures = bulk_page(page, component_origin)
+    dialog, date, _time, record = refused_at_fields(page, component_origin)
+    assert record.is_disabled()
+    dialog.get_by_label("How").select_option("")
+    hidden(dialog.locator("#bulk-contact-error"))
+    greyed(date)
+    available(record)
+    assert "bulk-contact-error" not in (record.get_attribute("aria-describedby") or "")
+    assert record.get_attribute("aria-invalid") is None
+    assert not failures

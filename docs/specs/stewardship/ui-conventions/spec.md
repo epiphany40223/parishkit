@@ -56,9 +56,11 @@ when it lands.
   [single-campaign interim](#single-campaign-interim),
   [addresses and legacy URLs](#addresses-and-legacy-urls),
   [not-found pages](#not-found-pages),
-  [unavailable menu pages](#unavailable-menu-pages).
+  [unavailable menu pages](#unavailable-menu-pages),
+  [navigation rules](#navigation-rules).
 - Admin page layout: [page help](#page-help),
   [button labels](#button-labels), [shared visual style](#shared-visual-style),
+  [colour scheme](#colour-scheme),
   [status indicators](#status-indicators), [time entry](#time-entry),
   [schedules](#schedules).
 - Tables: [Admin tables](#admin-tables),
@@ -256,15 +258,23 @@ small ES5 feature check reveals it and never alters the form.
 **Shared code.** `chart-v1.js` and `chart-v1.css`, described with the
 [chart engine](../reports/spec.md#chart-engine).
 
-All charts have title, legend, labeled axes with units, accessible color/line
-patterns, hover/focus values, and equivalent data tables or values drawn in
-the chart ([chart engine](../reports/spec.md#chart-engine)). They download as
-PNG or PDF. Dollar/count series on one chart use separate labeled axes rather
-than comparing unlike units on one scale.
+All charts have a title, a legend (or, for a chart of separate panels, a
+title on each panel naming its series), labeled axes with units, accessible
+color/line patterns, hover/focus values, and equivalent data tables or values
+drawn in the chart ([chart engine](../reports/spec.md#chart-engine)). They download as
+PNG or PDF. A chart never has a second y-axis: dollar and count series, or two
+series of very different size, go in separate panels on a shared axis, each
+with its own labeled scale
+([participation graph](../reports/spec.md#participation-graph)).
 A chart's caption never repeats figures its table, legend or drawn values
 already show; it keeps only what they don't, such as a scope note, and the
 chart keeps its accessible name and description
 ([chart engine](../reports/spec.md#chart-engine)).
+A stat tile that states a share may also draw it as a **share bar**: a plain
+progress bar at the tile's foot, so the bars of a row of tiles line up. Its
+exact figures are always printed in the tile, so it has no tooltip, and it is
+hidden from assistive technology, which reads the text instead
+([#720](https://github.com/epiphany40223/parishkit/issues/720)).
 
 ## Admin portal interaction
 
@@ -364,8 +374,8 @@ the same shared mechanism (`ui-v1.js`) serves any control a page opts in.
   loaded the ordinary way, without a jump to a panel. Because the chart,
   statistics and export panels are all regions, paging or sorting the daily
   table refreshes all three from the same answer: an export format chosen
-  but not yet used, an open "Technical details" and the chart's inspected
-  date return to their defaults, as an ordinary load would leave them. A
+  but not yet used and an open "Technical details" return to their
+  defaults, as an ordinary load would leave them. A
   disclosure marked `details[data-keep-open][id]` is the exception: one the
   reader opened stays open in the fresh copy of its region, so a refresh
   does not fold away what they were reading (the
@@ -867,6 +877,16 @@ the server draws disabled because other campaign work holds the page (report
 exports, follow-up saves, Participation) or because the sign-in is not
 recent (automation approval) names that notice too.
 
+The same applies wherever the page already knows the refusal, whatever the
+reason: other campaign work holding the action, a missing prerequisite the
+server checks first, or a sign-in that is not recent (named by the shared
+step-up notice). When that notice can appear on an in-place answer, it is
+drawn after the controls it disables, so nothing moves
+([#1331](https://github.com/epiphany40223/parishkit/issues/1331)). Each
+feature spec lists its own cases, such as
+[Restore review](../admin-portal/spec.md#restore-release) and the
+[Family timeline](../reports/spec.md#family-timeline).
+
 ### Field errors and live checks
 
 **Rule.** An error is shown at its field: the message beside it, the field
@@ -1051,7 +1071,7 @@ section says how every Review behaves.
   no jump to the top. A New or Edit page (New user, New scheduled email)
   returns instead to the table page it was opened from (Users, Dates and
   mail schedules), as [flows end where the reader
-  started](../admin-portal/spec.md#navigation-rules) says. A Review that the
+  started](#navigation-rules) says. A Review that the
   server answers with another page (Campaign settings' dates-only change,
   which leads to Dates and mail schedules) ends on that page. Wherever the
   reader ends, a short status line under the form or above the table says
@@ -1313,7 +1333,7 @@ or action, with the tip "Disabled; will be removed with the single-campaign
 change (#145)", shown and announced the same way as an unavailable menu
 entry's reason. The server refuses the matching actions too, so a greyed
 control cannot be bypassed
-([navigation rule 10](../admin-portal/spec.md#navigation-rules), [decisions 18 and
+([navigation rule 10](#navigation-rules), [decisions 18 and
 19](../admin-portal/spec.md#navigation-decisions)).
 
 ### Addresses and legacy URLs
@@ -1399,6 +1419,92 @@ opens one page per kind of reason. **Precedent.** #1128.
   `admin_navigation.PAGE_REASONS`, `admin_context.page_unavailable`.
   **Precedent.** #1242.
 
+### Navigation rules
+
+**Rule.** Every Admin page follows the numbered rules below: it is
+reachable, has a way back, has one name, and ends a flow where the reader
+started. **Why.** One registry and one set of rules keep the menu, the
+trails and the page names from drifting. **Shared code.** The registry in
+`accounts/admin_navigation.py`; `test_admin_navigation.py`,
+`test_admin_page_names.py`, `test_admin_ways_back.py`,
+`test_admin_message_links.py` and `test_admin_reachability_postgresql.py`.
+**Precedent.** #520, #521, #522. Where each page sits (its menu group,
+parent, name and URL) is feature placement and stays in the Admin portal's
+[Admin navigation](../admin-portal/spec.md#admin-navigation).
+
+These rules are requirements; a navigation test checks each one against the
+registry and the rendered pages.
+
+1. **Reachable.** Every registered page is a menu entry or names a parent in
+   the registry, and following parents always ends at a menu entry or Home.
+   Every child page is linked from its parent page in at least one state the
+   test renders, or is the result of a form on its parent that the registry
+   lists. No page is reachable only from an email, an error page or another
+   group's page.
+2. **Every report has a menu entry**, and every page listed under a report
+   entry is reached from that report.
+3. **A way back.** Every page except Home, the sign-in, the setup wizard and
+   the pages the access gate shows instead of a page (maintenance, not
+   configured yet, and error pages) shows a breadcrumb whose parent crumb is a
+   link the viewer may open, or a "Return to" link when the parent cannot be
+   linked. An error page offers a way back to the page the reader came from,
+   or to Home; the Restore review, maintenance and not-configured pages
+   offer sign-out. Templates do not hand-write back links that
+   repeat the trail.
+4. **One name.** A menu entry's page heading equals its menu label; a child
+   page's heading equals its breadcrumb label; the browser title starts with
+   the same name. The only exceptions are the object-named pages in the Admin portal's
+   [page names and placement](../admin-portal/spec.md#page-names-and-placement)
+   table.
+   Every "Return to" link names its target by that target's name. The
+   shared error page cannot know which page the reader came from, so its
+   link says "Return to the previous page"; the export error page reads
+   nothing from the database, so its link says "Return to the export status
+   page".
+5. **Flows end where the reader started.** After an action, the reader lands
+   on the page whose task started it: a settings change ends on the settings
+   page, and a New or Edit page's change on the table it was opened from
+   (Users, Dates and mail schedules), with the
+   [review dialog](#review-dialog)'s short status line there (until #750
+   converts a page, its separate status page returns there); Preview and test email returns to the page it was
+   opened from, remembered in the signed-in session as a change's origin is
+   (never in the URL); a manual ParishSoft refresh stays on Refresh from
+   ParishSoft and shows its progress there; sending a weekly report now ends
+   on Emailed reports with a link to the report; Cancel returns to the page it
+   was pressed on, never Home unless the flow started there.
+6. **Messages link what they name.** A message that tells the reader to use
+   another page links that page when the viewer may open it. A page is linked
+   only when the viewer may open it now: an in-page link to a page the menu
+   greys out is greyed out the same way, with the menu's reason (#1242), and
+   the navigation test fails on any followed link that answers an error,
+   apart from a short documented allow-list of fixture limits that may only
+   shrink.
+7. **Stable shape.** For each role, the menu's groups and entries are the same
+   across modes and campaign states (setup pending excepted); an unavailable
+   entry is greyed out with its reason, never removed, and stays reachable by
+   keyboard with its reason announced.
+8. **One home per concept.** A page appears under one menu entry only;
+   another page may link it, but its breadcrumb always runs through its home
+   (Content history runs through Campaign settings).
+9. **Every route classified.** Every Admin route is either a registered page
+   or listed as a non-page (form actions, downloads, images, status
+   fragments, sign-in and the setup wizard), and a test requires every new
+   route to be classified. A route that answers only POST or only JSON is a
+   non-page, not a page.
+10. **Multi-campaign controls are greyed out.** Every reachable or visible
+    control whose only purpose is multi-campaign work is an unavailable
+    control with the tip "Disabled; will be removed with the single-campaign
+    change (#145)", reachable by keyboard and announced as its description.
+    The controls are: Copy campaign on Campaign settings, and
+    the "create the successor draft" choice in the checklist after [Return to
+    Testing](../admin-portal/spec.md#return-to-testing-after-archive), which does not exist yet
+    (#527), so until it does the server's refusal alone covers it. The server
+    refuses the matching actions: cloning, creating a successor draft, and
+    choosing a campaign other than the current one for a report. The retired
+    chooser addresses are gone (404, #864). New campaign is removed outright ([decision
+    11](../admin-portal/spec.md#navigation-decisions)), not greyed, and so are the "Choose a retained
+    campaign" links once greyed on Participation and Ministry requests (#1125).
+
 ## Admin page layout and help
 
 ### Page help
@@ -1448,9 +1554,21 @@ Admin pages are laid out for a laptop screen: compact headings, panels,
 notices and table cells, and short filter forms in one row. The target is that,
 with help closed, a page's first data starts inside the browser window of a
 typical laptop (a 1366×768 screen, about 650 pixels of page after the
-browser's own toolbars). Pages with short filters meet it now; report pages
-with long filter and export forms meet it once those forms are collapsed by
-default (a #227 follow-up). An edit form's short fields (a status, an outcome,
+browser's own toolbars). Pages with short filters put them in one row. A
+report whose filter form is longer than a row puts it in a "Filters" panel (the
+`filterpanel` template tag): a native disclosure that starts closed and renders
+open whenever the shown results use any filter other than the page's default,
+so an applied filter is never hidden. The Family directory is the exception:
+its Filters panel is open by default (Administrator decision, #227), and the
+other reports keep theirs closed. Its summary says how many are applied
+("Filters: 2 applied", or "none applied"), and that count follows an in-place
+Apply while the panel and its form keep their elements. A report's export form
+is likewise a closed disclosure (for example, "Export complete results (CSV,
+XLSX or PDF)") with its sensitive-data notice inside. The Family directory,
+Additional information, Financial stewardship and Limitations follow this
+(#227); System logs, Ministry follow-up and the remaining report pages are
+still to convert.
+An edit form's short fields (a status, an outcome,
 a date and a time) likewise share a row on desktop (`.field-row` in
 `ui-v1.css`), top-aligned so a time's reading line fits under its box, while
 notes span the form; at phone width each field takes its own row (#1014). The
@@ -1600,6 +1718,91 @@ The portal and the emails share one visual style
   on a night with no reminder the next morning.
 
 Portal notices, cards and headings follow in later slices of #732.
+
+### Colour scheme
+
+**Rule.** The Admin portal, including sign-in and the setup wizard, is light
+or dark on screen. By default it follows the operating system's setting
+(`prefers-color-scheme`), and it changes as soon as that setting does. In
+dark, every colour token takes its dark value, and the browser's own form
+controls and scrollbars turn dark too.
+
+The **Appearance** switch at the top right of every Admin page's header,
+sign-in and setup included, lets a person override that default in this
+browser. It is a small segmented control of three icons: a sun for "Light",
+a moon for "Dark" and a monitor for "Match this device".
+
+- It is a radio group named "Appearance": one Tab stop, the arrow keys move
+  the choice, and the chosen icon is drawn selected (and checked for screen
+  readers). Each icon has its name as its accessible name and as a matching
+  tooltip, like the [row action](#row-actions-and-confirmation) icons, and
+  is drawn inline in the current text colour.
+- Each segment is a 36-pixel square with the shared focus ring, in both
+  schemes. Choosing one changes only colours, so nothing moves.
+- Wider than a phone, it is pinned to the header's top right corner, and
+  the header's other items (Find a Family, the status pills) wrap before
+  reaching it. On a phone it shares the first row with the parish name, at
+  the right, and everything else in the header moves below it; the page
+  never scrolls sideways. The Menu button stays below the header.
+- "Match this device" is the default, and choosing it saves nothing.
+- "Light" or "Dark" is saved in the browser's `localStorage`, so every
+  Admin page in that browser uses it, sign-in included.
+- The choice is not tied to the Admin user or stored on the server.
+
+A change applies in place: the page does not reload, nothing moves, and
+other open Admin tabs follow. A saved choice applies before the page's body
+is drawn, and the switch shows it selected from the first paint, so a page
+never shows the other scheme or the wrong choice first. When the browser
+refuses storage (a private window, blocked site data), the choice lasts
+only for the page it was made on.
+
+Everything else stays light:
+
+- the [Family portal](#family-portal);
+- a printed Admin page;
+- emails, which keep the light tokens and rely on the
+  [email button](#shared-visual-style) to survive a mail program's inverted
+  dark mode;
+- [downloaded files](#downloaded-files);
+- for now, each drawn chart, which keeps its white background and its own
+  dark labels as a light card;
+- each email sample preview (the content sample, the setup text editor's
+  saved sample and the new campaign's copy preview), a light card that
+  shows the email as it is sent.
+
+Both schemes meet the same contrast minimums: text 4.5:1 on every surface
+it is drawn on, and control borders, the focus ring and status and level
+icons 3:1; where the focus ring sits on an accent surface (the checked
+Basic or Advanced segment), it is drawn in the paper colour. The
+[status indicators](#status-indicators) keep their per-state tokens in
+both. Every colour a scheme changes is a token, so the dark scheme reaches
+each rule with no per-component CSS; only shadows, print rules and the
+logo backing name a colour. An image that draws in the ink
+colour, such as the select arrow, has a dark twin. A parish logo gets a
+white backing in dark, because it was drawn for a light header.
+
+Dark charts and a guard against new literal colours are later slices of
+[#1264](https://github.com/epiphany40223/parishkit/issues/1264).
+
+**Why.** Administrators who work in a dark desktop get a portal that
+matches it, without a second stylesheet that would drift from the first.
+Parishioners are the larger and less technical audience and have not asked
+for dark, so the Family portal is left as it is. **Shared code.**
+`DARK_COLORS` in `web/design_tokens.py` is declared by `ui-v1.css` for
+an `admin-document` root (set by `admin-base.html`) with
+`data-theme="dark"`. `admin-gate-v1.js` sets `data-theme` in the head from
+the saved choice or the operating system, keeps the choice as
+`data-theme-choice` (from which `ui-v1.css` draws the selected icon), and
+runs the switch in `admin-appearance.html`, which `admin-base.html` puts at
+the end of the header. `test_design_tokens.py` checks both token sets and
+their contrast. The browser test `test_dark_scheme.py` checks that key Admin
+pages leave no light surface or light ink in dark. It also checks the
+choice: it overrides the device in place, holds across a reload from the
+first paint, reaches other tabs, and leaves Family pages and print light;
+and the switch: keyboard use, focus ring, axe in both schemes, and its
+place at phone and laptop widths.
+**Precedent.** #732 (tokens), #1264 (the switch's place: Administrator,
+pk-local batch 24a).
 
 ### Status indicators
 
@@ -1752,7 +1955,7 @@ without the mark ([#1117](https://github.com/epiphany40223/parishkit/issues/1117
 | First-campaign Mail schedules | Send time | One time, browser time |
 | First-campaign Mail schedules, Repeat a reminder | Send time | One time, browser time |
 | The date-change review | Send time | One time, campaign time |
-| Ministry follow-up | Contact attempt time | One time, browser time zone |
+| Ministry requests' follow-up request | Contact attempt time | One time, browser time zone |
 | Logs, reports | Date filters | Dates only, no time of day |
 
 The Ministry follow-up contact attempt moved to this entry after its in-place
@@ -1900,7 +2103,7 @@ reader may not open, is plain text, not a link; and the link's accessible
 name names its row ("3 join requests for Choir"), since the visible number
 alone is ambiguous out of context. So far only
 [Ministry requests](../reports/spec.md#ministry-change-summary) has them
-(#1133). A report whose rows an installed SQL selection
+(#1133): its By Ministry counts filter the queue on the same page in place. A report whose rows an installed SQL selection
 orders offers that selection's sort orders on the columns they order and its
 page sizes; its other columns do not sort, since the schema owns those
 orders. In v1 that covers:
@@ -1912,10 +2115,8 @@ orders. In v1 that covers:
 - Financial stewardship detail (Family, Family DUID, Annual pledge and
   latest response);
 - the Additional information queue (Family, Family DUID and Submitted);
-- the Ministry report (Ministry; Member, Member DUID and Submitted in one
-  Ministry's view);
-- the Ministry follow-up queue (Member and Ministry; newest first by default,
-  with no Submitted column to show it, #1064).
+- the follow-up queue on Ministry requests (Member and Ministry; newest
+  first by default, with no Submitted column to show it, #1064).
 
 Extending those vocabularies is a schema change; the DUID sorts of the
 financial, Additional information and Ministry tables came with one
@@ -1987,6 +2188,10 @@ widths, so their changing text cannot push them or rewrap the bar (#563).
 With no rows at all the line is blank, since the table says it is empty,
 unless the table gives an empty-table reason (such as why there is nothing
 to import), which the line then shows and the unavailable buttons name.
+When rows are shown but none can be selected (every file in use), the line
+says why none can be ticked where the table gives that reason, and otherwise
+stays blank as for an empty table
+([#1332](https://github.com/epiphany40223/parishkit/issues/1332)).
 The shared `table-selection.html` include and its `ui-v1.js` wiring give
 every such table this behavior. The server validates every submitted
 selection.
@@ -2002,8 +2207,8 @@ Actions column. **Why.** One pattern for every list of editable things; a dialog
 names exactly what will be removed. **Shared code.** The `table_actions`
 template tag, `components/confirm-dialog.html` and `data-confirm-open` in
 `ui-v1.js`. **Precedent.** #879, #882 (first user), #947 (second slice),
-the Pages and emails email tables (third slice); #1065 (row links, System
-logs).
+the Pages and emails email tables (third slice), Roster changes to enter
+(a recording action); #1065 (row links, System logs).
 
 A table whose rows can be acted on follows one pattern
 ([#879](https://github.com/epiphany40223/parishkit/issues/879)), built once
@@ -2015,7 +2220,9 @@ sessions of
 [Users](../admin-portal/spec.md#users-table), the email template tables of
 [Pages and emails](../admin-portal/spec.md#default-content) and the bulk
 outcomes of [Ministry follow-up](../admin-portal/spec.md#follow-up-workflows)
-([#1131](https://github.com/epiphany40223/parishkit/issues/1131)); the
+([#1131](https://github.com/epiphany40223/parishkit/issues/1131)) and the
+Entered in ParishSoft tick of
+[Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter); the
 other Admin tables with per-row actions move to it in later changes, as the
 inventory on #879 lists.
 
@@ -2026,8 +2233,13 @@ inventory on #879 lists.
   icons are drawn inline, so they need no request and stay inside the
   content security policy. A destructive action with another name uses its
   own word and icon in Delete's place and works the same way; so far only
-  Revoke ("Revoke nightly export") on Automation access. A row shows only the
-  actions that apply to it; a row with none shows nothing there.
+  Revoke ("Revoke nightly export") on Automation access. An action that
+  records rather than removes, and that the row's other action undoes, also
+  takes an icon of its own and acts [in place](#in-place-controls) without a
+  dialog; so far only Roster changes to enter's tick, "Mark … entered in
+  ParishSoft" (a check mark) and "Clear Entered in ParishSoft for …" (an
+  undo arrow). A row shows only the actions that apply to it; a row with
+  none shows nothing there.
 - **Edit** opens the item's edit page, which is the same page as New, filled
   in. Saving it goes through the [review dialog](#review-dialog), after which
   the reader returns to the table (until #750 converts the page, through its
@@ -2110,9 +2322,9 @@ of ParishSoft DUID:
 - **Family DUID:** wherever a Family is named, in its own column; staff
   search and match Families by it.
 - **Member DUID:** only where staff act on a specific Member in ParishSoft:
-  Census changes, Roster changes to enter, the Ministry follow-up queue, the
-  Ministry report's request details (and its join and leave downloads and
-  packets), the Limitations report, Families the form cannot open, and the
+  Census changes, Roster changes to enter, the follow-up queue on Ministry
+  requests and its Export these requests, the host's join and leave lists
+  and the packets, the Limitations report, Families the form cannot open, and the
   Users page's ParishSoft Ministry leaders table and its import review
   (Administrator, 2026-10-12, so staff can find each leader in ParishSoft).
   Elsewhere a Member is named without it.
@@ -2170,7 +2382,7 @@ names a DUID is one of the two above and comes right after its name's
 heading (Family or Member; Census changes heads its Member column Who). The
 one DUID column apart from its name is the recorded exception below.
 
-The Ministry follow-up queue also has no Submitted column (Administrator
+The follow-up queue on Ministry requests also has no Submitted column (Administrator
 decision, 2026-10-11,
 [#1064](https://github.com/epiphany40223/parishkit/issues/1064)), so its
 one-line rows take less width; the request page shows the submission time
@@ -2292,7 +2504,7 @@ second. The Family timeline, Outgoing mail, Refused addresses, Testing
 submissions, the chosen-Family send page and "Families on the form now"
 word a blank surname "Name not recorded in ParishSoft" since that second
 change. Since its third (frozen migration 0094), the installed selections
-do too: the Ministry follow-up queue, its request page and Roster changes
+do too: the follow-up queue on Ministry requests, its request page and Roster changes
 to enter mark a Member with the shared badge (no longer "Unavailable
 Member"); the Financial, Limitations and Additional information reports
 mark a Family the data no longer has (no longer "Unavailable Family"), and
@@ -2321,7 +2533,7 @@ Administrator asked for one-line rows on #952). A long email or Name is cut
 off with "…"; the full value stays the cell's text, appears in a `title`
 tooltip, and is shown whole on the user's Edit page
 ([Users table](../admin-portal/spec.md#users-table), #952, #963).
-The Ministry follow-up queue does the same for a long Member name, with the
+The follow-up queue on Ministry requests does the same for a long Member name, with the
 shared `cell-ellipsis` class
 ([Follow-up workflows](../admin-portal/spec.md#follow-up-workflows), #932).
 Its Ministry name, which a leader scans to tell similar Ministries apart,
@@ -2405,7 +2617,7 @@ beside that part). The Ministry report's lists were the first case: the page's
 demographics" was Gender, Age, Email, Phones and Known primary Family address
 (Administrator decision, 2026-10-11, on
 [#932](https://github.com/epiphany40223/parishkit/issues/932)). Those lists
-were retired (#1157); Ministry follow-up's Export these requests splits its
+were retired (#1157); Ministry requests' Export these requests splits its
 Status cell ("Resolved: Joined the Ministry") into Status and Outcome the
 same way, and a Family cell with its
 [ParishSoft status](#members-and-families-no-longer-in-parishsoft) badge is
@@ -2423,7 +2635,7 @@ Recorded exceptions to the rule above:
   [#966](https://github.com/epiphany40223/parishkit/issues/966)). Its CSV
   and XLSX headings are still plain names; JSON Lines
   keeps program keys.
-- **Ministry follow-up, Export these requests:** the queue's columns, then
+- **Ministry requests, Export these requests:** the queue's columns, then
   each request's contact details from its request page (Email, Phones, Known
   primary Family address, Gender, Age, Current Ministry role) and Submitted.
   The contact details are what the export is for: they replaced the retired
@@ -2469,7 +2681,7 @@ which forms ask. **Precedent.**
 [#1127](https://github.com/epiphany40223/parishkit/issues/1127).
 
 Asking: System logs, Response lists, Financial stewardship, Limitations,
-Census changes, Additional information, Ministry follow-up's Export these
+Census changes, Additional information, Ministry requests' Export these
 requests (which replaced one Ministry's joining or leaving lists, #1157),
 Roster changes to enter, the Family timeline, and the Active parishioner
 family directory code list only while its response columns are included
@@ -2515,10 +2727,10 @@ three formats; the guard checks its Members and Families tables in each.
 **Rule.** The Family portal is mobile-first, is not behind the Admin
 JavaScript gate (where its flow needs script, an unsupported browser gets a
 plain notice rather than a broken page), and keeps every link it has emailed
-working. It
-shares the theme and design tokens with the Admin portal but keeps its own
-spacing, and the Admin-only conventions above (in-place controls, the
-JavaScript gate, Admin tables) do not apply to it. **Why.** Families use
+working. It shares the theme and design tokens with the Admin portal but
+keeps its own spacing and stays light (no
+[dark colour scheme](#colour-scheme)), and the Admin-only conventions above
+(in-place controls, the JavaScript gate, Admin tables) do not apply to it. **Why.** Families use
 whatever device and browser they have, and an emailed link cannot be
 re-sent. **Shared code.** `family-v1.js`, `ui-v1.css`, `web/design_tokens.py`.
 **Precedent.** #466, #565, #864. The Family flow's own behavior is in the

@@ -27,7 +27,7 @@ CASES = {
         "#followup-item",
         "#followup-save-next",
         "Second <Member> — Example <Ministry>",
-        "Return to Ministry follow-up",
+        "Return to Ministry requests",
     ),
     "information": (
         information,

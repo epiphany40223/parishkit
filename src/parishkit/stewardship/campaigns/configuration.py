@@ -77,13 +77,14 @@ BANNER_EMAILS = ("initial", "reminder", "confirmation")
 REMINDER_WORKGROUP = "reminder_workgroup"
 WORKGROUP_NAME_LIMIT = 200
 # What staff see for that setting (#1061): its Admin page title, menu entry,
-# breadcrumb, URL, CLI parity name, send counts, System health notice and
+# breadcrumb, URL, send counts, System health notice and
 # Family timeline wording all derive from this one name, so renaming it is a
 # one-line change here (the specs and guides quote it and need the same
 # edit). The stored key above and the log event code stay as they are. The
 # Administrator chose the name on 2026-10-11.
 REMINDER_WORKGROUP_NAME = "No-reminders WorkGroup"
-# The page's URL segment and CLI subcommand, e.g. "no-reminders-workgroup".
+# The page's URL segment, e.g. "no-reminders-workgroup". The command line's
+# ``workgroup`` commands do not derive from it.
 REMINDER_WORKGROUP_SLUG = slugify(REMINDER_WORKGROUP_NAME)
 
 # The campaign's Ministry leader roles (#922): people holding any of these

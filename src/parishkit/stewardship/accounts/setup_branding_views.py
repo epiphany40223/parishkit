@@ -58,8 +58,15 @@ def setup_branding(request):
         service = runtime()
         draft = _draft(request, service)
         if request.method == "POST":
+            # A browser sends the logo input left empty (Save and continue
+            # with no file chosen) as a part with an empty filename, which
+            # Django keeps as an empty POST value rather than a file (#1396):
+            # nothing was chosen, so it is allowed; any other value is not.
+            allowed = {"version", "csrfmiddlewaretoken"}
+            if request.POST.getlist("logo") == [""]:
+                allowed.add("logo")
             if (
-                set(request.POST) - {"version", "csrfmiddlewaretoken"}
+                set(request.POST) - allowed
                 or set(request.FILES) - {"logo"}
                 or any(len(values) != 1 for _, values in request.POST.lists())
                 or any(len(values) != 1 for _, values in request.FILES.lists())

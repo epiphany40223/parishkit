@@ -21,7 +21,7 @@
 {% for chart in charts %}<h3>{{ chart.title }}</h3>
 {% include 'stewardship/components/chart.html' with no_table=True %}{% endfor %}
 </div>
-{% comment %}The complete gate holds Apply while a date or amount is out of order or an amount is malformed (#563), its hint in a reserved line after the button so nothing moves; the server still checks each.{% endcomment %}<form id="table-filters" data-table-sync method="post" action="{% url 'admin:financial_report' %}" data-require-complete>{% csrf_token %}
+{% comment %}The complete gate holds Apply while a date or amount is out of order or an amount is malformed (#563), its hint in a reserved line after the button so nothing moves; the server still checks each. The form sits in the Filters panel, closed unless a filter is applied (#227).{% endcomment %}{% filterpanel query %}<form id="table-filters" data-table-sync method="post" action="{% url 'admin:financial_report' %}" data-require-complete>{% csrf_token %}
 <label for="financial-search">{% translate "Search Family name or Family DUID" %}</label><input id="financial-search" name="search" maxlength="200" value="{{ query.search }}">
 <label for="filter-active">{% translate "Family status" %}</label><select id="filter-active" name="active"><option value="any">{% translate "Any status" %}</option><option value="active"{% if query.active == 'active' %} selected{% endif %}>{% translate "Active" %}</option><option value="inactive"{% if query.active == 'inactive' %} selected{% endif %}>{% translate "Inactive" %}</option><option value="unavailable"{% if query.active == 'unavailable' %} selected{% endif %}>{% translate "Status unavailable" %}</option></select>
 <fieldset><legend>{% translate "First response date (campaign timezone)" %}</legend>
@@ -38,10 +38,9 @@
 <label for="filter-share">{% translate "Share method" %}</label><select id="filter-share" name="share"><option value="any">{% translate "Any share method" %}</option><option value="none"{% if query.share == 'none' %} selected{% endif %}>{% translate "No share method chosen" %}</option>{% for key,label in share_choices %}<option value="{{ key }}"{% if query.share == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
 {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
 {% button type="submit" aria-describedby="financial-filter-hint" %}{% translate "Apply filters" %}{% endbutton %}
-<p class="help" id="financial-filter-hint" data-complete-hint="reserve"></p></form>
+<p class="help" id="financial-filter-hint" data-complete-hint="reserve"></p></form>{% endfilterpanel %}
 <p id="financial-matching" data-table-sync>{% translate "Matching Families:" %} {{ total|number }}.</p>
-<section aria-labelledby="financial-export-heading">
-<h2 id="financial-export-heading">{% translate "Export complete results" %}</h2>
+<details class="export-panel"><summary id="financial-export-heading">{% translate "Export complete results (CSV, XLSX or PDF)" %}</summary>
 <p id="financial-export-count" data-table-sync>{% blocktranslate with shown=total|number count counter=total %}{{ shown }} matching Family, using the applied filters and sort above—not just this page. The file uses every matching pledge and its ParishSoft comparison totals as they are when you queue the export; later submissions or ParishSoft refreshes are not included.{% plural %}{{ shown }} matching Families, using the applied filters and sort above—not just this page. The file uses every matching pledge and its ParishSoft comparison totals as they are when you queue the export; later submissions or ParishSoft refreshes are not included.{% endblocktranslate %}</p>
 <p class="notice">{% translate "Sensitive parish financial information: download only to a trusted device and share only with authorized recipients." %}</p>
 <form id="table-export" data-table-sync data-submit-waits method="post" action="{% url 'admin:financial_export' %}">{% csrf_token %}
@@ -51,7 +50,7 @@
 <label for="financial-format">{% translate "Export format" %}</label><select id="financial-format" name="format">{% export_format_options "csv" "xlsx" "pdf" %}</select>{% include 'stewardship/export-dates-help.html' %}
 <div class="label-row"><label for="financial-export-timezone" id="financial-export-timezone-label">{% translate "Export timezone" %}</label>{% translate "Your browser's time zone is selected when your browser allows it; otherwise UTC is selected. You can change it before exporting." as tip %}{% include "stewardship/components/toggletip.html" with tip_id="financial-export-timezone-tip" tip_label_id="financial-export-timezone-label" tip_text=tip %}</div><select id="financial-export-timezone" name="browser_timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
 {% include 'stewardship/export-fresh-help.html' %}
-{% button type="submit" %}{% translate "Queue complete export" %}{% endbutton %}</fieldset></form></section>
+{% button type="submit" %}{% translate "Queue complete export" %}{% endbutton %}</fieldset></form></details>
 <script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
 <div id="{{ table.anchor }}" data-table-region>
 {% translate "Financial result pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}

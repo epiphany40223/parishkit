@@ -56,8 +56,12 @@
     // Drawn once: a figure already rendered (or failed) is left alone.
     root.dataset.chartState = "drawing";
     // The server renders the fixed width the spec carries (the email image);
-    // the page lets the same chart follow its panel's width instead.
-    spec.width = "container";
+    // the page lets the same chart follow its panel's width instead. A chart
+    // of stacked panels (the participation chart, #720) gives each panel
+    // that width; its own fit-x autosize keeps the axes inside it.
+    (Array.isArray(spec.vconcat) ? spec.vconcat : [spec]).forEach((part) => {
+      part.width = "container";
+    });
     // The CSP allows no eval and no inline styles: Vega runs in interpreter
     // mode (ast), nothing injects a stylesheet (chart-v1.css carries the
     // tooltip's), and there is no actions menu to style.
@@ -125,6 +129,31 @@
       }
     });
   };
+  // Vega shows a tooltip on pointermove, which a tap never sends: a touch
+  // pointer goes over, down, up and out again, then the page gets a click.
+  // So a tap on a drawn chart replays itself as a pointermove there, and
+  // the tooltip opens; a tap anywhere else sends each drawn chart a
+  // pointerout, which closes any open tooltip. Pointer and mouse users are
+  // unaffected: only a click that follows a touch pointerdown counts.
+  let touched = false;
+  document.addEventListener("pointerdown", (event) => {
+    touched = event.pointerType === "touch";
+  }, true);
+  document.addEventListener("click", (event) => {
+    if (!touched) return;
+    touched = false;
+    const target = event.target instanceof Element
+      ? event.target.closest("[data-chart-view] svg *") && event.target
+      : null;
+    const at = { bubbles: true, clientX: event.clientX, clientY: event.clientY, pointerType: "touch" };
+    drawn.forEach((_result, root) => {
+      const svg = root.querySelector("[data-chart-view] svg");
+      if (svg && !(target && svg.contains(target))) {
+        svg.dispatchEvent(new PointerEvent("pointerout", at));
+      }
+    });
+    if (target) target.dispatchEvent(new PointerEvent("pointermove", at));
+  }, true);
   window.ParishCharts = { render, hold };
   render(document);
 })();

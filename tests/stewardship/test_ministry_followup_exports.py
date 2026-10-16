@@ -409,6 +409,9 @@ def followup_page(**context):
             "export_fields": query.form_values(),
             "export_timezones": ["America/Chicago", "UTC"],
             "export_pdf_limit": 1000,
+            # Ministry requests' totals and packet (#1133), with no request.
+            "totals": {"joining": 0, "leaving": 0, "requests": 0},
+            "packet_limit": 200,
             "table": report_table(
                 [],
                 number=1,

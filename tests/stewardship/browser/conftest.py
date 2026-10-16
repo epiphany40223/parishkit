@@ -133,7 +133,6 @@ from .live_status_components import POSTS as LIVE_STATUS_POSTS
 from .live_status_components import components as live_status_components
 from .log_components import components as log_components
 from .menu_components import components as menu_components
-from .ministry_components import components as ministry_components
 from .my_ministries_components import components as my_ministries_components
 from .not_found_components import components as not_found_components
 from .past_campaign_components import POSTS as PAST_CAMPAIGN_POSTS
@@ -2140,7 +2139,6 @@ def component_origin():
             ),
         )
     responses.update(directory_components(context, admin))
-    responses.update(ministry_components(context, admin))
     responses.update(followup_components(context, admin))
     responses.update(source_form_components(context, admin))
     responses.update(data_to_fix_components(context, admin))
@@ -2252,6 +2250,7 @@ def component_origin():
         ("digest-v1.css", "text/css"),
         ("setup-v1.css", "text/css"),
         ("select-arrow-v1.svg", "image/svg+xml"),
+        ("select-arrow-dark-v1.svg", "image/svg+xml"),
         ("chart-v1.js", "application/javascript"),
         ("chart-v1.css", "text/css"),
     ):
