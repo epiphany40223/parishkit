@@ -59,5 +59,9 @@ def test_drive_session_refuses_the_mail_catcher_document():
     from parishkit.stewardship.backup_drive import DriveFailure, workspace_session
 
     with pytest.raises(DriveFailure) as error:
-        workspace_session(MAIL_CATCHER_DOCUMENT, subject="mail@example.org")
+        workspace_session(
+            MAIL_CATCHER_DOCUMENT,
+            subject="mail@example.org",
+            profile=DeploymentProfile.PRODUCTION,
+        )
     assert error.value.kind == "credential"

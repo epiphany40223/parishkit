@@ -21,10 +21,9 @@ deployment?" without real parish data, real credentials or a shared host.
 
 It is:
 
-- **not a production deployment.** It never holds real parish data, its VM
-  has no internet egress today, and it can never email a real Family, even
-  after its campaign goes to Production (see
-  [safety guarantees](#safety-guarantees));
+- **not a production deployment.** It never holds real parish data, and it
+  can never email a real Family, even after its campaign goes to Production
+  (see [safety guarantees](#safety-guarantees));
 - **not CI.** Nothing here runs Docker in CI. CI covers the local profile with
   fast tests, timeline tests and database tests that need no fake clock, and by
   rendering the local topology. Seed tests run in the VM (see
@@ -161,16 +160,25 @@ The LOCAL rendering differs from Production only as follows:
 - **Published ports.** Caddy publishes only `127.0.0.1:8443` and Mailpit only
   `127.0.0.1:8025`, both inside the VM. Nothing binds `0.0.0.0`.
 - **Networks.** `backend` and `proxy` are already `internal: true` in every
-  profile; today outbound traffic leaves through the non-internal
+  profile, and outbound traffic leaves through the non-internal
   `application-egress` network (web, worker, mail-dispatch, the ParishSoft,
-  Workspace and Slack installers, and the backup worker) and Caddy publishes
-  through `ingress`. LOCAL MUST omit `application-egress` entirely. Only Caddy
-  and Mailpit join `ingress`, which LOCAL creates with
+  Workspace and Slack installers, and the backup worker). LOCAL renders
+  `application-egress` with exactly the same members as Production
+  ([#1399](https://github.com/epiphany40223/parishkit/issues/1399)), so its
+  integrations run through Production's code; what a LOCAL service may reach
+  is limited by code, as the [safety guarantees](#safety-guarantees) say, not
+  by the network. Caddy, Mailpit and the fake ParishSoft MUST NOT join
+  `application-egress`. Caddy publishes through `ingress`; in the rendered
+  topology only Caddy and Mailpit join it (the operator script's
+  [launch-day spike](#launch-day-spike-check) shards attach to it too), and
+  LOCAL creates it with
   `com.docker.network.bridge.enable_ip_masquerade: "false"`. Published ports
-  still work, because Docker forwards inbound connections to them, but
+  still work, because Docker forwards inbound connections to them, but the
   containers on `ingress` get no source NAT and so no route to the internet.
-  This is a Docker bridge setting, not a firewall; a manual check in the VM
-  (an outbound request from the Caddy container fails) is part of the
+  This is a Docker bridge setting, not a firewall, and it relies on the VM's
+  own upstream NAT translating only the VM's address; a manual check in the
+  VM (outbound requests from Caddy, Mailpit and the fake ParishSoft fail,
+  and one from web succeeds) is part of the
   [testing requirements](#testing-requirements).
 - **Project name.** The renderer's top-level Compose `name` is
   `parishkit-local` (Production's stays `parishkit-stewardship`), and the
@@ -244,9 +252,10 @@ Production in either direction.
   does not live in `deployment._origin`, and every other profile's result is
   unchanged. The safety argument does not rest on refusing activation. Real
   Families cannot be emailed because:
-  - Gmail and Google service-account credentials are refused in LOCAL;
-  - the VM's application network has no internet egress;
-  - all mail goes to Mailpit through the mail-catcher transport;
+  - Gmail and Google service-account credentials are refused in LOCAL, at
+    every intake and at every Gmail call site;
+  - all mail goes to Mailpit through the mail-catcher transport, and Mailpit
+    has no route out and renders no relay;
   - the data is synthetic, with only `@example.test` addresses.
 
   A test MUST show that, after LOCAL activation, every Family and
@@ -257,9 +266,7 @@ Production in either direction.
   ParishSoft, the mail catcher, the sentinel OAuth client and a test Slack
   token. It sends no mail: a `--send-to` needs a Google service account,
   which LOCAL still refuses. A Slack `--channel-id ... --send` posts the one
-  fixed smoke message to the named channel, but only once LOCAL has egress;
-  until then the Slack check reports the provider unavailable and nothing is
-  posted.
+  fixed smoke message to the named channel, as in Production.
 - **Google sign-in.** In LOCAL the `google_oauth` installer accepts only a
   sentinel client document that other profiles refuse, and the LOCAL login page
   hides Google sign-in. The sentinel holds no real client ID or secret. Admin
@@ -271,15 +278,40 @@ Production in either direction.
   by the same code as in every other profile (#1399). Slack carries only
   operational and readiness alerts to the configured channel, never Family
   mail. A LOCAL Slack token SHOULD be a separate test bot token whose app is
-  installed only in a test channel, never Production's token. Until LOCAL has
-  egress, a Slack check reports the provider unavailable and nothing is
-  posted; with no Slack token, operational alerts are recorded and emailed
-  only (to Mailpit).
+  installed only in a test channel, never Production's token. That rule is
+  the developer's to keep: nothing in code tells a test token from
+  Production's. A LOCAL deployment does not know Production's Slack
+  workspace or channel, so it cannot refuse them, and its alerts carry no
+  environment label (only their "Deployment mode" field), so with
+  Production's token LOCAL's alerts would post to the Production channel
+  looking much like Production's own. A configured environment label on
+  alerts belongs with the later #1399 configuration work. With no Slack
+  token, operational alerts are recorded and emailed only (to Mailpit).
 - **Drive.** The Google Drive backup target is refused in LOCAL: off-site
   copies sign in with the Workspace key, and LOCAL still admits only the
-  mail-catcher document.
-- **No egress** (see [topology](#topology-and-web-differences)) backs these
-  checks up: even a mistaken real credential has no route out.
+  mail-catcher document. The refusal is repeated at use, whatever the
+  configuration or the credentials tree holds: the backup's off-site copy
+  (`backup_offsite.copy_offsite`) reports `not_configured` in LOCAL without
+  reading its destination or key, the Drive session
+  (`backup_drive.workspace_session`, which every copy, Test access check and
+  smoke check builds with the caller's profile) refuses LOCAL before it
+  parses the key, and the `backup_drive` smoke check refuses LOCAL before it
+  reads anything.
+- **Egress.** LOCAL's application services have Production's route out (see
+  [topology](#topology-and-web-differences)), so the guarantees above rest on
+  the code checks, enforced at install and at use, and not on the network.
+  Until the later #1399 changes land, those checks keep mail on the mail
+  catcher, ParishSoft on the fake and Google sign-in on the sentinel client,
+  so the only real provider a LOCAL deployment can reach is Slack, with a
+  token the developer installs. A fast test lists each of those use-time
+  checks and asserts that LOCAL refuses its real provider.
+  Under the [fake clock](#fake-clock), which never runs ahead of real time, a
+  faked process checks a real provider's TLS certificate against that past
+  time: it refuses a certificate issued since then and accepts one that has
+  expired since then. Today only Slack is reached this way, so the exposure
+  is a test Slack token; before a real Google key is admitted in LOCAL, the
+  Google token assertion's timestamps and Google's TLS checks running on a
+  past clock MUST be dealt with.
 
 ## Mail catcher
 
@@ -583,10 +615,13 @@ shared clock that the operator script controls.
 - **When each mode applies.** An unseeded deployment always runs in fake-clock
   mode, at the offset `up` sets (below). Its pages show dates about 17 days in
   the past. A seeded deployment runs in normal mode.
-- **Not faked.** Caddy, Mailpit and `fake-parishsoft` run on real time. TLS
-  certificate validity is checked by Caddy and the browser on real time, and no
-  faked process validates a certificate: Mailpit SMTP and the fake ParishSoft
-  are plain connections. Mailpit therefore stamps messages with real time.
+- **Not faked.** Caddy, Mailpit and `fake-parishsoft` run on real time. The
+  local certificate's validity is checked by Caddy and the browser on real
+  time, and Mailpit SMTP and the fake ParishSoft are plain connections. The
+  faked application services do validate a real provider's certificate
+  (Slack, once a token is installed) against faked time, as the
+  [egress guarantee](#safety-guarantees) describes. Mailpit therefore stamps
+  messages with real time.
   `fake-parishsoft` compares `release_at` against real time.
 - **Timers.** Monotonic clocks stay real (`FAKETIME_DONT_FAKE_MONOTONIC`), so
   sleeps, subprocess timeouts and work budgets behave normally. Valkey key
@@ -1629,9 +1664,10 @@ The local environment adds:
   Caddyfile are byte-identical before and after, and that rendered grants and
   the Valkey ACL are identical across profiles;
 - **rendering tests** that run the LOCAL renderer in CI and check the local
-  topology: only loopback publications, no `application-egress`, `ingress`
-  without masquerade and joined only by Caddy and Mailpit, the two extra
-  services, a local image tag and no GHCR reference;
+  topology: only loopback publications, `application-egress` joined by
+  exactly Production's services and never by Caddy, Mailpit or the fake
+  ParishSoft, `ingress` without masquerade and joined only by Caddy and
+  Mailpit, the two extra services, a local image tag and no GHCR reference;
 - **fake ParishSoft contract tests**: a fixed seed produces a fixed digest, an
   in-process fake passes the strict `CoherentParishSoftClient` loaders, a wrong
   key gets 401, and the late-added Family appears only after `release_at`;
@@ -1667,7 +1703,7 @@ The local environment adds:
 
 No Docker end-to-end run of the local environment belongs in CI, and neither
 do the [seed tests](#seeder-tests). A developer runs them and verifies the full
-stack in the VM, including the no-egress check, before a pull request that
+stack in the VM, including the network check, before a pull request that
 changes it, following the documented VM run.
 
 The delivery plan is

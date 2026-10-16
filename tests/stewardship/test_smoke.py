@@ -479,7 +479,7 @@ def test_backup_drive_probes_and_copies_the_newest_set(tmp_path, monkeypatch, ca
     monkeypatch.setattr(
         backup_drive,
         "workspace_session",
-        lambda value, subject: sessions.append((value, subject)),
+        lambda value, subject, profile: sessions.append((value, subject, profile)),
     )
     tags = []
 
@@ -501,7 +501,7 @@ def test_backup_drive_probes_and_copies_the_newest_set(tmp_path, monkeypatch, ca
         "copied_set": None,
         "target": "backup_drive",
     }
-    assert sessions == [(b"service-account", "mail@example.org")]
+    assert sessions == [(b"service-account", "mail@example.org", configuration.profile)]
     backups = private_directory(configuration.paths["backups"], create=True)
     directory = backups / "20260927T020000Z"
     directory.mkdir(mode=0o700)

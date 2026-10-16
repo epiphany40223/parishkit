@@ -568,7 +568,11 @@ def test_credential_service_publishes_only_after_admission(
         if target == "google_workspace":
             mail_relay.assert_called_once_with(installer.files.private)
             # Off-site backup access checks use this key and its egress.
-            probes.assert_called_once_with(installer.files.path, check=lease.check)
+            probes.assert_called_once_with(
+                installer.files.path,
+                profile=configuration.profile,
+                check=lease.check,
+            )
             assert lease.check.call_count == 3
         else:
             mail_relay.assert_not_called()
