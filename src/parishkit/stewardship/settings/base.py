@@ -41,6 +41,9 @@ MIDDLEWARE = [
     "parishkit.stewardship.accounts.sessions.NamespacedCsrfMiddleware",
     # Inside CSRF/sessions so a rendered error page's token and cookies persist.
     "parishkit.stewardship.web.error_pages.BrowserErrorMiddleware",
+    # Just inside the error pages, so it sees each Admin refusal as the view
+    # made it, after the view's transaction (#1403).
+    "parishkit.stewardship.web.refusal_log.AdminRefusalMiddleware",
     "parishkit.stewardship.accounts.access_gate.AccessGateMiddleware",
     "allauth.account.middleware.AccountMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",

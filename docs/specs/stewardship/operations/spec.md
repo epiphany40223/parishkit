@@ -1528,7 +1528,11 @@ unexpected or duplicated form fields, an expired or altered
 action that needs a fresh sign-in, or a CSRF failure. A 404 for an address
 that names no Admin page is not input and is not recorded. A control drawn
 [unavailable](../ui-conventions/spec.md#prerequisite-gates) is not a
-refusal, since nothing was submitted; a request forged past it is. The
+refusal, since nothing was submitted, and neither is opening a page its
+menu greys out right now
+([unavailable menu pages](../ui-conventions/spec.md#unavailable-menu-pages)):
+that page explains a visit, not refused input. A request forged past either
+is a refusal. The
 [admin command line](../admin-automation/spec.md#refusal-entry) records its
 refusals as the same event.
 
@@ -1538,7 +1542,8 @@ own. The reason comes from what the refusal already carries: its closed
 `ErrorCode` values and field identifiers; a closed reason code on the
 refusal itself, which the shared refusals fix (`stale_page`,
 `unexpected_fields`, `expired_preview`, `bad_signature`,
-`fresh_authentication_required`, `csrf_failed`, `denied`); and the Django
+`fresh_authentication_required`, `csrf_failed`, `denied`, and `gone` for a
+retired action or another campaign's address); and the Django
 error codes of a refused form (`required`, `invalid_choice`, `max_length`
 and so on), which every Admin form records through one shared form base.
 A refusal with no reason of its own has reason `unclassified` and names
@@ -1676,8 +1681,8 @@ process log only, one of the
 second one: refused sign-ins (`admin_login_refused` and the sampled
 `admin_login_denied`), including a step-up sign-in by the wrong account,
 and refused automation sessions (`automation_session_refused`). The code
-that writes such a record marks the response as already recorded, and the
-hook skips a marked response, so each of those paths gives its own record
+that writes such a record marks the request or response as already
+recorded, and the hook skips a marked one, so each of those paths gives its own record
 and no `admin_input_refused` entry or line. A completed step-up stays
 recorded as `admin_step_up` or `automation_fresh_gate`; the refused request
 that asked for it is new information and is recorded, with reason

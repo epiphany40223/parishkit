@@ -49,7 +49,9 @@ from parishkit.stewardship.web.namespaces import admin_return_path
 from parishkit.stewardship.web.refusals import (
     UserFacingDenied,
     UserFacingGone,
+    annotate,
     gone_response,
+    mark_recorded,
 )
 from parishkit.stewardship.web.security import login_denial
 
@@ -122,13 +124,16 @@ def denial(*, status=403, retry=None, admin=True):
     error = sys.exception()
     if isinstance(error, UserFacingGone):
         debug_swallowed("admin request refused")
-        return gone_response(error)
+        return annotate(gone_response(error), error)
     if isinstance(error, UserFacingDenied):
         # A reviewed refusal says plainly why, still as a 403 (#939: a
         # Ministry leader who leads no Ministry now), never a sign-in prompt.
         debug_swallowed("admin request refused")
-        return validation_response(
-            [FieldError(ErrorCode.DENIED)], status=403, refusal=error.refusal
+        return annotate(
+            validation_response(
+                [FieldError(ErrorCode.DENIED)], status=403, refusal=error.refusal
+            ),
+            error,
         )
     # Callers deny from inside an except block; record what actually failed.
     debug_swallowed("admin request denied")
@@ -140,7 +145,8 @@ def denial(*, status=403, retry=None, admin=True):
     response.stewardship_safe_error = True
     if retry:
         response["Retry-After"] = str(min(3600, max(1, int(retry))))
-    return response
+    # The exception being handled, if any, names the refusal in its log.
+    return annotate(response, error) if error is not None else response
 
 
 def ip_counter(limiter, source, *, initiation=False):
@@ -163,6 +169,10 @@ def record_failure(request, *, identity="", counter=None, sampled=True):
     if getattr(request, "auth_failure_counted", False):
         return 0
     request.auth_failure_counted = True
+    # The sign-in's own record (the admin_login_denied sample, or the
+    # caller's admin_login_refused) stands for this refusal: the refusal
+    # log adds none (#1403).
+    mark_recorded(request)
     limiter = runtime().limiter
     counters = [ip_counter(limiter, request.client_address)]
     if counter:

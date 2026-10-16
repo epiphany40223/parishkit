@@ -49,6 +49,9 @@ REASONS = frozenset(
         "fresh_authentication_required",
         "csrf_failed",
         "denied",
+        # A retired action or another campaign's address (UserFacingGone,
+        # HTTP 410): INFO, although it is a PermissionError.
+        "gone",
         "unclassified",
         "usage",
         "configuration",

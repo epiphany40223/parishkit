@@ -33,9 +33,11 @@ from parishkit.stewardship.web.contracts import (
     validation_response,
 )
 from parishkit.stewardship.web.refusals import (
+    AccessDenied,
     UserFacingDenied,
     UserFacingGone,
     UserFacingUnavailable,
+    annotate,
     expired_preview,
     gone_response,
     load_preview,
@@ -73,7 +75,7 @@ def principal(
         # rather than implying the signed-in account lacks a capability.
         raise signed_out()
     if not allows(value, capability):
-        raise PermissionError(f"This page requires the {capability} capability.")
+        raise AccessDenied(f"This page requires the {capability} capability.")
     return value
 
 
@@ -363,8 +365,14 @@ def error_response(error):
     an HTML page by the browser-error middleware, which, for a missing fresh
     authentication, offers the step-up "Confirm with Google" instead. A
     user-facing refusal (``web.refusals``) keeps its base type's status but
-    adds its reviewed explanation and fix link.
+    adds its reviewed explanation and fix link. Every response carries the
+    error's reason for the refusal log (``web.refusals.annotate``).
     """
+    return annotate(_error_response(error), error)
+
+
+def _error_response(error):
+    """The closed response for ``error``, as ``error_response`` describes."""
     if debug_logging_enabled():
         # The response names only a closed category; say what actually failed.
         logging.getLogger("parishkit.stewardship.debug").debug(
