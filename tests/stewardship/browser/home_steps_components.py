@@ -79,6 +79,11 @@ def components(context, admin):
 # an error, two warnings (one Home also reports in its refresh block), and
 # a banner group whose problem is current.
 HEALTH_PATH = "/home-health"
+# Home with the shared kinds of #1214's slice 1: an unknown No-reminders
+# WorkGroup while Reminders are scheduled, a backup key that cannot be
+# checked, a requested backup never picked up, and (Production) off-site
+# copies not set up.
+SHARED_PATH = "/home-health-shared"
 
 
 def health_components(context, admin, chrome, actor, configuration):
@@ -127,4 +132,42 @@ def health_components(context, admin, chrome, actor, configuration):
             },
         },
     )
-    return {HEALTH_PATH: ("text/html", html)}
+    shared = (
+        Problem(
+            "workgroup_missing",
+            workgroup="Do not remind",
+            detail="reminders_scheduled",
+        ),
+        Problem("backup_key_unchecked"),
+        Problem(
+            "backup_request_failed",
+            at=now - timedelta(hours=1),
+            detail="not_picked_up",
+        ),
+        Problem("offsite_missing"),
+    )
+    shared_html = render_to_string(
+        "stewardship/home.html",
+        context
+        | {
+            "admin_chrome": chrome,
+            "principal": actor,
+            "configuration": configuration,
+            "dashboard": {
+                "campaign": CAMPAIGN,
+                "refreshed_at": None,
+                "health_problems": shared,
+                "health_listed": {
+                    "failed": False,
+                    "late": False,
+                    "offsite": False,
+                    "offsite_unset": True,
+                },
+                "offsite_unset": True,
+            },
+        },
+    )
+    return {
+        HEALTH_PATH: ("text/html", html),
+        SHARED_PATH: ("text/html", shared_html),
+    }

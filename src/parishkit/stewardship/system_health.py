@@ -116,9 +116,19 @@ REGISTRY = {
     "source_destructive_change": ("source", "error"),
     "source_tenant_mismatch": ("source", "error"),
     "source_retention_failing": ("source", "warning"),
+    # An error while the campaign has Reminders still scheduled (#861),
+    # which ``tile_parts`` decides from the problem's ``detail``.
+    "workgroup_missing": ("source", "warning"),
     "backup_rpo_breach": ("backups", "error"),
     "backup_offsite_failed": ("backups", "warning"),
     "backup_key_changed": ("backups", "warning"),
+    "backup_key_mismatch": ("backups", "warning"),
+    # Home's alone: the System health page answers 503 instead while the
+    # configured backup key cannot be read (``home_problems``).
+    "backup_key_unchecked": ("backups", "warning"),
+    "backup_request_failed": ("backups", "warning"),
+    # In Production only (decision 5 of 2026-10-13).
+    "offsite_missing": ("backups", "warning"),
     "debug_logging": ("debug", "warning"),
     "versions_differ": ("version", "error"),
     "schema_mismatch": ("version", "error"),
@@ -151,6 +161,17 @@ UNLINKED_EVENTS = frozenset({"mail_provider_failed"})
 SENTENCE_LINKS_TILE = frozenset(
     {"mail_provider_unavailable", "source_destructive_change", "versions_differ"}
 )
+# Kinds whose Home line links no tile at all: while the configured backup
+# key cannot be read, the System health page cannot be shown (it answers
+# 503), so a link to its Backups tile would lead nowhere useful.
+NO_TILE_LINK = frozenset({"backup_key_unchecked"})
+# Problems a short watch cannot wait out, so ``system health --watch``
+# stops with them still listed (SystemHealth.terminal): off-site copies that
+# are not set up, which need an Administrator, and a requested backup that
+# failed, did not finish or was never picked up. The next nightly backup
+# clears a failed or unfinished request (``_request_failed``), hours away;
+# one never picked up needs the server operator or a newer request.
+WAIT_CANNOT_CLEAR = frozenset({"offsite_missing", "backup_request_failed"})
 # How bad each tile state is, for "worst of".
 RANK = {"working": 0, "warning": 1, "error": 2}
 
@@ -327,7 +348,12 @@ class Problem:
     sentence states (when it began, or until when). ``count`` and
     ``message_id`` belong to ``refusal_unrecorded`` alone (#1201): how many
     addresses were not set aside, and the newest entry's email, which the
-    sentence links.
+    sentence links. ``detail`` is a stored enumeration value some kinds
+    need: a failed backup request's page status (``request_status``), or
+    "reminders_scheduled" for an unknown No-reminders WorkGroup while the
+    campaign still has Reminders to send. ``workgroup`` is that WorkGroup's
+    name, as an Administrator typed it, so it is never part of the
+    document.
     """
 
     kind: str
@@ -335,6 +361,8 @@ class Problem:
     at: datetime | None = None
     count: int = 0
     message_id: str | None = None
+    detail: str | None = None
+    workgroup: str | None = None
 
     @property
     def names(self):
@@ -386,6 +414,16 @@ class Problem:
         return self.kind in SENTENCE_LINKS_TILE
 
     @property
+    def tile_link(self):
+        """Whether Home's line adds its own link to the problem's tile."""
+        return not self.links_tile and self.kind not in NO_TILE_LINK
+
+    @property
+    def runbooks(self):
+        """The operator runbooks a sentence links, on the page and Home alike."""
+        return RUNBOOKS
+
+    @property
     def summary(self):
         """A few plain words naming the problem, for a tile and the announcement."""
         from django.utils.translation import gettext as _
@@ -407,11 +445,21 @@ class Problem:
             "backup_rpo_breach": _("backup overdue"),
             "backup_offsite_failed": _("off-site copy failed"),
             "backup_key_changed": _("backup key changed"),
+            "backup_key_mismatch": _("last backup sealed to a different key"),
+            "backup_key_unchecked": _("backup key could not be checked"),
+            "backup_request_failed": _("requested backup did not complete"),
+            "offsite_missing": _("off-site copies not set up"),
             "debug_logging": _("debug logging on in %(name)s"),
             "refusal_unrecorded": _("refused address not set aside"),
             "versions_differ": _("versions differ"),
             "schema_mismatch": _("database does not match"),
         }.get(self.kind, self.kind)
+        if self.kind == "workgroup_missing":
+            from .campaigns.configuration import REMINDER_WORKGROUP_NAME
+
+            return _("%(workgroup)s not found in ParishSoft") % {
+                "workgroup": _(REMINDER_WORKGROUP_NAME)
+            }
         if "%(name)s" not in words:
             return words
         name = self.names if words.startswith("%(name)s") else self.names_inline
@@ -664,6 +712,9 @@ def tile_parts(problem, processes=()):
     whole group's. Without them the group's time stays.
     """
     tile, severity = REGISTRY[problem.kind]
+    if problem.kind == "workgroup_missing" and problem.detail == "reminders_scheduled":
+        # Families who should be skipped would get the next Reminder (#861).
+        severity = "error"
     if problem.kind not in PROCESS_KINDS:
         return ((tile, severity, problem),)
     mail = tuple(s for s in problem.subjects if s.service == "mail-dispatch")
@@ -755,6 +806,11 @@ def find_problems(
     refresh,
     backup_at,
     unrecorded=None,
+    workgroup_missing=None,
+    reminders_scheduled=False,
+    backup_key="matches",
+    backup_request=None,
+    offsite_set_up=True,
 ):
     """Every current problem, in the order the page lists them.
 
@@ -767,6 +823,15 @@ def find_problems(
     not be set aside and are not yet acknowledged (#1201). A pause an
     Administrator chose, Gmail's own limit and the daily limit are reasons
     sends wait, shown in their panel, not problems.
+
+    The rest are ``shared_inputs``'s answers. ``workgroup_missing`` is the
+    campaign's No-reminders WorkGroup name when ParishSoft has none by it
+    (#861), and ``reminders_scheduled`` whether the campaign still has a
+    Reminder to send, which makes that an error. ``backup_key`` is
+    "matches", "mismatch" (``key_mismatch``) or "unchecked" (Home only).
+    ``backup_request`` is the newest Take a backup now request's
+    ``BackupRequestStatus`` (or None), and ``offsite_set_up`` whether
+    off-site copies are set up, which only Production needs.
     """
     running = [line for line in processes if line.running]
     senders = [line for line in running if line.sender]
@@ -825,11 +890,36 @@ def find_problems(
         for kind in SOURCE_INCIDENTS
         if kind in incidents
     )
+    if workgroup_missing is not None:
+        problems.append(
+            Problem(
+                "workgroup_missing",
+                workgroup=workgroup_missing,
+                detail="reminders_scheduled" if reminders_scheduled else None,
+            )
+        )
     for kind in BACKUP_INCIDENTS:
-        if kind in incidents:
+        # One cause, one warning: a newest backup sealed to another key than
+        # the configured one also explains the changed-key incident, so only
+        # the mismatch is listed while both hold.
+        if kind in incidents and not (
+            kind == "backup_key_changed" and backup_key == "mismatch"
+        ):
             # The overdue backup's sentence states when the newest one finished.
             at = backup_at if kind == "backup_rpo_breach" else incidents[kind]
             problems.append(Problem(kind, at=at))
+    if backup_key != "matches":
+        problems.append(Problem(f"backup_key_{backup_key}"))
+    if _request_failed(backup_request, backup_at):
+        problems.append(
+            Problem(
+                "backup_request_failed",
+                at=backup_request.created_at,
+                detail=backup_request.status,
+            )
+        )
+    if mode == "production" and not offsite_set_up:
+        problems.append(Problem("offsite_missing"))
     if mode == "production":
         problems += _grouped(
             "debug_logging", [line for line in running if line.debug_logging]
@@ -947,8 +1037,10 @@ class SystemHealth(ReadModel):
 
     @property
     def terminal(self):
-        """``system health --watch`` repeats until everything is working."""
-        return not self.problems
+        """``system health --watch`` repeats until everything is working,
+        or only problems that waiting cannot clear remain
+        (``WAIT_CANNOT_CLEAR``)."""
+        return all(problem.kind in WAIT_CANNOT_CLEAR for problem in self.problems)
 
     @property
     def runbooks(self):
@@ -1103,10 +1195,13 @@ class SystemHealth(ReadModel):
         """The Backups tile's Working summary: the first of
         ``BACKUP_SUMMARIES`` that holds.
 
-        A request that failed, did not finish or was not picked up is a
-        page finding (``page_findings``), so it never reaches this; nor, in
-        Production, do off-site copies that are not set up (decision 5 of
-        2026-10-13), but the words stay true if they do.
+        Only a live request (waiting, held or running) is named here. One
+        that failed, did not finish or was not picked up is the
+        ``backup_request_failed`` problem while it is listed, and once a
+        newer backup clears it the summary names that backup. In
+        Production, off-site copies that are not set up are the
+        ``offsite_missing`` problem (decision 5 of 2026-10-13), but the
+        words stay true if a tile is Working with them.
         """
         request = self.backup_request
         if request is not None and request.status in LIVE_REQUEST:
@@ -1160,35 +1255,26 @@ class SystemHealth(ReadModel):
 
 # ------------------------------------------------------------ the dashboard
 
-# Page notices that are not yet in the shared problem list (the registry
-# slice of #1214 moves them there, so Home lists them too). On the page they
-# raise their tile to Warning, so a tile never stays closed and Working over
-# a notice that needs the Administrator.
-FINDINGS = {
-    "workgroup_missing": "source",
-    "backup_key_mismatch": "backups",
-    "backup_request_failed": "backups",
-    "offsite_missing": "backups",
-}
-# A requested backup in these page statuses ended without a backup.
+# A requested backup in these page statuses ended without a backup: the
+# ``backup_request_failed`` problem (``_request_failed`` says until when).
 FAILED_REQUESTS = frozenset({"failed", "did_not_finish", "not_picked_up"})
 
 
-def page_findings(health, *, workgroup_missing=None):
-    """The page-only findings that hold now, in their tiles' order.
+def _request_failed(request, backup_at):
+    """Whether ``request`` (a ``BackupRequestStatus``, or None) is the
+    ``backup_request_failed`` problem, with ``backup_at`` the newest
+    backup's finish.
 
-    ``workgroup_missing`` is the page's unknown No-reminders WorkGroup name
-    (``read_health``'s ``page``), or None. Off-site copies that are not set
-    up are a finding in Production only (decision 5 of 2026-10-13).
+    A newer request replaces it (only the newest is read). A newer finished
+    backup clears a request that failed or did not finish, since backups
+    work again. A request never picked up stays: a good nightly backup does
+    not prove the server checks for requests at all.
     """
-    request = health.backup_request
-    held = {
-        "workgroup_missing": bool(workgroup_missing),
-        "backup_key_mismatch": health.backup_key_matches is False,
-        "backup_request_failed": bool(request and request.status in FAILED_REQUESTS),
-        "offsite_missing": health.mode == "production" and health.offsite is None,
-    }
-    return tuple(kind for kind in FINDINGS if held[kind])
+    if request is None or request.status not in FAILED_REQUESTS:
+        return False
+    if request.status == "not_picked_up":
+        return True
+    return backup_at is None or backup_at <= request.created_at
 
 
 def source_form_tile(answer):
@@ -1316,16 +1402,14 @@ class Tile:
     ``problems`` are the problem parts the tile shows (``tile_parts``), in
     page order; ``counted`` those that set its state (a refused change
     already accepted once is shown but not counted, as ``attention``
-    says). ``findings`` are its page-only notices (``FINDINGS``). A
-    page-load tile (``loaded``) has none of these: its state comes from the
-    page's own read (``loaded_states``).
+    says). A page-load tile (``loaded``) has neither: its state comes from
+    the page's own read (``loaded_states``).
     """
 
     key: str
     state: str = "working"
     problems: tuple = ()
     counted: tuple = ()
-    findings: tuple = ()
     loaded: bool = False
 
     @property
@@ -1381,22 +1465,15 @@ class Tile:
     @property
     def top(self):
         """The counted part its summary names: the most severe (the first in
-        page order when several tie), or None when only findings count."""
+        page order when several tie), or None while it is Working."""
         return next(
             (part for part in self.counted if part.severity == self.state), None
         )
 
     @property
-    def top_finding(self):
-        """The finding its summary names when no counted problem does."""
-        if self.top is not None or not self.findings:
-            return None
-        return self.findings[0]
-
-    @property
     def more(self):
-        """How many more counted problems and findings the summary has."""
-        return max(len(self.counted) + len(self.findings) - 1, 0)
+        """How many more counted problems the summary has."""
+        return max(len(self.counted) - 1, 0)
 
     @property
     def listed(self):
@@ -1415,7 +1492,7 @@ class Tile:
         Its block holds the refused counts, and Accept this change once,
         which follows the problems, must sit directly under them
         (admin-portal spec, "Health tiles"), so it is listed after the
-        other problems and the page findings; None when there is none.
+        other problems; None when there is none.
         """
         return next(
             (
@@ -1504,14 +1581,13 @@ class Dashboard:
         return gettext("System health: all working.")
 
 
-def dashboard(health, *, findings=(), loaded=None):
+def dashboard(health, *, loaded=None):
     """The dashboard for ``health``: every tile, in the fixed order.
 
-    ``findings`` are ``page_findings``'s kinds and ``loaded`` the page-load
-    tiles' states (``loaded_states`` on the page, ``parse_loaded`` in the
-    fragment). A tile's state is the worst of its counted problems'
-    severities, with each finding a warning; a tile with nothing to report
-    is Working.
+    ``loaded`` holds the page-load tiles' states (``loaded_states`` on the
+    page, ``parse_loaded`` in the fragment). A tile's state is the worst of
+    its counted problems' severities; a tile with nothing to report is
+    Working.
     """
     loaded = loaded or {}
     attention = set(health.attention)
@@ -1528,11 +1604,9 @@ def dashboard(health, *, findings=(), loaded=None):
         if key in LOADED_TILES:
             tiles.append(Tile(key, loaded.get(key, "working"), loaded=True))
             continue
-        notes = tuple(kind for kind in findings if FINDINGS[kind] == key)
         states = [entry.severity for entry in counted[key]]
-        states += ["warning"] * len(notes)
         state = max(states, key=RANK.__getitem__, default="working")
-        tiles.append(Tile(key, state, tuple(shown[key]), tuple(counted[key]), notes))
+        tiles.append(Tile(key, state, tuple(shown[key]), tuple(counted[key])))
     return Dashboard(tuple(tiles))
 
 
@@ -1570,7 +1644,9 @@ def _image_migrations():
 
 
 # The status records, the open incidents the page names, the applied
-# migrations and when the newest backup finished, as one derived row: Home
+# migrations, when the newest backup finished, and the facts the shared
+# backup and No-reminders WorkGroup problems need (#1214), as one derived
+# row: Home
 # has a fixed query budget, so ``refresh_status.full_refresh_status`` joins
 # this row into the statement Home already runs, and the page runs it alone.
 # Every column is read whatever the data, so Home's query count never
@@ -1613,19 +1689,50 @@ HEALTH_SQL = (
     "WHERE l.level='CRITICAL' AND l.event='retry_refusal_unrecorded' "
     "AND l.created_at>=statement_timestamp()-make_interval(secs=>%(critical_window)s) "
     "AND NOT EXISTS(SELECT 1 FROM public.stewardship_critical_event_ack a "
-    "WHERE a.log_id=l.id))"
+    "WHERE a.log_id=l.id)),"
+    # The key the newest backup was sealed to, and when the configured key
+    # was activated: every activation that sets a different key records a
+    # ``backup_key_replaced`` security event at the activation's own time
+    # (schema/functions.sql), so the newest such event is the one that set
+    # the key configured now (``key_mismatch``).
+    "(SELECT recipient_fingerprint FROM public.stewardship_backup_run "
+    "ORDER BY completed_at DESC,id DESC LIMIT 1),"
+    "(SELECT started_at FROM public.stewardship_backup_run "
+    "ORDER BY completed_at DESC,id DESC LIMIT 1),"
+    "(SELECT max(created_at) FROM public.stewardship_policy_security_event "
+    "WHERE kind='backup_key_replaced'),"
+    # The newest Take a backup now request, as ``request_status`` words it.
+    "(SELECT json_build_object('state',state,'created_at',created_at,"
+    "'held_at',held_at,'claimed_at',claimed_at,'finished_at',finished_at,"
+    "'failure_kind',failure_kind) FROM public.stewardship_backup_request "
+    "ORDER BY created_at DESC,id DESC LIMIT 1),"
+    # The No-reminders WorkGroup evidence the current snapshot recorded
+    # (``workgroups.valid_evidence`` checks its shape; as json, which
+    # psycopg decodes, where Django leaves jsonb a string), and whether the
+    # current campaign has a Reminder still to come on the campaign clock
+    # (#861).
+    "(SELECT (s.cursor->'load'->%(workgroup_key)s)::json "
+    "FROM public.stewardship_source_current c "
+    "JOIN public.stewardship_source_snapshot s ON s.id=c.snapshot_id),"
+    "EXISTS(SELECT 1 FROM public.stewardship_schedule_revision r "
+    "JOIN public.stewardship_system_configuration g "
+    "ON r.configuration_id=g.active_configuration_id "
+    "AND r.campaign_id=g.current_campaign_id "
+    "WHERE r.kind='reminder' AND r.due_at>public.stewardship_campaign_now_v1())"
 )
-HEALTH_COLUMNS = 5
+HEALTH_COLUMNS = 11
 _TIMES = ("started_at", "reported_at", "sender_since", "sender_until")
 
 
 def health_params():
     """The named parameters ``HEALTH_SQL`` takes."""
     from .audit.critical_events import WINDOW
+    from .source.workgroups import EVIDENCE_KEY
 
     return {
         "health_incidents": list(INCIDENTS),
         "critical_window": int(WINDOW.total_seconds()),
+        "workgroup_key": EVIDENCE_KEY,
     }
 
 
@@ -1651,7 +1758,14 @@ class HealthFacts:
     ``incidents`` maps each open kind the page names to when it began;
     ``schema_current`` is whether the applied migrations are exactly the
     ones this version ships; ``backup_at`` is when the newest backup
-    finished; ``unrecorded`` is an ``Unrecorded``.
+    finished; ``unrecorded`` is an ``Unrecorded``. ``backup_fingerprint`` is
+    the key the newest backup was sealed to, ``backup_started_at`` when it
+    started, and ``key_set_at`` when the
+    configured key was activated (None before any was set on the page);
+    ``request`` is the newest backup request's row (times parsed), or None;
+    ``workgroup`` is the current snapshot's No-reminders WorkGroup evidence
+    as recorded (not yet checked), or None; ``reminders_scheduled`` whether
+    the current campaign has a Reminder still to come.
     """
 
     rows: list
@@ -1659,6 +1773,12 @@ class HealthFacts:
     schema_current: bool
     backup_at: datetime | None
     unrecorded: Unrecorded
+    backup_fingerprint: str | None
+    backup_started_at: datetime | None
+    key_set_at: datetime | None
+    request: dict | None
+    workgroup: object
+    reminders_scheduled: bool
 
 
 def _instant(value):
@@ -1671,10 +1791,14 @@ def health_facts(columns):
 
     psycopg decodes the JSON columns already.
     """
-    rows, incidents, applied, backup_at, unrecorded = columns
+    (rows, incidents, applied, backup_at, unrecorded, *rest) = columns
+    fingerprint, started_at, key_set_at, request, workgroup, scheduled = rest
     for row in rows:
         for name in _TIMES:
             row[name] = _instant(row[name])
+    if request is not None:
+        for name in ("created_at", "held_at", "claimed_at", "finished_at"):
+            request[name] = _instant(request[name])
     applied = frozenset(tuple(item.split(" ", 1)) for item in applied or ())
     return HealthFacts(
         rows,
@@ -1682,6 +1806,12 @@ def health_facts(columns):
         applied == _image_migrations(),
         backup_at,
         Unrecorded(unrecorded[0], _instant(unrecorded[1]), unrecorded[2]),
+        fingerprint,
+        started_at,
+        key_set_at,
+        request,
+        workgroup,
+        scheduled,
     )
 
 
@@ -1785,13 +1915,50 @@ def _drop_acceptance(attempt_id):
     return status, actor
 
 
-def _backup(configuration):
-    """The newest backup: when it finished, whether it used the configured key,
-    its size in bytes (database and files) and the version that took it."""
+def configured_fingerprint(configuration):
+    """The configured backup key's fingerprint, or None when none is set.
+
+    Raises ``ConfigError`` when the configured key cannot be read.
+    """
     from parishkit.config import ConfigError
 
     from .accounts.backup_key import configured_key
     from .backup_sealing import SealError, parse_public_key
+
+    record = configured_key(configuration)
+    if record is None:
+        return None
+    try:
+        return parse_public_key(record["values"]["settings"]["public_key"]).fingerprint
+    except (SealError, KeyError, TypeError):
+        # The applied configuration was validated when it was saved, so a key
+        # that cannot be read is a damaged configuration: the page answers
+        # 503 (a ConfigError), never 400, which would blame the request.
+        raise ConfigError("The configured backup key cannot be read.") from None
+
+
+def key_mismatch(configured, facts):
+    """Whether ``backup_key_mismatch`` holds (admin-portal spec, "Backup key,
+    one warning per cause").
+
+    ``configured`` is ``configured_fingerprint``'s answer and ``facts`` a
+    ``HealthFacts``. It holds only when the newest backup started after
+    the configured key was activated and was sealed to another key. A
+    backup reads its key as it starts (``backup.configured_recipient``), so
+    the ordinary day between a key change and the next backup, and a
+    backup already running when the key changed, are no problem.
+    """
+    return (
+        configured is not None
+        and facts.backup_fingerprint is not None
+        and facts.backup_fingerprint != configured
+        and (facts.key_set_at is None or facts.backup_started_at > facts.key_set_at)
+    )
+
+
+def _backup(configuration):
+    """The newest backup: when it finished, whether it used the configured key,
+    its size in bytes (database and files) and the version that took it."""
     from .jobs.backup_models import BackupRun
 
     newest = (
@@ -1808,17 +1975,10 @@ def _backup(configuration):
     if newest is None:
         return None, None, None, None
     size, version = newest[2] + newest[3], newest[4]
-    record = configured_key(configuration)
-    if record is None:
+    configured = configured_fingerprint(configuration)
+    if configured is None:
         return newest[0], None, size, version
-    try:
-        configured = parse_public_key(record["values"]["settings"]["public_key"])
-    except (SealError, KeyError, TypeError):
-        # The applied configuration was validated when it was saved, so a key
-        # that cannot be read is a damaged configuration: the page answers
-        # 503 (a ConfigError), never 400, which would blame the request.
-        raise ConfigError("The configured backup key cannot be read.") from None
-    return newest[0], configured.fingerprint == newest[1], size, version
+    return newest[0], configured == newest[1], size, version
 
 
 @dataclass(frozen=True)
@@ -1880,6 +2040,11 @@ def _backup_request(now):
         )
         .first()
     )
+    return request_from_row(row, now)
+
+
+def request_from_row(row, now):
+    """A request row's ``BackupRequestStatus`` at ``now`` (None stays None)."""
     if row is None:
         return None
     return BackupRequestStatus(status=request_status(row, now), **row)
@@ -1934,13 +2099,7 @@ def _offsite(configuration):
     """The off-site copy status Home shows, or None when copies are not set up."""
     from .accounts.backup_destination import offsite_status
 
-    kinds = {
-        record["values"]["kind"]
-        for record in configuration.active_configuration.canonical_document[
-            "sections"
-        ].get("integrations", [])
-    }
-    return offsite_status() if "backup" in kinds else None
+    return offsite_status() if _offsite_set_up(configuration) else None
 
 
 def _pause(campaign):
@@ -1959,17 +2118,22 @@ def _pause(campaign):
     }
 
 
-def _workgroup_missing(campaign):
-    """The campaign's Reminder WorkGroup name when ParishSoft has none by it.
+def workgroup_missing(campaign, recorded_value):
+    """The campaign's No-reminders WorkGroup name when ParishSoft has none by it.
 
-    None when the campaign names no WorkGroup, when the newest refresh found
-    it, or when no refresh has read the current name yet (#861).
+    ``recorded_value`` is ``HealthFacts.workgroup``, the current snapshot's
+    evidence as recorded. None when the campaign names no WorkGroup, when
+    the newest refresh found it, or when no refresh has read the current
+    name yet (#861): ``current_evidence``'s rule, on evidence already read.
     """
-    from .source.workgroups import current_evidence
+    from .source.workgroups import configured_name, evidence_for, valid_evidence
 
     if campaign is None:
         return None
-    name, evidence = current_evidence(campaign.active_configuration.values)
+    name = configured_name(campaign.active_configuration.values)
+    if name is None:
+        return None
+    evidence = evidence_for(name, valid_evidence(recorded_value))
     return name if evidence is not None and not evidence["found"] else None
 
 
@@ -1982,26 +2146,66 @@ def _processes(rows, now):
     )
 
 
+def shared_inputs(configuration, facts, now, *, key_fallback=False):
+    """``find_problems``'s inputs from ``HEALTH_SQL``'s facts, but ``refresh``.
+
+    Home and the page both take them from here, so they cannot disagree.
+    ``configuration`` carries the current campaign (``current_campaign``),
+    already loaded with its settings. Every input comes from the facts or
+    from the applied configuration, so none costs a query. A configured
+    backup key that cannot be read raises ``ConfigError`` (the page's 503),
+    unless ``key_fallback``: Home then lists ``backup_key_unchecked``.
+    """
+    from parishkit.config import ConfigError
+
+    processes, missing = _processes(facts.rows, now)
+    try:
+        configured = configured_fingerprint(configuration)
+        backup_key = "mismatch" if key_mismatch(configured, facts) else "matches"
+    except ConfigError:
+        if not key_fallback:
+            raise
+        backup_key = "unchecked"
+    return {
+        "mode": configuration.mode,
+        "processes": processes,
+        "missing": missing,
+        "schema_current": facts.schema_current,
+        "incidents": facts.incidents,
+        "backup_at": facts.backup_at,
+        "unrecorded": facts.unrecorded,
+        "workgroup_missing": workgroup_missing(
+            getattr(configuration, "current_campaign", None), facts.workgroup
+        ),
+        "reminders_scheduled": facts.reminders_scheduled,
+        "backup_key": backup_key,
+        "backup_request": request_from_row(facts.request, now),
+        "offsite_set_up": _offsite_set_up(configuration),
+    }
+
+
+def _offsite_set_up(configuration):
+    """Whether off-site copies are set up (a ``backup`` integration exists)."""
+    return any(
+        record["values"]["kind"] == "backup"
+        for record in configuration.active_configuration.canonical_document[
+            "sections"
+        ].get("integrations", [])
+    )
+
+
 def home_problems(configuration, now, refresh):
     """The System health problems, for the lines on Home (ADM-13 PR 2b).
 
     ``refresh`` is the ``FullRefreshStatus`` Home read with ``health=True``,
     which carries ``HEALTH_SQL``'s facts from the same statement, so the
     lines cost Home no query of their own. Returns the same ``Problem``
-    values the page lists, in its order.
+    values the page lists, in its order. Unlike the page, Home does not
+    fail when the configured backup key cannot be read; it lists that as a
+    warning instead (``backup_key_unchecked``).
     """
-    facts = refresh.health
-    processes, missing = _processes(facts.rows, now)
-    return find_problems(
-        mode=configuration.mode,
-        processes=processes,
-        missing=missing,
-        schema_current=facts.schema_current,
-        incidents=facts.incidents,
-        refresh=refresh,
-        backup_at=facts.backup_at,
-        unrecorded=facts.unrecorded,
-    )
+    inputs = shared_inputs(configuration, refresh.health, now, key_fallback=True)
+    return find_problems(refresh=refresh, **inputs)
 
 
 def read_health(store):
@@ -2040,13 +2244,12 @@ def read_health(store):
             configuration.current_campaign = campaign
         now = database_now()
         facts = _facts()
-        incidents, schema_current = facts.incidents, facts.schema_current
-        processes, missing = _processes(facts.rows, now)
+        inputs = shared_inputs(configuration, facts, now)
+        processes, missing = inputs["processes"], inputs["missing"]
         refresh = full_refresh_status(refresh_schedule(configuration), now)
         refused_at, refused_counts, refused_attempt = _refused(refresh.succeeded_at)
         drop_acceptance, accept_actor = _drop_acceptance(refused_attempt)
         backup_at, key_matches, backup_bytes, backup_version = _backup(configuration)
-        backup_request = _backup_request(now)
         retry_waiting, next_retry_at = _retries()
         daily_sent = daily_sends()
         daily_resume_at = daily_resume()
@@ -2059,7 +2262,6 @@ def read_health(store):
         page = {
             "campaign_id": None if campaign is None else campaign.pk,
             "pause": _pause(campaign) if paused else None,
-            "workgroup_missing": _workgroup_missing(campaign),
             "debug_actor": debug_actor,
             "accept_actor": accept_actor,
             # Which refusal the panel shows, so an open Accept this change
@@ -2069,20 +2271,11 @@ def read_health(store):
     model = SystemHealth(
         checked_at=now,
         mode=configuration.mode,
-        problems=find_problems(
-            mode=configuration.mode,
-            processes=processes,
-            missing=missing,
-            schema_current=schema_current,
-            incidents=incidents,
-            refresh=refresh,
-            backup_at=backup_at,
-            unrecorded=facts.unrecorded,
-        ),
+        problems=find_problems(refresh=refresh, **inputs),
         processes=processes,
         missing_services=missing,
         versions=tuple(sorted({line.version for line in processes if line.running})),
-        schema_current=schema_current,
+        schema_current=facts.schema_current,
         delivery_paused=paused,
         paused_at=campaign.paused_at if paused else None,
         send_active=bool(send and send.active),
@@ -2095,7 +2288,7 @@ def read_health(store):
         # family_mail_dispatch.over_daily_limit compares it.
         daily_limit=DAILY_SEND_LIMIT - RESERVED_SENDS,
         daily_resume_at=daily_resume_at,
-        incidents=incidents,
+        incidents=facts.incidents,
         refresh=refresh,
         refused_at=refused_at,
         refused_counts=refused_counts,
@@ -2103,7 +2296,7 @@ def read_health(store):
         backup_key_matches=key_matches,
         backup_bytes=backup_bytes,
         backup_version=backup_version,
-        backup_request=backup_request,
+        backup_request=inputs["backup_request"],
         offsite=offsite,
         debug_switch=debug_switch,
         drop_acceptance=drop_acceptance,
