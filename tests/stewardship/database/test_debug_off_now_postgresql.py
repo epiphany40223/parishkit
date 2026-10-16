@@ -2,8 +2,10 @@
 (ADM-13 PR 6b, #530).
 
 The control appears while a service reports debug logging. Preview, then
-confirm, answered with the page in place; a stale sign-in gets the "Confirm
-with Google" step-up; a repeated confirmation returns the first switch; one
+confirm, in the shared review dialog (#1356): the preview is a one-sentence
+confirmation, Apply's answer draws the region again, and a refusal is a
+fragment the dialog shows as drawn; a stale sign-in gets the "Confirm with
+Google" step-up; a repeated confirmation returns the first switch; one
 switch at a time; Administrators only; the audit event names the switch,
 and the panel says who set it. The command shows the page's preview at the
 prompt and sets the switch through the page's own ``turn_off_debug`` on the
@@ -79,7 +81,7 @@ def count(event):
 def test_the_control_is_offered_only_while_a_service_has_debug_logging(
     auth_service, google
 ):
-    """Always drawn in its tile (#1214): greyed with why without debug
+    """Always drawn in its tile (#1214): a status line without debug
     logging, the button once a service has it."""
     browser, _ = signed_in()
     quiet = page(browser)
@@ -93,20 +95,35 @@ def test_the_control_is_offered_only_while_a_service_has_debug_logging(
 
 
 def test_preview_then_confirm_sets_one_switch_and_its_audit(auth_service, google):
-    """The page answers each step in place; a repeat returns the first switch."""
+    """Each step answers the dialog; a repeat returns the first switch."""
     debug_service()
     browser, _ = signed_in()
+    views = count("system_health_viewed")
     preview = post(browser, action="debug_off_preview")
     assert preview.status_code == 200
     body = preview.content.decode()
-    assert 'id="debug-off"' in body
-    assert "Debug logging is on in: Web portal." in body
-    assert "Confirm: turn off debug logging" in body
+    # A confirmation, not the page: one sentence naming the services the
+    # server found, and none of the fixed bullets the About panel holds.
+    assert "<h1" not in body and 'id="debug-off"' not in body
+    assert (
+        '<p id="debug-off-review-summary">This turns debug logging off now in the'
+        " services that have it on (Web portal), without restarting them, until"
+        " the debug-off switch is cleared.</p>"
+    ) in body
+    assert re.search(r'name="key" value="[0-9a-f-]{36}" data-review-preview', body)
+    assert "Lines already written" not in body
     assert not DebugOffSwitch.objects.exists()
     key = key_of(preview)
     confirmed = post(browser, action="debug_off_confirm", key=key)
     assert confirmed.status_code == 200
-    assert "Debug logging turned off at" in confirmed.content.decode()
+    # Apply's answer is the region drawn again, its status line naming who
+    # set the switch; the page is not read again.
+    done = confirmed.content.decode()
+    assert "<h1" not in done and 'id="debug-off"' in done
+    assert 'data-debug-status="set"' in done
+    assert "Debug logging was turned off by admin@example.org at" in done
+    assert "data-live-status" not in done
+    assert count("system_health_viewed") == views
     switch = DebugOffSwitch.objects.get()
     assert str(switch.pk) == key and switch.cleared_at is None
     event = AuditEvent.objects.get(event_type="debug_logging_turned_off")
@@ -115,13 +132,16 @@ def test_preview_then_confirm_sets_one_switch_and_its_audit(auth_service, google
     assert post(browser, action="debug_off_confirm", key=key).status_code == 200
     assert DebugOffSwitch.objects.count() == 1
     assert count("debug_logging_turned_off") == 1
-    # While it is set, another preview is refused in the region, and the
-    # button is greyed with who set it.
+    # While it is set, another preview is refused in the dialog, and the
+    # region shows only the status line naming who set it.
     refused = post(browser, action="debug_off_preview")
     assert refused.status_code == 409
-    assert 'data-debug-off-refused="busy"' in refused.content.decode()
+    assert '<div data-review-refusal><p data-debug-off-refused="busy">' in (
+        refused.content.decode()
+    )
     body = page(browser)
-    assert 'disabled aria-describedby="debug-off-reason"' in body
+    assert 'value="debug_off_preview"' not in body
+    assert 'data-debug-status="set"' in body
     assert "Debug logging was turned off by admin@example.org at" in body
     assert 'data-debug-switch="set"' in body
 
@@ -139,7 +159,13 @@ def test_the_page_follows_the_switch_before_the_services_report(auth_service, go
     assert confirmed.status_code == 200
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         status = browser.get(PAGE + "status").content.decode()
-    for body in (confirmed.content.decode(), page(browser), status):
+    # Apply's answer is the region drawn again for the review dialog
+    # (#1356): it names who set the switch; the tile follows on the page and
+    # its status.
+    answer = confirmed.content.decode()
+    assert 'data-problem="debug_logging"' not in answer
+    assert "Debug logging was turned off by admin@example.org at" in answer
+    for body in (page(browser), status):
         assert 'data-problem="debug_logging"' not in body
         assert "Turned off from this page by admin@example.org at" in body
         assert "Debug logging was turned off by admin@example.org at" in body
@@ -151,7 +177,7 @@ def test_the_page_follows_the_switch_before_the_services_report(auth_service, go
 
 
 def test_a_stale_sign_in_gets_the_google_step_up(auth_service, google, monkeypatch):
-    """Answered in the region: the step-up form, returning to this page."""
+    """Answered in the dialog: the step-up form, returning to this page."""
     debug_service()
     browser, _ = signed_in()
     monkeypatch.setattr(sessions, "FRESH_SECONDS", -1)
@@ -162,8 +188,9 @@ def test_a_stale_sign_in_gets_the_google_step_up(auth_service, google, monkeypat
         response = post(browser, **values)
         assert response.status_code == 403
         body = response.content.decode()
+        assert "<div data-review-refusal>" in body
         assert 'data-debug-off-refused="reauthenticate"' in body
-        assert 'id="debug-off"' in body
+        assert 'id="debug-off"' not in body
         assert 'name="next" value="/admin/system/health/"' in body
     assert not DebugOffSwitch.objects.exists()
 
@@ -192,13 +219,13 @@ def test_only_an_administrator_may_turn_off_debug_logging(auth_service, google):
     assert not DebugOffSwitch.objects.exists()
 
 
-def test_cancel_and_stray_fields_answer_in_the_region(auth_service, google):
-    """Cancel closes the preview; a malformed step is refused in the region."""
+def test_stray_fields_are_refused_in_the_dialog(auth_service, google):
+    """A malformed step is refused in the dialog. There is no Cancel step:
+    the dialog's Cancel sends nothing (#1356)."""
     browser, _ = signed_in()
     views = count("system_health_viewed")
     cancelled = post(browser, action="debug_off_cancel")
-    assert cancelled.status_code == 200
-    assert 'id="debug-off"' in cancelled.content.decode()
+    assert cancelled.status_code == 400
     refused = post(browser, action="debug_off_preview", key="x")
     assert refused.status_code == 400
     assert 'data-debug-off-refused="invalid"' in refused.content.decode()
@@ -213,7 +240,7 @@ def test_a_missing_grant_is_said_plainly_not_as_a_step_up(
     auth_service, google, monkeypatch, caplog
 ):
     """A permission refusal other than the fresh sign-in's is logged and
-    answered plainly in the region, since a new sign-in would not help."""
+    answered plainly in the dialog, since a new sign-in would not help."""
     from django.db import DatabaseError
 
     class Refusal(Exception):

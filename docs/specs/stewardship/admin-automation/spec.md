@@ -1881,7 +1881,7 @@ none.
 | `parish_settings`, `ministries` | `parish show`, `parish preview`, `parish confirm`, `ministries list` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); Ministries changes nothing since [#1267](https://github.com/epiphany40223/parishkit/issues/1267) |
 | `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list`, `files delete`, `files rename` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
 | `artwork_settings` (its upload and removal reviews, #750) | `artwork show`, `artwork remove-preview`, `artwork remove` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); uploads are `artwork_upload`'s, below |
-| `branding_settings`: **Apply changes** on its in-place logo review (#750) | `branding show` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `branding confirm --expected-version …`, a configuration request for logos already uploaded (PR 10) |
+| `branding_settings`: **Apply** in its review dialog (#750) | `branding show` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `branding confirm --expected-version …`, a configuration request for logos already uploaded (PR 10) |
 | `hosted_file_upload`, `artwork_upload`, `branding_settings` uploads | Pending: file uploads; a later PR may accept `--file` |
 | `branding_asset` | Permanent: image previews and bytes for the browser |
 
@@ -1897,7 +1897,12 @@ waits for PR 5. `schedule preview` admits as the page's form post does,
 recording activity, so it needs a full-scope session although it changes
 nothing. It takes `--expected-version` (the `version` of `schedule show`,
 the page's hidden base digest) and `--changes`, a JSON change document bound
-to the page's own forms: a saved schedule named by `id` keeps what the
+to the page's own forms. Unlike the page, which takes send dates and times in
+the browser's time zone ([#558](https://github.com/epiphany40223/parishkit/issues/558)),
+the document's `date`, `time` and `weekday` are campaign-local wall-clock
+values, as a schedule saves them; when the same document changes
+`window.timezone`, they are in the proposed zone, and a saved schedule the
+document leaves alone keeps its wall-clock time in that zone. A saved schedule named by `id` keeps what the
 document leaves out, `delete` removes it, an entry without `id` adds one,
 and saved schedules it does not name stay unchanged; a daily digest's
 `comparison` is the page's Include Compared with past campaigns checkbox,
@@ -2110,13 +2115,13 @@ moving the plain-text preview to `content preview` are defaults, pending
 Administrator confirmation.
 
 `artwork remove-preview SLOT --expected-version …` and `artwork remove
-SLOT --token …` are the page's **Remove this image** and its in-place
-**Apply** (#750), as `parish preview` and `parish confirm` are Parish
+SLOT --token …` are the page's **Remove this image** and its review
+dialog's **Apply** (#750), as `parish preview` and `parish confirm` are Parish
 settings' Review and Apply. The preview admits as the page does
 (`CONFIGURE`, recording activity) and, in one read snapshot, checks the
 version (another is `stale_version`) and builds the page's own removal
 review (`artwork_views.review_removal`): a slot with no image is
-`not_available`, as the page answers 404, and a resulting document the
+`not_available`, as the page refuses it, and a resulting document the
 configuration refuses is `invalid`. A slot whose upload is unavailable can
 still be removed, as on the page. It prints `version`, `campaign_id`,
 `slot`, `name`, `image` (as `artwork show` prints it) and `preview.token`,

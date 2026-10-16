@@ -1373,7 +1373,7 @@ Specification: [System health](../../specs/stewardship/admin-portal/spec.md#syst
 - [x] ADM-13.11 — dashboard slice 3: the Mail tile: its Working summaries in a fixed order, one line for both mail senders while they agree, and its explanations in toggletips and "About this page". (A halt's kind and Clear the halt remain with ADM-13.04.)
 - [x] ADM-13.12 — dashboard slice 4: the ParishSoft refresh tile: its Working summaries in a fixed order, the refused counts inside the refusal's problem item with Accept this change once right under them, and a panel that repeats none of its problems.
 - [x] ADM-13.13 — dashboard slice 5: the Backups and Debug logging tiles: their Working summaries in a fixed order, the Backups page findings as Warning items of the tile's problems, and panels that repeat none of their tiles' problems.
-- [ ] ADM-13.14 — dashboard slice 6: the page-load and services tiles.
+- [x] ADM-13.14 — dashboard slice 6: the page-load and services tiles: their summaries and states chosen in one place, each page-load finding as its tile's problem item with its link drawn only while relevant, a Version panel that repeats none of its problems, and Accept this change once's step-up notice only while the sign-in is stale.
 - [ ] ADM-13.15 — dashboard slice 7: Home and the critical-problems banner.
 
 Evidence: In progress. ADM-13.00 is this docs-only change: the Admin portal

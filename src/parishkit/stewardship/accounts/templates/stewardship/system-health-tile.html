@@ -9,9 +9,10 @@
   it or above it (ui-conventions "No layout shift").
 
   Working tiles start closed, Warning and Error tiles open
-  (``tile.open``); system-health-v1.js opens a tile the address's anchor
-  names, and the Administrator decides after that: a poll never opens or
-  closes a tile. The summary row's words, the problems and the panel
+  (``tile.open``); system-health-v1.js opens only the tile the address's
+  anchor names, and the Administrator decides after that, by the toggle or
+  a click on the open band's blank space: a poll never opens or closes a
+  tile. The summary row's words, the problems and the panel
   content are data-live-mirror-targets that follow the poll. The open state
   and the action regions are not, so an open tile, an open preview and a
   ticked box survive every poll. The problems and panel targets wait while

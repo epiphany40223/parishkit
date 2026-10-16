@@ -1,7 +1,9 @@
 """Take a backup now on the System health page (ADM-13 PR 3b).
 
-Preview, then confirm, answered with the page in place; a stale sign-in
-gets the "Confirm with Google" step-up; a repeated confirmation returns the
+Preview, then confirm, in the shared review dialog (#1356): the preview is a
+one-sentence confirmation, Apply's answer draws the region again, and a
+refusal is a fragment the dialog shows as drawn; a stale sign-in gets the
+"Confirm with Google" step-up; a repeated confirmation returns the
 first request; one request at a time; Administrators only; the audit event
 names the request.
 """
@@ -43,27 +45,33 @@ def key_of(response):
 
 
 def test_preview_then_confirm_records_one_request_and_its_audit(auth_service, google):
-    """The page answers each step; a repeat returns the first request."""
+    """Each step answers the dialog; a repeat returns the first request."""
     browser, _ = signed_in()
     preview = post(browser, action="preview")
     assert preview.status_code == 200
     body = preview.content.decode()
-    assert 'id="backup-now"' in body
-    assert "Confirm: take a backup now" in body
-    assert "Off-site copies are not set up" in body
+    # A confirmation, not the page: one sentence, the dialog's description,
+    # and none of the last backup's facts the Backups details show.
+    assert "<h1" not in body and 'id="backup-now"' not in body
+    assert '<div data-review-answer data-review-done="Backup requested.">' in body
+    assert (
+        '<p id="backup-review-summary">This asks the server to take one backup'
+        " soon, of the same kind as the scheduled ones; off-site copies are not"
+        " set up, so it stays on the server only.</p>"
+    ) in body
+    assert "No backup has been recorded yet." not in body
+    assert "retention" not in body and "Confirm: take a backup now" not in body
+    assert re.search(r'name="key" value="[0-9a-f-]{36}" data-review-preview', body)
     assert BackupRequest.objects.count() == 0
     key = key_of(preview)
     confirmed = post(browser, action="confirm", key=key)
     assert confirmed.status_code == 200
-    assert "Backup requested at" in confirmed.content.decode()
-    # The answer's region shows the request's progress, under the greyed
-    # button, where its confirmation points (#1317).
-    region = confirmed.content.decode()
-    region = region[region.index('id="backup-now"') :]
-    region = region[: region.index("</section>")]
-    assert "The line under the button follows its progress" in region
-    assert 'data-backup-request="waiting"' in region
-    assert "and is waiting for the server" in region
+    # Apply's answer is the region drawn again, its button greyed; the
+    # dialog redraws the page from it, so the page is not read again.
+    done = confirmed.content.decode()
+    assert "<h1" not in done and 'id="backup-now"' in done
+    assert 'disabled aria-describedby="backup-now-reason"' in done
+    assert "data-live-status" not in done
     request = BackupRequest.objects.get()
     assert str(request.pk) == key and request.state == "waiting"
     event = AuditEvent.objects.get(event_type="backup_requested")
@@ -72,11 +80,13 @@ def test_preview_then_confirm_records_one_request_and_its_audit(auth_service, go
     assert post(browser, action="confirm", key=key).status_code == 200
     assert BackupRequest.objects.count() == 1
     assert AuditEvent.objects.filter(event_type="backup_requested").count() == 1
-    # While it waits, another preview is refused in the region, and the
+    # While it waits, another preview is refused in the dialog, and the
     # button is greyed.
     refused = post(browser, action="preview")
     assert refused.status_code == 409
-    assert 'data-backup-refused="busy"' in refused.content.decode()
+    assert '<div data-review-refusal><p data-backup-refused="busy">' in (
+        refused.content.decode()
+    )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         page = browser.get(PAGE).content.decode()
     assert 'disabled aria-describedby="backup-now-reason"' in page
@@ -84,15 +94,16 @@ def test_preview_then_confirm_records_one_request_and_its_audit(auth_service, go
 
 
 def test_a_stale_sign_in_gets_the_google_step_up(auth_service, google, monkeypatch):
-    """Answered in the region: the step-up form, returning to this page."""
+    """Answered in the dialog: the step-up form, returning to this page."""
     browser, _ = signed_in()
     monkeypatch.setattr(sessions, "FRESH_SECONDS", -1)
     for values in ({"action": "preview"}, {"action": "confirm", "key": str(uuid4())}):
         response = post(browser, **values)
         assert response.status_code == 403
         body = response.content.decode()
+        assert "<div data-review-refusal>" in body
         assert 'data-backup-refused="reauthenticate"' in body
-        assert 'id="backup-now"' in body
+        assert 'id="backup-now"' not in body
         assert 'name="next" value="/admin/system/health/"' in body
     assert BackupRequest.objects.count() == 0
 
@@ -119,15 +130,14 @@ def test_only_an_administrator_may_request_a_backup(auth_service, google):
     assert BackupRequest.objects.count() == 0
 
 
-def test_cancel_and_stray_fields_answer_in_the_region_without_a_view(
-    auth_service, google
-):
-    """Cancel closes the preview; a malformed step is refused in the region."""
+def test_stray_fields_are_refused_in_the_dialog_without_a_view(auth_service, google):
+    """A malformed step is refused in the dialog. There is no Cancel step:
+    the dialog's Cancel sends nothing (#1356)."""
     browser, _ = signed_in()
     views = AuditEvent.objects.filter(event_type="system_health_viewed").count()
     cancelled = post(browser, action="cancel")
-    assert cancelled.status_code == 200
-    assert 'data-in-place="backup-preview"' in cancelled.content.decode()
+    assert cancelled.status_code == 400
+    assert 'data-backup-refused="invalid"' in cancelled.content.decode()
     refused = post(browser, action="preview", key="x")
     assert refused.status_code == 400
     assert 'data-backup-refused="invalid"' in refused.content.decode()
@@ -204,7 +214,7 @@ def test_a_simultaneous_double_click_returns_the_first_request(auth_service, goo
     finally:
         del manager.create
     assert [status for status, _ in answers] == [200, 200]
-    assert all("Backup requested at" in body for _, body in answers)
+    assert all('id="backup-now"' in body for _, body in answers)
     request = BackupRequest.objects.get()
     assert str(request.pk) == key
     assert AuditEvent.objects.filter(event_type="backup_requested").count() == 1

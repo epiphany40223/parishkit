@@ -18,13 +18,13 @@ from django.urls import reverse
 from PIL import Image
 
 from parishkit.stewardship.accounts import setup_help
+from parishkit.stewardship.accounts import setup_mail_views as mail_views
+from parishkit.stewardship.accounts import (
+    setup_notification_views as notification_views,
+)
 from parishkit.stewardship.accounts import setup_progress_views as progress_views
 from parishkit.stewardship.accounts.backup_key import KeyStatus
 from parishkit.stewardship.accounts.branding_views import LogoUploadForm
-from parishkit.stewardship.accounts.campaign_create_views import (
-    CREATES_TESTING_DRAFT,
-    DEFAULT_TEXT,
-)
 from parishkit.stewardship.accounts.campaign_family_test_views import FamilyTestForm
 from parishkit.stewardship.accounts.campaign_forms import CampaignForm
 from parishkit.stewardship.accounts.campaign_mail_views import CampaignMailForm
@@ -37,7 +37,7 @@ from parishkit.stewardship.accounts.integration_forms import (
     IntegrationForm,
 )
 from parishkit.stewardship.accounts.ministry_views import CATALOG_SORTING
-from parishkit.stewardship.accounts.parish_views import TIMEZONE_NOTE, ParishForm
+from parishkit.stewardship.accounts.parish_views import ParishForm
 from parishkit.stewardship.accounts.presence import PRESENCE_SORTING
 from parishkit.stewardship.accounts.schedule_changes import describe as _describe
 from parishkit.stewardship.accounts.schedule_forms import (
@@ -85,10 +85,16 @@ from .automation_components import POSTS as AUTOMATION_POSTS
 from .automation_components import SLOW_GETS as AUTOMATION_SLOW_GETS
 from .automation_components import canonical
 from .automation_components import components as automation_components
+from .backup_test_components import components as backup_test_components
+from .backup_test_components import posts as backup_test_posts
 from .branding_components import POSTS as BRANDING_POSTS
 from .branding_components import components as branding_components
+from .campaign_create_components import POSTS as CAMPAIGN_CREATE_POSTS
+from .campaign_create_components import components as campaign_create_components
 from .campaign_settings_components import POSTS as CAMPAIGN_SETTINGS_POSTS
 from .campaign_settings_components import components as campaign_settings_components
+from .campaign_test_components import components as campaign_test_components
+from .campaign_test_components import posts as campaign_test_posts
 from .census_components import components as census_components
 from .chart_components import components as chart_components
 from .comparison_components import components as comparison_components
@@ -155,10 +161,14 @@ from .send_history_components import components as send_history_components
 from .send_progress_components import components as send_progress_components
 from .settings_components import POSTS as SETTINGS_POSTS
 from .settings_components import components as settings_components
+from .setup_live_components import POSTS as SETUP_LIVE_POSTS
+from .setup_live_components import components as setup_live_components
 from .signed_in_components import POSTS as SIGNED_IN_POSTS
 from .signed_in_components import components as signed_in_components
 from .source_form_components import components as source_form_components
 from .step_up_components import components as step_up_components
+from .stepper_components import POSTS as STEPPER_POSTS
+from .stepper_components import components as stepper_components
 from .system_health_components import components as system_health_components
 from .upload_defaults_components import components as upload_defaults_components
 from .upload_defaults_components import posts as upload_defaults_posts
@@ -221,9 +231,18 @@ def _history(events):
     )
 
 
+# The passive status fragments the setup status pages poll (#1354); a test
+# answers them with a route.
+SETUP_MAIL_STATUS = "/admin/setup/mail-test/status?format=status"
+SETUP_SLACK_STATUS = "/admin/setup/slack-test/status?format=status"
+SETUP_FINISHING_STATUS = "/admin/setup/cancel?format=status"
+SETUP_LOAD_STATUS = "/admin/setup/source/progress-status?format=status"
+
+
 def finishing_context(**status):
     """The "Finishing setup" page context, built by the real step mapping."""
     from parishkit.stewardship.accounts.setup_finishing import finishing
+    from parishkit.stewardship.jobs.queue_wait import waited_words
 
     now = datetime.now(UTC)
     status = {
@@ -238,7 +257,13 @@ def finishing_context(**status):
     return (
         status
         | finishing(status)
-        | {"next": "/admin/setup/cancel", "status_url": "/setup-status.json"}
+        | {
+            "next": "/admin/setup/cancel",
+            "status_url": SETUP_FINISHING_STATUS,
+            "confirmed_ago": waited_words(
+                status["server_now"] - status["confirmed_at"]
+            ),
+        }
     )
 
 
@@ -298,16 +323,9 @@ def load_collections(done=0, *, finished=None, expected=None):
 
 def progress_page(progress, wizard):
     """The source-load progress page context, built by the view's own helpers."""
-    status_key = progress_views.summary(progress)
-    return {
-        "progress": progress,
+    return progress_views._status_context(progress) | {
         "wizard": wizard,
-        "summaries": progress_views.SUMMARIES,
-        "status_key": status_key,
-        "phases": progress_views.phases(progress, status_key),
-        "phase_status": progress_views.PHASE_STATUS,
-        "collections": progress_views.collections(progress),
-        "collection_text": progress_views.COLLECTION_TEXT,
+        "status_url": SETUP_LOAD_STATUS,
     }
 
 
@@ -383,6 +401,8 @@ def schedule_page(
     reads from the database (schedule_preview.work_summary). With ``data``
     the formset is bound and validated, as after a refused preview.
     ``test_mail`` false is a live campaign, which admits no test mail (#923).
+    Send times are the browser's (#558); a bound post was typed in the
+    campaign's own zone, so its values read as they always have.
     """
     schedules = Schedules(
         data,
@@ -393,6 +413,9 @@ def schedule_page(
         prefix="schedules",
         email_links=True,
         test_mail=test_mail,
+        browser_times=True,
+        zone="" if data is None else owner["values"]["timezone"],
+        now=now,
     )
     if data is not None:
         schedules.is_valid()
@@ -435,6 +458,46 @@ def table_schedules(owner, emails):
     ]
 
 
+# The date-change review shows and takes send times in the browser's zone
+# (#558), as its view draws it: browser mode, at a fixed current instant.
+REVIEW_BROWSER_TIMES = {
+    "browser_times": True,
+    "now": datetime(2054, 9, 1, 12, tzinfo=UTC),
+}
+
+
+# The /schedule-dates-dst page's campaign, saved schedules and emails, for
+# its browser test to post back through the same formset (#558).
+REVIEW_DST = {}
+
+
+def review_dst_schedules(owner, emails):
+    """An invitation and two reminders either side of London's DST change.
+
+    London leaves summer time on October 25, 2054, a week before New York,
+    so the 9:00 AM New York reminders show as 14:00 on the 24th and 13:00 on
+    the 26th in a London browser.
+    """
+    by_kind = {row["values"]["slot"]: row for row in emails}
+
+    def saved(kind, **values):
+        """A saved schedule of ``kind`` that sends that type's email."""
+        email = by_kind[kind]
+        return schedule(
+            owner["id"],
+            kind=kind,
+            template_version=email["id"],
+            subject=email["values"]["subject"],
+            **values,
+        )
+
+    return [
+        saved("initial"),
+        saved("reminder", date="2054-10-24"),
+        saved("reminder", date="2054-10-26"),
+    ]
+
+
 def refused_table_data(rows):
     """The table page's post with Reminder 2 moved outside the campaign."""
     data = data_for(sorted(rows, key=schedule_order))
@@ -455,6 +518,11 @@ def component_origin():
         for kind in ("initial", "reminder", "daily_digest", "weekly_digest")
     ]
     table_rows = table_schedules(mail_campaign, mail_emails)
+    REVIEW_DST.update(
+        owner=mail_campaign,
+        templates=mail_emails,
+        previous=review_dst_schedules(mail_campaign, mail_emails),
+    )
     context = {
         "server_now": NOW,
         "deadline": NOW + timedelta(hours=1),
@@ -600,21 +668,8 @@ def component_origin():
             {
                 "form": LogoUploadForm(initial={"base_digest": "a" * 64}),
                 "assets": [branding_asset],
-            },
-        ),
-        # Parish logos with its upload's review in place (#750).
-        (
-            "/branding-preview",
-            "branding-settings",
-            {
-                "form": LogoUploadForm(initial={"base_digest": "a" * 64}),
-                "assets": [branding_asset],
-                "review": {
-                    "template": "stewardship/branding-review.html",
-                    "notes": [],
-                    "assets": [branding_asset],
-                    "preview": "synthetic-preview",
-                },
+                "page_url": "/branding-settings",
+                "refresh_url": "/branding-settings",
             },
         ),
         (
@@ -843,6 +898,18 @@ def component_origin():
             schedule_page(mail_campaign, [mail], now=datetime(2054, 9, 1, tzinfo=UTC)),
         ),
         (
+            # The date-change review with reminders either side of London's
+            # DST change, shown in the browser's zone (#558).
+            "/schedule-dates-dst",
+            "schedule-reconcile",
+            schedule_page(
+                mail_campaign,
+                REVIEW_DST["previous"],
+                templates=mail_emails,
+                now=REVIEW_BROWSER_TIMES["now"],
+            ),
+        ),
+        (
             # The scheduled emails table (#448): a sent invitation, two
             # upcoming reminders out of order, and a weekly digest.
             "/schedule-table",
@@ -898,6 +965,7 @@ def component_origin():
                     campaign_id=mail_campaign["id"],
                     campaign=mail_campaign["values"],
                     prefix="schedules",
+                    **REVIEW_BROWSER_TIMES,
                 ),
                 "base_digest": "a" * 64,
                 "editable": False,
@@ -960,6 +1028,8 @@ def component_origin():
             "setup-notification",
             {
                 "draft": setup_draft,
+                "status_url": SETUP_SLACK_STATUS,
+                "empty": notification_views.EMPTY,
                 "channel_id": "CFIXTURE",
                 "pending": True,
                 "unknown": False,
@@ -985,6 +1055,8 @@ def component_origin():
             "setup-mail",
             {
                 "draft": setup_draft,
+                "status_url": SETUP_MAIL_STATUS,
+                "empty": mail_views.EMPTY,
                 "testing_recipient": "testing@example.org",
                 "pending": True,
                 "unknown": False,
@@ -1011,6 +1083,8 @@ def component_origin():
             "setup-mail",
             {
                 "draft": setup_draft,
+                "status_url": SETUP_MAIL_STATUS,
+                "empty": mail_views.EMPTY,
                 "wizard": final_wizard("mail_test"),
                 "tested": False,
                 "testing_recipient": "testing@example.org",
@@ -1039,6 +1113,8 @@ def component_origin():
             "setup-mail",
             {
                 "draft": setup_draft,
+                "status_url": SETUP_MAIL_STATUS,
+                "empty": mail_views.EMPTY,
                 "wizard": final_wizard("mail_test", tests=frozenset({"mail_test"})),
                 "tested": True,
                 "testing_recipient": "testing@example.org",
@@ -1054,8 +1130,8 @@ def component_origin():
                 "items": [
                     {
                         "id": "synthetic-delivery",
-                        "state": "queued",
-                        "label": "Still sending (queued)",
+                        "state": "accepted",
+                        "label": "Delivered",
                         "created_at": NOW.isoformat(),
                         "current": True,
                     }
@@ -1548,6 +1624,8 @@ def component_origin():
                     "total": 0,
                     "active": True,
                     "collections": load_collections(),
+                    "started_at": (NOW - timedelta(seconds=75)).isoformat(),
+                    "heartbeat_at": (NOW - timedelta(seconds=3)).isoformat(),
                     "idle_at": (NOW + timedelta(minutes=30)).isoformat(),
                     "watchdog_at": (NOW + timedelta(hours=2)).isoformat(),
                     "absolute_at": (NOW + timedelta(hours=12)).isoformat(),
@@ -1779,6 +1857,8 @@ def component_origin():
             "/share-settings",
             "share-settings",
             {
+                "page_url": "/share-settings",
+                "refresh_url": "/share-settings",
                 "campaign": {
                     "pk": uuid4(),
                     "active_configuration": {"name": "Sample campaign"},
@@ -1787,27 +1867,6 @@ def component_origin():
                 "formset": ShareOptions(
                     prefix="options", previous=default_share_options()
                 ),
-            },
-        ),
-        # Share options with its review shown in place (#750).
-        (
-            "/share-preview",
-            "share-settings",
-            {
-                "campaign": {
-                    "pk": uuid4(),
-                    "active_configuration": {"name": "Sample campaign"},
-                },
-                "base_digest": "a" * 64,
-                "formset": ShareOptions(
-                    prefix="options", previous=default_share_options()
-                ),
-                "review": {
-                    "template": "stewardship/option-review.html",
-                    "preview": "synthetic-signed-intent",
-                    "before": [],
-                    "after": default_share_options(),
-                },
             },
         ),
         (
@@ -1876,7 +1935,7 @@ def component_origin():
                 ),
             },
         ),
-        # Create the campaign (#142): the first campaign's form and its review in place.
+        # Create the campaign (#142): the first campaign's form.
         (
             "/campaign-create",
             "campaign-create",
@@ -1899,35 +1958,6 @@ def component_origin():
             },
         ),
         (
-            "/campaign-create-preview",
-            "campaign-create",
-            {
-                "form": setup_help.apply(
-                    CampaignForm(
-                        initial={
-                            "timezone": "America/New_York",
-                            "census": True,
-                            "additional_information": True,
-                            "base_digest": "a" * 64,
-                        },
-                        previous={},
-                        ministries=[("4", "Community outreach"), ("5", "Choir")],
-                        funds=[("9", "Offertory")],
-                    ),
-                    setup_help.ADMIN_CAMPAIGN,
-                    replace=True,
-                ),
-                "review": {
-                    "preview": "synthetic-signed-intent",
-                    "changes": [
-                        {"label": "Campaign name", "before": None, "after": "Annual"}
-                    ],
-                    "notes": [CREATES_TESTING_DRAFT, DEFAULT_TEXT],
-                    "apply_label": "Create the campaign",
-                },
-            },
-        ),
-        (
             "/ministries",
             "ministries",
             {"table": ministries_table({}), "query": ""},
@@ -1936,6 +1966,8 @@ def component_origin():
             "/parish-settings",
             "parish-settings",
             {
+                "page_url": "/parish-settings",
+                "refresh_url": "/parish-settings",
                 "configuration": {
                     "mode": "testing",
                     "testing_recipient": "testing@example.org",
@@ -1958,6 +1990,8 @@ def component_origin():
             "/parish-settings-invalid",
             "parish-settings",
             {
+                "page_url": "/parish-settings",
+                "refresh_url": "/parish-settings",
                 "configuration": {
                     "mode": "testing",
                     "testing_recipient": "testing@example.org",
@@ -1972,37 +2006,6 @@ def component_origin():
                         "base_digest": "a" * 64,
                     }
                 ),
-            },
-        ),
-        # Parish settings with its review shown in place (#532).
-        (
-            "/parish-preview",
-            "parish-settings",
-            {
-                "configuration": {
-                    "mode": "testing",
-                    "testing_recipient": "testing@example.org",
-                },
-                "form": ParishForm(
-                    initial={
-                        "name": "Sample Parish",
-                        "website": "https://example.org",
-                        "timezone": "America/Los_Angeles",
-                        "phone": "+12125551234",
-                        "base_digest": "a" * 64,
-                    }
-                ),
-                "review": {
-                    "changes": [
-                        {
-                            "label": "Parish timezone",
-                            "before": "America/New_York",
-                            "after": "America/Los_Angeles",
-                        }
-                    ],
-                    "notes": [TIMEZONE_NOTE],
-                    "preview": "synthetic-signed-intent",
-                },
             },
         ),
         (
@@ -2180,17 +2183,24 @@ def component_origin():
     responses.update(content_catalog_components(context, admin))
     responses.update(in_place_components(context, admin))
     responses.update(live_status_components(context, admin))
+    responses.update(
+        setup_live_components(context, admin, NOW, SETUP_MAIL_STATUS, setup_draft)
+    )
     responses.update(in_place_commands_components(context, admin))
+    responses.update(campaign_test_components(context, admin))
+    responses.update(backup_test_components(context, admin))
     responses.update(family_test_components(context, admin))
     responses.update(upload_defaults_components(context, admin))
     responses.update(settings_components(context, admin))
     responses.update(campaign_settings_components(context, admin))
+    responses.update(campaign_create_components(context, admin))
     responses.update(menu_components(context, admin))
     responses.update(my_ministries_components(context, admin))
     responses.update(home_steps_components(context, admin))
     responses.update(automation_components(context, admin))
     responses.update(signed_in_components(context, admin))
     responses.update(step_up_components(context, admin))
+    responses.update(stepper_components(context, admin))
     responses.update(refresh_schedule_components(context, admin, NOW))
     # The in-place form page's POST answers (#519, #562): refusals answer
     # with the page the view would render (400 with the summary in the
@@ -2201,6 +2211,8 @@ def component_origin():
         IN_PLACE_POSTS
         | DELIVERY_POSTS
         | in_place_commands_posts(context, admin)
+        | campaign_test_posts(context, admin)
+        | backup_test_posts(context, admin)
         | AUTOMATION_POSTS
         | SIGNED_IN_POSTS
         | FOLLOWUP_POSTS
@@ -2209,8 +2221,11 @@ def component_origin():
         | FIND_FAMILY_POSTS
         | SECURITY_POSTS
         | LIVE_STATUS_POSTS
+        | SETUP_LIVE_POSTS
         | SETTINGS_POSTS
+        | STEPPER_POSTS
         | CAMPAIGN_SETTINGS_POSTS
+        | CAMPAIGN_CREATE_POSTS
         | SCHEDULE_LIST_POSTS
         | HOSTED_FILE_POSTS
         | USER_POSTS
@@ -2256,6 +2271,7 @@ def component_origin():
         ("session-v1.css", "text/css"),
         ("digest-v1.css", "text/css"),
         ("setup-v1.css", "text/css"),
+        ("stepper-v1.css", "text/css"),
         ("select-arrow-v1.svg", "image/svg+xml"),
         ("select-arrow-dark-v1.svg", "image/svg+xml"),
         ("chart-v1.js", "application/javascript"),
@@ -2350,13 +2366,17 @@ def component_origin():
                 self.end_headers()
                 return
             if self.path in posts:
-                status, location, body = posts[self.path]
+                # An answer may name its media type (a typed error's JSON,
+                # which a script's fetch gets from the real views); a page
+                # is HTML.
+                status, location, body, *kind = posts[self.path]
                 if self.path in IN_PLACE_SLOW:
                     time.sleep(1.5)
                 self.send_response(status)
                 if location:
                     self.send_header("Location", location)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
+                media = kind[0] if kind else "text/html"
+                self.send_header("Content-Type", f"{media}; charset=utf-8")
                 self.send_header("Content-Security-Policy", CSP)
                 self.end_headers()
                 self.wfile.write(body.encode())

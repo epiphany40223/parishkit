@@ -576,6 +576,41 @@ def test_unknown_outcome_needs_explicit_new_send_acknowledgement(
     assert CampaignMailTest.objects.count() == 2
 
 
+def test_test_list_updates_in_place_from_passive_reads(campaign_test, monkeypatch):
+    """Send this test email acts in place (#519): its form lands on Recent
+    test results, which the page re-reads at its own address while a test is
+    on its way (live-status-v1.js), without renewing idle time. Once the test
+    settles, the list carries the quiet follow-up that re-reads the form's
+    region, and Send is offered again. A tampered preview is refused and
+    sends nothing."""
+    _, browser, path, _ = campaign_test
+    queue(campaign_test)
+    with web_login():
+        before = PortalSession.objects.get().last_activity_at
+        page = browser.get(path, HTTP_REFERER="https://testserver" + path)
+        assert PortalSession.objects.get().last_activity_at == before
+        html = page.content.decode()
+        assert 'action="#campaign-tests"' in html
+        assert 'data-in-place="campaign-test-send"' in html
+        assert f'data-live-url="{path}"' in html and "data-live-pending" in html
+        assert "data-live-follow" not in html
+        assert "Refresh test results" not in html
+    from parishkit.stewardship.accounts import campaign_mail_tasks as tasks
+
+    monkeypatch.setattr(
+        tasks, "submit_sample", lambda *args, **kwargs: DeliveryOutcome.ACCEPTED
+    )
+    assert deliver(campaign_test).state == "accepted"
+    with web_login():
+        page = browser.get(path)
+        html = page.content.decode()
+        assert not page.context["pending"] and "data-live-pending" not in html
+        assert f'href="{path}#campaign-test-send"' in html
+        token = page.context["form"]["preview_token"].value()
+        assert post(browser, path, {"preview_token": token + "x"}).status_code == 400
+    assert CampaignMailTest.objects.count() == 1
+
+
 def test_revoked_requesting_admin_prevents_new_effects(campaign_test):
     """A queued test cannot outlive removal of its originating Admin authority."""
     row, _ = queue(campaign_test)

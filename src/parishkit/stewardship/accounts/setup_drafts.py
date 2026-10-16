@@ -53,9 +53,9 @@ REVIEWED = "setup_reviewed"
 def mark_reviewed(request, attempt_id, page, value):
     """Remember that this attempt's ``page`` was reviewed as ``value``.
 
-    ``value`` names what was reviewed (the saved share-option identities, the
-    draft version shown on the review page), so a later change to that data
-    makes the page count as not done again.
+    ``value`` names what was reviewed (the draft version shown on the review
+    page), so a later change to that data makes the page count as not done
+    again.
     """
     reviewed = request.session.get(REVIEWED, {})
     if reviewed.get("attempt") != str(attempt_id):
@@ -169,10 +169,12 @@ def save_section(request, service, attempt_id, *, step, values, expected_version
 
 
 def save_sections(request, service, attempt_id, *, updates, expected_version):
-    """One original-owner lock and version cover all dependent temporary edits."""
-    from .setup_content_values import CONTENT_STEPS
-    from .setup_schedule_values import reconcile_preparation
+    """Save several system steps under one original-owner lock and version.
 
+    Only the wizard's own steps (``setup_forms.FORMS``) can be saved:
+    ``validate_values`` refuses any other step, including the first-campaign
+    steps a draft saved before #142 may still hold.
+    """
     if type(updates) is not dict or not updates:
         raise ValueError("Setup edits are required.")
     updates = {step: validate_values(step, values) for step, values in updates.items()}
@@ -208,26 +210,8 @@ def save_sections(request, service, attempt_id, *, updates, expected_version):
                 UUID(updates["branding"]["bundle_id"]),
                 setup_attempt_id=attempt.pk,
             )
-        if "campaign" in updates:
-            from .setup_campaign import admit_campaign_values
-
-            admit_campaign_values(request, service, attempt_id, updates["campaign"])
-        # Content saved alongside its campaign is admitted against the new
-        # campaign values, which the draft does not hold until this commits.
-        pending = updates["campaign"]["campaign"] if "campaign" in updates else None
-        for step in CONTENT_STEPS:
-            if step not in updates:
-                continue
-            from .setup_content import admit_content_values
-
-            admit_content_values(
-                request, service, attempt_id, step, updates[step], pending
-            )
-        updates = reconcile_preparation(request, service, attempt_id, updates)
         context = dict(actor_id=actor.identity, correlation_id=current_correlation())
-        # The parent goes first when dates and schedules are saved together;
-        # SQL repeats each child's original source/campaign proof independently.
-        for step in sorted(updates, key=lambda item: (item != "campaign", item)):
+        for step in sorted(updates):
             values = updates[step]
             row = SetupDraftSection.objects.filter(attempt=attempt, step=step).first()
             if row is None:

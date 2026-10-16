@@ -10,8 +10,13 @@ from uuid import UUID, uuid4
 
 import pytest
 from django.template.loader import render_to_string
+from django.urls import reverse
 
-from parishkit.stewardship.accounts.admin_editing import in_place_follow, review_region
+from parishkit.stewardship.accounts.admin_editing import (
+    IN_PLACE_PAGES,
+    in_place_follow,
+    review_region,
+)
 from parishkit.stewardship.accounts.presence import PRESENCE_SORTING
 from parishkit.stewardship.jobs.views import EVENT_SORTING, TASK_SORTING
 from parishkit.stewardship.web.contracts import PageWindow
@@ -121,22 +126,18 @@ def test_presence_refresh_refreshes_the_list_in_place():
 # reads, whose answer never holds the page's regions.
 # The in-place settings pages (#532) draw their review region around
 # settings-review.html, whose Apply names it, and around the change status a
-# confirmed change shows, whose follow-up link names it too.
-SETTINGS_PAGES = (
-    "parish-settings.html",
-    "share-settings.html",
-    "reminder-workgroup.html",
-)
-# Campaign images and Parish logos review their uploads (and removals) in the
-# same region (#750); neither has a settings form, so they are not
-# SETTINGS_PAGES. Ministries changes nothing any more (#1267).
-REVIEW_PAGES = (
-    *SETTINGS_PAGES,
-    "artwork-settings.html",
-    "branding-settings.html",
-)
+# confirmed change shows, whose follow-up link names it too. None is left in
+# this build: Share options, Campaign images, Parish logos, Parish settings
+# (#750) and No-reminders WorkGroup (#750, #1356) review in the review
+# dialog; Create the campaign draws the panel but names no in_place page.
+SETTINGS_PAGES = ()
+# Ministries changes nothing any more (#1267).
+REVIEW_PAGES = SETTINGS_PAGES
 HOSTED = {
     "integration-summary.html": ("integration-settings.html",),
+    # Off-site backups' settled access check (#519): its follow-up re-reads
+    # the settings page's status line.
+    "backup-status-lines.html": ("integration-settings.html",),
     "settings-review.html": REVIEW_PAGES,
     "configuration-request-status.html": REVIEW_PAGES,
     # Refresh from ParishSoft shows the run it requested (#521).
@@ -153,6 +154,9 @@ HOSTED = {
     # The held-email table by send (#757): the Restore review page draws it
     # in its default region, Held emails in its own (region_id).
     "held-email-groups.html": ("restore-review.html", "held-emails.html"),
+    # A setup test page's live status region (#1354), whose follow-up re-reads
+    # the panel each test page draws around it.
+    "setup-test-status.html": ("setup-mail.html", "setup-notification.html"),
 }
 
 
@@ -302,6 +306,62 @@ def test_family_test_check_and_send_are_in_place():
     assert "components/step-up-notice.html" in region
     refresh = re.search(r'<a [^>]*>{% translate "Refresh status" %}</a>', text)
     assert "data-in-place-only" in refresh.group(0)
+
+
+def test_campaign_test_send_is_in_place_and_live():
+    """Send this test email posts in place (#519): its form sits in the
+    notices' region and lands on Recent test results, whose heading takes
+    focus. The list is a live status region, pending while a test is on its
+    way, whose settled copy carries a quiet follow-up that re-reads only the
+    form's region. The manual Refresh test results link is gone."""
+    text = (TEMPLATES / "campaign-mail.html").read_text()
+    form = re.search(r'<form [^>]*data-in-place="campaign-test-send"[^>]*>', text)
+    assert 'action="#campaign-tests"' in form.group(0)
+    assert "data-in-place-message=\"{% translate 'Test email requested.' %}\"" in (
+        form.group(0)
+    )
+    assert form.group(0) in region_body(text, "campaign-test-send")
+    assert 'id="campaign-test-pending"' in region_body(text, "campaign-test-send")
+    results = region_body(text, "campaign-tests")
+    assert (
+        'tabindex="-1" data-in-place-focus>{% translate "Recent test results" %}'
+        in (results)
+    )
+    status = re.search(r'<div [^>]*data-live-status="campaign-tests"[^>]*>', results)
+    assert "{% if pending %} data-live-pending{% endif %}" in status.group(0)
+    assert '{% if page_url %} data-live-url="{{ page_url }}"{% endif %}' in (
+        status.group(0)
+    )
+    follow = re.search(r"<a hidden data-live-follow[^>]*>", results).group(0)
+    assert "data-in-place data-in-place-quiet data-in-place-only" in follow
+    assert 'href="{{ page_url }}#campaign-test-send"' in follow
+    assert "Refresh test results" not in text
+    assert "live-status-v1.js" in text
+
+
+def test_backup_test_access_is_in_place():
+    """Off-site backups' Test access posts in place (#519): only the backup
+    page's settings form is data-in-place, naming the status line region,
+    and its Save is marked data-in-place-native so it still submits
+    natively. The settled check's follow-up re-reads the status line in
+    place instead of reloading the page."""
+    text = (TEMPLATES / "integration-settings.html").read_text()
+    form = re.search(
+        r'<form method="post" class="panel" autocomplete="off"[^>]*>', text
+    )
+    assert (
+        "{% if target == 'backup' %} action=\"#integration-status\" "
+        'data-in-place="backup-test"'
+    ) in form.group(0)
+    assert names_region(text, "integration-status")
+    save = re.search(
+        r'\{% button type="submit" name="action" value="preview"[^%]*%\}', text
+    )
+    assert "data-in-place-native" in save.group(0)
+    lines = (TEMPLATES / "backup-status-lines.html").read_text()
+    follow = re.search(r"<a hidden data-live-follow[^>]*>", lines).group(0)
+    assert "data-in-place data-in-place-quiet" in follow
+    assert 'href="{{ follow_url }}#integration-status"' in follow
 
 
 def test_information_reopen_confirmation_shows_only_when_unticking():
@@ -576,7 +636,11 @@ def test_only_an_applied_change_refreshes_its_settings_page(state):
     receipt = SimpleNamespace(state=state, request_id=uuid4(), failure_code="")
     html = render_to_string(
         "stewardship/configuration-request-status.html",
-        {"receipt": receipt, "follow_url": "/admin/parish/settings/?request=x"},
+        # A page that still reads ?request= (the last in_place page).
+        {
+            "receipt": receipt,
+            "follow_url": reverse("admin:reminder_workgroup") + "?request=x",
+        },
     )
     assert ("data-live-follow" in html) == (state == "applied")
 
@@ -618,14 +682,63 @@ def test_review_button_hint_follows_it_and_keeps_its_space():
     assert ".unchanged-hint[data-idle] { visibility: hidden; }" in css
 
 
-def test_option_lists_word_their_review_hint():
+def test_share_options_review_in_the_dialog():
     """Share options say "option", not "setting", in the hint after its
-    Review changes button (#921)."""
+    Save button (#921); its form opens the shared review dialog
+    (#750) from a region redrawn from the page's address once a change is
+    applied, and the page draws no in-place review region."""
     text = (TEMPLATES / "share-settings.html").read_text()
     form = re.search(r'<form id="settings-form"[^>]*>', text).group(0)
     assert 'data-require-change="base_digest"' in form
-    assert 'translate "Change an option to review it." as option_hint' in text
-    assert "review-changes-button.html' with hint=option_hint" in text
+    assert 'data-review-open="share-review"' in form
+    assert "data-in-place" not in form
+    assert 'data-refresh-url="{{ refresh_url }}"' in text
+    assert "settings-review" not in text
+    assert 'dialog_id="share-review"' in text and "review=True" in text
+    # A compact review (#1356): the button says Save, the dialog asks the
+    # question and its lines describe it.
+    assert 'translate "Change an option to save it." as option_hint' in text
+    assert "review-changes-button.html' with hint=option_hint label=save_label" in text
+    assert 'translate "Save" as save_label' in text
+    assert 'translate "Save the share options?" as review_title' in text
+    assert 'describedby="share-review-summary" %}' in text
+
+
+def test_the_workgroup_confirms_in_the_dialog():
+    """No-reminders WorkGroup's form carries the action's own label, Save,
+    and its hint (#1356); it opens the shared review dialog, described by
+    its confirmation's sentence, from a region redrawn from the page's
+    address once a change is applied, and the page draws no in-place review
+    region."""
+    text = (TEMPLATES / "reminder-workgroup.html").read_text()
+    form = re.search(r'<form id="settings-form"[^>]*>', text).group(0)
+    assert 'data-require-change="base_digest"' in form
+    assert 'data-review-open="workgroup-review"' in form
+    assert "data-in-place" not in form
+    assert 'data-refresh-url="{{ refresh_url }}"' in text
+    assert "settings-review" not in text
+    assert 'dialog_id="workgroup-review"' in text and "review=True" in text
+    assert 'describedby="workgroup-review-summary"' in text
+    assert "with hint=name_hint label=save_label" in text
+    button = render_to_string(
+        "stewardship/components/review-changes-button.html", {"label": "Save"}
+    )
+    assert ">Save</button>" in button and "Review changes" not in button
+    fragment = render_to_string(
+        "stewardship/reminder-workgroup-review.html",
+        {"review": {"clears": False, "preview": "signed"}},
+    )
+    assert 'data-review-done="No-reminders WorkGroup changed."' in fragment
+    assert '<p id="workgroup-review-summary">From the next ParishSoft refresh' in (
+        fragment
+    )
+    assert 'name="preview" value="signed" data-review-preview' in fragment
+    assert "Current" not in fragment and "New WorkGroup" not in fragment
+    cleared = render_to_string(
+        "stewardship/reminder-workgroup-review.html",
+        {"review": {"clears": True, "preview": "signed"}},
+    )
+    assert "gets the Reminders again" in cleared
 
 
 def test_campaign_settings_reviews_in_the_dialog_once():
@@ -642,20 +755,98 @@ def test_campaign_settings_reviews_in_the_dialog_once():
     assert "'stewardship/settings-review.html'" not in text
     assert 'dialog_id="campaign-review"' in text and "review=True" in text
     assert "(read-only)" not in text
+    # Save is the action's own label (#1356), for a compact review and a
+    # full one alike.
+    assert 'translate "Save" as save_label' in text
+    assert "hint=unchanged_hint label=save_label" in text
+    assert 'translate "Change a setting to save it." as unchanged_hint' in text
+
+
+def test_campaign_images_review_in_the_dialog():
+    """Each Campaign images upload and removal opens the shared review dialog
+    (#750) from the slots' region, which is redrawn from the page's address
+    once a change is applied; the page draws no in-place review region, and
+    the dialog's Review sends an upload multipart, as the form would."""
+    text = (TEMPLATES / "artwork-settings.html").read_text()
+    forms = re.findall(r"<form\b[^>]*>", text)
+    assert len(forms) == 2
+    for form in forms:
+        assert 'data-review-open="artwork-review"' in form
+        assert "data-in-place" not in form
+        # Each names its slot's own status line, drawn in the slot's pane,
+        # so the status shows beside the control and the page never jumps.
+        assert 'data-review-outcome="artwork-outcome-{{ entry.slot }}"' in form
+    slot_end = text.index("</section>")
+    assert text.rindex('outcome_id="artwork-outcome-"|add:entry.slot', 0, slot_end) > 0
+    assert "outcome_id=" not in text[text.index("{% endfor %}") :]
+    upload = next(form for form in forms if "artwork-upload-" in form)
+    assert 'enctype="multipart/form-data"' in upload
+    assert "data-require-complete" in upload
+    # Remove this image is drawn only when the slot has an image.
+    assert text.index("{% if entry.asset %}<form") < text.index("artwork-remove-")
+    assert 'data-refresh-url="{{ refresh_url }}"' in text
+    assert "settings-review" not in text
+    assert 'dialog_id="artwork-review"' in text and "review=True" in text
+    script = (TEMPLATES.parents[1] / "static/stewardship/ui-v1.js").read_text()
+    assert 'form.enctype === "multipart/form-data" ? data' in script
+    assert "state.form.dataset.reviewOutcome || dialog.dataset.reviewOutcome" in script
+
+
+def test_parish_logos_review_in_the_dialog():
+    """Parish logos' upload opens the shared review dialog (#750) from the
+    form's region, which is redrawn from the page's address once a change
+    is applied, as are the current logos; the page draws no in-place review
+    region, and the upload is sent multipart and waits for a chosen file."""
+    text = (TEMPLATES / "branding-settings.html").read_text()
+    forms = re.findall(r"<form\b[^>]*>", text)
+    assert len(forms) == 1
+    assert 'data-review-open="branding-review"' in forms[0]
+    assert "data-in-place" not in forms[0]
+    assert 'enctype="multipart/form-data"' in forms[0]
+    assert "data-require-complete" in forms[0]
+    assert 'data-refresh-url="{{ refresh_url }}"' in text
+    assert '<section id="branding-current" class="panel" data-in-place-region' in text
+    assert "settings-review" not in text
+    assert 'dialog_id="branding-review"' in text and "review=True" in text
+    review = (TEMPLATES / "branding-review.html").read_text()
+    assert "data-review-answer" in review and "data-review-preview" in review
+    assert 'name="bundle"' in review
+
+
+def test_parish_settings_review_in_the_dialog():
+    """Parish settings' form opens the shared review dialog (#750) and
+    waits for a real change (#921); it sits in a region redrawn from the
+    page's address once a change is applied, the page draws no in-place
+    review region, and the review fragment carries the signed preview."""
+    text = (TEMPLATES / "parish-settings.html").read_text()
+    forms = re.findall(r"<form\b[^>]*>", text)
+    assert len(forms) == 1
+    assert 'data-review-open="parish-review"' in forms[0]
+    assert 'data-require-change="base_digest"' in forms[0]
+    assert "data-in-place" not in forms[0] and "data-table-sync" not in forms[0]
+    assert 'data-refresh-url="{{ refresh_url }}"' in text
+    assert 'id="settings-review"' not in text and "live-status-v1.js" not in text
+    assert 'dialog_id="parish-review"' in text and "review=True" in text
+    review = (TEMPLATES / "parish-settings-review.html").read_text()
+    assert "data-review-answer" in review and "data-review-preview" in review
+    assert "parish_settings" not in IN_PLACE_PAGES
 
 
 def test_the_follow_up_carries_only_the_change():
     """Change status's read and its quiet follow-up name only the in-place
     page and the change. Ministries is no in-place page any more (#1267):
-    it changes nothing, so a follow-up never leads there."""
+    it changes nothing, so a follow-up never leads there, and Parish
+    settings reviews in the dialog."""
     receipt = SimpleNamespace(request_id="53200000-0000-4000-8000-000000000532")
-    status = review_region("parish_settings", receipt=receipt)["status_url"]
+    status = review_region("reminder_workgroup", receipt=receipt)["status_url"]
     read = {key: values[0] for key, values in parse_qs(urlsplit(status).query).items()}
-    assert read == {"in_place": "parish_settings"}
+    assert read == {"in_place": "reminder_workgroup"}
     follow = in_place_follow(read | {"q": "choir", "next": "/x"}, receipt.request_id)
-    assert urlsplit(follow).path == "/admin/parish/settings/"
+    assert urlsplit(follow).path == reverse("admin:reminder_workgroup")
     assert parse_qs(urlsplit(follow).query) == {"request": [receipt.request_id]}
-    assert in_place_follow({"in_place": "ministries"}, receipt.request_id) is None
+    # Nor to a page that reviews in the dialog (#750).
+    for page in ("ministries", "parish_settings"):
+        assert in_place_follow({"in_place": page}, receipt.request_id) is None
 
 
 def test_go_live_and_production_refreshes_are_in_place():

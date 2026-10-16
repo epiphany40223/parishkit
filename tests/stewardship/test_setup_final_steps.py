@@ -106,9 +106,11 @@ def test_email_test_sends_until_accepted_then_continues(slack):
     row = actions(waiting)
     assert '<button data-mail-send type="submit" form="setup-test">' in row
     assert "Send test email" in row
-    # Continue waits, hidden, for the page script to reveal after acceptance.
-    assert f'data-mail-continue href="{after}" hidden' in row
-    assert 'id="setup-test"' in waiting and "Send another test" not in waiting
+    # No hidden Continue: once a test settles, the live status region
+    # re-reads this panel in place, which brings the row back with Continue.
+    assert "setup-continue" not in row
+    assert 'action="#setup-test-panel" id="setup-test" data-in-place' in waiting
+    assert "Send another test" not in waiting
     done = page(
         "setup-mail.html",
         "mail_test",
@@ -140,8 +142,43 @@ def test_slack_test_follows_the_same_pattern():
     )
     row = actions(html)
     assert "Send Slack test" in row and " disabled" in row
-    assert f'href="{reverse("admin:setup_confirmation")}" hidden' in row
+    # Continue comes with the panel's in-place re-read once a test settles.
+    assert "setup-continue" not in row
     assert f'href="{reverse("admin:setup_mail")}"' in row  # Back
+
+
+PENDING_LINE = (
+    '<p class="help" id="setup-test-pending">A test is on its way. '
+    "Another test can be sent once its result is known.</p>"
+)
+
+
+@pytest.mark.parametrize("tested", [False, True])
+def test_send_held_by_a_pending_test_names_its_reason(tested):
+    """While a test is pending, each Send is unavailable and names the
+    pending line after the action row, and the live status problem line it
+    may also name has an id (#1332 item 28); a settled page has neither."""
+    form = SetupNotificationForm(
+        initial={"preview_token": "token", "request_key": uuid4()}
+    )
+    common = {
+        "wizard": wizard("slack_test", slack=True, tests=frozenset({"mail_test"})),
+        "form": form,
+        "items": [],
+        "channel_id": "C0123456789",
+        "tested": tested,
+    }
+    html = page("setup-notification.html", "slack_test", pending=True, **common)
+    assert 'data-live-problem-id="setup-test-problem"' in html
+    (send,) = re.findall(r"<button [^>]*data-mail-send[^>]*>", html)
+    assert " disabled" in send
+    assert 'aria-describedby="setup-test-pending"' in send
+    assert "data-live-problem-named" in send
+    # The line follows the action row, so it never moves the buttons.
+    assert PENDING_LINE in html.split(actions(html), 1)[1]
+    settled = page("setup-notification.html", "slack_test", pending=False, **common)
+    assert "setup-test-pending" not in settled
+    assert "data-live-problem-named" not in settled
 
 
 def test_finish_checks_readiness_as_its_primary_action():

@@ -70,8 +70,9 @@ def test_anonymous_and_another_admin_session_cannot_use_cancellation_exception(
     another = login(setup_http)
     _, attempt, _, _ = selected(setup_http)
     with web_login():
-        assert Client().get("/admin/setup/cancel").status_code == 403
-        response = client_for(another).get("/admin/setup/cancel")
-        assert response.status_code == 404
-        assert str(attempt.pk).encode() not in response.content
+        for address in ("/admin/setup/cancel", "/admin/setup/cancel?format=status"):
+            assert Client().get(address).status_code == 403
+            response = client_for(another).get(address)
+            assert response.status_code == 404
+            assert str(attempt.pk).encode() not in response.content
         assert SetupAttempt.objects.get(pk=attempt.pk).state == "frozen"

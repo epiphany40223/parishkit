@@ -54,7 +54,7 @@
 {% elif accept.refused == "reauthenticate" %}{% url 'admin:system_health' as here %}{% translate "accepting this change" as step_up_action %}{% translate "Nothing was accepted." as step_up_outcome %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action outcome=step_up_outcome next=here marker="accept-refused" marker_value="reauthenticate" %}
 {% elif accept.refused == "busy" %}<p class="notice" data-accept-refused="changed">{% translate "This changed since you looked; review it again. Nothing was accepted. The refusal above catches up within about 10 seconds." %}</p>
 {% elif accept.refused == "denied" %}<p class="notice notice-error" data-accept-refused="denied">{% translate "The server refused this acceptance, so nothing was accepted. System logs record why; ask the server operator to check the database grants." %}</p>
-{% elif accept.refused == "invalid" %}<p class="notice notice-error" data-accept-refused="invalid">{% translate "That request could not be read, or the box was not ticked. Nothing was accepted; review it again." %}</p>
+{% elif accept.refused == "invalid" %}<p class="notice notice-error" data-accept-refused="invalid">{% if accept.refusal_text %}{{ accept.refusal_text }}{% else %}{% translate "That request could not be read, or the box was not ticked. Nothing was accepted; review it again." %}{% endif %}</p>
 {% endif %}
 <div data-live-mirror-target="accept-button" data-live-mirror-hold>{% include 'stewardship/system-health-accept-button.html' %}</div>{% endif %}
 </section>{% endif %}</div>

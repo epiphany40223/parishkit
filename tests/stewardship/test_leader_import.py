@@ -171,5 +171,5 @@ def test_the_import_form_names_a_scope_and_addresses():
         "csrfmiddlewaretoken=t&scope=all&name=x",
         "csrfmiddlewaretoken=t&scope=selected&email=not+an+address",
     ):
-        with pytest.raises(UserFacingError, match="unexpected data"):
+        with pytest.raises(UserFacingError, match="did not expect"):
             choice(refused)
