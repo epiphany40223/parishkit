@@ -10,6 +10,8 @@ that Send comes back, and that exactly one POST was sent. A refused Send
 (409) is shown whole and sent once.
 """
 
+from uuid import UUID
+
 import pytest
 
 from .campaign_test_components import PAGE, REFUSED, SENT, SETTLED
@@ -70,6 +72,17 @@ def test_send_shows_the_test_and_its_result_in_place(page, component_origin):
     assert polls
     assert posts == [component_origin + PAGE]
     assert page.evaluate(MARKED) == "kept"
+    # Technical details sit after the polled list, never inside it (a poll
+    # would close them), and list each test's reference as Send drew them.
+    details = page.locator("#campaign-tests details.technical-details")
+    expect(details).to_have_count(1)
+    assert page.locator("[data-live-status] .technical-details").count() == 0
+    details.locator("summary").click()
+    for number in (5411, 5410):
+        expect(details.locator("code", has_text=str(UUID(int=number)))).to_be_visible()
+    expect(details).to_contain_text(
+        "As of when this page was opened; reload the page to update."
+    )
 
 
 def test_refused_send_is_shown_once(page, component_origin):
