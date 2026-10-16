@@ -82,17 +82,14 @@ NOTICE_BLOCK = re.compile(r"<div\b[^>]*" + NOTICE_CLASS + r"[^>]*>.*?</div>", re
 LINK = re.compile(r"<a\b.*?</a>", re.S)
 # About one line of visible introductory help.
 INTRO_WORDS = 15
-# Pages whose introduction is not yet converted, with the visible
-# introductory words each may keep: pages other work was changing when the
-# rest were converted (#227 follow-ups), and the three pages both portals
-# render (error.html, denied.html and availability.html), whose visible text
-# is the error itself. Each uses the Admin layout when ``admin`` is set and
-# the Family layout otherwise, and one template serves both, so their wording
-# is kept as a reviewed exception. Lower or remove an entry when its page is
-# converted; never raise one or add a page.
+# Pages whose introduction keeps visible words, with the count each may
+# keep: two pages both portals render (denied.html and availability.html),
+# whose visible text is the error itself. Each uses the Admin layout when
+# ``admin`` is set and the Family layout otherwise, and one template serves
+# both, so their wording is kept as a reviewed exception. Lower or remove an
+# entry when its page is converted; never raise one or add a page.
 INTRO_ALLOWED = {
     "denied.html": 31,
-    "go-live-readiness.html": 24,
     "availability.html": 21,
 }
 

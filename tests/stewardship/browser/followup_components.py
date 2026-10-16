@@ -512,6 +512,11 @@ def components(context, admin):
         "/followup-gated": values | dict(mutable=False),
         # More requests than one PDF may hold (#1157): PDF is unavailable.
         "/followup-over": values | dict(total=1001),
+        # A request with no saved follow-up yet (#227 empty state).
+        "/followup-item-new": values | dict(item=row, form=form, history=[]),
+        # A history page past its end, as a bookmarked ?page= can ask for.
+        "/followup-item-past-end": values
+        | dict(item=row, form=form, history=[], previous_history=1),
         "/followup-item": values
         | dict(item=row, form=form, history=[revision], next_history=2),
         "/followup-item-leave": values

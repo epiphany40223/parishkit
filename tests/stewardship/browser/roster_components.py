@@ -75,7 +75,7 @@ def components(context, admin):
     """The list (Not yet entered and All), its second page, and the list after
     a tick, at the addresses the view and the in-place GET refreshes use."""
 
-    def page(rows, paging, show="todo", changed=False, bulk_key=BULK_KEY):
+    def page(rows, paging, show="todo", changed=False, bulk_key=BULK_KEY, ministry=""):
         """Render the list from ``rows`` with ``paging``'s table choices."""
         table = paginate(rows, paging, carry=[("show", show)], sorting=SORTING)
         return table, (
@@ -89,7 +89,7 @@ def components(context, admin):
                     "table": replace(table, action=PATH),
                     "show": show,
                     "show_choices": SHOW.items(),
-                    "ministry": "",
+                    "ministry": ministry,
                     "ministries": [{"duid": 9, "name": "Food pantry"}],
                     "changed": changed,
                     "tick_fields": table.page_fields(table.number),
@@ -123,6 +123,14 @@ def components(context, admin):
         AFTER_ALL: after_all,
         STALE: stale,
         BULKED: bulked,
+        # Nothing left to enter, and nothing for one chosen Ministry: the
+        # two empty states name different next steps (#227).
+        "/roster-none": page([], {"size": "25"})[1],
+        "/roster-none-ministry": page([], {"size": "25"}, ministry="9")[1],
+        "/roster-none-all": page([], {"size": "25"}, show="all")[1],
+        "/roster-none-all-ministry": page([], {"size": "25"}, show="all", ministry="9")[
+            1
+        ],
     }
 
 
