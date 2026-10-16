@@ -17,6 +17,8 @@ import re
 
 import pytest
 
+from parishkit.stewardship.accounts.artwork_views import NOT_STATIC_IMAGE, UNAVAILABLE
+
 from .artwork_components import PAGE, REMOVAL
 from .test_in_place import MARK, MARKED
 from .test_settings_in_place import answer_reviews
@@ -177,6 +179,9 @@ def test_the_status_line_is_in_the_slot_and_the_page_never_jumps(
         title = "Review campaign image"
     else:
         changed, start, name = "welcome", "Campaign image removed.", "Welcome"
+        # The slot's whole reserved line in view first, as a reader sees
+        # the pane they act in (the one-line status fills only its top).
+        page.locator("#artwork-outcome-welcome").scroll_into_view_if_needed()
         slot(page, "Welcome page icon").get_by_role(
             "button", name="Remove this image"
         ).click()
@@ -208,20 +213,137 @@ def test_the_status_line_is_in_the_slot_and_the_page_never_jumps(
 
 
 def test_a_refused_upload_stays_on_the_field(page, component_origin):
-    """A refused upload marks the slot's field with its error and shows the
-    summary, linked to the field; no dialog opens and nothing reloads."""
+    """A refused upload marks the slot's field, described by the slot's own
+    status line, which says why and takes focus; no dialog opens, no
+    summary is placed above the heading, no error line is added and nothing
+    reloads. Choosing another image clears the line and the mark."""
     page.goto(component_origin + PAGE)
     failures = watch(page)
     member = slot(page, "Member pages icon")
+    field = page.locator("#id_member_image")
     member.get_by_label("Image").set_input_files(png())
     member.get_by_role("button", name="Upload and review").click()
-    summary = page.locator("[data-error-summary]")
-    visible(summary)
-    visible(summary.locator('a[href="#id_member_image"]'))
-    has_attribute(page.locator("#id_member_image"), "aria-invalid", "true")
+    eventually(page, said("member"))
+    line = page.locator("#artwork-outcome-member")
+    assert line.inner_text().startswith("Image:")
+    assert page.evaluate(FOCUSED) == "artwork-outcome-member"
+    has_attribute(field, "aria-invalid", "true")
+    assert "artwork-outcome-member" in field.get_attribute("aria-describedby").split()
+    assert page.locator("[data-error-summary]").count() == 0
+    assert member.locator(".errorlist").count() == 0
     assert not page.locator("dialog[data-review-dialog]").is_visible()
+    member.get_by_label("Image").set_input_files(png())
+    assert line.inner_text() == ""
+    assert field.get_attribute("aria-invalid") != "true"
+    described = field.get_attribute("aria-describedby") or ""
+    assert "artwork-outcome-member" not in described.split()
     assert page.url == component_origin + PAGE
     assert page.evaluate(MARKED) == "kept"
+    assert not failures
+
+
+def test_a_refused_upload_never_jumps_to_the_top(page, component_origin):
+    """A refused upload in a slot below the fold leaves the page where the
+    reader is: the scroll position and the slots are unchanged, and the
+    slot's own status line, in view, says why (#1410; UX conventions, "In-place
+    controls" and "Review dialog")."""
+    page.set_viewport_size(SHORT_WINDOW)
+    page.goto(component_origin + PAGE)
+    failures = watch(page)
+    member = slot(page, "Member pages icon")
+    member.get_by_role("button", name="Upload and review").scroll_into_view_if_needed()
+    scrolled = page.evaluate("window.scrollY")
+    assert scrolled > 0
+    places = page.evaluate(PLACES)
+    member.get_by_label("Image").set_input_files(png())
+    member.get_by_role("button", name="Upload and review").click()
+    eventually(page, said("member"))
+    assert page.evaluate("window.scrollY") == pytest.approx(scrolled, abs=1)
+    assert same_place(page.evaluate(PLACES), places)
+    line = page.locator("#artwork-outcome-member")
+    box = line.bounding_box()
+    assert box["y"] >= 0 and box["y"] + box["height"] <= SHORT_WINDOW["height"]
+    assert page.evaluate(FOCUSED) == "artwork-outcome-member"
+    assert page.evaluate(MARKED) == "kept"
+    assert not failures
+
+
+def refuse_welcome(page):
+    """Upload a file the server reads as no usable image to the welcome
+    icon's slot (the one slot with Remove this image); returns the slot."""
+    welcome = slot(page, "Welcome page icon")
+    welcome.get_by_label("Image").set_input_files(png())
+    welcome.get_by_role("button", name="Upload and review").click()
+    eventually(page, said("welcome"))
+    return welcome
+
+
+def test_an_accepted_review_clears_the_slots_refusal(page, component_origin):
+    """A slot's upload and its Remove this image share the slot's line, so
+    an accepted Review from either form clears a refusal there, and the
+    upload field's mark and description with it, even when the dialog is
+    then cancelled."""
+    answer_reviews(page, component_origin, REMOVAL, address=PAGE)
+    page.goto(component_origin + PAGE)
+    failures = watch(page)
+    welcome = refuse_welcome(page)
+    field = page.locator("#id_welcome_image")
+    has_attribute(field, "aria-invalid", "true")
+    welcome.get_by_role("button", name="Remove this image").click()
+    dialog = dialog_of(page)
+    assert page.locator("#artwork-outcome-welcome").inner_text() == ""
+    dialog.get_by_role("button", name="Cancel").click()
+    hidden(dialog)
+    assert page.locator("#artwork-outcome-welcome").inner_text() == ""
+    assert field.get_attribute("aria-invalid") == "false"
+    described = field.get_attribute("aria-describedby") or ""
+    assert "artwork-outcome-welcome" not in described.split()
+    assert page.evaluate(MARKED) == "kept"
+    assert not failures
+
+
+# The welcome slot's status line: its height, and whether its text overflows.
+LINE_FIT = """() => {
+    const line = document.getElementById('artwork-outcome-welcome');
+    return {height: line.getBoundingClientRect().height,
+        fits: line.scrollWidth <= line.clientWidth
+            && line.scrollHeight <= line.clientHeight};
+}"""
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_a_long_refusal_is_shown_whole_without_moving_anything(
+    page, component_origin, width
+):
+    """The real refusal of a file that is no usable image wraps whole
+    within the slot's reserved line, at phone and desktop width: nothing is
+    cut short, the line does not grow and no slot moves. The banner's
+    longer refusal fits the same way. A slot's unavailable reason, which
+    only a stale page is refused with, is shown whole too, though on a
+    phone it may take a line more."""
+    page.set_viewport_size({"width": width, "height": 844})
+    page.goto(component_origin + PAGE)
+    failures = watch(page)
+    empty = page.evaluate(LINE_FIT)
+    places = page.evaluate(PLACES)
+    refuse_welcome(page)
+    line = page.locator("#artwork-outcome-welcome")
+    assert line.inner_text() == f"Image: {NOT_STATIC_IMAGE['section']}"
+    shown = page.evaluate(LINE_FIT)
+    assert shown["fits"], shown
+    assert shown["height"] == pytest.approx(empty["height"], abs=0.5)
+    assert same_place(page.evaluate(PLACES), places)
+    for reason in [*NOT_STATIC_IMAGE.values(), *UNAVAILABLE.values()]:
+        line.evaluate(
+            "(node, text) => { node.textContent = text; }", f"Image: {reason}"
+        )
+        fitted = page.evaluate(LINE_FIT)
+        assert fitted["fits"], (reason, fitted)
+        if reason in NOT_STATIC_IMAGE.values() or width > 390:
+            assert fitted["height"] == pytest.approx(empty["height"], abs=0.5), (
+                reason,
+                fitted,
+            )
     assert not failures
 
 

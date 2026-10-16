@@ -4014,8 +4014,39 @@
   // An address from an attribute, never the form's action property, which
   // a field named "action" shadows.
   const formUrl = (form) => new URL(form.getAttribute("action") || "", document.baseURI).href;
+  // A form that names its pane's own reserved status line (Campaign images'
+  // slots, data-review-outcome) shows a refused Review there (#1410).
+  const paneLine = (form) => (form.dataset.reviewOutcome
+    ? document.getElementById(form.dataset.reviewOutcome) : null);
+  // A refusal written to a pane's line goes once it no longer applies: on
+  // an edit of a form naming the line, when a Review from the pane is
+  // accepted, or when the line takes another refusal. The pane's forms
+  // share the line (Campaign images' upload and Remove this image), so
+  // every field the line describes loses that description and its server
+  // mark, whichever form cleared it.
+  const clearPaneRefusal = (form) => {
+    const line = paneLine(form);
+    if (!line?.hasAttribute("data-refusal")) return;
+    line.removeAttribute("data-refusal");
+    line.textContent = "";
+    line.removeAttribute("title");
+    document.querySelectorAll("[aria-describedby]").forEach((node) => {
+      const ids = node.getAttribute("aria-describedby").split(/\s+/).filter(Boolean);
+      if (!ids.includes(line.id)) return;
+      const kept = ids.filter((id) => id !== line.id);
+      if (kept.length) node.setAttribute("aria-describedby", kept.join(" "));
+      else node.removeAttribute("aria-describedby");
+      node.removeAttribute("data-field-error");
+      node.setAttribute("aria-invalid", "false");
+    });
+  };
+  // Forms whose edits clear their pane's refusal: one listener each.
+  const paneWatched = new WeakSet();
   const showFieldErrors = (form, parsed) => {
     const fresh = parsed.getElementById(form.id);
+    const line = paneLine(form);
+    // A pane line's earlier refusal, and the marks it described, give way.
+    if (line) clearPaneRefusal(form);
     // A list placed by an earlier answer (below) that this one does not
     // repeat is out of date: its field's mark and message clear.
     form.querySelectorAll(".errorlist[data-review-placed]").forEach((placed) => {
@@ -4032,6 +4063,9 @@
     // the control's label, for a checkbox inside one).
     fresh.querySelectorAll(".errorlist[id]").forEach((list) => {
       let live = form.querySelector(`#${CSS.escape(list.id)}`);
+      // A pane with its own line says it there instead: a list added
+      // here would move the pane's button under the pointer (#1410).
+      if (!live && line) return;
       if (!live) {
         const control = form.querySelector(`#${CSS.escape(list.id.replace(/_error$/, ""))}`);
         if (!control) return;
@@ -4050,10 +4084,16 @@
       if (!node.id || isSubmit(node) || node instanceof HTMLButtonElement) return;
       const twin = fresh.querySelector(`#${CSS.escape(node.id)}`);
       if (!twin) return;
+      const invalid = twin.getAttribute("aria-invalid") === "true";
       if (twin.hasAttribute("aria-describedby")) {
-        node.setAttribute("aria-describedby", twin.getAttribute("aria-describedby"));
+        // A pane's field is described by the pane's line, in place of the
+        // list it does not draw.
+        const ids = twin.getAttribute("aria-describedby").split(/\s+/)
+          .filter((id) => id && (!line || form.querySelector(`#${CSS.escape(id)}`)));
+        if (line && invalid) ids.push(line.id);
+        node.setAttribute("aria-describedby", ids.join(" "));
       }
-      if (twin.getAttribute("aria-invalid") === "true") {
+      if (invalid) {
         node.setAttribute("aria-invalid", "true");
         node.setAttribute("data-field-error", "");
       }
@@ -4062,6 +4102,19 @@
       if (!node.closest(REGIONS)) node.remove();
     });
     const summary = parsed.querySelector("[data-error-summary]");
+    if (line) {
+      // The refusal is said in the pane's own line, where the reader is,
+      // never in a summary above the heading: focusing that would scroll
+      // the page to the top (#1410; UX conventions, "Review dialog").
+      line.setAttribute("data-refusal", "");
+      showOutcome(line.id, sentences([...(summary?.querySelectorAll("li") || [])]) || NOT_ACCEPTED);
+      if (!paneWatched.has(form)) {
+        paneWatched.add(form);
+        // A file pick fires both; the second finds nothing to clear.
+        ["input", "change"].forEach((type) => form.addEventListener(type, () => clearPaneRefusal(form)));
+      }
+      return;
+    }
     if (!summary) {
       form.querySelector("[aria-invalid=true]")?.focus();
       return;
@@ -4176,6 +4229,7 @@
       form.querySelectorAll(".errorlist[data-review-placed]").forEach((placed) => {
         placed.hidden = true;
       });
+      clearPaneRefusal(form);
       openReview(dialog, form, opener, review, null);
     } else if (answer.response.status === 400 && form.id && parsed.getElementById(form.id)) {
       showFieldErrors(form, parsed);

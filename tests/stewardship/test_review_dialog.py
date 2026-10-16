@@ -140,7 +140,8 @@ def test_the_status_line_keeps_its_space_and_is_polite():
         text,
     )
     css = (TEMPLATES.parents[1] / "static/stewardship/ui-v1.css").read_text()
-    rule = re.search(r"\.review-outcome \{([^}]*)\}", css).group(1)
+    # The shared rule, not Campaign images' slot lines (.artwork-slot, #1410).
+    rule = re.search(r"^\.review-outcome \{([^}]*)\}", css, re.M).group(1)
     assert "min-height" in rule and "white-space: nowrap" in rule
     source = (TEMPLATES / "users.html").read_text(encoding="utf-8")
     users = source.index('review-outcome.html" with outcome_id="users-outcome"')
