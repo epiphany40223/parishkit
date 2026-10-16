@@ -2794,8 +2794,8 @@ is not a multi-campaign control: once any campaign exists it is not shown,
 and the server refuses it, as it refuses Copy campaign and successor drafts
 until #145 and the close-out wizard (#527).
 
-Status: the page (its admission, first page and what follows confirming) is
-built; its guided steps are not yet
+Status: the page (its admission, first page and what follows confirming) and
+its guided steps are built
 ([#142](https://github.com/epiphany40223/parishkit/issues/142)). Setup ends
 without a campaign, so a newly set-up deployment reaches the page; a
 deployment set up before #142 already has its campaign and never does.
@@ -2862,25 +2862,49 @@ population to match the current ParishSoft data, stays incomplete until a
 full refresh has finished.
 
 **Guided steps.** While the current campaign is a draft in Testing mode, the
-Campaign setup pages show a stepper with the setup wizard's look: Basics,
-Ministries and funds, Share options (shown only when the campaign's modules
-use it), Pages and emails, Dates and mail schedules,
-Campaign images, Preview and test email, and Go-live readiness. Each step is
-the existing settings page, not a separate staging page, so every save is
-that page's ordinary review, confirm and apply. Basics counts as completed
-when the campaign is created; any other step counts as completed once a
-change confirmed on that page has been applied for this campaign, or for
-Preview and test email once a test of the current invitation was accepted.
-Defaults (the default text and share options) never complete a
-step, and Go-live readiness completes only by going live. Next and Back are
-plain links to the neighbouring step: they never save, discard or submit
-anything, so an Admin who leaves a page without confirming its review keeps
-the campaign as it was. After a change is applied, its status page offers
-Continue to the next step. The stepper is presentation only; each page still
-enforces its own prerequisites. Go-live readiness is the last step, so the
-go-live flow (and its redesign in #462) follows on from it unchanged. Once
-the campaign leaves draft (it is scheduled or goes live), the stepper is no
-longer shown.
+Campaign setup pages show Administrators a stepper with the setup wizard's
+look: Campaign settings (its basics, Ministries and funds, one form since
+[#1119](https://github.com/epiphany40223/parishkit/issues/1119)), Share
+options (shown only when the campaign's modules use it), Pages and emails,
+Dates and mail schedules, Campaign images, Preview and test email (for the
+initial invitation's current revision), and Go-live readiness. Each step is
+named after the page it opens and is that existing page, not a separate
+staging page, so every save is that page's ordinary review, confirm and
+apply. Only those pages draw the stepper; Preview and test email draws it
+only for the revision its step opens. Campaign settings counts as completed
+when the campaign is created. Share options, Pages and emails, Dates and
+mail schedules and Campaign images count as completed once a change
+confirmed on that page has been applied since the campaign was created: a
+change of the share options alone (not the default options Campaign
+settings writes when Financial stewardship is turned on or off); of the
+campaign images alone; of a mail schedule (added, removed or edited, even
+with the new email it sends) or of only the campaign's dates and time zone
+(a change Campaign settings can also make, which counts too); or of the
+pages and emails (anything else that changes content, including the
+schedules re-pointed at an email's new revision). Preview and test email
+counts as completed once a test of the invitation's current revision was
+accepted. Defaults (the default text and share options that Create the
+campaign adds) never complete a step, and Go-live readiness completes only
+by going live. The completion is read from what was applied, never stored.
+Next and Back are plain links to the neighbouring step in the stepper's
+summary: they never save, discard or submit anything, so an Admin who
+leaves a page without confirming its review keeps the campaign as it was.
+Every step stays a link (Preview and test email only while there is an
+invitation to test; until then Back and Next skip it). Once the current
+step is completed, its Next reads **Continue to the next step**, naming
+that step. The stepper is an
+[in-place](../ui-conventions/spec.md#in-place-controls) region: after a
+[review dialog](../ui-conventions/spec.md#review-dialog)'s Apply (Share
+options, Campaign images) the page's redraw from its own address, or an
+in-place refresh, shows the new completion and that Continue without a
+reload, and a reload shows the same. Change status also offers Continue to
+the next step once a change that completes a step is applied; the change
+that created the campaign offers
+Load the campaign's ParishSoft data instead. The stepper is presentation
+only; each page still enforces its own prerequisites. Go-live readiness is
+the last step, so the go-live flow (and its redesign in #462) follows on
+from it unchanged. Once the campaign leaves draft (it is scheduled or goes
+live), or once a go-live has started, the stepper is no longer shown.
 
 **Existing deployments.** A deployment that already has a campaign, such as
 Production, never sees Create the campaign, and its campaign, being active,
