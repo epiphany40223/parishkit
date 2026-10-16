@@ -28,13 +28,51 @@ from parishkit.stewardship.accounts.setup_progress_views import SUMMARIES, summa
             },
             "done",
         ),
+        # Setup itself ended, or a load stopped while setup still says
+        # loading: only a new setup helps.
         (
             {"setup_state": "expired", "task_state": "running", "phase": "fetching"},
-            "failed",
+            "ended",
         ),
         (
             {"setup_state": "loading", "task_state": "failed", "phase": "staging"},
+            "ended",
+        ),
+        # A load that failed for good returned setup to collecting (#1353).
+        (
+            {"setup_state": "collecting", "task_state": "failed", "phase": "staging"},
             "failed",
+        ),
+        # A discarded load, and a bound one that succeeded but went stale.
+        (
+            {
+                "setup_state": "collecting",
+                "task_state": "succeeded",
+                "phase": "validating",
+                "bound": False,
+                "loaded": False,
+            },
+            "voided",
+        ),
+        (
+            {
+                "setup_state": "collecting",
+                "task_state": "failed",
+                "phase": "validating",
+                "bound": False,
+                "loaded": False,
+            },
+            "voided",
+        ),
+        (
+            {
+                "setup_state": "collecting",
+                "task_state": "succeeded",
+                "phase": "validating",
+                "bound": True,
+                "loaded": False,
+            },
+            "voided",
         ),
     ],
 )
@@ -155,3 +193,32 @@ def test_progress_page_shows_the_right_parts_for_each_phase(phase):
         assert "2,687 loaded" in html and "Downloading…" in html
     if phase == "done":
         assert "Continue to the next step" in html
+
+
+@pytest.mark.parametrize("key", ["failed", "voided", "ended"])
+def test_each_ending_says_what_to_do_next(key):
+    """A failed load links back to the connection and Load again, a discarded
+    one to Load parish data, and only a setup that ended says to cancel; none
+    offers Continue or keeps watching (#1353)."""
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.accounts.setup_progress_views import _status_context
+
+    progress = observation("validating", active=False) | {
+        "task_state": "succeeded" if key == "voided" else "failed",
+        "setup_state": "expired" if key == "ended" else "collecting",
+        "bound": key != "voided",
+        "loaded": False,
+        "started_at": "2026-09-10T11:58:30+00:00",
+        "heartbeat_at": "2026-09-10T11:59:57+00:00",
+    }
+    context = _status_context(progress)
+    assert context["status_key"] == key
+    html = render_to_string("stewardship/setup-source-progress-status.html", context)
+    assert f"data-progress-{key}" in html
+    assert f'data-progress-state="{key}"' in html
+    assert "data-live-recheck-shown" in html and "data-live-pending" not in html
+    assert "Continue to the next step" not in html
+    assert ('href="/admin/setup/source"' in html) is (key != "ended")
+    assert ('href="/admin/setup/credentials/parishsoft"' in html) is (key == "failed")
+    assert ("cancel setup" in html) is (key == "ended")
