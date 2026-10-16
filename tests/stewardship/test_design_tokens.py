@@ -35,8 +35,7 @@ def test_stylesheet_declares_exactly_the_module_values():
 
 
 DARK_BLOCK = re.compile(
-    r"@media screen and \(prefers-color-scheme: dark\) {"
-    r"\s*html\.admin-document\s*{(.*?)}",
+    r'@media screen {\s*html\.admin-document\[data-theme="dark"\]\s*{(.*?)}',
     re.S,
 )
 
@@ -51,9 +50,11 @@ def test_dark_scheme_declares_exactly_the_module_values():
     """The dark block redefines every colour token, and only colours (#1264)."""
     assert set(tokens.DARK_COLORS) == set(tokens.COLORS)
     assert dark_properties() == tokens.DARK_COLORS
-    # The dark scheme applies only to screens and only to Admin pages.
+    # The dark scheme applies only to screens and only to Admin pages, and
+    # only through data-theme: admin-gate-v1.js reads the Appearance choice
+    # and the operating system's setting, so the stylesheet never does.
     css = (STATIC / "ui-v1.css").read_text()
-    assert css.count("prefers-color-scheme") == 1
+    assert "prefers-color-scheme" not in COMMENT.sub("", css)
     assert "color-scheme: dark;" in DARK_BLOCK.search(css)[1]
 
 

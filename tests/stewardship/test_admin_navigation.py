@@ -1061,6 +1061,51 @@ def test_the_menu_ends_with_sign_out(pending):
     assert '<form method="post" action="/admin/logout">' in menu
 
 
+@pytest.mark.parametrize("pending", [False, True])
+def test_the_menu_has_no_appearance_choice(pending):
+    """The Appearance choice moved from the sidebar to the header (#1264)."""
+    html = render_to_string(
+        "stewardship/admin-navigation.html",
+        {"admin_chrome": {"setup_pending": pending, "setup_url": "/admin/setup"}},
+    )
+    assert "appearance" not in html.lower()
+
+
+def test_the_appearance_switch_closes_every_admin_header():
+    """Sign-in, which has no sidebar, still gets the switch (#1264): a radio
+    group named Appearance whose three icons (sun, moon, monitor) each carry
+    an accessible name and a matching tooltip. Nothing is checked in the
+    markup, since only the browser knows the choice. Family pages have none.
+    """
+    html = render_to_string("stewardship/login.html", {})
+    header = html[html.index('<header class="site-header">') : html.index("</header>")]
+    switch = header[header.index('<div class="appearance-switch"') :]
+    assert header.index('class="brand"') < header.index("appearance-switch")
+    assert switch.startswith(
+        '<div class="appearance-switch" role="radiogroup" aria-label="Appearance">'
+    )
+    labels = re.findall(
+        r'<label data-choice="(\w+)" title="([^"]+)"><input type="radio" '
+        r'name="pk-appearance" value="(\w+)" autocomplete="off"><svg (.*?)</svg>'
+        r'<span class="visually-hidden">([^<]+)</span></label>',
+        switch,
+    )
+    named = [(choice, title, value, name) for choice, title, value, _, name in labels]
+    assert named == [
+        ("light", "Light", "light", "Light"),
+        ("dark", "Dark", "dark", "Dark"),
+        ("auto", "Match this device", "auto", "Match this device"),
+    ]
+    for _, _, _, svg, _ in labels:
+        assert 'aria-hidden="true" focusable="false"' in svg
+        assert 'stroke="currentColor"' in svg and "url(" not in svg
+    assert "checked" not in switch and "<form" not in switch
+    assert "appearance" not in render_to_string("stewardship/family-login.html", {})
+    static = Path(navigation.__file__).parent / "static" / "stewardship"
+    gate = (static / "admin-gate-v1.js").read_text(encoding="utf-8")
+    assert '"pk-admin-appearance"' in gate and 'input[name="pk-appearance"]' in gate
+
+
 def test_admin_pages_load_the_menu_script_and_family_pages_do_not():
     """admin-menu-v1.js loads deferred on Admin pages only, apart from ui-v1.js."""
     script = '<script src="/static/stewardship/admin-menu-v1.js" defer></script>'
