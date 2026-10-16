@@ -5089,7 +5089,11 @@ The server refuses the whole batch, saving nothing, when:
   no longer in ParishSoft (each named in the dialog);
 - any request is not of the button's kind (named in the dialog; the page
   never offers such a batch); or
-- the contact attempt is refused, as on the request form.
+- the contact attempt is refused, as on the request form. Except for a
+  missing time zone, which Date and Time cannot fix, that refusal is shown at
+  the dialog's Date and Time, which it marks, in place of the box below the
+  buttons; Record outcome waits, naming it, until the dialog's fields change
+  ([#1332](https://github.com/epiphany40223/parishkit/issues/1332)).
 
 A batch is at most one page of the largest page size. Posting the same
 action again replays each request's revision rather than writing a second.
