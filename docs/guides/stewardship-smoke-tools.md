@@ -36,6 +36,16 @@ error and exit `2`, with only a failure classification in the process log,
 never the exception text. No token, key,
 address or provider error text is printed.
 
+In the [local environment](stewardship-local-environment.md) the command
+runs the same checks against what is installed there
+([#1399](https://github.com/epiphany40223/parishkit/issues/1399)):
+ParishSoft against the fake service, the mailbox against the mail catcher,
+the sentinel OAuth client, and a test Slack token. A `--send-to` is refused
+there, because the send path takes only a Google service account, which the
+local environment still refuses. The local environment's
+[safety guarantees](../specs/stewardship/local-environment/spec.md#safety-guarantees)
+say what each check can reach.
+
 ## Design
 
 ### Reuse the installer's checks, in the consumer that holds the credential

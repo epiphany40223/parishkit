@@ -209,13 +209,11 @@ def _workspace(value, settings, session):
 def _slack(value, settings, session):
     """Check token authentication only; no channel-read scope or message side effect.
 
-    LOCAL has no Slack stand-in (#476): a LOCAL request's Slack token is
-    invalid before any network call, so the local environment never holds one.
+    The same check runs in every profile (#1399), so pk-local proves a test
+    token against Slack exactly as Production proves its own.
     """
     if session.profile is None:
         raise ValueError("A Slack check requires a deployment profile.")
-    if session.profile is DeploymentProfile.LOCAL:
-        return False
     token = slack_candidate(value)
     response = session.request(
         "POST",

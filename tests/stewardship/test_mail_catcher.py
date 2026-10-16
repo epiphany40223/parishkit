@@ -755,25 +755,9 @@ def test_installer_parent_and_real_helper_refuse_a_mismatch(profile, value):
     )
 
 
-def test_local_slack_check_is_invalid_before_any_network_call():
-    """LOCAL has no Slack: the token is refused without contacting Slack."""
-    session = SimpleNamespace(profile=LOCAL, request=forbidden)
-    assert worker._slack(b"xoxb-synthetic", {"channel_id": "C123"}, session) is False
-    assert (
-        worker.check_request(
-            check_payload(
-                "slack",
-                candidate=base64.b64encode(b"xoxb-synthetic").decode(),
-                profile="local",
-            )
-        )
-        == "invalid"
-    )
-
-
-@pytest.mark.parametrize("profile", OTHERS)
-def test_other_slack_checks_still_contact_slack(profile):
-    """Every other profile keeps the existing Slack authentication check."""
+@pytest.mark.parametrize("profile", PROFILES)
+def test_every_profile_runs_the_same_slack_check(profile):
+    """LOCAL included (#1399): every profile contacts Slack's auth.test alike."""
     seen = []
 
     def request(method, url, **kwargs):

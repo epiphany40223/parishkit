@@ -373,7 +373,8 @@ def save_credential(
 
     A Workspace or Slack key is first admitted under the deployment profile
     (``admit_candidate``, #476): LOCAL takes only the mail-catcher document
-    and no Slack token; every other profile refuses the mail-catcher document.
+    and every other profile refuses it; a Slack token is parsed the same way
+    in every profile (#1399).
     """
     require_fresh(request)
     if target in {"google_workspace", "slack"}:
