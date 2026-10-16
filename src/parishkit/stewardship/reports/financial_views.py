@@ -19,6 +19,7 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web.refusals import with_status_code
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import report_table
 
@@ -62,7 +63,8 @@ def _error(campaign_id, *, status):
     response.stewardship_safe_error = True
     if status == 503:
         response["Retry-After"] = "5"
-    return response
+    # The refusal log's codes for this page of its own (#1403).
+    return with_status_code(response)
 
 
 def _audit(principal, campaign_id, outcome, count=0, total=0):

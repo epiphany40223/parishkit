@@ -20,10 +20,33 @@ from dataclasses import dataclass
 from django.core import signing
 from django.utils.translation import gettext_lazy as _
 
-from parishkit.stewardship.audit.refusal_context import REASONS
+from parishkit.stewardship.audit.refusal_context import (
+    IDENTIFIER,
+    REASONS,
+    SETTING_REASONS,
+)
 from parishkit.stewardship.storage import StaleRecordError
 
 from .contracts import ErrorCode, FieldError, validation_response
+
+
+def setting_values(reason, expected, actual):
+    """``(expected, actual)`` as strings, refused unless ``reason`` may carry them.
+
+    Only a reason in ``SETTING_REASONS`` records the setting values it was
+    refused for (a parish zone, a size in bytes): the database checks only
+    their shape, which a submitted secret can also fit, so the closed list
+    in Python is the gate (#1403). The refusal log still drops a value of
+    the wrong shape.
+    """
+    if expected is None and actual is None:
+        return None, None
+    if reason not in SETTING_REASONS:
+        raise TypeError("Only a setting reason records expected and actual values.")
+    return (
+        None if expected is None else str(expected),
+        None if actual is None else str(actual),
+    )
 
 
 @dataclass(frozen=True)
@@ -88,6 +111,11 @@ class UserFacing(TypedRefusal):
     """
 
     default_reason = None
+    # What the refusal log adds (#1403): the number of submitted field names
+    # the form does not have, and its own fields sent more than once
+    # (``unexpected_fields``); never shown.
+    unexpected_count = None
+    duplicates = ()
 
     def __init__(
         self,
@@ -99,8 +127,15 @@ class UserFacing(TypedRefusal):
         title=None,
         page_fix=None,
         reason=None,
+        expected=None,
+        actual=None,
     ):
-        """Validate the fix link and reason, and keep the reviewed text."""
+        """Validate the fix link, reason and values; keep the reviewed text.
+
+        ``expected`` and ``actual`` are the setting values the refusal log
+        records, allowed only with a reason in ``SETTING_REASONS``
+        (``setting_values``).
+        """
         if link is not None and (
             type(link) is not str or not link.startswith("/") or link.startswith("//")
         ):
@@ -110,6 +145,7 @@ class UserFacing(TypedRefusal):
         reason = reason or self.default_reason
         if reason is not None and reason not in REASONS:
             raise TypeError("A refusal reason must be a closed reason code.")
+        self.expected, self.actual = setting_values(reason, expected, actual)
         super().__init__(str(message))
         self.refusal = Refusal(message, fix, link, link_label, title, page_fix, reason)
 
@@ -215,8 +251,15 @@ def stale_page():
     )
 
 
-def unexpected_fields():
+def unexpected_fields(*sources, allowed=None, multiple=()):
     """The standard refusal for a form posted with fields it does not have.
+
+    With the submitted ``sources`` (``request.POST``, ``request.FILES``) and
+    the form's ``allowed`` names, the refusal log also records how many
+    submitted names are not allowed (``unexpected_count``; those names are
+    the client's and are never kept) and which allowed names, other than
+    the ``multiple`` ones and the CSRF token, were sent more than once
+    (named, with the code ``duplicate``). Without them it records neither.
 
     A field the form does not have, a field sent twice, or a hidden or
     always-sent field left out (the Admin portal requires JavaScript, so a
@@ -230,7 +273,7 @@ def unexpected_fields():
     told to open the page again, and its "Return to the previous page" link
     does that. The status (400) and the JSON code stay ``invalid``.
     """
-    return UserFacingError(
+    error = UserFacingError(
         _(
             "Nothing was done: this page sent something the server did not "
             "expect, which usually means the page changed after you opened it."
@@ -240,6 +283,18 @@ def unexpected_fields():
         title=_("This page is out of date"),
         reason="unexpected_fields",
     )
+    if allowed is not None:
+        allowed = frozenset(allowed)
+        submitted = {name for source in sources for name in source}
+        error.unexpected_count = len(submitted - allowed)
+        # Only the server's own names are looked up and named.
+        error.duplicates = tuple(
+            name
+            for name in sorted(allowed - {*multiple, "csrfmiddlewaretoken"})
+            if any(len(source.getlist(name)) > 1 for source in sources)
+            and IDENTIFIER.fullmatch(name)
+        )
+    return error
 
 
 # Signed previews stay valid for fifteen minutes. The limit is enforced here;
@@ -308,6 +363,114 @@ def annotate(response, error):
     """
     response.stewardship_reason = reason_of(error)
     response.stewardship_exception_class = type(error)
+    if isinstance(error, UserFacing):
+        # The closed details a shared refusal adds (never its text).
+        response.stewardship_expected = error.expected
+        response.stewardship_actual = error.actual
+        response.stewardship_unexpected_count = error.unexpected_count
+        response.stewardship_duplicates = error.duplicates
+    return response
+
+
+def with_reason(response, reason, *, expected=None, actual=None):
+    """Give a refused response its closed reason, and setting values if any.
+
+    For a refusal no exception carries: a form drawn again whose cause has
+    a reason of its own (a campaign zone that is not the parish's, an image
+    that is too large). ``expected`` and ``actual`` follow
+    ``setting_values``. Returns ``response``.
+    """
+    if reason not in REASONS:
+        raise TypeError("A refusal reason must be a closed reason code.")
+    response.stewardship_reason = reason
+    response.stewardship_expected, response.stewardship_actual = setting_values(
+        reason, expected, actual
+    )
+    return response
+
+
+# The closed code a refusal status stands for, for a body of its own that
+# says no more (the ``ErrorCode`` the typed answer would carry). 404 and 422
+# have none: ``ErrorCode`` has no not-found or unprocessable member, and the
+# typed 404 answer uses ``unavailable``, which would say an outage. Such a
+# page records its status and any flag codes it passes.
+STATUS_CODES = {
+    400: ErrorCode.INVALID.value,
+    403: ErrorCode.DENIED.value,
+    409: ErrorCode.STALE.value,
+    410: ErrorCode.GONE.value,
+}
+
+
+def with_status_code(response, *codes):
+    """``with_codes`` with the code of the response's status first, if any.
+
+    For a report's own error page, whose flags (a reused form, a missing
+    browser zone) give the further ``codes``. Returns ``response``.
+    """
+    status = STATUS_CODES.get(response.status_code)
+    return with_codes(response, *([status] if status else []), *codes)
+
+
+def with_codes(response, *codes):
+    """Give a refused response with a body of its own its closed error codes.
+
+    For the pages that answer a refusal without ``validation_response``'s
+    typed errors (the report error pages, a page script's JSON answer), so
+    the refusal log can say what was refused. Returns ``response``.
+    """
+    if not all(type(code) is str and IDENTIFIER.fullmatch(code) for code in codes):
+        raise TypeError("A refusal code must be a closed identifier.")
+    response.stewardship_codes = tuple(codes)
+    return response
+
+
+# The marker on a 200 answer that is a refusal drawn in place: the step-up
+# notice an action's region shows instead of its result (#1403).
+IN_PLACE = "stewardship_refused_in_place"
+
+# The reason each refused-step key of an in-place region means (Restore
+# review, Held emails, System health): the region words the key for people,
+# the refusal log records the reason with the key as its code.
+STEP_REASONS = {
+    "reauthenticate": "fresh_authentication_required",
+    "changed": "stale_page",
+    "busy": "stale_page",
+    "denied": "denied",
+    "production": "production_only",
+    "blocked": "release_refused",
+    "needs_holds": "release_refused",
+    "superseded": "resend_refused",
+    "held_elsewhere": "resend_refused",
+}
+
+
+def refused_step(response, refused, error=None):
+    """Give an in-place region's refused step its reason; returns ``response``.
+
+    ``refused`` is the step's refused key, which becomes its code. ``error``
+    is the refusal's exception when the key alone does not say why (a stale
+    form's unexpected fields), whose own reason is then used. A region that
+    answers a refusal with 200 is marked as drawn in place.
+    """
+    if error is not None:
+        annotate(response, error)
+    else:
+        with_reason(response, STEP_REASONS.get(refused, "unclassified"))
+    if type(refused) is str and IDENTIFIER.fullmatch(refused):
+        with_codes(response, refused)
+    if response.status_code == 200:
+        setattr(response, IN_PLACE, True)
+    return response
+
+
+def refused_in_place(response, reason):
+    """Mark a 200 answer as a refusal with ``reason``; returns ``response``.
+
+    The refusal log records it as it does a 4xx refusal, without a status.
+    """
+    with_reason(response, reason)
+    setattr(response, IN_PLACE, True)
     return response
 
 

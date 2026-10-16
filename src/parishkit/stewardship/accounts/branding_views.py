@@ -42,6 +42,7 @@ from parishkit.stewardship.web.refusals import (
     UserFacingStale,
     stale_page,
     unexpected_fields,
+    with_reason,
 )
 
 from . import admin_navigation, field_tips
@@ -94,6 +95,27 @@ ERRORS = (
     signing.BadSignature,
     LookupError,
 )
+
+
+def image_reason(response, form, field):
+    """Give a refused image upload's page the reason its image was refused.
+
+    An image over the size limit is ``image_too_large``, with the limit and
+    the file's size in bytes; a file that is not a supported, bounded still
+    image is ``image_unsupported``. Any other refusal of the form keeps its
+    fields and codes only (#1403). Returns ``response``.
+    """
+    if form.has_error(field, "too_large"):
+        upload = form.files.get(form.add_prefix(field))
+        return with_reason(
+            response,
+            "image_too_large",
+            expected=MAX_IMAGE_BYTES,
+            actual=getattr(upload, "size", None),
+        )
+    if form.has_error(field, "unsupported_image"):
+        return with_reason(response, "image_unsupported")
+    return response
 
 
 def _error(error):
@@ -343,7 +365,9 @@ def _upload(request, service):
         or any(len(values) != 1 for _, values in request.POST.lists())
         or any(len(values) != 1 for _, values in request.FILES.lists())
     ):
-        raise unexpected_fields()
+        raise unexpected_fields(
+            request.POST, request.FILES, allowed=allowed | {"logo", *SLOTS}
+        )
     form = LogoUploadForm(request.POST, request.FILES)
     if form.is_valid():
         graphics = None
@@ -609,7 +633,9 @@ def branding_settings(request):
                 return _reviewed(request, service, actor, bundle_id)
         configuration = editable_configuration(service)
         if form is not None:
-            return _page(request, service, configuration, form, status=400)
+            return image_reason(
+                _page(request, service, configuration, form, status=400), form, "logo"
+            )
         form = LogoUploadForm(
             initial={"base_digest": configuration.active_configuration.digest}
         )

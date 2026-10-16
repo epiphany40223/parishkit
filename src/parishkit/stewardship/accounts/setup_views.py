@@ -46,7 +46,9 @@ def _closed(request, fields, query=frozenset()):
         or set(request.POST) - {*fields, "csrfmiddlewaretoken"}
         or any(len(values) != 1 for _, values in request.POST.lists())
     ):
-        raise unexpected_fields()
+        raise unexpected_fields(
+            request.POST, request.FILES, allowed={*fields, "csrfmiddlewaretoken"}
+        )
 
 
 def _checked(request, service, response, draft=None):

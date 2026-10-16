@@ -25,6 +25,7 @@ from .branding_views import (
     SIZE_FIELD_TEMPLATE,
     LogoForm,
     _error,
+    image_reason,
     media_root,
 )
 from .setup_drafts import save_section, view_draft
@@ -101,7 +102,9 @@ def setup_branding(request):
                 or any(len(values) != 1 for _, values in request.POST.lists())
                 or any(len(values) != 1 for _, values in request.FILES.lists())
             ):
-                raise unexpected_fields()
+                raise unexpected_fields(
+                    request.POST, request.FILES, allowed=allowed | {"logo"}
+                )
             version = expected_version(request.POST.get("version"))
             if version != draft.status.version:
                 raise stale_page()
@@ -163,6 +166,8 @@ def setup_branding(request):
             _context(draft, "branding") | {"form": form, "assets": assets},
             status=status,
         )
+        if status == 400:
+            image_reason(response, form, "logo")
         return _checked(request, service, response, draft)
     except ERRORS as error:
         return page_error(request, error, "branding", fallback=_error)

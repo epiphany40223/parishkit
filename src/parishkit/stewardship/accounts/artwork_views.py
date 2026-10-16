@@ -74,7 +74,14 @@ from .branding_staging import (
     staged_bundle,
 )
 from .branding_validation import validate_installation
-from .branding_views import ERRORS, _checked, _error, _retained, media_root
+from .branding_views import (
+    ERRORS,
+    _checked,
+    _error,
+    _retained,
+    image_reason,
+    media_root,
+)
 from .request_patch import build_candidate
 
 SALT = "stewardship-artwork-preview-v1-"
@@ -533,7 +540,11 @@ def artwork_upload(request, campaign_id, slot):
             or any(len(values) != 1 for _, values in request.POST.lists())
             or any(len(values) != 1 for _, values in request.FILES.lists())
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(
+                request.POST,
+                request.FILES,
+                allowed={"base_digest", "csrfmiddlewaretoken", "image"},
+            )
         form = ArtworkForm(request.POST, request.FILES, auto_id=f"id_{slot}_%s")
         reason = unavailable(campaign, slot)
         if reason is not None:
@@ -568,8 +579,10 @@ def artwork_upload(request, campaign_id, slot):
                 return _reviewed(
                     request, service, actor, configuration, campaign, change
                 )
-        return _page(
-            request, service, configuration, campaign, {slot: form}, status=400
+        return image_reason(
+            _page(request, service, configuration, campaign, {slot: form}, status=400),
+            form,
+            "image",
         )
     except ERRORS as error:
         return _error(error)

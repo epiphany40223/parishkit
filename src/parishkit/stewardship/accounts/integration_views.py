@@ -367,6 +367,7 @@ def _refuse_drive_in_local():
                 "The local laptop environment never reaches Google Drive; its "
                 "backups stay inside the VM."
             ),
+            reason="drive_not_in_local",
         )
 
 
@@ -375,13 +376,11 @@ def _test_access(request, configuration, actor):
 
     Only the page's own fields may be posted; ``queue_probe`` does the rest.
     """
-    if set(request.POST) - {
-        "action",
-        "csrfmiddlewaretoken",
-        "target",
-        "base_digest",
-    } or any(len(values) != 1 for _, values in request.POST.lists()):
-        raise unexpected_fields()
+    allowed = {"action", "csrfmiddlewaretoken", "target", "base_digest"}
+    if set(request.POST) - allowed or any(
+        len(values) != 1 for _, values in request.POST.lists()
+    ):
+        raise unexpected_fields(request.POST, allowed=allowed)
     queue_probe(configuration, actor, request.POST.get("target", ""))
     return HttpResponseRedirect(request.path)
 
@@ -413,6 +412,7 @@ def queue_probe(configuration, actor, entered):
             ),
             link=reverse("admin:integration_settings", args=["google_workspace"]),
             link_label=LABELS["google_workspace"],
+            reason="workspace_mail_missing",
         )
     entered = entered.strip()
     if not entered and "backup" not in records:
@@ -423,6 +423,7 @@ def queue_probe(configuration, actor, entered):
                 "off-site copies into Google Drive folder link, then choose Test "
                 "access."
             ),
+            reason="drive_folder_missing",
         )
     try:
         folder = folder_id_from_url(
@@ -436,6 +437,7 @@ def queue_probe(configuration, actor, entered):
                 "browser address bar or from Share, then Copy link. It starts "
                 "with https://drive.google.com/drive/folders/."
             ),
+            reason="drive_folder_link_invalid",
         ) from None
     return request_probe(
         actor.identity,

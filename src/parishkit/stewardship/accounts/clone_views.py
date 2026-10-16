@@ -23,7 +23,11 @@ from parishkit.stewardship.campaigns.work_locks import (
 from parishkit.stewardship.jobs.campaign_mail_values import document_parish
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.refusals import expired_preview, stale_page
+from parishkit.stewardship.web.refusals import (
+    expired_preview,
+    stale_page,
+    with_reason,
+)
 
 from . import admin_navigation, setup_help
 from .admin_editing import confirm, error_response, principal, sign_preview
@@ -101,7 +105,13 @@ def _preview(
                 code="not_parish_zone",
             ),
         )
-        return _page(request, source, form, schedules, seed, status=400)
+        # The refusal log names both zones (#1403): each is a catalog zone.
+        return with_reason(
+            _page(request, source, form, schedules, seed, status=400),
+            "campaign_zone_not_parish",
+            expected=parish["timezone"],
+            actual=values["timezone"],
+        )
     base = service.store.active()
     if base is None or base.digest != configuration.active_configuration.digest:
         raise StaleRecordError("The applied configuration changed.")
