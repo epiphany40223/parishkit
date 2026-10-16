@@ -89,20 +89,21 @@ On the first Admin login, the wizard collects what the system needs to run
 and let Admins sign in, and nothing about a campaign, before making the system
 configured ([#142](https://github.com/epiphany40223/parishkit/issues/142)):
 
-1. Parish name, website URL, optional HTTPS online giving URL, IANA timezone,
-   US main phone, and logo.
-2. The [users](#portal-user-management) who may sign in, while preserving
+1. Parish name, website URL, optional HTTPS online giving URL, IANA timezone
+   and US main phone.
+2. Google Workspace email service-account/delegated mailbox, sender/reply
+   address, optional From name, Testing recipient, and test delivery.
+3. Optional Slack token/channel and test notification. The channel ID field
+   is shown, and required, only while Slack notifications are enabled.
+4. The parish logo.
+5. The [users](#portal-user-management) who may sign in, while preserving
    the bootstrap Administrator: email addresses listed under Administrator,
    Staff and Ministry leader. Each address becomes one user with the highest
    role it is listed under, Named by its local part until renamed on the
    Users page. Access is by address only; no list grants a whole domain.
-3. ParishSoft API key replacement, expected organization, connectivity check,
+6. ParishSoft API key replacement, expected organization, connectivity check,
    and a complete staged source load.
-4. Google Workspace email service-account/delegated mailbox, sender/reply
-   address, optional From name, Testing recipient, and test delivery.
-5. Optional Slack token/channel and test notification. The channel ID field
-   is shown, and required, only while Slack notifications are enabled.
-6. Exact preview/readiness summary and final confirmation.
+7. Exact preview/readiness summary and final confirmation.
 
 The campaign is created afterwards, from Home, by
 [Create the campaign](#create-the-campaign). The wizard has no campaign
@@ -117,20 +118,26 @@ afterwards in Parish settings.
 
 The wizard presents these as one ordered sequence of pages, defined once in
 code. The Parish profile comes first, so the administrator starts by
-describing their own parish. The credential pages follow, each immediately
-after the public settings its staging depends on (outgoing mail and Testing
-recipient for Google Workspace, Slack settings for the Slack token). Like
-[secret replacement](#parish-and-integration-configuration), they require
-fresh Google authentication (a sign-in less than five minutes old); an older
-sign-in is offered "Confirm with Google", which keeps the setup, so the order
-does not need to race that window. The pages mention that rule only when the
-sign-in is already older
-([page help](../ui-conventions/spec.md#page-help)). The source load, logos and administrative
-access follow, then review, the email and Slack tests and the final
-confirmation. Every page shows a compact progress stepper: the current step by
-number and name, the count of completed steps and a slim track (each segment
-names its step and status on hover; the track is hidden from assistive
-technology because the list says the same), with the full ordered list (each
+describing their own parish. The Google Workspace and Slack credential pages
+follow, each immediately after the public settings its staging depends on
+(outgoing mail and Testing recipient for Google Workspace, Slack settings for
+the Slack token), then Parish logos and Administrative access. ParishSoft
+connection and Load parish data come last before review, next to each other
+([#1353](https://github.com/epiphany40223/parishkit/issues/1353)): the load
+can take a few minutes, so the rest of setup is done before the wait, and a
+load that fails on a wrong key or organization is one step after the page
+that fixes it. No page before review needs the loaded data. Like
+[secret replacement](#parish-and-integration-configuration), the credential
+pages require fresh Google authentication (a sign-in less than five minutes
+old); an older sign-in is offered "Confirm with Google", which keeps the
+setup, so the order does not need to race that window. The pages mention that
+rule only when the sign-in is already older
+([page help](../ui-conventions/spec.md#page-help)). Review, the email and
+Slack tests and the final confirmation follow the load. Every page shows a
+compact progress stepper: the current step by number and name, the count of
+completed steps and a slim track (each segment names its step and status on
+hover; the track is hidden from assistive technology because the list says
+the same), with the full ordered list (each
 applicable step named as completed, current, not done, optional or not yet
 available with the reason) in a collapsed disclosure. Navigation is
 conventional: completed steps and the first unfinished required step are
@@ -976,16 +983,16 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `error_page` | _error title_ | (outside the menu) | Administrator, Staff, Ministry leader | _error title_ (e.g. Check your entries, This information changed, Access unavailable, Page unavailable, Page not found, Confirm it's you) | (any Admin URL that fails) | (same) | Object-named (exception); offers a way back to the page or Home. |
 | `setup` | Initial setup | Setup stepper | Administrator | (same) | `/admin/setup` | `/admin/setup/` |  |
 | `setup_step_parish` | Parish profile | Setup stepper | Administrator | (same) | `/admin/setup/parish` | `/admin/setup/parish/` |  |
-| `setup_credential_parishsoft` | ParishSoft connection | Setup stepper | Administrator | Setup credential: ParishSoft (stepper: ParishSoft connection) | `/admin/setup/credentials/parishsoft` | `/admin/setup/credentials/parishsoft/` |  |
 | `setup_step_mail` | Outgoing email settings | Setup stepper | Administrator | (same) | `/admin/setup/mail` | `/admin/setup/mail/` |  |
 | `setup_step_testing` | Testing recipient | Setup stepper | Administrator | (same) | `/admin/setup/testing` | `/admin/setup/testing/` |  |
 | `setup_credential_google_workspace` | Google Workspace connection | Setup stepper | Administrator | Setup credential: Google Workspace mail (stepper: Google Workspace connection) | `/admin/setup/credentials/google_workspace` | `/admin/setup/credentials/google_workspace/` |  |
 | `setup_step_slack` | Slack notifications (optional) | Setup stepper | Administrator | (same) | `/admin/setup/slack` | `/admin/setup/slack/` |  |
 | `setup_credential_slack` | Slack connection | Setup stepper | Administrator | Setup credential: Slack (stepper: Slack connection) | `/admin/setup/credentials/slack` | `/admin/setup/credentials/slack/` |  |
-| `setup_source` | Load parish data | Setup stepper | Administrator | (same) | `/admin/setup/source` | `/admin/setup/source/` |  |
-| `setup_source_progress` | Loading parish data | Setup stepper | Administrator | (same) | `/admin/setup/source/<task>` | `/admin/setup/source/<task>/` |  |
 | `setup_branding` | Parish logos | Setup stepper | Administrator | Parish logo | `/admin/setup/branding` | `/admin/setup/branding/` |  |
 | `setup_step_access` | Administrative access | Setup stepper | Administrator | (same) | `/admin/setup/access` | `/admin/setup/access/` |  |
+| `setup_credential_parishsoft` | ParishSoft connection | Setup stepper | Administrator | Setup credential: ParishSoft (stepper: ParishSoft connection) | `/admin/setup/credentials/parishsoft` | `/admin/setup/credentials/parishsoft/` |  |
+| `setup_source` | Load parish data | Setup stepper | Administrator | (same) | `/admin/setup/source` | `/admin/setup/source/` |  |
+| `setup_source_progress` | Loading parish data | Setup stepper | Administrator | (same) | `/admin/setup/source/<task>` | `/admin/setup/source/<task>/` |  |
 | `setup_preview` | Review | Setup stepper | Administrator | Setup preview (stepper: Review) | `/admin/setup/preview` | `/admin/setup/preview/` |  |
 | `setup_mail` | Test email | Setup stepper | Administrator | Setup email test (stepper: Test email) | `/admin/setup/mail-test` | `/admin/setup/mail-test/` |  |
 | `setup_notification` | Test Slack | Setup stepper | Administrator | Setup Slack test (stepper: Test Slack) | `/admin/setup/slack-test` | `/admin/setup/slack-test/` |  |
