@@ -218,9 +218,15 @@ LEDGER = {
     "family_email_progress": command("send progress"),
     "family_email_progress_status": command("send progress"),
     "family_email_sends": command("send history"),
-    # Its read (#463); the pause, resume and resolution previews and their
-    # confirmation are still owed.
-    "delivery_control": command("send controls", owed="PR 7b"),
+    # Its read, and its pause, resume and resolution previews and their
+    # confirmation (PR 7b, #463).
+    "delivery_control": command(
+        "send controls",
+        "send pause-preview",
+        "send resume-preview",
+        "send resolve-preview",
+        "send confirm",
+    ),
     # The Family portal switch (PR 7a); the delivery controls above are PR 7b.
     "family_portal": command("portal maintenance show", "portal maintenance set"),
     # Testing sends.

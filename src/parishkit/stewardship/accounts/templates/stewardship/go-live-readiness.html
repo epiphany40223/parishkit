@@ -2,8 +2,8 @@
 {% block title %}{% translate "Go-live readiness" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Go-live readiness" %}</h1>
+{% aboutpage "go-live-readiness" %}<p>{% translate "Check that the campaign is ready, see how much mail going live would send right away, and delete the Testing data before going live." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
-<p>{% translate "Check that the campaign is ready, see how much mail going live would send right away, and delete the Testing data before going live." %}</p>
 {# Refresh readiness preview re-reads this region in place (ui-v1.js, a[data-in-place], #519). #}
 <div id="readiness-preview" data-in-place-region>
 <p>{% translate "As of" %} <time data-local-instant datetime="{{ preview.observed_at|instant }}">{{ preview.observed_at|instant }}</time></p>

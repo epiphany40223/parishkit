@@ -27,7 +27,7 @@ def components(context, admin):
         for index in range(ROWS)
     ]
 
-    def page(paging):
+    def page(paging, rows=rows):
         """Render the list with ``paging``'s table choices."""
         table = paginate(rows, paging, sorting=SORTING)
         return table, (
@@ -39,7 +39,7 @@ def components(context, admin):
                     "admin_chrome": admin,
                     "table": table,
                     "rows": rows,
-                    "families": ROWS,
+                    "families": len(rows),
                     "eligible": 1200,
                 },
             ),
@@ -53,4 +53,6 @@ def components(context, admin):
         f"{PATH}?{first.next_query}": second,
         # The Family heading's own address: Z-A, since A-Z is the default.
         f"{PATH}?{first.heading_query('family')}": reversed_,
+        # Every Family can open the form: the good-news empty state (#227).
+        "/source-form-none": page({"size": "25"}, rows=[])[1],
     }

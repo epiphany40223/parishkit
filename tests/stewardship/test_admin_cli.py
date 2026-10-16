@@ -83,6 +83,13 @@ def test_the_catalog_lists_every_command_with_its_flags():
     }
     refresh = {"refresh start", "refresh status"}
     portal = {"portal maintenance show", "portal maintenance set", "send controls"}
+    # Pause and resume mail's controls (PR 7b, #463).
+    portal |= {
+        "send pause-preview",
+        "send resume-preview",
+        "send resolve-preview",
+        "send confirm",
+    }
     configuration = {
         "files list",
         "files delete",
@@ -267,6 +274,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "export archive",
                 "integration confirm",
                 "integration key finish-switching",
+                "send confirm",
             }
         ), name
         # A prompting command, and only one, takes --yes. Other branches add
@@ -781,6 +789,8 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_export_family_test_names",
         "admin_cmd_test_families",
         "admin_cmd_portal_maintenance_set",
+        # send confirm: Pause and resume mail's Confirm (PR 7b, #463).
+        "admin_cmd_send_confirm",
         "admin_cmd_files_delete",
         "admin_cmd_files_rename",
         "admin_cmd_parish_confirm",

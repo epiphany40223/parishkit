@@ -1818,6 +1818,27 @@
     }
     if (!anywhere) syncControls(parsed);
     if (owner?.hasAttribute("data-in-place-filters")) syncFilters(parsed);
+    // A report's filters refused at a field (#1332) are drawn again with
+    // that field marked, but the filter form keeps its element and the
+    // values typed (syncControls), so the marks and messages are copied
+    // onto it, as a refused Review's are; its message lines are reserved,
+    // so nothing moves. The summary is already in the region
+    // (placeSummary) and takes focus below, straight from the control.
+    // An answer that is not a refusal clears every server mark it does
+    // not repeat: the reader fixed the range at its other end.
+    const filterForm = document.getElementById("table-filters");
+    const freshFilters = parsed.getElementById("table-filters");
+    if (!anywhere && filterForm instanceof HTMLFormElement && freshFilters) {
+      if (refused) showFieldErrors(filterForm, parsed, {focus: false});
+      else {
+        filterForm.querySelectorAll('[data-field-error=""][id]').forEach((node) => {
+          const twin = freshFilters.querySelector(`#${CSS.escape(node.id)}`);
+          if (node.hasAttribute("data-field-error") && twin?.getAttribute("aria-invalid") !== "true") {
+            clearFieldError(node);
+          }
+        });
+      }
+    }
     // Every swap and the synced hidden version are in place: a Review that
     // was applied makes its values the saved ones (the change gate, #921).
     gateChanges();
@@ -4111,7 +4132,10 @@
   };
   // Forms whose edits clear their pane's refusal: one listener each.
   const paneWatched = new WeakSet();
-  const showFieldErrors = (form, parsed) => {
+  // ``focus: false`` leaves focus to the caller when the answer has no
+  // summary of its own (a refused in-place filter Apply, whose summary is
+  // already in the swapped region).
+  const showFieldErrors = (form, parsed, {focus = true} = {}) => {
     const fresh = parsed.getElementById(form.id);
     const line = paneLine(form);
     // A pane line's earlier refusal, and the marks it described, give way.
@@ -4185,7 +4209,7 @@
       return;
     }
     if (!summary) {
-      form.querySelector("[aria-invalid=true]")?.focus();
+      if (focus) form.querySelector("[aria-invalid=true]")?.focus();
       return;
     }
     const placed = document.importNode(summary, true);

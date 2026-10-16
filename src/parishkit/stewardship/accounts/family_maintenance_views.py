@@ -13,6 +13,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.web.refusals import with_default_code
 
 from . import family_maintenance
 from .admin_editing import error_response, principal
@@ -62,6 +63,8 @@ def _page(request, *, message="", error=None):
         # The refusal page is this page, safe to show as it is (not the
         # generic "Invalid request." the middleware draws for other 400s).
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return response
 
 

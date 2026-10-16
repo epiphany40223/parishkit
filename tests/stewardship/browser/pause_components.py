@@ -6,6 +6,8 @@ from uuid import UUID
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts.delivery_control_commands import (
+    CAUTIONS,
+    COVERAGE_LABELS,
     resolution_choices,
 )
 
@@ -30,6 +32,9 @@ def components(context, admin):
         "admin_chrome": admin,
         "available": True,
         "fresh": True,
+        # The preview panels' cautions and coverage labels, as page() gives.
+        "cautions": CAUTIONS,
+        "coverage_labels": COVERAGE_LABELS,
         "inventory": inventory,
         # A sender check is required (#1288) and has not passed.
         "health": {"ready": False, "required": True, "trouble": "test_failed"},

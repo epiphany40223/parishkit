@@ -117,8 +117,11 @@ BUTTON = {
     "button-min-height": "44px",
 }
 
+# The soft shadow under a panel; the maintenance page's card draws it too.
+SHADOW = {"shadow": "0 1px 2px rgb(16 24 40 / 5%), 0 4px 16px rgb(16 24 40 / 6%)"}
+
 # Every custom property ui-v1.css declares on :root from this module.
-CSS_PROPERTIES = {**COLORS, **RADII, **FONTS, **BUTTON}
+CSS_PROPERTIES = {**COLORS, **RADII, **FONTS, **BUTTON, **SHADOW}
 
 # The rem base for email, which has no root font size to inherit.
 REM_PX = 16

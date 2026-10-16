@@ -55,7 +55,10 @@ from parishkit.stewardship.campaigns.work_locks import (
     work_transaction,
 )
 from parishkit.stewardship.storage import StaleRecordError
-from parishkit.stewardship.web.refusals import stale_page
+from parishkit.stewardship.web.refusals import (
+    stale_page,
+    with_default_code,
+)
 
 from . import admin_navigation, setup_help
 from .admin_editing import (
@@ -182,6 +185,8 @@ def _page(request, configuration, form, *, status=200, receipt=None):
     )
     if status != 200:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return response
 
 

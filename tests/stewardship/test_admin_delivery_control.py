@@ -318,12 +318,18 @@ def test_the_catalog_entry():
     )
 
 
-def test_the_ledger_covers_the_page_with_its_changes_owed():
-    """The page's read is covered; its previews and confirmation are PR 7b's."""
+def test_the_ledger_covers_the_page():
+    """The page's read, its previews and their confirmation (PR 7b)."""
     entry = LEDGER["delivery_control"]
     assert entry.kind == "command"
-    assert entry.detail == ("send controls",)
-    assert entry.owed == "PR 7b"
+    assert entry.detail == (
+        "send controls",
+        "send pause-preview",
+        "send resume-preview",
+        "send resolve-preview",
+        "send confirm",
+    )
+    assert entry.owed is None
 
 
 @pytest.mark.parametrize(

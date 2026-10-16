@@ -35,6 +35,34 @@ RESOLVABLE_LABELS = {
     "daily_digest": _("Daily Admin reports"),
     "weekly_digest": _("Weekly Admin reports"),
 }
+# The preview panels' cautions and a resolution's coverage labels. The page
+# draws them and ``pk-admin send confirm`` prints them at its prompt (#463),
+# so the two say the same thing.
+CAUTIONS = {
+    "pause": _(
+        "Email may keep going out while you read this. Confirming holds every "
+        "unsent live email at that moment and records the counts. If the "
+        "campaign settings or your permissions change first, you need a new "
+        "preview."
+    ),
+    "resume": _(
+        "When you confirm, the test email check, the email counts, the "
+        "campaign dates and your sign-in are checked again. If any of them "
+        "changed, nothing is released and you need a new preview."
+    ),
+    "resolve": _(
+        "These counts are checked again when you confirm. Other held types "
+        "and emails that may not have arrived stay as they are. The pause "
+        "ends only when no email is held or waiting for a decision on "
+        "whether it arrived."
+    ),
+}
+COVERAGE_LABELS = {
+    "items": _("Follow-up items covered"),
+    "daily_ranges": _("Daily report ranges covered"),
+}
+# The longest delivery-control reason, in characters.
+REASON_LIMIT = 1024
 
 
 class SenderCheckRequired(StaleRecordError):
@@ -298,6 +326,8 @@ def page(request, service, campaign_id):
         return {
             "campaign": campaign,
             "fresh": fresh,
+            "cautions": CAUTIONS,
+            "coverage_labels": COVERAGE_LABELS,
             **controls(campaign, runtime),
             "test_template": ContentVersion.objects.filter(
                 configuration_id=runtime.active_configuration_id,
@@ -369,7 +399,7 @@ def _preview(
     if (
         type(reason) is not str
         or not reason.strip()
-        or len(reason) > 1024
+        or len(reason) > REASON_LIMIT
         or "\x00" in reason
     ):
         raise ValueError("Enter a delivery-control reason of at most 1,024 characters.")
@@ -448,8 +478,14 @@ def _binding(token):
     return value
 
 
-def confirm(request, service, campaign_id, *, token):
-    """Commit control and holds together; current authority still gates exact replay."""
+def confirm(request, service, campaign_id, *, token, record=None):
+    """Commit control and holds together; current authority still gates exact replay.
+
+    ``record(command)``, when given, runs in the same transaction right after
+    a new control is recorded, so ``pk-admin send confirm`` records its own
+    command event with it (#463); an exact replay returns the original
+    control and calls nothing. The page passes none.
+    """
     binding = _binding(token)
     with campaign_transaction(campaign_id, correlation_id=current_correlation()) as (
         campaign,
@@ -535,7 +571,7 @@ def confirm(request, service, campaign_id, *, token):
             raise StaleRecordError("Delivery inputs changed; review a new preview.")
         if binding["action"] == "pause":
             values["inventory"] = current_inventory
-        return DeliveryControlCommand.objects.create(
+        command = DeliveryControlCommand.objects.create(
             id=key,
             **values,
             control_id=(
@@ -550,3 +586,6 @@ def confirm(request, service, campaign_id, *, token):
             authenticated_at=require_fresh(request),
             correlation_id=current_correlation(),
         )
+        if record is not None:
+            record(command)
+        return command

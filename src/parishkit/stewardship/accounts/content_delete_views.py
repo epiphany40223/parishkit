@@ -66,10 +66,11 @@ def _chosen(parameters):
     The form carries only its CSRF token, its base version and the chosen
     ``revision_id`` values; anything else is a stale or crafted page.
     """
-    if set(parameters) - {"csrfmiddlewaretoken", "base_digest", "revision_id"} or any(
+    allowed = {"csrfmiddlewaretoken", "base_digest", "revision_id"}
+    if set(parameters) - allowed or any(
         len(values) != 1 for name, values in parameters.lists() if name != "revision_id"
     ):
-        raise unexpected_fields()
+        raise unexpected_fields(parameters, allowed=allowed, multiple={"revision_id"})
     values = parameters.getlist("revision_id")
     if not values:
         raise UserFacingError(
@@ -124,7 +125,7 @@ def content_delete(request, campaign_id):
         actor = principal(request, service)
         filters(request.GET, allowed=set())
         if request.FILES:
-            raise unexpected_fields()
+            raise unexpected_fields(request.FILES, allowed=())
         identifiers = _chosen(request.POST)
         listing = reverse("admin:content_catalog")
         with work_transaction():

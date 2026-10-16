@@ -17,7 +17,11 @@ from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.presentation import parse_us_phone, phone
-from parishkit.stewardship.web.refusals import UserFacingError, stale_page
+from parishkit.stewardship.web.refusals import (
+    UserFacingError,
+    stale_page,
+    with_default_code,
+)
 
 from . import admin_navigation
 from .admin_editing import (
@@ -199,6 +203,8 @@ def _form_page(request, configuration, form, *, status=200):
     )
     if status != 200:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return response
 
 
@@ -213,10 +219,16 @@ def _initial_form(configuration):
 
 
 def _shown(name, value):
-    """Preview telephone and date-format changes the way people will read them."""
+    """A setting's value in words for the review's "Field: old → new" line.
+
+    Telephone and date-format values are shown the way people will read
+    them. The online giving address is the only setting that can be empty
+    (the website is required); unset, it reads "Not set", as in Campaign
+    settings' compact review, so the line never has an empty side.
+    """
     if name == "date_format":
         return dict(dates.CHOICES).get(value, value)
-    return phone(value) if name == "phone" else value
+    return (phone(value) if name == "phone" else value) or _("Not set")
 
 
 def review_change(service, actor, configuration, form):
@@ -227,8 +239,9 @@ def review_change(service, actor, configuration, form):
     Only changed profile values are reviewed; no change, or a resulting
     document the configuration refuses, adds the page's refusal to the form
     and returns None. The review's ``changes`` are drawn for people
-    (``_shown``); ``values`` maps each changed field to its stored
-    ``(before, after)``, None for an unset value.
+    (``_shown``), one compact-review line each (#1356); ``values`` maps
+    each changed field to its stored ``(before, after)``, None for an unset
+    value, which the command line reports.
     """
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
         # Refused in the review dialog with the standard explanation.

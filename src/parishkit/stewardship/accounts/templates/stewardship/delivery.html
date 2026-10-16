@@ -131,7 +131,7 @@ removes it, and that must not move the button.{% endcomment %}
 <div id="delivery-evidence" data-in-place-region>
 <h2>{% translate "Admin evidence and decisions" %}</h2>
 {% for note in notes %}<section class="panel"><p>{{ note.action|delivery_label }} · <time datetime="{{ note.created_at|instant }}" data-local-instant>{{ note.created_at|instant }}</time></p><p>{{ note.evidence_note }}</p></section>
-{% empty %}<p>{% translate "No Admin evidence on this page." %}</p>{% endfor %}
+{% empty %}<p>{% if previous_query or next_query %}{% translate "No Admin evidence on this page. Use Previous page or Next page to see the rest of this email's history." %}{% else %}{% translate "No Admin evidence yet. Each note or decision saved for this email is listed here." %}{% endif %}</p>{% endfor %}
 <nav aria-label="{% translate 'Evidence and attempt history pages' %}">{% if previous_query %}<a href="?{{ previous_query }}#delivery-evidence" data-in-place="evidence-previous" data-in-place-fallback="evidence-next" data-in-place-message="{% translate 'Previous page shown.' %}">{% translate "Previous page" %}</a>{% endif %} {% if next_query %}<a href="?{{ next_query }}#delivery-evidence" data-in-place="evidence-next" data-in-place-fallback="evidence-previous" data-in-place-message="{% translate 'Next page shown.' %}">{% translate "Next page" %}</a>{% endif %}</nav>
 </div>
 {% endblock %}

@@ -241,6 +241,7 @@ ACTIVITY_TYPES = {
         "admin_cmd_delivery_resend",
         "admin_cmd_delivery_refusal_clear",
         "admin_cmd_delivery_bounce_report",
+        "admin_cmd_send_confirm",
         "submission_receipt_skipped",
         *built_types("campaign_", "pause", "resume", "first_delivery"),
         *built_types("family_mail_test_"),

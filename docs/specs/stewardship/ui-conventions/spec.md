@@ -725,10 +725,13 @@ never scrolls to show it (Administrator, pk-local review of
   never move the form or the status line. The form has an id, so a file
   chosen while it is redrawn is said not to be kept.
 - **Review dialog: Parish settings (#750).** Parish settings reviews in the
-  [review dialog](#review-dialog), titled "Review Parish settings": each
-  changed setting with its current and proposed value, and a new
-  timezone's note. Its form is an in-place region, redrawn after Apply at
-  the applied version, with the status line under it. A field's refusal
+  [review dialog](#review-dialog) as a compact review (#1356): its button
+  reads **Save** and the dialog, "Save the Parish settings?", lists one
+  "Setting: old → new" line per changed setting (every Parish setting is
+  short, so no change keeps a full review), with a new timezone's note; an
+  unset online giving address reads "Not set". Its form is an in-place
+  region, redrawn after Apply at the applied version, with the status line
+  under it. A field's refusal
   (the Parish website's included) stays on the form; a stale page or an
   out-of-date preview is refused in the dialog, and the form is not
   redrawn, so it is refused again until the page is reloaded.
@@ -1008,6 +1011,23 @@ The server stays the authority: it checks every save, and its refusal is
 shown at the field as above, even when the browser would have allowed the
 value (a wrong computer clock, for example).
 
+A report's filters follow the same rule (#1332). A filter the server
+refuses at one field (a request built by hand, or a browser whose check did
+not run) draws the report again, answered 400: the filters show the values
+sent, with the error at that field and in the summary, and the results are
+those for no filters, as Campaign comparison shows its current day for a
+refused day. A refusal no field can show (an unknown or repeated field, a
+choice no form offers, a sort or page size the table does not accept) keeps
+the report's error page. A range out of order is refused at its end with
+both ends marked, and its message is shown once, after them, in a line
+the form reserves so that a refusal shown in place moves nothing. An
+in-place Apply keeps the filter form and what was typed, and takes the
+marks and message from the answer. The server's mark clears, with its
+message and summary item, on the first edit of a field it marks (either
+end of a range), or when an in-place Apply is answered without it.
+**Shared code.** `web/filter_errors.py` (`FilterError`), the `filter_mark`
+and `filter_line` template tags; first use: Financial stewardship.
+
 A file field marked `data-max-bytes` (with `data-max-bytes-message`, the
 server's own words) is refused at the field as soon as a file over that
 size is chosen, and the form is not sent until a smaller file is chosen; a
@@ -1152,7 +1172,7 @@ the campaign wizard in #1404 PR 4).
   that would move the pane's controls. The line clears on the form's next
   edit or accepted Review (#1410).
 - **Opening the dialog.** An accepted Review opens the dialog. Its title
-  names the change ("Review Parish settings") and labels the dialog
+  names the change ("Review campaign settings") and labels the dialog
   (`aria-labelledby`); focus moves to that title, never to Apply, so the
   reader hears what is being reviewed before reaching the buttons. Its body
   shows the review the feature specification describes: a full review (the
@@ -1304,10 +1324,11 @@ Share options, Campaign images, Parish logos, Parish settings, Create the
 campaign and No-reminders WorkGroup use the dialog; Create the campaign, New
 user and No-reminders WorkGroup are confirmations under #1356, and so are a
 one-time New scheduled email, Import selected with nobody skipped and
-Campaign images' Remove this image. Edit user, Share options and a small
-Campaign settings change are compact reviews under #1356; Parish settings
-becomes one under #1356 later, and an Integration settings edit when #750
-reaches it. The in-place review panel of #532 is retired
+Campaign images' Remove this image. Edit user, Share options, a small
+Campaign settings change and Parish settings are compact reviews under the
+same issue, and an Integration settings edit becomes one when #750 reaches
+it.
+The in-place review panel of #532 is retired
 ([#1429](https://github.com/epiphany40223/parishkit/issues/1429),
 [in-place controls](#in-place-controls)); the other editors use separate
 Review and Change status pages.
@@ -2003,14 +2024,20 @@ The portal and the emails share one visual style
   fallback; only the vendored chart tooltip rules are exempt. The setup
   wizard's Back and Continue buttons take the shared button shape. Email
   components read the same module and inline the values, because mail
-  programs cannot load the stylesheet.
+  programs cannot load the stylesheet. So does the maintenance page shown
+  while the site is updating, which loads no stylesheet: it inlines the
+  light page, panel, ink and muted colours, the panel's corners and shadow,
+  and the sans font stack.
 - **Buttons:** templates draw every button, and every link styled as one,
   with the `{% button %}` tag. Its variants are primary (the default),
   secondary, large and link. It renders the stylesheet's classes and keeps
   each attribute in the order the template gives it, so in-place controls
   keep their `data-` attributes. A guard test counts raw button markup in
   every template against a list of reviewed exceptions that may only
-  shrink.
+  shrink. A button is secondary only when it is drawn so (the secondary
+  variant, or the `button-secondary` class on a button a script builds),
+  never because of where it sits or what attributes it carries, and a test
+  holds the stylesheet's secondary rule to that class alone.
 - **Email buttons:** `email_button()` renders the same primary and
   secondary buttons for email: a one-cell table with inline styles from the
   tokens, `bgcolor`, and Outlook padding. The label is real text, so the
