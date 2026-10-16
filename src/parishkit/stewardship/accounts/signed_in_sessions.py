@@ -23,6 +23,7 @@ from django.db.models import Exists, OuterRef, Subquery
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.web.tables import Sorting
 
+from .admin_session_store import stored_key
 from .automation_models import AutomationLogin
 from .models import PortalSession
 from .policy_models import AdminRevocation, PortalUser
@@ -43,6 +44,20 @@ def _live(query, now):
         # recovery; a session issued before it is already refused.
         query = query.filter(created_at__gt=latest.created_at)
     return query
+
+
+def live_principal(session):
+    """The ``PortalUser`` id of ``session`` while it is live, else None.
+
+    Read-only: it renews and revokes nothing. The refusal log (#1403) names
+    the signed-in user of a request refused before its view ran admission,
+    such as a CSRF failure, by the same live rules as this page.
+    """
+    key = stored_key(session)
+    if key is None:
+        return None
+    query = PortalSession.objects.filter(session_id=key)
+    return _live(query, database_now()).values_list("principal_id", flat=True).first()
 
 
 def live_sessions(now, current_id):

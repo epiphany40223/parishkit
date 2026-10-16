@@ -32,8 +32,8 @@ when a limit stops it, the process log records a WARNING ``task_timed_out``
 (``refusal_log_write``) with the limit and the elapsed seconds, after the
 refusal's own line.
 
-Nothing calls this yet; the Admin refusal middleware and the command line
-do in later changes.
+The Admin refusal middleware (``web.refusal_log``) calls it for refused
+Admin page requests; the command line will in a later change.
 """
 
 import json
@@ -84,14 +84,20 @@ _INSERT = (
 )
 
 
+def _class(error):
+    """``error``'s class, when ``error`` is an exception or already a class."""
+    return error if isinstance(error, type) else type(error)
+
+
 def exception_class_of(error):
     """An exception type's own class name in lowercase snake form.
 
     ``ValueError`` is ``value_error`` and ``HTTPError`` is ``http_error``.
-    Never its module or text; a name that does not fit the identifier shape
-    afterwards is dropped by ``refusal_context.clean``.
+    ``error`` is the exception or its class. Never its module or text; a
+    name that does not fit the identifier shape afterwards is dropped by
+    ``refusal_context.clean``.
     """
-    name = type(error).__name__
+    name = _class(error).__name__
     name = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", name)
     return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name).lower()
 
@@ -102,7 +108,11 @@ def level_of(reason, error=None):
     INFO for everything else, a step-up request included."""
     if reason in WARNING_REASONS:
         return "WARNING"
-    if reason == "unclassified" and isinstance(error, PermissionError):
+    if (
+        reason == "unclassified"
+        and error is not None
+        and issubclass(_class(error), PermissionError)
+    ):
         return "WARNING"
     return "INFO"
 
@@ -114,10 +124,10 @@ class RefusalRecord:
     ``actor_id`` is the signed-in user's ``PortalUser`` id, or None for an
     anonymous request (which gets the process-log line only). Exactly one of
     ``route`` (the resolved page name) and ``command`` (the pk-admin catalog
-    name) is expected. ``error`` is the refusing exception, if any: it is
-    never recorded, only used for the level and, for an unclassified
-    refusal, its class name. Every other value is checked and dropped when
-    it is not on the allow-list (``refusal_context.clean``).
+    name) is expected. ``error`` is the refusing exception, or only its
+    class, if any: it is never recorded, only used for the level and, for
+    an unclassified refusal, its class name. Every other value is checked
+    and dropped when it is not on the allow-list (``refusal_context.clean``).
     """
 
     reason: str
@@ -133,7 +143,7 @@ class RefusalRecord:
     actual: str | None = None
     unexpected_count: int | None = None
     mode: str | None = None
-    error: BaseException | None = None
+    error: BaseException | type | None = None
 
     def context(self):
         """The cleaned, allow-listed context for the line and the entry."""

@@ -148,8 +148,14 @@ def error_response(request, *, status):
 
 
 def csrf_failure(request, reason=""):
-    """Do not disclose the supplied origin, cookie, referer or framework reason."""
-    return error_response(request, status=403)
+    """Do not disclose the supplied origin, cookie, referer or framework reason.
+
+    The refusal log records the closed reason ``csrf_failed`` (#1403), never
+    Django's ``reason`` text.
+    """
+    response = error_response(request, status=403)
+    response.stewardship_reason = "csrf_failed"
+    return response
 
 
 def _in_networks(address, networks):

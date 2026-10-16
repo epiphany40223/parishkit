@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from django.core import signing
 from django.utils.translation import gettext_lazy as _
 
+from parishkit.stewardship.audit.refusal_context import REASONS
 from parishkit.stewardship.storage import StaleRecordError
 
 from .contracts import ErrorCode, FieldError, validation_response
@@ -48,6 +49,9 @@ class Refusal:
     link_label: str | None = None
     title: str | None = None
     page_fix: str | None = None
+    # The closed reason code the refusal log records (#1403;
+    # ``audit.refusal_context.REASONS``); never shown.
+    reason: str | None = None
 
     def as_dict(self):
         """JSON-safe fields for scripts; the link is a same-origin path."""
@@ -60,14 +64,30 @@ class Refusal:
         }
 
 
-class UserFacing:
+class TypedRefusal:
+    """Mixin for an exception that carries its own closed ``reason`` code.
+
+    Only these are read for a reason (``reason_of``): an arbitrary
+    exception's own ``reason`` attribute (a network error's, say) is never
+    trusted as one (#1403).
+    """
+
+    reason = None
+
+
+class UserFacing(TypedRefusal):
     """Mixin giving an exception a safe ``refusal`` to show the Admin.
 
     ``link`` must be a server-owned same-origin path (for example from
     ``reverse``); ``link_label`` names where it goes. ``title`` is the page's
     own heading, when the closed category's would mislead; ``page_fix`` the
     fix a POST's error page shows instead of ``fix`` (see ``Refusal``).
+    ``reason`` is the closed reason code the refusal log records (#1403),
+    the class's ``default_reason`` when not given; a new kind of refusal adds
+    its code to ``audit.refusal_context.REASONS``.
     """
+
+    default_reason = None
 
     def __init__(
         self,
@@ -78,16 +98,25 @@ class UserFacing:
         link_label=None,
         title=None,
         page_fix=None,
+        reason=None,
     ):
-        """Validate the fix link and keep the refusal's reviewed text."""
+        """Validate the fix link and reason, and keep the reviewed text."""
         if link is not None and (
             type(link) is not str or not link.startswith("/") or link.startswith("//")
         ):
             raise TypeError("A refusal link must be a same-origin path.")
         if (link is None) != (link_label is None):
             raise TypeError("A refusal link needs a label, and a label a link.")
+        reason = reason or self.default_reason
+        if reason is not None and reason not in REASONS:
+            raise TypeError("A refusal reason must be a closed reason code.")
         super().__init__(str(message))
-        self.refusal = Refusal(message, fix, link, link_label, title, page_fix)
+        self.refusal = Refusal(message, fix, link, link_label, title, page_fix, reason)
+
+    @property
+    def reason(self):
+        """The refusal's closed reason code, or None (see ``reason_of``)."""
+        return self.refusal.reason
 
 
 def refusal_text(error, *, page=False):
@@ -119,6 +148,20 @@ class UserFacingMissing(UserFacing, LookupError):
 class UserFacingDenied(UserFacing, PermissionError):
     """The action is not allowed in the current state (HTTP 403)."""
 
+    default_reason = "denied"
+
+
+class AccessDenied(TypedRefusal, PermissionError):
+    """A shared access check's refusal: no caller, or no capability (HTTP 403).
+
+    Raised by the Admin caller's own checks and ``admin_editing.principal``
+    in place of a bare ``PermissionError``, which it still is, so that the
+    refusal log records the fixed reason ``denied`` rather than
+    ``unclassified`` (#1403).
+    """
+
+    reason = "denied"
+
 
 class UserFacingGone(UserFacing, PermissionError):
     """A retired action or another campaign's address; it will not work again.
@@ -128,8 +171,10 @@ class UserFacingGone(UserFacing, PermissionError):
     that is not the current one. It is a ``PermissionError`` so any handler
     that does not know it still refuses (403); ``gone_response`` and the
     handlers that call it answer with the 410 page and its explanation,
-    never a sign-in prompt.
+    never a sign-in prompt. The refusal log records it as ``gone``, at INFO.
     """
+
+    default_reason = "gone"
 
 
 class UserFacingUnavailable(UserFacing, StaleRecordError):
@@ -166,6 +211,7 @@ def stale_page():
         fix=_(
             "Reload the page to see the latest version, then make your change again."
         ),
+        reason="stale_page",
     )
 
 
@@ -192,6 +238,7 @@ def unexpected_fields():
         fix=_("Reload the page, then try again."),
         page_fix=_("Open the page again, then try again."),
         title=_("This page is out of date"),
+        reason="unexpected_fields",
     )
 
 
@@ -214,6 +261,7 @@ def expired_preview(link=None):
         fix=_("Review the changes again, then confirm."),
         link=link,
         link_label=_("Review the changes again") if link else None,
+        reason="expired_preview",
     )
 
 
@@ -234,6 +282,56 @@ def load_preview(token, *, salt, link=None, max_age=None):
         )
     except signing.SignatureExpired:
         raise expired_preview(link) from None
+
+
+def reason_of(error):
+    """The closed reason code an exception carries for the refusal log, or None.
+
+    Only a ``TypedRefusal`` (the ``web.refusals`` types, ``AccessDenied``
+    and a missing fresh sign-in) carries its own; a tampered or foreign
+    signed value is ``bad_signature``. Anything else has none, and the log
+    records it as ``unclassified`` with its class name (#1403).
+    """
+    if isinstance(error, TypedRefusal) and error.reason in REASONS:
+        return error.reason
+    if isinstance(error, signing.BadSignature):
+        return "bad_signature"
+    return None
+
+
+def annotate(response, error):
+    """Carry ``error``'s reason and class on its refused response.
+
+    The refusal log middleware (``web.refusal_log``) reads both: the reason
+    names the refusal, and the class gives only its name and level. The
+    exception itself, and so its text, is not kept. Returns ``response``.
+    """
+    response.stewardship_reason = reason_of(error)
+    response.stewardship_exception_class = type(error)
+    return response
+
+
+# The marker on a request or response whose refusal its own code already
+# records (a refused sign-in, a refused automation session), so the refusal
+# log adds no second record (#1403).
+RECORDED = "stewardship_refusal_recorded"
+
+
+def mark_recorded(target):
+    """Mark a request or response as already recorded; returns ``target``."""
+    setattr(target, RECORDED, True)
+    return target
+
+
+# The marker on a response that refuses no input: a page its menu greys out
+# right now, opened directly (ui-conventions, "Unavailable menu pages").
+NOT_INPUT = "stewardship_refusal_not_input"
+
+
+def mark_not_input(response):
+    """Mark a response as no refusal of input; returns ``response``."""
+    setattr(response, NOT_INPUT, True)
+    return response
 
 
 def return_link(request):
