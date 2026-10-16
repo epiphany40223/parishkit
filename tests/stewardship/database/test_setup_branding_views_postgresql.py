@@ -1,5 +1,7 @@
 """Actual wizard logo upload, original-login private PNGs and terminal scrubbing."""
 
+import re
+
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 
@@ -8,7 +10,7 @@ from parishkit.stewardship.accounts.setup_models import SetupAttempt, SetupDraft
 
 from .auth_builders import signed_in
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
-from .test_branding_views_postgresql import media, upload  # noqa: F401
+from .test_branding_views_postgresql import browser_post, media, upload  # noqa: F401
 from .test_runtime_auth_grants_postgresql import web_login
 from .test_setup_views_postgresql import post, setup_http, started  # noqa: F401
 
@@ -80,3 +82,35 @@ def test_setup_logo_rejects_invalid_stale_and_extra_inputs_before_selection(requ
             assert post(browser, "/admin/setup/branding", values).status_code == status
         assert not BrandingBundle.objects.exists()
         assert not SetupDraftSection.objects.exists()
+
+
+def test_setup_logo_left_empty_is_not_refused_as_an_extra_field(request):
+    """A browser sends the logo input left empty (Save and continue with no
+    file chosen) as a part with an empty filename, which Django keeps as an
+    empty POST value (#1396). With no logo saved it is refused on the field,
+    not as an unexpected field; with one saved the step continues and keeps
+    it."""
+    request.getfixturevalue("setup_http")
+    request.getfixturevalue("google")
+    request.getfixturevalue("media")
+    url = "/admin/setup/branding"
+
+    def version():
+        """The step's current draft version, as its page carries it."""
+        page = browser.get(url).content.decode()
+        return re.search(r'name="version" value="(\d+)"', page).group(1)
+
+    with web_login():
+        browser = started()
+        empty = [("logo", "", b"")]
+        refused = browser_post(browser, {"version": version()}, empty, url=url)
+        assert refused.status_code == 400
+        assert refused["Content-Type"].startswith("text/html")
+        assert 'aria-invalid="true"' in refused.content.decode()
+        assert not BrandingBundle.objects.exists()
+        saved = post(browser, url, {"version": version(), "logo": upload()})
+        assert saved.status_code == 302, saved.content
+        kept = browser_post(browser, {"version": version()}, empty, url=url)
+        assert kept.status_code == 302, kept.content
+        assert kept["Location"] == "/admin/setup/access"
+        assert BrandingBundle.objects.count() == 1
