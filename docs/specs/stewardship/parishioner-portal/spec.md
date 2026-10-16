@@ -116,9 +116,10 @@ again" link; in Testing it sits below the Testing banner, which is always the
 top-most bar, above the page title.
 
 Each step is its own page. Back/Next controls preserve the in-memory state,
-move focus to the step heading, and never submit; Next first checks only the
-current page and keeps the Family there with inline errors and focus on the
-first unanswered question, scrolled into view above the sticky navigation. Each
+move focus to the step heading, and never send the response; Next on every page
+but the last first checks only the current page and keeps the Family there with
+inline errors and focus on the first unanswered question, scrolled into view
+above the sticky navigation. Each
 problem is reported once: a question with its own visible error line (the red
 outline and message under it) gets no second notice. Only a problem with no
 error line of its own, such as an unresolved changed-record choice, gets a note
@@ -139,7 +140,7 @@ the navigation buttons (a phone tap shows no tooltip), cleared by the next page
 change. Next moves forward one page at a time. The rule is enforced in the
 browser; the server does not track which pages were viewed. Once every page has
 been viewed, every segment is available. Testing and Production behave the same. Review (the last segment,
-or Review response on the last page) also requires every page to have been
+or Next on the last page) also requires every page to have been
 viewed: otherwise it opens the first page not yet viewed and says so. It then
 checks every page and, if an answer is missing, opens that page and focuses the
 question, so the response cannot be completed until all steps are done.
