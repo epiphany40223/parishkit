@@ -95,13 +95,16 @@ def test_integration_settings_wait_for_their_required_fields(target):
     """Save is held by the complete gate, its hint after the buttons."""
     html = settings_page(target, workspace_configured=True)
     assert "data-require-complete" in tag(
-        html, r'<form method="post" class="panel"[^>]*>'
+        html, r'<form method="post"[^>]*id="integration-form"[^>]*>'
     )
     assert HINT in html
     save = tag(html, r"<button[^>]*>(?=Save<)")
     assert 'aria-describedby="integration-complete-hint"' in save
-    # The hint follows every button, so it never moves one.
-    assert html.index(HINT) > html.rindex("</button>")
+    # The hint follows every button of the form (the review dialog's own
+    # come after it, #750), so it never moves one.
+    form = html[html.index('id="integration-form"') :]
+    form = form[: form.index("</form>")]
+    assert form.index(HINT) > form.rindex("</button>")
 
 
 def test_a_slack_page_not_set_up_requires_its_token():

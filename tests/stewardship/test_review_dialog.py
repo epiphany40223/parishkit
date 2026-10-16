@@ -656,3 +656,19 @@ def test_a_small_campaign_settings_change_is_a_compact_review():
     full = fragment(False)
     assert "data-review-title" not in full and "campaign-review-summary" not in full
     assert "<table" in full and "Nothing changes until you choose Apply." in full
+
+
+def test_the_page_reads_a_pasted_key_as_the_server_does():
+    """ui-v1.js's SERVER_SPACE, which decides whether an integration's key
+    field holds a key (data-review-native, #750), is exactly the set of
+    characters Python's str.strip() removes (str.isspace): the server and
+    the key field's cleaning use str.strip(), so the page submits natively
+    exactly when the server takes the key-save path. JavaScript's own trim()
+    differs (U+FEFF, U+0085, U+001C-U+001F)."""
+    script = (TEMPLATES.parents[1] / "static/stewardship/ui-v1.js").read_text()
+    (body,) = re.findall(r"const SERVER_SPACE = /\^\[(.+?)\]\*\$/;", script)
+    space = re.compile(f"[{body}]")
+    for code in range(0x110000):
+        character = chr(code)
+        assert bool(space.fullmatch(character)) == character.isspace(), hex(code)
+    assert "\N{ZERO WIDTH NO-BREAK SPACE}".strip() and not "\x85".strip()

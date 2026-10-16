@@ -24,7 +24,6 @@ from parishkit.stewardship.runtime_grants import runtime_grants
 
 from .auth_builders import signed_in
 from .campaign_builders import change
-from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_configuration_service_postgresql import (  # noqa: F401
     as_config_installer,
     config_role,
@@ -142,9 +141,11 @@ def remove_slack(slack):
     """Preview, confirm and apply Remove Slack."""
     browser = slack["browser"]
     preview_page = post(browser, URL, {"action": "remove"})
-    assert b"To set Slack up again later" in preview_page.content
-    # Removal is reviewed like any other change (#196).
-    assert flow_steps(preview_page.content) == (STEPS, "Review")
+    assert b"to set Slack up again later" in preview_page.content
+    # Removal is a confirmation in the review dialog (#750), its question
+    # the dialog's title, not a review page of its own.
+    assert b'data-review-title="Remove Slack?"' in preview_page.content
+    assert b"<html" not in preview_page.content
     preview = hidden(preview_page, "preview")
     response = post(browser, URL, {"action": "confirm", "preview": preview})
     assert response.status_code == 302

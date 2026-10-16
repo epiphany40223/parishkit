@@ -1,0 +1,40 @@
+{% load i18n %}{% comment %}
+The review dialog's answer for an integration's settings page (#750;
+integration_views._preview and _remove), drawn in the shared review dialog
+(UX conventions, "Review dialog") that integration-settings.html includes,
+never as a page of its own: ui-v1.js moves this fragment's content into the
+dialog's body. It shows public settings only, never a key, a key's
+fingerprint or the key field's signed request; the one hidden field is the
+signed preview (data-review-preview) the dialog's Apply posts back to the
+settings page.
+
+``kind`` says which review it is (UX conventions, "A confirmation when Review
+would only repeat the page" and "A compact review when Review adds only the
+old value"):
+
+- "compact": an ordinary settings edit, one line per changed setting
+  (components/compact-review.html), the dialog asking "Save the … settings?".
+- "schedule": a refresh schedule change (ParishSoft), the full review under
+  the dialog's own title: any other changed setting's line, then the
+  schedule's differences in words, never its stored settings.
+- "setup": Off-site backups set up by its folder, a confirmation.
+- "remove": Remove Slack or Turn off off-site copies, a confirmation.
+
+``refused`` instead draws a stale sign-in's refusal (status 403), marked
+data-review-refusal so the dialog shows it as drawn: the shared step-up
+notice, whose Confirm with Google returns to the settings page.
+{% endcomment %}{% if refused %}<div data-review-refusal>{% url 'admin:integration_settings' target as here %}{% translate "saving or removing settings here" as step_up_action %}{% translate "Nothing was changed." as step_up_outcome %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action outcome=step_up_outcome next=here %}</div>
+{% elif kind == "schedule" %}{% blocktranslate asvar done %}{{ label }} settings changed.{% endblocktranslate %}<div data-review-answer data-review-done="{{ done }}">
+{% if changes %}{% include 'stewardship/components/compact-review.html' with changes=changes summary_id="integration-review-lines" %}{% endif %}
+<section aria-labelledby="schedule-changes-heading"><h3 id="schedule-changes-heading">{% translate "Refresh schedule changes" %}</h3>
+<ul>{% for item in schedule_changes %}<li>{{ item }}</li>{% endfor %}</ul>
+<p class="help">{% translate "The new schedule takes effect when the change is applied. Until then, refreshes run as they do now." %}</p></section>
+<input type="hidden" name="preview" value="{{ preview }}" data-review-preview>
+</div>
+{% else %}{% if kind == "compact" %}{% blocktranslate asvar question %}Save the {{ label }} settings?{% endblocktranslate %}{% blocktranslate asvar done %}{{ label }} settings changed.{% endblocktranslate %}{% elif kind == "setup" %}{% translate "Turn on off-site copies?" as question %}{% translate "Off-site copies turned on." as done %}{% elif target == "backup" %}{% translate "Turn off off-site copies?" as question %}{% translate "Off-site copies turned off." as done %}{% else %}{% translate "Remove Slack?" as question %}{% translate "Slack removed." as done %}{% endif %}<div data-review-answer data-review-done="{{ done }}" data-review-title="{{ question }}" data-review-describedby="integration-review-summary">
+{% if kind == "compact" %}{% include 'stewardship/components/compact-review.html' with changes=changes summary_id="integration-review-summary" %}
+{% elif kind == "setup" %}<p id="integration-review-summary">{% translate "From the next backup, each backup is also copied to this Google Drive folder." %}</p>
+{% elif target == "backup" %}<p id="integration-review-summary">{% translate "Backups continue on the server; copies already in Google Drive are left there." %}</p>
+{% else %}<p id="integration-review-summary">{% translate "Slack alerts stop at once; to set Slack up again later, save the channel ID with the app's bot token on this page." %}</p>{% endif %}
+<input type="hidden" name="preview" value="{{ preview }}" data-review-preview>
+</div>{% endif %}

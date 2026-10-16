@@ -1963,6 +1963,10 @@
       owner = event.submitter?.form || form;
     }
     if (!region || !sameOrigin(written || "")) return;
+    // A form that also opens the review dialog (Off-site backups' settings,
+    // #750) is in place only for a button marked data-review-skip (Test
+    // access): its Save is the dialog's Review (below), never an in-place save.
+    if (form.matches("form[data-review-open]") && !event.submitter?.hasAttribute("data-review-skip")) return;
     // A submitter marked data-in-place-native submits natively: Save and
     // next on the last follow-up item, whose answer is the queue (#534),
     // loads it once rather than fetching it and then loading it again.
@@ -3910,10 +3914,12 @@
     }
   };
   // Swap every region of this page that the fresh page also has, except one
-  // only its own control replaces (data-in-place-own).
-  const redrawFrom = (fresh) => {
+  // only its own control replaces (data-in-place-own). ``own`` is the region
+  // whose control's answer this is (a review dialog's form's region, #750),
+  // which is swapped even when it is marked so.
+  const redrawFrom = (fresh, own = null) => {
     document.querySelectorAll(REGIONS).forEach((other) => {
-      if (ownedElsewhere(other, null)) return;
+      if (ownedElsewhere(other, own)) return;
       const copy = fresh.getElementById(other.id);
       if (isRegion(copy)) swapRegion(other, copy);
     });
@@ -4017,7 +4023,8 @@
   // marked data-review-open="<dialog id>" (New and Edit user, Import
   // Ministry leaders, New and Edit scheduled email, Campaign settings, its
   // date change on Dates and mail schedules, Share options, Campaign images,
-  // Parish logos, Parish settings and Create the campaign's confirmation).
+  // Parish logos, Parish settings, the integration settings pages and Create
+  // the campaign's confirmation).
   //
   // Review posts the form, submitter included, without a page load. Until
   // the answer arrives the form is inert and aria-busy, and its Review
@@ -4056,6 +4063,14 @@
   // redraw, so the redraw never wipes it. Across a page change that line's text waits in sessionStorage,
   // for that address only and for a minute: it is the review's short
   // sentence and a time, never an answer, a value or a credential.
+  // A value made only of what Python's str.strip() removes (str.isspace:
+  // U+0085 and U+001C-U+001F are, U+FEFF is not; JavaScript's trim() and \s
+  // differ on all three). The server decides "a key was pasted" with
+  // str.strip() (integration_views), and the key field's own cleaning strips
+  // the same way, so the page and the server always take the same path for
+  // a pasted key (#750). test_review_dialog checks this class against
+  // str.isspace for every code point.
+  const SERVER_SPACE = /^[\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]*$/;
   const REVIEW_OUTCOME = "pk-review-outcome";
   const REVIEW_OUTCOME_MS = 60000;
   const REVIEW_UNREACHABLE = "The server could not be reached, so nothing was reviewed. Try again in a moment.";
@@ -4319,6 +4334,16 @@
     const form = event.target;
     if (event.defaultPrevented || !(form instanceof HTMLFormElement)
       || !form.matches("form[data-review-open]")) return;
+    // A submission that is no Review takes the form's other way: a button
+    // marked data-review-skip (Off-site backups' Test access, which posts in
+    // place), or any submission while the field a form names in
+    // data-review-native holds a value (an integration's pasted new key,
+    // which submits natively: its slow install is followed on the page, the
+    // recorded exception of UX conventions "Review dialog", #456). A value
+    // holds something unless it is all SERVER_SPACE, as the server reads it.
+    if (event.submitter?.hasAttribute("data-review-skip")) return;
+    const native = form.dataset.reviewNative && form.elements.namedItem(form.dataset.reviewNative);
+    if (native && "value" in native && !SERVER_SPACE.test(native.value)) return;
     const dialog = document.getElementById(form.dataset.reviewOpen);
     if (!(dialog instanceof HTMLDialogElement) || !sameOrigin(formUrl(form))) return;
     event.preventDefault();
@@ -4373,7 +4398,10 @@
     state.done = true;
     dialog.close();
     if (fromAnswer) window.history.replaceState(window.history.state, "", fromAnswer);
-    redrawFrom(fresh);
+    // The Apply is the answer to the form's own Review, so the form's region
+    // is redrawn even when only its own controls replace it (data-in-place-own:
+    // an integration's settings, which Dismiss and Test access leave alone).
+    redrawFrom(fresh, region);
     if (!showOutcome(outcome, text)) announce(text);
   };
 

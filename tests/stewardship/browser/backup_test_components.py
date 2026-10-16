@@ -41,8 +41,9 @@ def components(context, admin):
     )
     passed = SimpleNamespace(kind="passed", message="Access works.", folder_url=FOLDER)
 
-    def settings(probe=None):
-        """The settings page with ``probe`` as the reader's latest check."""
+    def settings(probe=None, url=PAGE):
+        """The settings page at ``url`` with ``probe`` as the reader's latest
+        check; its forms post to ``url`` itself, as the view's do."""
         return render_to_string(
             "stewardship/integration-settings.html",
             values
@@ -55,6 +56,9 @@ def components(context, admin):
                 "probe": probe,
                 "pending": probe is pending,
                 "status_url": STATUS,
+                # Save and Test access post to the page itself (#750).
+                "page_url": url,
+                "refresh_url": url,
                 "form": IntegrationForm(
                     "backup", initial={"base_digest": "a" * 64, "target": FOLDER}
                 ),
@@ -69,8 +73,8 @@ def components(context, admin):
         PAGE: settings(),
         TESTED: settings(pending),
         SETTLED: settings(passed),
-        REFUSED: settings(),
-        REFUSED_LINKED: settings(),
+        REFUSED: settings(url=REFUSED),
+        REFUSED_LINKED: settings(url=REFUSED_LINKED),
         STATUS: status,
     }
     return {path: ("text/html", html) for path, html in responses.items()}

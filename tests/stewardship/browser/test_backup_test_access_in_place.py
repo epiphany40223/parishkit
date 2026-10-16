@@ -17,7 +17,7 @@ import pytest
 from .backup_test_components import PAGE, REFUSED, REFUSED_LINKED, STATUS, TESTED
 from .test_export_resolve_in_place import announced, open_marked, stayed, wheel_to
 from .test_in_place import MARKED, count_requests
-from .waits import focused, visible
+from .waits import focused, hidden, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -120,10 +120,22 @@ def test_a_refusal_s_link_is_shown_with_it(page, component_origin):
     assert page.evaluate(MARKED) == "kept"
 
 
-def test_save_still_submits_natively(page, component_origin):
-    """Save in the same form is marked data-in-place-native: it submits as
-    a native form does, so its answer loads in place of this page."""
+def test_save_opens_the_review_dialog_and_test_access_does_not(page, component_origin):
+    """Save in the same form opens the review dialog (#750), posting the
+    form to the page itself without a page load; Test access, marked
+    data-review-skip, stays in place and never opens it."""
+    from .review_helpers import answer_reviews
+    from .settings_components import PARISH_REVIEW
+
+    reviews = answer_reviews(page, component_origin, PARISH_REVIEW, address=PAGE)
     open_marked(page, component_origin, PAGE)
-    with page.expect_navigation():
-        page.get_by_role("button", name="Save", exact=True).click()
-    assert page.evaluate(MARKED) is None
+    dialog = page.locator("dialog#integration-review")
+    page.get_by_role("button", name="Save", exact=True).click()
+    visible(dialog)
+    assert len(reviews) == 1 and "action=preview" in reviews[0]
+    dialog.get_by_role("button", name="Cancel").click()
+    hidden(dialog)
+    page.get_by_role("button", name=NAME, exact=True).click()
+    visible(page.locator("#integration-status", has_text="Checking access"))
+    assert not dialog.is_visible() and len(reviews) == 1
+    assert page.evaluate(MARKED) == "kept"

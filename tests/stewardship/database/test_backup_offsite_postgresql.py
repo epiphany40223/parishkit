@@ -805,18 +805,19 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
     assert invalid.json()["refusal"]["message"] == (
         "That is not a link to a Google Drive folder."
     )
-    preview = hidden(
-        post(
-            browser,
-            URL,
-            {
-                "action": "preview",
-                "base_digest": store.active().digest,
-                "target": f"{LINK}?usp=sharing",
-            },
-        ),
-        "preview",
+    setup = post(
+        browser,
+        URL,
+        {
+            "action": "preview",
+            "base_digest": store.active().digest,
+            "target": f"{LINK}?usp=sharing",
+        },
     )
+    # Setting the folder up is a confirmation in the review dialog (#750).
+    assert b'data-review-title="Turn on off-site copies?"' in setup.content
+    assert b"each backup is also copied to this Google Drive folder" in setup.content
+    preview = hidden(setup, "preview")
     apply(store, post(browser, URL, {"action": "confirm", "preview": preview}))
     # The scheduler's alert sees the folder as configured from now on.
     with task_login(ServiceRole.WORKER, exact=True), transaction.atomic():
@@ -841,7 +842,11 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
     index = browser.get("/admin/system/integrations/").content
     assert f'href="{URL}">Change</a>'.encode() in index
     assert b"copied to Google Drive" in browser.get(URL).content
-    preview = hidden(post(browser, URL, {"action": "remove"}), "preview")
+    removal = post(browser, URL, {"action": "remove"})
+    # Turning it off is a confirmation in the review dialog too (#750).
+    assert b'data-review-title="Turn off off-site copies?"' in removal.content
+    assert b'data-review-done="Off-site copies turned off."' in removal.content
+    preview = hidden(removal, "preview")
     apply(store, post(browser, URL, {"action": "confirm", "preview": preview}))
     assert backups(store) == []
     with task_login(ServiceRole.WORKER, exact=True), transaction.atomic():
@@ -979,15 +984,17 @@ def page_post(browser, values):
 
 def test_test_access_answers_in_place(workspace):
     """Test access posts in place (#519): the page's form names its status
-    line, Save submits natively, and Test access's redirect is this page,
-    whose status line runs the check. Once it settles, the passive status
-    read's follow-up re-reads that line in place rather than reloading."""
+    line, Save opens the review dialog (#750) while Test access is no
+    Review, and Test access's redirect is this page, whose status line runs
+    the check. Once it settles, the passive status read's follow-up re-reads
+    that line in place rather than reloading."""
     browser, _ = signed_in()
     page = browser.get(URL).content.decode()
     form = re.search(r'<form [^>]*data-in-place="backup-test"[^>]*>', page).group(0)
-    assert 'action="#integration-status"' in form
-    save = re.search(r'<button [^>]*value="preview"[^>]*>', page).group(0)
-    assert "data-in-place-native" in save
+    assert f'action="{URL}#integration-status"' in form
+    assert 'data-review-open="integration-review"' in form
+    test = re.search(r'<button [^>]*value="test"[^>]*>', page).group(0)
+    assert "data-review-skip" in test
     response = post(browser, URL, {"action": "test", "target": LINK})
     assert (response.status_code, response["Location"]) == (302, URL)
     probe = BackupDriveProbe.objects.get()
