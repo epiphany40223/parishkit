@@ -72,6 +72,8 @@ the Roster changes to enter list, whose download is ``export roster`` (in
 in ``admin_workgroup``) read and change the No-reminders WorkGroup.
 ``campaign show``, ``campaign preview`` and ``campaign confirm`` (PR 10, in
 ``admin_campaign``) read and change Campaign settings.
+``followup list``, ``followup show``, ``followup update`` and ``followup
+bulk`` (PR 11a, in ``admin_followup``) read and record Ministry follow-up.
 """
 
 import argparse
@@ -6061,6 +6063,358 @@ def _events_specs():
     )
 
 
+# ---------------------------------------------- Ministry follow-up (PR 11a)
+#
+# ``followup list``, ``followup show``, ``followup update`` and ``followup
+# bulk`` (#463, in ``admin_followup``): the Ministry requests follow-up
+# queue, a request's page and Save, and the queue's bulk outcome.
+
+# The queue's choices (``reports.ministry_followup``), spelled out because
+# the parser is built before Django is set up; a test keeps them equal.
+FOLLOWUP_STATES = (
+    "unresolved",
+    "any",
+    "new",
+    "in_progress",
+    "resolved",
+    "closed_no_response",
+    "not_in_parishsoft",
+)
+FOLLOWUP_OUTCOMES = (
+    "any",
+    "joined",
+    "leave_confirmed",
+    "declined",
+    "other",
+    "no_response",
+)
+# What a Save may set (``workflows.models.STAFF_STATES``), the outcomes a
+# Resolved request records (less the retired ``duplicate``), and the
+# contact channels (``CONTACT_CHANNELS``).
+FOLLOWUP_SAVE_STATES = ("new", "in_progress", "resolved", "closed_no_response")
+FOLLOWUP_RESOLVED = ("joined", "leave_confirmed", "declined", "other")
+FOLLOWUP_CHANNELS = ("email", "phone", "in_person", "other")
+# The queue's bulk outcome buttons, by the page's posted "kind:outcome"
+# value (``workflows.followup.BULK_ACTIONS``).
+FOLLOWUP_BULK = (
+    "join:joined",
+    "join:declined",
+    "leave:leave_confirmed",
+    "leave:declined",
+)
+# The longest notes the page takes (``workflows.followup.MAX_NOTES``), in
+# UTF-8 bytes at most four per character.
+FOLLOWUP_NOTES_LIMIT = 5000 * 4
+# The longest contact notes (``MAX_CONTACT_NOTES``), likewise in bytes.
+FOLLOWUP_CONTACT_NOTES_LIMIT = 2000 * 4
+
+
+def _positive(value):
+    """A page number: a positive integer; anything else is a usage error."""
+    if not value.isdecimal() or not 1 <= int(value) <= 2**31 - 1:
+        raise argparse.ArgumentTypeError("not a page number")
+    return int(value)
+
+
+def _chosen_request(value):
+    """``--request ID:VERSION``: a request and the version its row showed."""
+    identity, separator, version = value.partition(":")
+    if not separator:
+        raise argparse.ArgumentTypeError("not ID:VERSION")
+    try:
+        return _uuid(identity), _version(version)
+    except argparse.ArgumentTypeError:
+        raise argparse.ArgumentTypeError("not ID:VERSION") from None
+
+
+def followup_list(args, preamble, runtime, context):
+    """One page of the Ministry follow-up queue, without Members (#463)."""
+    from .admin_followup import read_followup_list
+
+    return read_followup_list(
+        context["caller"],
+        runtime,
+        {
+            "ministry": args.ministry,
+            "action": args.action,
+            "state": args.state,
+            "outcome": args.outcome,
+            "sort": args.sort,
+            "page": args.page,
+            "size": args.size,
+        },
+    )
+
+
+def followup_show(args, preamble, runtime, context):
+    """One Ministry request and its follow-up history, without notes (#463)."""
+    from .admin_followup import read_followup_show
+
+    return read_followup_show(
+        context["caller"], runtime, args.request_id, history_page=args.page or 1
+    )
+
+
+def _followup_contact(args, context, *, stdin_free=True):
+    """The contact attempt's options, refused when they would have no effect.
+
+    The page sends a contact attempt's instant and notes only with a
+    channel; on the command line an instant or notes without
+    ``--contact-channel`` would be silently dropped, so it is a usage error,
+    as other options that go only with another are. ``--contact-notes -``
+    reads standard input, when no other option already does.
+    """
+    if args.contact_channel is None and (
+        args.contact_at is not None or args.contact_notes is not None
+    ):
+        raise UsageError("--contact-at and --contact-notes go with --contact-channel.")
+    if args.contact_notes == "-" and not stdin_free:
+        raise UsageError("Only one input may be read from standard input.")
+    if args.contact_notes is None:
+        return None
+    return _input(args.contact_notes, context, FOLLOWUP_CONTACT_NOTES_LIMIT)
+
+
+def followup_update(args, preamble, runtime, context):
+    """Record follow-up on one Ministry request, as its Save does (#463).
+
+    Without ``--request-key`` a new key is made and written to standard
+    error before anything is done, so a run that crashes can be repeated
+    with it. The page's Save asks nothing, so neither does this. An
+    ``--outcome`` goes only with ``--state resolved``, as the page shows
+    the outcome only then.
+    """
+    from .admin_followup import update_followup
+
+    if args.outcome is not None and args.state != "resolved":
+        raise UsageError("--outcome goes with --state resolved.")
+    key = _request_key(args, context)
+    notes = None
+    if args.notes is not None:
+        notes = _input(args.notes, context, FOLLOWUP_NOTES_LIMIT)
+    contact_notes = _followup_contact(args, context, stdin_free=args.notes != "-")
+    return update_followup(
+        context["caller"],
+        runtime,
+        args.request_id,
+        expected_version=args.expected_version,
+        request_key=key,
+        state=args.state,
+        outcome=args.outcome,
+        notes=notes,
+        channel=args.contact_channel,
+        contact_at=args.contact_at,
+        contact_notes=contact_notes,
+        context=context,
+    )
+
+
+def followup_bulk(args, preamble, runtime, context):
+    """Resolve several Ministry requests with one outcome (#463, #1131).
+
+    The queue's bulk outcome asks in its confirmation dialog, and resolving
+    a request closes it, so this asks first (or takes ``--yes``), after
+    refusing a choice too long to record. Without ``--request-key`` a new
+    key is made and written to standard error before anything is done.
+    """
+    from . import admin_followup
+    from .reports.ministries import outcome_label
+
+    # The role first (#1341): the page's own admission, which admits Staff,
+    # Administrators and a leader of any Ministry, before any input or
+    # prompt; each chosen request is checked against the leader's scope.
+    admin_followup.admit_followup(context["caller"], runtime)
+
+    key = _request_key(args, context)
+    contact_notes = _followup_contact(args, context)
+    versions = dict(args.request)
+    if len(versions) != len(args.request):
+        raise ValueError("A request was chosen twice.")
+    # Refused before the prompt: nothing is asked about a choice the page
+    # could not record.
+    admin_followup.check_lengths(contact_notes=contact_notes, requests=versions)
+    kind, _, outcome = args.outcome.partition(":")
+    # The page's dialog words: the outcome's label for this kind of request.
+    confirm(
+        context,
+        (
+            f"Mark {len(versions)} Ministry request(s) as "
+            f"{outcome_label(outcome, kind)}. Each request is resolved, with "
+            "its own entry in its follow-up history.",
+            "A resolved request leaves the open queue and cannot be edited again.",
+        ),
+    )
+    return admin_followup.bulk_followup(
+        context["caller"],
+        runtime,
+        versions,
+        action=kind,
+        outcome=outcome,
+        request_key=key,
+        channel=args.contact_channel,
+        contact_at=args.contact_at,
+        contact_notes=contact_notes,
+        context=context,
+    )
+
+
+def _followup_list_options(parser):
+    """Options of ``followup list``: the queue's filters, without its search."""
+    parser.add_argument("--ministry", metavar="DUID", help="one Ministry, by DUID")
+    parser.add_argument("--action", choices=("any", "join", "leave"))
+    parser.add_argument(
+        "--state",
+        choices=FOLLOWUP_STATES,
+        help="default unresolved (New or In progress)",
+    )
+    parser.add_argument("--outcome", choices=FOLLOWUP_OUTCOMES)
+    parser.add_argument(
+        "--sort",
+        choices=("newest", "name", "ministry"),
+        help="default newest; name sorts by the Member, who is not printed",
+    )
+    parser.add_argument("--page", type=_positive, help="page number (default 1)")
+    parser.add_argument(
+        "--size", choices=("25", "50", "100", "250"), help="rows per page (default 50)"
+    )
+
+
+def _followup_show_options(parser):
+    """Options of ``followup show``: the request and its history page."""
+    parser.add_argument("request_id", type=_uuid, metavar="REQUEST_ID")
+    parser.add_argument(
+        "--page", type=_positive, help="the history's page number (default 1)"
+    )
+
+
+def _followup_contact_options(parser, *, prompts=False):
+    """A follow-up's optional contact attempt, as the page's form takes it.
+
+    ``prompts`` marks a prompting command, whose ``-`` input needs --yes.
+    """
+    parser.add_argument("--contact-channel", choices=FOLLOWUP_CHANNELS)
+    parser.add_argument(
+        "--contact-at",
+        metavar="INSTANT",
+        help="with --contact-channel: when, as an ISO 8601 instant with its offset",
+    )
+    parser.add_argument(
+        "--contact-notes",
+        help="with --contact-channel: optional notes on the contact attempt, "
+        "or - to read them from standard input" + (" (needs --yes)" if prompts else ""),
+    )
+
+
+def _followup_update_options(parser):
+    """Options of ``followup update``: a request page's form."""
+    parser.add_argument("request_id", type=_uuid, metavar="REQUEST_ID")
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_version,
+        help="the request's version, as followup show prints it",
+    )
+    parser.add_argument("--state", required=True, choices=FOLLOWUP_SAVE_STATES)
+    parser.add_argument(
+        "--outcome",
+        choices=FOLLOWUP_RESOLVED,
+        help="with --state resolved: the outcome (other needs --notes)",
+    )
+    parser.add_argument(
+        "--notes",
+        help="the request's notes, replacing them (default: kept), or - to "
+        "read them from standard input",
+    )
+    _followup_contact_options(parser)
+    _request_key_option(parser)
+
+
+def _followup_bulk_options(parser):
+    """Options of ``followup bulk``: the queue's bulk outcome dialog."""
+    parser.add_argument(
+        "--outcome",
+        required=True,
+        choices=FOLLOWUP_BULK,
+        help="the request kind and outcome, as the queue's buttons post them",
+    )
+    parser.add_argument(
+        "--request",
+        required=True,
+        action="append",
+        type=_chosen_request,
+        metavar="ID:VERSION",
+        help="a chosen request and its version, as followup list prints them "
+        "(repeat for each, up to 250)",
+    )
+    _followup_contact_options(parser, prompts=True)
+    _request_key_option(parser)
+
+
+def _followup_specs():
+    """The Ministry follow-up commands (ADM-11 PR 11a, ``admin_followup``).
+
+    ``followup list`` and ``followup show`` are passive reads any session
+    may run; they record the page's ``ministry_followup_viewed``. ``followup
+    update`` asks nothing, as the page's Save does not; ``followup bulk``
+    asks, as the queue's bulk dialog does. Neither change is fresh-gated,
+    as the page asks for no recent sign-in.
+    """
+    from .admin_followup import FollowupBulk, FollowupList, FollowupShow, FollowupUpdate
+
+    return (
+        CommandSpec(
+            "followup list",
+            "List a page of the Ministry follow-up queue, without Members.",
+            followup_list,
+            "read_only",
+            False,
+            FollowupList.field_names(),
+            11,
+            options=(_followup_list_options,),
+            audit_event="ministry_followup_viewed",
+        ),
+        CommandSpec(
+            "followup show",
+            "Show one Ministry request and its follow-up history.",
+            followup_show,
+            "read_only",
+            False,
+            FollowupShow.field_names(),
+            11,
+            options=(_followup_show_options,),
+            audit_event="ministry_followup_viewed",
+        ),
+        CommandSpec(
+            "followup update",
+            "Record follow-up on one Ministry request, as its Save does.",
+            followup_update,
+            "full",
+            True,
+            FollowupUpdate.field_names(),
+            11,
+            options=(_followup_update_options,),
+            request_key=True,
+            expected_version=True,
+        ),
+        CommandSpec(
+            "followup bulk",
+            "Resolve several Ministry requests with one outcome.",
+            followup_bulk,
+            "full",
+            True,
+            FollowupBulk.field_names(),
+            11,
+            options=(_followup_bulk_options,),
+            prompts=True,
+            request_key=True,
+            expected_version=True,
+        ),
+    )
+
+
+# ------------------------------------------ end of Ministry follow-up block
+
+
 COMMANDS = (
     COMMANDS
     + _read_specs()
@@ -6076,6 +6430,7 @@ COMMANDS = (
     + _report_specs()
     + _users_specs()
     + _events_specs()
+    + _followup_specs()
     + _history_specs()
     + _artwork_specs()
     + _integration_specs()
