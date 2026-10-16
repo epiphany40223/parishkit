@@ -1330,9 +1330,10 @@ Saved while only PostgreSQL or only YAML has changed. The dedicated installer
 and fail-closed mismatch recovery are defined by the
 [configuration architecture](../architecture/spec.md#configuration-and-secrets).
 Every editor in this section reviews and applies through the
-[review dialog](../ui-conventions/spec.md#review-dialog). Parish settings, until #750 converts it, shows its review, Apply and
-that status [in place](../ui-conventions/spec.md#in-place-controls) under its
-form.
+[review dialog](../ui-conventions/spec.md#review-dialog), Parish settings
+included: its Review opens the dialog with each changed setting, Apply
+follows the change there, and the form is redrawn at the applied version.
+Parish settings' address takes no query.
 
 Outgoing email settings (the setup mail step and the post-setup outgoing
 email integration) include an optional From name: a single line of at most 100

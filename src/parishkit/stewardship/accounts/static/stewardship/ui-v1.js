@@ -4043,7 +4043,7 @@
   // marked data-review-open="<dialog id>" (New and Edit user, Import
   // Ministry leaders, New and Edit scheduled email, Campaign settings, its
   // date change on Dates and mail schedules, Share options, Campaign images,
-  // Parish logos and Create the campaign's confirmation).
+  // Parish logos, Parish settings and Create the campaign's confirmation).
   //
   // Review posts the form, submitter included, without a page load. Until
   // the answer arrives the form is inert and aria-busy, and its Review
