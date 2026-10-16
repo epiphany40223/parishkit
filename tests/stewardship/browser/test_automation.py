@@ -297,6 +297,9 @@ def test_revoking_a_session_asks_then_acts_in_place(page, component_origin, quer
     row = live.locator("tr").filter(has_text="launch <assistant>")
     button = row.get_by_role("button", name="Revoke launch <assistant>")
     assert button.get_attribute("title") == "Revoke launch <assistant>"
+    # Read the id now: confirming redraws the table and removes this row, so
+    # a lazy read afterward would wait for a button that is gone (#1387).
+    session_id = button.get_attribute("value")
     # Actions is the last column (#932).
     assert live.locator("thead th").last.inner_text() == "Actions"
     button.scroll_into_view_if_needed()
@@ -315,7 +318,7 @@ def test_revoking_a_session_asks_then_acts_in_place(page, component_origin, quer
     with page.expect_request(lambda request: request.method == "POST") as sent:
         dialog.get_by_role("button", name="Revoke", exact=True).click()
     fields = parse_qs(sent.value.post_data or "")
-    assert fields["session_id"] == [button.get_attribute("value")]
+    assert fields["session_id"] == [session_id]
     assert set(fields) == {"csrfmiddlewaretoken", "session_id"}
     has_text(
         page.get_by_role("status").filter(has_text="Revoked launch <assistant>."),
