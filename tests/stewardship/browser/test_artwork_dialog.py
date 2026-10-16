@@ -180,11 +180,20 @@ def test_the_status_line_is_in_the_slot_and_the_page_never_jumps(
     else:
         changed, start, name = "welcome", "Campaign image removed.", "Welcome"
         # The slot's whole reserved line in view first, as a reader sees
-        # the pane they act in (the one-line status fills only its top).
-        page.locator("#artwork-outcome-welcome").scroll_into_view_if_needed()
-        slot(page, "Welcome page icon").get_by_role(
+        # the pane they act in (the one-line status fills only its top),
+        # and its Remove this image button, which sits above it, so the
+        # click scrolls nothing. Scrolled to the line "if needed" alone,
+        # the click's own scroll to the button left the line's two
+        # reserved lines (#1410) 14px below the fold in Firefox, and
+        # focusing the line then rightly scrolled it into view.
+        remove = slot(page, "Welcome page icon").get_by_role(
             "button", name="Remove this image"
-        ).click()
+        )
+        page.locator("#artwork-outcome-welcome").evaluate(
+            "line => line.scrollIntoView({block: 'center'})"
+        )
+        remove.evaluate("button => button.scrollIntoView({block: 'nearest'})")
+        remove.click()
         # Remove this image is a confirmation (#1356).
         title = "Remove this image?"
     dialog = dialog_of(page, title)
