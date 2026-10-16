@@ -10,8 +10,11 @@ from urllib.parse import parse_qs
 
 import pytest
 
+from parishkit.stewardship.web.design_tokens import COLORS
+
 from .hosted_file_components import BULK, LIBRARY, REFUSAL, REFUSED
 from .test_components import axe_violations
+from .test_dark_scheme import rgb
 from .waits import eventually, has_value, hidden, painted, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -51,6 +54,13 @@ def test_hosted_images_load_inline_under_the_page_policy(page, component_origin)
     visible(image)
     assert image.evaluate("node => node.complete && node.naturalWidth > 0")
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
+
+# A notice's computed background and start-bar colours.
+NOTICE_COLOURS = (
+    "n => [getComputedStyle(n).backgroundColor,"
+    " getComputedStyle(n).borderInlineStartColor]"
+)
 
 
 def rows(page):
@@ -143,6 +153,11 @@ def test_delete_asks_then_redraws_the_library_in_place(
     assert usage.inner_text().startswith("3 of 100 files, 361.7")
     notice = page.locator("#hosted-file-uploaded")
     assert "Uploaded parish-picnic.png" in notice.inner_text()
+    # A confirmation is an information notice, not a warning (#732).
+    assert notice.locator(".notice").evaluate(NOTICE_COLOURS) == [
+        rgb(COLORS["accent-soft"]),
+        rgb(COLORS["accent"]),
+    ]
     delete = page.get_by_role("button", name="Delete parish-picnic")
     identifier = delete.get_attribute("value")
     delete.click()
