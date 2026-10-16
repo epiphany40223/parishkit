@@ -85,7 +85,7 @@ def test_each_select_arrow_draws_in_its_schemes_ink(name, colors):
 
 def test_only_layout_properties_live_outside_the_module():
     """A new colour or shape token belongs in design_tokens.py first."""
-    assert set(root_properties()) - set(tokens.CSS_PROPERTIES) == {"shadow", "gutter"}
+    assert set(root_properties()) - set(tokens.CSS_PROPERTIES) == {"gutter"}
 
 
 @pytest.mark.parametrize("name", sorted(p.name for p in STATIC.glob("*.css")))

@@ -572,8 +572,11 @@ button, .button, .link-button, .sort-link, input[type=submit], input[type=button
 button:not(:disabled):hover, .button:hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--paper); box-shadow: 0 2px 6px rgb(16 24 40 / 16%); }
 button:not(:disabled):active { box-shadow: none; }
 button:disabled { cursor: not-allowed; opacity: .55; box-shadow: none; }
-.button-secondary, .actions > button[type=button], button[name=page], button[data-review-edit], [data-content-toolbar] button { background: var(--paper); color: var(--accent); border-color: var(--accent); box-shadow: none; }
-.button-secondary:not(:disabled):hover, .actions > button[type=button]:not(:disabled):hover, button[name=page]:not(:disabled):hover, button[data-review-edit]:not(:disabled):hover, [data-content-toolbar] button:not(:disabled):hover { background: var(--accent-soft); color: var(--accent-strong); box-shadow: none; }
+/* The secondary look comes only from its class ({% button variant="secondary" %}
+   or class "button-secondary" in script), never from where a button sits, so
+   a button's look is decided where it is drawn (#732). */
+.button-secondary { background: var(--paper); color: var(--accent); border-color: var(--accent); box-shadow: none; }
+.button-secondary:not(:disabled):hover { background: var(--accent-soft); color: var(--accent-strong); box-shadow: none; }
 .actions { display: flex; gap: .75rem 1rem; flex-wrap: wrap; align-items: center; }
 /* A submitted form (ui-v1.js): its clicked button turns muted with a small
    spinner and the form ignores repeat clicks until the next page loads. With
