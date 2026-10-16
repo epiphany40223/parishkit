@@ -327,7 +327,7 @@ def test_backup_test_access_is_in_place():
     place instead of reloading the page."""
     text = (TEMPLATES / "integration-settings.html").read_text()
     form = re.search(
-        r'<form method="post" class="panel" autocomplete="off"[^>]*>', text
+        r'<form method="post" class="panel" id="integration-form"[^>]*>', text
     )
     assert (
         "{% if target == 'backup' %} action=\"#integration-status\" "

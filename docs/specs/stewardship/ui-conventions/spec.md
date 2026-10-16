@@ -892,8 +892,17 @@ kept, and after an applied change a redrawn form compares with its new
 defaults. A control marked `data-change-ignore` is no change: one that only
 shows other fields (Edit scheduled email's "Edit this schedule's email",
 whose fields count instead), and plain text generated from the HTML, which is
-not sent. The hint
-keeps its space while hidden, so it never moves the page.
+not sent. A row a page script adds or removes counts, and a hidden field
+counts only when it is marked as carrying a setting
+(`data-change-setting`): a saved row's identity, or a saved setting the page
+shows only as words, such as ParishSoft's stored quick updates, whose
+removal is a change (#1334 review). Every other hidden field is no change:
+the version and security tokens, a formset's row counts, a one-time request
+key or signed intent, the browser's time zone, a table's filters, size and
+sort (so a form redrawn with the table at other view settings still waits),
+and the fields a script writes from the visible controls it follows. A form
+redrawn at the same version takes its hidden settings from the new drawing.
+The hint keeps its space while hidden, so it never moves the page.
 The server still refuses an unchanged Review ("No settings have changed."),
 only as a safeguard for requests that bypass the page script: no page draws
 a "nothing has changed" state ([review dialog](#review-dialog)).
@@ -938,6 +947,31 @@ as leniently as the server reads it), and a refusal of either, or of a
 missing Slack token or a new ParishSoft key sent with a refresh schedule
 change, is shown at that field rather than as a notice or an error page
 (#563).
+
+The settings editors follow the same gates (#1330). Save on every
+integration settings page, ParishSoft's included, waits for a change, and a
+pasted key counts as one; Off-site backups' Test access, which can test the
+saved folder, never waits for one (`data-change-exempt`), and a folder link
+that isn't a Drive folder is refused at its field, as Save refuses it. While
+an integration that isn't set up yet can't store its key, its Save is shown
+unavailable, named by the notice that says why. The Pages and emails editor's
+Preview changes waits for a change, except while the page offers saving what
+it shows as it is (the default text filled in, a saved text that needs
+re-saving, a confirmation email with a retired receipt closing note folded
+in, a refused Preview drawn again). On Campaign settings the Ministry
+leader roles need one ticked while Ministry stewardship is on, and on a live
+campaign Save waits while the Ministries and another setting both changed
+(`data-change-alone`), with the server's own words. The automation
+approval's user code and New and Edit user's Email and Name are checked in
+the browser, with their refusals at the field, and Continue, Add the user
+or Save waits for them (a Name the Email lookup fills in or clears counts
+as an entry).
+The Parish website carries a pattern too: on Parish settings, which has no
+complete gate, the browser marks a website with a user name, query or
+fragment at the field when it is left, and the server's refusal is shown
+there; Save still waits only for a change. An integration page drawn
+again after a refused Save shows what was posted, so its Save does not
+wait for a change then.
 
 The same holds for the rest of the Admin portal (#563, the audit's last
 slice): Start Testing cleanup on Go-live readiness and Confirm Production
@@ -1035,7 +1069,9 @@ size is chosen, and the form is not sent until a smaller file is chosen; a
 form marked `data-max-total-bytes` refuses files that together exceed it
 the same way. The message shows where the server's errors for that field
 go, in a reserved line that keeps its height once the error clears and is
-announced to screen readers (`file-size-field.html`). A field that a
+announced to screen readers (`file-size-field.html`; Off-site backups'
+folder link keeps the same line, so Test access refused there in place
+moves nothing, #1334 review). A field that a
 choice hides drops its refusal, and shows it again if it reappears with
 the same file. The reverse proxy refuses an oversized request before the
 page could explain it, so this check is what keeps such a refusal on the
