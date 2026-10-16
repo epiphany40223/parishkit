@@ -316,6 +316,12 @@ class Action(StrEnum):
     ADMIN_CMD_CENSUS_RESOLVE = "admin_cmd_census_resolve"
     # census review: an Automatic row's Review (#528, ADM-09).
     ADMIN_CMD_CENSUS_REVIEW = "admin_cmd_census_review"
+    # census edit: an Automatic row's Edit value or Clear edit (#1434,
+    # ADM-09.04).
+    ADMIN_CMD_CENSUS_EDIT = "admin_cmd_census_edit"
+    # census resolve-conflict: an Automatic Conflict's Use the Family's value
+    # anyway (#1434, ADM-09.03).
+    ADMIN_CMD_CENSUS_RESOLVE_CONFLICT = "admin_cmd_census_resolve_conflict"
 
 
 # Closed field identifiers are operational metadata, never census values.

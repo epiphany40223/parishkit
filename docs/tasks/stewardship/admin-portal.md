@@ -636,7 +636,20 @@ rebound key, an unchanged decision `invalid`, the open-state matrix with
 every queued review and a Conflict's Approve refused, By-hand `invalid`, a
 stale version, an unknown or another campaign's change `not_available`, a
 read-only session, Staff and a Ministry leader denied, an ended session, no
-current campaign).
+current campaign). #1434 adds `census edit` (Edit value, Clear edit) and
+`census resolve-conflict` (Use the Family's value anyway) through the same
+command scope and the page's `edit_census_change` and
+`resolve_census_conflict`, recording `admin_cmd_census_edit` and
+`admin_cmd_census_resolve_conflict` once per request key, with no schema
+change and no prompt; `export census --format jsonl` gains `editable` and
+`resolvable`; proven by `tests/stewardship/test_admin_census.py`,
+`tests/stewardship/test_admin_census_export.py`,
+`tests/stewardship/test_admin_cli.py` and
+`tests/stewardship/database/test_admin_census_edit_cli_postgresql.py`
+(edit, clear, a repeat and a rebound key, unchanged edits recording
+nothing, a refused value with its reason, By-hand, queued, stale, unknown
+and Staff refusals; a resolution with both events, its repeat and rebound
+key, its undo by `census review`, and its refusals).
 A follow-up (#682) lets `delivery resolve` retry Family emails too, loading
 the web's general and public token keyrings only for that, checked against
 the web's published receipts; proven by `tests/stewardship/test_admin_cli.py`,

@@ -2012,6 +2012,49 @@ The result has `created`, `request_key`, `review` (`id`, `proposal_id`,
 never the note, the Family, the Member or the value. System logs show the
 page's `census_change_updated` and the command's `admin_cmd_census_review`.
 
+### Editing a value or resolving a conflict
+
+`census edit` is the same Review's **Edit value** (`--value`) and **Clear
+edit** (`--clear`): the value publication writes instead of the Family's
+answer, which never changes. `census resolve-conflict` is **Use the
+Family's value anyway** on a Conflict: it approves the change over
+ParishSoft's current value, which publication then expects to find. Both
+are an Administrator's only, with a full-scope session, one change at a
+time, and ask nothing, as on the page; neither publishes anything.
+
+```sh
+pk-admin census edit PROPOSAL_ID --expected-version 3 --value "Patricia"
+pk-admin census edit PROPOSAL_ID --expected-version 4 --clear
+pk-admin census edit PROPOSAL_ID --expected-version 5 --value - < value.txt
+pk-admin census resolve-conflict PROPOSAL_ID --expected-version 6 \
+    --note "Checked with the Family"
+```
+
+Take `PROPOSAL_ID` and `--expected-version` from `export census --format
+jsonl`; its `editable` and `resolvable` keys say whether each command acts
+on the change now. `--value` is read as the Family form reads its answer: a
+date as `YYYY-MM-DD` no later than today, Gender one of the census choices,
+and anything else no longer than ParishSoft takes (never more than 1,000
+characters). A value the change
+cannot take is exit 1 (`invalid`), with the reason in `error.fields`
+(field `value`); the value itself is never printed. An edit keeps the
+change's decision. An edit that would change nothing (the value already
+set, `--clear` with no edit, or the Family's own answer with no edit)
+records nothing and returns `unchanged` true. `--value -` and `--note -`
+read standard input, so only one of them may be `-`. To undo a resolved
+conflict, use `census review --decision unreviewed` (or `ignored`); the
+change is a Conflict again. `--request-key`, stale versions and changes of
+another campaign work as for `census review`; any other change the command
+does not take now is exit 1 (`invalid`).
+
+`census edit`'s result has `created`, `unchanged`, `request_key`, `review`
+(`id`, `proposal_id`, `edited`, `expected_version`, `created_at`, or null
+when unchanged) and `proposal` (`id`, `version`, `decision`, `execution`
+and `edited`, whether an edited value is now set). `census resolve-conflict`'s
+result is `census review`'s. Neither has the value, the note, the Family or
+the Member. System logs show the page's `census_change_updated` and the
+command's `admin_cmd_census_edit` or `admin_cmd_census_resolve_conflict`.
+
 ## Digests
 
 Each emailed daily or weekly report links to a saved copy on the portal,
@@ -2442,8 +2485,10 @@ and `version`, which recording a row's outcome needs and the page's files
 leave out, and `actions`: the outcomes you may record on that row now
 (`entered` and `ignored` on a By-hand change still open, `reopened` on an
 ignored one, for Administrators only, and only with a `--note` saying
-why), and `reviews`: the decisions `census review` takes on that row now
-(an Automatic change still open, for Administrators only). Both are empty
+why), `reviews`: the decisions `census review` takes on that row now
+(an Automatic change still open, for Administrators only), and `editable`
+and `resolvable`: whether `census edit` and `census resolve-conflict` act
+on it now (true or false, for Administrators only). They are empty or false
 while other campaign work holds the campaign, as the page then offers no
 Record outcome or Review. The file names Families and
 Members with their contact details, so create it private, as above, and
@@ -2990,3 +3035,12 @@ print is exit 1 (`invalid`).
   pause existed. A reader that took `ready` as proof of a test must read
   `required` and `checked_at` instead. The command mirrors the Pause and
   resume mail page, and its only readers are Administrator-run assistants.
+- `pk-admin/1` (#1434): additive. `census edit PROPOSAL_ID
+  --expected-version VERSION (--value TEXT|- | --clear) [--note TEXT|-]
+  [--request-key KEY]`, an Automatic Census changes row's Edit value and
+  Clear edit, and `census resolve-conflict PROPOSAL_ID --expected-version
+  VERSION [--note TEXT|-] [--request-key KEY]`, its Use the Family's value
+  anyway (full scope, Administrators only, neither fresh-gated nor
+  prompting; `census_change_updated` and `admin_cmd_census_edit` or
+  `admin_cmd_census_resolve_conflict`). `export census --format jsonl`
+  records gain `editable` and `resolvable`.

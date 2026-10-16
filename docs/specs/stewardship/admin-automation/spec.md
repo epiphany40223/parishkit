@@ -2545,7 +2545,7 @@ file is regenerated from the retained capture, in its original format.
 | `family_timeline`, `family_timeline_export` | One Family's timeline, so export only: the page's new export form and `export family-timeline FAMILY_RECORD_ID` (PR 8g, migration 0063); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
 | `family_open_form` (new, #529) | Permanent: Open form signs this browser in to the Family form for a Family on the phone, a browser hand-off by nature; Families' responses are read through `report responses` and the directory exports with its Response filters |
 | `limitations_export` | `export limitations [--show S] [--format F] [--timezone Z]` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)): the page's download through the page's own writer (`limitation_views.export_body`), with #752's audit fields |
-| `census_changes`, `census_changes_export` | `report census`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export census` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command is `census resolve PROPOSAL_ID --action entered\|ignored\|reopened` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), through the same `census_resolution` service. An Automatic row's Review (Approve, Ignore, Back to To review; ADM-09) posts there too; its command is `census review PROPOSAL_ID --decision approved\|ignored\|unreviewed` ([#528](https://github.com/epiphany40223/parishkit/issues/528)), through the same `census_review` service |
+| `census_changes`, `census_changes_export` | `report census`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export census` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command is `census resolve PROPOSAL_ID --action entered\|ignored\|reopened` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), through the same `census_resolution` service. An Automatic row's Review (Approve, Ignore, Back to To review; ADM-09) posts there too; its command is `census review PROPOSAL_ID --decision approved\|ignored\|unreviewed` ([#528](https://github.com/epiphany40223/parishkit/issues/528)), through the same `census_review` service. The Review's Edit value and Clear edit (ADM-09.04) are `census edit PROPOSAL_ID --value TEXT\|- \| --clear`, and its Use the Family's value anyway (ADM-09.03) is `census resolve-conflict PROPOSAL_ID` ([#1434](https://github.com/epiphany40223/parishkit/issues/1434)), through the same service |
 | `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_regenerate`, `report_export_download` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export regenerate`, `export download --stream` (PR 8b); an exact request's status, cancel and retry, which these pages also serve, are `export exact status --watch`, `export exact cancel` and `export exact retry` (PR 8h) |
 | `report_exact_create` | `export exact create` (PR 8h); the handed-off file through `export fetch` |
 | `daily_digest_snapshot` | `digest daily SNAPSHOT_ID` (PR 8d) |
@@ -2668,11 +2668,39 @@ key. A changed version or the racing second review is `stale_version`. It
 prints the review's ids, decision, version and time and the change's state,
 never the note, Family, Member or value. No preview token is used: the
 page's own protection is the version and the request key, which the command
-takes too. The page's Edit value (ADM-09.04) and Use the Family's value
-anyway (ADM-09.03) have no command yet
-([#1434](https://github.com/epiphany40223/parishkit/issues/1434)); when
-they are added they call `census_review.edit_census_change` and
-`census_review.resolve_census_conflict`, which refuse `queued` too.
+takes too.
+
+`census edit PROPOSAL_ID --expected-version VERSION (--value TEXT|- |
+--clear) [--note TEXT|-] [--request-key KEY]`
+([#1434](https://github.com/epiphany40223/parishkit/issues/1434)) is the same Review's Edit value (`--value`) and Clear edit
+(`--clear`) ([ADM-09.04](../reports/spec.md#automatic-census-review)), and
+`census resolve-conflict PROPOSAL_ID --expected-version VERSION [--note
+TEXT|-] [--request-key KEY]` its Use the Family's value anyway (ADM-09.03).
+Both take `census review`'s shape: full scope, keyed, not fresh-gated and
+never prompting (an edit can be changed or cleared, and `census review
+--decision ignored|unreviewed` puts a resolved change back to Conflict),
+the Administrator's `PUBLISH_CENSUS` checked first, then the same
+admission, command scope, campaign check, Live-change lookup and key
+handling. They call `census_review.edit_census_change` and
+`census_review.resolve_census_conflict`, so every rule is the page's, in
+Python and in 0107's and 0108's SQL: an Automatic Member change, open
+(never `queued` nor final); an edited value read as the Family form reads
+its own answer and fitting ParishSoft's request schema; a resolution only
+on a `conflict` whose ParishSoft value is known, one change at a time and
+never in bulk. A value the change cannot take is `invalid`, with the
+service's static reason in `error.fields` (field `value`), never the value;
+the command refuses more than 1,000 characters itself, the same way.
+An edit that would change nothing (the same value, a clear with no edit, or
+the Family's own answer with no edit) records nothing and returns
+`unchanged` true with no `review`, as the page's notice says so. Any other
+refusal is `invalid`, and a changed version or racing write
+`stale_version`. The services record `census_change_updated`, and the
+commands `admin_cmd_census_edit` and `admin_cmd_census_resolve_conflict` in
+the same transaction, only for a new key. `census edit` prints the review's
+ids, version and time and whether an edit is now set (`edited`);
+`census resolve-conflict` prints `census review`'s document. Neither prints
+the value, the note, the Family or the Member. Standard input carries only
+one of `--value -` and `--note -`.
 
 The digest commands (PR 8d) read a retained report an emailed digest
 links to from its stored snapshot, through its page's own functions
@@ -2820,8 +2848,10 @@ columns with the same text under fixed keys, plus `proposal_id` and
 [downloaded files](../ui-conventions/spec.md#downloaded-files)), and
 `actions`, the outcomes the reader may record on the row from its state and
 their capabilities, and `reviews`, the decisions `census review` may give
-it (an Administrator's, on an Automatic row only), both empty while other
-campaign work holds the campaign (the page's own check,
+it (an Administrator's, on an Automatic row only), and `editable` and
+`resolvable` (true or false), whether `census edit` and `census
+resolve-conflict` may act on it ([#1434](https://github.com/epiphany40223/parishkit/issues/1434); a resolution is not one of the `reviews`), all empty or false while
+other campaign work holds the campaign (the page's own check,
 `admit_campaign(..., mutating=True)`, made once per export). It records the
 page's `census_changes_exported` with the rows in the file, and no
 `admin_cmd_*` event, as `logs export`. The `jsonl` format and its keys are
