@@ -102,6 +102,17 @@ def test_the_gone_page_links_back_to_its_report():
     assert "Regenerate" not in page
 
 
+def test_the_gone_page_records_the_gone_code(monkeypatch):
+    """The 410 page carries ``gone`` for the refusal log (#1459's strict
+    check), and is never cached."""
+    monkeypatch.setattr(export_ui.admin_navigation, "place", Mock())
+    request = RequestFactory().get("/")
+    response = export_ui.gone_page(request, "participation", "/admin/reports/")
+    assert response.status_code == 410
+    assert response.stewardship_codes == ("gone",)
+    assert response["Cache-Control"] == "no-store"
+
+
 def test_native_download_denial_stays_uniform(monkeypatch):
     """Every refusal other than expiry is the uniform denial, without detail."""
     _failing(monkeypatch, export_ui, PermissionError("private detail"))

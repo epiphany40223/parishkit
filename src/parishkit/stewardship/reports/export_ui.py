@@ -242,7 +242,8 @@ def gone_page(request, source, report_url, *, arguments=None, queries=None):
     it was cancelled, its old status page is not shown; this page links
     back to the report (``source``, at ``report_url``) to export it again.
     Callers check the export's owner and capability first, so the report it
-    names is never revealed to anyone else.
+    names is never revealed to anyone else. The refusal log records it as
+    ``gone``, the code its status stands for.
     """
     admin_navigation.place(
         request, parent=source, arguments=arguments or {}, queries=queries or {}
@@ -259,7 +260,7 @@ def gone_page(request, source, report_url, *, arguments=None, queries=None):
         status=410,
     )
     response["Cache-Control"] = "no-store"
-    return response
+    return with_status_code(response)
 
 
 def _gone(request, job):
