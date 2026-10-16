@@ -215,8 +215,8 @@ each mail type is, that exactly one initial invitation is required before
 go-live, that reminders and the daily and weekly Admin digests are optional (at
 most one digest of each kind), that submission receipts and critical alerts are
 sent automatically and never scheduled, the time zone send times are entered in
-(this computer's on the list and the New and Edit scheduled email pages; the
-campaign's on the date-change review, see [time
+(this computer's on every schedule page, except the retired Copy campaign page,
+which keeps the campaign's; see [time
 entry](../ui-conventions/spec.md#time-entry)), and the current campaign dates. Wherever a schedule is
 edited (the date-change review and the
 New and Edit scheduled email pages below), its fields show only those its mail
@@ -2501,6 +2501,36 @@ read-only editors still post their saved values, so the posted form, its
 validation, the review and reminder planning are unchanged. When the browser
 restores a value into a closed editor (Back), `pageshow` opens that editor
 again; a value restored into a read-only editor is put back to its saved value.
+
+The date-change review shows and takes send dates and times in the browser's
+time zone ([#558](https://github.com/epiphany40223/parishkit/issues/558)), as
+[New and Edit scheduled email](#new-and-edit-scheduled-email) do: each saved
+schedule's editor is filled from its moment
+in the browser's zone, the page names that zone beside the dates, and the
+server converts each posted row back to the campaign's zone with the browser's
+zone the page sends. A row posted as it was shown keeps its saved values, and
+without a usable zone Review changes stays unavailable and the server refuses
+the post. The campaign dates are calendar dates and are not converted. A draft
+campaign's time zone may change in the same review. A schedule whose send date,
+time and day of the week are left as shown (even if its email changed) then
+keeps its campaign wall-clock time in the new zone, as a time zone change always
+has, so its send moves and the review lists the moved sends. A schedule whose
+send date or time changed converts from the typed browser time into the new
+zone, so it sends at the moment typed. Two rows that show the same time can
+therefore send an hour apart after a zone change: an untouched row moves with
+the new zone while a changed one keeps the moment typed, and the review shows
+each row's moment. A dated send typed at a moment the campaign's clocks show
+twice (the hour they repeat when they fall back) is refused on its send time,
+since a schedule keeps only a campaign wall-clock time and the scheduler reads
+it as the first of the two; the Admin chooses a time outside that hour. A typed
+time the browser's own clocks skip reads forward, as every browser-local time
+does, and no moment falls in an hour the campaign's clocks skip. A digest's
+row also posts the moment the page drew it from, so a page drawn before a
+daylight-saving change and posted after it still reads as unchanged. These
+rules are the shared conversion, so New and Edit scheduled email follow them
+too. The review dialog, like every schedule review, shows when each
+schedule sends only as moments in the browser's zone (a digest also says it
+recurs), never the saved campaign-local date and time.
 
 The date-change review reviews and applies in the
 [review dialog](../ui-conventions/spec.md#review-dialog). **Review changes**

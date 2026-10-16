@@ -19,16 +19,26 @@ but carry the saved ones (data-saved-value, ScheduleWindow), so the page
 opens with Review available and reverting the dates makes it unavailable
 again. A blank added schedule is no change. Its hint keeps its space, so it
 never moves the page.
+Send dates and times are shown and typed in the browser's time zone (#558),
+as on New and Edit scheduled email: ui-v1.js fills the hidden zone field
+(data-browser-zone), names the zone in the note, and fills each saved row
+from its data-schedule-local moment, making those values the fields'
+defaults, so the change gate compares with the saved schedules as this
+browser shows them. Without a zone, data-zone-missing shows and Review
+changes stays unavailable. The campaign dates are calendar dates, and its
+time zone is a setting; neither is converted.
 {% endcomment %}
 <h1>{% translate "Dates and mail schedules" %}</h1>
-{% aboutpage "schedules" %}{% include 'stewardship/schedule-guide.html' with window_text=schedules.window_text campaign_timezone=schedules.timezone %}
+{% aboutpage "schedules" %}{% include 'stewardship/schedule-guide.html' with window_text=schedules.window_text %}
 <p>{% translate "Review changes shows what would change and the work it affects; nothing takes effect until you choose Apply and it says Applied." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
 {% if window.proposed %}<p class="notice">{% translate "The proposed dates below have not been saved. Resolve the schedules and review the complete change before applying it." %}</p>{% endif %}
 <p><a href="{% url 'admin:content_catalog' %}">{% translate "Create or edit email templates and their subjects" %}</a></p>
-<form method="post" action="{{ post_url }}" id="schedule-dates-form" data-review-open="schedule-dates-review" data-require-change="base_digest">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}">
+<form method="post" action="{{ post_url }}" id="schedule-dates-form" data-review-open="schedule-dates-review" data-require-change="base_digest" data-schedule-zoned>{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="zone" value="" data-browser-zone>
 <fieldset class="panel"><legend>{% translate "Campaign window" %}</legend>
 <p class="help">{% translate "If you change the campaign dates, change or delete every mailing that would fall outside the new dates." %}</p>{% if window.live_at %}<p class="notice">{% translate "This campaign is live, so only its end date can change. Family codes and links keep working until the end date you choose." %}</p>{% elif not editable %}{% translate "They lock once the campaign goes live, and while other campaign work is running. You can still change schedules that have not sent yet. A live campaign's end date can change here while it is open and no other campaign work is running." as locked_tip %}<div class="label-row notice"><span id="window-locked">{% translate "The campaign dates and time zone can't be changed here right now." %}</span>{% include "stewardship/components/toggletip.html" with tip_id="window-locked-tip" tip_label_id="window-locked" tip_text=locked_tip %}</div>{% endif %}{{ window.as_div }}</fieldset>
+<p class="help" data-browser-zone-note hidden>{% translate "Enter send dates and times in this computer's time zone:" %} <span data-browser-zone-name></span>.</p>
+<p class="notice notice-error" id="schedule-dates-zone-missing" data-zone-missing hidden>{% translate "Your browser didn't report a time zone, so these send times can't be read. Check your computer's time zone setting, then reload this page." %}</p>
 {% include 'stewardship/schedule-table.html' %}
 {% include 'stewardship/schedule-fields.html' %}
 <p>{% translate "Change the dates or a schedule to review it." as unchanged_hint %}{% include 'stewardship/components/review-changes-button.html' with hint=unchanged_hint %}</p></form>
