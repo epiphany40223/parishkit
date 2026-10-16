@@ -212,6 +212,10 @@ DESCRIPTIONS = {
         "after the Administrator accepted the duplicate risk, as the email's "
         "page does."
     ),
+    "admin_cmd_send_confirm": _(
+        "An automation session confirmed a reviewed pause, resume or "
+        "resolution of held email, as the Pause and resume mail page does."
+    ),
     "admin_cmd_delivery_resolve": _(
         "An automation session resolved an outgoing email, as the email's "
         "page does: a note, external evidence or a retry."
