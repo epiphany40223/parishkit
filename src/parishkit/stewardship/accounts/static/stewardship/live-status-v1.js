@@ -23,9 +23,9 @@
 // form[data-live-autosubmit] (such as a ready download) is submitted once.
 // A follow-up link also marked data-in-place is clicked instead, so ui-v1.js
 // refreshes the page where the reader is rather than loading it again: an
-// in-place settings page's refresh once its change settles (#532) names its
-// own address, and a link naming only a fragment (a task page once its task
-// ends, #869) re-reads this same address.
+// off-site backup's settled check (#519) names its settings page's address,
+// and a link naming only a fragment (a task page once its task ends, #869)
+// re-reads this same address.
 //
 // A region that follows a steadily changing count (such as Family email
 // progress) may set data-live-interval="<ms>" to poll at that fixed pace
@@ -555,7 +555,7 @@
       // Anchoring cannot help at the foot of the page, where a shorter status
       // (Applied is shorter than its running indicator) shortens the page and
       // the browser pulls everything above down. A region inside a
-      // [data-keep-height] one (a settings page's review region, ui-v1.js)
+      // [data-keep-height] one (a review or status region, ui-v1.js)
       // therefore keeps the height of that one the reader's place needs
       // (#736): enough that the page's foot stays at or below the viewport's
       // bottom edge (a copy of ui-v1.js's heldHeight; see it for why).
@@ -622,7 +622,7 @@
       const follow = region.querySelector("a[data-live-follow]");
       if (follow) {
         // An in-place link naming only a fragment re-reads this page
-        // (#869); one naming an address is clicked as it is (#532).
+        // (#869); one naming an address is clicked as it is (#519).
         if (follow.hasAttribute("data-in-place") && follow.getAttribute("href").startsWith("#")) refreshPage(follow);
         else if (follow.hasAttribute("data-in-place")) follow.click();
         else window.location.assign(follow.href);

@@ -20,8 +20,8 @@ import pytest
 from parishkit.stewardship.accounts.artwork_views import NOT_STATIC_IMAGE, UNAVAILABLE
 
 from .artwork_components import PAGE, REMOVAL
+from .review_helpers import answer_reviews
 from .test_in_place import MARK, MARKED
-from .test_settings_in_place import answer_reviews
 from .waits import eventually, has_attribute, hidden, same_place, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -180,11 +180,20 @@ def test_the_status_line_is_in_the_slot_and_the_page_never_jumps(
     else:
         changed, start, name = "welcome", "Campaign image removed.", "Welcome"
         # The slot's whole reserved line in view first, as a reader sees
-        # the pane they act in (the one-line status fills only its top).
-        page.locator("#artwork-outcome-welcome").scroll_into_view_if_needed()
-        slot(page, "Welcome page icon").get_by_role(
+        # the pane they act in (the one-line status fills only its top),
+        # and its Remove this image button, which sits above it, so the
+        # click scrolls nothing. Scrolled to the line "if needed" alone,
+        # the click's own scroll to the button left the line's two
+        # reserved lines (#1410) 14px below the fold in Firefox, and
+        # focusing the line then rightly scrolled it into view.
+        remove = slot(page, "Welcome page icon").get_by_role(
             "button", name="Remove this image"
-        ).click()
+        )
+        page.locator("#artwork-outcome-welcome").evaluate(
+            "line => line.scrollIntoView({block: 'center'})"
+        )
+        remove.evaluate("button => button.scrollIntoView({block: 'nearest'})")
+        remove.click()
         # Remove this image is a confirmation (#1356).
         title = "Remove this image?"
     dialog = dialog_of(page, title)
@@ -290,7 +299,8 @@ def test_an_accepted_review_clears_the_slots_refusal(page, component_origin):
     field = page.locator("#id_welcome_image")
     has_attribute(field, "aria-invalid", "true")
     welcome.get_by_role("button", name="Remove this image").click()
-    dialog = dialog_of(page)
+    # The removal opens a confirmation (#1356), titled as its question.
+    dialog = dialog_of(page, "Remove this image?")
     assert page.locator("#artwork-outcome-welcome").inner_text() == ""
     dialog.get_by_role("button", name="Cancel").click()
     hidden(dialog)

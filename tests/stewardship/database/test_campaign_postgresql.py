@@ -9,6 +9,7 @@ import pytest
 from django.db import IntegrityError, close_old_connections, connection, transaction
 from django.db.models import F
 
+from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.configuration_installation import install_request
 from parishkit.stewardship.accounts.configuration_models import (
     AppliedConfigurationVersion,
@@ -168,10 +169,15 @@ def test_configuration_is_immutable(tmp_path, model):
 
 
 def test_invalid_creation_and_timezone_fail_before_manifest_change(tmp_path):
-    """Unsupported lifecycle actions become terminal invalid-candidate receipts."""
+    """Unsupported lifecycle actions become terminal invalid-candidate receipts.
+
+    A new draft may start in any catalog zone, not only the parish's (#1330,
+    #1408), so the refused zone is one outside the catalog, which is refused
+    before any request is recorded.
+    """
     store, root, actor = initialized(tmp_path)
-    failed, _, _ = add_draft(store, root, actor, campaign(timezone="America/Chicago"))
-    assert failed.state == "failed" and failed.failure_code == "invalid_candidate"
+    with pytest.raises(ConfigError):
+        add_draft(store, root, actor, campaign(timezone="Mars/Olympus"))
     assert SystemConfiguration.objects.get().active_configuration_id == root.version_id
     assert not Campaign.objects.exists()
     applied, _, _ = add_draft(store, root, actor)

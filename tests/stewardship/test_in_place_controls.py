@@ -4,19 +4,10 @@ ui-v1.js relies on, and the no-script landing every such control keeps."""
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from types import SimpleNamespace
-from urllib.parse import parse_qs, urlsplit
-from uuid import UUID, uuid4
+from uuid import UUID
 
-import pytest
 from django.template.loader import render_to_string
-from django.urls import reverse
 
-from parishkit.stewardship.accounts.admin_editing import (
-    IN_PLACE_PAGES,
-    in_place_follow,
-    review_region,
-)
 from parishkit.stewardship.accounts.presence import PRESENCE_SORTING
 from parishkit.stewardship.jobs.views import EVENT_SORTING, TASK_SORTING
 from parishkit.stewardship.web.contracts import PageWindow
@@ -124,22 +115,11 @@ def test_presence_refresh_refreshes_the_list_in_place():
 # around them draws: the template's name, and the page templates'. The
 # integration status line is also the passive status view live-status-v1.js
 # reads, whose answer never holds the page's regions.
-# The in-place settings pages (#532) draw their review region around
-# settings-review.html, whose Apply names it, and around the change status a
-# confirmed change shows, whose follow-up link names it too. None is left in
-# this build: Share options, Campaign images, Parish logos, Parish settings
-# (#750) and No-reminders WorkGroup (#750, #1356) review in the review
-# dialog; Create the campaign draws the panel but names no in_place page.
-SETTINGS_PAGES = ()
-# Ministries changes nothing any more (#1267).
-REVIEW_PAGES = SETTINGS_PAGES
 HOSTED = {
     "integration-summary.html": ("integration-settings.html",),
     # Off-site backups' settled access check (#519): its follow-up re-reads
     # the settings page's status line.
     "backup-status-lines.html": ("integration-settings.html",),
-    "settings-review.html": REVIEW_PAGES,
-    "configuration-request-status.html": REVIEW_PAGES,
     # Refresh from ParishSoft shows the run it requested (#521).
     "background-task-status.html": ("background-task.html", "source-refresh.html"),
     # Outgoing mail's bulk review region (#382 M4): Confirm and Continue
@@ -627,34 +607,13 @@ def test_refresh_task_keeps_the_history_view():
     )
 
 
-@pytest.mark.parametrize("state", ["applied", "failed", "cancelled", "staged"])
-def test_only_an_applied_change_refreshes_its_settings_page(state):
-    """An in-place settings page refreshes itself only once its change is
-    applied (#532 review). A change that was not applied leaves the page
-    alone, so its form keeps the version it was reviewed at and a change
-    refused as stale must be reloaded before the next Review."""
-    receipt = SimpleNamespace(state=state, request_id=uuid4(), failure_code="")
-    html = render_to_string(
-        "stewardship/configuration-request-status.html",
-        # A page that still reads ?request= (the last in_place page).
-        {
-            "receipt": receipt,
-            "follow_url": reverse("admin:reminder_workgroup") + "?request=x",
-        },
-    )
-    assert ("data-live-follow" in html) == (state == "applied")
-
-
-@pytest.mark.parametrize("page", SETTINGS_PAGES)
-def test_settings_review_waits_for_a_change(page):
-    """Each in-place settings form keeps Review changes unavailable until it
-    differs from what is saved (#921): the form names its version field for
-    the change gate, and draws the shared Review button with its hint."""
-    text = (TEMPLATES / page).read_text()
-    form = re.search(r'<form id="settings-form"[^>]*>', text).group(0)
-    assert 'data-require-change="base_digest"' in form
-    assert "stewardship/components/review-changes-button.html" in text
-    assert 'translate "Review changes"' not in text
+def test_change_status_never_follows_back_to_a_settings_page():
+    """The in-place settings panel of #532 is retired (#1429): every editor
+    reviews in the review dialog (#750), which follows Change status itself,
+    so the status draws no follow-up back to the page."""
+    text = (TEMPLATES / "configuration-request-status.html").read_text()
+    assert "data-live-follow" not in text and "follow_url" not in text
+    assert not (TEMPLATES / "settings-review.html").exists()
 
 
 def test_review_button_hint_follows_it_and_keeps_its_space():
@@ -752,7 +711,6 @@ def test_campaign_settings_reviews_in_the_dialog_once():
     assert 'data-require-change="base_digest"' in forms[0]
     assert "data-in-place" not in forms[0]
     assert text.count("stewardship/components/review-changes-button.html") == 1
-    assert "'stewardship/settings-review.html'" not in text
     assert 'dialog_id="campaign-review"' in text and "review=True" in text
     assert "(read-only)" not in text
     # Save is the action's own label (#1356), for a compact review and a
@@ -829,24 +787,6 @@ def test_parish_settings_review_in_the_dialog():
     assert 'dialog_id="parish-review"' in text and "review=True" in text
     review = (TEMPLATES / "parish-settings-review.html").read_text()
     assert "data-review-answer" in review and "data-review-preview" in review
-    assert "parish_settings" not in IN_PLACE_PAGES
-
-
-def test_the_follow_up_carries_only_the_change():
-    """Change status's read and its quiet follow-up name only the in-place
-    page and the change. Ministries is no in-place page any more (#1267):
-    it changes nothing, so a follow-up never leads there, and Parish
-    settings reviews in the dialog."""
-    receipt = SimpleNamespace(request_id="53200000-0000-4000-8000-000000000532")
-    status = review_region("reminder_workgroup", receipt=receipt)["status_url"]
-    read = {key: values[0] for key, values in parse_qs(urlsplit(status).query).items()}
-    assert read == {"in_place": "reminder_workgroup"}
-    follow = in_place_follow(read | {"q": "choir", "next": "/x"}, receipt.request_id)
-    assert urlsplit(follow).path == reverse("admin:reminder_workgroup")
-    assert parse_qs(urlsplit(follow).query) == {"request": [receipt.request_id]}
-    # Nor to a page that reviews in the dialog (#750).
-    for page in ("ministries", "parish_settings"):
-        assert in_place_follow({"in_place": page}, receipt.request_id) is None
 
 
 def test_go_live_and_production_refreshes_are_in_place():
