@@ -135,10 +135,9 @@ the page script fills, and the server converts the typed wall-clock time to
 UTC; the page names the zone next to the fields. The Admin portal requires
 JavaScript ([#565](https://github.com/epiphany40223/parishkit/issues/565)), so
 a missing or unknown zone is refused rather than guessed, and when the browser
-reports none the page keeps Save unavailable, saying why. A time that occurs
-twice when clocks fall back is the first occurrence; a time skipped when clocks
-spring forward is read with the offset in force before the change (2:30 AM
-becomes 3:30 AM daylight time), so the form is never refused for it. Emails,
+reports none the page keeps Save unavailable, saying why. A typed time that
+occurs twice or is skipped at a daylight-saving change follows the one
+[daylight-saving rule](#schedules), so the form is never refused for it. Emails,
 which cannot know a reader's browser, use the parish time zone and name it
 ("9:15 PM Eastern"), never "UTC". Operational and security alert emails
 follow the same rule (Administrator decision, 2026-10-10,
@@ -2350,14 +2349,18 @@ learned once. **Shared code.**
   [ParishSoft refresh schedule](../admin-portal/spec.md#parishsoft-refresh-schedule-settings)
   is the recorded exception: its times are typed and shown in its schedule
   zone (decision 18).
-- **Daylight saving.** When a schedule is evaluated, a wall time that occurs
-  twice (clocks fall back) runs once, at its first occurrence. A wall time
-  that the spring-forward change skips runs at the first instant after the
-  gap, so 2:30 AM runs at 3:00 AM. No occurrence runs twice or is dropped
-  (`resolve_local`). A one-off time typed into a page still reads a skipped
-  time with the offset in force before the change, so 2:30 AM becomes 3:30
-  AM ([dates and times](#dates-and-times)). A later #1129 change moves typed
-  times onto `resolve_local`.
+- **Daylight saving.** One rule turns every local wall time into an instant,
+  whether a schedule is evaluated or a one-off time is typed into a page
+  ([dates and times](#dates-and-times)), on the server (`resolve_local`, and
+  `stewardship_resolve_local_v1` in the database) and in the page script
+  (`ParishLocalTime.moment`). A wall time that occurs twice (clocks fall
+  back) is its first occurrence, so it runs once. A wall time that the
+  spring-forward change skips is the first instant after the gap, so 2:30
+  AM is 3:00 AM, not 3:30 AM. No occurrence runs twice or is dropped, and a
+  form is never refused for a skipped time. The shared cases
+  (`tests/stewardship/fixtures/dst_cases.json`) pin the server and the page
+  script to the same instants
+  ([#1129](https://github.com/epiphany40223/parishkit/issues/1129)).
 - **Preview.** Before Review, an editor shows the schedule's next
   occurrences in plain words, each with its weekday and date, in the
   browser's zone, and also in the schedule zone when that differs. The

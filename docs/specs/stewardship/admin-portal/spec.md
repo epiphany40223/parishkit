@@ -2668,11 +2668,10 @@ campaign's zone through the same moment, so the rules above (inside the
 campaign dates, after the initial invitation, no two Family mailings at once)
 compare the moments the Admin chose. A digest's time and weekday are converted
 at its next send; where the two zones change their clocks on different dates, a
-digest keeps its campaign wall-clock time between them. Around a
-daylight-saving change, a typed time that occurs twice in the browser's zone is
-the first occurrence, and a skipped one moves forward (2:30 AM becomes 3:30 AM),
-as every browser-local time is read; a saved campaign-local time that the
-campaign's own change skips stays as saved and the scheduler resolves it. An
+digest keeps its campaign wall-clock time between them. A typed time follows
+the shared [daylight-saving rule](../ui-conventions/spec.md#schedules); a
+saved campaign-local time that the campaign's own change skips stays as saved
+and the scheduler resolves it. An
 Edit page posted with the date, time and weekday it showed keeps the saved
 values exactly, so saving it unchanged never moves the send, even when the two
 zones change their clocks at different instants. A page posted without a
