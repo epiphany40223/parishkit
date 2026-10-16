@@ -253,10 +253,11 @@ def test_every_family_or_member_detail_is_left_out():
     Any field whose name looks like a person's identifier or contact detail
     is either left out or reviewed here as not naming anyone: Ministry DUIDs
     name Ministries, ``directory_phone`` is the directory's filter choice
-    (any, yes or no) and ``exact_code_used`` a flag. A new field of that
-    shape fails here until it is reviewed or left out of the document.
+    (any, yes or no), ``exact_code_used`` a flag and ``codes`` a refused
+    Admin input's closed error codes (#1403). A new field of that shape
+    fails here until it is reviewed or left out of the document.
     """
-    reviewed = {"directory_phone", "exact_code_used"}
+    reviewed = {"directory_phone", "exact_code_used", "codes"}
     people = {
         name
         for name in DETAIL_FIELDS
