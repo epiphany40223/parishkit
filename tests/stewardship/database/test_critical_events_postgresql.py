@@ -73,7 +73,7 @@ def test_banner_names_events_and_acknowledgement_clears_it_for_everyone(
     critical(Event.MAIL_PROVIDER_FAILED)
     page = home(browser)
     assert BANNER in page
-    assert "ParishSoft data refresh failed (2×)" in page
+    assert "ParishSoft refresh failed (2×)" in page
     assert "Email sending failed" in page
     assert ROUTE in page and 'name="critical" value="yes"' in page
     response = acknowledge(browser)
@@ -93,7 +93,7 @@ def test_banner_names_events_and_acknowledgement_clears_it_for_everyone(
     critical(Event.TASK_FAILED)
     page = home(other)
     assert BANNER in page and "Background task failed" in page
-    assert "ParishSoft data refresh failed" not in page
+    assert "ParishSoft refresh failed" not in page
     assert acknowledge(other).status_code == 302
     assert BANNER not in home(other)
     # A row a long transaction inserted before the acknowledgement but
@@ -186,7 +186,7 @@ def test_a_critical_event_recorded_after_the_page_survives_acknowledge(
     assert login.status_code == 302
     critical(Event.SOURCE_INVALID)
     page = home(browser)
-    assert "ParishSoft data refresh failed" in page
+    assert "ParishSoft refresh failed" in page
     # A new CRITICAL arrives while the Administrator reads the page.
     critical(Event.MAIL_PROVIDER_FAILED)
     response = acknowledge(browser, shown(page))
@@ -198,7 +198,7 @@ def test_a_critical_event_recorded_after_the_page_survives_acknowledge(
     assert event.auditcontext.context == {"outcome": "succeeded", "count": 1}
     page = home(browser)
     assert BANNER in page and "Email sending failed" in page
-    assert "ParishSoft data refresh failed" not in page
+    assert "ParishSoft refresh failed" not in page
 
 
 @pytest.mark.parametrize(
