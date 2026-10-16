@@ -892,7 +892,13 @@ kept, and after an applied change a redrawn form compares with its new
 defaults. A control marked `data-change-ignore` is no change: one that only
 shows other fields (Edit scheduled email's "Edit this schedule's email",
 whose fields count instead), and plain text generated from the HTML, which is
-not sent. The hint
+not sent. A hidden field that carries a setting counts like any other
+control, and so does a row a page script adds or removes: removing
+ParishSoft's stored quick updates, which the page shows only as words with
+hidden fields, is a change (#1334 review). Hidden fields that carry no
+setting do not count (the version and security tokens, a formset's row
+counts, a one-time request key, the browser's time zone), nor does a hidden
+field a script adds alongside the visible controls it follows. The hint
 keeps its space while hidden, so it never moves the page.
 The server still refuses an unchanged Review ("No settings have changed."),
 only as a safeguard for requests that bypass the page script: no page draws

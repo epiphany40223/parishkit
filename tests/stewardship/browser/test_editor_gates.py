@@ -2,9 +2,10 @@
 
 In real browsers: integration Save waits for a change (a pasted key counts),
 Off-site backups' Test access never does, Slack's Save is unavailable while
-its key can't be stored, ParishSoft's Save waits beside its schedule gate,
-the Pages and emails editor's Preview changes waits for a change (the
-visual editor's toolbar counts), New user's Review waits for an Email and a
+its key can't be stored, ParishSoft's Save waits beside its schedule gate
+(removing its stored quick updates, hidden fields only, is a change), the
+Pages and emails editor's Preview changes waits for a change (the visual
+editor's toolbar counts), New user's Add the user waits for an Email and a
 Name and for the Email check, the automation approval's user code and the
 Parish website are checked as typed, and Campaign settings' leader roles
 need one ticked. Pages are the real templates (the components modules and
@@ -128,6 +129,47 @@ def test_parishsoft_save_waits_for_a_change_beside_its_schedule(page, component_
     assert not failures
 
 
+def test_removing_parishsoft_quick_updates_is_a_change(page, component_origin):
+    """Production's stored quick updates are rows of hidden fields only, so
+    the change gate counts hidden fields too: Remove quick updates makes
+    Save available, as removing a rule with controls does (#1334 review)."""
+    from playwright.sync_api import expect
+
+    from .refresh_schedule_components import PRODUCTION
+    from .test_refresh_schedule_editor import answering, rule_rows
+
+    failures = watch(page)
+    requests = answering(page, PRODUCTION)
+    page.goto(component_origin + "/refresh-schedule-gated")
+    save = page.locator(".schedule-save button[type=submit]")
+    expect(save).to_be_disabled()
+    page.get_by_role("button", name="Remove quick updates").click()
+    expect(page.locator("[data-quick-rule]")).to_have_count(0)
+    expect(save).to_be_enabled()
+    assert "kind=quick" not in requests[-1]
+    # Shown again from history, the removal still counts.
+    page.evaluate(RESTORE)
+    expect(save).to_be_enabled()
+    # A rewritten hidden setting is a change; written back, it is none.
+    page.goto(component_origin + "/refresh-schedule-gated")
+    expect(save).to_be_disabled()
+    write = (
+        "value => { const field = document.querySelector("
+        "'[data-quick-rule] input[type=hidden][name$=\"-every\"]');"
+        " field.value = value;"
+        " field.dispatchEvent(new Event('change', {bubbles: true})); return true; }"
+    )
+    saved = page.locator('[data-quick-rule] input[name$="-every"]').input_value()
+    page.evaluate(write, "30")
+    expect(save).to_be_enabled()
+    page.evaluate(write, saved)
+    expect(save).to_be_disabled()
+    # A rule with controls removed is a change too.
+    rule_rows(page).first.get_by_role("button", name="Remove").click()
+    expect(save).to_be_enabled()
+    assert not failures
+
+
 def test_preview_changes_waits_for_a_change(page, component_origin):
     """Preview changes waits until the content differs from what is saved;
     a toolbar edit in the visual editor, which fires no input event, counts.
@@ -191,7 +233,7 @@ def test_a_name_filled_or_cleared_from_parishsoft_moves_review(page, component_o
 
     failures = watch(page)
     page.goto(component_origin + NEW)
-    review = page.get_by_role("button", name="Review")
+    review = page.get_by_role("button", name="Add the user")
     lookups = HeldLookups(page)
     lookups.ask("ann@example.org")
     expect(review).to_be_disabled()
