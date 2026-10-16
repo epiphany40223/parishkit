@@ -364,3 +364,19 @@ def test_the_label_guard_leaves_other_ellipses_alone(source):
     """Progress text, a mid-label ellipsis, assignments that are not labels
     and comments are not labels."""
     assert not trailing_ellipsis_labels(source)
+
+
+STYLESHEET = TEMPLATES.parents[1] / "static/stewardship/ui-v1.css"
+
+
+def test_only_the_class_makes_a_button_secondary():
+    """The secondary look is chosen where a button is drawn (#732): the
+    stylesheet's secondary rules select .button-secondary alone, never a
+    button by its place, name or data- attribute."""
+    css = re.sub(r"/\*.*?\*/", "", STYLESHEET.read_text(), flags=re.S)
+    rules = re.findall(r"([^{}]*\.button-secondary[^{}]*){", css)
+    selectors = sorted({part.strip() for rule in rules for part in rule.split(",")})
+    assert selectors == [
+        ".button-secondary",
+        ".button-secondary:not(:disabled):hover",
+    ]

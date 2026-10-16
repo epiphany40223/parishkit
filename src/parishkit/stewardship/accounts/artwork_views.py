@@ -53,6 +53,7 @@ from parishkit.stewardship.web.refusals import (
     UserFacingStale,
     stale_page,
     unexpected_fields,
+    with_default_code,
 )
 
 from . import admin_navigation
@@ -74,7 +75,14 @@ from .branding_staging import (
     staged_bundle,
 )
 from .branding_validation import validate_installation
-from .branding_views import ERRORS, _checked, _error, _retained, media_root
+from .branding_views import (
+    ERRORS,
+    _checked,
+    _error,
+    _retained,
+    image_reason,
+    media_root,
+)
 from .request_patch import build_candidate
 
 SALT = "stewardship-artwork-preview-v1-"
@@ -244,7 +252,9 @@ class ArtworkForm(AdminForm):
         """Size is an early bound; signature, pixels and animation are checked next."""
         value = self.cleaned_data["image"]
         if not 0 < value.size <= MAX_IMAGE_BYTES:
-            raise forms.ValidationError(_("Choose an image no larger than 5 MB."))
+            raise forms.ValidationError(
+                _("Choose an image no larger than 5 MB."), code="too_large"
+            )
         return value
 
 
@@ -332,6 +342,8 @@ def _page(request, service, configuration, campaign, forms_by_slot, *, status=20
     )
     if status != 200:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return _checked(request, service, response)
 
 
@@ -531,19 +543,28 @@ def artwork_upload(request, campaign_id, slot):
             or any(len(values) != 1 for _, values in request.POST.lists())
             or any(len(values) != 1 for _, values in request.FILES.lists())
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(
+                request.POST,
+                request.FILES,
+                allowed={"base_digest", "csrfmiddlewaretoken", "image"},
+            )
         form = ArtworkForm(request.POST, request.FILES, auto_id=f"id_{slot}_%s")
         reason = unavailable(campaign, slot)
         if reason is not None:
             # The page shows this upload unavailable; a request that skips it
             # is refused at the field like any other upload error (#563).
             form.is_valid()
-            form.add_error("image", reason)
+            form.add_error("image", forms.ValidationError(reason, code="not_available"))
         elif form.is_valid():
             try:
                 graphics = prepare_artwork(form.cleaned_data["image"], _kind(slot))
             except ValueError:
-                form.add_error("image", NOT_STATIC_IMAGE[_kind(slot)])
+                form.add_error(
+                    "image",
+                    forms.ValidationError(
+                        NOT_STATIC_IMAGE[_kind(slot)], code="unsupported_image"
+                    ),
+                )
             else:
                 try:
                     identifier = stage_branding(
@@ -561,8 +582,10 @@ def artwork_upload(request, campaign_id, slot):
                 return _reviewed(
                     request, service, actor, configuration, campaign, change
                 )
-        return _page(
-            request, service, configuration, campaign, {slot: form}, status=400
+        return image_reason(
+            _page(request, service, configuration, campaign, {slot: form}, status=400),
+            form,
+            "image",
         )
     except ERRORS as error:
         return _error(error)

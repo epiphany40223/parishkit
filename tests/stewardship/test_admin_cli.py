@@ -83,6 +83,13 @@ def test_the_catalog_lists_every_command_with_its_flags():
     }
     refresh = {"refresh start", "refresh status"}
     portal = {"portal maintenance show", "portal maintenance set", "send controls"}
+    # Pause and resume mail's controls (PR 7b, #463).
+    portal |= {
+        "send pause-preview",
+        "send resume-preview",
+        "send resolve-preview",
+        "send confirm",
+    }
     configuration = {
         "files list",
         "files delete",
@@ -206,6 +213,11 @@ def test_the_catalog_lists_every_command_with_its_flags():
         # Home's acknowledgements, with the users and follow-up of PR 11.
         "events list",
         "events acknowledge",
+        # The Ministry follow-up queue (PR 11a).
+        "followup list",
+        "followup show",
+        "followup update",
+        "followup bulk",
     }
     # Past campaigns' archive import (#1018), listed with the reports.
     reports |= {"history list", "history preview", "history confirm", "history remove"}
@@ -265,6 +277,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "export archive",
                 "integration confirm",
                 "integration key finish-switching",
+                "send confirm",
             }
         ), name
         # A prompting command, and only one, takes --yes. Other branches add
@@ -805,6 +818,8 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_export_family_test_names",
         "admin_cmd_test_families",
         "admin_cmd_portal_maintenance_set",
+        # send confirm: Pause and resume mail's Confirm (PR 7b, #463).
+        "admin_cmd_send_confirm",
         "admin_cmd_files_delete",
         "admin_cmd_files_rename",
         "admin_cmd_parish_confirm",
@@ -844,6 +859,9 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_users_confirm",
         "admin_cmd_users_import_leaders",
         "admin_cmd_events_acknowledge",
+        # The Ministry follow-up queue's Save and bulk outcome (PR 11a).
+        "admin_cmd_followup_update",
+        "admin_cmd_followup_bulk",
         "admin_cmd_history_preview",
         "admin_cmd_history_confirm",
         "admin_cmd_history_remove",
@@ -1377,7 +1395,16 @@ def test_only_an_unexpected_error_logs_a_failure_line(
     with caplog.at_level(logging.DEBUG):
         code, document = run_failing(monkeypatch, failing, written=written)
     assert document["error"]["code"] == expected
-    assert len(failure_lines(caplog)) == (expected in admin_cli.TRACED_CODES)
+    lines = [json.loads(line)["message"] for line in failure_lines(caplog)]
+    # A refusal of input has its own line instead (#1403).
+    refused = expected in {"invalid", "denied"}
+    assert lines == (
+        ["admin_input_refused"]
+        if refused
+        else ["task_failed"]
+        if expected in admin_cli.TRACED_CODES
+        else []
+    )
     # Only the unexpected is recorded durably, too (#617).
     assert len(written) == (expected in admin_cli.TRACED_CODES)
 

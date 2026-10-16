@@ -24,6 +24,7 @@ server:
 from types import SimpleNamespace as Value
 from uuid import UUID
 
+from django import forms
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts.admin_editing import summary_errors
@@ -96,7 +97,9 @@ def components(context, admin):
     )
     refused_size.is_valid()
     refused_size.errors.clear()
-    refused_size.add_error("favicon", SIZE_ERROR)
+    refused_size.add_error(
+        "favicon", forms.ValidationError(SIZE_ERROR, code="wrong_shape")
+    )
     return {
         PAGE: page([]),
         REVIEW: (

@@ -44,17 +44,8 @@ NEXT_STEP = re.compile(r"[.:;!?]\s+\S")
 ALLOWED = {
     # Pages deferred until the pull requests changing them merge (#227).
     "census-changes.html": {"No matching census changes."},
-    "delivery.html": {"No Admin evidence on this page."},
     "directory.html": {"No matching Families."},
-    "go-live-families.html": {
-        "No Families on this page have Testing responses left to delete."
-    },
-    "information.html": {"No Staff edits yet."},
-    "limitations-report.html": {"No matching Members.", "No matching Families."},
-    "ministry-followup.html": {"No follow-up edits yet."},
-    "ministry-roster.html": {"No roster changes to enter."},
     "participation.html": {"No campaign dates to show."},
-    "source-form.html": {"Every Family that can use the portal can open the form."},
     # The shared chart's exact-values table; the page around each chart
     # says what it covers.
     "components/chart.html": {"Nothing to show yet."},

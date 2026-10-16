@@ -55,7 +55,8 @@ class SetupParishForm(ParishForm):
             typed(value, "url")
         except ConfigError:
             raise forms.ValidationError(
-                _("Use a website URL without credentials, query or fragment.")
+                _("Use a website URL without credentials, query or fragment."),
+                code="invalid_url",
             ) from None
         return value
 
@@ -78,11 +79,15 @@ class IdentityLines(forms.CharField):
         value = super().clean(value)
         lines = [line.strip() for line in value.splitlines() if line.strip()]
         if len(lines) > 50:
-            raise forms.ValidationError(_("Enter at most fifty addresses."))
+            raise forms.ValidationError(
+                _("Enter at most fifty addresses."), code="too_many"
+            )
         try:
             values = sorted({normalized_email(line) for line in lines})
         except ConfigError:
-            raise forms.ValidationError(_("Check the email addresses.")) from None
+            raise forms.ValidationError(
+                _("Check the email addresses."), code="invalid_email"
+            ) from None
         return values
 
 
@@ -157,7 +162,8 @@ class SetupSlackForm(AdminForm):
                 _(
                     "Enable Slack and supply a channel, "
                     "or disable it and clear the channel."
-                )
+                ),
+                code="channel_mismatch",
             )
         return values
 

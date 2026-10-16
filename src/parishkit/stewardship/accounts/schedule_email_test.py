@@ -36,6 +36,9 @@ from parishkit.stewardship.web.refusals import (
     UserFacingError,
     UserFacingStale,
     unexpected_fields,
+    with_codes,
+    with_default_code,
+    with_reason,
 )
 
 from .admin_editing import error_response, principal
@@ -88,6 +91,8 @@ def _answer(body, status=200):
     """A JSON answer the page script reads, kept as is by the error pages."""
     response = JsonResponse(body, status=status)
     response.stewardship_safe_error = True
+    # The refusal log's code for this page's own refusal (#1444).
+    with_default_code(response)
     return response
 
 
@@ -107,14 +112,18 @@ def _send(request, campaign_id):
         or set(request.POST) - {*POSTED, "csrfmiddlewaretoken"}
         or any(len(values) != 1 for _name, values in request.POST.lists())
     ):
-        raise unexpected_fields()
+        raise unexpected_fields(
+            request.POST, request.FILES, allowed={*POSTED, "csrfmiddlewaretoken"}
+        )
     with read_transaction():
         state, campaign, _editable = schedule_state(service, campaign_id, page=True)
         records = _records(state[0], campaign.pk)
     chosen, kind = _chosen(records, request.POST.get(CHOSEN))
     form = ScheduleEmailForm(request.POST, kind="email", slot=kind)
     if not form.is_valid():
-        return _answer({"errors": _errors(form)}, status=400)
+        # The form's own fields and codes reach the refusal log through the
+        # Admin form base; ``invalid`` says the text itself was refused.
+        return with_codes(_answer({"errors": _errors(form)}, status=400), "invalid")
     values = form.values(campaign_id=campaign.pk, slot=kind)
     text = {key: values[key] for key in ("subject", "html", "text")}
     try:
@@ -130,6 +139,7 @@ def _send(request, campaign_id):
         raise UserFacingStale(
             _("A test email is already on its way."),
             fix=_("Wait a minute for it to finish, then send another."),
+            reason="test_pending",
         ) from None
     except TestUncertain:
         refusal = Refusal(
@@ -139,7 +149,10 @@ def _send(request, campaign_id):
                 "tick the confirmation below."
             ),
         )
-        return _answer({"unknown": True, "refusal": refusal.as_dict()}, status=409)
+        return with_reason(
+            _answer({"unknown": True, "refusal": refusal.as_dict()}, status=409),
+            "test_result_uncertain",
+        )
     except ObjectDoesNotExist:
         # The chosen email, or the mail settings, are gone from the applied
         # configuration since the read above: as Preview and test email

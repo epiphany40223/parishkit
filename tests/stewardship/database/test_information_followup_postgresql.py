@@ -1,5 +1,6 @@
 """Real live information, authorized Staff revisions and independent SQL guards."""
 
+import re
 import socket
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
@@ -189,6 +190,69 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
         assert b"search=" not in body
         for invalid in ({"sort": "submitted_at"}, {"size": "250"}, {"size": "5"}):
             assert search(browser, route, invalid)[0].status_code == 400
+        # A date the reader can fix at its field draws the queue again
+        # (#1332): 400, the values sent in the filters, the error at both
+        # dates and in the summary, and the results for no filters.
+        # The reader's earlier view was a search for "Called".
+        assert search(browser, route, {"search": "Called"})[0].status_code == 200
+        audited = set(
+            AuditEvent.objects.filter(event_type="information_viewed").values_list(
+                "pk", flat=True
+            )
+        )
+        response, body = search(
+            browser,
+            route,
+            {
+                "search": "Nobody",
+                "start": "2026-11-05",
+                "end": "2026-11-01",
+                "zone": "America/New_York",
+                "sort": "name",
+            },
+        )
+        assert response.status_code == 400 and response["Cache-Control"] == "no-store"
+        assert response.stewardship_codes == ("invalid",)
+        assert b'value="2026-11-05" aria-invalid="true"' in body
+        assert b'id="end" type="date" name="end" value="2026-11-01"' in body
+        assert body.count(b'aria-invalid="true"') == 2
+        # Each date keeps its zone note before the message (#1047).
+        described = b"information-zone-help submitted-dates_error"
+        assert body.count(b'aria-describedby="' + described + b'"') == 2
+        assert (
+            b'<ul class="errorlist" id="submitted-dates_error"><li>Enter a Submitted'
+            in body
+        )
+        assert b'<a href="#end">Enter a Submitted on or before' in body
+        assert b"Please contact" in body and b'aria-sort="ascending"' in body
+        assert b"data-filter-panel open" in body
+        # The search sent stays in its field only; the export and the
+        # table's controls carry the filters the results use (none).
+        assert body.count(b'value="Nobody"') == 1
+        assert body.count(b'value="2026-11-05"') == 1
+        # This request's own audit: shown, but not for the filters asked for.
+        outcomes = AuditContext.objects.filter(
+            event__event_type="information_viewed"
+        ).exclude(event__in=audited)
+        assert sorted(
+            context["outcome"] for context in outcomes.values_list("context", flat=True)
+        ) == ["denied", "started"]
+        # The remembered view is now the unfiltered one the page shows, with
+        # the sort sent, not the reader's earlier search.
+        token = re.search(rb'data-queue-address="[^"]*\?queue=(\w+)"', body).group(1)
+        response, body = read(browser, route + "?queue=" + token.decode())
+        assert response.status_code == 200 and b"Please contact" in body
+        assert b'value="Called"' not in body and b'aria-sort="ascending"' in body
+        assert b"aria-invalid" not in body
+        # A hostile value sent back into its field stays text.
+        response, body = search(browser, route, {"start": '"><script>x'})
+        assert response.status_code == 400 and b"<script>x" not in body
+        assert b'value="&quot;&gt;&lt;script&gt;x" aria-invalid="true"' in body
+        # Whole, ordered dates without a known zone keep the error page.
+        response, body = search(browser, route, {"start": "2026-11-01", "zone": ""})
+        assert response.status_code == 400 and b"time zone" in body
+        assert b'id="table-filters"' not in body
+        assert response.stewardship_codes == ("invalid", "zone_missing")
         # The Family DUID heading sorts through the same vocabulary (#960).
         response, body = search(browser, route, {"sort": "duid_desc"})
         assert response.status_code == 200 and b"Please contact" in body

@@ -236,13 +236,18 @@ class ContentForm(AdminForm):
         try:
             prepared = prepare_content(values["html"])
         except ValueError:
-            self.add_error("html", BOUNDED_MESSAGE)
+            self.add_error(
+                "html", forms.ValidationError(BOUNDED_MESSAGE, code="unbounded_content")
+            )
             return values
         if not generate:
             try:
                 prepared = prepare_content(values["html"], text=typed)
             except ValueError:
-                self.add_error("text", BOUNDED_MESSAGE)
+                self.add_error(
+                    "text",
+                    forms.ValidationError(BOUNDED_MESSAGE, code="unbounded_content"),
+                )
                 return values
         parts = [("html", prepared.html), ("text", prepared.text)]
         if self.kind == "email":
@@ -255,7 +260,15 @@ class ContentForm(AdminForm):
                 field = self._part_field(part, generate)
                 if not self.has_error(field):
                     self.add_error(
-                        field, SUBJECT_MESSAGE if part == "subject" else BOUNDED_MESSAGE
+                        field,
+                        forms.ValidationError(
+                            SUBJECT_MESSAGE if part == "subject" else BOUNDED_MESSAGE,
+                            code=(
+                                "invalid_subject"
+                                if part == "subject"
+                                else "unbounded_content"
+                            ),
+                        ),
                     )
         if self.errors:
             return values
@@ -291,9 +304,12 @@ class ContentForm(AdminForm):
         except ValueError:
             self.add_error(
                 None,
-                _(
-                    "Use bounded content and only the documented placeholders. "
-                    "Email subjects must be one line."
+                forms.ValidationError(
+                    _(
+                        "Use bounded content and only the documented placeholders. "
+                        "Email subjects must be one line."
+                    ),
+                    code="invalid_placeholders",
                 ),
             )
             return values

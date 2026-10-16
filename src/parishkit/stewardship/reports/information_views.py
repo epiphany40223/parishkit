@@ -25,6 +25,13 @@ from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 from parishkit.stewardship.web.contracts import expected_version, filters
 from parishkit.stewardship.web.dates import UnknownZone
+from parishkit.stewardship.web.filter_errors import (
+    FilterError,
+    error_context,
+    line_sizes,
+    refused,
+)
+from parishkit.stewardship.web.refusals import with_status_code
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import report_table
 
@@ -32,6 +39,7 @@ from .chart_specs import information_followup
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .information import (
+    FIELD_MESSAGES,
     INFORMATION_SORTING,
     PAGE_SIZE,
     PAGE_SIZES,
@@ -55,6 +63,11 @@ from .report_paging import (
 
 # The name this queue's views are remembered under (report_paging.py).
 QUEUE = "information"
+# The element id of each filter field a refusal can be shown at (#1332).
+FIELD_IDS = {"start": "start", "end": "end"}
+# The reserved message line both dates are described by, shown once after
+# them (UX conventions, Field errors).
+FIELD_LINES = {"start": "submitted-dates", "end": "submitted-dates"}
 
 
 def _recalled(request, campaign_id, token):
@@ -114,7 +127,12 @@ def _error(campaign_id, *, item_id=None, status=400, bound=False, zone=False):
     response.stewardship_safe_error = True
     if status == 503:
         response["Retry-After"] = "5"
-    return response
+    # The refusal log's codes for this page of its own (#1403).
+    return with_status_code(
+        response,
+        *(["form_reused"] if bound else []),
+        *(["zone_missing"] if zone else []),
+    )
 
 
 def _audit(principal, campaign_id, outcome):
@@ -138,8 +156,14 @@ def _audit(principal, campaign_id, outcome):
 
 
 def _page_response(request, campaign_id, *, item_id=None):
-    """Guard every data query, template render and byte; audit response completion."""
-    finish, handed_off = None, False
+    """Guard every data query, template render and byte; audit response completion.
+
+    Queue filters refused at a field (``FilterError``) draw the queue again,
+    answered 400, with the error at that field and the results for no
+    filters, as Financial stewardship does (#1332); the audit then ends
+    denied, not succeeded.
+    """
+    finish, handed_off, refusal = None, False, None
     try:
         service = runtime()
         principal = _principal(request, service.store)
@@ -157,7 +181,14 @@ def _page_response(request, campaign_id, *, item_id=None):
                 parameters = request.POST.copy()
                 parameters.pop("csrfmiddlewaretoken", None)
                 size = pop_page_size(parameters, PAGE_SIZES, default=PAGE_SIZE)
-                query = InformationQuery.parse(parameters)
+                try:
+                    query = InformationQuery.parse(parameters)
+                except FilterError as error:
+                    # Every closed choice was accepted before a date was
+                    # checked, so the submitted sort is one the queue knows.
+                    # The view remembered below is this unfiltered one.
+                    refusal = error
+                    query = InformationQuery(sort=error.query.sort)
             history_page = 1
             # Remembered before the response streams: the session is saved
             # once the view returns.
@@ -195,12 +226,12 @@ def _page_response(request, campaign_id, *, item_id=None):
             if finalized:
                 return
             finalized = True
+            outcome = Outcome.SUCCEEDED if completed else Outcome.FAILED
+            if completed and refusal is not None:
+                # The page was shown, but not for the filters asked for.
+                outcome = Outcome.DENIED
             try:
-                _audit(
-                    principal,
-                    campaign_id,
-                    Outcome.SUCCEEDED if completed else Outcome.FAILED,
-                )
+                _audit(principal, campaign_id, outcome)
             except (DatabaseError, StorageInvariantError) as error:
                 emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
 
@@ -302,7 +333,17 @@ def _page_response(request, campaign_id, *, item_id=None):
                     action=reverse("admin:information_queue"),
                     sizes=PAGE_SIZES,
                 ),
+                # Per request, in the request's language.
+                filter_sizes=line_sizes(FIELD_MESSAGES, FIELD_LINES),
             )
+            if refusal is not None:
+                # The filter form shows what was sent, with the error at its
+                # field; the panel counts, and the export carries, only the
+                # filters the results use (none).
+                context |= error_context(refusal, FIELD_IDS, FIELD_LINES) | {
+                    "applied": query,
+                    "query": refusal.query,
+                }
             return iter(
                 (
                     render_to_string(
@@ -319,6 +360,10 @@ def _page_response(request, campaign_id, *, item_id=None):
             on_close=finish,
         )
         handed_off = response.status_code == 200 and response.streaming
+        if handed_off and refusal is not None:
+            # The refusal was known before the response was made, so its
+            # status is set before any byte is sent.
+            refused(response)
         return response
     except (PermissionError, ObjectDoesNotExist):
         return denial()

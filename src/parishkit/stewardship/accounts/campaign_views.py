@@ -13,6 +13,7 @@ from urllib.parse import urlencode
 from uuid import uuid4
 
 from django.core import signing
+from django.core.exceptions import ValidationError
 from django.db import DatabaseError
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
@@ -48,6 +49,7 @@ from parishkit.stewardship.web.refusals import (
     UserFacingStale,
     stale_page,
     unexpected_fields,
+    with_default_code,
 )
 
 from . import admin_navigation, field_tips, setup_help
@@ -580,6 +582,8 @@ def _page(
     )
     if status != 200:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return response
 
 
@@ -720,9 +724,13 @@ def _draft_review(service, actor, state, campaign, form):
         if set(changed) - window_fields:
             form.add_error(
                 None,
-                _(
-                    "No settings have been saved. Reconcile dates and mail schedules "
-                    "first using the schedule editor, then save other draft settings."
+                ValidationError(
+                    _(
+                        "No settings have been saved. Reconcile dates and mail "
+                        "schedules first using the schedule editor, then save other "
+                        "draft settings."
+                    ),
+                    code="schedules_first",
                 ),
             )
             return None
@@ -743,9 +751,12 @@ def _draft_review(service, actor, state, campaign, form):
     except ConfigError:
         form.add_error(
             None,
-            _(
-                "Check the campaign name and dates. Existing invitation and "
-                "reminder times must remain within the campaign."
+            ValidationError(
+                _(
+                    "Check the campaign name and dates. Existing invitation and "
+                    "reminder times must remain within the campaign."
+                ),
+                code="candidate_refused",
             ),
         )
         return None
@@ -843,7 +854,12 @@ def _live_review(service, actor, state, campaign, form, opened):
             if refusal is not None
             else [item for errors in end_form.errors.values() for item in errors]
         )
-        form.add_error("end_date", " ".join(str(text) for text in texts if text))
+        form.add_error(
+            "end_date",
+            ValidationError(
+                " ".join(str(text) for text in texts if text), code="end_date_refused"
+            ),
+        )
         return None
     patch = [
         {
@@ -1100,7 +1116,9 @@ def campaign_end_date_check(request, campaign_id):
                 for name, values in request.POST.lists()
             )
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(
+                request.GET, request.POST, allowed=allowed, multiple=MULTIPLE_FIELDS
+            )
         with read_transaction():
             state = _state(service)
             configuration, campaigns, _source, held = state[:4]

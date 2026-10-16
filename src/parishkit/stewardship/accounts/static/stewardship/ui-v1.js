@@ -917,14 +917,38 @@
     };
   };
   // localMoment: the moment (ms) a date ("YYYY-MM-DD") and canonical time
-  // stand for in this browser's zone. Like the server, a time skipped when
-  // clocks spring forward reads with the offset before the change, and one
-  // that occurs twice is the first.
+  // stand for in this browser's zone, by the server's one daylight-saving
+  // rule (ui-conventions#schedules, resolve_local): a time that occurs twice
+  // is the first, and a time skipped when clocks spring forward is the first
+  // moment after the gap, so 2:30 AM reads as 3:00 AM. Date alone reads a
+  // skipped time with the offset before the change (3:30 AM), so a moment
+  // that does not show the typed wall time is searched back to the gap's end.
   const localMoment = (day, clock) => {
     const [year, month, date] = day.split("-").map(Number);
     const [hour, minute, second = 0] = clock.split(":").map(Number);
-    return new Date(year, month - 1, date, hour, minute, second).getTime();
+    const wall = Date.UTC(year, month - 1, date, hour, minute, second);
+    // The wall time a moment shows in this browser, counted as if it were
+    // UTC, so two wall times compare as numbers.
+    const shown = (moment) => {
+      const at = new Date(moment);
+      return Date.UTC(at.getFullYear(), at.getMonth(), at.getDate(), at.getHours(),
+        at.getMinutes(), at.getSeconds(), at.getMilliseconds());
+    };
+    let high = new Date(year, month - 1, date, hour, minute, second).getTime();
+    if (shown(high) === wall) return high;
+    // Skipped: ``high`` shows a later wall time. Two days earlier shows an
+    // earlier one even after a whole skipped day; the first millisecond
+    // showing ``wall`` or later is the end of the gap.
+    let low = high - 2 * 86400000;
+    while (high - low > 1) {
+      const middle = Math.floor((low + high) / 2);
+      if (shown(middle) < wall) low = middle;
+      else high = middle;
+    }
+    return high;
   };
+  // Shared with the browser tests, which pin it to the server's reading.
+  window.ParishLocalTime = Object.freeze({moment: localMoment});
   document.querySelectorAll("form[data-schedule-entry], form[data-schedule-zoned]").forEach((form) => {
     const zone = form.querySelector("input[data-browser-zone]");
     if (zone && !zone.value) {
@@ -1840,6 +1864,27 @@
     }
     if (!anywhere) syncControls(parsed);
     if (owner?.hasAttribute("data-in-place-filters")) syncFilters(parsed);
+    // A report's filters refused at a field (#1332) are drawn again with
+    // that field marked, but the filter form keeps its element and the
+    // values typed (syncControls), so the marks and messages are copied
+    // onto it, as a refused Review's are; its message lines are reserved,
+    // so nothing moves. The summary is already in the region
+    // (placeSummary) and takes focus below, straight from the control.
+    // An answer that is not a refusal clears every server mark it does
+    // not repeat: the reader fixed the range at its other end.
+    const filterForm = document.getElementById("table-filters");
+    const freshFilters = parsed.getElementById("table-filters");
+    if (!anywhere && filterForm instanceof HTMLFormElement && freshFilters) {
+      if (refused) showFieldErrors(filterForm, parsed, {focus: false});
+      else {
+        filterForm.querySelectorAll('[data-field-error=""][id]').forEach((node) => {
+          const twin = freshFilters.querySelector(`#${CSS.escape(node.id)}`);
+          if (node.hasAttribute("data-field-error") && twin?.getAttribute("aria-invalid") !== "true") {
+            clearFieldError(node);
+          }
+        });
+      }
+    }
     // Every swap and the synced hidden version are in place: a Review that
     // was applied makes its values the saved ones (the change gate, #921).
     gateChanges();
@@ -3039,7 +3084,7 @@
         // time (its own refusal holds Save).
         const clock = time && time.value ? parseTime(time.value) : null;
         const future = !date.disabled && Boolean(date.value) && (clock && clock.value
-          ? new Date(`${date.value}T${canonicalTime(clock.value)}`).getTime() > Date.now()
+          ? localMoment(date.value, canonicalTime(clock.value)) > Date.now()
           : date.value > localToday());
         if (future) {
           fields.forEach((node) => {
@@ -4133,7 +4178,10 @@
   };
   // Forms whose edits clear their pane's refusal: one listener each.
   const paneWatched = new WeakSet();
-  const showFieldErrors = (form, parsed) => {
+  // ``focus: false`` leaves focus to the caller when the answer has no
+  // summary of its own (a refused in-place filter Apply, whose summary is
+  // already in the swapped region).
+  const showFieldErrors = (form, parsed, {focus = true} = {}) => {
     const fresh = parsed.getElementById(form.id);
     const line = paneLine(form);
     // A pane line's earlier refusal, and the marks it described, give way.
@@ -4207,7 +4255,7 @@
       return;
     }
     if (!summary) {
-      form.querySelector("[aria-invalid=true]")?.focus();
+      if (focus) form.querySelector("[aria-invalid=true]")?.focus();
       return;
     }
     const placed = document.importNode(summary, true);

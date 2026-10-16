@@ -19,6 +19,13 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web.filter_errors import (
+    FilterError,
+    error_context,
+    line_sizes,
+    refused,
+)
+from parishkit.stewardship.web.refusals import with_status_code
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import report_table
 
@@ -26,6 +33,7 @@ from .chart_specs import financial_charts
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .financial import (
+    FIELD_MESSAGES,
     FINANCIAL_SORTING,
     FREQUENCY_LABELS,
     PAGE_SIZE,
@@ -36,6 +44,26 @@ from .financial import (
 )
 from .read_admission import admit_report_read
 from .report_paging import carried_filters, clamp_query, pop_page_size
+
+# The element id of each filter field a refusal can be shown at (#1332).
+FIELD_IDS = {
+    "first_start": "first-start",
+    "first_end": "first-end",
+    "latest_start": "latest-start",
+    "latest_end": "latest-end",
+    "pledge_min": "pledge-min",
+    "pledge_max": "pledge-max",
+}
+# The reserved message line each of them is described by: one per range,
+# shown once after both its ends (UX conventions, Field errors).
+FIELD_LINES = {
+    "first_start": "first-response-dates",
+    "first_end": "first-response-dates",
+    "latest_start": "latest-response-dates",
+    "latest_end": "latest-response-dates",
+    "pledge_min": "pledge-range",
+    "pledge_max": "pledge-range",
+}
 
 
 def _principal(request, store, *, read_only=False):
@@ -62,7 +90,8 @@ def _error(campaign_id, *, status):
     response.stewardship_safe_error = True
     if status == 503:
         response["Retry-After"] = "5"
-    return response
+    # The refusal log's codes for this page of its own (#1403).
+    return with_status_code(response)
 
 
 def _audit(principal, campaign_id, outcome, count=0, total=0):
@@ -90,8 +119,12 @@ def report(request, campaign_id):
     """Hold purge protection through projection, rendering and streaming.
 
     Default GET is safe; identifying filters and pagination use native POST.
+    Filters refused at a field (``FilterError``) draw the page again,
+    answered 400, with the error at that field and the results for no
+    filters, as Campaign comparison shows its current day for a refused
+    day (#1332); the audit then ends denied, not succeeded.
     """
-    finish, handed_off = None, False
+    finish, handed_off, refusal = None, False, None
     try:
         service = runtime()
         principal = _principal(request, service.store)
@@ -105,6 +138,10 @@ def report(request, campaign_id):
             parameters.pop("csrfmiddlewaretoken", None)
             size = pop_page_size(parameters, PAGE_SIZES, default=PAGE_SIZE)
             query = FinancialQuery.parse(parameters)
+        except FilterError as error:
+            # Every closed choice was accepted before a field rule was
+            # checked, so the submitted sort is one the selection knows.
+            refusal, query = error, FinancialQuery(sort=error.query.sort)
         except ValueError:
             # Only the requester's own filters are a 400. A later ValueError is
             # a data problem that no change of filters could fix.
@@ -118,11 +155,15 @@ def report(request, campaign_id):
             if finalized:
                 return
             finalized = True
+            outcome = Outcome.SUCCEEDED if completed else Outcome.FAILED
+            if completed and refusal is not None:
+                # The page was shown, but not for the filters asked for.
+                outcome = Outcome.DENIED
             try:
                 _audit(
                     principal,
                     campaign_id,
-                    Outcome.SUCCEEDED if completed else Outcome.FAILED,
+                    outcome,
                     count,
                     total,
                 )
@@ -200,7 +241,17 @@ def report(request, campaign_id):
                 "mutable": mutable,
                 "request_key": uuid4(),
                 "export_timezones": sorted(timezone_names()),
+                # Per request, in the request's language.
+                "filter_sizes": line_sizes(FIELD_MESSAGES, FIELD_LINES),
             }
+            if refusal is not None:
+                # The filter form shows what was sent, with the error at its
+                # field; the panel counts, and the export carries, only the
+                # filters the results use (none).
+                context |= error_context(refusal, FIELD_IDS, FIELD_LINES) | {
+                    "applied": query,
+                    "query": refusal.query,
+                }
             return iter(
                 (
                     render_to_string(
@@ -222,6 +273,10 @@ def report(request, campaign_id):
             # recovery navigation, never private contents.
             return _error(campaign_id, status=503)
         handed_off = response.status_code == 200 and response.streaming
+        if handed_off and refusal is not None:
+            # The refusal was known before the response was made, so its
+            # status is set before any byte is sent.
+            refused(response)
         return response
     except (PermissionError, ObjectDoesNotExist):
         return denial()

@@ -3,6 +3,7 @@
 from uuid import UUID, uuid4
 
 from django.core import signing
+from django.core.exceptions import ValidationError
 from django.db import DatabaseError
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
@@ -21,7 +22,11 @@ from parishkit.stewardship.source.refresh_status import (
 )
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.refusals import UserFacingError, unexpected_fields
+from parishkit.stewardship.web.refusals import (
+    UserFacingError,
+    unexpected_fields,
+    with_default_code,
+)
 
 from . import admin_navigation
 from .admin_editing import (
@@ -293,6 +298,8 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
     )
     if status == 400:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return response
 
 
@@ -366,6 +373,7 @@ def _refuse_drive_in_local():
                 "The local laptop environment never reaches Google Drive; its "
                 "backups stay inside the VM."
             ),
+            reason="drive_not_in_local",
         )
 
 
@@ -374,13 +382,11 @@ def _test_access(request, configuration, actor):
 
     Only the page's own fields may be posted; ``queue_probe`` does the rest.
     """
-    if set(request.POST) - {
-        "action",
-        "csrfmiddlewaretoken",
-        "target",
-        "base_digest",
-    } or any(len(values) != 1 for _, values in request.POST.lists()):
-        raise unexpected_fields()
+    allowed = {"action", "csrfmiddlewaretoken", "target", "base_digest"}
+    if set(request.POST) - allowed or any(
+        len(values) != 1 for _, values in request.POST.lists()
+    ):
+        raise unexpected_fields(request.POST, allowed=allowed)
     queue_probe(configuration, actor, request.POST.get("target", ""))
     return HttpResponseRedirect(request.path)
 
@@ -412,6 +418,7 @@ def queue_probe(configuration, actor, entered):
             ),
             link=reverse("admin:integration_settings", args=["google_workspace"]),
             link_label=LABELS["google_workspace"],
+            reason="workspace_mail_missing",
         )
     entered = entered.strip()
     if not entered and "backup" not in records:
@@ -422,6 +429,7 @@ def queue_probe(configuration, actor, entered):
                 "off-site copies into Google Drive folder link, then choose Test "
                 "access."
             ),
+            reason="drive_folder_missing",
         )
     try:
         folder = folder_id_from_url(
@@ -435,6 +443,7 @@ def queue_probe(configuration, actor, entered):
                 "browser address bar or from Share, then Copy link. It starts "
                 "with https://drive.google.com/drive/folders/."
             ),
+            reason="drive_folder_link_invalid",
         ) from None
     return request_probe(
         actor.identity,
@@ -463,15 +472,19 @@ def _inline_credential_form(configuration, request, target, *, required=False):
     return InlineCredentialForm(target, initial={"intent": intent}, required=required)
 
 
-def _refused_key(configuration, request, target, message=None):
+def _refused_key(configuration, request, target, message=None, *, code=None):
     """The new-key field redrawn with a refusal at the field (#563).
 
     The field is bound empty, with a freshly signed intent, so the page shows
     the error beside the key field (``aria-invalid``, described by the
     message) and never shows the pasted key again. Without ``message``, the
     refusal is the missing key of an integration not set up yet; ``message``
-    is any other reason the key could not be saved.
+    is any other reason the key could not be saved, and ``code`` its closed
+    error code, which the refusal log records (#1437): required with a
+    ``message``, so no caller can build a code-less error.
     """
+    if message is not None and not code:
+        raise TypeError("A refused key's message needs its closed code.")
     blank = _inline_credential_form(
         configuration, request, target, required=message is None
     )
@@ -481,7 +494,7 @@ def _refused_key(configuration, request, target, message=None):
         required=message is None,
     )
     if credential.is_valid():
-        credential.add_error("candidate", message)
+        credential.add_error("candidate", ValidationError(message, code=code))
     return credential
 
 
@@ -540,6 +553,7 @@ def _save(request, service, configuration, actor, target):
                     "can't be saved together. Leave this empty and save the "
                     "schedule change first, then paste the new key again."
                 ),
+                code="key_with_schedule_change",
             ),
             status=400,
         )
@@ -586,7 +600,9 @@ def review_settings(service, actor, configuration, target, form):
     # a page saved as shown is no change at all.
     settings = form.public_settings()
     if settings == before:
-        form.add_error(None, _("No settings have changed."))
+        form.add_error(
+            None, ValidationError(_("No settings have changed."), code="unchanged")
+        )
         return None
     patch = [
         {
@@ -729,10 +745,11 @@ def _remove(request, service, configuration, actor, target):
     Removing Slack stops new Slack alerts at once. Its key file stays on the
     server until it is replaced; setting Slack up again installs a new key.
     """
-    if set(request.POST) - {"action", "csrfmiddlewaretoken"} or any(
+    allowed = {"action", "csrfmiddlewaretoken"}
+    if set(request.POST) - allowed or any(
         len(values) != 1 for _, values in request.POST.lists()
     ):
-        raise unexpected_fields()
+        raise unexpected_fields(request.POST, allowed=allowed)
     preview = review_removal(service, actor, configuration, target)
     admin_navigation.place(request, flow="change", step="review")
     return render(
@@ -909,15 +926,17 @@ def refresh_schedule_check(request, target):
         principal(request, service)
         if target != "parishsoft":
             raise LookupError("Integration is unavailable.")
-        if set(request.POST) - posted_names() - {"csrfmiddlewaretoken"} or any(
+        allowed = posted_names() | {"csrfmiddlewaretoken"}
+        if set(request.POST) - allowed or any(
             len(values) != 1 for _, values in request.POST.lists()
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(request.POST, allowed=allowed)
         with read_transaction():
             configuration = editable_configuration(service)
             record = _selected(configuration, target)
             editor = ScheduleEditor(request.POST, stored=record["values"]["settings"])
             if not editor.posted:
+                # No sources: the fields were allowed; none of the editor's was sent.
                 raise unexpected_fields()
             context = _schedule_context(configuration, editor)
         response = render(request, "stewardship/refresh-schedule-check.html", context)

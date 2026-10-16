@@ -35,6 +35,7 @@ from parishkit.stewardship.reports.export_views import SAFE_FAILURES
 from parishkit.stewardship.reports.source_form import blocked_families
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.refusals import with_default_code
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
@@ -111,6 +112,8 @@ def _error(status):
         headers={"Cache-Control": "no-store"},
     )
     response.stewardship_safe_error = True
+    # The refusal log's code for this page's own refusal (#1444).
+    with_default_code(response)
     if status == 503:
         response["Retry-After"] = "5"
     return response

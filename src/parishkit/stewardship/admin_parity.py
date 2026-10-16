@@ -218,9 +218,15 @@ LEDGER = {
     "family_email_progress": command("send progress"),
     "family_email_progress_status": command("send progress"),
     "family_email_sends": command("send history"),
-    # Its read (#463); the pause, resume and resolution previews and their
-    # confirmation are still owed.
-    "delivery_control": command("send controls", owed="PR 7b"),
+    # Its read, and its pause, resume and resolution previews and their
+    # confirmation (PR 7b, #463).
+    "delivery_control": command(
+        "send controls",
+        "send pause-preview",
+        "send resume-preview",
+        "send resolve-preview",
+        "send confirm",
+    ),
     # The Family portal switch (PR 7a); the delivery controls above are PR 7b.
     "family_portal": command("portal maintenance show", "portal maintenance set"),
     # Testing sends.
@@ -276,8 +282,8 @@ LEDGER = {
     # By Ministry counts. ``report ministry`` prints those counts, and
     # ``export ministry`` writes one Ministry's join or leave list, the file
     # the retired Members joining and leaving pages offered (#1157); the
-    # queue itself is the follow-up commands' (PR 11).
-    "ministry_report": command("report ministry", "export ministry", owed="PR 11"),
+    # queue itself is ``followup list``'s (#463 PR 11a).
+    "ministry_report": command("report ministry", "export ministry", "followup list"),
     # A packet of the chosen Ministries' Members and contacts: an export.
     "ministry_packet": command("export ministry-packet"),
     "response_dashboard": command("report responses"),
@@ -392,10 +398,11 @@ LEDGER = {
     "security_event_acknowledge": command("events list", "events acknowledge"),
     "critical_events_acknowledge": command("events list", "events acknowledge"),
     "information_update": pending("PR 11", "followup"),
-    "ministry_followup_item": pending("PR 11", "followup"),
-    "ministry_followup_update": pending("PR 11", "followup"),
-    # Bulk outcomes on the queue (#1131).
-    "ministry_followup_bulk": pending("PR 11", "followup"),
+    # A Ministry request's page and its Save (#463 PR 11a).
+    "ministry_followup_item": command("followup show"),
+    "ministry_followup_update": command("followup show", "followup update"),
+    # Bulk outcomes on the queue (#1131): followup bulk (#463 PR 11a).
+    "ministry_followup_bulk": command("followup list", "followup bulk"),
     # Export these requests (#1157): the queue's filtered set with contacts.
     "ministry_followup_export": pending("PR 11", "followup export"),
     # The roster Entered in ParishSoft tick and its list (#528).

@@ -212,6 +212,10 @@ DESCRIPTIONS = {
         "after the Administrator accepted the duplicate risk, as the email's "
         "page does."
     ),
+    "admin_cmd_send_confirm": _(
+        "An automation session confirmed a reviewed pause, resume or "
+        "resolution of held email, as the Pause and resume mail page does."
+    ),
     "admin_cmd_delivery_resolve": _(
         "An automation session resolved an outgoing email, as the email's "
         "page does: a note, external evidence or a retry."
@@ -225,6 +229,14 @@ DESCRIPTIONS = {
         "An automation session reviewed an automatic census change "
         "(approved, ignored or sent back to To review), as the Census "
         "changes page's Review does."
+    ),
+    "admin_cmd_followup_update": _(
+        "An automation session recorded follow-up on a Ministry request, as "
+        "the request's Save on Ministry requests does."
+    ),
+    "admin_cmd_followup_bulk": _(
+        "An automation session resolved several Ministry requests with one "
+        "outcome, as the Ministry requests queue's bulk outcome does."
     ),
     "admin_cmd_census_edit": _(
         "An automation session edited the value publication writes for an "

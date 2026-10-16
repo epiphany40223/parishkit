@@ -38,6 +38,7 @@ window makes the next scheduled quick update run as a full refresh (see
 from uuid import uuid4
 
 from django.core import signing
+from django.core.exceptions import ValidationError
 from django.db import DatabaseError
 from django.shortcuts import render
 from django.urls import reverse
@@ -54,7 +55,10 @@ from parishkit.stewardship.campaigns.work_locks import (
     work_transaction,
 )
 from parishkit.stewardship.storage import StaleRecordError
-from parishkit.stewardship.web.refusals import stale_page
+from parishkit.stewardship.web.refusals import (
+    stale_page,
+    with_default_code,
+)
 
 from . import admin_navigation, setup_help
 from .admin_editing import (
@@ -181,6 +185,8 @@ def _page(request, configuration, form, *, status=200, receipt=None):
     )
     if status != 200:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return response
 
 
@@ -254,7 +260,12 @@ def creation_review(service, actor, state, form):
     try:
         build_candidate(base, patch, candidate_id=uuid4())
     except ConfigError:
-        form.add_error(None, _("Check the campaign name and dates."))
+        form.add_error(
+            None,
+            ValidationError(
+                _("Check the campaign name and dates."), code="candidate_refused"
+            ),
+        )
         return None
     return {
         # Worked out here, from the modules chosen: the page does not show it.

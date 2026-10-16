@@ -42,6 +42,8 @@ from parishkit.stewardship.web.refusals import (
     UserFacingStale,
     stale_page,
     unexpected_fields,
+    with_default_code,
+    with_reason,
 )
 
 from . import admin_navigation, field_tips
@@ -96,6 +98,27 @@ ERRORS = (
 )
 
 
+def image_reason(response, form, field):
+    """Give a refused image upload's page the reason its image was refused.
+
+    An image over the size limit is ``image_too_large``, with the limit and
+    the file's size in bytes; a file that is not a supported, bounded still
+    image is ``image_unsupported``. Any other refusal of the form keeps its
+    fields and codes only (#1403). Returns ``response``.
+    """
+    if form.has_error(field, "too_large"):
+        upload = form.files.get(form.add_prefix(field))
+        return with_reason(
+            response,
+            "image_too_large",
+            expected=MAX_IMAGE_BYTES,
+            actual=getattr(upload, "size", None),
+        )
+    if form.has_error(field, "unsupported_image"):
+        return with_reason(response, "image_unsupported")
+    return response
+
+
 def _error(error):
     """Report invalid uploads on the form and storage failures as retryable."""
     # PermissionError is also an OSError: preserve explicit authorization denial.
@@ -125,7 +148,9 @@ class LogoForm(AdminForm):
         """Size is an early bound; signature, pixels and animation are checked next."""
         value = self.cleaned_data["logo"]
         if not 0 < value.size <= MAX_IMAGE_BYTES:
-            raise forms.ValidationError(_("Choose an image no larger than 5 MB."))
+            raise forms.ValidationError(
+                _("Choose an image no larger than 5 MB."), code="too_large"
+            )
         return value
 
 
@@ -243,10 +268,13 @@ class LogoUploadForm(LogoForm):
             return None
         value = self.cleaned_data.get("logo")
         if value is None:
-            raise forms.ValidationError(self.fields["logo"].error_messages["required"])
+            raise forms.ValidationError(
+                self.fields["logo"].error_messages["required"], code="required"
+            )
         if value.size > MAX_IMAGE_BYTES:
             raise forms.ValidationError(
-                str(LOGO_TOO_LARGE).replace("{size}", file_size(value.size))
+                str(LOGO_TOO_LARGE).replace("{size}", file_size(value.size)),
+                code="too_large",
             )
         return super().clean_logo()
 
@@ -264,14 +292,21 @@ class LogoUploadForm(LogoForm):
         chosen = {name: values.get(name) for name in SLOTS if values.get(name)}
         if not chosen:
             self.add_error(
-                "large", _("Choose an image for at least one size to upload.")
+                "large",
+                forms.ValidationError(
+                    _("Choose an image for at least one size to upload."),
+                    code="choose_one",
+                ),
             )
             return values
         total = sum(item.size for item in chosen.values())
         if total > MAX_TOTAL_BYTES:
             self.add_error(
                 next(iter(chosen)),
-                str(self.max_total_message).replace("{size}", file_size(total)),
+                forms.ValidationError(
+                    str(self.max_total_message).replace("{size}", file_size(total)),
+                    code="total_too_large",
+                ),
             )
             return values
         sizes = {}
@@ -331,7 +366,9 @@ def _upload(request, service):
         or any(len(values) != 1 for _, values in request.POST.lists())
         or any(len(values) != 1 for _, values in request.FILES.lists())
     ):
-        raise unexpected_fields()
+        raise unexpected_fields(
+            request.POST, request.FILES, allowed=allowed | {"logo", *SLOTS}
+        )
     form = LogoUploadForm(request.POST, request.FILES)
     if form.is_valid():
         graphics = None
@@ -349,12 +386,23 @@ def _upload(request, service):
                     form.cleaned_data["sizes"], active.parish, media_root()
                 )
             except MissingSlot as missing:
-                form.add_error(missing.slot, missing_message(missing.slot))
+                form.add_error(
+                    missing.slot,
+                    forms.ValidationError(
+                        missing_message(missing.slot), code="missing_size"
+                    ),
+                )
         else:
             try:
                 graphics = prepare_graphics(form.cleaned_data["logo"])
             except ValueError:
-                form.add_error("logo", _("Choose a supported, bounded static image."))
+                form.add_error(
+                    "logo",
+                    forms.ValidationError(
+                        _("Choose a supported, bounded static image."),
+                        code="unsupported_image",
+                    ),
+                )
         if graphics is not None:
             identifier = stage_branding(
                 request,
@@ -482,6 +530,8 @@ def _page(request, service, configuration, form, *, status=200):
     )
     if status != 200:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return _checked(request, service, response)
 
 
@@ -586,7 +636,9 @@ def branding_settings(request):
                 return _reviewed(request, service, actor, bundle_id)
         configuration = editable_configuration(service)
         if form is not None:
-            return _page(request, service, configuration, form, status=400)
+            return image_reason(
+                _page(request, service, configuration, form, status=400), form, "logo"
+            )
         form = LogoUploadForm(
             initial={"base_digest": configuration.active_configuration.digest}
         )

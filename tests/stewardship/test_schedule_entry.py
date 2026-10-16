@@ -327,8 +327,8 @@ def test_typed_times_at_daylight_saving_changes_read_first_or_forward():
         campaign_zone=CHICAGO,
         now=NOW,
     ) == (date(2026, 11, 1), time(0, 30), None)
-    # 2:30 AM New York on spring-forward day is 3:30 AM EDT (07:30 UTC),
-    # still 1:30 AM standard time in Chicago.
+    # 2:30 AM New York on spring-forward day is the first instant after the
+    # gap, 3:00 AM EDT (07:00 UTC), still 1:00 AM standard time in Chicago.
     assert schedule_local.to_campaign(
         date(2027, 3, 14),
         time(2, 30),
@@ -336,7 +336,7 @@ def test_typed_times_at_daylight_saving_changes_read_first_or_forward():
         zone=NEW_YORK,
         campaign_zone=CHICAGO,
         now=NOW,
-    ) == (date(2027, 3, 14), time(1, 30), None)
+    ) == (date(2027, 3, 14), time(1, 0), None)
 
 
 def test_an_unchanged_edit_keeps_the_saved_values_at_fall_back():

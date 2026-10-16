@@ -42,7 +42,7 @@ from redis.exceptions import RedisError
 from parishkit.config import ConfigError
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.refusals import unexpected_fields
+from parishkit.stewardship.web.refusals import refused_in_place, unexpected_fields
 from parishkit.stewardship.web.tables import whole_table
 
 from .admin_editing import error_response, principal
@@ -101,7 +101,7 @@ def _fields(parameters, allowed):
     if set(parameters) - allowed or any(
         len(values) != 1 for _, values in parameters.lists()
     ):
-        raise unexpected_fields()
+        raise unexpected_fields(parameters, allowed=allowed)
 
 
 def _administrator(request, service):
@@ -152,7 +152,12 @@ def approval_view(request):
         actor = _administrator(request, service)
         filters(request.GET, allowed=set())
         if not _fresh(request):
-            return _approval_page(request, {"state": "enter", "fresh": False})
+            page = _approval_page(request, {"state": "enter", "fresh": False})
+            # A code posted without a fresh sign-in is refused in place: the
+            # page offers "Confirm with Google" instead (#1403). A visit is not.
+            if request.method == "POST":
+                refused_in_place(page, "fresh_authentication_required")
+            return page
         context = {"state": "enter", "fresh": True}
         if request.method == "POST":
             action = request.POST.get("action")
@@ -203,10 +208,16 @@ def approval_view(request):
                     session=session,
                     scope_label=SCOPES[session.scope],
                 )
-        return _approval_page(request, context)
+        page = _approval_page(request, context)
+        if context.get("refused"):
+            # The same answer for an unknown code and another's pairing.
+            refused_in_place(page, "pairing_code_refused")
+        return page
     except PairingRefused:
         context = {"state": "enter", "fresh": True, "refused": True}
-        return _approval_page(request, context)
+        return refused_in_place(
+            _approval_page(request, context), "pairing_code_refused"
+        )
     except REFUSALS as error:
         return error_response(error)
 

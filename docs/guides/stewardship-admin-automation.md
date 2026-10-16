@@ -775,8 +775,8 @@ to Families is paused, what is queued or held, and what can be paused,
 resumed or resolved now. Like the page, it needs an Administrator; a
 session of any scope may run it, and it records nothing in System logs, as
 opening the page records nothing. It reads the current campaign only;
-without one it is exit 1 (`not_available`). Pausing, resuming and
-resolving held messages stay on the page for now.
+without one it is exit 1 (`not_available`). The page's pause, resume and
+resolution follow below.
 
 ```sh
 pk-admin send controls
@@ -801,6 +801,49 @@ pk-admin send controls
 whatever `available` says; the controls and choices follow the page, which
 draws them only when `available` is true. Every number is a count, apart
 from the reason; no recipient, message or mail-service response is printed.
+
+Pausing, resuming and resolving held messages work as on the page: a
+preview first, then its confirmation. Each preview asks for a reason (the
+page shows it), needs a full-scope session and records nothing; each runs
+the page's own preview, so it is refused exactly where the page offers no
+such button (exit 1, `stale_version`), for example a resume while any
+email is still being handed to the mail service or not sure it arrived, or
+before a needed sender check has passed.
+
+```sh
+pk-admin send pause-preview --reason "Wrong reminder text" > preview.json
+jq -r .result.preview.token preview.json | pk-admin send confirm --token - --yes
+pk-admin send resume-preview --reason "Reminder fixed"
+pk-admin send resolve-preview --decision cancel --type receipt \
+    --type weekly_digest --reason "Campaign closed"
+```
+
+`send resolve-preview` is the Resolve held messages form of a paused,
+closed campaign: `--decision release` or `cancel` takes one or more
+`--type` (`receipt`, `daily_digest`, `weekly_digest`), and `clear` takes
+none. A preview prints `action`, `campaign_id`, the `reason`, `expires_at`, the
+`inventory` it bound (as `send controls` prints it), for a resume its
+`plan` (`before_start`: nothing is overdue yet; `family`: the overdue
+`family_recovery` and `report_recovery` counts), for a resolution its
+`resolution` (`decision`, `types` and each type's follow-up `coverage`),
+and `preview.token`.
+
+`send confirm --token TOKEN` is the preview's Confirm button. The token is
+the page's own and lasts five minutes, so a preview made on the page
+confirms here and the other way round. Like the page's button it needs a
+recent sign-in, which a full-scope session stands in for, so it always
+asks, naming the action, the reason, the counts and the page's own caution
+(for a resolution, each type's follow-up coverage too); `--yes` answers,
+and `--token -` (standard input) needs it. The page then checks everything
+again, as it does for its own button, and records the control. System logs
+then show the page's own events (`campaign_pause` or `campaign_resume`;
+for a resolution `delivery_held_release`, `delivery_held_cancel` or
+`delivery_held_clear`, with `campaign_resume` when it ends the pause), with `automation_fresh_gate` and
+`admin_cmd_send_confirm` beside them. An out-of-date
+token is exit 1 (`stale_version`): preview again. Repeating a confirmed
+token returns the same control with `created` false and records nothing.
+The result is `created`, `command_id`, `action` and `status`, which is
+`send controls`'s document after the change.
 
 ## Hosted files
 
@@ -2660,6 +2703,108 @@ Each acknowledgement is recorded in System logs as on the page
 event is exit 1 (`not_available`), and a token that `events list` did not
 print is exit 1 (`invalid`).
 
+## Ministry follow-up
+
+`followup list` reads the follow-up queue on **Ministry requests**, and
+`followup show` one request's page with its follow-up history.
+`followup update` is a request's **Save**, and `followup bulk` the queue's
+bulk outcome (**Mark as Joined**, **Declined**, **Left** or **Stayed**). The
+reads run on a session of any scope and record the page's
+`ministry_followup_viewed`; the changes need a full-scope session. Each
+request names a Member of a Family, so the documents give the request's ID
+and version, its Ministry, its status and instants, but never the Member's
+name or DUID, the notes or a contact attempt's notes; read those on the
+page. No command takes the queue's search.
+
+```sh
+pk-admin followup list --ministry 12 --action join
+pk-admin followup show REQUEST_ID
+pk-admin followup update REQUEST_ID --expected-version 1 --state in_progress \
+  --contact-channel phone --contact-at 2054-10-05T14:30:00-04:00
+pk-admin followup update REQUEST_ID --expected-version 2 --state resolved \
+  --outcome joined
+pk-admin followup bulk --outcome join:joined \
+  --request REQUEST_ID:1 --request OTHER_ID:3 \
+  --contact-channel email --contact-at 2054-10-05T09:00:00-04:00
+```
+
+`followup list` takes the queue's filters: `--ministry DUID`, `--action`
+(`any`, `join` or `leave`), `--state` (`unresolved` by default: New or In
+progress; `any`, `new`, `in_progress`, `resolved`, `closed_no_response`, or
+`not_in_parishsoft` for requests whose Member ParishSoft no longer lists),
+`--outcome`, `--sort` (`newest`, `name` or `ministry`), `--page` and
+`--size` (25, 50, 100 or 250; 50 by default). A page past the end shows
+the last page, as on the page.
+
+| `followup list` field | What it holds |
+| --- | --- |
+| `campaign_id` | The current campaign |
+| `filters` | The choices applied: `ministry`, `action`, `state`, `outcome`, `sort` |
+| `page`, `size`, `total` | The page shown, rows per page, and how many requests the filters keep |
+| `rows` | Each request: `id`, `version` (what `--expected-version` takes), `ministry` (DUID) and `ministry_name`, `in_campaign`, `kind` (`member` or `proposed_member`), `action`, `state`, `outcome`, `open`, `member_status` (`current`, or `missing`, `moved`, `inactive` or `deceased` in ParishSoft), `submitted_at`, `resolved_at`, `source_resolved`, `latest`, `last_contact_at` and `roster` (the Entered in ParishSoft tick: `eligible`, `entered`, `sequence`) |
+
+| `followup show` field | What it holds |
+| --- | --- |
+| `campaign_id` | The current campaign |
+| `request` | The request, as a `followup list` row |
+| `history_page`, `more_history` | The history page shown (`--page`), and whether another follows |
+| `history` | Each recorded follow-up, newest first: `id`, `request_id` (the request it was recorded on, across the Family's resubmissions), `expected_version`, `state`, `outcome`, `contact_channel`, `contact_at`, `actor_id`, `created_at` and `bulk` (recorded by a bulk outcome) |
+
+`followup update` sets the request's status (`--state new`, `in_progress`,
+`resolved` with `--outcome`, or `closed_no_response`) and, with
+`--contact-channel` (`email`, `phone`, `in_person` or `other`), a contact
+attempt at `--contact-at`, an ISO 8601 instant with its UTC offset, with
+optional `--contact-notes` (at most 2,000 characters). `--notes TEXT`
+(at most 5,000 characters) replaces the request's notes; left out, the
+notes stay as they are. Either `--notes` or `--contact-notes` may be `-`
+to read standard input, one of them per run, which keeps the text out of
+shell history. The outcome `other` needs notes. An option that would have
+no effect is a usage error (exit 2): `--outcome` without `--state
+resolved`, and `--contact-at` or `--contact-notes` without
+`--contact-channel`.
+
+`followup bulk` resolves every chosen request with one outcome
+(`join:joined`, `join:declined`, `leave:leave_confirmed` or
+`leave:declined`: every request must be of that kind), each request at the
+version `followup list` printed, keeping each one's notes. It takes the
+same optional contact attempt (`--contact-channel`, `--contact-at`,
+`--contact-notes`), recorded on every chosen request, and at most 250
+requests. It asks for confirmation first (or takes `--yes`), since a
+resolved request cannot be edited again; a choice too long to record is
+refused before it asks.
+
+Either change takes `--request-key`; without one it makes a key and prints
+it to standard error. The key binds each request's revision, as on the
+page: a repeat with it records nothing twice, and `followup bulk` with the
+same key and more requests resolves only the new ones (`changed` counts
+them).
+
+| `followup update` field | What it holds |
+| --- | --- |
+| `created` | False for a repeat with the same key, which recorded nothing |
+| `request_key` | The key, for a repeat |
+| `revision` | What was recorded: `id`, `request_id`, `expected_version`, `state`, `outcome`, `contact_channel`, `contact_at`, `created_at` |
+| `request` | The request now: `id`, `version`, `state`, `outcome` |
+
+| `followup bulk` field | What it holds |
+| --- | --- |
+| `created`, `request_key` | As for `followup update` |
+| `outcome` | The outcome recorded, as given |
+| `changed` | How many requests this run resolved (0 for a repeat) |
+| `requests` | Each chosen request now: `id`, `version`, `state`, `outcome` |
+
+Each change is recorded in System logs as on the page
+(`ministry_request_updated`, and `ministry_followup_bulk_applied` for a
+bulk outcome), with `admin_cmd_followup_update` or `admin_cmd_followup_bulk`
+naming the session. A request changed since its version, closed, or whose
+Member ParishSoft no longer lists is exit 1 (`stale_version`): read it
+again. The request is checked before the other rules, so a stale request
+is `stale_version` even when another option is also wrong. A choice the
+page refuses, or text past its length, is exit 1 (`invalid`), with
+`error.fields` naming the option (`outcome`, `notes`, `contact_at`,
+`contact_notes` or `request`). A request that is not one of the current
+campaign's, or is outside your Ministries, is exit 1 (`not_available`).
+
 ## Output changelog
 
 - `pk-admin/1` (ADM-11 PR 2): the first version, with the session commands.
@@ -3035,6 +3180,19 @@ print is exit 1 (`invalid`).
   pause existed. A reader that took `ready` as proof of a test must read
   `required` and `checked_at` instead. The command mirrors the Pause and
   resume mail page, and its only readers are Administrator-run assistants.
+- `pk-admin/1` (#1437): a correction, kept on version 1. A campaign
+  change with financial stewardship enabled and a required financial field
+  left empty reports that field's problem with `code` `required` (it was
+  `invalid`), as an empty field elsewhere does. The closed set of codes is
+  unchanged, and the only readers are Administrator-run assistants.
+- `pk-admin/1` (#463): additive. `send pause-preview --reason TEXT|-`,
+  `send resume-preview --reason TEXT|-`, `send resolve-preview --decision
+  release|cancel|clear [--type KIND …] --reason TEXT|-` (full scope, no
+  event) and `send confirm --token TOKEN|-` (full scope, fresh-gated and
+  prompting, recording `admin_cmd_send_confirm`), Pause and resume mail's
+  previews and confirmation.
+- `pk-admin/1` (#463 PR 11a): additive. `followup list`, `followup show`,
+  `followup update` and `followup bulk`, the Ministry follow-up queue.
 - `pk-admin/1` (#1434): additive. `census edit PROPOSAL_ID
   --expected-version VERSION (--value TEXT|- | --clear) [--note TEXT|-]
   [--request-key KEY]`, an Automatic Census changes row's Edit value and

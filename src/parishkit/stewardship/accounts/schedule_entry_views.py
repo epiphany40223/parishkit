@@ -67,6 +67,7 @@ from parishkit.stewardship.web.refusals import (
     UserFacingError,
     UserFacingMissing,
     unexpected_fields,
+    with_default_code,
 )
 
 from . import admin_navigation, schedule_email, schedule_local
@@ -217,11 +218,14 @@ class RepeatRule(AdminForm):
             raise forms.ValidationError(
                 _("One repeat adds at most %(limit)s reminders."),
                 params={"limit": REPEAT_LIMIT},
+                code="too_many_dates",
             )
         try:
             return sorted(date.fromisoformat(value) for value in values)
         except ValueError:
-            raise forms.ValidationError(_("Choose the dates again.")) from None
+            raise forms.ValidationError(
+                _("Choose the dates again."), code="invalid_dates"
+            ) from None
 
 
 def _saved(state, campaign):
@@ -325,6 +329,16 @@ def _messages(errors):
     return [str(message) for message in errors]
 
 
+def _coded(errors):
+    """``(message, code)`` for each of a list of ``ValidationError``s.
+
+    ``errors`` is an error list's ``as_data()``; the code travels with each
+    message, so the refusal log can say why a carried error was refused
+    (#1437).
+    """
+    return [(str(message), error.code) for error in errors for message in error]
+
+
 def _carry_errors(entry, window, schedules, identifiers, targets):
     """Show the review's errors on the page's one schedule form.
 
@@ -336,32 +350,32 @@ def _carry_errors(entry, window, schedules, identifiers, targets):
     top too, so nothing the server found is hidden.
     """
 
-    def add(field, message):
-        """Add one message, once."""
+    def add(field, message, code):
+        """Add one message, once, keeping its error's closed code."""
         existing = entry.errors.get(field or "__all__", [])
         if message not in existing:
-            entry.add_error(field, message)
+            entry.add_error(field, forms.ValidationError(message, code=code))
 
     labels = schedule_labels(schedules.previous)
     for index, form in enumerate(schedules.forms):
         identifier = identifiers[index]
-        for field, messages in form.errors.items():
-            for message in _messages(messages):
+        for field, errors in form.errors.as_data().items():
+            for message, code in _coded(errors):
                 if identifier in targets:
                     day = targets[identifier]
                     if day is not None and field == "date":
-                        add(None, f"{parish_date(day)}: {message}")
+                        add(None, f"{parish_date(day)}: {message}", code)
                     elif field in entry.fields and not entry.fields[field].disabled:
-                        add(field, message)
+                        add(field, message, code)
                     else:
-                        add(None, message)
+                        add(None, message, code)
                 else:
                     name = labels[index] if index < len(labels) else ""
-                    add(None, f"{name}: {message}" if name else message)
-    for message in _messages(schedules.non_form_errors()):
-        add(None, message)
-    for message in _messages(window.non_field_errors()):
-        add(None, message)
+                    add(None, f"{name}: {message}" if name else message, code)
+    for message, code in _coded(schedules.non_form_errors().as_data()):
+        add(None, message, code)
+    for message, code in _coded(window.non_field_errors().as_data()):
+        add(None, message, code)
 
 
 def entry_form(
@@ -518,13 +532,19 @@ def _check_repeat(entry, repeat):
     if repeat is None or not repeat.cleaned_data.get("repeat"):
         return
     if entry.cleaned_data.get("kind") != "reminder":
-        repeat.add_error("repeat", _("Only reminders repeat."))
+        repeat.add_error(
+            "repeat",
+            forms.ValidationError(_("Only reminders repeat."), code="reminders_only"),
+        )
     elif not repeat.cleaned_data.get("dates"):
         repeat.add_error(
             "repeat",
-            _(
-                "This rule gives no date that can be added. Change the rule, "
-                "or uncheck Repeat to choose one date."
+            forms.ValidationError(
+                _(
+                    "This rule gives no date that can be added. Change the rule, "
+                    "or uncheck Repeat to choose one date."
+                ),
+                code="no_dates",
             ),
         )
 
@@ -562,6 +582,8 @@ def _entry_page(request, context, *, status=200):
     )
     if status == 400:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return response
 
 
@@ -606,7 +628,7 @@ def _entry(request, campaign_id, schedule_id=None):
     actor = principal(request, service)
     filters(request.GET, allowed=set())
     if request.FILES:
-        raise unexpected_fields()
+        raise unexpected_fields(request.FILES, allowed=())
     new = schedule_id is None
     # The page posts only a preview; its review confirms on the list.
     if (
@@ -618,6 +640,7 @@ def _entry(request, campaign_id, schedule_id=None):
         )
         != "preview"
     ):
+        # No sources: an unknown action value, not an unexpected field.
         raise unexpected_fields()
     posted = request.POST if request.method == "POST" else None
     now = timezone.now()
@@ -691,17 +714,24 @@ def _entry(request, campaign_id, schedule_id=None):
                 now=now,
             )
         except UnknownZone:
-            entry.add_error(None, ZONE_MISSING)
+            entry.add_error(
+                None, forms.ValidationError(ZONE_MISSING, code="zone_missing")
+            )
             return _entry_page(request, context, status=400)
         except schedule_local.RepeatedHour:
-            entry.add_error("time", REPEATED_HOUR)
+            entry.add_error(
+                "time", forms.ValidationError(REPEATED_HOUR, code="repeated_hour")
+            )
             return _entry_page(request, context, status=400)
         except ValueError:
             # Only a date far outside any campaign cannot be converted.
             entry.add_error(
                 "date",
-                _("Choose a date within the campaign (%(window)s).")
-                % {"window": window_text(values)},
+                forms.ValidationError(
+                    _("Choose a date within the campaign (%(window)s).")
+                    % {"window": window_text(values)},
+                    code="outside_campaign",
+                ),
             )
             return _entry_page(request, context, status=400)
         added = (
@@ -740,7 +770,7 @@ def _entry(request, campaign_id, schedule_id=None):
             window.non_field_errors()
         ):
             # The whole candidate refused the edited email: say so there.
-            schedule_email.refuse(email, EMAIL_DOES_NOT_FIT)
+            schedule_email.refuse(email, EMAIL_DOES_NOT_FIT, "candidate_refused")
             return _entry_page(request, context, status=400)
         if reviewed is None:
             repeating = repeat is not None and repeat.cleaned_data["repeat"]
@@ -755,7 +785,7 @@ def _entry(request, campaign_id, schedule_id=None):
             return _entry_page(request, context, status=400)
         if added is not None:
             if len(reviewed["preview"] or "") > PREVIEW_LIMIT:
-                schedule_email.refuse(email, TOO_LARGE)
+                schedule_email.refuse(email, TOO_LARGE, "too_large")
                 return _entry_page(request, context, status=400)
             reviewed = reviewed | {"email": _sample(service, campaign, added)}
         # The review dialog's fragment, never a page: its Apply confirms on
@@ -875,10 +905,11 @@ def _chosen(parameters):
     what happened: nothing chosen, one schedule twice (a stale or crafted
     page), or more than a campaign can hold.
     """
-    if set(parameters) - {"csrfmiddlewaretoken", "base_digest", "schedule_id"} or any(
+    allowed = {"csrfmiddlewaretoken", "base_digest", "schedule_id"}
+    if set(parameters) - allowed or any(
         len(values) != 1 for name, values in parameters.lists() if name != "schedule_id"
     ):
-        raise unexpected_fields()
+        raise unexpected_fields(parameters, allowed=allowed, multiple={"schedule_id"})
     values = parameters.getlist("schedule_id")
     if not values:
         raise UserFacingError(
@@ -933,7 +964,7 @@ def schedule_delete(request, campaign_id):
         actor = principal(request, service)
         filters(request.GET, allowed=set())
         if request.FILES:
-            raise unexpected_fields()
+            raise unexpected_fields(request.FILES, allowed=())
         identifiers = _chosen(request.POST)
         listing = reverse("admin:schedule_settings")
         with work_transaction():

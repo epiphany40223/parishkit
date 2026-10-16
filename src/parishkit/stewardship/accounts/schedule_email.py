@@ -181,15 +181,16 @@ def test_context(admitted, campaign_id):
     }
 
 
-def refuse(form, message):
+def refuse(form, message, code):
     """Refuse the edited email as a whole, at its HTML source.
 
     A refusal of the whole email (the configuration refusing it, or its
     review being too large) is put on a field, never only on the form, so
     the review dialog's in-place answer marks the field (aria-invalid),
     places the message before it and links the error summary to it.
+    ``code`` is its closed error code, which the refusal log records.
     """
-    form.add_error("html", message)
+    form.add_error("html", forms.ValidationError(message, code=code))
 
 
 def copy(form, records, chosen, *, campaign_id, kind):

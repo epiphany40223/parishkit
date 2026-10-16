@@ -25,6 +25,7 @@ and the answers its forms post for are served by the fixture server:
 from types import SimpleNamespace as Value
 from uuid import UUID
 
+from django import forms
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.template.loader import render_to_string
 
@@ -140,7 +141,10 @@ def components(context, admin):
         auto_id="id_welcome_%s",
     )
     unusable.is_valid()
-    unusable.add_error("image", NOT_STATIC_IMAGE["section"])
+    unusable.add_error(
+        "image",
+        forms.ValidationError(NOT_STATIC_IMAGE["section"], code="unsupported_image"),
+    )
     POSTS[REFUSED_IMAGE] = (
         400,
         None,

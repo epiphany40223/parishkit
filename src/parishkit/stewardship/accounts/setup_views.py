@@ -11,7 +11,7 @@ from django.views.decorators.http import require_http_methods
 from parishkit.config import ConfigError
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import expected_version, filters
-from parishkit.stewardship.web.refusals import stale_page, unexpected_fields
+from parishkit.stewardship.web.refusals import annotate, stale_page, unexpected_fields
 
 from .access_gate import status_page
 from .admin_editing import error_response
@@ -46,7 +46,9 @@ def _closed(request, fields, query=frozenset()):
         or set(request.POST) - {*fields, "csrfmiddlewaretoken"}
         or any(len(values) != 1 for _, values in request.POST.lists())
     ):
-        raise unexpected_fields()
+        raise unexpected_fields(
+            request.POST, request.FILES, allowed={*fields, "csrfmiddlewaretoken"}
+        )
 
 
 def _checked(request, service, response, draft=None):
@@ -144,7 +146,9 @@ def page_error(request, error, current=None, *, fallback=error_response):
     )
     page["Cache-Control"] = "no-store"
     page.stewardship_safe_error = True
-    return page
+    # The refusal log's reason and class, which the JSON answer carried
+    # (#1444).
+    return annotate(page, error)
 
 
 @require_http_methods(["GET", "HEAD", "POST"])

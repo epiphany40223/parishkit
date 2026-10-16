@@ -6,9 +6,9 @@
  *   images, so there are no web fonts, CDN frameworks or data: URI images.
  *   Typography uses system font stacks; decoration is pure CSS.
  * - Templates and tests depend on the existing class names (.panel, .notice,
- *   .notice-error, .actions, .help, .flow, .table-scroll, .changed, .brand,
- *   .site-header, .skip-link, .content-editor, ...). Restyle
- *   them; do not rename them.
+ *   .notice-error, .notice-info, .actions, .help, .flow, .table-scroll,
+ *   .changed, .brand, .site-header, .skip-link, .content-editor, ...).
+ *   Restyle them; do not rename them.
  * - Every text/background pair below meets WCAG AA (4.5:1), and control
  *   boundaries and the focus ring meet the 3:1 non-text minimum. Re-check
  *   contrast when changing any color token.
@@ -572,8 +572,11 @@ button, .button, .link-button, .sort-link, input[type=submit], input[type=button
 button:not(:disabled):hover, .button:hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--paper); box-shadow: 0 2px 6px rgb(16 24 40 / 16%); }
 button:not(:disabled):active { box-shadow: none; }
 button:disabled { cursor: not-allowed; opacity: .55; box-shadow: none; }
-.button-secondary, .actions > button[type=button], button[name=page], button[data-review-edit], [data-content-toolbar] button { background: var(--paper); color: var(--accent); border-color: var(--accent); box-shadow: none; }
-.button-secondary:not(:disabled):hover, .actions > button[type=button]:not(:disabled):hover, button[name=page]:not(:disabled):hover, button[data-review-edit]:not(:disabled):hover, [data-content-toolbar] button:not(:disabled):hover { background: var(--accent-soft); color: var(--accent-strong); box-shadow: none; }
+/* The secondary look comes only from its class ({% button variant="secondary" %}
+   or class "button-secondary" in script), never from where a button sits, so
+   a button's look is decided where it is drawn (#732). */
+.button-secondary { background: var(--paper); color: var(--accent); border-color: var(--accent); box-shadow: none; }
+.button-secondary:not(:disabled):hover { background: var(--accent-soft); color: var(--accent-strong); box-shadow: none; }
 .actions { display: flex; gap: .75rem 1rem; flex-wrap: wrap; align-items: center; }
 /* A submitted form (ui-v1.js): its clicked button turns muted with a small
    spinner and the form ignores repeat clicks until the next page loads. With
@@ -594,9 +597,14 @@ button.is-busy::after, .button.is-busy::after { content: ""; display: inline-blo
 [data-content-toolbar] { display: flex; flex-wrap: wrap; gap: .5rem; }
 [data-content-toolbar] button { margin: 0; padding-inline: .9rem; font-size: .925rem; }
 
-/* Notices keep a full border (visible in forced-colors mode) plus a status bar. */
+/* Notices keep a full border (visible in forced-colors mode) plus a status bar.
+   Three kinds (ui-conventions "Shared visual style", #732): .notice alone is
+   a warning, .notice-error a failure or refusal, and .notice-info neutral
+   information with nothing to beware of, in the "Working" status look's
+   tokens (test_design_tokens.py checks their contrast in both schemes). */
 .notice { padding: 1rem 1.25rem; background: var(--warning-bg); border: 1px solid var(--warning-border); border-inline-start-width: .35rem; border-radius: var(--radius-small); margin-block: 1rem; }
 .notice-error { background: var(--error-bg); border-color: var(--error-border); }
+.notice-info { background: var(--accent-soft); border-color: var(--accent); }
 .notice h2 { margin-top: 0; font-size: 1.1rem; }
 .notice ul { margin-bottom: 0; }
 /* System health's problems: one notice per problem, without list bullets. */
@@ -875,6 +883,10 @@ details.filter-panel > form:not(.filter-bar) > :is(p, [data-complete-hint]) { gr
 details.filter-panel > form:not(.filter-bar) > button { justify-self: start; margin: 0; }
 details.filter-panel > form:not(.filter-bar) > fieldset { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem 1rem; align-items: end; margin: 0; padding: .5rem .75rem .75rem; }
 details.filter-panel > form:not(.filter-bar) > fieldset > legend { grid-column: 1 / -1; margin: 0; font-size: .925rem; }
+/* A range's reserved message line (#1332) spans its fieldset after both
+   ends, or the form after Apply when the range has no fieldset. */
+details.filter-panel > form:not(.filter-bar) > .field-error-line,
+details.filter-panel > form:not(.filter-bar) > fieldset > .field-error-line { grid-column: 1 / -1; margin: 0; }
 /* The theme's short-field rule (a date's div, from 48rem, above) gives a
    date cell an end margin and caps its box at 14rem, which left the dates
    narrower than the selects beside them and ragged against the row above.
@@ -1396,14 +1408,15 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
    live-checked date (Campaign settings' end date, #1119) are taller
    than their minimum height, so a thicker border would grow them too; so
    would a Campaign images slot's file field, moving every slot below it
-   (#1410; its scope is in :where(), so the list keeps its specificity).
+   (#1410; its scope is in :where(), so the list keeps its specificity),
+   and so would a report filter's range ends, refused in place (#1332).
    A select is held at its minimum height and keeps the global 2px border. */
-:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file])[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
-:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file])[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(details.filter-panel > form > div, details.filter-panel > form > fieldset > div) > input)[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
+:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(details.filter-panel > form > div, details.filter-panel > form > fieldset > div) > input)[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 /* Forced colors draw no shadow: an outline inside the border marks it,
    except under keyboard focus, where the global 3px focus ring shows. */
 @media (forced-colors: active) {
-  :is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file])[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
+  :is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(details.filter-panel > form > div, details.filter-panel > form > fieldset > div) > input)[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
 }
 .schedule-row-messages { padding-top: .5rem; min-height: calc(1lh + .5rem); }
 .schedule-row-messages > * { margin: 0; }

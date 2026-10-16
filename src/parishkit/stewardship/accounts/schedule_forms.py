@@ -200,9 +200,12 @@ class ScheduleWindow(AdminForm):
         ):
             self.add_error(
                 "overlap_confirmed",
-                _(
-                    "These campaign dates overlap the upcoming financial period. "
-                    "Check this box to confirm that is intended."
+                forms.ValidationError(
+                    _(
+                        "These campaign dates overlap the upcoming financial period. "
+                        "Check this box to confirm that is intended."
+                    ),
+                    code="overlap_unconfirmed",
                 ),
             )
             return values
@@ -211,22 +214,29 @@ class ScheduleWindow(AdminForm):
             # generic window refusal below (#944).
             self.add_error(
                 "end_date",
-                _("Choose an end date after the campaign's start date, %(start)s.")
-                % {"start": parish_date(values["start_date"])},
+                forms.ValidationError(
+                    _("Choose an end date after the campaign's start date, %(start)s.")
+                    % {"start": parish_date(values["start_date"])},
+                    code="end_before_start",
+                ),
             )
             return values
         try:
             interval = campaign_values(self.values())
         except ConfigError:
             raise forms.ValidationError(
-                _("Check the campaign dates, timezone and financial overlap.")
+                _("Check the campaign dates, timezone and financial overlap."),
+                code="invalid_campaign",
             ) from None
         if self.live_at is not None and interval.end <= self.live_at:
             # A live campaign can't end in the past (the installer and SQL
             # refuse it too); say so here rather than as a failed change.
             self.add_error(
                 "end_date",
-                _("Choose an end date that has not already passed."),
+                forms.ValidationError(
+                    _("Choose an end date that has not already passed."),
+                    code="end_passed",
+                ),
             )
         return values
 
@@ -690,6 +700,21 @@ class ScheduleSet(AdminFormSet):
         return schedulable(self.templates)
 
     @property
+    def repeat_rule(self):
+        """A blank repeat rule for the date-change review's Repeat a reminder.
+
+        The panel draws the shared rule controls
+        (``components/repeat-rule.html``) from New scheduled email's own
+        ``RepeatRule``, so both repeat panels offer the same choices (#1129).
+        The panel posts nothing, so the form is never bound. It is imported
+        here, not at the top, because ``schedule_entry_views`` imports this
+        module.
+        """
+        from .schedule_entry_views import RepeatRule
+
+        return RepeatRule()
+
+    @property
     def window(self):
         """The campaign's first and last local days.
 
@@ -723,7 +748,9 @@ class ScheduleSet(AdminFormSet):
         if any(self.errors):
             return
         if self.management_form.cleaned_data.get("INITIAL_FORMS") != len(self.previous):
-            raise forms.ValidationError(_("Reload schedules before saving."))
+            raise forms.ValidationError(
+                _("Reload schedules before saving."), code="reload"
+            )
         old = {row["id"]: row["values"] for row in self.previous}
         seen, rows, field_errors = set(), [], False
         for form in self.forms:
@@ -732,7 +759,8 @@ class ScheduleSet(AdminFormSet):
             if identifier:
                 if identifier not in old or identifier in seen:
                     raise forms.ValidationError(
-                        _("Schedule identities have changed. Reload before saving.")
+                        _("Schedule identities have changed. Reload before saving."),
+                        code="identity_changed",
                     )
                 seen.add(identifier)
             if (
@@ -743,15 +771,20 @@ class ScheduleSet(AdminFormSet):
                 continue
             if identifier and form.cleaned_data["kind"] != old[identifier]["kind"]:
                 raise forms.ValidationError(
-                    _("A saved schedule's mail type cannot change.")
+                    _("A saved schedule's mail type cannot change."), code="kind_locked"
                 )
             if self.browser_times:
                 try:
                     self._to_campaign(form, old.get(identifier))
                 except UnknownZone:
-                    raise forms.ValidationError(ZONE_MISSING) from None
+                    raise forms.ValidationError(
+                        ZONE_MISSING, code="zone_missing"
+                    ) from None
                 except schedule_local.RepeatedHour:
-                    form.add_error("time", REPEATED_HOUR)
+                    form.add_error(
+                        "time",
+                        forms.ValidationError(REPEATED_HOUR, code="repeated_hour"),
+                    )
                     field_errors = True
                     continue
                 except ValueError:
@@ -776,12 +809,14 @@ class ScheduleSet(AdminFormSet):
                 # The field checks above mirror schedule_values, so this is
                 # only a safety net should the two ever disagree.
                 raise forms.ValidationError(
-                    _("Check each schedule's date and time against the campaign.")
+                    _("Check each schedule's date and time against the campaign."),
+                    code="outside_campaign",
                 ) from None
             rows.append((values["kind"], due))
         if seen != old.keys():
             raise forms.ValidationError(
-                _("Every saved schedule must be retained or explicitly deleted.")
+                _("Every saved schedule must be retained or explicitly deleted."),
+                code="missing_rows",
             )
         if not field_errors:
             self._check_collection(rows)
@@ -836,6 +871,7 @@ class ScheduleSet(AdminFormSet):
                             "reminders — leave it empty. Digests are sent "
                             "throughout the campaign."
                         ),
+                        "date_not_allowed",
                     )
                 )
         elif data["date"] is None:
@@ -843,10 +879,13 @@ class ScheduleSet(AdminFormSet):
                 (
                     "date",
                     _("Choose the date it is sent, within the campaign (%(window)s)."),
+                    "date_missing",
                 )
             )
         elif not start <= data["date"] <= end:
-            problems.append(("date", OUTSIDE_WINDOW))
+            # Its own code, which a live end-date review recognizes
+            # (campaign_end_date.end_review).
+            problems.append(("date", OUTSIDE_WINDOW, OUTSIDE_CAMPAIGN))
         if "weekday" not in FIELDS[kind]:
             if data["weekday"] is not None:
                 problems.append(
@@ -856,11 +895,16 @@ class ScheduleSet(AdminFormSet):
                             "A weekday applies only to weekly digests — leave it "
                             "at Not weekly."
                         ),
+                        "weekday_not_allowed",
                     )
                 )
         elif data["weekday"] is None:
             problems.append(
-                ("weekday", _("Choose the day of the week the digest is sent."))
+                (
+                    "weekday",
+                    _("Choose the day of the week the digest is sent."),
+                    "weekday_missing",
+                )
             )
         if data.get("comparison") and "comparison" not in FIELDS[kind]:
             problems.append(
@@ -870,6 +914,7 @@ class ScheduleSet(AdminFormSet):
                         "Only daily Admin digests can include the comparison "
                         "with past campaigns — leave it unticked."
                     ),
+                    "comparison_not_allowed",
                 )
             )
         if self._subject(data, previous) is None:
@@ -877,13 +922,12 @@ class ScheduleSet(AdminFormSet):
                 (
                     "template_version",
                     _("Choose an email of this mail type (%(kind)s)."),
+                    "template_missing",
                 )
             )
         params = {"window": self.window_text, "kind": EMAIL_LABELS[kind]}
-        for field, message in problems:
-            # The outside-the-campaign date has its own code, which a live
-            # end-date review recognizes (campaign_end_date.end_review).
-            code = OUTSIDE_CAMPAIGN if message is OUTSIDE_WINDOW else None
+        # Each problem is (field, message, closed code) (#1437).
+        for field, message, code in problems:
             form.add_error(
                 field, forms.ValidationError(message, code=code, params=params)
             )
@@ -901,34 +945,49 @@ class ScheduleSet(AdminFormSet):
         errors = []
         if mail and not initial:
             errors.append(
-                _(
-                    "Reminders need an initial invitation. Add one Initial "
-                    "invitation schedule."
+                forms.ValidationError(
+                    _(
+                        "Reminders need an initial invitation. Add one Initial "
+                        "invitation schedule."
+                    ),
+                    code="needs_initial",
                 )
             )
         elif len(initial) > 1:
             errors.append(
-                _("Only one Initial invitation is allowed. Delete the extra one.")
+                forms.ValidationError(
+                    _("Only one Initial invitation is allowed. Delete the extra one."),
+                    code="one_initial",
+                )
             )
         elif any(due <= initial[0] for due, kind in mail if kind == "reminder"):
             errors.append(
-                _(
-                    "Every reminder must be sent after the initial invitation. "
-                    "Choose a later date or time."
+                forms.ValidationError(
+                    _(
+                        "Every reminder must be sent after the initial invitation. "
+                        "Choose a later date or time."
+                    ),
+                    code="reminder_before_initial",
                 )
             )
         if len({due for due, kind in mail}) != len(mail):
             errors.append(
-                _(
-                    "Two emails to Families cannot be sent at the same date and "
-                    "time. Change one of them."
+                forms.ValidationError(
+                    _(
+                        "Two emails to Families cannot be sent at the same date and "
+                        "time. Change one of them."
+                    ),
+                    code="same_time",
                 )
             )
         if len(set(digests)) != len(digests):
             errors.append(
-                _(
-                    "Only one Daily Admin digest and one Weekly Admin digest are "
-                    "allowed. Delete the extra one."
+                forms.ValidationError(
+                    _(
+                        "Only one Daily Admin digest and one Weekly Admin digest are "
+                        "allowed. Delete the extra one."
+                    ),
+                    code="one_digest",
                 )
             )
         if errors:
@@ -966,7 +1025,9 @@ class ScheduleSet(AdminFormSet):
         data = form.cleaned_data
         subject = self._subject(data, previous)
         if subject is None:
-            raise forms.ValidationError(_("Choose a configured email template."))
+            raise forms.ValidationError(
+                _("Choose a configured email template."), code="no_template"
+            )
         values = {
             "campaign_id": self.campaign_id,
             "kind": data["kind"],

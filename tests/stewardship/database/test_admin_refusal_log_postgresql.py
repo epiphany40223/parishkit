@@ -63,6 +63,8 @@ def test_an_extra_submitted_key_is_counted_never_named(auth_service, google):
         "status": 400,
         "codes": ["invalid"],
         "reason": "unexpected_fields",
+        # The extra key is counted, never named (#1403, PR 5).
+        "unexpected_count": 1,
         "mode": "testing",
     }
     assert extra not in json.dumps(entry.context)
@@ -163,3 +165,33 @@ def test_a_refused_automation_session_keeps_only_its_own_record(
         event_type="automation_session_refused", subject_id=row.pk
     ).exists()
     assert entries() == [] and refusal_lines(caplog) == []
+
+
+def test_a_strict_violation_leaves_the_connection_usable(
+    auth_service, google, monkeypatch
+):
+    """A refusal that says nothing is noted, never raised (#1444).
+
+    The Logs page's error is replaced by a bare 400 so the strict check has
+    something to note. The request still answers, its entry is written, and
+    the same connection serves the next query and the next request; the
+    note is taken here so the test hook does not fail this test.
+    """
+    from django.db import connection
+    from django.http import HttpResponse
+
+    from parishkit.stewardship.audit import log_views
+    from parishkit.stewardship.web import refusal_log
+
+    browser, _ = signed_in()
+    monkeypatch.setattr(log_views, "_error", lambda *_, **__: HttpResponse(status=400))
+    response = browser.get("/admin/system/logs/?correlation=x")
+    assert response.status_code == 400
+    (violation,) = refusal_log.take_strict_violations()
+    assert violation.startswith("admin:logs answered 400")
+    (entry,) = entries()
+    assert entry.context["reason"] == "unclassified"
+    # The same connection is still open and outside any transaction.
+    assert connection.connection is not None and not connection.in_atomic_block
+    assert PortalUser.objects.filter(email="admin@example.org").exists()
+    assert browser.get("/admin/system/logs/").status_code == 200

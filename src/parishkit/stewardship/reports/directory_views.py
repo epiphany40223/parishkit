@@ -34,6 +34,7 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web.refusals import with_status_code
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import report_table
 
@@ -186,7 +187,8 @@ def _error(campaign_id, *, status, no_rehearsal=False):
     response.stewardship_safe_error = True
     if status == 503:
         response["Retry-After"] = "5"
-    return response
+    # The refusal log's codes for this page of its own (#1403).
+    return with_status_code(response, *(["rehearsal_ended"] if no_rehearsal else []))
 
 
 def _mailing_rows(rows):
@@ -535,6 +537,8 @@ def _bare(status):
     debug_swallowed("find a family refused")
     response = HttpResponse(status=status, headers={"Cache-Control": "no-store"})
     response.stewardship_safe_error = True
+    # The refusal log's code for this refusal (#1444).
+    with_status_code(response)
     if status == 503:
         response["Retry-After"] = "5"
     return response

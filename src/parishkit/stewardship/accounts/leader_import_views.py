@@ -98,19 +98,22 @@ def _choice(parameters):
     addresses), which ``all`` ignores, since the table's form posts them
     with either button. ``selected`` needs at least one.
     """
-    if set(parameters) - {"csrfmiddlewaretoken", "scope", "email"} or any(
+    allowed = {"csrfmiddlewaretoken", "scope", "email"}
+    if set(parameters) - allowed or any(
         len(values) != 1 for name, values in parameters.lists() if name != "email"
     ):
-        raise unexpected_fields()
+        raise unexpected_fields(parameters, allowed=allowed, multiple={"email"})
     scope = parameters.get("scope")
     emails = parameters.getlist("email")
     if scope not in SCOPES or len(emails) > CHOSEN_LIMIT:
+        # No sources: the fields were allowed; a value is malformed.
         raise unexpected_fields()
     if scope == "all":
         return None
     try:
         chosen = [clean_email(email) for email in emails]
     except UserRefused:
+        # No sources: the fields were allowed; a value is malformed.
         raise unexpected_fields() from None
     if not chosen:
         raise UserFacingError(
@@ -150,7 +153,7 @@ def user_leader_import(request):
         actor = principal(request, service, capability=Capability.MANAGE_USERS)
         filters(request.GET, allowed=set())
         if request.FILES:
-            raise unexpected_fields()
+            raise unexpected_fields(request.FILES, allowed=())
         chosen = _choice(request.POST)
         leaders = read_leaders(request.session.session_key)
         with read_transaction():

@@ -186,7 +186,8 @@ def check_slot(name, data):
                 **title,
                 "size": file_size(len(data)),
                 "limit": file_size(slot.max_bytes),
-            }
+            },
+            code="too_large",
         )
     formats = _("PNG, JPEG or WebP") if len(slot.formats) > 1 else "PNG"
     try:
@@ -194,7 +195,8 @@ def check_slot(name, data):
     except ValueError:
         raise forms.ValidationError(
             _("%(slot)s: the file is not a %(formats)s image that can be read.")
-            % {**title, "formats": formats}
+            % {**title, "formats": formats},
+            code="unreadable_image",
         ) from None
     if facts.format not in slot.formats:
         raise forms.ValidationError(
@@ -207,11 +209,13 @@ def check_slot(name, data):
                 "found": _FORMAT_NAMES.get(facts.format, facts.format),
                 "noun": slot.noun,
                 "formats": formats,
-            }
+            },
+            code="wrong_format",
         )
     if facts.frames != 1:
         raise forms.ValidationError(
-            _("%(slot)s: the image is animated; choose a single still image.") % title
+            _("%(slot)s: the image is animated; choose a single still image.") % title,
+            code="animated",
         )
     measured = {**title, "width": f"{facts.width:,}", "height": f"{facts.height:,}"}
     if facts.width * facts.height > MAX_IMAGE_PIXELS:
@@ -220,20 +224,23 @@ def check_slot(name, data):
                 "%(slot)s: the image is %(width)s × %(height)s pixels; the limit is "
                 "16 megapixels."
             )
-            % measured
+            % measured,
+            code="too_many_pixels",
         )
     problem = _shape_problem(name, facts.width, facts.height)
     if problem:
         raise forms.ValidationError(
             _("%(slot)s: the image is %(width)s × %(height)s pixels; %(rule)s.")
-            % {**measured, "rule": problem}
+            % {**measured, "rule": problem},
+            code="wrong_shape",
         )
     try:
         return prepare_slot_graphic(data, name, VARIANTS[name])
     except ValueError:
         raise forms.ValidationError(
             _("%(slot)s: the file is not a %(formats)s image that can be read.")
-            % {**title, "formats": formats}
+            % {**title, "formats": formats},
+            code="unreadable_image",
         ) from None
 
 

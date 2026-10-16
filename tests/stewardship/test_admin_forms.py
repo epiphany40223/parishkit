@@ -200,7 +200,7 @@ def recorded(monkeypatch):
     """Every RefusalRecord the middleware hands to the writer, in order."""
     records = []
     monkeypatch.setattr(refusal_log, "record_refusal", records.append)
-    monkeypatch.setattr(refusal_log, "_mode", lambda: "testing")
+    monkeypatch.setattr(refusal_log, "current_mode", lambda: "testing")
     return records
 
 
@@ -262,8 +262,13 @@ def test_a_form_drawn_again_names_its_fields_and_django_codes(recorded):
     assert record.level == "INFO"
 
 
-def test_no_message_or_value_is_ever_recorded(recorded):
-    """A view's own error message and every submitted value stay out."""
+def test_no_message_or_value_is_ever_recorded(recorded, settings):
+    """A view's own error message and every submitted value stay out.
+
+    A code-less error fails a test under the strict test settings (#1437);
+    this test turns that off to show what production records for one.
+    """
+    settings.STEWARDSHIP_ERROR_CODES_STRICT = False
 
     def build(request):
         form = EntryForm(request.POST)
@@ -311,9 +316,12 @@ def test_a_field_of_a_refused_forms_own_sent_twice_is_a_duplicate(recorded):
     assert context["form"] == "entry_form"
 
 
-def test_a_clean_form_sent_twice_is_not_the_refused_one(recorded):
+def test_a_clean_form_sent_twice_is_not_the_refused_one(recorded, settings):
     """A form that validated cleanly adds no ``duplicate`` and does not
     claim ``form`` ahead of the form that was refused."""
+    # A bare 400 with no form error says nothing, which the strict test
+    # settings refuse (#1444); off here to see what such a request records.
+    settings.STEWARDSHIP_REFUSAL_LOG_STRICT = False
 
     def build(request):
         SlotForm({"time": "09:00"}).is_valid()
@@ -411,8 +419,11 @@ def test_an_answer_that_is_not_a_refusal_records_nothing(recorded, status):
     assert recorded == []
 
 
-def test_a_valid_or_unbound_form_adds_nothing(recorded):
+def test_a_valid_or_unbound_form_adds_nothing(recorded, settings):
     """A refused request whose forms were clean records no form."""
+    # A bare 400 with no form error says nothing, which the strict test
+    # settings refuse (#1444); off here to see what such a request records.
+    settings.STEWARDSHIP_REFUSAL_LOG_STRICT = False
 
     def build(request):
         EntryForm(request.POST).is_valid()
@@ -437,8 +448,11 @@ def test_the_collector_is_gone_after_a_view_raises():
     assert admin_forms._VALIDATED.get() is None
 
 
-def test_a_second_request_starts_empty(recorded):
+def test_a_second_request_starts_empty(recorded, settings):
     """A form refused in one request is never part of the next one's entry."""
+    # A bare 400 with no form error says nothing, which the strict test
+    # settings refuse (#1444); off here to see what such a request records.
+    settings.STEWARDSHIP_REFUSAL_LOG_STRICT = False
     refuse({"kind": "zz"}, lambda request: EntryForm(request.POST).is_valid())
     refuse({}, lambda request: None)
     first, second = recorded
@@ -457,3 +471,16 @@ def test_only_bound_forms_validated_in_the_request_are_collected():
     assert validated == [bound]
     # No collector bound: validating keeps nothing anywhere.
     EntryForm({"name": "x"}).is_valid()
+
+
+def test_a_code_less_error_fails_under_the_test_settings():
+    """The test settings refuse an Admin form error with no code (#1437),
+    whether a view adds it or the form's own validation raises it."""
+    form = EntryForm({"kind": "a"})
+    form.is_valid()
+    with pytest.raises(AssertionError, match="without a closed code"):
+        form.add_error("note", "Not coded.")
+    form = EntryForm({"kind": "a"})
+    form.is_valid()
+    form.add_error("note", forms.ValidationError("Coded.", code="clash"))
+    assert form.has_error("note", "clash")

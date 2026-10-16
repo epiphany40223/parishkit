@@ -43,7 +43,11 @@ from parishkit.stewardship.system_health import (
     source_form_tile,
 )
 from parishkit.stewardship.web.contracts import ErrorCode, filters
-from parishkit.stewardship.web.refusals import refusal_text, unexpected_fields
+from parishkit.stewardship.web.refusals import (
+    refusal_text,
+    refused_step,
+    unexpected_fields,
+)
 
 from .admin_editing import editable_configuration
 from .authentication import runtime
@@ -370,11 +374,12 @@ def _act(request):
         (name for prefix, name in _REGIONS if action.startswith(prefix)), "backup_now"
     )
     allow = action.startswith("debug_allow_")
-    result, status = None, 200
+    result, status, refused_error = None, 200, None
     try:
         service = runtime()
         try:
             if action not in _ACTION_FIELDS:
+                # No sources: an unknown action value, not an unexpected field.
                 raise unexpected_fields()
             _closed(request, _ACTION_FIELDS[action])
             result = _step(action, request, service)
@@ -396,6 +401,7 @@ def _act(request):
         except ValueError as error:
             # A stale form's unexpected fields say so in the region (#1401).
             result = {"refused": "invalid", "refusal_text": refusal_text(error)}
+            refused_error = error
         if result and "refused" in result:
             result["allow"] = allow
             status = _REFUSALS[result["refused"]]
@@ -419,6 +425,9 @@ def _act(request):
         if status != 200:
             # The answer carries its own explanation; keep it as rendered.
             response.stewardship_safe_error = True
+        if result and "refused" in result:
+            # The refusal log records why the step was refused (#1403).
+            refused_step(response, result["refused"], refused_error)
         response["Cache-Control"] = "no-store"
         return response
     except ERRORS as error:

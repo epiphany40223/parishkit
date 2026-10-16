@@ -193,7 +193,7 @@ def test_pages_list_tick_and_download_the_roster_changes(
         _, body = get(browser, route + "?ministry=9")
         assert f"follow-up/{join.pk}/".encode() in body
         _, body = get(browser, route + "?ministry=8")
-        assert b"No roster changes to enter." in body
+        assert b"No roster changes to enter for this Ministry." in body
         assert get(browser, route + "?ministry=x")[0].status_code == 400
         assert get(browser, route + "?sort=id")[0].status_code == 400
         tick_url = f"/admin/reports/ministries/follow-up/{join.pk}/roster/"

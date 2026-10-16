@@ -1,13 +1,15 @@
 """Dates and times typed in the browser's local time zone (#558)."""
 
+import json
 import re
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from urllib.parse import urlencode
 
 import pytest
 from django.http import QueryDict
 
+from parishkit.stewardship.campaigns.intervals import resolve_local
 from parishkit.stewardship.reports.ministry_followup_views import change_values
 from parishkit.stewardship.web.dates import (
     UnknownZone,
@@ -21,6 +23,11 @@ from .test_ministry_followup import FORM, form
 TEMPLATES = (
     Path(__file__).parents[2]
     / "src/parishkit/stewardship/accounts/templates/stewardship"
+)
+# The shared note naming the browser's zone, hidden until the script knows
+# it (components/zone-note.html, #1129).
+ZONE_NOTE = (
+    '{% include "stewardship/components/zone-note.html" with note_text=zone_note'
 )
 
 
@@ -76,13 +83,13 @@ TEMPLATES = (
             "America/Los_Angeles",
             datetime(2026, 11, 1, 8, 30, tzinfo=UTC),
         ),
-        # Spring forward: 2:30 AM never happens; the pre-change offset makes
-        # it the instant shown as 3:30 AM daylight time.
+        # Spring forward: 2:30 AM never happens; it is the first instant
+        # after the gap, 3:00 AM daylight time (ui-conventions#schedules).
         (
             "2026-03-08",
             "02:30",
             "America/Los_Angeles",
-            datetime(2026, 3, 8, 10, 30, tzinfo=UTC),
+            datetime(2026, 3, 8, 10, tzinfo=UTC),
         ),
     ],
 )
@@ -90,6 +97,34 @@ def test_browser_local_time_converts_to_utc(day, clock, zone, expected):
     """A typed local date and time becomes the same instant in UTC."""
     moment = browser_instant(day, clock, zone)
     assert moment == expected and moment.tzinfo is UTC
+
+
+# One daylight-saving rule for every local time turned into an instant
+# (ui-conventions#schedules, #1129), in cases shared with the page script's
+# browser test: New York (March and November), Sydney south of the equator
+# (October and April), Lord Howe Island, whose clocks move 30 minutes, and
+# Santiago, whose spring-forward gap starts at midnight.
+DST_CASES = json.loads(
+    (Path(__file__).parent / "fixtures" / "dst_cases.json").read_text()
+)["cases"]
+
+
+@pytest.mark.parametrize(
+    "case", DST_CASES, ids=lambda case: f"{case['zone']} {case['date']} {case['time']}"
+)
+def test_typed_times_follow_the_one_daylight_saving_rule(case):
+    """A skipped time is the gap's end and a repeated one the first, exactly.
+
+    ``browser_instant`` and the schedulers' ``resolve_local`` give the same
+    instant, so a time typed into a page and one a schedule evaluates never
+    differ at a clock change.
+    """
+    moment = browser_instant(case["date"], case["time"], case["zone"])
+    assert moment == datetime.fromisoformat(case["utc"]) and moment.tzinfo is UTC
+    local = datetime.combine(
+        date.fromisoformat(case["date"]), time.fromisoformat(case["time"])
+    )
+    assert resolve_local(local, case["zone"]) == moment
 
 
 @pytest.mark.parametrize(
@@ -211,15 +246,15 @@ def test_follow_up_page_labels_no_utc_entry():
     zone = re.search(r'<input type="hidden" name="contact_zone"[^>]*>', text)[0]
     assert 'value="{{ form.contact_zone }}"' in zone
     assert " data-browser-zone " in zone
-    # The note stays hidden until the script names a known zone, and both
-    # fields carry the gate marker for an unknown one.
-    assert "data-browser-zone-note hidden" in text
+    # The shared note stays hidden until the script names a known zone, and
+    # both fields carry the gate marker for an unknown one.
+    assert ZONE_NOTE in text
     assert text.count("data-browser-zone-field>") == 2
     # The queue's Export these requests (#1157) offers UTC among its zone
     # choices, as every export asking for a zone does; the follow-up itself
-    # names no fixed zone.
+    # names no fixed zone (the shared note names the browser's).
     followup = text[: text.index('<section aria-labelledby="followup-export-heading">')]
-    assert "data-browser-zone-name" in text and "UTC" not in followup
+    assert "UTC" not in followup
     # Every follow-up instant shown (the request's submitted time, history,
     # contact, the queue's last contact, source as of) is converted in the
     # browser. The queue has no Submitted column (#1064).
@@ -322,7 +357,7 @@ def test_log_page_dates_are_browser_local():
         line for line in text.splitlines() if '<option value="UTC">UTC</option>' in line
     ]
     assert 'name="zone" value="{{ query.zone }}" data-browser-zone ' in text
-    assert "data-browser-zone-note hidden" in text
+    assert ZONE_NOTE in text
     assert text.count("data-browser-zone-field>") == 2
     assert (
         '<form id="table-filters"' in text

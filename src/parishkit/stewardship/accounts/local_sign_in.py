@@ -121,11 +121,16 @@ def sign_in(request):
     and counts failures exactly as the Google callback does, consumes the
     token atomically, and hands the identity to ``establish_identity``.
     """
+    # Deferred too: the command imports this module before Django is set up.
+    from parishkit.stewardship.web.refusals import mark_not_input
+
     from .authentication import denial, establish_identity, record_failure, runtime
     from .sessions import database_now
 
     if running_profile() is not DeploymentProfile.LOCAL:
-        return error_response(request, status=404)
+        # No such page outside LOCAL: an address no page answers, not a
+        # refusal of input, so the refusal log leaves it out (#1444).
+        return mark_not_input(error_response(request, status=404))
     if request.method != "POST":
         return render(request, "stewardship/local-sign-in.html")
     if request.get_host() != urlsplit(LOCAL_PUBLIC_ORIGIN).netloc:

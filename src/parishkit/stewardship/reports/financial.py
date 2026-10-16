@@ -7,6 +7,7 @@ from datetime import date, datetime
 
 from django.db import connection
 from django.utils.datastructures import MultiValueDict
+from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
@@ -23,6 +24,7 @@ from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSn
 from parishkit.stewardship.source.snapshot_names import name_file_rows
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.filter_errors import FilterError, iso_date
 from parishkit.stewardship.web.tables import Sorting
 
 from .financial_documents import period_years
@@ -64,6 +66,30 @@ FREQUENCY_LABELS = {
     "none": "No frequency",
 }
 DATES = ("first_start", "first_end", "latest_start", "latest_end")
+# What each filter field the reader can fix says when the server refuses
+# it (#1332): the words of the page's own hints (data-missing-hint), which
+# the browser shows first, so the two never disagree. An end field's message
+# covers both its own date and its order after the start.
+FIELD_MESSAGES = {
+    "first_start": _("Enter a first response From date, or clear it."),
+    "first_end": _(
+        "Enter a first response Through date no earlier than its From date, "
+        "or clear it."
+    ),
+    "latest_start": _("Enter a latest response From date, or clear it."),
+    "latest_end": _(
+        "Enter a latest response Through date no earlier than its From date, "
+        "or clear it."
+    ),
+    "pledge_min": _(
+        "Enter At least in whole dollars or dollars and cents, such as 100 or "
+        "100.50, without commas, or clear it."
+    ),
+    "pledge_max": _(
+        "Enter At most in whole dollars or dollars and cents, no less than "
+        "At least, or clear it."
+    ),
+}
 
 
 @dataclass(frozen=True, repr=False)
@@ -86,7 +112,13 @@ class FinancialQuery:
 
     @classmethod
     def parse(cls, parameters):
-        """Accept only single bounded values; SQL enforces the same closed shape."""
+        """Accept only single bounded values; SQL enforces the same closed shape.
+
+        A rule the reader can fix at one field (a date, a pledge amount, a
+        range's order) raises ``FilterError`` naming that field; anything
+        else (an unknown field, a choice no form offers) is a plain
+        ``ValueError``.
+        """
         if type(parameters) is dict:
             if any(type(value) is not str for value in parameters.values()):
                 raise ValueError("Financial filters require text values.")
@@ -103,29 +135,33 @@ class FinancialQuery:
             or query.frequency not in {"any", "none", *FREQUENCIES}
             or query.sort not in FINANCIAL_SORTING.tokens
             or (query.share not in {"any", "none"} and not SHARE.fullmatch(query.share))
-            or any(
-                value and MONEY.fullmatch(value) is None
-                for value in (query.pledge_min, query.pledge_max)
-            )
         ):
             raise ValueError("Invalid financial filters.")
         for name in DATES:
+            if not iso_date(getattr(query, name)):
+                raise FilterError(name, FIELD_MESSAGES[name], query)
+        for name in ("pledge_min", "pledge_max"):
             value = getattr(query, name)
-            if value and date.fromisoformat(value).isoformat() != value:
-                raise ValueError("Invalid financial date filter.")
-        for low, high in (
-            (query.first_start, query.first_end),
-            (query.latest_start, query.latest_end),
+            if value and MONEY.fullmatch(value) is None:
+                raise FilterError(name, FIELD_MESSAGES[name], query)
+        # A range out of order is refused at its end, the field whose hint
+        # names the order (data-not-before), with its start marked too:
+        # fixing either end fixes it.
+        for low, high, name, pair in (
+            (query.first_start, query.first_end, "first_end", "first_start"),
+            (query.latest_start, query.latest_end, "latest_end", "latest_start"),
         ):
             if low and high and low > high:
-                raise ValueError("Invalid financial date interval.")
+                raise FilterError(name, FIELD_MESSAGES[name], query, pair=pair)
         if (
             query.pledge_min
             and query.pledge_max
             and parse_money(query.pledge_min).cents
             > parse_money(query.pledge_max).cents
         ):
-            raise ValueError("Invalid financial pledge range.")
+            raise FilterError(
+                "pledge_max", FIELD_MESSAGES["pledge_max"], query, pair="pledge_min"
+            )
         return query
 
     def form_values(self):

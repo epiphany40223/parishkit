@@ -76,9 +76,9 @@ def test_page_data_starts_on_a_laptop_screen(page, component_origin, path):
 
 # Pages converted in #227 (campaign email and schedules in help-ux-1; keys,
 # refreshes and refusals in help-ux-2; the setup wizard in help-ux-3; the
-# setup overview, parish data load and Pause and resume mail later), each
-# with the caution or data line that must stay visible while its help is
-# closed.
+# setup overview, parish data load, Pause and resume mail and Go-live
+# readiness later), each with the caution or data line that must stay
+# visible while its help is closed.
 CONVERTED_PAGES = {
     "/campaign-mail": "It is sent only to",
     "/live-family-tests-later": "never to the Family",
@@ -101,6 +101,7 @@ CONVERTED_PAGES = {
     "/setup": "Cancel permanently ends this attempt",
     "/setup-source-progress": "Downloaded from ParishSoft",
     "/delivery-pause": "Current live-mail inventory",
+    "/go-live": "This preview has not changed the campaign",
 }
 
 
