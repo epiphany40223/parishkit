@@ -28,7 +28,7 @@
 <div class="short" data-missing-hint="{% translate 'Enter a whole Through date, no earlier than From, or clear it.' %}"><label for="log-end">{% translate "Through" %}</label><input id="log-end" type="date" name="end" data-not-before="log-start" value="{{ query.end }}" aria-describedby="log-zone-help" data-browser-zone-field></div>
 {% button type="submit" aria-describedby="log-filter-hint" %}{% translate "Apply filters" %}{% endbutton %}
 </div>
-<p class="help" id="log-zone-help" data-browser-zone-note hidden>{% translate "From and Through are days in this computer's time zone:" %} <span data-browser-zone-name></span>.</p>
+{% translate "From and Through are days in this computer's time zone:" as zone_note %}{% include "stewardship/components/zone-note.html" with note_text=zone_note note_id="log-zone-help" %}
 {% comment %}The gate's hint keeps one line reserved while empty (data-complete-hint="reserve"), so it showing or going never moves the table below (no layout shift, #953).{% endcomment %}<p class="help" id="log-filter-hint" data-complete-hint="reserve"></p>
 <details id="log-identifier-filters" class="log-more-filters"{% if query.private %} open{% endif %}><summary>{% translate "Filter by identifier" %}</summary>
 <p class="help">{% translate "Usually easier: select an entry's icon in the Related column below. To filter by hand, copy an identifier from a task's page (under Technical details) or from a download of these entries." %}</p>
