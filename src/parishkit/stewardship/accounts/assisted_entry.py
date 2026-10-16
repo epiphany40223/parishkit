@@ -50,6 +50,7 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.credential_keys import key_set_lock
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.family_identity import code_context
+from parishkit.stewardship.web.refusals import with_status_code
 
 from .cryptography import CryptographicError
 from .limiting import LimiterUnavailable
@@ -179,7 +180,8 @@ def _refusal(request, *, status=403):
     """Render the plain Admin refusal for ``request``."""
     response = render(request, "stewardship/open-form-refused.html", status=status)
     response.stewardship_safe_error = True
-    return response
+    # The refusal log's code for this page's own refusal (#1444).
+    return with_status_code(response)
 
 
 @require_POST

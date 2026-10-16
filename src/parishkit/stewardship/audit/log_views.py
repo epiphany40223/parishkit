@@ -31,6 +31,7 @@ from parishkit.stewardship.web.exports import (
     download_headers,
     page_download,
 )
+from parishkit.stewardship.web.refusals import with_codes
 
 from .log_reads import (
     EXPORT_FORMATS,
@@ -90,7 +91,8 @@ def _error(code, status, *, query_string=False, message=None):
     response["Cache-Control"] = "no-store"
     if status == 503:
         response["Retry-After"] = "5"
-    return response
+    # The refusal log's code for this page's own refusal (#1444).
+    return with_codes(response, code.value)
 
 
 def _principal(request, store, *, final=False):

@@ -35,6 +35,7 @@ from .campaign_builders import (
     change,
     policy_operation_id,
 )
+from .test_admin_refusal_log_postgresql import entries
 from .test_background_grants_postgresql import task_login
 from .test_campaign_views_postgresql import apply, post
 from .test_content_views_postgresql import values
@@ -342,6 +343,8 @@ def test_placeholders_render_on_pages_and_guard_rename_and_delete(
     assert rename.status_code == 400 and "This file is in use" in unescape(
         rename.content.decode()
     )
+    # The refusal log says why: the page's default code, then in use (#1444).
+    assert entries()[-1].context["codes"] == ["invalid", "in_use"]
     assert HostedFile.objects.count() == 2
     assert HostedFile.objects.get(pk=guide.pk).slug == "guide"
     # The database refuses too, whatever the caller.

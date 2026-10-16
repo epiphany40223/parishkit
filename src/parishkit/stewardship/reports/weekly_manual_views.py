@@ -24,6 +24,7 @@ from parishkit.stewardship.jobs.delivery_views import (
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
 from parishkit.stewardship.web.admin_forms import AdminForm
+from parishkit.stewardship.web.refusals import with_status_code
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.security import private_response
 
@@ -89,7 +90,8 @@ def _blocked(request, campaign, reason, status):
         status=status,
     )
     response["Cache-Control"] = "no-store"
-    return response
+    # The refusal log's codes when this refuses (#1444): a 200 records none.
+    return with_status_code(response, reason) if status != 200 else response
 
 
 def _guard_refused(error):

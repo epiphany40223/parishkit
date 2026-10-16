@@ -186,7 +186,9 @@ def setup_source_progress(request, task_id):
             or set(request.POST) - {"csrfmiddlewaretoken"}
             or any(len(values) != 1 for _, values in request.POST.lists())
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(
+                request.POST, request.FILES, allowed={"csrfmiddlewaretoken"}
+            )
         service = runtime()
         progress = source_progress(
             request, service, task_id, renew=request.method == "POST"
