@@ -2021,8 +2021,9 @@ to *To review* and the change is compared with the Family's baseline again
 (a change already queued for publication keeps its approval, and its
 publication then meets a conflict). A Family's later same answer does not
 carry the accepted base, so its approval goes back to *To review* too. It is
-per change only, never part of bulk review, and has no command-line
-counterpart yet ([#1434](https://github.com/epiphany40223/parishkit/issues/1434)).
+per change only, never part of bulk review. On the command line it is
+`pk-admin census resolve-conflict`, through the same service
+([admin automation](../admin-automation/spec.md#reports-and-exports)).
 
 The same *Review* disclosure has **Edit value**
 ([#528](https://github.com/epiphany40223/parishkit/issues/528), ADM-09.04):
@@ -2056,8 +2057,9 @@ Administrator's, while no other campaign work holds the campaign), a
 Conflict included. It keeps the decision, so an approved change stays
 approved, whoever edits it; its new version means a publication plan that
 included the change must be confirmed again, with the edited value in view.
-It is per change only, never part of bulk review, and has no command-line
-counterpart yet.
+It is per change only, never part of bulk review. On the command line it
+is `pk-admin census edit`, through the same service
+([admin automation](../admin-automation/spec.md#reports-and-exports)).
 
 An Administrator may also give several Automatic changes one decision at
 once, with the shared selection column, bulk bar and confirmation dialog
