@@ -159,6 +159,11 @@ def local_environment(request):
     production), and emails are untouched, so what the mail catcher shows is
     exactly what a Family would receive. ``configure_web`` records the
     profile; a process without it (tests, management commands) shows nothing.
+
+    ``google_sign_in`` is whether LOCAL holds a real Google OAuth client
+    (#1399) rather than the sentinel ``up`` installs; with it, the sign-in
+    page and the fresh-authentication prompt offer Google beside the test
+    sign-in. Other profiles get neither flag, so their pages are unchanged.
     """
     value = getattr(settings, "STEWARDSHIP_DEPLOYMENT_PROFILE", None)
     if value is not None and DeploymentProfile(value) is DeploymentProfile.LOCAL:
@@ -167,8 +172,9 @@ def local_environment(request):
 
 
 def local_banner():
-    """The LOCAL banner's flags: always ``local_environment``, and
-    ``local_real_parishsoft`` when this deployment reads the real API.
+    """The LOCAL flags: always ``local_environment``, ``local_real_parishsoft``
+    when this deployment reads the real API, and ``google_sign_in`` when it
+    holds a real Google OAuth client (#1399).
 
     Called only for a LOCAL process. A misrecorded choice shows the default
     (fake) wording; such a process cannot read ParishSoft at all.
@@ -177,7 +183,11 @@ def local_banner():
         real = recorded_parishsoft_base_url() == DEFAULT_API_BASE_URL
     except ConfigError:
         real = False
-    return {"local_environment": True, "local_real_parishsoft": real}
+    return {
+        "local_environment": True,
+        "local_real_parishsoft": real,
+        "google_sign_in": getattr(settings, "STEWARDSHIP_GOOGLE_SIGN_IN", False),
+    }
 
 
 def active_date_format():

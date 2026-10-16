@@ -345,9 +345,10 @@ one Administrator until it expires or ends. It is a delegation from a
 Google-authenticated Admin session, not a new way to sign in; the Google-only
 rule in
 [identity and session security](../architecture/spec.md#identity-and-session-security)
-stands. In LOCAL, where Google sign-in is replaced by the
-[local test sign-in](../local-environment/spec.md#local-test-sign-in), the
-approval page accepts that sign-in's step-up exactly as other Admin pages do.
+stands. In LOCAL, where the
+[local test sign-in](../local-environment/spec.md#local-test-sign-in) stands
+in for Google sign-in or sits beside it, the approval page accepts that
+sign-in's step-up exactly as other Admin pages do.
 
 ### Session records
 
