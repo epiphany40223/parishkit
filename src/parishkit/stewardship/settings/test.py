@@ -11,3 +11,7 @@ STEWARDSHIP_LOG_CONTRACT_STRICT = True
 # An Admin form error without a closed code fails the test that raised it
 # (web.admin_forms, #1437): the refusal log records codes, never messages.
 STEWARDSHIP_ERROR_CODES_STRICT = True
+# An Admin refusal the refusal log can say nothing about (reason
+# ``unclassified``, no codes, no exception class) fails the test that made
+# it (web.refusal_log, #1444); production records it as is.
+STEWARDSHIP_REFUSAL_LOG_STRICT = True

@@ -22,7 +22,11 @@ from parishkit.stewardship.source.refresh_status import (
 )
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.refusals import UserFacingError, unexpected_fields
+from parishkit.stewardship.web.refusals import (
+    UserFacingError,
+    unexpected_fields,
+    with_default_code,
+)
 
 from . import admin_navigation
 from .admin_editing import (
@@ -294,6 +298,8 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
     )
     if status == 400:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return response
 
 
@@ -739,10 +745,11 @@ def _remove(request, service, configuration, actor, target):
     Removing Slack stops new Slack alerts at once. Its key file stays on the
     server until it is replaced; setting Slack up again installs a new key.
     """
-    if set(request.POST) - {"action", "csrfmiddlewaretoken"} or any(
+    allowed = {"action", "csrfmiddlewaretoken"}
+    if set(request.POST) - allowed or any(
         len(values) != 1 for _, values in request.POST.lists()
     ):
-        raise unexpected_fields()
+        raise unexpected_fields(request.POST, allowed=allowed)
     preview = review_removal(service, actor, configuration, target)
     admin_navigation.place(request, flow="change", step="review")
     return render(
@@ -919,15 +926,17 @@ def refresh_schedule_check(request, target):
         principal(request, service)
         if target != "parishsoft":
             raise LookupError("Integration is unavailable.")
-        if set(request.POST) - posted_names() - {"csrfmiddlewaretoken"} or any(
+        allowed = posted_names() | {"csrfmiddlewaretoken"}
+        if set(request.POST) - allowed or any(
             len(values) != 1 for _, values in request.POST.lists()
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(request.POST, allowed=allowed)
         with read_transaction():
             configuration = editable_configuration(service)
             record = _selected(configuration, target)
             editor = ScheduleEditor(request.POST, stored=record["values"]["settings"])
             if not editor.posted:
+                # No sources: the fields were allowed; none of the editor's was sent.
                 raise unexpected_fields()
             context = _schedule_context(configuration, editor)
         response = render(request, "stewardship/refresh-schedule-check.html", context)

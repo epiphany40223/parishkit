@@ -30,7 +30,11 @@ from parishkit.stewardship.campaigns.work_locks import (
 )
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.refusals import UserFacingError, unexpected_fields
+from parishkit.stewardship.web.refusals import (
+    UserFacingError,
+    unexpected_fields,
+    with_default_code,
+)
 from parishkit.stewardship.web.tables import whole_table
 
 from . import admin_navigation
@@ -183,6 +187,8 @@ def _page(request, campaign, window, schedules, digest, *, editable, status=200)
     )
     if status == 400:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return response
 
 
@@ -237,7 +243,9 @@ def schedule_settings(request, campaign_id):
         actor = principal(request, service)
         salt = preview_salt(campaign_id)
         if request.FILES or (request.method == "POST" and request.GET):
-            raise unexpected_fields()
+            # A query is refused only on a POST.
+            posted_query = [request.GET] if request.method == "POST" else []
+            raise unexpected_fields(request.FILES, *posted_query, allowed=())
         proposed = filters(
             request.GET, allowed={"start_date", "end_date", "timezone", "sort"}
         )

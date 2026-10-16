@@ -316,9 +316,12 @@ def test_a_field_of_a_refused_forms_own_sent_twice_is_a_duplicate(recorded):
     assert context["form"] == "entry_form"
 
 
-def test_a_clean_form_sent_twice_is_not_the_refused_one(recorded):
+def test_a_clean_form_sent_twice_is_not_the_refused_one(recorded, settings):
     """A form that validated cleanly adds no ``duplicate`` and does not
     claim ``form`` ahead of the form that was refused."""
+    # A bare 400 with no form error says nothing, which the strict test
+    # settings refuse (#1444); off here to see what such a request records.
+    settings.STEWARDSHIP_REFUSAL_LOG_STRICT = False
 
     def build(request):
         SlotForm({"time": "09:00"}).is_valid()
@@ -416,8 +419,11 @@ def test_an_answer_that_is_not_a_refusal_records_nothing(recorded, status):
     assert recorded == []
 
 
-def test_a_valid_or_unbound_form_adds_nothing(recorded):
+def test_a_valid_or_unbound_form_adds_nothing(recorded, settings):
     """A refused request whose forms were clean records no form."""
+    # A bare 400 with no form error says nothing, which the strict test
+    # settings refuse (#1444); off here to see what such a request records.
+    settings.STEWARDSHIP_REFUSAL_LOG_STRICT = False
 
     def build(request):
         EntryForm(request.POST).is_valid()
@@ -442,8 +448,11 @@ def test_the_collector_is_gone_after_a_view_raises():
     assert admin_forms._VALIDATED.get() is None
 
 
-def test_a_second_request_starts_empty(recorded):
+def test_a_second_request_starts_empty(recorded, settings):
     """A form refused in one request is never part of the next one's entry."""
+    # A bare 400 with no form error says nothing, which the strict test
+    # settings refuse (#1444); off here to see what such a request records.
+    settings.STEWARDSHIP_REFUSAL_LOG_STRICT = False
     refuse({"kind": "zz"}, lambda request: EntryForm(request.POST).is_valid())
     refuse({}, lambda request: None)
     first, second = recorded

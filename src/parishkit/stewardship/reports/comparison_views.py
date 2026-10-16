@@ -42,6 +42,7 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.presentation import number
+from parishkit.stewardship.web.refusals import with_default_code
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
@@ -269,6 +270,8 @@ def report(request, campaign_id):
             # The page is this view's own refusal, so the security boundary
             # keeps it instead of replacing it with the bare error text.
             response.stewardship_safe_error = True
+            # The refusal log's code for this page's own refusal (#1444).
+            with_default_code(response)
         return response
     except (PermissionError, ObjectDoesNotExist):
         return denial()
