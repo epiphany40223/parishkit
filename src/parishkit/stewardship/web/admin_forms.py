@@ -22,12 +22,18 @@ and rendering are Django's, unchanged.
 
 ``tests/stewardship/test_admin_forms.py`` refuses any form or formset class
 under ``parishkit.stewardship`` that does not derive from these bases.
+
+Under the test settings (``STEWARDSHIP_ERROR_CODES_STRICT``) every error an
+Admin form or formset holds must carry a closed code (#1437), so any test
+that draws a form with a code-less error fails, including errors built at
+run time that the source guard (``test_admin_error_codes.py``) cannot see.
 """
 
 from contextlib import contextmanager
 from contextvars import ContextVar
 
 from django import forms
+from django.conf import settings
 from django.forms.formsets import BaseFormSet
 
 # The bound forms and formsets validated so far in this request, in the
@@ -55,6 +61,23 @@ def _collect(form):
         validated.append(form)
 
 
+def _require_codes(errors, owner):
+    """Under strict test settings, refuse an error without a closed code.
+
+    ``errors`` are ``ValidationError``s (an error list's ``as_data()``).
+    Outside the test settings nothing is checked: a code-less error still
+    names its field in the refusal log, with no code.
+    """
+    if not getattr(settings, "STEWARDSHIP_ERROR_CODES_STRICT", False):
+        return
+    for error in errors:
+        if not (isinstance(error.code, str) and error.code):
+            raise AssertionError(
+                f"{type(owner).__name__} holds a validation error without a "
+                f"closed code: {error.messages!r} (#1437)."
+            )
+
+
 class AdminForm(forms.Form):
     """An Admin form whose validation the refusal log can read; never drawn
     or validated differently from a plain ``forms.Form``."""
@@ -64,6 +87,18 @@ class AdminForm(forms.Form):
         super().full_clean()
         if self.is_bound:
             _collect(self)
+            self._check_codes()
+
+    def add_error(self, field, error):
+        """Add as Django does; a view's later error is checked too."""
+        super().add_error(field, error)
+        self._check_codes()
+
+    def _check_codes(self):
+        """Every error the form holds has a code (strict test settings)."""
+        if self._errors:
+            for found in self._errors.as_data().values():
+                _require_codes(found, self)
 
 
 class AdminFormSet(BaseFormSet):
@@ -79,3 +114,4 @@ class AdminFormSet(BaseFormSet):
         super().full_clean()
         if self.is_bound:
             _collect(self)
+            _require_codes(self._non_form_errors.as_data(), self)

@@ -25,6 +25,7 @@ from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 from parishkit.stewardship.web.contracts import expected_version, filters
 from parishkit.stewardship.web.dates import UnknownZone
+from parishkit.stewardship.web.refusals import with_status_code
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import report_table
 
@@ -114,7 +115,12 @@ def _error(campaign_id, *, item_id=None, status=400, bound=False, zone=False):
     response.stewardship_safe_error = True
     if status == 503:
         response["Retry-After"] = "5"
-    return response
+    # The refusal log's codes for this page of its own (#1403).
+    return with_status_code(
+        response,
+        *(["form_reused"] if bound else []),
+        *(["zone_missing"] if zone else []),
+    )
 
 
 def _audit(principal, campaign_id, outcome):

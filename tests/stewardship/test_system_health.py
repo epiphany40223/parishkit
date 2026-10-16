@@ -3110,4 +3110,4 @@ def test_home_keeps_both_notices_for_a_viewer_without_system_health():
     assert admin.count("did not finish.") == 1
     assert "Copying the newest backup failed." not in admin
     assert admin.count("Run a full refresh now") == 1
-    assert admin.count("Off-site backup settings") == 1
+    assert admin.count("Off-site backups (Google Drive)") == 1

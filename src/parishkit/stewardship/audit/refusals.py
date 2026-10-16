@@ -33,12 +33,16 @@ when a limit stops it, the process log records a WARNING ``task_timed_out``
 refusal's own line.
 
 The Admin refusal middleware (``web.refusal_log``) calls it for refused
-Admin page requests; the command line will in a later change.
+Admin page requests. The command line (``admin_cli``) calls it for a refused
+command, passing ``db``, a private short-lived connection of its own opened
+after the command's connections are closed (admin-automation spec, Refusal
+entry); the same rules apply on it.
 """
 
 import json
 import logging
 import re
+from contextlib import contextmanager
 from dataclasses import dataclass
 from math import ceil
 from time import monotonic
@@ -196,13 +200,38 @@ def _timeout_kind(error):
     return kind if kind in {"statement_timeout", "lock_timeout"} else None
 
 
-def record_refusal(record):
+@contextmanager
+def _short_transaction(db):
+    """One new transaction on ``db``, committed on success, else rolled back.
+
+    ``None`` is this thread's own connection, through Django's ``atomic``. A
+    private connection (the command line's) is a separate wrapper that
+    ``atomic`` cannot name, so its transaction is begun and ended directly;
+    its caller closes it afterwards, so autocommit is not turned back on.
+    """
+    if db is None:
+        with transaction.atomic():
+            yield
+        return
+    db.set_autocommit(False)
+    try:
+        yield
+    except BaseException:
+        db.rollback()
+        raise
+    db.commit()
+
+
+def record_refusal(record, *, db=None, durable=True):
     """Log one refused Admin input; never raise.
 
     The process-log line comes first whatever happens to the durable entry.
     A durable entry is written only for a signed-in actor, outside any
     atomic block, and only while the actor's budget for that level in the
     current window lasts; see the module docstring for the cap and limits.
+    ``db`` is the command line's private connection; None (a page) is this
+    thread's own connection. ``durable=False`` (no connection could be made
+    for it) writes the line alone, still naming the actor.
     """
     try:
         context = record.context()
@@ -212,6 +241,7 @@ def record_refusal(record):
         # No context means no line can be written; say so instead.
         emit_failure(error, event=Event.ADMIN_INPUT_REFUSED, level=logging.WARNING)
         return
+    target = connection if db is None else db
     try:
         # With autocommit off, Django's outermost atomic() would only be a
         # savepoint in the caller's transaction, so the entry and its
@@ -219,10 +249,11 @@ def record_refusal(record):
         # get_autocommit() reconnects a closed connection, within its
         # connect_timeout.
         durable = (
-            actor_id is not None
+            durable
+            and actor_id is not None
             and complete(context)
-            and not connection.in_atomic_block
-            and connection.get_autocommit()
+            and not target.in_atomic_block
+            and target.get_autocommit()
         )
     except Exception as error:
         _guarded_line(level, context, actor_id)
@@ -235,7 +266,7 @@ def record_refusal(record):
     started = monotonic()
     try:
         enforce(Event.ADMIN_INPUT_REFUSED, level, context)
-        with transaction.atomic(), connection.cursor() as cursor:
+        with _short_transaction(db), target.cursor() as cursor:
             cursor.execute(f"SET LOCAL statement_timeout='{STATEMENT_SECONDS}s'")
             cursor.execute(f"SET LOCAL lock_timeout='{LOCK_SECONDS}s'")
             cursor.execute(

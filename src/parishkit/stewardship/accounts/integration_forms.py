@@ -150,7 +150,9 @@ class IntegrationForm(AdminForm):
         try:
             folder = folder_id_from_url(self.cleaned_data["target"])
         except ValueError as error:
-            raise forms.ValidationError(str(error)) from None
+            raise forms.ValidationError(
+                str(error), code="invalid_folder_link"
+            ) from None
         return f"https://drive.google.com/drive/folders/{folder}"
 
     def is_valid(self):
@@ -196,6 +198,7 @@ class IntegrationForm(AdminForm):
                     "same organization. Keep %(loaded)s here."
                 ),
                 params={"loaded": self.loaded_organization},
+                code="organization_locked",
             )
         return value
 

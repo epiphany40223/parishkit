@@ -318,3 +318,53 @@ def test_level_icons_take_their_colours_from_tokens():
         )
         colours = set(re.findall(r'(?:fill|stroke)="([^"]+)"', icon))
         assert colours <= {"currentColor", "none"}, (level, colours)
+
+
+# The notice kinds (ui-conventions "Shared visual style", #732): each one's
+# class, its background and its border. Every notice's text is --ink.
+NOTICE_LOOKS = {
+    "notice": ("warning-bg", "warning-border"),
+    "notice-error": ("error-bg", "error-border"),
+    "notice-info": ("accent-soft", "accent"),
+}
+
+
+@pytest.mark.parametrize("kind", sorted(NOTICE_LOOKS))
+def test_each_notice_kind_reads_its_tokens(kind):
+    """Each notice class sets exactly the background and border tokens listed."""
+    css = (STATIC / "ui-v1.css").read_text()
+    rule = re.search(rf"^\.{kind} {{([^}}]*)}}", css, re.M)[1]
+    background, border = NOTICE_LOOKS[kind]
+    assert f"background: var(--{background});" in rule
+    assert re.search(rf"border(?:-color)?: [^;]*var\(--{border}\);", rule)
+
+
+@pytest.mark.parametrize("scheme", sorted(SCHEMES))
+@pytest.mark.parametrize("kind", sorted(NOTICE_LOOKS))
+def test_each_notice_kind_meets_the_contrast_minimums(kind, scheme):
+    """A notice's ink text meets 4.5:1 and its border 3:1, in both schemes."""
+    background, border = NOTICE_LOOKS[kind]
+    assert contrast("ink", background, SCHEMES[scheme]) >= 4.5
+    assert contrast(border, background, SCHEMES[scheme]) >= 3
+
+
+# The neutral notices that use the information kind (#732 slice 5), by
+# template and a fragment of their text, so a later edit cannot quietly turn
+# them back into warnings.
+INFO_NOTICES = {
+    "campaign-mail-families.html": ('id="family-test-sent"',),
+    "emailed-reports.html": ('id="weekly-requested"',),
+    "hosted-files.html": ("Uploaded {{ name }}",),
+    "campaign-comparison.html": ("the latest complete figures are shown",),
+    "weekly-digest.html": ("Manually requested report.", "Saved report:"),
+}
+TEMPLATES = STATIC.parent.parent / "templates/stewardship"
+
+
+@pytest.mark.parametrize("name", sorted(INFO_NOTICES))
+def test_neutral_notices_use_the_information_kind(name):
+    """The notice class nearest before each listed fragment is notice-info."""
+    source = (TEMPLATES / name).read_text()
+    for fragment in INFO_NOTICES[name]:
+        start = source.rindex('class="notice', 0, source.index(fragment))
+        assert source.startswith('class="notice notice-info"', start), fragment

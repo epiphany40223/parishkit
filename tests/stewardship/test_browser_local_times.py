@@ -1,13 +1,15 @@
 """Dates and times typed in the browser's local time zone (#558)."""
 
+import json
 import re
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from urllib.parse import urlencode
 
 import pytest
 from django.http import QueryDict
 
+from parishkit.stewardship.campaigns.intervals import resolve_local
 from parishkit.stewardship.reports.ministry_followup_views import change_values
 from parishkit.stewardship.web.dates import (
     UnknownZone,
@@ -76,13 +78,13 @@ TEMPLATES = (
             "America/Los_Angeles",
             datetime(2026, 11, 1, 8, 30, tzinfo=UTC),
         ),
-        # Spring forward: 2:30 AM never happens; the pre-change offset makes
-        # it the instant shown as 3:30 AM daylight time.
+        # Spring forward: 2:30 AM never happens; it is the first instant
+        # after the gap, 3:00 AM daylight time (ui-conventions#schedules).
         (
             "2026-03-08",
             "02:30",
             "America/Los_Angeles",
-            datetime(2026, 3, 8, 10, 30, tzinfo=UTC),
+            datetime(2026, 3, 8, 10, tzinfo=UTC),
         ),
     ],
 )
@@ -90,6 +92,34 @@ def test_browser_local_time_converts_to_utc(day, clock, zone, expected):
     """A typed local date and time becomes the same instant in UTC."""
     moment = browser_instant(day, clock, zone)
     assert moment == expected and moment.tzinfo is UTC
+
+
+# One daylight-saving rule for every local time turned into an instant
+# (ui-conventions#schedules, #1129), in cases shared with the page script's
+# browser test: New York (March and November), Sydney south of the equator
+# (October and April), Lord Howe Island, whose clocks move 30 minutes, and
+# Santiago, whose spring-forward gap starts at midnight.
+DST_CASES = json.loads(
+    (Path(__file__).parent / "fixtures" / "dst_cases.json").read_text()
+)["cases"]
+
+
+@pytest.mark.parametrize(
+    "case", DST_CASES, ids=lambda case: f"{case['zone']} {case['date']} {case['time']}"
+)
+def test_typed_times_follow_the_one_daylight_saving_rule(case):
+    """A skipped time is the gap's end and a repeated one the first, exactly.
+
+    ``browser_instant`` and the schedulers' ``resolve_local`` give the same
+    instant, so a time typed into a page and one a schedule evaluates never
+    differ at a clock change.
+    """
+    moment = browser_instant(case["date"], case["time"], case["zone"])
+    assert moment == datetime.fromisoformat(case["utc"]) and moment.tzinfo is UTC
+    local = datetime.combine(
+        date.fromisoformat(case["date"]), time.fromisoformat(case["time"])
+    )
+    assert resolve_local(local, case["zone"]) == moment
 
 
 @pytest.mark.parametrize(

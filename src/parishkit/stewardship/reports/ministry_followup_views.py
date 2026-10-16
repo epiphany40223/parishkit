@@ -38,7 +38,7 @@ from parishkit.stewardship.web.contracts import (
     validation_response,
 )
 from parishkit.stewardship.web.dates import UnknownZone, browser_instant
-from parishkit.stewardship.web.refusals import Refusal
+from parishkit.stewardship.web.refusals import Refusal, with_status_code
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import (
@@ -191,7 +191,8 @@ def _error(campaign_id, *, request_id=None, status=400, link=False):
     response.stewardship_safe_error = True
     if status == 503:
         response["Retry-After"] = "5"
-    return response
+    # The refusal log's codes for this page of its own (#1403).
+    return with_status_code(response, *(["bad_link"] if link else []))
 
 
 def _audit(principal, campaign_id, outcome, ministry=None):

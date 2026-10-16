@@ -12,6 +12,7 @@ answer from another path is shown by a full load instead.
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
+from django import forms
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -80,14 +81,15 @@ BY_NAME = f"{LIBRARY}?" + paginate(ROWS, {}, sorting=LIBRARY_SORTING).heading_qu
 )
 
 
-def _refused(message):
-    """An upload form the view refused with ``message`` at its file field."""
+def _refused(reason):
+    """An upload form the view refused for ``reason`` at its file field,
+    with the refusal's words and its reason as the code, as the view does."""
     form = UploadForm(
         {"slug": ""},
         {"file": SimpleUploadedFile("guide.pdf", b"<html>", "application/pdf")},
     )
     form.is_valid()
-    form.add_error("file", str(message))
+    form.add_error("file", forms.ValidationError(str(REFUSALS[reason]), code=reason))
     return form
 
 
@@ -160,10 +162,8 @@ def components(context, admin):
         FULL_BY_SIZE: _sized(context, admin, [archive, *rows]),
         ROOM_AGAIN: _sized(context, admin, rows),
         BY_NAME: _library(context, admin, rows, sort="name"),
-        REFUSED_TYPE: _library(context, admin, rows, form=_refused(REFUSALS["type"])),
-        REFUSED_SIZE: _library(
-            context, admin, rows, form=_refused(REFUSALS["too_large"])
-        ),
+        REFUSED_TYPE: _library(context, admin, rows, form=_refused("type")),
+        REFUSED_SIZE: _library(context, admin, rows, form=_refused("too_large")),
         STEP_UP: step_up_page("error", context, admin, next=LIBRARY),
     }
     return {path: ("text/html", body) for path, body in pages.items()}

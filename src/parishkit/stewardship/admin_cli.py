@@ -6401,6 +6401,127 @@ def record_failure(spec, error, *, changed, committed):
             )
 
 
+def refusal_record(spec, error, code, *, actor_id=None, admitted=True):
+    """The ``RefusalRecord`` for a command refused with ``code`` (#1403).
+
+    It is found as the page finds it (``web.refusal_log``), so both read
+    alike in the system logs: an exit-1 refusal has the error's own closed
+    reason (``web.refusals.reason_of``), else ``unexpected_fields`` when a
+    problem names a key or id the caller sent that the command does not
+    have, else ``unclassified`` with its class name; its code, then each
+    field problem's code; and the global mode, read only after admission.
+
+    ``fields`` is an allow-list: only a ``admin_changes.FieldProblem``'s
+    server-owned ``logged`` name is recorded, never a problem's ``field``,
+    which may hold a key, an id or a sheet name the caller sent. An
+    ``unexpected`` problem is only counted (``unexpected_count``), as the
+    page counts submitted names its form does not have. An exit-2 refusal
+    has its code as its reason and nothing else. ``spec`` is None when no
+    command was chosen. See the admin-automation spec, Refusal entry.
+    """
+    from .audit.refusals import RefusalRecord
+
+    command = spec.name if spec is not None else None
+    if EXIT_CODES[code] == 2:
+        return RefusalRecord(reason=code, command=command)
+    from .admin_changes import FieldProblem
+    from .web.refusal_log import current_mode
+    from .web.refusals import UserFacing, reason_of
+
+    problems = [
+        item for item in getattr(error, "fields", None) or () if isinstance(item, dict)
+    ]
+    marked = [item for item in problems if isinstance(item, FieldProblem)]
+    unexpected = sum(1 for item in marked if item.unexpected)
+    # Only a shared refusal carries closed setting values, as on the page.
+    shared = error if isinstance(error, UserFacing) else None
+    return RefusalRecord(
+        reason=(
+            reason_of(error) or ("unexpected_fields" if unexpected else "unclassified")
+        ),
+        actor_id=actor_id,
+        command=command,
+        fields=tuple(item.logged for item in marked if item.logged),
+        codes=(code, *(item.get("code") for item in problems)),
+        expected=getattr(shared, "expected", None),
+        actual=getattr(shared, "actual", None),
+        unexpected_count=unexpected or None,
+        mode=current_mode() if admitted else None,
+        error=error,
+    )
+
+
+def write_refusal(record):
+    """Log one refused command, durably on a private connection; never raise.
+
+    As for ``write_failure``, the command's own connections are closed
+    first, and the entry goes through a fresh, short-lived connection with
+    the same (web) login and a 2-second connect limit, so the process holds
+    one connection at a time; ``record_refusal`` then writes the
+    standard-error line and, for a named actor, the capped entry in its own
+    short transaction, and closes nothing itself. Without an actor only the
+    line is written and no connection is opened.
+    """
+    from django.db import connections
+
+    from .audit.refusals import record_refusal
+    from .audit.timeouts import _private_connection
+
+    db, durable = None, True
+    try:
+        if record.actor_id is not None:
+            connections.close_all()
+            db = _private_connection(None)
+    except Exception as error:
+        # No private connection: the line still says what was refused.
+        with contextlib.suppress(Exception):
+            from .observability import Event, emit_failure
+
+            emit_failure(error, event=Event.ADMIN_INPUT_REFUSED, level=logging.WARNING)
+        # The line still names the actor; only the durable write is skipped.
+        durable = False
+    try:
+        record_refusal(record, db=db, durable=durable)
+    finally:
+        if db is not None:
+            with contextlib.suppress(Exception):
+                db.close()
+
+
+def record_command_refusal(spec, error, context, *, admitted, changed, committed):
+    """Log one exit-1 or exit-2 refusal of ``spec``'s command; never raise.
+
+    Called once per invocation, from the admitted command's own failure
+    path (while admission still holds the web login), or, for a refusal
+    before or outside it, from ``run``'s handler; ``context["refused"]``
+    marks that it was done. ``error`` is classified as ``run`` classifies
+    it; any other exit is not a refusal of input and records nothing. The
+    actor is the session's Administrator (``context["actor_id"]``, set by
+    ``admit_session``), only after admission and only for exit 1.
+    """
+    if context.get("refused"):
+        return
+    try:
+        code = classify(
+            error, admitted_process=admitted, changed=changed, committed=committed
+        )
+        if EXIT_CODES.get(code) not in {1, 2}:
+            return
+        context["refused"] = True
+        actor_id = context.get("actor_id") if admitted else None
+        write_refusal(
+            refusal_record(spec, error, code, actor_id=actor_id, admitted=admitted)
+        )
+    except Exception as log_error:
+        # The command's document and exit code are the contract.
+        with contextlib.suppress(Exception):
+            from .observability import Event, emit_failure
+
+            emit_failure(
+                log_error, event=Event.ADMIN_INPUT_REFUSED, level=logging.WARNING
+            )
+
+
 def document(name, correlation_id, *, ok, final=True, session=None, result=None):
     """The one JSON document a command prints."""
     value = {
@@ -6469,7 +6590,7 @@ def run(args, *, stdin, stdout, stderr):
                 admitted_process = True
                 try:
                     if spec.scope != "none":
-                        caller = admit_session(spec, preamble, runtime, stderr)
+                        caller = admit_session(spec, preamble, runtime, stderr, context)
                         context["caller"] = caller
                         context["session"] = caller.automation_session
                     try:
@@ -6495,6 +6616,16 @@ def run(args, *, stdin, stdout, stderr):
                         changed=spec.changes_state and caller is not None,
                         committed=context.get("committed", False),
                     )
+                    # A refusal of input, likewise, on the same kind of
+                    # private connection (#1403); it never raises either.
+                    record_command_refusal(
+                        spec,
+                        error,
+                        context,
+                        admitted=True,
+                        changed=spec.changes_state and caller is not None,
+                        committed=context.get("committed", False),
+                    )
                     raise
             # ``logs export`` leaves its file's bytes for here; ``export
             # download`` has already written them inside its read guard.
@@ -6511,6 +6642,16 @@ def run(args, *, stdin, stdout, stderr):
             )
             if code in TRACED_CODES:
                 trace_failure(error, admitted_process=admitted_process)
+            # A refusal before admission (exit 2) has its line here; one
+            # inside the admitted command was recorded above.
+            record_command_refusal(
+                spec,
+                error,
+                context,
+                admitted=admitted_process,
+                changed=spec.changes_state and caller is not None,
+                committed=context.get("committed", False),
+            )
             output = document(
                 spec.name,
                 correlation_id,
@@ -6607,8 +6748,13 @@ def watch(spec, args, preamble, runtime, context, emit):
         raise WatchInterrupted(model) from None
 
 
-def admit_session(spec, preamble, runtime, stderr):
-    """Admit the command through its automation session and check its scope."""
+def admit_session(spec, preamble, runtime, stderr, context):
+    """Admit the command through its automation session and check its scope.
+
+    The session's Administrator is kept as ``context["actor_id"]`` before the
+    scope check, so a refusal from that check onwards names its actor in
+    the refusal log (#1403).
+    """
     from .accounts.admin_caller import AdminCaller
     from .accounts.automation_sessions import database_now
 
@@ -6618,6 +6764,7 @@ def admit_session(spec, preamble, runtime, stderr):
         store=runtime.store,
         pairing=runtime.pairing,
     )
+    context["actor_id"] = caller.principal.identity
     if spec.scope == "full" and caller.read_only:
         from .accounts.automation_sessions import close_command_session
 
@@ -6701,7 +6848,13 @@ def main(argv=None, *, stdin=None, stdout=None, stderr=None):
         ):
             # Standard input cannot carry both the input and the answer.
             raise UsageError("A prompting command reading - needs --yes.")
-    except UsageError:
+    except UsageError as error:
+        # The refusal's line comes first; its document names no command,
+        # and neither does the line (#1403).
+        configure_logging()
+        record_command_refusal(
+            None, error, {}, admitted=False, changed=False, committed=False
+        )
         output = {
             "schema": SCHEMA,
             "command": None,

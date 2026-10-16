@@ -59,6 +59,7 @@ import json
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from django import forms
 from django.http import QueryDict
 from django.template.loader import render_to_string
 
@@ -80,6 +81,7 @@ from parishkit.stewardship.accounts.schedule_entry_views import (
     entry_times,
 )
 from parishkit.stewardship.accounts.schedule_forms import (
+    OUTSIDE_CAMPAIGN,
     Schedules,
     ScheduleWindow,
     email_names,
@@ -317,7 +319,7 @@ def _email_refused(values, owner, emails, rows, schedule_row):
         data, emails, schedule_row, owner["id"]
     )
     assert email.is_valid(), email.errors
-    schedule_email.refuse(email, EMAIL_DOES_NOT_FIT)
+    schedule_email.refuse(email, EMAIL_DOES_NOT_FIT, "candidate_refused")
     entry = entry_form(None, emails, rows, schedule_row)
     context = {
         "email_toggle": toggle,
@@ -358,7 +360,7 @@ def _invalid(values, owner, emails, rows):
     entry = entry_form(data, emails, rows)
     repeat = RepeatRule(data, prefix="repeat")
     assert entry.is_valid() and repeat.is_valid(), entry.errors
-    entry.add_error("date", DATE_REFUSAL)
+    entry.add_error("date", forms.ValidationError(DATE_REFUSAL, code=OUTSIDE_CAMPAIGN))
     context = {
         "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
         "values": owner["values"],

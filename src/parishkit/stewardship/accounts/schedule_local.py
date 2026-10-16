@@ -153,7 +153,8 @@ def to_campaign(
     browser's zone (see the module docstring). Raises ``UnknownZone`` for a
     blank or unknown ``zone``. A time that occurs twice or not at all in the
     browser's zone reads as ``browser_instant`` reads it: the first of two,
-    and a skipped one forward (2:30 AM becomes 3:30 AM daylight time).
+    and a skipped one as the first instant after the gap (2:30 AM becomes
+    3:00 AM daylight time).
 
     ``saved`` is the edited schedule's campaign-local values (None on New).
     When the typed values are what the Edit page showed for them

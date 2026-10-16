@@ -1121,7 +1121,7 @@ def test_other_schedule_errors_are_shown_as_they_are(auth_service, google, monke
 
     def broken(self, rows):
         """A rule between schedules that the end date does not cause."""
-        raise forms.ValidationError("Two emails to Families clash.")
+        raise forms.ValidationError("Two emails to Families clash.", code="clash")
 
     monkeypatch.setattr(schedule_forms.Schedules, "_check_collection", broken)
     refused = post(

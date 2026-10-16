@@ -83,7 +83,8 @@ class PhoneField(forms.CharField):
             return parse_us_phone(value)
         except ValueError:
             raise forms.ValidationError(
-                _("Enter a ten-digit US telephone number, such as (212) 555-1234.")
+                _("Enter a ten-digit US telephone number, such as (212) 555-1234."),
+                code="invalid_phone",
             ) from None
 
 
@@ -153,7 +154,8 @@ class ParishForm(AdminForm):
                 _(
                     "Use an https:// address without a user name or password, "
                     "for example https://giving.example.org/parish?tab=home."
-                )
+                ),
+                code="invalid_url",
             ) from None
         return value
 
@@ -211,10 +213,16 @@ def _initial_form(configuration):
 
 
 def _shown(name, value):
-    """Preview telephone and date-format changes the way people will read them."""
+    """A setting's value in words for the review's "Field: old → new" line.
+
+    Telephone and date-format values are shown the way people will read
+    them. The online giving address is the only setting that can be empty
+    (the website is required); unset, it reads "Not set", as in Campaign
+    settings' compact review, so the line never has an empty side.
+    """
     if name == "date_format":
         return dict(dates.CHOICES).get(value, value)
-    return phone(value) if name == "phone" else value
+    return (phone(value) if name == "phone" else value) or _("Not set")
 
 
 def review_change(service, actor, configuration, form):
@@ -225,8 +233,9 @@ def review_change(service, actor, configuration, form):
     Only changed profile values are reviewed; no change, or a resulting
     document the configuration refuses, adds the page's refusal to the form
     and returns None. The review's ``changes`` are drawn for people
-    (``_shown``); ``values`` maps each changed field to its stored
-    ``(before, after)``, None for an unset value.
+    (``_shown``), one compact-review line each (#1356); ``values`` maps
+    each changed field to its stored ``(before, after)``, None for an unset
+    value, which the command line reports.
     """
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
         # Refused in the review dialog with the standard explanation.
@@ -246,7 +255,7 @@ def review_change(service, actor, configuration, form):
         # None removes the optional key; see request_patch's parish update.
         values["online_giving_url"] = values["online_giving_url"] or None
     if not values:
-        form.add_error(None, UNCHANGED)
+        form.add_error(None, forms.ValidationError(UNCHANGED, code="unchanged"))
         return None
     patch = [
         {
@@ -264,9 +273,12 @@ def review_change(service, actor, configuration, form):
     except ConfigError:
         form.add_error(
             None,
-            _(
-                "Check the settings. Website URLs cannot include credentials, "
-                "query parameters or fragments."
+            forms.ValidationError(
+                _(
+                    "Check the settings. Website URLs cannot include credentials, "
+                    "query parameters or fragments."
+                ),
+                code="candidate_refused",
             ),
         )
         return None

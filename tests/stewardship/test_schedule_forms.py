@@ -1006,8 +1006,8 @@ def test_a_typed_send_in_the_campaign_repeated_hour_is_refused():
         ("Europe/London", time(7, 0), time(3, 0)),
         ("Europe/London", time(6, 59), time(1, 59)),
         # 2:30 AM never happens in Los Angeles that day either: it reads
-        # forward as 3:30 AM PDT, 6:30 AM in New York.
-        ("America/Los_Angeles", time(2, 30), time(6, 30)),
+        # as the first instant after the gap, 3:00 AM PDT, 6:00 AM in New York.
+        ("America/Los_Angeles", time(2, 30), time(6, 0)),
     ],
 )
 def test_a_spring_forward_send_converts_to_a_real_campaign_time(zone, typed, stored):
@@ -1088,7 +1088,10 @@ def test_the_review_refuses_a_send_in_the_repeated_hour_on_its_field():
 
 
 def test_the_review_reads_a_skipped_browser_time_forward():
-    """2:30 AM on March 8, 2054 never happens in Los Angeles: 6:30 AM New York."""
+    """2:30 AM on March 8, 2054 never happens in Los Angeles: 3:00 AM PDT.
+
+    That first instant after the gap is 6:00 AM in New York.
+    """
     owner = campaign()
     owner["values"] = owner["values"] | {
         "start_date": "2054-03-01",
@@ -1111,7 +1114,7 @@ def test_the_review_reads_a_skipped_browser_time_forward():
     [added] = formset.patch()
     assert (added["values"]["date"], added["values"]["time"]) == (
         "2054-03-08",
-        "06:30:00",
+        "06:00:00",
     )
 
 

@@ -63,6 +63,8 @@ def test_an_extra_submitted_key_is_counted_never_named(auth_service, google):
         "status": 400,
         "codes": ["invalid"],
         "reason": "unexpected_fields",
+        # The extra key is counted, never named (#1403, PR 5).
+        "unexpected_count": 1,
         "mode": "testing",
     }
     assert extra not in json.dumps(entry.context)
