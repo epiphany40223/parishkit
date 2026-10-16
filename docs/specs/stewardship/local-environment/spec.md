@@ -21,9 +21,9 @@ deployment?" without real parish data, real credentials or a shared host.
 
 It is:
 
-- **not a production deployment.** It never holds real parish data, never
-  talks to Google, ParishSoft, Slack or Google Drive, and it can never email a
-  real Family, even after its campaign goes to Production (see
+- **not a production deployment.** It never holds real parish data, its VM
+  has no internet egress today, and it can never email a real Family, even
+  after its campaign goes to Production (see
   [safety guarantees](#safety-guarantees));
 - **not CI.** Nothing here runs Docker in CI. CI covers the local profile with
   fast tests, timeline tests and database tests that need no fake clock, and by
@@ -32,6 +32,16 @@ It is:
 - **not the Phase 0 development scaffold.** The
   [Compose scaffold](../../../development/stewardship-compose.md) (HTTP, no
   proxy, bind-mounted source) is superseded for running the real application.
+
+**Shared code paths.** The local environment and Production share as much
+code as possible, with as little LOCAL branching as possible
+([#1399](https://github.com/epiphany40223/parishkit/issues/1399)). Differences
+come from configuration and installed credentials, with Testing mode (and,
+once real mail is allowed, a configured mail redirect) as the guard against
+reaching a real parishioner, not from code that refuses or disables an
+integration in LOCAL. A remaining LOCAL branch needs a reason stated in this
+specification; #1399 records the inventory of branches still being removed
+and the order in which they go.
 
 ## Host virtual machine
 
@@ -242,8 +252,14 @@ Production in either direction.
   A test MUST show that, after LOCAL activation, every Family and
   administrative message is sent only through the mail-catcher transport.
 - **Smoke tools.** `pk-stewardship smoke` (see the
-  [smoke tools guide](../../../guides/stewardship-smoke-tools.md)) refuses
-  LOCAL; there is no real provider to smoke-test.
+  [smoke tools guide](../../../guides/stewardship-smoke-tools.md)) runs in
+  LOCAL exactly as in Production, against whatever is installed: the fake
+  ParishSoft, the mail catcher, the sentinel OAuth client and a test Slack
+  token. It sends no mail: a `--send-to` needs a Google service account,
+  which LOCAL still refuses. A Slack `--channel-id ... --send` posts the one
+  fixed smoke message to the named channel, but only once LOCAL has egress;
+  until then the Slack check reports the provider unavailable and nothing is
+  posted.
 - **Google sign-in.** In LOCAL the `google_oauth` installer accepts only a
   sentinel client document that other profiles refuse, and the LOCAL login page
   hides Google sign-in. The sentinel holds no real client ID or secret. Admin
@@ -251,9 +267,17 @@ Production in either direction.
 - **ParishSoft.** In LOCAL the only reachable ParishSoft base URL is
   `LOCAL_SOURCE_BASE_URL`; the `parishsoft` installer and configuration refuse
   any other. Outside LOCAL the same checks refuse that constant.
-- **Slack and Drive.** The `slack` credential target and the Google Drive
-  backup target are refused in LOCAL. Operational alerts that would go to Slack
-  are recorded and emailed only (to Mailpit).
+- **Slack.** The `slack` credential target is admitted and checked in LOCAL
+  by the same code as in every other profile (#1399). Slack carries only
+  operational and readiness alerts to the configured channel, never Family
+  mail. A LOCAL Slack token SHOULD be a separate test bot token whose app is
+  installed only in a test channel, never Production's token. Until LOCAL has
+  egress, a Slack check reports the provider unavailable and nothing is
+  posted; with no Slack token, operational alerts are recorded and emailed
+  only (to Mailpit).
+- **Drive.** The Google Drive backup target is refused in LOCAL: off-site
+  copies sign in with the Workspace key, and LOCAL still admits only the
+  mail-catcher document.
 - **No egress** (see [topology](#topology-and-web-differences)) backs these
   checks up: even a mistaken real credential has no route out.
 

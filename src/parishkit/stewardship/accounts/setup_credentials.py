@@ -7,7 +7,7 @@ from django.db.models import F
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import work_transaction
-from parishkit.stewardship.deployment import DeploymentProfile, recorded_profile
+from parishkit.stewardship.deployment import recorded_profile
 from parishkit.stewardship.mail_catcher import MailTransport, workspace_transport
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.web.contracts import check_version
@@ -82,16 +82,15 @@ def _context(attempt, target, organization_id):
 def admit_candidate(target, candidate, profile):
     """Parse a Workspace or Slack candidate under the deployment profile (#476).
 
-    This is the web intake's half of the two-way refusal, repeated by the
-    isolated installer's provider check. The Workspace candidate must be the
-    mail-catcher document in LOCAL and a Google service account anywhere
-    else; Slack has no local stand-in, so LOCAL refuses any Slack token.
-    Every refusal is a ConfigError, so the pages show their one generic
+    This is the web intake's half of the Workspace two-way refusal, repeated
+    by the isolated installer's provider check. The Workspace candidate must
+    be the mail-catcher document in LOCAL and a Google service account
+    anywhere else. A Slack token is parsed the same way in every profile
+    (#1399): LOCAL may hold a test token, so pk-local runs Production's Slack
+    code. Every refusal is a ConfigError, so the pages show their one generic
     format message and never echo the candidate.
     """
     if target == "slack":
-        if profile is DeploymentProfile.LOCAL:
-            raise ConfigError("Slack is not available in the local profile.")
         slack_candidate(candidate)
     elif workspace_transport(candidate, profile) is MailTransport.GMAIL:
         # Outside LOCAL the candidate must be a well-formed service account,

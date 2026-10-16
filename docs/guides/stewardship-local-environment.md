@@ -533,5 +533,5 @@ except as part of a restore or a typed-confirmation wipe. The VM has no shared
 directories, so a mistake inside it cannot touch the laptop's files. See the
 specification's
 [safety guarantees](../specs/stewardship/local-environment/spec.md#safety-guarantees)
-for why a LOCAL deployment cannot reach Gmail, ParishSoft, Slack or Google
-Drive.
+for why a LOCAL deployment cannot email a real Family, and what each
+integration can reach.

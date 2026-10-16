@@ -29,7 +29,7 @@ from .accounts.integration_candidates import (
 from .accounts.key_files import read_private
 from .accounts.policy_schema import normalized_email
 from .accounts.provider_context import validated_context
-from .deployment import DeploymentProfile, ServiceRole, load_deployment
+from .deployment import ServiceRole, load_deployment
 from .observability import Event, configure_logging, emit_failure
 from .runtime_paths import RuntimeLayout
 
@@ -261,11 +261,10 @@ def execute_smoke(args):
     try:
         if args.config is None or args.target not in TARGETS:
             raise ConfigError("Configuration and a known target are required.")
+        # Every profile runs the same checks (#1399): in LOCAL they reach
+        # whatever is installed there (the fake ParishSoft, the mail catcher,
+        # a test Slack token), through the installer's own classification.
         configuration = load_deployment(Path(args.config))
-        if configuration.profile is DeploymentProfile.LOCAL:
-            # The local environment has no real provider to smoke-test; its
-            # fake ParishSoft and mail catcher are exercised by the loaders.
-            raise ConfigError("The smoke check has no provider in the local profile.")
         if configuration.service_role not in {
             ServiceRole.WEB,
             ServiceRole.WORKER,

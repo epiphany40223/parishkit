@@ -541,21 +541,14 @@ def test_backup_drive_runs_only_in_the_backup_profile(tmp_path, monkeypatch, cap
     assert "smoke check refused" in capsys.readouterr().err
 
 
-def test_local_profile_is_refused(tmp_path, monkeypatch, capsys):
-    """LOCAL has no real provider to smoke-test; the check refuses before any IO."""
+def test_local_profile_runs_the_same_check(tmp_path, monkeypatch, capsys):
+    """LOCAL is not refused (#1399): it runs the same check as Production."""
     from dataclasses import replace
 
     from parishkit.stewardship.deployment import DeploymentProfile
 
     configuration = consumer(tmp_path, ServiceRole.WORKER, parishsoft=b"key-bytes")
     monkeypatch.setattr(smoke, "configure_logging", lambda: None)
-    monkeypatch.setattr(
-        smoke,
-        "load_deployment",
-        lambda path: replace(configuration, profile=DeploymentProfile.LOCAL),
-    )
-    called = []
-    monkeypatch.setattr(smoke, "check_parishsoft", lambda *a, **k: called.append(a))
     args = SimpleNamespace(
         config=str(tmp_path / "service.yaml"),
         target="parishsoft",
@@ -565,15 +558,92 @@ def test_local_profile_is_refused(tmp_path, monkeypatch, capsys):
         channel_id=None,
         send=None,
     )
-    assert smoke.execute_smoke(args) == 2
-    captured = capsys.readouterr()
-    assert not captured.out and "smoke check refused" in captured.err
-    assert called == []
-    # Production is unchanged: the same consumer, outside LOCAL, runs the check.
-    monkeypatch.setattr(smoke, "load_deployment", lambda path: configuration)
+    called = []
     monkeypatch.setattr(
         smoke,
         "check_parishsoft",
-        lambda *a, **k: called.append(a) or {"credential": "valid"},
+        lambda *a, **k: called.append(a[0].profile) or {"credential": "valid"},
     )
-    assert smoke.execute_smoke(args) == 0 and len(called) == 1
+    for profile in (DeploymentProfile.LOCAL, DeploymentProfile.PRODUCTION):
+        monkeypatch.setattr(
+            smoke,
+            "load_deployment",
+            lambda path, profile=profile: replace(configuration, profile=profile),
+        )
+        assert smoke.execute_smoke(args) == 0
+        assert called[-1] is profile
+        assert json.loads(capsys.readouterr().out)["credential"] == "valid"
+
+
+def test_local_send_to_through_the_mail_catcher_sends_nothing(
+    tmp_path, monkeypatch, capsys
+):
+    """LOCAL's mail catcher passes the check, but ``--send-to`` sends nothing.
+
+    The send path takes only a Google service account, which LOCAL still
+    refuses (#1399), so the smoke send stops before any SMTP connection.
+    """
+    from contextlib import nullcontext
+    from dataclasses import replace
+
+    from parishkit.stewardship.deployment import DeploymentProfile
+    from parishkit.stewardship.mail_catcher import MAIL_CATCHER_DOCUMENT
+
+    configuration = consumer(
+        tmp_path, ServiceRole.MAIL_DISPATCH, google_workspace=MAIL_CATCHER_DOCUMENT
+    )
+    monkeypatch.setattr(smoke, "configure_logging", lambda: None)
+    monkeypatch.setattr(
+        smoke,
+        "load_deployment",
+        lambda path: replace(configuration, profile=DeploymentProfile.LOCAL),
+    )
+    catcher = SimpleNamespace(ehlo=lambda: (250, b"mailpit"))
+    monkeypatch.setattr(
+        provider_check_worker, "open_mail_catcher", lambda: nullcontext(catcher)
+    )
+
+    # execute_smoke turns any exception into its generic refusal, so a
+    # raising fake alone could not tell a refusal from a reached server.
+    opened = []
+
+    def forbidden(*args, **kwargs):
+        opened.append(args)
+        raise OSError("no SMTP connection may be opened")
+
+    monkeypatch.setattr(smoke.smtplib, "SMTP_SSL", forbidden)
+    monkeypatch.setattr(smoke.smtplib, "SMTP", forbidden)
+    # The refusal must come from the service-account parser itself.
+    refusals = []
+    real_candidate = smoke.workspace_candidate
+
+    def candidate(*args, **kwargs):
+        try:
+            return real_candidate(*args, **kwargs)
+        except ConfigError as error:
+            refusals.append(error)
+            raise
+
+    monkeypatch.setattr(smoke, "workspace_candidate", candidate)
+    args = SimpleNamespace(
+        config=str(tmp_path / "mail-dispatch.yaml"),
+        target="google_workspace",
+        organization_id=None,
+        delegated_email="mail@parish.example",
+        send_to=None,
+        channel_id=None,
+        send=None,
+    )
+    # Without an address the LOCAL check itself passes against the catcher.
+    assert smoke.execute_smoke(args) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "target": "google_workspace",
+        "credential": "valid",
+        "sent": False,
+    }
+    args.send_to = "someone@parish.example"
+    assert smoke.execute_smoke(args) == 2
+    captured = capsys.readouterr()
+    assert not captured.out and "smoke check refused" in captured.err
+    assert opened == []
+    assert len(refusals) == 1
