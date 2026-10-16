@@ -1011,6 +1011,23 @@ The server stays the authority: it checks every save, and its refusal is
 shown at the field as above, even when the browser would have allowed the
 value (a wrong computer clock, for example).
 
+A report's filters follow the same rule (#1332). A filter the server
+refuses at one field (a request built by hand, or a browser whose check did
+not run) draws the report again, answered 400: the filters show the values
+sent, with the error at that field and in the summary, and the results are
+those for no filters, as Campaign comparison shows its current day for a
+refused day. A refusal no field can show (an unknown or repeated field, a
+choice no form offers, a sort or page size the table does not accept) keeps
+the report's error page. A range out of order is refused at its end with
+both ends marked, and its message is shown once, after them, in a line
+the form reserves so that a refusal shown in place moves nothing. An
+in-place Apply keeps the filter form and what was typed, and takes the
+marks and message from the answer. The server's mark clears, with its
+message and summary item, on the first edit of a field it marks (either
+end of a range), or when an in-place Apply is answered without it.
+**Shared code.** `web/filter_errors.py` (`FilterError`), the `filter_mark`
+and `filter_line` template tags; first use: Financial stewardship.
+
 A file field marked `data-max-bytes` (with `data-max-bytes-message`, the
 server's own words) is refused at the field as soon as a file over that
 size is chosen, and the form is not sent until a smaller file is chosen; a
@@ -2007,14 +2024,20 @@ The portal and the emails share one visual style
   fallback; only the vendored chart tooltip rules are exempt. The setup
   wizard's Back and Continue buttons take the shared button shape. Email
   components read the same module and inline the values, because mail
-  programs cannot load the stylesheet.
+  programs cannot load the stylesheet. So does the maintenance page shown
+  while the site is updating, which loads no stylesheet: it inlines the
+  light page, panel, ink and muted colours, the panel's corners and shadow,
+  and the sans font stack.
 - **Buttons:** templates draw every button, and every link styled as one,
   with the `{% button %}` tag. Its variants are primary (the default),
   secondary, large and link. It renders the stylesheet's classes and keeps
   each attribute in the order the template gives it, so in-place controls
   keep their `data-` attributes. A guard test counts raw button markup in
   every template against a list of reviewed exceptions that may only
-  shrink.
+  shrink. A button is secondary only when it is drawn so (the secondary
+  variant, or the `button-secondary` class on a button a script builds),
+  never because of where it sits or what attributes it carries, and a test
+  holds the stylesheet's secondary rule to that class alone.
 - **Email buttons:** `email_button()` renders the same primary and
   secondary buttons for email: a one-cell table with inline styles from the
   tokens, `bgcolor`, and Outlook padding. The label is real text, so the
@@ -2317,6 +2340,9 @@ learned once. **Shared code.**
 - `campaigns/recurrence.py`: repeat rules. Its cases
   (`tests/stewardship/fixtures/recurrence_cases.json`) also pin the page
   script's `ParishRecurrence`.
+- `components/repeat-rule.html`: the one repeat rule's controls (how often,
+  the days, the monthly choices, From and Until), with its choices from
+  New scheduled email's `RepeatRule` form.
 - `campaigns/intervals.resolve_local`: the daylight-saving rule.
 - `ParishEditorMode`: the Basic and Advanced modes.
 - `components/zone-note.html`: the note that names the browser's zone
@@ -2391,7 +2417,10 @@ except the browser-zone entry, which is its recorded exception
 ([#1122](https://github.com/epiphany40223/parishkit/issues/1122)), so its
 note names its schedule zone instead. The date-change review draws the
 shared zone note, as do System logs and Ministry requests; New and Edit
-scheduled email follows once its open changes land. Later
+scheduled email follows once its open changes land. The two mail
+repeat panels, New scheduled email's Repeat and the date-change review's
+Repeat a reminder, draw one repeat rule, so they offer the same choices in
+the same order and one page script expands both. Later
 [#1129](https://github.com/epiphany40223/parishkit/issues/1129) slices bring
 the shared preview and Basic and Advanced modes to the mail schedule
 editors, reminder repeats and digests. Until each change lands, an

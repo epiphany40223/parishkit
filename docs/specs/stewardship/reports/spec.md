@@ -2087,6 +2087,14 @@ or regenerating one needs the same fresh sign-in as a
 [active parishioner family directory](#active-parishioner-family-directory) export, returning to this report. No
 Ministry leader receives aggregate or Family financial detail.
 
+The page checks its date and pledge filters before Apply (a date, each
+range's order, an amount's form). A request that reaches the server with one
+broken is refused at that field
+([field errors](../ui-conventions/spec.md#field-errors-and-live-checks),
+[#1332](https://github.com/epiphany40223/parishkit/issues/1332)): a range out
+of order at its Through date or At most, with both ends marked. Its access
+audit ends denied.
+
 ## Limitations
 
 **Access:** Admin and Staff only.

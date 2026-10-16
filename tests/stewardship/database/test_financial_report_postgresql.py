@@ -682,12 +682,40 @@ def test_native_page_filters_privately_and_denies_leaders(
         assert b"No matching pledges." in body and b"$1,234.50" not in body
         _, body = search(browser, route, {"pledge_min": "1234.50", "share": CHECK})
         assert name in body and b'value="1234.50"' in body
-        for invalid in ({"pledge_min": "1,234"}, {"sort": "random"}, {"extra": "x"}):
+        for invalid in ({"sort": "random"}, {"extra": "x"}):
             response, body = search(browser, route, invalid)
             assert response.status_code == 400
-            # An ordinary typo gets an explanation and a way back, never an echo.
+            # A refusal no field can show gets an explanation and a way
+            # back, never an echo.
             assert b"without commas" in body and route.encode() in body
-            assert b"1,234" not in body and response["Cache-Control"] == "no-store"
+            assert b"random" not in body and response["Cache-Control"] == "no-store"
+        # A rule the reader can fix at a field draws the page again (#1332):
+        # 400, the values sent in the filters, the error at the field and in
+        # the summary, and the results for no filters.
+        response, body = search(
+            browser, route, {"pledge_min": "1,234", "sort": "pledge_desc"}
+        )
+        assert response.status_code == 400 and response["Cache-Control"] == "no-store"
+        assert b'value="1,234" aria-invalid="true"' in body
+        assert b'aria-describedby="pledge-range_error"' in body
+        assert (
+            b'<ul class="errorlist" id="pledge-range_error"><li>Enter At least' in body
+        )
+        assert b'<a href="#pledge-min">Enter At least' in body
+        assert name in body and b'aria-sort="descending"' in body
+        assert b"data-filter-panel open" in body
+        # Neither the export nor the table's controls carry the refused value
+        # (the Family's own $1,234.50 pledge is in the unfiltered results).
+        assert body.count(b'value="1,234"') == 1 and b"$1,234.50" in body
+        response, body = search(
+            browser, route, {"latest_start": "2026-09-02", "latest_end": "2026-09-01"}
+        )
+        assert response.status_code == 400
+        assert b'<ul class="errorlist" id="latest-response-dates_error">' in body
+        # A hostile value sent back into its field stays text.
+        response, body = search(browser, route, {"first_end": '"><script>x'})
+        assert response.status_code == 400 and b"<script>x" not in body
+        assert b'value="&quot;&gt;&lt;script&gt;x" aria-invalid="true"' in body
         # A stale Next click past the end shows the last page (#203).
         _, body = search(browser, route, {"page": "9"})
         assert name in body and b"No matching pledges." not in body
@@ -749,7 +777,8 @@ def test_native_page_filters_privately_and_denies_leaders(
             event__event_type="financial_report_viewed"
         ).values_list("context", flat=True)
     )
-    assert {"succeeded", "started", "failed"} <= {
+    # A page drawn again for refused filters ends denied (#1332).
+    assert {"succeeded", "started", "failed", "denied"} <= {
         context["outcome"] for context in contexts
     }
     assert name.decode() not in str(contexts) and "1234" not in str(contexts)

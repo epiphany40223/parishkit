@@ -8,13 +8,32 @@ from django.urls import reverse
 
 from parishkit.stewardship.reports.chart_specs import financial_charts
 from parishkit.stewardship.reports.financial import (
+    FIELD_MESSAGES,
     FINANCIAL_SORTING,
     FREQUENCY_LABELS,
     PAGE_SIZES,
     FinancialQuery,
 )
+from parishkit.stewardship.reports.financial_views import FIELD_IDS, FIELD_LINES
 from parishkit.stewardship.reports.money import MoneyAmount
+from parishkit.stewardship.web.filter_errors import (
+    FilterError,
+    error_context,
+    line_sizes,
+)
 from parishkit.stewardship.web.tables import report_table
+
+
+def refused_values():
+    """The view's context for At most below At least, refused at its field."""
+    sent = FinancialQuery(pledge_min="500", pledge_max="100")
+    error = FilterError(
+        "pledge_max", FIELD_MESSAGES["pledge_max"], sent, pair="pledge_min"
+    )
+    shown = FinancialQuery()
+    return error_context(error, FIELD_IDS, FIELD_LINES) | dict(
+        query=sent, applied=shown, query_fields=shown.form_values()
+    )
 
 
 def components(context, admin):
@@ -118,6 +137,8 @@ def components(context, admin):
         mutable=True,
         request_key=UUID(int=100),
         export_timezones=("America/New_York", "UTC"),
+        # The filters' reserved message lines (#1332), as the view sizes them.
+        filter_sizes=line_sizes(FIELD_MESSAGES, FIELD_LINES),
         summary=summary,
         # The summary's charts (#720), as the view builds them.
         charts=financial_charts(summary, choices),
@@ -154,6 +175,9 @@ def components(context, admin):
         # bar's label must still fit after it at phone width.
         "/financial-long-labels": values
         | dict(charts=financial_charts(crowded, long_choices)),
+        # Filters the server refused at At most (#1332): drawn again with
+        # the values sent, the error at the field and the unfiltered results.
+        "/financial-refused": values | refused_values(),
     }
     result = {
         path: (
