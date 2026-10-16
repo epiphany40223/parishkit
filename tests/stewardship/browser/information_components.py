@@ -15,6 +15,7 @@ from uuid import UUID
 from django.template.loader import render_to_string
 from django.urls import reverse
 
+from parishkit.stewardship.reports.chart_specs import information_followup
 from parishkit.stewardship.reports.information import (
     INFORMATION_SORTING,
     PAGE_SIZES,
@@ -110,6 +111,10 @@ def components(context, admin):
         total=51,
         rows=[item],
         table=table(query),
+        # The Follow-up status chart of all 51 matching requests (#720).
+        followup_chart=information_followup(
+            {"completed": 20, "needed_open": 21, "not_needed_open": 10}, 51
+        ),
         mutable=True,
         export_timezones=("UTC", "America/Detroit"),
         request_key=UUID(int=83),
@@ -148,6 +153,9 @@ def components(context, admin):
                 "query_fields": withdrawn.form_values(),
                 "total": 3,
                 "table": table(withdrawn, [other], 3),
+                "followup_chart": information_followup(
+                    {"completed": 1, "needed_open": 0, "not_needed_open": 2}, 3
+                ),
             },
         ),
         "/information-none": (
@@ -158,6 +166,7 @@ def components(context, admin):
                 "query_fields": nothing.form_values(),
                 "total": 0,
                 "table": table(nothing, [], 0),
+                "followup_chart": None,
             },
         ),
         "/information-dated": (
@@ -170,6 +179,17 @@ def components(context, admin):
             },
         ),
         "/information-queue-gated": ("information", values | {"mutable": False}),
+        # The queue as first opened, with its default filters: the Filters
+        # panel starts closed (#227).
+        "/information-unfiltered": (
+            "information",
+            values
+            | {
+                "query": InformationQuery(),
+                "query_fields": InformationQuery().form_values(),
+                "table": table(InformationQuery()),
+            },
+        ),
         "/information-item": ("information", values | {"item": item}),
         "/information-unresolved": (
             "information",

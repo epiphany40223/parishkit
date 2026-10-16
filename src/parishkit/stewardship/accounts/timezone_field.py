@@ -6,8 +6,10 @@ name only (America/New_York): an alias works in every SQL conversion only
 because the database maps it (``stewardship_timezone_name_v1``), and it reads
 as a second, different zone in a list. A stored alias is still shown, as the
 current choice, so an unchanged form keeps it: a live campaign's locked
-zone, a draft that must match the Parish zone, and configuration history
-never change just because a page was saved.
+zone and configuration history never change just because a page was saved.
+
+A fresh form for a new choice (Create the campaign, the setup Parish step)
+starts on the browser's own zone (``browser_default``, #1330).
 """
 
 from django import forms
@@ -53,3 +55,20 @@ class TimezoneField(forms.ChoiceField):
     def valid_value(self, value):
         """Any catalog name, so a stored alias posted back unchanged is valid."""
         return value in timezone_names()
+
+
+def browser_default(form, name="timezone", *, choose=False):
+    """Start an unbound form's zone menu on the browser's zone (#1330).
+
+    The menu is marked ``data-browser-default``, and ui-v1.js selects the
+    zone the browser reports when the menu offers it; otherwise the form's
+    initial zone stays selected. With ``choose`` (no zone to fall back on)
+    the menu starts on a blank "Choose a time zone" entry, which the
+    required field refuses, never on the first zone in the list. A bound
+    form (drawn again after a refusal) keeps the zone that was posted.
+    """
+    field = form.fields[name]
+    if choose:
+        field.choices = [("", _("Choose a time zone")), *canonical_choices()]
+    if not form.is_bound:
+        field.widget.attrs["data-browser-default"] = ""

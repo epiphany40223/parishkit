@@ -197,6 +197,24 @@ def test_no_invitations_yet_says_so_instead_of_shares():
     assert "No invitations" not in render(value=metrics())
 
 
+def test_tiles_draw_their_share_of_invited_as_bars():
+    """Each tile's share bar runs against Invited and is hidden from AT (#720).
+
+    Invited's own bar is full; a share past 100% (link followed, 5 of 4)
+    keeps its count, which the browser draws as a full bar. With nothing
+    invited there is no share, so no tile has a bar.
+    """
+    page = render(value=metrics())
+    bars = re.findall(
+        r'<span class="stat-bar" aria-hidden="true">'
+        r'<progress value="(\d+)" max="(\d+)"></progress></span></li>',
+        page,
+    )
+    assert bars == [("4", "4"), ("5", "4"), ("4", "4"), ("3", "4"), ("3", "4")]
+    rows = tuple(replace(row, invited_at=None) for row in metrics().families)
+    assert "<progress" not in render(value=metrics(families=rows))
+
+
 def test_lists_open_the_directory_with_closed_presets():
     """Each link is a directory preset the directory accepts in GET.
 

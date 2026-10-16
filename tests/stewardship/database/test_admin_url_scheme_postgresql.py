@@ -247,7 +247,6 @@ def test_new_report_pages_refuse_or_explain_without_a_current_campaign(
         ("information_queue", []),
         ("information_item", [item]),
         ("ministry_report", []),
-        ("ministry_followup", []),
         ("ministry_followup_item", [item]),
         ("family_directory", []),
         ("family_timeline", [item]),
@@ -284,9 +283,9 @@ def test_new_report_pages_refuse_or_explain_without_a_current_campaign(
         ("ministry_report", []),
         ("ministry_followup_export", []),
         ("ministry_packet", []),
-        ("ministry_followup", []),
         ("ministry_followup_update", [item]),
         ("ministry_followup_bulk", []),
+        ("ministry_roster_bulk", []),
         ("family_directory_export", []),
         ("find_family", []),
     ):

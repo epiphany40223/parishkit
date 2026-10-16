@@ -26,9 +26,11 @@ from parishkit.stewardship.reports.ministry_followup import (
     STATE_LABELS as FOLLOWUP_STATE_LABELS,
 )
 from parishkit.stewardship.reports.ministry_followup_views import (
+    BULK_FIELD_IDS,
     BULK_KIND_HINTS,
     FIELD_IDS,
     REFUSALS,
+    _bulk_refusal,
     _refusal_error,
     bulk_actions,
     bulk_values,
@@ -331,6 +333,25 @@ def test_refusals_name_the_one_problem_and_its_field():
     with pytest.raises(ValueError) as refused:
         change({key: value for key, value in MINIMAL.items() if key != "notes"})
     assert not isinstance(refused.value, FollowupRefusal)
+
+
+def test_bulk_refusal_names_the_dialog_fields_it_concerns():
+    """A bulk contact refusal names the dialog's Date and Time (#1332), so
+    the dialog shows it there; one with no field names none."""
+    fields = ("contact_date", "contact_time")
+    named = json.loads(_bulk_refusal(400, "Fix the time.", fields).content)
+    assert [e["field_id"] for e in named["errors"]] == [
+        BULK_FIELD_IDS[name] for name in fields
+    ]
+    assert named["refusal"]["message"] == "Fix the time."
+    plain = json.loads(_bulk_refusal(409, "Changed.").content)
+    assert [(e["code"], e["field_id"]) for e in plain["errors"]] == [
+        ("stale_version", None)
+    ]
+    # Every refusal field the dialog has is named by its own id there.
+    assert set(BULK_FIELD_IDS) <= {
+        name for _, names in REFUSALS.values() for name in names
+    }
 
 
 SOURCES = Path(__file__).parents[2] / "src/parishkit/stewardship"

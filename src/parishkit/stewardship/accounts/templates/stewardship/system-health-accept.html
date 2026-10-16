@@ -1,30 +1,39 @@
 {% load i18n stewardship %}{% comment %}
   Accept this change once (ADM-13 PR 5b), in the ParishSoft refresh tile's
   details directly under the refusal it answers (#1214), outside the polled
-  status region, so a poll never discards a preview. It is always drawn,
-  and its button follows the polled state: greyed with its reason while no
-  refusal can be accepted. ``mirrored`` (the polled
-  copy) leaves the button's CSRF token empty. Its
-  forms post to the System health page itself, which answers with this page;
-  ui-v1.js swaps this region (#accept-change) in place. ``accept`` holds the
-  step's result: ``preview`` (a system_health.AcceptPreview: the refusal's
-  counts, counts only, and the signed binding), ``requested`` (the
-  acceptance just recorded, or the first one when the confirmation was
-  repeated) with ``refresh`` (the full refresh requested, or None), or
-  ``refused`` (why the step was refused: ``busy`` is "this changed since you
-  looked", with the step-up for a stale sign-in). Under each count that fell
-  too far the preview lists its example Families (PR 5c: name and Family
-  DUID, Administrators only), or says none are available; they are part
-  of the preview, drawn with it, so nothing appears or moves afterwards.
-  Without a preview, the button is shown in a data-live-mirror-target that
-  the polled region keeps current. The preview names the refusal it reviews
-  (data-live-keep-for); once a poll shows another (or none) in the
-  region's data-live-key, live-status-v1.js marks it changed on its reserved line and holds
-  Confirm. Confirm waits for the tick box (data-acknowledgment); the server
-  checks the box and every other condition again.
-{% endcomment %}<section class="panel" id="accept-change" data-in-place-region aria-labelledby="accept-change-heading">
+  status region, so a poll never discards a preview. The #accept-change
+  in-place region itself is always drawn, so a step's answer always has a
+  region to swap in, but it shows nothing while there is nothing to accept
+  (batch 24a): without a step result it holds only a data-live-mirror-target
+  that the polled region keeps current with system-health-accept-offer.html,
+  which draws the section only while the refusal shown can be accepted or
+  was accepted (not for a lapsed or never-acceptable one). The section so
+  appears and goes in the same poll as the refusal's problem item (both
+  targets are data-live-mirror-hold). Its forms post to the System health
+  page itself, which answers with this page; ui-v1.js swaps this region in
+  place. ``accept`` holds the step's result, and while there is one the
+  section is drawn here, outside any mirror target, so polls leave it
+  alone: ``preview`` (a system_health.AcceptPreview: the refusal's counts,
+  counts only, and the signed binding), ``requested`` (the acceptance just
+  recorded, or the first one when the confirmation was repeated) with
+  ``refresh`` (the full refresh requested, or None), or ``refused`` (why the
+  step was refused: ``busy`` is "this changed since you looked", with the
+  step-up for a stale sign-in). Under each count that fell too far the
+  preview lists its example Families (PR 5c: name and Family DUID,
+  Administrators only), or says none are available; they are part of the
+  preview, drawn with it, so nothing appears or moves afterwards. A
+  requested or refused result keeps the button in a data-live-mirror-target
+  that the polled region keeps current; like the problems it waits while
+  the pointer is over the grid (data-live-mirror-hold), since its height
+  changes (accepted to lapsed, for one). The preview names the refusal it
+  reviews (data-live-keep-for); once a poll shows another (or none) in the
+  region's data-live-key, live-status-v1.js marks it changed on its
+  reserved line and holds Confirm. Confirm waits for the tick box
+  (data-acknowledgment); the server checks the box and every other
+  condition again.
+{% endcomment %}<div id="accept-change" data-in-place-region>{% if not accept %}<div data-live-mirror-target="accept-offer" data-live-mirror-hold>{% include 'stewardship/system-health-accept-offer.html' %}</div>
+{% else %}<section class="panel" aria-labelledby="accept-change-heading">
 <h3 id="accept-change-heading">{% translate "Accept this change once" %}</h3>
-{% translate "An acceptance lets one full refresh through only if every count is at least the “after” value reviewed and every count that was within the limit stays within it; the limit itself is not raised. It ends when a full refresh is promoted, when a new refusal is recorded, or after 24 hours, and a refusal can be accepted only once. A refresh that found no Families or no Members can never be accepted. In an emergency, the server operator can still let a change through, as “Accepting a large ParishSoft change” in the launch runbooks describes." as accept_tip %}
 {% if accept.preview %}{% with preview=accept.preview %}<div data-accept-preview data-live-keep-for="{{ preview.attempt_id }}"><p>{% translate "This lets the next full ParishSoft refresh through although some counts fell too far. Use it only after checking in ParishSoft that the change is real, for example that the parish inactivated many Families at once." %}</p>
 <div class="table-scroll"><table><caption>{% translate "The refresh refused at" %} <time datetime="{{ preview.refused_at|instant }}" data-local-instant>{{ preview.refused_at|instant }}</time></caption>
 <thead><tr><th scope="col">{% translate "Count" %}</th><th scope="col" class="numeric">{% translate "Before" %}</th><th scope="col" class="numeric">{% translate "After" %}</th><th scope="col" class="numeric">{% translate "Fell by" %}</th><th scope="col">{% translate "Result" %}</th></tr></thead>
@@ -33,7 +42,7 @@
 {% translate "Each example is a Family in the current data that the refused refresh would remove or change for that count: the Family, one of its Members or one of its valid email addresses is missing, or the Family no longer counts. Up to five are listed per count, lowest Family DUID first. Only Administrators see them, and they are deleted when the change is accepted, when a newer refusal or a full refresh replaces this one, or after seven days." as examples_tip %}<ul>
 {% if preview.expects_examples %}<li><span id="accept-change-examples">{% translate "Under each count that fell too far, example Families show where to look in ParishSoft." %}</span> {% include "stewardship/components/toggletip.html" with tip_id="accept-change-examples-tip" tip_label_id="accept-change-examples" tip_text=examples_tip %}</li>{% endif %}
 <li>{% translate "Records missing from ParishSoft leave the campaign's data after that refresh. A mistake in ParishSoft should be fixed there instead, followed by Refresh now." %}</li>
-<li><span id="accept-change-rules">{% translate "The next full refresh goes through only if no count falls below the “after” value shown, and counts within the limit stay within it." %}</span> {% include "stewardship/components/toggletip.html" with tip_id="accept-change-rules-tip" tip_label_id="accept-change-rules" tip_text=accept_tip %}</li>
+<li><span id="accept-change-rules">{% translate "The next full refresh goes through only if no count falls below the “after” value shown, and counts within the limit stay within it." %}</span> {% include "stewardship/system-health-accept-tip.html" with tip_id="accept-change-rules-tip" tip_label_id="accept-change-rules" %}</li>
 <li>{% translate "Confirming also asks for a full refresh now. The acceptance ends after 24 hours, or sooner when a full refresh is promoted or a new refusal is recorded." %}</li>
 </ul>
 <p class="reserve-lines-wrap" role="status" data-live-stale-note="{% translate 'This changed since you looked; review it again.' %}"></p>
@@ -45,7 +54,7 @@
 {% elif accept.refused == "reauthenticate" %}{% url 'admin:system_health' as here %}{% translate "accepting this change" as step_up_action %}{% translate "Nothing was accepted." as step_up_outcome %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action outcome=step_up_outcome next=here marker="accept-refused" marker_value="reauthenticate" %}
 {% elif accept.refused == "busy" %}<p class="notice" data-accept-refused="changed">{% translate "This changed since you looked; review it again. Nothing was accepted. The refusal above catches up within about 10 seconds." %}</p>
 {% elif accept.refused == "denied" %}<p class="notice notice-error" data-accept-refused="denied">{% translate "The server refused this acceptance, so nothing was accepted. System logs record why; ask the server operator to check the database grants." %}</p>
-{% elif accept.refused == "invalid" %}<p class="notice notice-error" data-accept-refused="invalid">{% translate "That request could not be read, or the box was not ticked. Nothing was accepted; review it again." %}</p>
-{% else %}<p><span id="accept-change-intro">{% translate "After checking in ParishSoft that a large drop is real, let the next full refresh through once. It needs a recent Google sign-in." %}</span> {% include "stewardship/components/toggletip.html" with tip_id="accept-change-intro-tip" tip_label_id="accept-change-intro" tip_text=accept_tip %}</p>{% endif %}
-<div data-live-mirror-target="accept-button">{% include 'stewardship/system-health-accept-button.html' %}</div>{% endif %}
-</section>
+{% elif accept.refused == "invalid" %}<p class="notice notice-error" data-accept-refused="invalid">{% if accept.refusal_text %}{{ accept.refusal_text }}{% else %}{% translate "That request could not be read, or the box was not ticked. Nothing was accepted; review it again." %}{% endif %}</p>
+{% endif %}
+<div data-live-mirror-target="accept-button" data-live-mirror-hold>{% include 'stewardship/system-health-accept-button.html' %}</div>{% endif %}
+</section>{% endif %}</div>

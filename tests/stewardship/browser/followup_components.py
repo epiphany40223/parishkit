@@ -13,11 +13,18 @@ by a request whose save redirects to the next request (``ADVANCE_ITEM`` to
 ``NEXT_ITEM``) and one whose save, the last in the list, redirects to the
 remembered queue view (``LAST_ITEM`` to ``QUEUE_VIEW``). The bulk
 outcome queue (#1131, ``BULK_QUEUE``) has open join and leave requests and a
-closed one; its dialog redraws the table from the remembered view
-``BULK_VIEW``, which shows the join request resolved. The tests answer the
+closed one (``BULK_CLOSED_QUEUE`` lists the closed one alone, #1332); its
+dialog redraws the table from the remembered view ``BULK_VIEW``, which
+shows the join request resolved. The tests answer the
 dialog's POST (``BULK_POST``) themselves, with a route. ``GONE_QUEUE`` is
 Staff's Status choice for Members no longer in ParishSoft (#1217), and
 ``GONE_ITEM`` one of its request pages.
+
+Ministry requests (#1133) is this queue with its totals, By Ministry counts
+and Follow-up packet, served at its real address (``REQUESTS``) so a By
+Ministry count, a GET to that same address with its link filters
+(``COUNTED``), is followed in place. ``LEADER`` is a leader of one Ministry,
+``SORTED`` and ``SEARCHED`` the answers to an in-place re-sort and Apply.
 """
 
 from datetime import UTC, datetime
@@ -27,6 +34,8 @@ from uuid import UUID
 from django.template.loader import render_to_string
 from django.urls import reverse
 
+from parishkit.stewardship.accounts.policy import Principal
+from parishkit.stewardship.reports.chart_specs import ministry_followup
 from parishkit.stewardship.reports.ministries import outcome_label
 from parishkit.stewardship.reports.ministry_followup import (
     CHANNELS,
@@ -43,6 +52,7 @@ from parishkit.stewardship.reports.ministry_followup_views import (
     REFUSALS,
     _refusal_error,
     bulk_actions,
+    count_links,
 )
 from parishkit.stewardship.web.tables import report_table
 from parishkit.stewardship.workflows.followup import FollowupRefusal, outcomes_for
@@ -72,7 +82,7 @@ NEXT_ITEM = (
 )
 LAST_ITEM = reverse("admin:ministry_followup_item", args=[LAST_REQUEST])
 LAST_UPDATE = reverse("admin:ministry_followup_update", args=[LAST_REQUEST])
-QUEUE_VIEW = reverse("admin:ministry_followup") + f"?queue={TOKEN}"
+QUEUE_VIEW = reverse("admin:ministry_report") + f"?queue={TOKEN}"
 # A resolved join that takes the roster tick (#528), before and after it.
 TICK_REQUEST = UUID(int=101)
 TICK_ITEM = reverse("admin:ministry_followup_item", args=[TICK_REQUEST])
@@ -81,13 +91,29 @@ TICKED = TICK_ITEM + "?ticked=1"
 # The bulk outcome queue (#1131): its address, the remembered view the dialog
 # redraws it from, and where the dialog posts.
 BULK_QUEUE = "/followup-bulk"
+# A queue page whose only request is closed: rows, none selectable (#1332).
+BULK_CLOSED_QUEUE = "/followup-bulk-closed"
 BULK_TOKEN = "cd" * 16
-BULK_VIEW = reverse("admin:ministry_followup") + f"?queue={BULK_TOKEN}"
+BULK_VIEW = reverse("admin:ministry_report") + f"?queue={BULK_TOKEN}"
 BULK_POST = reverse("admin:ministry_followup_bulk")
 BULK_KEY = UUID(int=104)
 BULK_JOIN, BULK_LEAVE, BULK_CLOSED = UUID(int=105), UUID(int=106), UUID(int=107)
 # Staff's view of requests for Members no longer in ParishSoft (#1217).
 GONE_QUEUE, GONE_ITEM = "/followup-gone", "/followup-gone-item"
+# Ministry requests (#1133): the page at its real address, the answer to its
+# "51 join requests" count, and a leader of one Ministry.
+REQUESTS = reverse("admin:ministry_report")
+COUNTED = REQUESTS + "?ministry=9&action=join&state=any"
+LEADER, SORTED, SEARCHED, NOTHING = (
+    "/ministry-requests-leader",
+    "/ministry-requests-sorted",
+    "/ministry-requests-searched",
+    # A search that matches no request: every total is zero.
+    "/ministry-requests-nothing",
+)
+GATED_REQUESTS = "/ministry-requests-gated"
+# A packet limit of one Ministry, so ticking both choices passes it (#1332).
+PACKET_LIMIT = "/ministry-requests-packet-limit"
 # The fixture server's answers to a Save (status, Location, body).
 POSTS = {
     UPDATE: (303, SAVED, ""),
@@ -114,7 +140,7 @@ def _table(rows, query, total, campaign):
         carry=[(k, v) for k, v in query.form_values().items() if k != "sort"],
         sorting=SORTING,
         sort=query.sort,
-        action=reverse("admin:ministry_followup"),
+        action=reverse("admin:ministry_report"),
     )
 
 
@@ -158,6 +184,33 @@ def components(context, admin):
         notes="Left a <private> voicemail",
     )
     query = FollowupQuery(search="Example", ministry="9")
+    # By Ministry (#1133): every Ministry in scope, with Staff's count links
+    # and marks; one no longer in ParishSoft's data, one removed from the
+    # campaign with nothing unresolved.
+    staff = Principal(UUID(int=97), frozenset({"staff"}))
+    by_ministry = [
+        dict(
+            duid=9,
+            name="Example <Ministry>",
+            active=None,
+            in_campaign=True,
+            joining=51,
+            leaving=0,
+            unresolved=40,
+        ),
+        dict(
+            duid=12,
+            name="Another Ministry",
+            active=True,
+            in_campaign=False,
+            joining=2,
+            leaving=1,
+            unresolved=0,
+        ),
+    ]
+    for summary in by_ministry:
+        summary["count_links"] = count_links(staff, summary)
+    totals = dict(joining=40, leaving=11, requests=62, unresolved=51, completed=11)
     values = dict(
         # Staff or an Administrator: the help explains the Removed badge
         # (#1135).
@@ -183,7 +236,7 @@ def components(context, admin):
         bulk_actions=bulk_actions(),
         bulk_kind_hints=BULK_KIND_HINTS,
         bulk_key=BULK_KEY,
-        refresh_url=reverse("admin:ministry_followup"),
+        refresh_url=reverse("admin:ministry_report"),
         future_message=REFUSALS["contact_future"][0],
         total=51,
         rows=[row],
@@ -193,6 +246,18 @@ def components(context, admin):
         export_fields=query.form_values(),
         export_timezones=["America/Detroit", "UTC"],
         export_pdf_limit=1000,
+        # Ministry requests' overview (#1133): the totals, By Ministry and
+        # the packet's choices, every Ministry in scope.
+        totals=totals,
+        followup_chart=ministry_followup(totals),
+        by_ministry=by_ministry,
+        show_marks=True,
+        packet_choices=[
+            dict(duid=12, name="Another Ministry"),
+            dict(duid=9, name="Example <Ministry>"),
+        ],
+        packet_limit=200,
+        packet_key=UUID(int=109),
         # The Member's contact details on a request page (#1157), as
         # request_contacts returns them for a join: a leader's view, with
         # the unpublished phone withheld.
@@ -346,9 +411,69 @@ def components(context, admin):
     bulk_page = values | dict(
         query=unfiltered, queue_token=BULK_TOKEN, refresh_url=BULK_VIEW
     )
+    counted = FollowupQuery(ministry="9", action="join", state="any")
+    sorted_query = FollowupQuery(sort="ministry")
+    joined = dict(joining=51, leaving=0, requests=51, unresolved=40, completed=11)
+    searched = dict(joining=0, leaving=9, requests=60, unresolved=9, completed=51)
+    nothing_query = FollowupQuery(search="No such Member")
+    nothing = dict.fromkeys(
+        ("joining", "leaving", "requests", "unresolved", "completed"), 0
+    )
+    requests_page = values | dict(
+        query=unfiltered,
+        export_fields=unfiltered.form_values(),
+        rows=[row, proposed],
+        table=_table([row, proposed], unfiltered, 51, campaign),
+    )
     pages = {
+        REQUESTS: requests_page,
+        # The "51 join requests" count's answer: that Ministry's join
+        # requests of any status, with their totals.
+        COUNTED: requests_page
+        | dict(
+            query=counted,
+            export_fields=counted.form_values(),
+            rows=[row],
+            table=_table([row], counted, 51, campaign),
+            totals=joined,
+            followup_chart=ministry_followup(joined),
+        ),
+        SORTED: requests_page
+        | dict(
+            query=sorted_query,
+            export_fields=sorted_query.form_values(),
+            rows=[proposed, row],
+            table=_table([proposed, row], sorted_query, 51, campaign),
+        ),
+        SEARCHED: requests_page
+        | dict(totals=searched, followup_chart=ministry_followup(searched)),
+        NOTHING: requests_page
+        | dict(
+            query=nothing_query,
+            export_fields=nothing_query.form_values(),
+            rows=[],
+            total=0,
+            table=_table([], nothing_query, 0, campaign),
+            totals=nothing,
+            followup_chart=ministry_followup(nothing),
+        ),
+        # A leader of one Ministry: one line, no marks or campaign help.
+        LEADER: requests_page
+        | dict(
+            by_ministry=by_ministry[:1],
+            packet_choices=[dict(duid=9, name="Example <Ministry>")],
+            show_marks=False,
+            campaign_marks=False,
+            not_in_source=None,
+        ),
+        GATED_REQUESTS: requests_page | dict(mutable=False),
+        PACKET_LIMIT: requests_page | dict(packet_limit=1),
         BULK_QUEUE: bulk_page
         | dict(rows=bulk_rows, table=_table(bulk_rows, unfiltered, 3, campaign)),
+        BULK_CLOSED_QUEUE: bulk_page
+        | dict(
+            rows=bulk_rows[2:], table=_table(bulk_rows[2:], unfiltered, 1, campaign)
+        ),
         BULK_VIEW: bulk_page
         | dict(
             rows=bulk_after,

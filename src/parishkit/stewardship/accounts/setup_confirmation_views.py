@@ -21,10 +21,7 @@ class SetupConfirmationForm(forms.Form):
     preview_token = forms.CharField(max_length=4096, widget=forms.HiddenInput)
     confirmed = forms.BooleanField(
         widget=ACKNOWLEDGMENT,
-        label=_(
-            "I reviewed the parish and first-campaign settings "
-            "and want to finish setup."
-        ),
+        label=_("I reviewed these settings and want to finish setup."),
     )
 
 

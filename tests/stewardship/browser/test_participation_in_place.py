@@ -39,16 +39,13 @@ CHART_TOP = (
     " - document.querySelector('#participation-statistics figure.chart')"
     ".getBoundingClientRect().top"
 )
-# Counts every AbortController.abort() call, so a test can see that a
-# swapped-out chart's page-wide listeners were removed.
-COUNT_ABORTS = """(() => {
-    const abort = AbortController.prototype.abort;
-    window.aborts = 0;
-    AbortController.prototype.abort = function (...args) {
-        window.aborts += 1;
-        return abort.apply(this, args);
-    };
-})()"""
+# The export panel's top, measured from the top of the daily chart panel:
+# the redrawn daily chart keeps its space, so the panel below it must not
+# move (#720). Relative, so the page above (and its fonts) does not matter.
+EXPORT_TOP = (
+    "document.getElementById('participation-export').getBoundingClientRect().top"
+    " - document.getElementById('participation-chart').getBoundingClientRect().top"
+)
 
 
 def zones(page):
@@ -61,9 +58,7 @@ def zones(page):
 def test_options_apply_in_place(page, component_origin):
     """Apply report options sends one GET and swaps the statistics, chart and
     export panels: no reload, the reader's place and focus kept, the options
-    announced, the address replaced, and the fresh chart's date slider wired
-    again while the old chart's page-wide listeners are removed."""
-    page.add_init_script(COUNT_ABORTS)
+    announced, the address replaced, and the fresh daily chart drawn."""
     page.set_viewport_size(VIEWPORT)
     page.goto(component_origin + REAL + "?" + ZONE)
     page.evaluate(MARK)
@@ -94,19 +89,16 @@ def test_options_apply_in_place(page, component_origin):
     )
     assert len(gets) == 1
     assert page.locator("input[name=population_scope]").input_value() == "current"
-    # One chart was swapped out: its listeners' controller, and nothing else.
-    assert page.evaluate("window.aborts") == 1
-    # The swapped-in chart's slider shows its tooltip, so digest-v1.js wired
-    # the fresh chart.
-    page.get_by_role("slider", name="Inspect campaign date").focus()
-    page.keyboard.press("Home")
-    visible(page.locator("[data-digest-tip]"))
+    # The swapped-in daily chart is drawn by chart-v1.js (#720).
+    expect(
+        page.locator("#participation-chart [data-chart-state=rendered]")
+    ).to_have_count(1)
 
 
 def test_options_redraw_the_progress_chart_in_place(page, component_origin):
     """Apply report options redraws the statistics' progress chart (#720)
-    with the fresh counts, and it keeps its space until drawn, so the
-    daily chart panel below it stays as far below it as it was (#736)."""
+    with the fresh counts, and both charts keep their space until drawn, so
+    the panels below each stay as far below it as they were (#736)."""
     from .test_charts import assert_clean, watch
     from .test_response_dashboard import FITTED
 
@@ -114,15 +106,20 @@ def test_options_redraw_the_progress_chart_in_place(page, component_origin):
     page.set_viewport_size(VIEWPORT)
     page.goto(component_origin + REAL + "?" + ZONE)
     rendered = page.locator("#participation-statistics [data-chart-state=rendered]")
+    daily = page.locator("#participation-chart [data-chart-state=rendered]")
     expect(rendered).to_have_count(1)
+    expect(daily).to_have_count(1)
     eventually(page, FITTED)
     top = page.evaluate(CHART_TOP)
+    export = page.evaluate(EXPORT_TOP)
     page.get_by_label("Chart population").select_option("current")
     page.locator(APPLY).click()
     visible(page.locator("#participation-statistics .stat-value", has_text=REFRESHED))
     expect(rendered).to_have_count(1)
+    expect(daily).to_have_count(1)
     eventually(page, FITTED)
     assert abs(page.evaluate(CHART_TOP) - top) < 2
+    assert abs(page.evaluate(EXPORT_TOP) - export) < 2
     labels = rendered.locator("svg tspan").all_text_contents()
     assert "450 out of 1,000 (45%)" in labels
     assert_clean(page, errors)
@@ -171,7 +168,6 @@ def test_browser_zone_is_applied_in_place_once(page, component_origin):
     assert documents == [component_origin + REAL]
     assert fetches == [component_origin + REAL + "?" + ZONE]
     assert page.evaluate("document.activeElement === document.body")
-    assert page.locator("[data-digest-values]").inner_text() == ""
     assert "Report options applied." not in page.locator("main").inner_text()
     page.goto(component_origin + REAL + "?timezone=UTC")
     expect(page.locator("input[data-report-zone]")).to_have_value("UTC")

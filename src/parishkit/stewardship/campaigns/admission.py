@@ -169,11 +169,8 @@ def validate_installation(document, *, request_id=None):
                 row.state not in {"archived", "purged"} for row in existing.values()
             ):
                 raise ConfigError("Previous campaigns must be archived.")
-            if (
-                target["values"]["timezone"]
-                != document["sections"]["parish"][0]["values"]["timezone"]
-            ):
-                raise ConfigError("A new draft must copy the current parish timezone.")
+            # A new draft may start in any catalog zone, not only the parish
+            # zone (#1330); its dates are resolved in its own zone.
     # Check retired definition identities before immutable projection insertion;
     # otherwise the SQL defense would leave the installer at 'validating'.
     _validate_content_installation(

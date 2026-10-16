@@ -136,6 +136,9 @@ def test_v2_equals_v1_when_the_zone_is_the_campaigns(live_response_service):
             ],
         )
         v1, v2 = (json.loads(value) for value in cursor.fetchone())
+    # 0100 added v2's follow-up counts (#720); v1, the older captures'
+    # selection, has none.
+    assert v2.pop("counts") == {"completed": 0, "needed_open": 0, "not_needed_open": 1}
     assert v1 == v2 and v2["total"] == 1
 
 

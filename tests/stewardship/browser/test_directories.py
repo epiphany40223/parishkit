@@ -13,6 +13,20 @@ pytestmark = pytest.mark.parametrize(
 )
 
 
+def page_box(locator):
+    """``locator``'s box in page, not window, coordinates.
+
+    Values are rounded to a hundredth of a pixel: Firefox reports a box
+    scrolled into view a few hundred-thousandths of a pixel off (its
+    fractional ``scrollY``), which is not a layout shift.
+    """
+    box = locator.evaluate(
+        "node => { const r = node.getBoundingClientRect();"
+        " return {x: r.x, y: r.y + scrollY, width: r.width, height: r.height}; }"
+    )
+    return {key: round(value, 2) for key, value in box.items()}
+
+
 @pytest.mark.parametrize("width", [320, 1280])
 def test_directories_are_accessible_and_keep_filters_in_post(
     page,
@@ -300,9 +314,13 @@ def test_mailing_columns_lock_reach_to_postal_mail_only(page, component_origin):
     apply = page.get_by_role("button", name="Apply filters")
 
     def boxes():
-        """Where the filter bar's controls are drawn."""
+        """Where the filter bar's controls are drawn, in page coordinates.
+
+        Ticking a box below the window scrolls it into view first, which is
+        not a layout shift.
+        """
         summary = page.locator("#directory-summary")
-        return [item.bounding_box() for item in (reach, mailing, phone, apply, summary)]
+        return [page_box(item) for item in (reach, mailing, phone, apply, summary)]
 
     assert reach.is_enabled() and reach.input_value() == "any"
     assert reach.get_attribute("aria-describedby") == "directory-reach-tip"
@@ -346,10 +364,10 @@ def test_mailing_columns_page_draws_reach_locked(page, component_origin):
     page.goto(component_origin + "/postal-directory")
     reach = page.get_by_label("Campaign mail can reach", exact=True)
     assert reach.is_disabled() and reach.input_value() == "mail"
-    before = reach.bounding_box()
+    before = page_box(reach)
     page.get_by_label("Include mailing columns").uncheck()
     assert reach.is_enabled() and reach.input_value() == "any"
-    assert reach.bounding_box() == before
+    assert page_box(reach) == before
 
 
 def test_export_time_zone_follows_the_applied_response_columns(page, component_origin):

@@ -4,16 +4,27 @@
 {% block content %}
 {% include 'stewardship/setup-wizard.html' %}
 <h1>{% translate "Load parish data" %}</h1>
-{% aboutpage "setup-source" %}<p>{% translate "Read the parish's Families, Members, Ministries and funds from ParishSoft with the connection you entered. The first campaign offers the Ministries and funds found here. A normal load takes several minutes, about ten for a parish of a few thousand Families; keep its progress page open until it finishes." %}</p>{% endaboutpage %}
+{% aboutpage "setup-source" %}<p>{% translate "Read the parish's Families, Members, Ministries and funds from ParishSoft with the connection you entered. Campaigns offer the Ministries and funds found here. A normal load takes several minutes, about ten for a parish of a few thousand Families; keep its progress page open until it finishes." %}</p>{% endaboutpage %}
 <p class="notice">{% translate "Starting the load fixes the parish time zone for this setup attempt." %}</p>
-{% if draft.source_task_id %}
+{% if draft.source_task_id and draft.status.state == 'loading' or draft.source_loaded %}
 {% if draft.status.state == 'loading' %}
 <p class="notice" role="status">{% translate "The parish data load is running. Keep its progress page open until it finishes." %}</p>
 {% else %}
-<p class="notice" role="status">{% translate "Parish data is loaded. The first campaign can now use its Ministries and funds." %}</p>
+<p class="notice" role="status">{% translate "Parish data is loaded." %}</p>
 {% endif %}
 <p><a href="{% url 'admin:setup_source_progress' draft.source_task_id %}">{% translate "View the load progress" %}</a></p>
 {% include 'stewardship/setup-navigation.html' %}
+{% elif draft.source_task_id %}
+{# A bound load that failed, or succeeded but is no longer valid (#1353). #}
+<form method="post" action="{% url 'admin:setup' %}" class="panel">{% csrf_token %}
+<input type="hidden" name="action" value="load"><input type="hidden" name="attempt" value="{{ draft.status.attempt_id }}"><input type="hidden" name="version" value="{{ draft.status.version }}">
+{% if draft.source_task_state == 'failed' %}
+<p class="notice" role="status">{% translate "The last parish data load did not finish. Check the ParishSoft connection, then load the parish data again." %}</p>
+{% else %}
+<p class="notice" role="status" data-source-stale>{% translate "The parish data needs loading again: the loaded data no longer matches the saved ParishSoft connection." %}</p>
+{% endif %}
+{% translate "Load again" as submit %}{% include 'stewardship/setup-navigation.html' %}
+</form>
 {% elif source_step.state == 'blocked' %}
 <p class="notice" role="status">{{ source_step.status }} <a href="{{ source_step.fix_url }}">{% blocktranslate trimmed with step=source_step.fix_label %}Go to “{{ step }}”{% endblocktranslate %}</a></p>
 {% include 'stewardship/setup-navigation.html' %}

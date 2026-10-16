@@ -201,12 +201,23 @@ def test_the_retired_pages_are_gone(response_service, google):
     browser, _, _, _ = leader(harness, google, roles=("staff",))
     report = reverse("admin:ministry_report")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        for path in ("joining/", "leaving/", "exports/", "joining", "leaving"):
+        # The follow-up queue's own address went with #1133.
+        for path in (
+            "joining/",
+            "leaving/",
+            "exports/",
+            "joining",
+            "leaving",
+            "follow-up/",
+            "follow-up",
+        ):
             address = report + path
             assert browser.get(address).status_code == 404, address
             assert post(browser, address, {"ministry": "9"}).status_code == 404
         response, body = read(browser, report)
-        assert response.status_code == 200 and b"Contact details" not in body
+        # No retired list's form or Contact details control (#1157).
+        assert response.status_code == 200 and b"/joining/" not in body
+        assert b"Contact details of" not in body
 
 
 def test_a_pdf_above_its_limit_is_refused_and_not_offered(
@@ -221,7 +232,7 @@ def test_a_pdf_above_its_limit_is_refused_and_not_offered(
     monkeypatch.setattr(ministry_followup_views, "EXPORT_PDF_LIMIT", 1)
     harness = setup(response_service)
     browser, _, _, _ = leader(harness, google, roles=("staff",))
-    queue = reverse("admin:ministry_followup")
+    queue = reverse("admin:ministry_report")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = search(
             browser, queue, FollowupQuery(state="any").form_values()

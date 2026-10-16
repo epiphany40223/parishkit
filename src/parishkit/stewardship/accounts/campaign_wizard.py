@@ -1,0 +1,581 @@
+"""The Campaign setup stepper over the existing campaign pages (#142 slice 4).
+
+While the current campaign is a draft in Testing mode, the Campaign setup
+pages show a stepper with the setup wizard's look (admin-portal spec,
+"Create the campaign", Guided steps). Each step is the existing settings
+page, so every save stays that page's own review, confirm and apply; the
+stepper only shows where the Administrator is, what is completed, and links
+Back and Next to the neighbouring pages. It grants nothing: each page still
+performs every access, state and prerequisite check of its own.
+
+Completion is read from what was applied, plus one stored fact. Campaign
+settings is completed when the campaign is created. Share options, Pages
+and emails, Dates and mail schedules and Campaign images are completed once
+a change confirmed on that page has been applied since the campaign was
+created, which ``step_keys`` recognizes from each applied request's patch
+(defaults written by Create the campaign never count, because they arrive in
+the creation request), or once the Administrator pressed that step's
+**Continue to <next step>** while its form held no change (#1404): that
+stores a ``CampaignSetupReview`` row (``record_review``), the step "kept as
+is". Preview and test email is completed by an accepted test of the initial
+invitation's current revision. Go-live readiness completes only by going
+live, and the stepper is no longer shown then.
+
+The stepper's summary names the next step that is not done yet and offers
+Leave campaign setup; the action row at the bottom of each step page
+(campaign-step-actions.html) holds Back and the one primary Continue. The
+sub-pages a step opens (an email's editor, a new or edited mail schedule,
+the Campaign calendar, and Campaign settings' content history) draw the
+same stepper with their step current and a Return to <step> link instead
+(``SUBPAGES``).
+"""
+
+from dataclasses import dataclass
+from uuid import uuid4
+
+from django.urls import reverse
+from django.utils.translation import gettext_lazy as _
+
+from .admin_navigation import PAGES as NAMES
+from .campaign_wizard_models import REVIEW_STEPS, CampaignSetupReview
+from .setup_wizard import Step, Wizard
+
+
+@dataclass(frozen=True)
+class Page:
+    """One step: its key and the Admin URL name of the page it opens."""
+
+    key: str
+    route: str
+
+    @property
+    def label(self):
+        """The page's own name, as the menu and its heading use it."""
+        return NAMES[self.route].label
+
+
+# The order a campaign is prepared in. Ministries and funds are part of
+# Campaign settings' one form (#1119), so they are not a step of their own.
+PAGES = (
+    Page("settings", "campaign_settings"),
+    Page("share_options", "share_settings"),
+    Page("content", "content_catalog"),
+    Page("schedules", "schedule_settings"),
+    Page("images", "artwork_settings"),
+    Page("mail_test", "campaign_mail"),
+    Page("go_live", "go_live"),
+)
+# The steps an applied change's patch can complete (see ``step_keys``).
+CHANGE_STEPS = frozenset({"share_options", "content", "schedules", "images"})
+# Pages and emails' change to a schedule only re-points it at the email's
+# new revision; any other schedule change is made on Dates and mail
+# schedules.
+_CONTENT_SCHEDULE_VALUES = frozenset({"template_version", "subject"})
+# Dates and mail schedules' campaign window: a change of only these values is
+# that page's (Campaign settings can make the same change, and it counts too).
+_WINDOW_VALUES = frozenset({"timezone", "start_date", "end_date"})
+
+
+@dataclass(frozen=True)
+class CampaignWizard(Wizard):
+    """The Campaign setup stepper for one page, beyond the setup wizard's.
+
+    ``upcoming`` is where Continue goes: the next step after the current
+    one that is not done yet, or simply the next one when every later step
+    is done. ``sub`` marks a sub-page of the current step. ``no_schedules``
+    marks Dates and mail schedules with no schedule saved, whose Continue
+    says it goes on without one. ``load`` is the campaign's ParishSoft
+    data while it has no Families: "offer" (with ``refresh_key``, the
+    button's request key) or "loading" once a refresh is under way.
+    """
+
+    upcoming: Step | None = None
+    sub: bool = False
+    no_schedules: bool = False
+    load: str | None = None
+    refresh_key: object = None
+
+    @property
+    def reviewable(self):
+        """Whether the current step's Continue records it as kept as is."""
+        return self.current is not None and self.current.key in REVIEW_STEPS
+
+
+def shown(campaign, mode, *, admin, go_live):
+    """Whether the stepper applies to the current campaign at all.
+
+    Only Administrators prepare a campaign, only a Testing draft is being
+    prepared, and once a go-live has started (``go_live``, the chrome's
+    flag) its own steps take over because campaign settings are locked.
+    """
+    return bool(
+        admin
+        and campaign is not None
+        and campaign.state == "draft"
+        and mode == "testing"
+        and not go_live
+    )
+
+
+def step_keys(patch, campaign_id):
+    """The steps one applied change completes, from its stored patch.
+
+    ``patch`` is a request's list of operations. A campaign update of
+    ``share_options`` alone, or of ``artwork`` alone, comes from Share
+    options or Campaign images, whose editors write exactly that value;
+    Campaign settings also writes (default) share options whenever Financial
+    stewardship is turned on or off, alongside the modules, and that must
+    not count. A schedule added, removed or edited (anything but Pages and
+    emails' re-pointing of a schedule at an email's new revision), or a
+    change of only the campaign's dates and time zone, comes from Dates and
+    mail schedules, even when it also adds the email it sends; any other
+    change to content comes from Pages and emails. The change that
+    created the campaign completes none of them: its default text and share
+    options are not the Administrator's choices. The read never fails on an
+    unexpected item shape.
+    """
+    owner = str(campaign_id)
+    keys = set()
+    content = False
+    for item in patch if isinstance(patch, list) else ():
+        if not isinstance(item, dict):
+            continue
+        section = item.get("section")
+        values = item.get("values") if isinstance(item.get("values"), dict) else {}
+        if section == "campaigns" and item.get("id") == owner:
+            if item.get("operation") == "add":
+                return set()
+            if item.get("operation") != "update" or not values:
+                continue
+            if values.keys() == {"share_options"}:
+                keys.add("share_options")
+            elif values.keys() == {"artwork"}:
+                keys.add("images")
+            elif values.keys() <= _WINDOW_VALUES:
+                keys.add("schedules")
+        elif section == "schedules":
+            if item.get("operation") != "update" or not (
+                values.keys() <= _CONTENT_SCHEDULE_VALUES
+            ):
+                keys.add("schedules")
+        elif section == "content":
+            content = True
+    if content and "schedules" not in keys:
+        keys.add("content")
+    return keys
+
+
+def build(
+    financial,
+    current,
+    *,
+    done,
+    mail_test_url,
+    sub=False,
+    no_schedules=False,
+    load=None,
+):
+    """Derive the stepper for the page ``current`` (a step key) as a ``Wizard``.
+
+    A pure function of what the database read found, so the order, the
+    applicable steps and their states are unit-testable without one.
+    ``financial`` decides whether Share options applies; ``done`` holds the
+    completed step keys; ``mail_test_url`` is Preview and test email for the
+    invitation's current revision, or None when there is none to test. Every
+    other step is always a link: Back and Continue never save or discard
+    anything on the page, and each page keeps its own prerequisites.
+    ``sub``, ``no_schedules`` and ``load`` are carried through
+    (``CampaignWizard``).
+    """
+    pages = [page for page in PAGES if page.key != "share_options" or financial]
+    steps = []
+    for number, page in enumerate(pages, start=1):
+        url = (
+            mail_test_url if page.key == "mail_test" else reverse(f"admin:{page.route}")
+        )
+        if page.key in done:
+            state, status = "done", _("Completed")
+        elif url is None:
+            state = "blocked"
+            status = _("Not available yet: %(reason)s") % {
+                "reason": _("the campaign has no invitation email to test.")
+            }
+        else:
+            state, status = "todo", _("Not done yet")
+        steps.append(
+            Step(
+                number=number,
+                key=page.key,
+                label=page.label,
+                href=url,
+                url=url,
+                state=state,
+                status=status,
+                current=page.key == current,
+            )
+        )
+    keys = [step.key for step in steps]
+    index = keys.index(current) if current in keys else None
+    # Back and Next skip a step that cannot open (no invitation to test), so
+    # neither dead-ends on it.
+    before = [step for step in steps[:index] if step.url] if index is not None else []
+    after = (
+        [step for step in steps[index + 1 :] if step.url] if index is not None else []
+    )
+    # Never land on a completed step (#1404): Continue skips to the next
+    # step not done yet, or the next step when every later one is done.
+    upcoming = next((step for step in after if step.state != "done"), None)
+    return CampaignWizard(
+        steps=tuple(steps),
+        previous=before[-1] if before else None,
+        next=after[0] if after else None,
+        completed=sum(step.state == "done" for step in steps),
+        total=len(steps),
+        upcoming=upcoming or (after[0] if after else None),
+        sub=sub,
+        no_schedules=no_schedules,
+        load=load,
+        refresh_key=uuid4() if load == "offer" else None,
+    )
+
+
+def resume(wizard):
+    """The first step not done yet that can open, else the last step.
+
+    Home's "Continue campaign setup" opens it (#1404).
+    """
+    return next(
+        (step for step in wizard.steps if step.state != "done" and step.url),
+        wizard.steps[-1],
+    )
+
+
+def invitation_revision(configuration, campaign_id):
+    """The initial invitation's current revision (its record id), or None.
+
+    Preview and test email for this revision is the stepper's test step, as
+    it is Home's next step (``admin_dashboard``). One small indexed query.
+    """
+    from .content_models import ContentVersion
+
+    return (
+        ContentVersion.objects.filter(
+            configuration_id=configuration.active_configuration_id,
+            campaign_id=campaign_id,
+            kind="email",
+            slot="initial",
+        )
+        .order_by("record_id")
+        .values_list("record_id", flat=True)
+        .first()
+    )
+
+
+def _creation_sequence(campaign_id):
+    """The activation sequence that added the campaign, or 0 when none did.
+
+    Create the campaign's request adds it with an ``add`` operation; a
+    campaign that arrived any other way (a setup before #142) counts every
+    applied change. The ``@>`` containment is served by the request table's
+    ``config_request_patch_lookup`` GIN index (jsonb_path_ops), so it does
+    not scan every patch.
+    """
+    from .runtime_models import ConfigurationActivation
+
+    return (
+        ConfigurationActivation.objects.filter(
+            request__patch__contains=[
+                {"operation": "add", "section": "campaigns", "id": str(campaign_id)}
+            ]
+        )
+        .values_list("sequence", flat=True)
+        .first()
+        or 0
+    )
+
+
+def completed(campaign, revision):
+    """The step keys completed for ``campaign``, read from what was applied.
+
+    ``revision`` is the invitation's current revision (or None). Applied
+    changes since the campaign's creation, and the steps kept as is
+    (``CampaignSetupReview``, the whole step only), complete the page
+    steps; an accepted test of ``revision`` completes Preview and test
+    email. A stored review is never undone by a later change.
+    It reads every patch applied since the creation: only the step pages and
+    an applied step change's status call it, while a Testing draft is being
+    prepared, whose history is a few dozen changes, in a constant number of
+    queries.
+    """
+    from .campaign_mail_models import CampaignMailTest
+    from .runtime_models import ConfigurationActivation
+
+    done = {"settings"}
+    patches = ConfigurationActivation.objects.filter(
+        sequence__gt=_creation_sequence(campaign.pk), request__isnull=False
+    ).values_list("request__patch", flat=True)
+    for patch in patches:
+        done |= step_keys(patch, campaign.pk)
+    done |= set(
+        CampaignSetupReview.objects.filter(campaign_id=campaign.pk, item="")
+        .values_list("step", flat=True)
+        .distinct()
+    )
+    if (
+        revision is not None
+        and CampaignMailTest.objects.filter(
+            campaign_id=campaign.pk, template__record_id=revision, state="accepted"
+        ).exists()
+    ):
+        done.add("mail_test")
+    return done
+
+
+def _financial(campaign):
+    """Whether the campaign has Financial stewardship, which Share options needs."""
+    values = campaign.active_configuration.values or {}
+    return "financial" in values.get("modules", ())
+
+
+def _test_url(revision):
+    """Preview and test email for ``revision``, or None without one."""
+    return reverse("admin:campaign_mail", args=[revision]) if revision else None
+
+
+# Each step page's URL name, to its step key.
+ROUTES = {page.route: page.key for page in PAGES}
+# Each sub-page a step opens, to that step's key (#1404): they draw the
+# stepper with their step current and a Return to <step> link. Campaign
+# images' upload answer is that page itself, drawn again with its error.
+SUBPAGES = {
+    "content_edit": "content",
+    "content_revision": "content",
+    # Content history is opened from Campaign settings, its trail's parent.
+    "content_history": "settings",
+    "content_history_revision": "settings",
+    "schedule_new": "schedules",
+    "schedule_edit": "schedules",
+    "schedule_calendar": "schedules",
+}
+_SAME_PAGE = {"artwork_upload": "images"}
+
+
+def _load_state(campaign):
+    """The campaign's ParishSoft data while it has no Families, or None.
+
+    "loading" while a ParishSoft refresh is under way (requested and not
+    finished), else "offer": the step pages then show Load the campaign's
+    ParishSoft data at the top (#1404). Two small indexed queries, and only
+    the first once the campaign has its Families.
+    """
+    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+    from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
+    from parishkit.stewardship.source.requests import TASK_TYPE
+
+    if FamilyCampaign.objects.filter(campaign_id=campaign.pk).exists():
+        return None
+    if TaskRun.objects.filter(
+        task_type=TASK_TYPE, state__in=NONTERMINAL_STATES
+    ).exists():
+        return "loading"
+    return "offer"
+
+
+def for_request(match, campaign, configuration):
+    """The stepper for the page ``match`` resolved, or None off the steps.
+
+    The caller has already decided the stepper is ``shown``. Only the steps'
+    own pages and their sub-pages (``SUBPAGES``) draw it, and Preview and
+    test email only for the invitation's current revision, the one its step
+    opens. Off those pages nothing is read, so other Admin pages pay nothing
+    for it.
+    """
+    name = getattr(match, "url_name", None)
+    if getattr(match, "namespace", None) != "admin":
+        return None
+    current = ROUTES.get(name) or _SAME_PAGE.get(name) or SUBPAGES.get(name)
+    if current is None:
+        return None
+    financial = _financial(campaign)
+    if current == "share_options" and not financial:
+        return None
+    revision = invitation_revision(configuration, campaign.pk)
+    if current == "mail_test" and str(match.kwargs.get("revision_id")) != str(revision):
+        return None
+    sub = name in SUBPAGES
+    no_schedules = False
+    if current == "schedules" and not sub:
+        from .schedule_reads import campaign_schedules
+
+        no_schedules = not campaign_schedules(configuration, campaign.pk)
+    return build(
+        financial,
+        current,
+        done=completed(campaign, revision),
+        mail_test_url=_test_url(revision),
+        sub=sub,
+        no_schedules=no_schedules,
+        load=_load_state(campaign),
+    )
+
+
+def current_wizard(configuration):
+    """The stepper over the current campaign, opened on no step, or None.
+
+    None unless the stepper is shown (``shown``, read here: an
+    Administrator is assumed, as the caller already checked). Home's
+    Continue campaign setup and the step Continue read it (#1404).
+    """
+    from parishkit.stewardship.campaigns.credential_models import (
+        CampaignCredentialState,
+    )
+
+    campaign = configuration.current_campaign if configuration else None
+    go_live = bool(
+        campaign
+        and CampaignCredentialState.objects.filter(
+            campaign=campaign, go_live_gate=True
+        ).exists()
+    )
+    if not shown(
+        campaign, configuration and configuration.mode, admin=True, go_live=go_live
+    ):
+        return None
+    revision = invitation_revision(configuration, campaign.pk)
+    return build(
+        _financial(campaign),
+        None,
+        done=completed(campaign, revision),
+        mail_test_url=_test_url(revision),
+    )
+
+
+def _system():
+    """The runtime row with its current campaign and that campaign's values."""
+    from .runtime_models import SystemConfiguration
+
+    return SystemConfiguration.objects.select_related(
+        "current_campaign__active_configuration", "active_configuration__parish"
+    ).first()
+
+
+def current():
+    """The stepper over the current campaign, read now, or None (``current_wizard``)."""
+    return current_wizard(_system())
+
+
+def record_review(store, actor_id, step):
+    """Record ``step`` kept as is; return the step Continue opens next.
+
+    The Administrator pressed Continue to <next step> on an unchanged step
+    page (#1404). Under the shared work order it rechecks the Administrator
+    and that the stepper still applies (a Testing draft, no go-live), then
+    stores one ``CampaignSetupReview`` with its
+    ``campaign_setup_step_reviewed`` audit event, which SQL requires
+    (schema/migrations/0105_campaign_setup_review.sql). A step already kept
+    as is records nothing again. Raises PermissionError or ValueError when
+    it may not record; nothing is changed then.
+    """
+    from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
+    from parishkit.stewardship.audit.services import record_action
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+
+    from .policy import Capability, allows, current_principal
+
+    if step not in REVIEW_STEPS:
+        raise ValueError("Unknown Campaign setup step.")
+    with work_transaction():
+        if not allows(current_principal(store, actor_id), Capability.CONFIGURE):
+            raise PermissionError("Campaign setup is unavailable.")
+        configuration = _system()
+        if current_wizard(configuration) is None:
+            raise ValueError("Campaign setup is not in progress.")
+        campaign = configuration.current_campaign
+        if step == "share_options" and not _financial(campaign):
+            raise ValueError("Share options do not apply to this campaign.")
+        kept = CampaignSetupReview.objects.filter(
+            campaign_id=campaign.pk, step=step, item=""
+        )
+        if not kept.exists():
+            review = CampaignSetupReview.objects.create(
+                campaign=campaign, step=step, actor_id=actor_id
+            )
+            record_action(
+                Action.CAMPAIGN_SETUP_STEP_REVIEWED,
+                actor_kind=ActorKind.PORTAL_USER,
+                actor_id=actor_id,
+                subject_id=review.pk,
+                parish_id=configuration.active_configuration.parish.pk,
+                campaign_id=campaign.pk,
+                context={"outcome": Outcome.SUCCEEDED},
+            )
+        revision = invitation_revision(configuration, campaign.pk)
+        return build(
+            _financial(campaign),
+            step,
+            done=completed(campaign, revision),
+            mail_test_url=_test_url(revision),
+        ).upcoming
+
+
+@dataclass(frozen=True)
+class StatusLink:
+    """Change status's way back into the stepper once a step's change applied.
+
+    ``back`` is True for a sub-page's change (Return to <step>), False for
+    the step's own (Continue to the next step).
+    """
+
+    url: str
+    label: object
+    back: bool
+
+
+def continue_for(receipt):
+    """Where Change status leads once a step's change is applied, or None.
+
+    Change status (and an in-place settings page's status, which reads it)
+    offers it once the change is applied, while the stepper is shown
+    (Change status itself already required the Administrator capability).
+    A change made on a sub-page (an email's editor, a mail schedule) leads
+    Return to its step (#1404); any other step change leads on to the next
+    step not done yet. The change that created the campaign is not a step's
+    change (it goes straight on to the next step instead), so it gets none.
+    """
+    from .request_models import ConfigurationChangeRequest
+
+    if receipt.state != "applied":
+        return None
+    configuration = _system()
+    wizard = current_wizard(configuration)
+    if wizard is None:
+        return None
+    campaign = configuration.current_campaign
+    patch = (
+        ConfigurationChangeRequest.objects.filter(pk=receipt.request_id)
+        .values_list("patch", flat=True)
+        .first()
+    )
+    keys = step_keys(patch, campaign.pk)
+    if not keys:
+        return None
+    entries = patch if isinstance(patch, list) else []
+    item_change = any(
+        isinstance(item, dict) and item.get("section") == "schedules"
+        for item in entries
+    )
+    for key in ("content", "schedules"):
+        step = wizard.step(key)
+        if key in keys and (key == "content" or item_change) and step:
+            return StatusLink(step.url, step.label, back=True)
+    order = [page.key for page in PAGES]
+    revision = invitation_revision(configuration, campaign.pk)
+    upcoming = build(
+        _financial(campaign),
+        max(keys, key=order.index),
+        done=completed(campaign, revision),
+        mail_test_url=_test_url(revision),
+    ).upcoming
+    if upcoming is None or not upcoming.url:
+        return None
+    return StatusLink(upcoming.url, upcoming.label, back=False)

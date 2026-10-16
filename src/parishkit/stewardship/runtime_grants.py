@@ -408,8 +408,10 @@ DISPATCH_TOKEN_FUNCTION = (
 # boolean, read by every process that reaches the database
 # (``debug_switch``), without any login reading who set it.
 DEBUG_OFF_FUNCTION = "stewardship_debug_logging_off_v1()"
-# The server operator's offline ``pk-stewardship debug-off-clear``.
-DEBUG_OFF_CLEAR_FUNCTION = "stewardship_debug_off_clear_v1()"
+# The server operator's offline ``pk-stewardship debug-off-clear``: it
+# returns the cleared switch's id (or NULL), which the command's audit
+# event names (0098, #1229, which dropped 0078's count-only v1).
+DEBUG_OFF_CLEAR_FUNCTION = "stewardship_debug_off_clear_v2()"
 # Whether one exact publication audit event is recorded (#528, DAT-09.01):
 # the worker writes plan and outcome events but cannot read audit rows, so
 # its deferred checks ask this, which answers for those two types only.
@@ -468,10 +470,7 @@ CLOSURE_FUNCTIONS = {
         ("stewardship_jobs", "0027_address_retry"),
     ),
     # The debug-off switch (0078, #530) follows 0077.
-    **dict.fromkeys(
-        (DEBUG_OFF_FUNCTION, DEBUG_OFF_CLEAR_FUNCTION),
-        ("stewardship_jobs", "0028_debug_off_switch"),
-    ),
+    DEBUG_OFF_FUNCTION: ("stewardship_jobs", "0028_debug_off_switch"),
     # The bounce report (0081, #806) follows 0080.
     BOUNCE_REPORT_FUNCTION: ("stewardship_jobs", "0030_bounce_report"),
     # The campaign archive's answers read (0084, #1018).
@@ -488,6 +487,11 @@ CLOSURE_FUNCTIONS = {
     PUBLICATION_AUDITED_FUNCTION: (
         "stewardship_responses",
         "0004_publication_plans",
+    ),
+    # The operator's debug-off clear naming its switch (0098, #1229).
+    DEBUG_OFF_CLEAR_FUNCTION: (
+        "stewardship_jobs",
+        "0032_debug_off_clear_subject",
     ),
 }
 
@@ -544,6 +548,12 @@ CLOSURE_TABLES = {
     # An Administrator's review of an Automatic census change (0096, #528),
     # which web records and reads.
     "stewardship_proposal_review": ("stewardship_responses", "0006_proposal_review"),
+    # A Campaign setup step an Administrator kept as is (0105, #1404), which
+    # web records and reads.
+    "stewardship_campaign_setup_review": (
+        "stewardship_accounts",
+        "0025_campaign_setup_review",
+    ),
 }
 
 
@@ -558,8 +568,9 @@ CLOSURE_COLUMNS = {
         "stewardship_reports",
         "0021_digest_comparison",
     ),
-    # #477's 0083 gives web the ready row's funnel_chart column, so the
-    # saved page knows whether the email had the funnel charts.
+    # #477's 0083 gives web the ready row's funnel_chart column, which the
+    # saved page read until #1370 removed the funnel charts; kept until a
+    # forward migration drops the column.
     ("stewardship_daily_digest_ready", "funnel_chart"): (
         "stewardship_reports",
         "0022_digest_funnel_charts",
@@ -1006,6 +1017,9 @@ def runtime_grants(role, *, target=None):
         tables["stewardship_setup_slack_delivery"].add("INSERT")
         tables["stewardship_setup_config_intent"].add("INSERT")
         tables["stewardship_setup_readiness_binding"] = {"SELECT", "INSERT"}
+        # A Campaign setup step kept as is (#1404): insert-only, so a
+        # reviewed step can never be withdrawn or rewritten.
+        tables["stewardship_campaign_setup_review"] = {"SELECT", "INSERT"}
         tables["stewardship_setup_credential_install"] = {"SELECT"}
         from .responses.grants import add_response_web_grants
 

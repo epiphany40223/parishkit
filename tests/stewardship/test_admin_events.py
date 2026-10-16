@@ -104,7 +104,7 @@ def test_events_list_is_its_golden_projection():
             "events": [
                 {
                     "event": Event.SOURCE_INVALID.value,
-                    "name": "ParishSoft data refresh failed",
+                    "name": "ParishSoft refresh failed",
                     "count": 2,
                     "ended_at": None,
                 },

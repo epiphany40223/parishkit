@@ -1,11 +1,25 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
-{% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block title %}{% translate "Share options" %}{% endblock %}
-{% block content %}
+{% block content %}{% comment %}
+Share options (option_editing.option_settings): the current draft's ordered
+share options. Save is unavailable until the rows differ from the saved
+list (data-require-change, #921), with its hint after it. Save posts
+the form without a page load (data-review-open, UX conventions "Review
+dialog", #750): an accepted review opens the shared review dialog below with
+share-options-review.html, a compact review of only what changed (#1356),
+whose Apply posts the signed preview here, follows
+the change and, once it is applied, redraws the form's region from this
+page's address (the applied list and a fresh blank row); the status line
+under the form says what was applied. A Review refused for a row's value
+keeps the dialog shut: ui-v1.js marks each field and shows the summary from
+this page drawn again. Any other refusal (a stale page, an out-of-date
+preview, a draft that can no longer change) shows inside the dialog.
+{% endcomment %}
 <h1>{% translate "Share options" %}</h1>
 <p>{{ campaign.active_configuration.name }}</p>
-{% comment %}Review and apply happen in place, below the form (#750). The form is a region of its own: a Review's answer redraws it with the values sent; Apply's answer leaves it, unless the change has already been applied (data-in-place-always), when it is redrawn at the applied version (#768).{% endcomment %}<div id="settings-editor" data-in-place-region{% if receipt.state == 'applied' %} data-in-place-always{% endif %}><form id="settings-form" method="post" action="#settings-review" data-in-place data-in-place-message="{% translate 'Review ready.' %}" data-require-change="base_digest">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}">
+<div id="settings-editor" data-in-place-region data-refresh-url="{{ refresh_url }}"><form id="settings-form" method="post" action="{{ page_url }}" data-review-open="share-review" data-require-change="base_digest">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}">
 {% include 'stewardship/share-fields.html' %}
-{% translate "Change an option to review it." as option_hint %}{% include 'stewardship/components/review-changes-button.html' with hint=option_hint %}</form></div>
-<div id="settings-review" data-in-place-region data-keep-height>{% include 'stewardship/settings-review.html' %}</div>
+{% translate "Change an option to save it." as option_hint %}{% translate "Save" as save_label %}{% include 'stewardship/components/review-changes-button.html' with hint=option_hint label=save_label %}</form></div>
+{% include 'stewardship/components/review-outcome.html' with outcome_id="share-outcome" %}
+{% translate "Save the share options?" as review_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="share-review" title=review_title apply_url=page_url outcome_id="share-outcome" fallback="settings-form" describedby="share-review-summary" %}
 {% endblock %}

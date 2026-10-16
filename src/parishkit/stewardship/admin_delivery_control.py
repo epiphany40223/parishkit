@@ -141,7 +141,10 @@ def controls_model(campaign, status):
             "count": due["count"],
             "types": _kinds(due["types"], lambda count: {"count": count}),
         },
-        health=_pick(status["health"], ("ready", "checked_at", "expires_at")),
+        health=_pick(
+            status["health"],
+            ("ready", "required", "trouble", "checked_at", "expires_at"),
+        ),
         pause_available=available and not paused,
         resume_available=available and status["resume_available"],
         resolve_available=available and status["resolve_available"],

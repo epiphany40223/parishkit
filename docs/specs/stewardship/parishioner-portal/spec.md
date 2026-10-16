@@ -125,7 +125,7 @@ error line of its own, such as an unresolved changed-record choice, gets a note
 beside the navigation buttons ("Please choose a value for each changed
 record."), which also describes the focused control for assistive technology.
 Only a choice group (share methods) is outlined in red, never a whole section.
-A "Step N of M" line names the current step, and a segmented step bar like the
+A "Step N of M" line names the current step, and a segmented [step bar](../ui-conventions/spec.md#step-bars) like the
 setup wizard's has one button per step: each is named by its step, shows a
 "Step N of M" tooltip on hover or keyboard focus, and jumps to that page on
 click or tap. Every Family, first-time or returning, must view every page in

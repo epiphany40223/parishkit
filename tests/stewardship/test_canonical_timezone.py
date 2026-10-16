@@ -121,3 +121,42 @@ def test_setup_stores_a_new_zone_canonically(disabled, expected):
     form.fields["timezone"].disabled = disabled
     form.is_valid()
     assert form.cleaned_data["timezone"] == expected
+
+
+def test_a_first_setup_zone_starts_on_the_browser_zone_or_a_blank_choice():
+    """With no zone saved the setup Parish step's menu is marked for the
+    browser's zone and starts on a blank required entry, never the first
+    catalog zone (Africa/Abidjan was stored that way on pk-local, #1330)."""
+    form = SetupParishForm()
+    menu = str(form["timezone"])
+    assert "data-browser-default" in menu
+    assert options(form)[0] == ("", "Choose a time zone")
+    assert 'value="" selected' in menu or "selected" not in menu
+    assert 'value="Africa/Abidjan" selected' not in menu
+    refused = SetupParishForm(data={"timezone": ""})
+    assert not refused.is_valid() and "timezone" in refused.errors
+    # A form drawn again keeps the posted zone; the browser does not reset it.
+    assert "data-browser-default" not in str(refused["timezone"])
+
+
+def test_a_saved_setup_zone_is_kept():
+    """A zone already saved in the setup draft is shown as saved."""
+    form = SetupParishForm(initial={"timezone": "America/Chicago"})
+    menu = str(form["timezone"])
+    assert "data-browser-default" not in menu
+    assert 'value="America/Chicago" selected' in menu
+    assert options(form)[0][0] != ""
+
+
+def test_the_setup_zone_help_names_the_browser_only_for_a_new_zone():
+    """The help says the browser's zone is selected only when it is: a
+    saved zone (and so a zone the source load has fixed) says nothing of
+    the browser."""
+
+    def help_text(form):
+        field = form.fields["timezone"]
+        return str(getattr(field, "tip", field.help_text))
+
+    assert "browser's time zone is selected" in help_text(SetupParishForm())
+    saved = SetupParishForm(initial={"timezone": "America/Chicago"})
+    assert "browser" not in help_text(saved)

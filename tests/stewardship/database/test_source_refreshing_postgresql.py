@@ -137,16 +137,31 @@ def spy_staging(monkeypatch):
     return batches, reports
 
 
+def staging_clock(monkeypatch, step):
+    """Replace the staging progress clock with one that moves ``step`` seconds
+    each time it is read, so the time floor is deterministic (#895)."""
+    now = [0.0]
+
+    def monotonic():
+        now[0] += step
+        return now[0]
+
+    monkeypatch.setattr(refreshing, "monotonic", monotonic)
+
+
 def test_staging_writes_small_batches(tmp_path, monkeypatch):
     """Each staging step writes at most STAGING_BATCH_ROWS (#394).
 
     Steps no longer take the work-order lock (#147, see
     test_source_step_lock_postgresql); small batches keep them short.
 
-    Progress is still reported about every PROGRESS_ROWS rows, not per batch,
-    and every row is staged exactly once.
+    When staging is slow enough that PROGRESS_SECONDS always passes, progress
+    is reported every PROGRESS_ROWS rows, not per batch, and every row is
+    staged exactly once.
     """
     assert refreshing.STAGING_BATCH_ROWS <= 125 and refreshing.PROGRESS_ROWS == 500
+    assert refreshing.PROGRESS_SECONDS == 2.0
+    staging_clock(monkeypatch, refreshing.PROGRESS_SECONDS)
     credential, execution, lease, *_ = setup(tmp_path)
     fake_provider(monkeypatch, pages())
     with_extra_funds(monkeypatch, 1100)
@@ -161,6 +176,30 @@ def test_staging_writes_small_batches(tmp_path, monkeypatch):
     assert staging[0] == 0 and len(staging) == 1 + total // 500
     assert all(b - a >= 500 for a, b in zip(staging, staging[1:], strict=False))
     assert reports[-1] == (total, "validating")
+
+
+def test_fast_staging_reports_progress_only_at_its_ends(tmp_path, monkeypatch):
+    """Staging that outruns PROGRESS_SECONDS makes no report in between (#895).
+
+    Each report is a task transition under the work-order lock, so a fast
+    full refresh used to queue mail and Family forms about 20 times while it
+    staged. With the clock frozen, only the first staging report and the
+    validating report (with the final count) remain, and every row is still
+    staged exactly once.
+    """
+    staging_clock(monkeypatch, 0.0)
+    credential, execution, lease, *_ = setup(tmp_path)
+    fake_provider(monkeypatch, pages())
+    with_extra_funds(monkeypatch, 1100)
+    batches, reports = spy_staging(monkeypatch)
+    result = run(credential, execution, lease)
+    total = sum(result.counts.values())
+    assert result.state == "ready" and sum(batches) == total
+    assert len(batches) > total // refreshing.STAGING_BATCH_ROWS
+    assert [current for current, phase in reports if phase == "staging"] == [0]
+    assert reports[-1] == (total, "validating")
+    task = TaskRun.objects.get(pk=execution.claim.run_id)
+    assert task.progress_current == task.progress_total == total
 
 
 def test_interrupted_staging_keeps_only_whole_committed_batches(tmp_path, monkeypatch):

@@ -1,0 +1,31 @@
+{% load i18n stewardship %}{% comment %}
+The Campaign setup stepper (#142, campaign_wizard.py): the setup wizard's
+compact stepper (setup-wizard.html) over the existing campaign pages, drawn
+by base.html above the page while the current campaign is a Testing draft.
+Its step bar and list are the setup wizard's (stepper-steps.html, #1402).
+Its summary names the next step that is not done yet, as text, and offers
+Leave campaign setup (Home); the moving controls, Back and the one primary
+Continue, are the action row at the bottom of the page
+(campaign-step-actions.html, #1404), so leaving a page never saves or
+discards anything. It is an in-place region, so the redraw after a review
+dialog's Apply (from the page's data-refresh-url) or an in-place refresh
+shows the new completion marks without a reload; a reload shows the same.
+After it, outside the region: the reserved status line a step reached from
+a review dialog's Apply names what was applied in (Create the campaign's,
+#1404), and, until the campaign has its Families, the offer to load its
+ParishSoft data, or the line saying it is loading.
+{% endcomment %}{% with wizard=admin_chrome.campaign_wizard %}{% if wizard %}
+<nav id="campaign-stepper" class="setup-stepper" data-in-place-region aria-labelledby="campaign-stepper-heading">
+<h2 id="campaign-stepper-heading" class="setup-sr-only">{% translate "Campaign setup progress" %}</h2>
+<div class="setup-stepper-summary">
+<p class="setup-stepper-current">{% blocktranslate trimmed with number=wizard.current.number total=wizard.total %}Step {{ number }} of {{ total }}:{% endblocktranslate %} <strong>{{ wizard.current.label }}</strong></p>
+<p class="setup-stepper-count">{% blocktranslate trimmed with done=wizard.completed total=wizard.total %}{{ done }} of {{ total }} steps completed{% endblocktranslate %}</p>
+<p class="setup-stepper-moves">{% if wizard.upcoming %}<span data-campaign-step-next>{% blocktranslate trimmed with label=wizard.upcoming.label %}Next: {{ label }}{% endblocktranslate %}</span>{% endif %}<a href="{% url 'admin:index' %}" data-campaign-leave>{% translate "Leave campaign setup" %}</a></p>
+</div>
+{% translate "Campaign setup steps" as track_label %}{% translate "All campaign setup steps" as list_summary %}{% include 'stewardship/stepper-steps.html' with track_label=track_label list_id='campaign-stepper-list' list_summary=list_summary %}
+</nav>
+{% include 'stewardship/components/review-outcome.html' with outcome_id="campaign-step-outcome" %}
+{% if wizard.load == 'offer' %}<div class="notice next-step" data-campaign-load><p><strong>{% translate "Load the campaign's ParishSoft data." %}</strong> {% translate "A full refresh adds the campaign's Families, Family codes and giving. It usually takes a few minutes. You can go on with the next steps while it runs; Go-live readiness waits for it." %}</p>
+<form method="post" action="{% url 'admin:source_refresh' %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ wizard.refresh_key }}"><input type="hidden" name="return_step" value="{{ wizard.current.key }}">{% button type="submit" data-submit-waits %}{% translate "Load the campaign's ParishSoft data" %}{% endbutton %}</form></div>
+{% elif wizard.load == 'loading' %}<p class="notice" role="status" data-campaign-load>{% translate "ParishSoft data is loading; Go-live readiness waits for it." %}</p>{% endif %}
+{% endif %}{% endwith %}

@@ -533,6 +533,12 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             "stewardship_proposal_review_guard",
             "stewardship_proposal_review_guard_v1",
         ),
+        # A Campaign setup step kept as is (#1404): INSERT only, under its
+        # own name.
+        "stewardship_campaign_setup_review": (
+            "stewardship_campaign_setup_review_guard",
+            "stewardship_campaign_setup_review_guard_v1",
+        ),
         # A roster tick's history (#528): INSERT only, under its own name.
         "stewardship_ministry_roster_entry": (
             "stewardship_ministry_roster_entry_guard",
@@ -862,6 +868,7 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                 "stewardship_weekly_manual_request",
                 "stewardship_proposal_resolution",
                 "stewardship_proposal_review",
+                "stewardship_campaign_setup_review",
                 "stewardship_ministry_roster_entry",
                 "stewardship_publication_plan",
                 "stewardship_publication_entity",

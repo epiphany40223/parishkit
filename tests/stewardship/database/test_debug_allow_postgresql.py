@@ -2,7 +2,10 @@
 debug-allow`` (ADM-13 PR 6c, #1207).
 
 In Testing, while the debug-off switch is set, an Administrator previews and
-confirms clearing it, answered with the page in place; a stale sign-in gets
+confirms clearing it in the shared review dialog (#1356): the preview is a
+one-sentence confirmation, Apply's answer draws Turn off debug logging's
+region again, and a refusal is a fragment the dialog shows as drawn; a
+stale sign-in gets
 the "Confirm with Google" step-up; a repeated confirmation returns the
 switch; the audit event names the switch. In Production the page greys the
 button, the server refuses the step, and the switch's guard (frozen
@@ -87,20 +90,31 @@ def count(event):
 
 
 def test_preview_then_confirm_clears_the_switch_in_testing(auth_service, google):
-    """Answered in place; the clear names the Administrator; a repeat is safe."""
+    """Answered in the dialog; the clear names the Administrator; a repeat
+    is safe."""
     switch = set_switch()
     browser, _ = signed_in()
     body = page(browser)
     # The region is drawn while the switch is set, with the button offered.
     assert 'id="debug-off"' in body and 'value="debug_allow_preview"' in body
+    views = count("system_health_viewed")
     preview = post(browser, action="debug_allow_preview")
     assert preview.status_code == 200
-    assert "Confirm: allow debug logging again" in preview.content.decode()
+    text = preview.content.decode()
+    # A confirmation, not the page: one sentence, the dialog's description.
+    assert "<h1" not in text and 'id="debug-off"' not in text
+    assert '<p id="debug-allow-review-summary">This clears the debug-off' in text
+    assert "personal information" in text and "set at" not in text
     key = key_of(preview)
     assert key == str(switch.pk)
+    assert f'name="key" value="{key}" data-review-preview' in text
     confirmed = post(browser, action="debug_allow_confirm", key=key)
     assert confirmed.status_code == 200
-    assert "Debug-off switch cleared at" in confirmed.content.decode()
+    # Apply's answer is the region drawn again; the page is not read again.
+    done = confirmed.content.decode()
+    assert "<h1" not in done and 'id="debug-off"' in done
+    assert "data-live-status" not in done
+    assert count("system_health_viewed") == views
     switch.refresh_from_db()
     session = PortalSession.objects.order_by("-authenticated_at").first()
     assert switch.cleared_at is not None and switch.cleared_by == "administrator"
@@ -110,11 +124,13 @@ def test_preview_then_confirm_clears_the_switch_in_testing(auth_service, google)
     # The same confirmation again returns the switch and records nothing new.
     assert post(browser, action="debug_allow_confirm", key=key).status_code == 200
     assert count("debug_logging_allowed") == 1
-    # No switch is set now: the preview is refused and the button greyed.
+    # No switch is set now: the preview is refused and no button is drawn.
     refused = post(browser, action="debug_allow_preview")
     assert refused.status_code == 409
-    assert 'data-debug-allow-refused="busy"' in refused.content.decode()
-    assert "The debug-off switch is not set." in page(browser)
+    assert '<div data-review-refusal><p data-debug-allow-refused="busy">' in (
+        refused.content.decode()
+    )
+    assert ">Allow debug logging again<" not in page(browser)
 
 
 def test_a_switch_cleared_by_someone_else_is_stale(auth_service, google):
@@ -123,7 +139,7 @@ def test_a_switch_cleared_by_someone_else_is_stale(auth_service, google):
     browser, _ = signed_in()
     key = key_of(post(browser, action="debug_allow_preview"))
     with connection.cursor() as cursor:
-        cursor.execute("SELECT public.stewardship_debug_off_clear_v1()")
+        cursor.execute("SELECT public.stewardship_debug_off_clear_v2()")
     answer = post(browser, action="debug_allow_confirm", key=key)
     assert answer.status_code == 409
     assert 'data-debug-allow-refused="busy"' in answer.content.decode()
@@ -132,10 +148,12 @@ def test_a_switch_cleared_by_someone_else_is_stale(auth_service, google):
     assert count("debug_logging_allowed") == 0
     unknown = post(browser, action="debug_allow_confirm", key=str(uuid4()))
     assert unknown.status_code == 400
+    # There is no Cancel step: the dialog's Cancel sends nothing (#1356).
+    assert post(browser, action="debug_allow_cancel").status_code == 400
 
 
 def test_a_stale_sign_in_gets_the_google_step_up(auth_service, google, monkeypatch):
-    """Answered in the region: the step-up form, returning to this page."""
+    """Answered in the dialog: the step-up form, returning to this page."""
     switch = set_switch()
     browser, _ = signed_in()
     monkeypatch.setattr(sessions, "FRESH_SECONDS", -1)
@@ -146,6 +164,7 @@ def test_a_stale_sign_in_gets_the_google_step_up(auth_service, google, monkeypat
         response = post(browser, **values)
         assert response.status_code == 403
         body = response.content.decode()
+        assert "<div data-review-refusal>" in body
         assert 'data-debug-allow-refused="reauthenticate"' in body
         assert 'name="next" value="/admin/system/health/"' in body
     switch.refresh_from_db()
@@ -177,14 +196,15 @@ def test_only_an_administrator_may_allow_debug_logging(auth_service, google):
     assert switch.cleared_at is None
 
 
-def test_production_greys_the_button_and_refuses_the_step(auth_service, google):
+def test_production_draws_no_button_and_refuses_the_step(auth_service, google):
     """In Production only the server operator clears the switch."""
     switch = set_switch()
     browser, _ = signed_in()
     force_mode("production")
     body = page(browser)
     assert 'value="debug_allow_preview"' not in body
-    assert 'disabled aria-describedby="debug-allow-reason"' in body
+    assert ">Allow debug logging again<" not in body
+    assert 'data-debug-status="set"' in body
     for values in (
         {"action": "debug_allow_preview"},
         {"action": "debug_allow_confirm", "key": str(switch.pk)},

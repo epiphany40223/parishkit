@@ -462,15 +462,16 @@ def test_import_selected_reviews_and_applies_one_change(deployment):
     assert response.status_code == 200, response.content
     text = response.content.decode()
     # The review dialog's fragment (#750), never a page of its own.
-    assert "data-review-answer" in text and "2 new users" in text
+    assert "data-review-answer" in text
     assert "<h1" not in text and "<html" not in text and "<form" not in text
     assert 'data-review-done="Leaders imported."' in text
-    assert "Example 1, Leader" in text and "Example 0, Leader" in text
-    # Each new user's Member DUID in its own column right after the Member
-    # (Administrator, 2026-10-12, #932).
-    assert re.search(r"Member</th>\s*<th[^>]*numeric[^>]*>Member DUID</th>", text)
-    assert '<td class="numeric">900</td>' in text
-    assert '<td class="numeric">901</td>' in text
+    # Every ticked leader is imported, nobody skipped: a confirmation
+    # (#1356) that lists none of the rows the reader just ticked.
+    assert 'data-review-title="Import the selected leaders?"' in text
+    assert (
+        '<p id="leader-import-summary">This adds the 2 chosen leaders as users' in text
+    )
+    assert "Example 1, Leader" not in text and "<table" not in text
     assert "Skipped" not in text
     # Nothing changed by reviewing.
     assert "ann@example.org" not in users(store)
@@ -528,6 +529,8 @@ def test_the_review_skips_users_and_leaders_no_longer_listed(deployment):
     assert response.status_code == 200, text
     assert "1 new user" in text and "Example 4, Leader" in text
     assert "Already a user" in text and "No longer a ParishSoft" in text
+    # Skipped rows are news: the full review, not a confirmation (#1356).
+    assert "data-review-title" not in text
     with web():
         applied = post(
             browser, USERS, {"action": "confirm", "preview": token(response)}
@@ -543,7 +546,14 @@ def test_import_all_and_nothing_left(deployment):
     store, browser = deployment
     with web():
         response = post(browser, IMPORT, {"scope": "all", "email": ["ann@example.org"]})
-    assert f"{len(LISTED)} new users" in response.content.decode()
+    text = response.content.decode()
+    assert f"{len(LISTED)} new users" in text
+    # Import all takes rows the page may not show: the full review (#1356),
+    # each new user's Member DUID in its own column right after the Member
+    # (Administrator, 2026-10-12, #932).
+    assert "data-review-title" not in text
+    assert re.search(r"Member</th>\s*<th[^>]*numeric[^>]*>Member DUID</th>", text)
+    assert '<td class="numeric">900</td>' in text
     with web():
         applied = post(
             browser, USERS, {"action": "confirm", "preview": token(response)}

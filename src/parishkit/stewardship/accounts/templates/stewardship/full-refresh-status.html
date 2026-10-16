@@ -18,17 +18,28 @@
   refresh past the lateness margin is named as late (with the run button
   beside it when none is running), or as held while a bulk send holds it.
   Every time is shown in the browser's time zone (data-local-instant).
+  ``problems_listed`` (System health's ParishSoft refresh tile, #1214)
+  leaves out the late notice, because the tile's problems state it just
+  above; ``failed_listed`` (set there only while ``source_failed`` is
+  listed, not while a failing connection is listed instead) likewise
+  shortens a failure to when changes appear and its "See what went wrong"
+  link, as a plain line. Home sets both the same way while its System
+  health lines list ``source_late`` and ``source_failed``, and also
+  ``keep_action``, so the one-click Run a full refresh now that the
+  notices carried stays (once) on Home (#1214).
 {% endcomment %}<p>{% if status.data_as_of %}{% translate "ParishSoft data as of" %} <time datetime="{{ status.data_as_of|instant }}" data-local-instant>{{ status.data_as_of|instant }}</time>{% if status.shows_full_separately %}, {% translate "last full refresh" %} <time datetime="{{ status.full_started_at|instant }}" data-local-instant>{{ status.full_started_at|instant }}</time>{% endif %}.{% else %}{% translate "ParishSoft data: not yet loaded." %}{% endif %}</p>
 {% if status.connection %}<p>{% translate "Connection:" %}
   {% if status.connection.state == "failing" %}{% translate "failing since" %} <time datetime="{{ status.connection.at|instant }}" data-local-instant>{{ status.connection.at|instant }}</time>.{% elif status.connection.state == "not_checked" %}{% translate "not checked since" %} <time datetime="{{ status.connection.at|instant }}" data-local-instant>{{ status.connection.at|instant }}</time>.{% elif status.connection.state == "working" %}{% translate "working" %} ({% translate "last answered" %} <time datetime="{{ status.connection.at|instant }}" data-local-instant>{{ status.connection.at|instant }}</time>).{% else %}{% translate "not checked yet." %}{% endif %}
 </p>{% endif %}
 {% if status.out_of_date and status.catching_up %}<p class="notice" role="status">{% translate "The full refresh due at" %} <time datetime="{{ status.overdue_at|instant }}" data-local-instant>{{ status.overdue_at|instant }}</time> {% translate "is catching up after a Family send." %}</p>
 {% elif status.out_of_date and status.held_for_send %}<p class="notice" role="status">{% translate "The full refresh due at" %} <time datetime="{{ status.overdue_at|instant }}" data-local-instant>{{ status.overdue_at|instant }}</time> {% translate "is held while Family emails are being sent. It runs when the send ends, and by" %} <time datetime="{{ status.resume_at|instant }}" data-local-instant>{{ status.resume_at|instant }}</time> {% translate "at the latest." %}</p>
-{% elif status.out_of_date %}<div class="notice notice-error" role="status"><p>{% translate "The full refresh due at" %} <time datetime="{{ status.overdue_at|instant }}" data-local-instant>{{ status.overdue_at|instant }}</time> {% blocktranslate count minutes=status.late_minutes trimmed %}is {{ minutes }} minute late.{% plural %}is {{ minutes }} minutes late.{% endblocktranslate %}</p>{% if status.offers_late_run %}{% include "stewardship/full-refresh-action.html" %}{% endif %}</div>
+{% elif status.out_of_date and not problems_listed %}<div class="notice notice-error" role="status"><p>{% translate "The full refresh due at" %} <time datetime="{{ status.overdue_at|instant }}" data-local-instant>{{ status.overdue_at|instant }}</time> {% blocktranslate count minutes=status.late_minutes trimmed %}is {{ minutes }} minute late.{% plural %}is {{ minutes }} minutes late.{% endblocktranslate %}</p>{% if status.offers_late_run %}{% include "stewardship/full-refresh-action.html" %}{% endif %}</div>
+{% elif status.out_of_date and keep_action and status.offers_late_run %}{% include "stewardship/full-refresh-action.html" %}
 {% endif %}
 <p>{% if status.running %}{% translate "A full refresh is running now." %} {% endif %}{% if status.next_full_at %}{% translate "Next scheduled full refresh:" %} <time datetime="{{ status.next_full_at|instant }}" data-local-instant>{{ status.next_full_at|instant }}</time>.{% endif %}
 </p>
-{% if status.failed_at %}<div class="notice notice-error" role="status">
+{% if status.failed_at and failed_listed %}<p>{% translate "Changes made in ParishSoft since the last successful full refresh appear after the next one" %}{% if status.next_full_at %} ({% translate "scheduled for" %} <time datetime="{{ status.next_full_at|instant }}" data-local-instant>{{ status.next_full_at|instant }}</time>){% endif %}.{% if status.failed_task_id and can_view_task %} <a href="{% url 'admin:background_task_page' status.failed_task_id %}">{% translate "See what went wrong" %}</a>{% endif %}</p>{% if keep_action and not status.offers_late_run %}{% include "stewardship/full-refresh-action.html" %}{% endif %}
+{% elif status.failed_at %}<div class="notice notice-error" role="status">
   <p>{% if status.nightly_only %}{% translate "The nightly full ParishSoft reload at" %}{% else %}{% translate "The most recent full ParishSoft reload, at" %}{% endif %} <time datetime="{{ status.failed_at|instant }}" data-local-instant>{{ status.failed_at|instant }}</time>, {% translate "did not finish." %}{% if status.failed_task_id and can_view_task %} <a href="{% url 'admin:background_task_page' status.failed_task_id %}">{% translate "See what went wrong" %}</a>{% endif %}</p>
   <p>{% translate "Changes made in ParishSoft since the last successful full refresh appear after the next one" %}{% if status.next_full_at %} ({% translate "scheduled for" %} <time datetime="{{ status.next_full_at|instant }}" data-local-instant>{{ status.next_full_at|instant }}</time>){% endif %}.</p>
   {% if not status.offers_late_run %}{% include "stewardship/full-refresh-action.html" %}{% endif %}

@@ -51,7 +51,7 @@ from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.snapshot_names import snapshot_family_facts
 from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
-from parishkit.stewardship.source.workgroups import current_evidence
+from parishkit.stewardship.source.workgroups import applied_evidence
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.report_errors import report_unavailable
@@ -124,16 +124,24 @@ class Identity:
         return REACH["deliverable"] if self.email_deliverable else _("No")
 
 
-def open_form(identity, *, testing_codes):
+def open_form(identity, *, testing_codes, current=True, eligible=True):
     """Whether Open form is offered, and if not, why: ``(available, reason)``.
 
     The form is opened with the Family's code; in Testing mode the Family
     sign-in accepts only rehearsal codes, so a live code would be refused.
+    The hand-off (``assisted_entry.open_form``) also refuses a campaign that
+    is not the current one (``current``) and a Family that may not use the
+    Family form (``eligible``, its ``portal_eligible``), so the page shows
+    those refusals too rather than offering a button that fails (#1331).
     """
     if identity.code is None:
         return False, "no_code"
     if testing_codes:
         return False, "testing"
+    if not current:
+        return False, "not_current"
+    if not eligible:
+        return False, "not_eligible"
     return True, ""
 
 
@@ -145,7 +153,9 @@ def page_context(campaign, family_id, identity, mode, timeline, as_of, **options
     view: the timeline and the mode switch), ``show_codes`` (the role may see
     Family codes; without it the code and Open form are left out),
     ``testing_codes`` and ``family_test_url`` (the active parishioner family directory's
-    Testing-mode link, given only to roles that may open that page), and
+    Testing-mode link, given only to roles that may open that page),
+    ``current`` and ``eligible`` (whether the campaign is the current one
+    and the Family may use the Family form, for Open form), and
     ``values``, the timeline table's validated ``sort`` and ``size``, and
     ``export``, the export form's values (``export_context``), shown only on
     the full view of a timeline (with no Testing rehearsal there is none).
@@ -159,7 +169,12 @@ def page_context(campaign, family_id, identity, mode, timeline, as_of, **options
     # view with no rehearsal), so switching back to Production keeps it.
     sort = table.sort if table is not None else values.get("sort")
     testing_codes = options.get("testing_codes", False)
-    available, reason = open_form(identity, testing_codes=testing_codes)
+    available, reason = open_form(
+        identity,
+        testing_codes=testing_codes,
+        current=options.get("current", True),
+        eligible=options.get("eligible", True),
+    )
     return {
         "campaign": campaign,
         "identity": identity,
@@ -258,13 +273,14 @@ def read_identity(family, *, codes, workgroup=None):
     so a rotation cannot change keys between the read and the decryption;
     the caller holds the read guard's transaction. ``workgroup`` is the
     campaign's configuration values, to tell whether its Reminder WorkGroup
-    holds this Family now.
+    holds this Family now. While a rename waits for a refresh, that is the
+    previous WorkGroup, whose name is the one shown (#1305).
     """
     workgroup_name = None
     if workgroup is not None:
-        name, evidence = current_evidence(workgroup)
+        evidence = applied_evidence(workgroup)
         if evidence is not None and family.family_duid in evidence["family_duids"]:
-            workgroup_name = name
+            workgroup_name = evidence["name"]
     snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
     # A blank surname is a data gap, worded as the name (#1216).
     facts = snapshot_family_facts(
@@ -377,6 +393,8 @@ def family_timeline(request, campaign_id, family_id):
                 full=full,
                 show_codes=codes,
                 testing_codes=testing_codes,
+                current=system.current_campaign_id == campaign_id,
+                eligible=family.portal_eligible,
                 family_test_url=test_url,
                 values=values,
                 export=export_context(campaign_id, family.pk) if full else None,

@@ -64,14 +64,17 @@ def test_stale_sign_in_offers_the_step_up_instead_of_start(
     """Start is unavailable until the sign-in is fresh (#547).
 
     The page offers "Confirm with Google", returning to readiness, in place
-    of the acknowledgement and Start; LOCAL names its own sign-in, not Google.
+    of the acknowledgement; Start stays in view, unavailable, named by the
+    step-up (#1331). LOCAL names its own sign-in, not Google.
     """
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/go-live-stale")
     main = page.locator("main")
     assert "starting cleanup needs a Google sign-in" in (main.inner_text())
     visible(page.get_by_role("button", name="Confirm with Google"))
-    assert page.get_by_role("button", name="Start Testing cleanup").count() == 0
+    start = page.get_by_role("button", name="Start Testing cleanup")
+    assert start.is_disabled()
+    assert start.get_attribute("aria-describedby") == "cleanup-fresh-reason"
     assert page.locator("input[data-acknowledgment]").count() == 0
     step_up = page.locator("[data-cleanup-step-up] form")
     assert step_up.get_attribute("action") == "/admin/login"

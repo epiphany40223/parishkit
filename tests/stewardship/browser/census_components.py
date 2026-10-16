@@ -8,7 +8,7 @@ navigator's POST forms carry exactly what the production page would.
 
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -18,6 +18,7 @@ from parishkit.stewardship.reports.census_change_views import (
     ROUTE_LABELS,
     SORTING,
     STATUS_LABELS,
+    bulk_actions,
     row_controls,
 )
 from parishkit.stewardship.reports.census_changes import CensusQuery, select, shape
@@ -36,6 +37,10 @@ RESOLVED = (
 # Administrator's Approve of that row with.
 AUTOMATIC = "/census-changes-automatic"
 APPROVED = "Mobile phone for Member DUID 100 in Family DUID 1000 approved."
+# The page whose first three rows are Automatic and offer bulk review, and
+# the notice the view answers an Administrator's bulk Approve of two with.
+BULK = "/census-changes-bulk"
+BULK_APPROVED = "2 changes approved."
 STALE = (
     "Mobile phone for Member DUID 100 in Family DUID 1000 was updated by "
     "someone else, so nothing was recorded. The list shows its current status."
@@ -46,8 +51,9 @@ def components(context, admin):
     """The page at each table choice the test steps through."""
     when = datetime(2054, 10, 5, 12, tzinfo=UTC)
 
-    def shaped(index, automatic):
-        """One shaped row; the first is Automatic when ``automatic`` says."""
+    def shaped(index, automatic, approved=0):
+        """One shaped row; the first ``automatic`` rows are Automatic, and the
+        first ``approved`` of them approved (one version on)."""
         return shape(
             {
                 "id": str(index),
@@ -61,27 +67,29 @@ def components(context, admin):
                 "current_value": "555-0100",
                 "admin_value_set": False,
                 "admin_value": None,
-                "handling": "api" if automatic and index == 0 else "manual",
-                "decision": "unreviewed",
+                "handling": "api" if index < automatic else "manual",
+                "decision": "approved" if index < approved else "unreviewed",
                 "execution": "pending",
                 # Later Families answered later, so newest first reverses.
                 "submitted_at": when + timedelta(minutes=index),
                 "family_duid": 1000 + index,
                 "family_name": f"Family {index:02d}",
                 "member_name": f"Member {index:02d}",
-                "version": 1,
+                "version": 2 if index < approved else 1,
             }
         )
 
     query = CensusQuery()
 
-    def page(paging, notice=None, *, automatic=False):
+    def page(paging, notice=None, *, automatic=False, bulk=False, approved=0):
         """Render the page with the table paged and sorted as ``paging`` says,
         and ``notice`` (a resolution's answer) above it; with ``automatic``,
         its first row is an Automatic change an Administrator reviews, and
-        its forms post to ``AUTOMATIC``."""
-        path = AUTOMATIC if automatic else PATH
-        rows = [shaped(index, automatic) for index in range(ROWS)]
+        its forms post to ``AUTOMATIC``; with ``bulk``, its first three rows
+        are, it offers bulk review, and its forms post to ``BULK``."""
+        path = BULK if bulk else AUTOMATIC if automatic else PATH
+        count = 3 if bulk else int(automatic)
+        rows = [shaped(index, count, approved) for index in range(ROWS)]
         result = select(rows, query, administrator=True)
         table = paginate(
             result["rows"],
@@ -109,6 +117,10 @@ def components(context, admin):
                     "notice": notice,
                     "action": path,
                     "mutable": True,
+                    "bulk": bulk,
+                    "bulk_actions": bulk_actions(),
+                    # A fresh key per drawn page, as the view draws one.
+                    "bulk_key": uuid4(),
                 },
             ),
         )
@@ -128,6 +140,11 @@ def components(context, admin):
         AUTOMATIC: page({"size": "25"}, automatic=True),
         "/census-changes-approved": page(
             {"size": "25"}, notice=APPROVED, automatic=True
+        ),
+        # Three Automatic rows with bulk review; and the answer to Approve.
+        BULK: page({"size": "25"}, bulk=True),
+        "/census-changes-bulk-approved": page(
+            {"size": "25"}, notice=BULK_APPROVED, bulk=True, approved=2
         ),
         # A row someone else changed first: the page says so, nothing saved.
         "/census-changes-stale": page(

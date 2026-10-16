@@ -32,6 +32,13 @@ class DraftView:
     absolute_at: datetime
     watchdog_at: datetime | None
     source_task_id: UUID | None = None
+    # The bound load's Task state (#1353): a failed load leaves setup
+    # collecting, so only "succeeded" means the parish data is loaded.
+    source_task_state: str | None = None
+    # Whether that load's staged data is still valid (staged_load): a load
+    # that succeeded can go stale when its credential changes, and then
+    # needs loading again (#1353).
+    source_loaded: bool = False
     # Wizard pages the admin has explicitly reviewed (see mark_reviewed).
     reviewed: dict = field(default_factory=dict)
 
@@ -46,9 +53,9 @@ REVIEWED = "setup_reviewed"
 def mark_reviewed(request, attempt_id, page, value):
     """Remember that this attempt's ``page`` was reviewed as ``value``.
 
-    ``value`` names what was reviewed (the saved share-option identities, the
-    draft version shown on the review page), so a later change to that data
-    makes the page count as not done again.
+    ``value`` names what was reviewed (the draft version shown on the review
+    page), so a later change to that data makes the page count as not done
+    again.
     """
     reviewed = request.session.get(REVIEWED, {})
     if reviewed.get("attempt") != str(attempt_id):
@@ -62,6 +69,39 @@ def _reviewed(request, attempt_id):
     if reviewed.get("attempt") != str(attempt_id):
         return {}
     return {key: value for key, value in reviewed.items() if key != "attempt"}
+
+
+def staged_load(attempt):
+    """The attempt's exact, still-valid staged load result, or None.
+
+    Valid means: the bound load succeeded, its exchange is unscrubbed and
+    on the Task's fence, the staged ParishSoft credential still has the
+    version and fingerprint the load read, and its snapshot is ready on the
+    same fences. Review, campaign staging and the wizard's Load parish data
+    step all use this one predicate (#1353), and the attempt's audit trigger
+    repeats it in SQL to refuse a Load again of a still-valid load.
+    """
+    from .setup_exchange_models import SetupSourceResult
+
+    if attempt.source_task_id is None:
+        return None
+    return (
+        SetupSourceResult.objects.filter(
+            exchange__attempt=attempt,
+            exchange__scrubbed_at=None,
+            exchange__task__root_id=attempt.source_task_id,
+            exchange__task__state="succeeded",
+            exchange__task_fence=F("exchange__task__fence"),
+            exchange__credential__scrubbed_at=None,
+            exchange__credential_version=F("exchange__credential__version"),
+            exchange__fingerprint=F("exchange__credential__fingerprint"),
+            snapshot__state="ready",
+            snapshot__task_id=F("exchange__task_id"),
+            snapshot__source_fence=F("exchange__source_fence"),
+        )
+        .order_by("-snapshot__completed_at", "-pk")
+        .first()
+    )
 
 
 def _owned(request, service, attempt_id=None):
@@ -111,6 +151,8 @@ def view_draft(request, service, attempt_id=None):
             window.absolute_at,
             window.watchdog_at,
             row.source_task_id,
+            row.source_task.state if row.source_task_id else None,
+            row.state == SetupState.COLLECTING and staged_load(row) is not None,
             _reviewed(request, row.pk),
         )
 
@@ -127,10 +169,12 @@ def save_section(request, service, attempt_id, *, step, values, expected_version
 
 
 def save_sections(request, service, attempt_id, *, updates, expected_version):
-    """One original-owner lock and version cover all dependent temporary edits."""
-    from .setup_content_values import CONTENT_STEPS
-    from .setup_schedule_values import reconcile_preparation
+    """Save several system steps under one original-owner lock and version.
 
+    Only the wizard's own steps (``setup_forms.FORMS``) can be saved:
+    ``validate_values`` refuses any other step, including the first-campaign
+    steps a draft saved before #142 may still hold.
+    """
     if type(updates) is not dict or not updates:
         raise ValueError("Setup edits are required.")
     updates = {step: validate_values(step, values) for step, values in updates.items()}
@@ -166,26 +210,8 @@ def save_sections(request, service, attempt_id, *, updates, expected_version):
                 UUID(updates["branding"]["bundle_id"]),
                 setup_attempt_id=attempt.pk,
             )
-        if "campaign" in updates:
-            from .setup_campaign import admit_campaign_values
-
-            admit_campaign_values(request, service, attempt_id, updates["campaign"])
-        # Content saved alongside its campaign is admitted against the new
-        # campaign values, which the draft does not hold until this commits.
-        pending = updates["campaign"]["campaign"] if "campaign" in updates else None
-        for step in CONTENT_STEPS:
-            if step not in updates:
-                continue
-            from .setup_content import admit_content_values
-
-            admit_content_values(
-                request, service, attempt_id, step, updates[step], pending
-            )
-        updates = reconcile_preparation(request, service, attempt_id, updates)
         context = dict(actor_id=actor.identity, correlation_id=current_correlation())
-        # The parent goes first when dates and schedules are saved together;
-        # SQL repeats each child's original source/campaign proof independently.
-        for step in sorted(updates, key=lambda item: (item != "campaign", item)):
+        for step in sorted(updates):
             values = updates[step]
             row = SetupDraftSection.objects.filter(attempt=attempt, step=step).first()
             if row is None:

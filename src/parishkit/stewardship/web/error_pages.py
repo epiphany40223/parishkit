@@ -239,7 +239,10 @@ def error_page(request, response):
     messages = list(dict.fromkeys(str(MESSAGES[e.code]) for e in errors))
     if refusal is not None:
         messages = [str(refusal.message)]
-        guidance = refusal.fix or guidance
+        # The page answering a form's POST shows the full-page fix: Reload
+        # here would send the same refused form again (Refusal.page_fix).
+        page_fix = refusal.page_fix if request.method == "POST" else None
+        guidance = page_fix or refusal.fix or guidance
         title = refusal.title or title
     reauthenticate = admin and getattr(response, "stewardship_reauthenticate", False)
     if reauthenticate:

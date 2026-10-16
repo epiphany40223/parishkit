@@ -231,6 +231,18 @@ def test_open_form_needs_a_code_and_production():
     assert open_form(IDENTITY, testing_codes=True) == (False, "testing")
     no_code = Identity(1234)
     assert open_form(no_code, testing_codes=False) == (False, "no_code")
+
+
+def test_open_form_needs_the_current_campaign_and_an_eligible_family():
+    """The hand-off's other refusals are known on the page too (#1331)."""
+    assert open_form(IDENTITY, testing_codes=False, current=False) == (
+        False,
+        "not_current",
+    )
+    assert open_form(IDENTITY, testing_codes=False, eligible=False) == (
+        False,
+        "not_eligible",
+    )
     assert Identity(1, reach="provider_suppressed").reach_label.startswith("No:")
     assert Identity(1, email_deliverable=True, reach="?").reach_label == "Yes"
 
@@ -360,6 +372,11 @@ def test_open_form_is_unavailable_with_its_reason():
     page = render(TIMELINE, identity=Identity(1234, "Adams, Ann"))
     assert "Unavailable for this campaign" in page
     assert "this Family has no code for this campaign" in page
+    page = render(TIMELINE, eligible=False)
+    assert "data-open-form" not in page
+    assert "no longer lists this Family as active and registered" in page
+    page = render(TIMELINE, current=False)
+    assert "this is not the current campaign" in page
 
 
 def test_codes_are_left_out_for_roles_without_them():

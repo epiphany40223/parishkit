@@ -754,7 +754,12 @@ def test_cleanup_needs_a_fresh_sign_in_and_records_it(
     with web_login():
         response = post(browser, path, {"action": "verify"})
         assert response.status_code == 200 and response.context["fresh"] is False
-        assert b"Start Testing cleanup" not in response.content
+        # Start is in view but unavailable, named by the step-up (#1331).
+        assert (
+            b'disabled aria-describedby="cleanup-fresh-reason">'
+            b"Start Testing cleanup</button>"
+        ) in response.content
+        assert b'name="preview_token"' not in response.content
         assert b"Confirm with Google" in response.content
         values = {"action": "cleanup", "preview_token": token, "acknowledge": "yes"}
         refused = browser.post(

@@ -1,7 +1,6 @@
 """Closed, non-secret wizard forms; credentials have a separate sealed intake."""
 
 from copy import deepcopy
-from uuid import UUID
 
 from django import forms
 from django.utils.translation import gettext_lazy as _
@@ -14,6 +13,7 @@ from parishkit.stewardship.web.sender_name_field import SenderNameField
 from . import setup_help
 from .parish_views import ParishForm
 from .policy_schema import normalized_email
+from .timezone_field import browser_default
 
 
 class SetupParishForm(ParishForm):
@@ -24,9 +24,19 @@ class SetupParishForm(ParishForm):
     date_format = None
 
     def __init__(self, *args, **kwargs):
-        """Explain each profile field in plain language."""
+        """Explain each profile field; a new zone starts on the browser's."""
         super().__init__(*args, **kwargs)
-        setup_help.apply(self, setup_help.PARISH, replace=True)
+        # No zone saved yet: start on the browser's zone, or on a blank
+        # required choice, never the list's first zone (Africa/Abidjan was
+        # stored on pk-local that way, #1330), and say so in the help. A saved
+        # zone is kept, with help that does not mention the browser.
+        fresh = not self.initial.get("timezone")
+        texts = setup_help.PARISH
+        if fresh:
+            texts = texts | {"timezone": setup_help.PARISH_NEW_TIMEZONE}
+        setup_help.apply(self, texts, replace=True)
+        if fresh:
+            browser_default(self, choose=True)
 
     def clean_timezone(self):
         """Store a new setup's zone by its canonical name (#1286).
@@ -246,27 +256,12 @@ def initial_values(step, values):
 
 
 def validate_values(step, values):
-    """Service callers cannot inject extra fields, coercions or private payloads."""
-    from .setup_content_values import CONTENT_STEPS, validate_content_step
+    """Service callers cannot inject extra fields, coercions or private payloads.
 
-    if step in CONTENT_STEPS:
-        return validate_content_step(step, values)
-    if step == "schedules":
-        from .setup_schedule_values import validate_schedule_step
-
-        return validate_schedule_step(values)
-    if step == "campaign":
-        from parishkit.stewardship.campaigns.configuration import campaign_values
-
-        if (
-            type(values) is not dict
-            or set(values) != {"campaign", "source_result"}
-            or type(values["source_result"]) is not str
-            or str(UUID(values["source_result"])) != values["source_result"]
-        ):
-            raise ValueError("Invalid first-campaign setup fields.")
-        campaign_values(values["campaign"])
-        return deepcopy(values)
+    Only the wizard's steps (``FORMS``) are accepted. The first-campaign
+    steps the wizard saved before #142 (campaign, schedules, content) are
+    refused like any other unknown step.
+    """
     if step not in FORMS or type(values) is not dict:
         raise ValueError("Invalid public setup values.")
     if step == "parish" and "online_giving_url" not in values:

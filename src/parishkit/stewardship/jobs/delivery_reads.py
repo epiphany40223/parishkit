@@ -567,8 +567,12 @@ def read_detail(message_id, parameters):
     The history's upper version is pinned to the message read, so a page
     and its history agree. ``actions`` are the resolutions the page offers
     now, in its order; ``retry_unavailable`` says a retry would be offered
-    but the campaign's resend admission refuses it. Raises
-    ``OutboxMessage.DoesNotExist`` for an unknown message.
+    but the campaign's resend admission refuses it. ``held`` are the
+    decisions (not the bare note) the page would offer but other campaign
+    work holds now (the export admission refuses; never for an archived
+    campaign, which accepts no change at all), so the page shows them
+    unavailable with why (#1331). Raises ``OutboxMessage.DoesNotExist`` for
+    an unknown message.
     """
     from parishkit.stewardship.campaigns.models import Campaign
 
@@ -606,6 +610,20 @@ def read_detail(message_id, parameters):
         can_resolve=can_resolve,
         can_retry=can_retry,
     )
+    held = []
+    if not can_resolve and campaign.state != "archived":
+        # What the page would offer once the campaign work finishes. The
+        # resend admission also refuses while campaign work holds the
+        # campaign, so the retry is held with the rest, named by the same
+        # notice, rather than drawn apart with a reason that misses the
+        # real blocker.
+        held = offered_actions(
+            message["state"],
+            task and task["state"],
+            campaign_state=campaign.state,
+            can_resolve=True,
+            can_retry=True,
+        )[1:]
     notes, notes_following = window.rows(
         DeliveryResolution.objects.filter(message_id=message_id)
         .order_by("-created_at", "-id")
@@ -619,6 +637,7 @@ def read_detail(message_id, parameters):
         window=window,
         has_next=events_following or notes_following,
         actions=actions,
+        held=held,
         retry_unavailable=bool(
             task
             and task["state"] == "failed"
@@ -786,9 +805,11 @@ def read_refusal(refusal_id, parameters):
 
     ``can_clear`` says the current campaign's source generation is the one
     its Family credentials were built from, so a verified clearance can be
-    recorded now. ``message_id`` is the email whose delivery recorded the
-    refusal (#935). Raises ``RecipientRefusal.DoesNotExist`` for an unknown
-    refusal.
+    recorded now; while it cannot, ``clear_blocked`` names the first reason
+    (``CLEAR_BLOCKS``), which the page shows by its unavailable Clear
+    (#1331). The server checks again when Clear is sent. ``message_id`` is
+    the email whose delivery recorded the refusal (#935). Raises
+    ``RecipientRefusal.DoesNotExist`` for an unknown refusal.
     """
     from parishkit.stewardship.source.snapshot_models import SourceCurrent
 
@@ -800,24 +821,56 @@ def read_refusal(refusal_id, parameters):
     )
     resolved = RecipientRefusalResolution.objects.filter(refusal_id=refusal_id).first()
     source = SourceCurrent.objects.first()
+    # Each condition the clearance needs, read apart so the page can say
+    # which one is missing: a current campaign, not archived, no other
+    # campaign work holding it, and Family credentials built from the
+    # current ParishSoft data.
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT EXISTS(SELECT 1 FROM stewardship_source_current cur "
-            "JOIN stewardship_system_configuration r ON true "
-            "JOIN stewardship_campaign c ON c.id=r.current_campaign_id "
-            "JOIN stewardship_campaign_credentials k ON k.campaign_id=c.id "
+            "SELECT c.id IS NOT NULL, c.state='archived', "
+            "c.id IS NOT NULL AND stewardship_export_admitted_v1(c.id,true), "
+            "EXISTS(SELECT 1 FROM stewardship_source_current cur "
             "WHERE cur.organization_id=%s AND cur.snapshot_id=k.source_snapshot_id "
-            "AND cur.generation=k.source_generation AND NOT k.population_dirty "
-            "AND c.state<>'archived' "
-            "AND stewardship_export_admitted_v1(c.id,true))",
+            "AND cur.generation=k.source_generation AND NOT k.population_dirty) "
+            "FROM stewardship_system_configuration r "
+            "LEFT JOIN stewardship_campaign c ON c.id=r.current_campaign_id "
+            "LEFT JOIN stewardship_campaign_credentials k ON k.campaign_id=c.id",
             (refusal.organization_id,),
         )
-        can_clear = cursor.fetchone()[0]
+        current, archived, admitted, fresh = cursor.fetchone() or (
+            False,
+            False,
+            False,
+            False,
+        )
+    blocked = clear_blocked(
+        current=current, archived=archived, admitted=admitted, fresh=fresh
+    )
     return dict(
         refusal=refusal,
         message_id=refusal.message_id,
         resolved=resolved,
         source=source,
-        can_clear=can_clear,
+        can_clear=blocked is None,
+        clear_blocked=blocked,
         command_id=uuid4(),
     )
+
+
+# Why a refused address cannot be cleared now (read_refusal), in the order
+# the page names them: the first that applies. "busy" covers every refusal
+# of the campaign's export admission (stewardship_export_admitted_v1):
+# usually campaign work under way, but also no active configuration, no
+# credentials row or a held go-live gate, so the page words it as the
+# campaign not accepting changes rather than naming one cause.
+CLEAR_BLOCKS = ("no_campaign", "archived", "busy", "stale")
+
+
+def clear_blocked(*, current, archived, admitted, fresh):
+    """The first ``CLEAR_BLOCKS`` reason a clearance is refused now, or None."""
+    for reason, holds in zip(
+        CLEAR_BLOCKS, (not current, archived, not admitted, not fresh), strict=True
+    ):
+        if holds:
+            return reason
+    return None

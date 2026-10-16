@@ -9,12 +9,22 @@ multi-campaign control: ``single_campaign.first_campaign_admitted`` refuses
 it as soon as any campaign row exists (admin-portal spec, "Create the
 campaign").
 
-Like Parish and Campaign settings, the page reviews and confirms in place
-(#532): the review, its refusals and the change's live status fill the
-review region under the form (``settings-review.html``), and confirmation
-answers with this page again, naming the request. Unlike them, it never
-refreshes itself once the change is applied: by then the campaign exists, so
-the form has nothing left to create.
+The form's Create the campaign button posts its Review without a page load
+and is answered with a confirmation in the shared review dialog (UX
+conventions, "Review dialog", #750, #1356): one sentence saying what Apply
+does, the number of pages and emails it adds with the default text (the one
+fact the page above does not show), and the signed preview, which the
+dialog's Apply posts back here. It lists no values again: every one of them
+is in the filled-in form behind the dialog. A Review refused for the form's
+values is the page again with status 400, so the errors stay on the form
+and the dialog stays shut; any other refusal (no longer admitted, a stale
+page, an out-of-date preview) is a plain refusal shown in the dialog.
+
+Apply is answered with this page naming the request (``?request=``), whose
+region holds the change's live status; the dialog follows it there and,
+once the change is applied, redraws the page's region from that address,
+because the page's own address could only be refused by then (the campaign
+exists, so the form has nothing left to create).
 
 The campaign's Families and Family codes are not created here: a refresh reads
 the current campaign when it is requested, so it can only follow the
@@ -30,6 +40,7 @@ from uuid import uuid4
 from django.core import signing
 from django.db import DatabaseError
 from django.shortcuts import render
+from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
@@ -43,7 +54,7 @@ from parishkit.stewardship.campaigns.work_locks import (
     work_transaction,
 )
 from parishkit.stewardship.storage import StaleRecordError
-from parishkit.stewardship.web.refusals import UserFacingStale, stale_page
+from parishkit.stewardship.web.refusals import stale_page
 
 from . import admin_navigation, setup_help
 from .admin_editing import (
@@ -51,31 +62,27 @@ from .admin_editing import (
     error_response,
     form_action,
     principal,
-    receipt_base,
     requested_status,
     review_region,
-    reviewed_base,
     sign_preview,
+    summary_errors,
 )
 from .authentication import runtime
 from .campaign_forms import CampaignForm
-from .campaign_preview import describe_changes
 from .campaign_views import MULTIPLE_FIELDS, _catalog, _state
 from .content_forms import default_content
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
 from .request_patch import build_candidate
 from .sessions import authenticated_admin
+from .timezone_field import browser_default
 
 # A salt of its own, so a creation preview can never be confirmed on Campaign
 # settings (whose confirmation refuses any added campaign) or the reverse.
 SALT = "stewardship-campaign-create-preview-v1"
-# The review's notes: what confirming does, and where the text comes from.
-CREATES_TESTING_DRAFT = _(
-    "This creates the campaign as a draft in Testing mode. No Family emails "
-    "are sent by this action."
-)
-DEFAULT_TEXT = _("Pages and emails start with the default text.")
+# The page region that Apply's answer, its status and the redraw after it
+# share (campaign-create.html).
+REGION = "campaign-create-region"
 
 
 def created_campaign_refresh(receipt):
@@ -142,21 +149,18 @@ def _scope(service):
     return state[0], state[-1]
 
 
-def _page(request, configuration, form, *, status=200, **region):
-    """The creation page: its form and the in-place review region (#532).
+def _page(request, configuration, form, *, status=200, receipt=None):
+    """The creation page: its form, or the status of a confirmed creation.
 
-    ``region`` is ``review_region``'s ``review``, ``receipt`` or ``refusal``.
-    The step indicator follows the region: Make changes, Review, then Apply
-    once a change is shown. A change's status drawn once a campaign exists
-    (a reload of the confirmation's answer) leaves the form out: it could
-    only be refused, so the page points to Campaign settings instead, saying
-    the campaign was created only if this change was applied.
+    With ``receipt`` (Apply's answer, the dialog's polls of it, the redraw
+    once it is applied, or a reload of that address) the page's region holds
+    the change's live status instead of the form, which by then could only
+    create a second campaign or be refused; once a campaign exists it points
+    to Campaign settings, saying the campaign was created only if this change
+    was applied. A Review refused for its values (400) draws its errors'
+    summary, which the page script places above the heading.
     """
-    step = "review" if region.get("review") else "edit"
-    if region.get("receipt"):
-        step = "apply"
-    admin_navigation.place(request, flow="change", step=step)
-    receipt = region.get("receipt")
+    admin_navigation.place(request, flow="change", step="apply" if receipt else "edit")
     response = render(
         request,
         "stewardship/campaign-create.html",
@@ -165,11 +169,13 @@ def _page(request, configuration, form, *, status=200, **region):
             "form": form,
             "created": receipt is not None
             and configuration.current_campaign_id is not None,
-            # No in-place follow-up (page None): once applied, the campaign
-            # exists and this page has nothing left to create. The status
-            # offers the campaign's first refresh instead.
-            **review_region(None, form, **region),
+            # The status polls Change status naming no in-place page: nothing
+            # follows up on this page once it is applied.
+            **review_region(None, receipt=receipt),
             "refresh_key": created_campaign_refresh(receipt) if receipt else None,
+            "errors": summary_errors(form) if status == 400 else [],
+            # Review and the dialog's Apply post here.
+            "page_url": request.path,
         },
         status=status,
     )
@@ -178,12 +184,11 @@ def _page(request, configuration, form, *, status=200, **region):
     return response
 
 
-def creation_form(configuration, source, data=None, *, digest=None):
+def creation_form(configuration, source, data=None):
     """The creation form over the current source's Ministries and funds.
 
-    ``digest`` is the applied configuration the form is drawn against (the
-    current one when None). The local seeder (``seed_web``) fills in the
-    same form.
+    It is drawn at the applied configuration's version. The local seeder
+    (``seed_web``) fills in the same form.
     """
     ministries, funds = _catalog(configuration, source, {})
     form = CampaignForm(
@@ -192,9 +197,7 @@ def creation_form(configuration, source, data=None, *, digest=None):
             "timezone": configuration.active_configuration.parish.timezone,
             "census": True,
             "additional_information": True,
-            "base_digest": configuration.active_configuration.digest
-            if digest is None
-            else digest,
+            "base_digest": configuration.active_configuration.digest,
         },
         previous={},
         ministries=ministries,
@@ -202,31 +205,39 @@ def creation_form(configuration, source, data=None, *, digest=None):
     )
     # Same plain-language field help as Campaign settings.
     setup_help.apply(form, setup_help.ADMIN_CAMPAIGN, replace=True)
+    return any_zone(form)
+
+
+def any_zone(form):
+    """Start the form's zone on the browser's; any zone may be chosen (#1330).
+
+    The menu starts on the browser's zone when it offers it, else on the
+    form's initial (parish) zone, and its help says so. The browser
+    component pages build their form with this too.
+    """
+    form.fields["timezone"].help_text = setup_help.CREATION_TIMEZONE
+    browser_default(form)
     return form
 
 
 def creation_review(service, actor, state, form):
     """Validate the whole new campaign and sign its review; record nothing yet.
 
-    Returns the review region's ``review``, or None with the reason on the
-    form's errors. The page shows either; the local seeder (``seed_web``)
-    confirms the signed ``preview`` the way the page's Apply does.
+    Returns the confirmation's ``review`` (the signed ``preview`` and the
+    number of default pages and emails it adds, ``content``), or None with
+    the reason on the form's errors. The page shows either; the local seeder
+    (``seed_web``) confirms the signed ``preview`` the way the dialog's Apply
+    does.
     """
     configuration, fingerprint = state[0], state[-1]
     if not form.is_valid():
         return None
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
         raise stale_page()
+    # Any catalog zone is accepted (TimezoneField, campaign_values), not only
+    # the parish zone: the campaign's dates and schedules are resolved in its
+    # own zone (Administrator, 2026-10-15, #1330).
     values = form.values()
-    if values["timezone"] != configuration.active_configuration.parish.timezone:
-        form.add_error(
-            "timezone",
-            _(
-                "The campaign starts in the Parish timezone. "
-                "Edit the draft afterward to change it."
-            ),
-        )
-        return None
     target = str(uuid4())
     # The campaign starts with the default text for every page and email its
     # modules use, added in this same configuration change so it never exists
@@ -246,14 +257,16 @@ def creation_review(service, actor, state, form):
         form.add_error(None, _("Check the campaign name and dates."))
         return None
     return {
-        "changes": describe_changes(
-            {},
-            values,
-            ministries=form.fields["ministry_duids"].choices,
-            funds=form.fields["fund_duids"].choices,
+        # Worked out here, from the modules chosen: the page does not show it.
+        "content": len(content),
+        # Once applied, the dialog opens the next Campaign setup step
+        # (#1404): Campaign settings is completed by the creation, so it is
+        # Share options with Financial stewardship, else Pages and emails.
+        "next_url": reverse(
+            "admin:share_settings"
+            if "financial" in values.get("modules", ())
+            else "admin:content_catalog"
         ),
-        "notes": [CREATES_TESTING_DRAFT, *([DEFAULT_TEXT] if content else [])],
-        "apply_label": _("Create the campaign"),
         "preview": sign_preview(
             actor=actor,
             configuration=configuration,
@@ -265,25 +278,28 @@ def creation_review(service, actor, state, form):
 
 
 def _preview(request, service, actor, state, form):
-    """The page's Review: the signed review in place, or the form's errors."""
+    """The review dialog's confirmation, or the page with the form's errors."""
     review = creation_review(service, actor, state, form)
     if review is None:
         return _page(request, state[0], form, status=400)
-    return _page(request, state[0], form, review=review)
+    return render(
+        request, "stewardship/campaign-create-review.html", {"review": review}
+    )
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
 def campaign_create(request):
-    """Read the creation form, review the new campaign in place, or confirm it.
+    """Read the creation form, confirm the new campaign in the dialog, or apply it.
 
-    The page, its review and its confirmation each require admission
+    The page, its Review and its Apply each require admission
     (``first_campaign_admitted``, and no campaign work or credential hold);
-    the confirmation rechecks it under the work lock that records the request
-    (``_scope``). Two reads skip it, because they show a change already
-    recorded rather than offering a new one: the page naming one of this
-    Administrator's own changes (``?request=``, confirmation's in-place
-    answer, by which time the campaign may exist), and a refused
-    confirmation, redrawn in place with its explanation (status 409).
+    Apply rechecks it under the work lock that records the request
+    (``_scope``). A refused Review or Apply raises its refusal, which the
+    dialog shows; a plain load of the page is refused whole. One read skips
+    admission, because it shows a change already recorded rather than
+    offering a new one: the page naming one of this Administrator's own
+    changes (``?request=``, Apply's answer, by which time the campaign may
+    exist).
     """
     try:
         service = runtime()
@@ -294,7 +310,7 @@ def campaign_create(request):
             service,
             passive=request.method != "POST" and "request" in request.GET,
         )
-        action, refusal, digest = None, None, None
+        action = None
         if request.method == "POST":
             action = form_action(
                 request.POST,
@@ -302,23 +318,17 @@ def campaign_create(request):
                 multiple_fields=MULTIPLE_FIELDS,
             )
             if action == "confirm":
-                try:
-                    response = confirm(
-                        request,
-                        service,
-                        actor,
-                        salt=SALT,
-                        current_scope=_scope,
-                        first_campaign=True,
-                        in_place=True,
-                    )
-                    response["Cache-Control"] = "no-store"
-                    return response
-                except UserFacingStale as error:
-                    # Drawn below, the form kept at the version the change
-                    # was reviewed at (admin_editing.reviewed_base).
-                    refusal = error.refusal
-                    digest = reviewed_base(request.POST, SALT)
+                response = confirm(
+                    request,
+                    service,
+                    actor,
+                    salt=SALT,
+                    current_scope=_scope,
+                    first_campaign=True,
+                    in_place=REGION,
+                )
+                response["Cache-Control"] = "no-store"
+                return response
         with (
             read_transaction()
             if request.method in {"GET", "HEAD"}
@@ -329,37 +339,17 @@ def campaign_create(request):
                 if request.method != "POST"
                 else None
             )
-            if receipt is not None:
-                digest = receipt_base(request, receipt)
             state = _state(service)
             configuration, source = state[0], state[2]
-            if receipt is None and refusal is None and not _admitted(state):
-                # A Review is refused in place, keeping the reader's values;
-                # a plain load of the page is refused whole.
-                if action != "preview":
-                    raise first_campaign_refused()
-                refusal = first_campaign_refused().refusal
+            if receipt is None and not _admitted(state):
+                raise first_campaign_refused()
             form = creation_form(
                 configuration,
                 source,
                 request.POST if action == "preview" else None,
-                digest=digest,
             )
-            if refusal is not None:
-                response = _page(
-                    request, configuration, form, status=409, refusal=refusal
-                )
-            elif action == "preview":
-                try:
-                    response = _preview(request, service, actor, state, form)
-                except UserFacingStale as error:
-                    response = _page(
-                        request,
-                        configuration,
-                        form,
-                        status=409,
-                        refusal=error.refusal,
-                    )
+            if action == "preview":
+                response = _preview(request, service, actor, state, form)
             else:
                 response = _page(request, configuration, form, receipt=receipt)
         # Recheck access after the observation ends, so a GET's read-only

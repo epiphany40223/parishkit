@@ -19,64 +19,68 @@ pytestmark = pytest.mark.parametrize(
 
 @pytest.mark.parametrize("width", [320, 1280])
 @pytest.mark.parametrize("path", ["/clone-preview"])
-def test_schedule_preview_distinguishes_parish_intent_from_browser_time(
+def test_schedule_preview_shows_send_times_only_in_browser_time(
     page, component_origin, width, path
 ):
-    """Keep parish civil time visible while converting the resolved UTC instant."""
+    """Show each send as the resolved UTC instant in the browser's zone (#558).
+
+    The campaign-local date and time a schedule saves, with the campaign's
+    zone, are not shown beside it: every Admin time is browser-local.
+    """
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + path)
     instant = page.locator("time[data-local-instant]").first
     assert instant.get_attribute("datetime") == "2054-10-01T13:00:00+00:00"
     assert "6:00" in instant.inner_text() and "PDT" in instant.inner_text()
     text = page.locator("main").inner_text()
-    # The parish's intended time uses the parish style's clock (the default
-    # style is 12-hour), computed from the same filter the template uses.
+    # The schedule's campaign-local intent (9:00 AM New York, in the parish
+    # style's clock) is no longer printed.
     with dates.using(dates.DEFAULT):
         parish_clock = parish_time("09:00:00")
     assert parish_clock == "9:00 AM"
-    assert parish_clock in text and "America/New_York" in text
+    assert parish_clock not in text
     assert "not a list of who will receive it" in text
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
 
+def renewal(route, **values):
+    """Answer one source-load renewal POST with a synthetic progress reading."""
+    route.fulfill(
+        json={
+            "server_now": NOW.isoformat(),
+            "task_id": urlsplit(route.request.url).path.split("/")[-1],
+            "task_state": "running",
+            "setup_state": "loading",
+            "phase": "staging",
+            "active": True,
+            "current": 1234,
+            "total": 5000,
+            "collections": load_collections(7),
+            "idle_at": (NOW + timedelta(minutes=30)).isoformat(),
+            "watchdog_at": (NOW + timedelta(hours=2)).isoformat(),
+            "absolute_at": (NOW + timedelta(hours=12)).isoformat(),
+        }
+        | values
+    )
+
+
 @pytest.mark.parametrize("clock_skew_hours", [-48, 0, 48])
-def test_setup_progress_only_polls_visible_correlated_work_and_stops_at_deadline(
+def test_setup_progress_only_renews_visible_correlated_work_and_stops_at_deadline(
     page, component_origin, clock_skew_hours
 ):
-    """Visible-page polling carries only CSRF and stops at local deadlines."""
-    from playwright.sync_api import expect
-
+    """Visible-page renewal carries only CSRF and stops at local deadlines."""
     page.clock.install(time=NOW + timedelta(hours=clock_skew_hours))
     requests = []
 
     def observe(route):
         """The synthetic server response has no Family values or renewal promises."""
         requests.append(route.request)
-        route.fulfill(
-            json={
-                "server_now": NOW.isoformat(),
-                "task_id": urlsplit(route.request.url).path.split("/")[-1],
-                "task_state": "running",
-                "setup_state": "loading",
-                "phase": "staging",
-                "active": True,
-                "current": 1234,
-                "total": 5000,
-                "collections": load_collections(7),
-                "idle_at": (NOW + timedelta(minutes=30)).isoformat(),
-                "watchdog_at": (NOW + timedelta(hours=2)).isoformat(),
-                "absolute_at": (NOW + timedelta(hours=12)).isoformat(),
-            }
-        )
+        renewal(route)
 
     page.route("**/admin/setup/source/*?format=json", observe)
     page.goto(component_origin + "/setup-source-progress")
-    expect(page.locator("[data-task-counts]")).to_contain_text("1,234")
-    assert page.locator("[data-task-counts]").inner_text() == "1,234 of 5,000 (25%)"
-    visible(page.locator("[data-load-records]"))
-    assert "Done" in page.locator('[data-load-phase="fetching"]').inner_text()
-    assert "In progress" in page.locator('[data-load-phase="staging"]').inner_text()
-    assert len(requests) == 1 and requests[0].method == "POST"
+    recorded(page, requests, 1)
+    assert requests[0].method == "POST"
     assert requests[0].post_data.startswith("csrfmiddlewaretoken=")
     assert "&" not in requests[0].post_data
     page.clock.set_system_time(NOW + timedelta(days=7))
@@ -95,107 +99,23 @@ def test_setup_progress_only_polls_visible_correlated_work_and_stops_at_deadline
     assert len(requests) == 2
 
 
-def test_setup_progress_terminal_response_stops_automatic_posts(page, component_origin):
-    """Expired setup does not look successful or keep sending renewal requests."""
-    from playwright.sync_api import expect
-
+def test_setup_progress_terminal_renewal_stops_automatic_posts(page, component_origin):
+    """A renewal that says the load ended stops renewing, and nothing else posts."""
     page.clock.install(time=NOW)
     requests = []
 
     def expired(route):
         """A terminal server verdict is final even before the local timer expires."""
         requests.append(route.request)
-        route.fulfill(
-            json={
-                "server_now": NOW.isoformat(),
-                "task_id": urlsplit(route.request.url).path.split("/")[-1],
-                "task_state": "cancelled",
-                "setup_state": "expired",
-                "phase": "fetching",
-                "active": False,
-                "current": 0,
-                "total": 0,
-                "collections": load_collections(2),
-                "idle_at": (NOW + timedelta(minutes=30)).isoformat(),
-                "watchdog_at": (NOW + timedelta(hours=2)).isoformat(),
-                "absolute_at": (NOW + timedelta(hours=12)).isoformat(),
-            }
-        )
+        renewal(route, task_state="cancelled", setup_state="expired", active=False)
 
     page.route("**/admin/setup/source/*?format=json", expired)
     page.goto(component_origin + "/setup-source-progress")
-    expect(page.locator("[data-task-state]")).to_have_js_property(
-        "textContent", "cancelled"
-    )
+    recorded(page, requests, 1)
     page.clock.fast_forward(60000)
+    page.wait_for_timeout(200)
     assert len(requests) == 1
-    page.route(
-        "**/setup-source-progress",
-        lambda route: route.fulfill(content_type="text/html", body="Manual progress"),
-    )
-    with page.expect_request("**/setup-source-progress") as submitted:
-        page.get_by_role("button", name="Check progress now").click()
-    assert submitted.value.method == "POST"
-
-
-def test_setup_progress_shows_each_collection_then_offers_continue(
-    page, component_origin
-):
-    """The download lists finished collections; completion reveals Continue."""
-    from playwright.sync_api import expect
-
-    page.clock.install(time=NOW)
-    state = {"done": False}
-
-    def respond(route):
-        """First a download midway through the rosters, then a finished load."""
-        done = state["done"]
-        route.fulfill(
-            json={
-                "server_now": NOW.isoformat(),
-                "task_id": urlsplit(route.request.url).path.split("/")[-1],
-                "task_state": "succeeded" if done else "running",
-                "setup_state": "collecting" if done else "loading",
-                "phase": "validating" if done else "fetching",
-                "active": not done,
-                "current": 9000 if done else 0,
-                "total": 9000 if done else 0,
-                "collections": load_collections(7)
-                if done
-                else load_collections(5, finished=57, expected=213),
-                "started_at": (NOW - timedelta(seconds=75)).isoformat(),
-                "heartbeat_at": (NOW - timedelta(seconds=3)).isoformat(),
-                "idle_at": (NOW + timedelta(minutes=30)).isoformat(),
-                "watchdog_at": (NOW + timedelta(hours=2)).isoformat(),
-                "absolute_at": (NOW + timedelta(hours=12)).isoformat(),
-            }
-        )
-
-    page.route("**/admin/setup/source/*?format=json", respond)
-    page.goto(component_origin + "/setup-source-progress")
-    expect(page.locator("[data-progress-elapsed]")).to_contain_text("1 min")
-    assert "downloading" in page.locator("[data-progress-summary]").inner_text()
-    assert "3 seconds ago" in page.locator("[data-progress-quiet]").inner_text()
-    families = page.locator('[data-collection="families"]')
-    assert "1,234 loaded" in families.inner_text()
-    assert "setup-load-done" in families.get_attribute("class")
-    rosters = page.locator('[data-collection="ministry_roster"]')
-    assert "57 of 213 loaded" in rosters.inner_text()
-    assert "setup-load-active" in rosters.get_attribute("class")
-    assert "Waiting" in page.locator('[data-collection="funds"]').inner_text()
-    # No meaningless "0 of 0" count while downloading.
-    assert page.locator("[data-load-records]").is_hidden()
-    assert page.locator("[data-progress-done]").is_hidden()
-    state["done"] = True
-    with page.expect_response("**/admin/setup/source/*?format=json"):
-        page.clock.fast_forward(15000)
-    expect(page.locator("[data-progress-done]")).to_have_js_property("hidden", False)
-    assert (
-        "Parish data is loaded" in page.locator("[data-progress-summary]").inner_text()
-    )
-    visible(page.get_by_role("link", name="Continue to the next step"))
-    assert page.locator("[data-task-counts]").inner_text() == "9,000 of 9,000 (100%)"
-    assert "Done" in page.locator('[data-load-phase="validating"]').inner_text()
+    assert page.get_by_role("button", name="Check progress now").count() == 0
 
 
 def test_csp_permits_the_fixed_google_form_destination(page, component_origin):
@@ -264,7 +184,6 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/denied-unavailable",
         "/ministries",
         "/parish-settings",
-        "/parish-preview",
         "/configuration-request",
         "/go-live-steps",
         "/background",
@@ -278,7 +197,6 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/campaign-settings-live",
         "/campaign-settings-locked",
         "/share-settings",
-        "/share-preview",
         "/presence",
         "/background-task",
         "/export-cleanup-task",
@@ -306,7 +224,6 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/credential-status",
         "/credential-selection",
         "/branding-settings",
-        "/branding-preview",
         "/hosted-files",
         "/hosted-file-unavailable",
         "/setup",
@@ -344,7 +261,7 @@ def test_components_accessible_and_responsive(
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
     page.goto(component_origin + path)
-    if path in {"/branding-settings", "/branding-preview"}:
+    if path == "/branding-settings":
         assert page.locator(".branding-preview").evaluate_all(
             "images => images.length > 0 && images.every("
             "image => image.complete && image.naturalWidth > 0)"
@@ -987,26 +904,45 @@ def axe_violations(page, axe_source):
     }))""")
 
 
+def shown_step_list(page, stepper, width):
+    """The stepper's one shown step list, opened from the keyboard if narrow.
+
+    At 64rem and wider the open copy is shown and the disclosure is not
+    (#1404); narrower, the disclosure is shown collapsed and opens with its
+    summary. Exactly one copy is ever shown, so it is met once.
+    """
+    wide = stepper.locator(".setup-stepper-wide .setup-steps")
+    narrow = stepper.locator(".setup-stepper-list .setup-steps")
+    if width >= 1024:
+        visible(wide)
+        assert stepper.locator(".setup-stepper-list").is_hidden()
+        return wide
+    assert wide.is_hidden() and narrow.is_hidden()
+    stepper.locator(".setup-stepper-list summary").focus()
+    page.keyboard.press("Enter")
+    visible(narrow)
+    return narrow
+
+
 @pytest.mark.parametrize("width", [320, 1280])
 def test_setup_stepper_is_compact_and_its_full_list_stays_accessible(
     page, component_origin, axe_source, width
 ):
-    """A short summary by default; the ordered list opens from the keyboard."""
+    """A short summary; the ordered list is open on a wide screen (#1404) and
+    opens from the keyboard on a narrow one."""
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/setup-testing")
     stepper = page.locator(".setup-stepper")
-    assert "Step 4 of 12: Testing recipient" in stepper.inner_text()
+    assert "Step 3 of 12: Testing recipient" in stepper.inner_text()
     assert "1 of 12 steps completed" in stepper.inner_text()
-    # Far shorter than fifteen stacked cards, even at phone width.
-    assert stepper.bounding_box()["height"] < (260 if width == 320 else 160)
-    assert page.locator(".setup-steps").is_hidden()
-    page.locator(".setup-stepper-list summary").focus()
-    page.keyboard.press("Enter")
-    visible(page.locator(".setup-steps"))
-    current = page.locator('.setup-steps [aria-current="step"]')
+    # Far shorter than fifteen stacked cards, even at phone width (where the
+    # list is still collapsed), and with the list open in two columns.
+    assert stepper.bounding_box()["height"] < (260 if width == 320 else 480)
+    steps = shown_step_list(page, stepper, width)
+    current = steps.locator('[aria-current="step"]')
     assert "Current step" in current.inner_text()
-    assert "Completed" in page.locator(".setup-step-done").first.inner_text()
-    links = page.locator(".setup-steps a")
+    assert "Completed" in steps.locator(".setup-step-done").first.inner_text()
+    links = steps.locator("a")
     assert links.count() >= 2
     assert all(
         box["height"] >= 44
@@ -1015,38 +951,93 @@ def test_setup_stepper_is_compact_and_its_full_list_stays_accessible(
         )
     )
     # The list holds only links, which Tab skips in macOS WebKit (#1043).
-    tab_to_next(page)
+    if width >= 1024:
+        links.first.focus()
+    else:
+        tab_to_next(page)
     assert page.evaluate("document.activeElement.closest('.setup-steps') !== null")
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
 
 
+def tip_shown(locator):
+    """Whether a step bar segment's floating tooltip is drawn."""
+    return locator.evaluate("node => getComputedStyle(node, '::after').display") == (
+        "block"
+    )
+
+
 @pytest.mark.parametrize("width", [320, 1280])
-def test_setup_track_segments_name_their_step_on_hover(page, component_origin, width):
-    """Each decorative segment's title names its step and status, as the list does."""
+def test_setup_step_bar_links_open_steps_and_explains_the_rest(
+    page, component_origin, width
+):
+    """Each open step's segment is a link; a blocked one only shows why (#1402)."""
     page.set_viewport_size({"width": width, "height": 900})
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    opened = []
+    # The component server has no wizard pages: answer any setup step page.
+    page.route(
+        "**/admin/setup/**",
+        lambda route: (
+            opened.append(route.request.url),
+            route.fulfill(content_type="text/html", body="<title>Step</title>"),
+        ),
+    )
     page.goto(component_origin + "/setup-testing")
-    track = page.locator(".setup-track")
-    before = track.bounding_box()
-    titles = track.locator("span").evaluate_all("nodes => nodes.map(n => n.title)")
-    steps = page.locator(".setup-steps li").evaluate_all(
+    track = page.get_by_role("list", name="Setup steps")
+    segments = track.locator("a")
+    steps = page.locator(".setup-stepper-list .setup-steps li").evaluate_all(
         "items => items.map(item => ["
         "item.querySelector('.setup-step-label').lastChild.textContent.trim(),"
         "item.querySelector('.setup-step-status').textContent.trim()])"
     )
-    assert len(titles) == len(steps) == 12
-    for number, (title, (label, status)) in enumerate(
-        zip(titles, steps, strict=True), 1
-    ):
-        assert title == f"Step {number} of 12: {label} — {status}", title
-    assert any(title.endswith(" — Completed") for title in titles)
-    assert "— Current step — " in titles[3]
-    # The larger hover target is invisible: the track keeps its size.
-    segment = track.locator("span").nth(3)
-    segment.hover()
-    assert page.evaluate("document.querySelector('.setup-track span:hover') !== null")
-    assert track.bounding_box() == before
+    assert segments.count() == len(steps) == 12
+    names = segments.evaluate_all("nodes => nodes.map(n => n.textContent.trim())")
+    tips = segments.evaluate_all("nodes => nodes.map(n => n.dataset.tip)")
+    assert names == tips
+    for number, (name, (label, status)) in enumerate(zip(names, steps, strict=True), 1):
+        assert name.startswith(f"Step {number} of 12: {label} — "), name
+        assert name.endswith(status), name
+    assert "— Current step — " in names[2]
+    assert segments.nth(2).get_attribute("aria-current") == "step"
+    # A 44px target each, as on the Family bar, with no horizontal scroll.
+    assert all(
+        box["height"] >= 44
+        for box in segments.evaluate_all(
+            "nodes => nodes.map(node => node.getBoundingClientRect().toJSON())"
+        )
+    )
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    # A step that cannot open yet is not a link: focusable, disabled, and a
+    # click only shows its tooltip, moving nothing and opening nothing.
+    blocked = segments.nth(5)
+    assert blocked.get_attribute("href") is None
+    assert blocked.get_attribute("aria-disabled") == "true"
+    assert "Not available yet: " in blocked.get_attribute("data-tip")
+    before = page.locator(".setup-stepper").bounding_box()
+    address = page.url
+    # Playwright waits for an aria-disabled control to enable; force sends
+    # the real mouse click a reader would.
+    blocked.click(force=True)
+    assert page.evaluate("document.activeElement.dataset.stepUnavailable === ''")
+    assert tip_shown(blocked)
+    assert page.locator(".setup-stepper").bounding_box() == before
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.wait_for_timeout(200)
+    assert page.url == address and opened == []
+    # Keyboard focus shows a link's tooltip too; following it only opens its
+    # page (a GET, with nothing submitted).
+    done = segments.nth(1)
+    done.focus()
+    assert tip_shown(done)
+    address = done.get_attribute("href")
+    assert address == "/admin/setup/mail"
+    with page.expect_request("**/admin/setup/**") as request:
+        done.click()
+    assert request.value.method == "GET" and request.value.post_data is None
+    assert request.value.url == component_origin + address
+    assert not failures
 
 
 def test_admin_sidebar_and_breadcrumbs_mark_the_current_page(page, component_origin):

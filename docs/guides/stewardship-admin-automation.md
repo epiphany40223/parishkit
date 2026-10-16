@@ -108,7 +108,8 @@ and exits 2. Each command prints exactly one JSON document (schema
 `pk-admin/1`) on standard output, except one that writes a file there
 (`logs export`, see [System logs](#system-logs), `export census`, see
 [Census changes download](#census-changes-download), `export limitations`,
-see [Limitations download](#limitations-download), and `export download`, see
+see [Limitations download](#limitations-download), `export roster`, see
+[Roster changes download](#roster-changes-download), and `export download`, see
 [report exports](#report-exports)), whose document goes to standard error; warnings, such as a session with less than
 72 hours left, and structured logs go to standard error. The document's
 fields, the exit codes and the error codes are in the specification's
@@ -532,14 +533,16 @@ The document is JSON with two optional members:
 | Member | What it holds |
 | --- | --- |
 | `window` | Any of `start_date`, `end_date` (`YYYY-MM-DD`), `timezone` and `overlap_confirmed` (true or false, only for a campaign with a financial period). Members you leave out keep their values. Changing the dates once they are locked is exit 1 (`stale_version`), as on the page, except that a live campaign (scheduled or open in Production, before it closes) may change `end_date` alone. Family codes and links keep working until the new end date. |
-| `schedules` | A list of entries, each one of the four below. Saved schedules you do not name stay as they are; leaving one out never removes it. |
+| `schedules` | A list of entries, each one of the six below. Saved schedules you do not name stay as they are; leaving one out never removes it. |
 
 | Entry | Members |
 | --- | --- |
-| Change a saved schedule | `id` (from `schedule show`) and any of `date`, `time`, `weekday`, `template_version` and, for a daily digest, `comparison` (`true` or `false`: whether it includes Compared with past campaigns). Members you leave out keep their values. Its `kind` cannot change, so it may not be given. |
+| Change a saved schedule | `id` (from `schedule show`) and any of `date`, `time` and `weekday` (in the campaign's time zone, as for adding one), `template_version` and, for a daily digest, `comparison` (`true` or `false`: whether it includes Compared with past campaigns). Members you leave out keep their values. Its `kind` cannot change, so it may not be given. |
 | Remove a saved schedule | `id` and `"delete": true`, nothing else. |
-| Add a schedule | `kind` (`initial`, `reminder`, `daily_digest` or `weekly_digest`) and the members its kind needs: `date` for `initial` and `reminder`, `weekday` (0 is Monday) for `weekly_digest`, and `time` (in the campaign's time zone) and `template_version` for all. A `daily_digest` may add `"comparison": true`; it is off without it. A `time` may be written in any form the page accepts, such as `09:00:00`, `9:00`, `9am` or `21:00`, and is stored as `HH:MM:SS`. |
+| Add a schedule | `kind` (`initial`, `reminder`, `daily_digest` or `weekly_digest`) and the members its kind needs: `date` for `initial` and `reminder`, `weekday` (0 is Monday) for `weekly_digest`, and `time` (in the campaign's time zone, or in the new one when `window` changes `timezone` in the same document; the Admin portal takes times in your computer's zone instead) and `template_version` for all. A `daily_digest` may add `"comparison": true`; it is off without it. A `time` may be written in any form the page accepts, such as `09:00:00`, `9:00`, `9am` or `21:00`, and is stored as `HH:MM:SS`. |
 | Add repeating reminders | `repeat` (the rule below), `time` and `template_version`, as for one reminder, and nothing else. It adds one ordinary reminder per date the rule gives, as if you listed each one. Every date must fit: unlike the page, which leaves out a date that does not fit, the command refuses the whole change. A problem with one date alone, such as a date after the campaign closes, names that date; a conflict between schedules, such as a date at the same moment as a saved reminder or not after the initial invitation, comes back as a plain `schedules` error, as for reminders listed one by one. A rule that gives no dates or more than 30, or skips a month, is exit 1 (`invalid`). The rule itself is not saved unless you add `"remember": true`, which also saves it as a reminder series holding exactly the reminders this repeat adds, so later changes can treat them as one. The reminders are the same either way, and they send as ordinary reminders. |
+| Change a remembered series | `series` (a series `id` from `schedule show`) and `scope`: `"following"` with `from` (one of its reminder ids) changes that reminder and the later ones ("this and following"); `"series"` changes the whole series from its first reminder that has not sent. Optionally a new `repeat` rule (checked as above), `time` and `template_version`. The rules for what stays, what is replaced and what is refused are in the [admin-automation spec](../specs/stewardship/admin-automation/spec.md#schedules-and-configuration) (a reminder whose time has passed without any work yet can start a whole-series edit and, if its time or email changes, may send right after confirm). |
+| Delete a remembered series | `series` and `"delete": true`, nothing else. Its reminders that have not sent are removed with it; ones that sent stay as ordinary reminders. |
 
 | `repeat` member | What it holds |
 | --- | --- |
@@ -561,7 +564,8 @@ the page and email templates (a command for those arrives later).
 | `changes` | Each change's `id`, `operation` (`add`, `update` or `remove`), `kind`, its values and first send times `before` and `after` (as in `schedule show`; `null` when added or removed), and its `impact`: `delivered`, `cancellable`, `failed`, `blocking`, `occurrences` and `outboxes`, the page's counts |
 | `blocking` | Sends in progress or with an uncertain result. While it is above zero, `preview` is `null`, as the page offers no **Confirm** |
 | `preview` | `token`, which `schedule confirm` takes |
-| `series` | Each reminder series the change remembers (a repeat with `"remember": true`): its new `id`, its `rule` and its reminders' ids (`schedules`); empty otherwise |
+| `series` | Each reminder series the change remembers (a repeat with `"remember": true`): its new `id`, its `rule` and its reminders' ids (`schedules`); empty otherwise. A series edit lists here the new series it starts |
+| `series_changes` | Each remembered series a `series` entry updates or removes: its `id`, `operation` (`update` or `remove`) and, for an update, its new `rule` and `schedules`; empty otherwise |
 
 Each `error.fields` entry has `field` (`window.<name>`,
 `schedules.<id>.<name>`, `schedules.new<n>.<name>` for the n-th added
@@ -786,7 +790,7 @@ pk-admin send controls
 | `paused_at`, `reason` | When it was paused and the reason the pausing Administrator gave (both null when not paused) |
 | `inventory` | Live mail by state: `queued` (unsent, held or not), `held` (stopped by the pause), `submitting` (being handed to the mail service), `unknown` (not sure it arrived), `stranded` (held invitations and reminders a closed campaign will not send), and `types`, one entry per mail type: its `kind` and the same four counts |
 | `next_due` | The next scheduled send: `at` (null when none remain), `count` (schedules due then) and `types` (each `kind` and `count`); it counts schedules, not emails |
-| `health` | The provider and sender check a resume needs: `ready`, `checked_at` and `expires_at` |
+| `health` | The [sender check](../specs/stewardship/admin-portal/spec.md#live-delivery-pause) a resume or release needs: `ready` (true while paused when no check is needed or it has passed), `required`, `trouble` (why one is needed: `test_in_progress`, `provider_failure`, `test_failed` or `sender_changed`; null when not), `checked_at` and `expires_at` |
 | `pause_available` | Whether the page offers Preview pause: `available` and not paused |
 | `resume_available`, `resolve_available` | Whether the page offers Preview resume, or Resolve held messages (a paused, closed campaign); both false unless `available` |
 | `resolution` | The Resolve held messages choices, null unless `resolve_available`: `types` (each `kind`, `name`, `held` and `cancellable`), and whether `release`, `cancel` and `clear` are offered |
@@ -982,6 +986,126 @@ slot's or an altered token is exit 1 (`invalid`). `artwork remove`
 records `admin_cmd_artwork_remove` in System logs with the request;
 repeating it with the same token returns the same request.
 
+## No-reminders WorkGroup
+
+`workgroup show` reads the current campaign's **No-reminders WorkGroup**:
+the ParishSoft Family WorkGroup whose Families get no Reminder emails.
+It needs an Administrator; a session of any scope may run it, and it
+records nothing in System logs, as opening the page records nothing.
+
+```sh
+pk-admin workgroup show
+```
+
+| Field | What it holds |
+| --- | --- |
+| `version` | The configuration version; `workgroup preview --expected-version` takes it |
+| `campaign_id` | The current campaign |
+| `name` | The WorkGroup's name, or null when no WorkGroup is set |
+| `state` | The page's **Now**: `off` (none set), `pending` (the next ParishSoft refresh reads it), `missing` (ParishSoft has no Family WorkGroup of that name: check the name) or `found` |
+| `families` | When `found`, how many Families the newest refresh found in it; otherwise null |
+
+`workgroup preview` and `workgroup confirm` are the page's **Review
+changes** and **Apply changes**, as `parish preview` and `parish
+confirm` are for the parish profile. They need a full-scope session.
+Give the new name with `--name`, as ParishSoft shows it (capital letters
+and spaces at the ends do not matter), or `--clear` to name none, so
+every eligible Family that has not responded gets the Reminders. A blank
+`--name` is refused (exit 1, `invalid`): turning the exclusion off takes
+`--clear`. Nothing changes until the change from `workgroup confirm` is
+applied. Then the old WorkGroup stops applying at once, but a new name
+applies only from the next ParishSoft refresh that reads it: until then
+no Family is excluded, and `workgroup show` says `pending`. Do not rename
+or clear the WorkGroup shortly before a Reminder send unless every
+Family should get that Reminder; run a refresh after renaming.
+
+```sh
+VERSION=$(pk-admin workgroup show | jq -r .result.version)
+pk-admin workgroup preview --name "Active: Stewardship 2027" \
+    --expected-version "$VERSION" |
+  jq -r .result.preview.token | pk-admin workgroup confirm --token -
+```
+
+| Field | What it holds |
+| --- | --- |
+| `version`, `campaign_id` (`workgroup preview`) | The version the change was reviewed against, and the current campaign |
+| `before`, `after` | The WorkGroup now and the one proposed (null for none) |
+| `preview.token` | What `workgroup confirm --token` takes, valid for fifteen minutes |
+| `created`, `request` (`workgroup confirm`) | As `parish confirm` prints them; follow the change with `config request show --watch` |
+
+The same name again, or a name the page refuses (too long), is exit 1
+(`invalid`). A version that is no longer current, or an expired token,
+is exit 1 (`stale_version`): read `workgroup show` again. An altered
+token is exit 1 (`invalid`). With no current campaign, each command is
+exit 1 (`not_available`). `workgroup confirm` records
+`admin_cmd_workgroup_confirm` in System logs with the request; repeating
+it with the same token returns the same request.
+
+## Campaign settings
+
+`campaign show` reads the current campaign's **Campaign settings**: each
+setting the page's form has, and which of them can change now. It needs
+an Administrator; a session of any scope may run it, and it records
+nothing in System logs, as opening the page records nothing.
+
+```sh
+pk-admin campaign show
+```
+
+| Field | What it holds |
+| --- | --- |
+| `version` | The configuration version; `campaign preview --expected-version` takes it |
+| `campaign_id`, `state` | The current campaign and its state (`draft`, `scheduled`, `active`, ...) |
+| `editable` | Whether every setting can change: a Testing-mode draft that has never been live, with no background work running |
+| `open` | The settings that can change now. On a live campaign, the end date (while it may still move), the Ministry leader roles and the Ministries, while no background work holds them |
+| `settings` | Each setting by the page's form field name: `name`, `year_label`, `timezone`, `start_date`, `end_date`, the module boxes `census`, `ministry` and `financial_enabled`, `ministry_duids`, `ministry_leader_roles`, the financial periods (`financial_start`, `financial_end`, `comparison_start`, `comparison_end`, `fund_duids`, `comparison_fund_duids`, `overlap_confirmed`) and `additional_information` |
+
+`campaign preview` and `campaign confirm` are the page's **Review
+changes** and **Apply changes**, as `parish preview` and `parish
+confirm` are for the parish profile. They need a full-scope session.
+`--changes` is a JSON document shaped like `settings`, with only the
+settings to change; every other setting keeps its saved value. Check
+boxes are `true` or `false`, the Ministry, fund and leader role lists
+JSON arrays (Ministries by the DUID `ministries list` prints, funds by
+their ParishSoft DUID), dates `YYYY-MM-DD`, and `year_label` may be null. Nothing
+changes until `campaign confirm`.
+
+```sh
+VERSION=$(pk-admin campaign show | jq -r .result.version)
+pk-admin campaign preview --expected-version "$VERSION" \
+    --changes '{"campaign": {"ministry_leader_roles": ["Chairperson"]}}' |
+  jq -r .result.preview.token | pk-admin campaign confirm --token -
+```
+
+On a live campaign the page reviews a Ministries change on its own: give
+`ministry_duids` alone. A live end date is reviewed as Dates and mail
+schedules reviews it, so `schedule preview` can change it too. On a
+draft that has mail schedules, change its dates with `schedule preview`,
+which moves the mailings with them; `campaign preview` refuses a dates
+change there, as the page sends it to Dates and mail schedules.
+
+| Field | What it holds |
+| --- | --- |
+| `version`, `campaign_id` (`campaign preview`) | The version the change was reviewed against, and the current campaign |
+| `kind` | Which review it is: `settings`, `end_date` (a live campaign's end date) or `ministries` (a live campaign's Ministries) |
+| `changes` | Each stored setting that changes: `field`, `before` and `after`. These are the stored names, not the document's: the module boxes change `modules`, and the financial periods change `financial` |
+| `replanned` | For an end date, the ids of the saved schedules it re-plans |
+| `ministries` | For Ministries, those to add and to remove (each with its `duid`, `name` and counts of what it touches) and `open_forms`, the Families with a form open now; otherwise null |
+| `notes` | The page's notes, such as what a later end date means for Families |
+| `preview.token` | What `campaign confirm --token` takes, valid for fifteen minutes |
+| `created`, `request` (`campaign confirm`) | As `parish confirm` prints them; follow the change with `config request show --watch` |
+
+No change, a value the page refuses, or Ministries given with another
+change is exit 1 (`invalid`), naming the setting where the page does
+(`campaign.<field>`). A setting that cannot change now, a version that is
+no longer current, or an expired token is exit 1 (`stale_version`): read
+`campaign show` again. An altered token is exit 1 (`invalid`). With no
+current campaign, each command is exit 1 (`not_available`). `campaign
+confirm` records `admin_cmd_campaign_confirm` in System logs with the
+request, plus what the page records: `campaign_end_date_requested` for an
+end date, `campaign_ministries_requested` for Ministries. Repeating it
+with the same token returns the same request.
+
 ## Parish, Ministry, logo and Share option settings
 
 `parish show`, `ministries list`, `branding show` and `campaign shares`
@@ -1067,7 +1191,9 @@ access and Dismiss (see
 [Checking the backup folder and dismissing a key change](#checking-the-backup-folder-and-dismissing-a-key-change)),
 and `integration key status` and the Finish switching commands follow a key
 change and finish switching to it (see
-[Following a key change and finishing the switch](#following-a-key-change-and-finishing-the-switch));
+[Following a key change and finishing the switch](#following-a-key-change-and-finishing-the-switch)),
+and `integration schedule-preview` previews the ParishSoft refresh schedule
+(see [Previewing the refresh schedule](#previewing-the-refresh-schedule));
 pasting a new key stays on the pages for now.
 
 ```sh
@@ -1205,6 +1331,38 @@ what changes in words; it is null when the schedule does not change. The
 preview changes nothing. `integration confirm` prompts with the stored
 setting names that change (such as `refresh_rules`) and records the
 request as above; the new schedule applies when the request installs.
+
+#### Previewing the refresh schedule
+
+`integration schedule-preview` is the ParishSoft page's live check of its
+schedule editor: the next seven days of refreshes, the cost and the
+freshness line, without saving anything. Without an option it previews the
+applied schedule. With `--refresh-schedule DOCUMENT` (or `-` for standard
+input) it previews a proposed one, in the same document
+`integration preview` takes:
+
+```sh
+pk-admin integration schedule-preview
+pk-admin integration schedule-preview --refresh-schedule - < schedule.json
+```
+
+It needs an Administrator, in a session of any scope, and records nothing
+in System logs, as the page's check records nothing. A document of another
+shape, or one that adds a quick update, is exit 1 (`invalid`) as for
+`integration preview`. The page's own problems are not refused: they are
+listed, and the command exits 0, so you can fix them and check again.
+
+| Field | What it holds |
+| --- | --- |
+| `version` | The applied configuration |
+| `timezone` | The zone the schedule's times are in |
+| `proposed` | Whether `--refresh-schedule` gave the schedule |
+| `changed` | Whether it differs from the applied schedule |
+| `schedule` | The checked schedule document; null while a row cannot be read |
+| `problems` | Each problem's `field` (`refresh_schedule.rules[N]`, `refresh_schedule.skips[N]` or `refresh_schedule`) and `message`, the page's words |
+| `blocking` | Whether the problems would stop this schedule from being saved; an unchanged schedule's never do |
+| `status` | The line beside the page's Save |
+| `preview` | The page's seven `days` (each `day`, `weekday`, `today`, `change` on a daylight-saving day, `counts`, and `times` with `text`, `struck`, `kind` and `due_at`), plus `line`, `summary`, `warning`, `freshness` and `estimated_windows`; null when there is nothing to preview |
 
 ### Checking the backup folder and dismissing a key change
 
@@ -1755,8 +1913,9 @@ list's rows), `joins`, `leaves`, `entered` (already marked; 0 with `--show
 todo`), `replaced` (the page's "Replaced by a later response") and
 `ministries`: the same counts for each Ministry on the list, by DUID
 (`ministry`) with its `name`. Each row names a Member and a Family, so the
-rows stay on the page and its downloads. It records the page's "viewed"
-event with a count of 0.
+rows stay on the page and its downloads (`export roster`, see
+[Roster changes download](#roster-changes-download)). It records the page's
+"viewed" event with a count of 0.
 
 `report census` counts **Census changes**, the census changes Families
 reported, which are carried into ParishSoft automatically or by hand. Like
@@ -1788,13 +1947,13 @@ pk-admin census resolve PROPOSAL_ID --action reopened --expected-version 4 \
     --note - --yes < note.txt
 ```
 
-`PROPOSAL_ID` and the `--expected-version` are the change's id and version.
-No command or download prints them yet: they are only in the hidden fields
-of the change's row form on the Census changes page (the page's downloads
-leave them out). `export census` will print them. `--note` is optional,
-except to reopen; `-` reads it from standard input, which keeps a note that
-names people out of shell history and the process list, and then needs
-`--yes`, because standard input cannot carry both the note and an answer. `--request-key` is made for you and
+`PROPOSAL_ID` and the `--expected-version` are the change's id and version,
+which `export census --format jsonl` prints (`proposal_id` and `version`,
+with the `actions` the change takes now; the page's own downloads leave
+them out). `--note` is optional, except to reopen; `-` reads it from
+standard input, which keeps a note that names people out of shell history
+and the process list, and then needs `--yes`, because standard input cannot
+carry both the note and an answer. `--request-key` is made for you and
 written to standard error when left out. Repeating the command with the
 same key returns the same resolution (`created` false) and records nothing
 new; the key used for another outcome or note is exit 1 (`invalid`). A
@@ -1811,6 +1970,42 @@ The result has `created`, `request_key`, `resolution` (`id`,
 left them), never the note, the Family, the Member or the value. System
 logs show the page's `census_change_updated` and the command's
 `admin_cmd_census_resolve`.
+
+### Reviewing an automatic census change
+
+`census review` is an Automatic row's **Review**: Approve (`approved`),
+Ignore (`ignored`) or Back to To review (`unreviewed`). Only an
+Administrator may review (Staff and Ministry leaders get `denied`, before
+anything is read), with a full-scope session and no recent sign-in, as on
+the page. Every review can be changed again until publication of the change
+starts, so, as on the page, it asks nothing. Approving does not publish
+anything: publication is a separate step.
+
+```sh
+pk-admin census review PROPOSAL_ID --decision approved --expected-version 3
+pk-admin census review PROPOSAL_ID --decision ignored --expected-version 4 \
+    --note - < note.txt
+```
+
+Take `PROPOSAL_ID` and `--expected-version` from `export census --format
+jsonl` (`proposal_id` and `version`); its `reviews` key lists the decisions
+the change takes now. `--note` is optional; `-` reads it from standard
+input. `--request-key` works as for `census resolve`: made for you and
+written to standard error when left out, and a repeat with the same key
+returns the same review (`created` false) and records nothing new; the key
+used for another decision or note is exit 1 (`invalid`). A change someone
+updated since that version is exit 1 (`stale_version`). A decision the change does not
+take now is exit 1 (`invalid`): a By-hand change, the decision it already
+has, approving a Conflict, or any review of a change that is queued for
+publication or already has a final outcome. A change that is not the
+current campaign's is exit 1 (`not_available`), and so is a repeat after
+the current campaign changed.
+
+The result has `created`, `request_key`, `review` (`id`, `proposal_id`,
+`decision`, `expected_version`, `created_at`) and `proposal` (the change's
+`id`, `version`, `decision` and `execution` as the command left them),
+never the note, the Family, the Member or the value. System logs show the
+page's `census_change_updated` and the command's `admin_cmd_census_review`.
 
 ## Digests
 
@@ -2191,6 +2386,28 @@ Families) and columns; `count` is the Member rows plus the Family rows. The
 file names Families and Members, so create it private, as above, and
 delete it once used; the wrapper refuses to write it to a terminal.
 
+### Roster changes download
+
+`export roster` writes the page's download of **Roster changes to enter**
+to standard output, and its document (`campaign_id`, `file_name`,
+`content_type`, `format`, `timezone`, `size`, `sha256`, `count`) to
+standard error, as `export limitations` does. It needs a full-scope
+session, as every export does; Administrators and Staff may run it, and a
+Ministry leader is refused (`denied`). It takes `report roster`'s options,
+`--show todo` (the default: not yet marked Entered in ParishSoft) or
+`--show all`, and `--ministry DUID`, plus `--format` (`xlsx`, the default,
+`csv` or `pdf`) and `--timezone` (UTC, the default, or a time zone name,
+for the file's times). It records the page's "downloaded" event
+(`roster_changes_exported`) with the number of changes in the file.
+
+```sh
+(umask 077; pk-admin export roster --ministry 9 --format csv > roster.csv)
+```
+
+The files are the page's own, with its columns. They name Members and
+Families, so create them private, as above, and delete them once used; the
+wrapper refuses to write one to a terminal.
+
 ### Census changes download
 
 `export census` writes the page's download of **Census changes** to
@@ -2220,8 +2437,10 @@ and `version`, which recording a row's outcome needs and the page's files
 leave out, and `actions`: the outcomes you may record on that row now
 (`entered` and `ignored` on a By-hand change still open, `reopened` on an
 ignored one, for Administrators only, and only with a `--note` saying
-why). `actions` is empty while other campaign work holds the campaign, as
-the page then offers no Record outcome. The file names Families and
+why), and `reviews`: the decisions `census review` takes on that row now
+(an Automatic change still open, for Administrators only). Both are empty
+while other campaign work holds the campaign, as the page then offers no
+Record outcome or Review. The file names Families and
 Members with their contact details, so create it private, as above, and
 delete it once used; the wrapper refuses to write it to a terminal.
 
@@ -2649,6 +2868,12 @@ print is exit 1 (`invalid`).
   `artwork remove SLOT`, Campaign images' Remove this image and its Apply
   (full scope, Administrators only); `artwork remove` records
   `admin_cmd_artwork_remove`.
+- `pk-admin/1` (#463): additive. `workgroup show`, `workgroup preview
+  (--name NAME | --clear) --expected-version VERSION` and `workgroup
+  confirm --token TOKEN|-`, the No-reminders WorkGroup page's read, Review
+  and Apply (Administrators only; the read in any session, the others in
+  a full-scope one); `workgroup confirm` records
+  `admin_cmd_workgroup_confirm`.
 - `pk-admin/1` (#1161): additive. `export comparison` no longer needs
   `--timezone`; without it the file uses the parish's time zone.
 - `pk-admin/1` (#1211): additive. `delivery bounce-report MESSAGE_ID
@@ -2725,3 +2950,37 @@ print is exit 1 (`invalid`).
   fresh-gated and prompting, recording
   `admin_cmd_integration_key_finish_switching` and a `policy_change`
   notice).
+- `pk-admin/1` (#463): additive. `export roster [--show todo|all]
+  [--ministry DUID] [--format csv|xlsx|pdf] [--timezone ZONE]`, the Roster
+  changes to enter download (full scope, Administrators and Staff, the
+  page's `roster_changes_exported`), streamed as `export limitations` is.
+- `pk-admin/1` (#469): additive. `schedule preview`'s change document
+  takes `series` entries ("this and following", the whole series, or
+  delete a remembered series), and the preview gains `series_changes`.
+- `pk-admin/1` (#528): additive. `census review PROPOSAL_ID --decision
+  approved|ignored|unreviewed --expected-version VERSION [--note TEXT|-]
+  [--request-key KEY]`, an Automatic Census changes row's Review (full
+  scope, Administrators only, neither fresh-gated nor prompting;
+  `census_change_updated` and `admin_cmd_census_review`). `export census
+  --format jsonl` records gain `reviews`, the decisions `census review`
+  takes on the row now.
+- `pk-admin/1` (#463): additive. `campaign show`, `campaign preview
+  --changes FILE|- --expected-version VERSION` and `campaign confirm
+  --token TOKEN|-`, Campaign settings' read, Review and Apply
+  (Administrators only; the read in any session, the others in a
+  full-scope one); `campaign confirm` records `admin_cmd_campaign_confirm`
+  and the page's own events.
+- `pk-admin/1` (#632): additive. `integration schedule-preview
+  [--refresh-schedule DOCUMENT|-]`, the ParishSoft page's live refresh
+  schedule check (any session, Administrators only, no event).
+- `pk-admin/1` (#1288): a change of meaning, kept on version 1.
+  `send controls` `health` gains `required` (whether a sender check is
+  needed) and `trouble` (why: `test_in_progress`, `provider_failure`,
+  `test_failed` or `sender_changed`; null when none is needed). `ready` now
+  means "held mail may be released": while paused it is true with `proof`,
+  `checked_at` and `expires_at` all null when no check is needed, and
+  otherwise only while a passed check is current, which now lasts 30
+  minutes (it was five). It used to mean that an accepted test after the
+  pause existed. A reader that took `ready` as proof of a test must read
+  `required` and `checked_at` instead. The command mirrors the Pause and
+  resume mail page, and its only readers are Administrator-run assistants.

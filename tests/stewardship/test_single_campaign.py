@@ -1,4 +1,4 @@
-"""The single-campaign interim (ADM-12.05; admin-portal spec, navigation rule 10).
+"""The single-campaign interim (ADM-12.05; UX conventions spec, navigation rule 10).
 
 Multi-campaign controls are greyed out with one tip, and their actions are
 refused in campaign service code. The views' refusals are covered by
@@ -70,7 +70,6 @@ def test_only_copy_campaign_uses_the_multi_campaign_control():
         "information.html",
         "limitations-report.html",
         "ministry-followup.html",
-        "ministry-report.html",
         "ministry-roster.html",
         "participation.html",
     ],

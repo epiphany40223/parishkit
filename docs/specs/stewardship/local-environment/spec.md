@@ -1088,7 +1088,11 @@ Because LOCAL has no Google sign-in, a local-only route signs an Admin in.
     ([#613](https://github.com/epiphany40223/parishkit/issues/613)). Each
     prompt records its return path in the browser's `localStorage` (the
     printed link is often opened in a new tab), replacing any earlier one,
-    for ten minutes. The sign-in page's script sends it as the form's `next`
+    for ten minutes. A prompt copy that CSS hides (a page that draws one
+    control with and without its step-up and shows one) records nothing
+    ([#1385](https://github.com/epiphany40223/parishkit/issues/1385)); a
+    prompt inside a closed section still records, since opening the section
+    shows it. The sign-in page's script sends it as the form's `next`
     and clears it when the form is submitted, so a link opened but not
     submitted keeps it. The POST passes it to the shared core, which honours
     it only when the sign-in is a step-up of this browser's live session for
@@ -1143,6 +1147,7 @@ section is the contract.
 | `reset [--seeded \| NAME]` | Restore the post-setup snapshot and restart in fake-clock mode, or with `--seeded` the seeded snapshot in normal mode, or the named one, image and data together (each snapshot carries its clock-mode marker); with no post-setup snapshot, delete the root and run `up` again |
 | `reset --reinstall` | Delete the root and run `up` again from the checkout even when a snapshot exists (snapshots are kept) |
 | `wizard` | Complete the setup wizard unattended (below) |
+| `finish-setup` | After the browser wizard stops at Finishing setup, do the runbook's post-wizard step for its frozen attempt (below) |
 | `seed [--response-scale m]` | Seed the current deployment at the current time (below) |
 | `seed --testing` | Switch to the post-setup snapshot and move it to real time: a Testing-mode draft campaign to review (below) |
 | `reseed` | Restore the post-setup snapshot, then `seed` |
@@ -1241,11 +1246,12 @@ every send goes through the mail-catcher transport to Mailpit.
 
 **`wizard`.** For an unattended install (and the documented VM seed runs),
 `wizard` completes the setup wizard through the wizard pages' own service
-layer (`pk-stewardship local-seed --step wizard` under `web`: the parish,
-access, mail, Slack and Testing-recipient settings, the fake ParishSoft key
-and organization, the source load, the mail-catcher document, a generated
-logo through the real branding staging, the review, the setup test mail and
-the final confirmation), then follows the deployment runbook's post-wizard
+layer, in the wizard's page order (`pk-stewardship local-seed --step wizard`
+under `web`: the parish, mail and Testing-recipient settings, the
+mail-catcher document, the Slack setting, a generated logo through the real
+branding staging, the access lists, the fake ParishSoft key and organization,
+the source load, the review, the setup test mail and the final
+confirmation), then follows the deployment runbook's post-wizard
 step: once the credential installers report `awaiting_ack`, it recreates
 `worker` and `mail-dispatch` from `compose.json` and acknowledges each
 request inside them, which lets the installer complete setup. Setup collects
@@ -1260,6 +1266,29 @@ mail schedules, so the seed's `prepare` phase adds the Initial schedule with
 the Reminders when the campaign has none. The browser wizard and Create the
 campaign remain the developer-facing path; `wizard` writes nothing those
 pages would not.
+
+**`finish-setup`.** The browser wizard stops at Finishing setup, "Waiting for
+the server operator", until the post-wizard step has run, as in Production.
+`finish-setup` is that step for the browser path, and `wizard` runs the same
+VM-half function, so LOCAL has one implementation of it. It looks up the
+frozen attempt's request ids (`pk-stewardship local-seed --step credentials`
+under `web`, which writes nothing: the ids of the attempt's unscrubbed
+`stewardship_setup_sealed_credential` rows for `parishsoft` and
+`google_workspace`, the lookup `--step wizard` reports with), waits until both
+`stewardship_secret_request` rows are `awaiting_ack`, recreates `worker` and
+`mail-dispatch` from `compose.json` (with the fake-clock override in fake
+mode), acknowledges each request inside them, waits for setup to complete and
+restarts every service under the configured topology. Unlike `wizard` it
+creates no campaign: setup collects none (#142), so Create the campaign
+follows in the browser. It is idempotent: when
+setup is already complete it says so and changes nothing, and a repeated
+acknowledgement is a no-op, so a rerun after an interruption is safe. It
+refuses, before any service is touched, when no attempt is frozen (the
+wizard's pages are not finished) or the frozen attempt lacks either
+credential. Like every long VM-half command it logs to `/var/log`. Production
+keeps its runbook step; nothing here changes the production tooling, and the
+web service never acknowledges a credential itself, so LOCAL exercises the
+same split between the wizard and the operator.
 
 **Snapshots and fast reset.** Snapshots are uncompressed copies of the runtime
 root inside the VM, under `/opt/parishkit-snapshots/<name>` together with the

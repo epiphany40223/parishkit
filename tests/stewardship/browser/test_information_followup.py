@@ -26,8 +26,14 @@ def test_staff_queue_detail_history_and_accessibility(
     assert page.locator(":focus").get_attribute("name") == "disposition"
     visible(page.get_by_role("button", name="Next", exact=True).first)
     assert page.locator("th[aria-sort=descending]").inner_text().startswith("Submitted")
-    assert page.locator("form").evaluate_all(
+    # Every form posts, except the empty one Vega adds to each drawn chart
+    # for parameter bindings, which this page's Follow-up status chart (#720)
+    # has none of: with no field it submits nothing.
+    assert page.locator("form:not(.vega-bindings)").evaluate_all(
         "nodes => nodes.every(node => node.method === 'post')"
+    )
+    assert page.locator("form.vega-bindings").evaluate_all(
+        "nodes => nodes.every(node => !node.elements.length)"
     )
     page.route("**/information/", lambda route: route.fulfill(body="Filtered"))
     with page.expect_request(lambda request: request.method == "POST") as sent:
@@ -85,12 +91,15 @@ def test_staff_queue_detail_history_and_accessibility(
     page.goto(component_origin + "/information-gated")
     assert page.get_by_role("button", name="Save follow-up").is_disabled()
     page.goto(component_origin + "/information-queue-gated")
+    page.get_by_text("Export complete results").click()
     assert page.get_by_role("button", name="Queue complete export").is_disabled()
 
 
 def export_post(page, component_origin):
     """The complete-result form posts its private filters in the body."""
     page.goto(component_origin + "/information")
+    # The export starts closed (#227).
+    page.get_by_text("Export complete results").click()
     page.get_by_label("Export format", exact=True).select_option("xlsx")
     page.get_by_label("Export timezone", exact=True).select_option("UTC")
     page.get_by_label("Include complete Staff workflow history").check()

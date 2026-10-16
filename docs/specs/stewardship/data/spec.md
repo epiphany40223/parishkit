@@ -137,9 +137,13 @@ frozen migration 0015), so it can change while the campaign runs, and needs
 no configuration schema version: like `artwork`, documents without it stay
 valid. Each source refresh records what it read in its snapshot cursor's
 load evidence, `cursor.load.reminder_workgroup = {name, found,
-family_duids}`; nothing else stores the membership, and no Family row,
+family_duids}`; when `found` is false, `family_duids` is the set the
+snapshot before it applied, kept until a refresh finds the named WorkGroup
+(#1305), not a membership ParishSoft reported. Nothing else stores the membership, and no Family row,
 eligibility flag, code or link changes because of it. The current snapshot's
-record applies only while its `name` equals the campaign's setting (see
+record applies while the campaign names any WorkGroup, even one whose `name`
+differs from the record's until a refresh reads it, and never while the
+setting is cleared (see
 [background processing](../background-processing/spec.md#family-invitations-and-reminders)).
 
 One versioned `SystemConfiguration` holds the global `testing` or `production`
@@ -202,7 +206,7 @@ Production had none.
 A `Campaign` includes:
 
 - UUID, unique human name, optional stewardship year label, and lifecycle state;
-- an IANA campaign-timezone snapshot, initialized from the Parish timezone;
+- an IANA campaign-timezone snapshot, chosen at creation (any catalog zone);
 - local start/end dates and their resolved UTC boundary instants;
 - enabled census, Ministry, and financial modules;
 - references to the global mode transitions under which it was exercised;
@@ -362,6 +366,24 @@ and never reroutes a `production` OutboxMessage. Outbox rows held by it remain
 in their ordinary nonterminal state with a structured pause-hold reference;
 the dispatch claim must check both state and current pause version.
 
+`CampaignSetupReview` (`stewardship_campaign_setup_review`, frozen migration
+0105, [#1404](https://github.com/epiphany40223/parishkit/issues/1404)) records a
+[Campaign setup step](../admin-portal/spec.md#create-the-campaign) an
+Administrator kept as is: campaign, step key (`settings`, `share_options`,
+`content`, `schedules` or `images`), item key (empty for the whole step, or
+one Pages and emails slot such as `page:welcome`), actor and time, unique on
+campaign, step and item. It is insert-only: the web role holds SELECT and
+INSERT only, and its guard admits an INSERT only from a current Administrator,
+for the current campaign while the system is in Testing mode, the campaign is
+a draft and no go-live has started, and requires the
+`campaign_setup_step_reviewed` audit event in the same transaction. Rows are
+retained with their campaign; the campaign purge, when it lands, must
+inventory and delete them as campaign-owned setup detail. Because the guard
+refuses every DELETE and the campaign foreign key blocks deleting the
+campaign while rows remain, that purge needs a forward migration that gives
+the guard a purge path (for example, admitting DELETE from the purge
+worker under its own lock); until then a purge attempt fails closed.
+
 Deleting a Campaign through ordinary CRUD is impossible. Closing and archiving
 retain all relationships. Exceptional purge is defined by the
 [Admin portal](../admin-portal/spec.md#campaign-purge).
@@ -504,6 +526,10 @@ remember it: the same signed intent adds the series record, holding exactly
 the reminders that repeat adds (`schedule_changes.build_preview`'s
 `series`). So far only the command line asks
 ([`schedule preview`](../admin-automation/spec.md#schedules-and-configuration)).
+The same command's `series` entries edit a series "this and following" or
+as a whole, or delete it, in one signed intent that adds and removes
+ordinary reminders and updates, adds or removes series records
+(`accounts.series_edits.plan`); a reminder that has sent is never changed.
 
 ### Source snapshot
 
@@ -1973,10 +1999,20 @@ entities. An entity's written proposals are `queued` from just before its PUT
 until its outcome: `published` when verified, or, when the entity is
 invalidated, back to `failed` (an attempt failed) or `pending`. Every entity a
 run leaves without a published or invalidated outcome, and any left by a
-crashed run once its plan's execution window has passed, is invalidated, so a
-new preflight can plan it and it never blocks a later confirmation. A crash
-after a PUT is recovered by the next run's read, without a second PUT. After
-releasing the lease, a final targeted/full refresh reconciles
+crashed run once its plan's execution window has passed, is closed, so a
+new preflight can plan it and it never blocks a later confirmation. One whose
+changes the plan queued (its PUT may have landed) is read back first and
+recorded published when ParishSoft holds the planned payload; any other is
+invalidated. A crash after a PUT is recovered by the next run's read, without
+a second PUT. If the system switches to Testing mode or the
+`parishsoft_publication` setting goes off after such a crash, the next run
+refuses before any read or lease, so the crashed entity's proposals stay
+`queued`. They stay that way until a run in Production mode with the setting
+on (a recovery retry or an Administrator's rerun) reads them back and closes
+them. This is safe: a `queued` proposal refuses every review and resolution
+and no preflight plans it, so nothing can change it or plan a second write
+while its PUT may have landed. Turning publication off never needs them
+cleared first. After releasing the lease, a final targeted/full refresh reconciles
 the promoted snapshot under a new lease claim. Publication ships switched off;
 the [publication guide](../../../guides/stewardship-member-requests.md#parishsoft-publication)
 says what must happen before it is switched on.

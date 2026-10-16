@@ -5,6 +5,7 @@ and a promoted ParishSoft snapshot. Creation is admitted only while the
 deployment has never had a campaign; it is not a way to add a second one.
 """
 
+import re
 from uuid import uuid4
 
 import pytest
@@ -50,8 +51,10 @@ def new_fields(store):
 def test_first_campaign_is_created_with_default_content(auth_service, google):
     """Review, confirm and apply one request that adds the draft and its text.
 
-    The review, the confirmation's answer and the change's status are all this
-    page again, in its review region (#532), as on Campaign settings.
+    The Review is a confirmation for the review dialog (#1356): one sentence
+    and the number of default pages and emails, repeating none of the form's
+    values. Apply's answer and the change's status are this page again,
+    naming the request, whose region holds the status.
     """
     publish(source())
     browser, _ = signed_in()
@@ -62,16 +65,28 @@ def test_first_campaign_is_created_with_default_content(auth_service, google):
     assert response.status_code == 200 and b"Create the campaign" in response.content
     assert flow_steps(response.content) == (STEPS, "Make changes")
     preview = post(browser, CREATE, new_fields(store))
-    assert b"Pages and emails start with the default text." in preview.content
-    assert b'id="settings-review"' in preview.content
-    assert b"Nothing is saved until you choose Create the campaign." in preview.content
-    assert flow_steps(preview.content) == (STEPS, "Review")
+    fragment = preview.content.decode()
+    assert "data-review-answer" in fragment and "<html" not in fragment
+    assert (
+        "This creates the campaign as a draft in Testing mode; no email is sent."
+        in fragment
+    )
+    assert re.search(
+        r"It starts with \d+ pages and emails in the default text", fragment
+    )
+    # None of the form's values is drawn again: they are on the page.
+    values = new_fields(store)
+    for name in ("name", "start_date", "end_date"):
+        assert values[name] not in fragment, name
+    assert "Current" not in fragment and "Proposed" not in fragment
     proposal = token(preview)
     assert not Campaign.objects.exists()
     assert not ConfigurationChangeRequest.objects.exists()
     accepted = post(browser, CREATE, {"action": "confirm", "preview": proposal})
     request_id = requested(accepted)
-    assert accepted["Location"] == (f"{CREATE}?request={request_id}#settings-review")
+    assert accepted["Location"] == (
+        f"{CREATE}?request={request_id}#campaign-create-region"
+    )
     assert (
         post(browser, CREATE, {"action": "confirm", "preview": proposal})["Location"]
         == accepted["Location"]
@@ -84,8 +99,10 @@ def test_first_campaign_is_created_with_default_content(auth_service, google):
     # nothing refreshes this page (its follow-up is for settings pages only).
     status_url = reverse("admin:configuration_request", args=[request_id])
     assert f'data-live-url="{status_url}"' in pending
-    # Before it is applied the form is still drawn, held until complete.
-    assert 'id="settings-form"' in pending and "data-require-complete" in pending
+    # The region holds the status, not the form, which could only create a
+    # second campaign or be refused once this change applies.
+    assert 'id="campaign-create-region"' in pending
+    assert 'id="settings-form"' not in pending
     apply(store, accepted)
     row = Campaign.objects.get()
     assert row.state == "draft" and not row.structural_locked
@@ -130,6 +147,63 @@ def test_first_campaign_is_created_with_default_content(auth_service, google):
     assert f'href="{CREATE}"'.encode() not in browser.get("/admin/").content
 
 
+def test_a_zone_other_than_the_parish_zone_is_the_campaign_zone(auth_service, google):
+    """Any catalog zone may start the campaign, not only the parish's (#1330).
+
+    The Administrator chose America/Kentucky/Louisville with a parish zone of
+    America/New_York and was refused. A zone hours away from the parish's
+    shows the dates are days in the chosen zone: the campaign opens at local
+    midnight there, which is not the parish's midnight. The page offers the
+    browser's zone through ``data-browser-default``, on the fresh form only.
+    """
+    from datetime import date, datetime, time
+    from zoneinfo import ZoneInfo
+
+    from ..configuration_factory import PARISH_TIMEZONE
+
+    publish(source())
+    browser, _ = signed_in()
+    store = auth_service.store
+    page = browser.get(CREATE).content.decode()
+    menu = re.search(r'<select name="timezone"[^>]*>', page)[0]
+    assert "data-browser-default" in menu
+    zone = "America/Los_Angeles"
+    assert zone != PARISH_TIMEZONE
+    preview = post(browser, CREATE, new_fields(store) | {"timezone": zone})
+    assert preview.status_code == 200, preview.content
+    accepted = post(browser, CREATE, {"action": "confirm", "preview": token(preview)})
+    apply(store, accepted)
+    projection = Campaign.objects.get().active_configuration
+    assert projection.timezone == projection.values["timezone"] == zone
+    start = date.fromisoformat(projection.values["start_date"])
+    assert projection.starts_at == datetime.combine(start, time(), ZoneInfo(zone))
+    assert projection.starts_at != datetime.combine(
+        start, time(), ZoneInfo(PARISH_TIMEZONE)
+    )
+    parish = store.active().document()["sections"]["parish"][0]["values"]
+    assert parish["timezone"] == PARISH_TIMEZONE
+
+
+def test_a_refused_form_keeps_the_posted_zone(auth_service, google):
+    """A form drawn again keeps the posted zone; the browser does not reset it."""
+    publish(source())
+    browser, _ = signed_in()
+    refused = post(
+        browser,
+        CREATE,
+        new_fields(auth_service.store) | {"timezone": "America/Chicago", "name": ""},
+    )
+    assert refused.status_code == 400
+    menu = re.search(r'<select name="timezone"[^>]*>', refused.content.decode())[0]
+    assert "data-browser-default" not in menu
+    assert b'<option value="America/Chicago" selected>' in refused.content
+    # A name that is not a catalog zone is still refused at the field.
+    bogus = post(
+        browser, CREATE, new_fields(auth_service.store) | {"timezone": "Mars/Base"}
+    )
+    assert bogus.status_code == 400 and not Campaign.objects.exists()
+
+
 def test_creation_is_refused_once_any_campaign_exists(auth_service, google):
     """A preview signed with no campaign cannot add a second one later."""
     publish(source())
@@ -138,19 +212,33 @@ def test_creation_is_refused_once_any_campaign_exists(auth_service, google):
     proposal = token(post(browser, CREATE, new_fields(store)))
     add_draft(store, store.active(), uuid4())
     requests = ConfigurationChangeRequest.objects.count()
-    # Both are refused in place: the page again, the explanation in its
-    # review region, and no review or Create button.
+    # Both are refused with the closed refusal the review dialog shows, and
+    # no signed review.
     for refused in (
         post(browser, CREATE, {"action": "confirm", "preview": proposal}),
         post(browser, CREATE, new_fields(store)),
     ):
         assert refused.status_code == 409
         content = refused.content.decode()
-        region = content.split('id="settings-review"', 1)[1]
-        assert "The campaign can&#x27;t be created right now." in region
+        assert "The campaign can't be created right now." in content
         assert 'name="preview"' not in content
     assert ConfigurationChangeRequest.objects.count() == requests
     assert Campaign.objects.count() == 1
+
+
+def test_a_field_error_is_the_page_again(auth_service, google):
+    """A Review refused for the form's values answers the page again (400),
+    with the field's error and the summary, and signs nothing, so the review
+    dialog stays shut and the errors stay on the form."""
+    publish(source())
+    browser, _ = signed_in()
+    refused = post(browser, CREATE, new_fields(auth_service.store) | {"name": ""})
+    assert refused.status_code == 400
+    content = refused.content.decode()
+    assert 'id="settings-form"' in content and "data-error-summary" in content
+    assert 'aria-invalid="true"' in content
+    assert 'name="preview"' not in content and "data-review-answer" not in content
+    assert not ConfigurationChangeRequest.objects.exists()
 
 
 def test_creation_needs_loaded_parish_data(auth_service, google):
@@ -448,6 +536,47 @@ def test_two_creations_confirmed_together_apply_one(auth_service, google):
     assert "A campaign already exists." in failed
     assert "The campaign has been created." not in failed
     assert 'id="settings-form"' not in failed
+
+
+def test_a_failed_change_with_no_campaign_links_back_to_the_page(auth_service, google):
+    """A reload of a failed creation's address, with no campaign, has a way back.
+
+    The address draws only the change's status, so without a link the failed
+    status would be a dead end (review of #1357).
+    """
+    from parishkit.stewardship.accounts.configuration_installation import (
+        install_request,
+    )
+
+    publish(source())
+    browser, _ = signed_in()
+    store = auth_service.store
+    proposal = token(post(browser, CREATE, new_fields(store)))
+    accepted = post(browser, CREATE, {"action": "confirm", "preview": proposal})
+    # Any other configuration change made meanwhile leaves the creation on a
+    # stale base, so it fails when it installs and no campaign is created.
+    version = store.active()
+    parish = version.document()["sections"]["parish"][0]
+    change(
+        store,
+        version,
+        uuid4(),
+        [
+            {
+                "operation": "update",
+                "section": "parish",
+                "id": parish["id"],
+                "values": {"name": "Changed Parish"},
+            }
+        ],
+    )
+    state = install_request(
+        store, request_id=requested(accepted), correlation_id=uuid4()
+    ).state
+    assert state == "failed" and not Campaign.objects.exists()
+    failed = browser.get(accepted["Location"]).content.decode()
+    assert "A campaign already exists." not in failed
+    assert f'href="{CREATE}"' in failed
 
 
 def test_local_seeder_creates_the_campaign_through_the_page(auth_service, google):
