@@ -18,7 +18,7 @@ from parishkit.stewardship.source.refresh_status import (
 )
 from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSnapshot
 
-from .content_models import ContentVersion
+from .campaign_wizard import invitation_revision
 from .policy import Capability, allows
 
 
@@ -139,17 +139,7 @@ def summary(actor, configuration, now, *, home=False):
             # initial invitation's current revision while a Testing draft
             # admits test mail (NAV-18); the same row Pause and resume mail
             # links. One small indexed query, for Administrators only.
-            result["test_email"] = (
-                ContentVersion.objects.filter(
-                    configuration_id=configuration.active_configuration_id,
-                    campaign_id=campaign.pk,
-                    kind="email",
-                    slot="initial",
-                )
-                .order_by("record_id")
-                .values_list("record_id", flat=True)
-                .first()
-            )
+            result["test_email"] = invitation_revision(configuration, campaign.pk)
         if campaign.state in {"draft", "scheduled", "active"} and allows(
             actor, Capability.FAMILY_CODES
         ):
