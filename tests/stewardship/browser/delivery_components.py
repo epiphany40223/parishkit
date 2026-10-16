@@ -273,6 +273,8 @@ def components(now):
         ],
     )
     yield "/delivery", "delivery", delivery
+    # No Admin evidence saved yet (#227 empty state).
+    yield "/delivery-no-evidence", "delivery", delivery | dict(notes=[])
     # Other campaign work holds the email: its decisions stay in view,
     # unavailable, named by the notice that says why (#1331).
     yield (
