@@ -1458,6 +1458,46 @@
     document.write(text);
     document.close();
   };
+  // A refused in-place POST answered as JSON (a typed error: a user-facing
+  // refusal, a stale page, a denial, an outage) is the server's answer to a
+  // script, never a page: shown whole it would be raw JSON (#519). It is
+  // shown in place instead, as one alert line after the control's buttons,
+  // so nothing above it moves: the refusal's message and fix in plain words
+  // (refusalText, with the confirm dialogs' wording for its status when it
+  // has none) and its same-origin link when it has one. A later answer to
+  // the same form replaces the line (a new element, so it is announced
+  // again) or, when it is not such a refusal, removes it. Keyed by the form
+  // (or the control, outside any form) so a submitter outside its form
+  // (form="…") still finds its own line.
+  const refusalNotes = new WeakMap();
+  const clearRefusal = (key) => {
+    refusalNotes.get(key)?.remove();
+    refusalNotes.delete(key);
+  };
+  const showRefusal = (key, control, status, text) => {
+    const note = document.createElement("p");
+    note.className = "notice notice-error";
+    note.setAttribute("role", "alert");
+    note.setAttribute("data-in-place-refusal", "");
+    note.textContent = refusalText(status, text);
+    let link = null;
+    try { link = JSON.parse(text)?.refusal?.link; } catch { /* refusalText fell back already */ }
+    if (link?.url && link.label && sameOrigin(link.url)) {
+      const anchor = document.createElement("a");
+      anchor.href = link.url;
+      anchor.textContent = link.label;
+      note.append(" ", anchor);
+    }
+    const old = refusalNotes.get(key);
+    if (old?.isConnected) {
+      old.replaceWith(note);
+    } else if (control instanceof HTMLFormElement || !(control instanceof Element)) {
+      key.append(note);
+    } else {
+      (control.closest(".actions, p") || control).after(note);
+    }
+    refusalNotes.set(key, note);
+  };
   // Load the page a control leads to and bring this page up to date from it.
   // Success: every region present in both pages is swapped (the one the
   // control changes and any other on the page, so they never disagree), the
@@ -1655,6 +1695,22 @@
       leave(fallback);
       return;
     }
+    // A refused POST answered as JSON is shown in place beside its control
+    // (showRefusal), never written as the page; the page and focus stay.
+    // Any other answer removes such a line an earlier answer left.
+    const noteKey = owner || (control instanceof Element && control.closest("form")) || control;
+    if (refused && /^application\/json\b/i.test(response.headers.get("Content-Type") || "")) {
+      region.removeAttribute("aria-busy");
+      if (isBox(control)) failedState.set(control, sentState.get(control));
+      showRefusal(noteKey, control, response.status, text);
+      // Focus is on the control, as after a swapped refusal with no
+      // summary; a click does not focus a button in every engine (Safari).
+      if (control instanceof HTMLElement && !(control instanceof HTMLFormElement)) {
+        control.focus({preventScroll: true});
+      }
+      return;
+    }
+    clearRefusal(noteKey);
     // A redirect chose the answer's address: a refusal that was redirected
     // to another page (the sign-in page) is that page, not this one.
     const otherOrigin = answered.origin !== window.location.origin;
