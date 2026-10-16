@@ -1,0 +1,33 @@
+{% load i18n stewardship %}{% comment %}
+  Turn off debug logging's answers in the shared review dialog (ADM-13 PR
+  6b, #1356; system_health_views._act), never a page of its own: the
+  button's form (system-health-debug-button.html) posts the preview step
+  without a page load and ui-v1.js shows this fragment in the dialog.
+  ``debug_off`` holds the step's result:
+
+  - ``preview`` (a system_health.DebugOffPreview): a confirmation (UX
+    conventions, "A confirmation when Review would only repeat the page").
+    What the switch leaves alone (lines already written, the startup gap,
+    the server's setting) and who clears it are in the About panel and the
+    region's toggletip, so it says in one sentence what Apply does
+    (debug-off-review-summary, the dialog's description), naming the
+    services the server found with debug logging on. The preview's key
+    (data-review-preview) is what Apply posts as the switch's identity, so
+    a repeated Apply returns the first switch.
+  - ``requested``: Apply's answer once the switch is set: the region drawn
+    again, which the dialog puts in place of the page's
+    (data-review-redraw="body", so the page is not read again), showing
+    who set the switch and when; the status line after the region says
+    debug logging was turned off.
+  - ``refused``: why the step was refused, marked data-review-refusal so
+    the dialog shows it as drawn, with the shared step-up for a stale
+    sign-in, which returns to System health.
+{% endcomment %}{% if debug_off.preview %}{% with preview=debug_off.preview %}<div data-review-answer data-review-done="{% translate 'Debug logging turned off.' %}">
+<p id="debug-off-review-summary">{% if preview.processes %}{% blocktranslate with services=preview.processes|join:", " trimmed %}This turns debug logging off now in the services that have it on ({{ services }}), without restarting them, until the debug-off switch is cleared.{% endblocktranslate %}{% else %}{% translate "No service reports debug logging right now; this keeps it off in every service until the debug-off switch is cleared." %}{% endif %}</p>
+<input type="hidden" name="key" value="{{ preview.key }}" data-review-preview>
+</div>{% endwith %}
+{% elif debug_off.requested %}{% include 'stewardship/system-health-debug-off.html' %}
+{% else %}<div data-review-refusal>{% if debug_off.refused == "reauthenticate" %}{% url 'admin:system_health' as here %}{% translate "turning off debug logging" as step_up_action %}{% translate "Nothing was changed." as step_up_outcome %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action outcome=step_up_outcome next=here marker="debug-off-refused" marker_value="reauthenticate" %}
+{% elif debug_off.refused == "busy" %}<p data-debug-off-refused="busy">{% translate "Debug logging has already been turned off, so nothing was changed. The line under Turn off debug logging says who did it and when." %}</p>
+{% elif debug_off.refused == "denied" %}<p data-debug-off-refused="denied">{% translate "The server refused to turn off debug logging, so nothing was changed. System logs record why; ask the server operator to check the database grants." %}</p>
+{% else %}<p data-debug-off-refused="invalid">{% translate "That request could not be read. Nothing was changed; try again." %}</p>{% endif %}</div>{% endif %}

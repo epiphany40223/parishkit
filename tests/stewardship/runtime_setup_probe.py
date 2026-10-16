@@ -111,17 +111,13 @@ def main():
     assert callback["Location"] == "/admin/", callback["Location"]
     get("/admin/setup")
     post("/admin/setup", {"action": "start"})
+    # The public steps, the logo, then the credentials with ParishSoft last,
+    # right before the load as in the wizard (#1353). This is close to page
+    # order, not exact: each page accepts a save once its own prerequisites
+    # are met.
     for step, values in fixture["steps"].items():
         path = "/admin/setup/" + step
         post(path, initial_values(step, values) | {"version": version(path)})
-    for target in ("parishsoft", "google_workspace"):
-        path = "/admin/setup/credentials/" + target
-        data = {"version": version(path), "candidate": "synthetic-private-" + target}
-        if target == "parishsoft":
-            data["organization_id"] = "1"
-        else:
-            data["candidate"] = fixture["workspace"]
-        post(path, data)
     stream = BytesIO()
     Image.new("RGB", (64, 64), "navy").save(stream, format="PNG")
     post(
@@ -131,6 +127,14 @@ def main():
             "logo": SimpleUploadedFile("logo.png", stream.getvalue(), "image/png"),
         },
     )
+    for target in ("google_workspace", "parishsoft"):
+        path = "/admin/setup/credentials/" + target
+        data = {"version": version(path), "candidate": "synthetic-private-" + target}
+        if target == "parishsoft":
+            data["organization_id"] = "1"
+        else:
+            data["candidate"] = fixture["workspace"]
+        post(path, data)
     draft = get("/admin/setup").context["draft"]
     progress = post(
         "/admin/setup",
@@ -149,8 +153,8 @@ def main():
         assert time.monotonic() < deadline, data
         time.sleep(0.5)
     assert not runtime().configured() and not SetupCompletion.objects.exists()
-    # Setup collects no campaign (#142): the logo and access steps were the
-    # last data pages, so the review follows the load.
+    # Setup collects no campaign (#142), and the load is the last data step
+    # (#1353), so the review follows it.
     get("/admin/setup/preview")
     mail = get("/admin/setup/mail-test")
     post("/admin/setup/mail-test", fields(mail.context["form"]))

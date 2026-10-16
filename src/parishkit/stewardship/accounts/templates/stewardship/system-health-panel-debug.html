@@ -9,9 +9,9 @@
   Production the ``debug_logging`` problem names every service with debug
   logging in effect and what to do, so only Testing lists them here; who
   set the debug-off switch and when, and that debug logging is off
-  everywhere, are Turn off debug logging's greyed reason; how to clear the
+  everywhere, are Turn off debug logging's status line; how to clear the
   switch is that region's toggletip. The Testing note about Turn off debug
-  logging is left out while the switch is set and that button is greyed.
+  logging is left out while the switch is set and that button is not drawn.
 {% endcomment %}{% if health.debug_lines and health.mode != "production" %}<ul>{% for line in health.debug_lines %}<li>{% blocktranslate with name=line.label trimmed %}Debug logging is on in {{ name }}.{% endblocktranslate %}</li>{% endfor %}</ul>
 {% if not health.debug_switch.active %}<p>{% translate "That is expected in Testing, where the deployment tool can turn it on on purpose. Turn off debug logging works here too." %}</p>{% endif %}{% endif %}
 {% with switch=health.debug_switch %}{% if switch.active %}<p data-debug-switch="set">{% translate "The setting on the server still says “on”." %}</p>

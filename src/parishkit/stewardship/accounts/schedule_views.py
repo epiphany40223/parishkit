@@ -6,7 +6,9 @@ actions (``schedule_entry_views`` owns the New, Edit and Delete actions).
 Proposed campaign dates (sent here by Campaign settings) and this page's own
 POSTs keep the combined date-change review: every schedule's editor with the
 proposed dates, previewed and confirmed together, as the campaign
-configuration rules require. Its Review changes opens the shared review
+configuration rules require. Send dates and times there are shown and typed
+in the browser's time zone (#558; ``ScheduleSet`` with ``browser_times``),
+which the page posts as ``zone``. Its Review changes opens the shared review
 dialog (UX conventions, "Review dialog", #750) without a page load, and once
 the change is applied the dialog returns to the list, whose status line says
 what was applied. The review of every schedule change, from any of these
@@ -141,9 +143,11 @@ def _summary(window, schedules):
 def _page(request, campaign, window, schedules, digest, *, editable, status=200):
     """The date-change review: proposed dates and every schedule's editor.
 
-    Civil dates and the time zone show separately from browser-local audit
-    timestamps. A refused Review (status 400) is this page with its errors
-    and their summary, which the page script marks on the form it shows.
+    The campaign's calendar dates and time zone are shown as saved; each
+    saved schedule's send time is filled in the browser's zone from its
+    moment (``data-schedule-local``). A refused Review (status 400) is this
+    page with its errors and their summary, which the page script marks on
+    the form it shows.
     """
     # Schedules stay editable when the dates are locked: step 1 of 3 (#196).
     admin_navigation.place(request, flow="change", step="edit")
@@ -273,7 +277,11 @@ def schedule_settings(request, campaign_id):
                 proposed=proposed,
             )
             if request.method == "POST":
-                schedule_action(request.POST, window_fields=window.open_fields)
+                schedule_action(
+                    request.POST,
+                    window_fields=window.open_fields,
+                    extra_fields={"zone"},
+                )
             schedules = Schedules(
                 request.POST if request.method == "POST" else None,
                 prefix="schedules",
@@ -286,6 +294,12 @@ def schedule_settings(request, campaign_id):
                 # why instead of linking a test that cannot work (#923).
                 email_links=True,
                 test_mail=admits_test_mail(state[0].mode, campaign),
+                # Send times are shown and typed in the browser's zone,
+                # which the page posts as ``zone`` (#558); the list and the
+                # GET review read only ``now``.
+                browser_times=True,
+                zone=request.POST.get("zone", "") if request.method == "POST" else "",
+                now=timezone.now(),
             )
             response = (
                 _list(

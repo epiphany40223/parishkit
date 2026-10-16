@@ -12,10 +12,9 @@
   The text a page puts around this component must not mention Google in
   LOCAL either (#619): word it neutrally, or keep the Google wording in an
   {% if local_environment %} ... {% else %} branch.
-  ``mirrored`` (a copy in a polled status region, such as System health's)
-  leaves the CSRF token empty, so the polled markup is the same from poll to
-  poll; live-status-v1.js fills it from the page's own token.
+  ``mirrored`` (a copy a live status update carries, live-status-v1.js)
+  leaves the CSRF token empty for the script to fill from the page's own.
 {% endcomment %}{% if local_environment %}<p class="local-environment-step-up" data-local-step-up="{{ next }}">{% translate "To confirm, run" %} <code>tools/stewardship-local.sh sign-in --email you@example.org</code> {% translate "on the laptop again and open the printed link in this browser." %} {% if next_label %}{% blocktranslate with page=next_label %}It refreshes this sign-in in place and takes you to {{ page }}.{% endblocktranslate %}{% else %}{% translate "It refreshes this sign-in in place and brings you back to this page." %}{% endif %}</p>{% else %}<form method="post" action="{% url 'admin:login' %}">
-  {% if mirrored %}<input type="hidden" name="csrfmiddlewaretoken" value="">{% else %}{% csrf_token %}{% endif %}<input type="hidden" name="next" value="{{ next }}">
+  <input type="hidden" name="csrfmiddlewaretoken" value="{% if not mirrored %}{{ csrf_token }}{% endif %}"><input type="hidden" name="next" value="{{ next }}">
   {% button type="submit" %}{% translate "Confirm with Google" %}{% endbutton %}
 </form>{% endif %}

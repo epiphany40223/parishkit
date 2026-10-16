@@ -108,6 +108,17 @@ SITES = {
         WEB,
         {"campaigns/cleanup_requests.py"},
     ),
+    # The census Publish page's calls (#528); the page is a later slice, so
+    # nothing imports them yet.
+    "responses/publication_tasks.py::request_preflight": site(
+        "census_publication_preflight", WEB
+    ),
+    "responses/publication_tasks.py::confirm_and_publish": site(
+        "census_publication", WEB
+    ),
+    "responses/publication_tasks.py::rerun_publication": site(
+        "census_publication", WEB
+    ),
     "jobs/delivery_resolution.py::resolve_delivery": site(
         "outbox_delivery",
         WEB,

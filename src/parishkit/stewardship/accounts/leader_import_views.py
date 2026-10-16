@@ -138,7 +138,9 @@ def user_leader_import(request):
     configuration and signs the review for one Apply on Users. Anyone who
     became a user meanwhile, or is no longer listed, is skipped and named
     on the review. With nobody left to import the review says so and offers
-    no Apply. The answer is a fragment for the review dialog, not a page.
+    no Apply. Import selected with nobody skipped or left over is a
+    confirmation instead (#1356). The answer is a fragment for the review
+    dialog, not a page.
     Nothing is recorded here but the definer's own audit event.
     """
     from .user_views import ERRORS, SALT, _users
@@ -190,6 +192,16 @@ def user_leader_import(request):
                 "remaining": plan.remaining,
                 "limit": ENTRY_LIMIT,
                 "preview": token,
+                # Import selected that imports every ticked row, and nothing
+                # else, would only repeat the rows the reader just ticked: a
+                # confirmation (UX conventions, "A confirmation when Review
+                # would only repeat the page", #1356). Import all (rows on
+                # other pages), a skipped row or the per-change limit is
+                # news, so it keeps the full review.
+                "confirmation": chosen is not None
+                and bool(token)
+                and not plan.skipped
+                and not plan.remaining,
             },
         )
         _recheck(request, service, actor)

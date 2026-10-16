@@ -1047,6 +1047,21 @@ zone, and its retry asks for exactly those filters; a capture made before
 schema migration 0064 has no zone, keeps its campaign-zone days and is retried
 unchanged.
 
+The page is visual first
+([#720](https://github.com/epiphany40223/parishkit/issues/720)). After the
+matching-request count and before the export, one
+[chart engine](#chart-engine) chart, "Follow-up status", draws every request
+the filters match, not only the table's page, as progress bars against all
+of them. There are three bars: "Completed", "Needed, not completed" and "Not
+needed, not completed". Every request is in exactly one, so the bars add up
+to the matching requests. The chart draws its values the way the
+[Participation statistics](#campaign-statistics) chart does, in each bar's
+axis label, so it has no exact-values table. With no matching request,
+nothing is drawn. The installed selection counts the states from the same
+filtered rows, in the same statement as the total and the page (schema
+migration 0100), so the counts follow the filters in place, and paging and
+sorting leave them unchanged.
+
 Editing is audited and uses optimistic concurrency. This report is also the
 source for the weekly Admin digest.
 

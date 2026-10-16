@@ -330,6 +330,12 @@ FROZEN = {
     "0099_workgroup_rename_keep.sql": (
         "d6c82585d1876698dcea878a3648f23a0633cf7775e85a31b0a0d73d1d9a7adb"
     ),
+    "0100_information_status_counts.sql": (
+        "1c57a030f6130f596f6b5c1ee9fe2c9c540e5676ee69b2055faa401e5828c4f6"
+    ),
+    "0101_publication_tasks.sql": (
+        "6d1e92b1571c696103b9e72bf302ce67f4f161bb8ab86d44d95618a9bd9f4b2f"
+    ),
 }
 
 

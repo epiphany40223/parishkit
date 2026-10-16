@@ -12,7 +12,17 @@ applied both tables are redrawn in place and Users' status line starts with
 data-review-done. With nobody left to import there is no preview, so the
 dialog offers no Apply, only Cancel. A review lasts fifteen minutes, as
 every review does.
-{% endcomment %}<div data-review-answer data-review-done="{% translate 'Leaders imported.' %}">
+With ``confirmation`` (Import selected importing every ticked row, nobody
+skipped or left over) it is instead a confirmation (UX conventions, "A
+confirmation when Review would only repeat the page", #1356): the ticked
+rows are on the page behind the dialog, so it lists none of them, says in
+one sentence what Apply does, with the count, and names its own question
+(data-review-title) and that sentence (data-review-describedby), which
+replace the dialog's for this answer only.
+{% endcomment %}{% if confirmation %}<div data-review-answer data-review-done="{% translate 'Leaders imported.' %}" data-review-title="{% translate 'Import the selected leaders?' %}" data-review-describedby="leader-import-summary">
+<p id="leader-import-summary">{% blocktranslate count count=added|length trimmed %}This adds the chosen leader as a user with the role Ministry leader.{% plural %}This adds the {{ count }} chosen leaders as users with the role Ministry leader.{% endblocktranslate %}</p>
+<input type="hidden" name="preview" value="{{ preview }}" data-review-preview>
+</div>{% else %}<div data-review-answer data-review-done="{% translate 'Leaders imported.' %}">
 <h3 id="leader-import-title">{% if added %}{% blocktranslate count count=added|length %}{{ count }} new user{% plural %}{{ count }} new users{% endblocktranslate %}{% else %}{% translate "Nobody to import" %}{% endif %}</h3>
 {% if added %}<p>{% translate "Each person below becomes a user with the role Ministry leader, named as the Member column shows. You can change a Name later with Edit." %}</p>
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="leader-import-caption">
@@ -44,4 +54,4 @@ every review does.
 </div>{% endif %}
 {% if preview %}<p>{% translate "Nothing changes until you choose Apply." %}</p>
 <input type="hidden" name="preview" value="{{ preview }}" data-review-preview>{% endif %}
-</div>
+</div>{% endif %}

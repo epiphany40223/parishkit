@@ -189,6 +189,8 @@ def test_background_assembly_binds_exact_keys_role_and_closed_registry(
             "automation_maintenance",
             "setup_source_load",
             "setup_source_cleanup",
+            "census_publication_preflight",
+            "census_publication",
         }
         if role is ServiceRole.SCHEDULER:
             expected.add("setup_mail_test")
@@ -211,6 +213,13 @@ def test_background_assembly_binds_exact_keys_role_and_closed_registry(
                 if login == "pk_stewardship_worker"
             }
         assert runtime.handlers["source_refresh"].pulse is pulse
+        if role is ServiceRole.WORKER:
+            # #1245 review note 4: both publication tasks get the real
+            # parishsoft_publication setting (off by default here).
+            for name in ("census_publication_preflight", "census_publication"):
+                keywords = runtime.handlers[name].execute.keywords
+                assert keywords["enabled"] is configuration.parishsoft_publication
+                assert keywords["enabled"] is False
         assert runtime.handlers["operational_collect"].pulse is pulse
         assert runtime.handlers["operational_prepare"].pulse is pulse
         assert runtime.handlers["security_prepare"].pulse is pulse
@@ -294,6 +303,8 @@ def test_scheduler_registry_is_metadata_only():
         "setup_source_load",
         "setup_source_cleanup",
         "setup_mail_test",
+        "census_publication_preflight",
+        "census_publication",
     }
     for handler in handlers.values():
         with pytest.raises(PermissionError):

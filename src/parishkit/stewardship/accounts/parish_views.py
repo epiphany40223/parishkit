@@ -4,8 +4,9 @@ from uuid import uuid4
 
 from django import forms
 from django.core import signing
-from django.db import DatabaseError, transaction
+from django.db import DatabaseError
 from django.shortcuts import render
+from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
@@ -13,8 +14,9 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.schema_primitives import canonical_timezone, typed
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web import dates
+from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.presentation import parse_us_phone, phone
-from parishkit.stewardship.web.refusals import UserFacingStale, stale_page
+from parishkit.stewardship.web.refusals import UserFacingError, stale_page
 
 from . import admin_navigation
 from .admin_editing import (
@@ -23,11 +25,8 @@ from .admin_editing import (
     error_response,
     form_action,
     principal,
-    receipt_base,
-    requested_status,
-    review_region,
-    reviewed_base,
     sign_preview,
+    summary_errors,
 )
 from .authentication import runtime
 from .limiting import LimiterUnavailable
@@ -37,6 +36,8 @@ from .sessions import authenticated_admin
 from .timezone_field import TimezoneField
 
 SALT = "stewardship-parish-profile-preview-v1"
+# The refusal of a Review with nothing changed.
+UNCHANGED = _("No settings have changed.")
 # The review's note when the change includes the timezone.
 TIMEZONE_NOTE = _(
     "This timezone change is prospective. Existing campaign timezones, "
@@ -168,18 +169,15 @@ def _profile(configuration):
     ]
 
 
-def _form_page(request, configuration, form, *, status=200, **region):
-    """Render the editor and its in-place review region (#532).
+def _form_page(request, configuration, form, *, status=200):
+    """Render the editor; a Review refused for its values (400) has its errors.
 
-    ``region`` is ``review_region``'s ``review``, ``receipt`` or
-    ``refusal``: the reviewed change, a confirmed change's status, or a
-    refusal shown in place. The step indicator follows whichever is shown.
+    ``form`` is the unbound editor at the applied version, or a refused
+    Review's bound form, whose errors the page script marks on the form the
+    reader is using and whose summary it places above the heading.
     """
-    step = "review" if region.get("review") else "edit"
-    if region.get("receipt"):
-        step = "apply"
-    # Edit, review, apply (#196), all on this page.
-    admin_navigation.place(request, flow="change", step=step)
+    admin_navigation.place(request, flow="change", step="edit")
+    page_url = reverse("admin:parish_settings")
     response = render(
         request,
         "stewardship/parish-settings.html",
@@ -187,7 +185,12 @@ def _form_page(request, configuration, form, *, status=200, **region):
             "form": form,
             "parish_name": _profile(configuration)["values"]["name"],
             "configuration": configuration,
-            **review_region("parish_settings", form, **region),
+            # Review and the review dialog's Apply post here.
+            "page_url": page_url,
+            # Once a change is applied, the dialog redraws the form's region
+            # from this page's own address.
+            "refresh_url": page_url,
+            "errors": summary_errors(form) if form.is_bound else [],
         },
         status=status,
     )
@@ -196,20 +199,13 @@ def _form_page(request, configuration, form, *, status=200, **region):
     return response
 
 
-def _initial_form(configuration, digest=None):
-    """The editor as the applied profile fills it, at its current version.
-
-    A refusal passes the ``digest`` the reader's form was at instead (see
-    ``admin_editing.reviewed_base``), since only the form's hidden fields
-    are taken from an in-place answer.
-    """
+def _initial_form(configuration):
+    """The editor as the applied profile fills it, at its current version."""
     record = _profile(configuration)["values"]
     initial = {
         name: record.get(name, DEFAULTS.get(name, "")) for name in PROFILE_FIELDS
     }
-    initial["base_digest"] = (
-        configuration.active_configuration.digest if digest is None else digest
-    )
+    initial["base_digest"] = configuration.active_configuration.digest
     return ParishForm(initial=initial)
 
 
@@ -232,7 +228,7 @@ def review_change(service, actor, configuration, form):
     ``(before, after)``, None for an unset value.
     """
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
-        # Shown in place (#532) with the standard explanation.
+        # Refused in the review dialog with the standard explanation.
         raise stale_page()
     record = _profile(configuration)
     posted = dict(form.cleaned_data)
@@ -249,7 +245,7 @@ def review_change(service, actor, configuration, form):
         # None removes the optional key; see request_patch's parish update.
         values["online_giving_url"] = values["online_giving_url"] or None
     if not values:
-        form.add_error(None, _("No settings have changed."))
+        form.add_error(None, UNCHANGED)
         return None
     patch = [
         {
@@ -296,76 +292,58 @@ def review_change(service, actor, configuration, form):
 
 
 def _preview(request, service, actor):
-    """Validate the full resulting document and show only changed profile values."""
+    """The review dialog's fragment, the page refused (400), or a refusal raised.
+
+    A field's refusal, or the resulting document's, is the page again with
+    status 400, so it stays on the form. A stale page is raised by
+    ``review_change`` for the dialog; so is no change at all, which the
+    page's change gate keeps out of reach.
+    """
     configuration = editable_configuration(service)
     form = ParishForm(request.POST)
     if not form.is_valid():
         return _form_page(request, configuration, form, status=400)
     review = review_change(service, actor, configuration, form)
     if review is None:
+        if str(UNCHANGED) in form.non_field_errors():
+            raise UserFacingError(UNCHANGED, fix=_("Nothing was changed."))
         return _form_page(request, configuration, form, status=400)
-    return _form_page(request, configuration, form, review=review)
-
-
-def _post(request, service, actor):
-    """Review or confirm in place; a stale page or preview is refused in place.
-
-    The refusal is the page again (status 409) with the standard explanation
-    in its review region, so the Administrator keeps their place and typing.
-    Its form stays at the version the reader's values came from (posted, or
-    reviewed), so a page changed elsewhere must be reloaded before the next
-    Review rather than quietly undoing that change.
-    """
-    action = form_action(request.POST, preview_fields={*PROFILE_FIELDS, "base_digest"})
-    try:
-        if action == "preview":
-            return _preview(request, service, actor)
-        return confirm(
-            request, service, actor, salt=SALT, current_scope=_scope, in_place=True
-        )
-    except UserFacingStale as error:
-        configuration = editable_configuration(service)
-        digest = (
-            request.POST.get("base_digest", "")
-            if action == "preview"
-            else reviewed_base(request.POST, SALT)
-        )
-        return _form_page(
-            request,
-            configuration,
-            _initial_form(configuration, digest),
-            status=409,
-            refusal=error.refusal,
-        )
+    return render(
+        request, "stewardship/parish-settings-review.html", {"review": review}
+    )
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
 def parish_settings(request):
     """Preview and enqueue parish edits without granting web configuration writes.
 
-    Review, apply and the change's status all happen on this page (#532).
+    GET draws the editor (it takes no query: its address is all there is).
+    Review is answered with the review dialog's fragment (UX conventions,
+    "Review dialog", #750), and the dialog's Apply with the change's status,
+    which the dialog follows. A Review refused for its values is the page
+    again (400); every other refusal (a stale page, an out-of-date preview)
+    is raised and shown in the dialog. A refusal never redraws the form, so
+    it keeps the version the reader's values came from, and the next Review
+    is refused until the page is reloaded rather than quietly undoing a
+    change made elsewhere.
     """
     try:
         service = runtime()
-        # Reading a change's status (the page's own quiet refresh once it is
-        # applied) is passive, as Change status is: it never renews idle time.
-        actor = principal(
-            request,
-            service,
-            passive=request.method != "POST" and "request" in request.GET,
-        )
+        actor = principal(request, service)
+        filters(request.GET, allowed=set())
         if request.method == "POST":
-            response = _post(request, service, actor)
-        else:
-            with transaction.atomic():
-                receipt = requested_status(request, service, actor, request.GET)
-                configuration = editable_configuration(service)
-                response = _form_page(
-                    request,
-                    configuration,
-                    _initial_form(configuration, receipt_base(request, receipt)),
-                    receipt=receipt,
+            action = form_action(
+                request.POST, preview_fields={*PROFILE_FIELDS, "base_digest"}
+            )
+            if action == "preview":
+                response = _preview(request, service, actor)
+            else:
+                response = confirm(
+                    request, service, actor, salt=SALT, current_scope=_scope
                 )
+        else:
+            configuration = editable_configuration(service)
+            response = _form_page(request, configuration, _initial_form(configuration))
         if not allows(
             authenticated_admin(request, store=service.store, read_only=True),
             Capability.CONFIGURE,
