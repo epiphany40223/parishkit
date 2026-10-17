@@ -114,10 +114,14 @@ class ReportQuery:
             values.append(("timezone", self.timezone))
         return values
 
-    def url(self, *, page=None):
-        """Preserve validated state on every link to the current campaign's report."""
+    def url(self, *, page=None, scope=None):
+        """Preserve validated state on every link to the current campaign's report.
+
+        ``scope`` gives another Chart population's link (#1535), and ``page``
+        another daily-table page; otherwise the current ones are kept.
+        """
         values = {
-            "scope": self.scope,
+            "scope": self.scope if scope is None else scope,
             "page": self.page if page is None else page,
             "sort": self.sort,
         }

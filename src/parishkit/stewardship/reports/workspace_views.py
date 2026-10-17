@@ -38,7 +38,7 @@ from .read_admission import admit_report_read
 from .selection import guarded_participation
 from .statistics import StatisticsUnavailable, calculate_statistics
 from .statistics_selection import capture_statistics
-from .workspace import DAILY_SORTING, RenderedReport, ReportQuery
+from .workspace import DAILY_SORTING, SCOPE_LABELS, RenderedReport, ReportQuery
 
 REPORTABLE = ("draft", "scheduled", "active", "closed", "archived")
 
@@ -267,6 +267,13 @@ def statistics_panel(statistics):
     }
 
 
+def scope_links(query):
+    """Each Chart population segment's address (#1535): this page with that
+    scope, the daily table back on its first page, its sort and size and
+    the zone kept."""
+    return {scope: query.url(page=1, scope=scope) for scope in SCOPE_LABELS}
+
+
 def _page_context(campaign_id, query, selected, principal):
     """Format detached shared observations; never recompute money in templates."""
     campaign = Campaign.objects.select_related("active_configuration").get(
@@ -281,6 +288,7 @@ def _page_context(campaign_id, query, selected, principal):
     context = {
         "campaign": campaign,
         "query": query,
+        "scope_links": scope_links(query),
         "selection": selected,
         "statistics": statistics,
         **statistics_panel(statistics),
