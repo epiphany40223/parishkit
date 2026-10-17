@@ -543,6 +543,14 @@ cents. Report URLs, pinned digest inputs, equivalent data
 tables, PNG/PDF output, and structured downloads record the scope and exactly
 match the displayed values. A scope note explains why the historical endpoint
 may differ from current-statistics cards.
+On the Participation page the toggle is the Chart population
+[binary choice](../ui-conventions/spec.md#binary-choices), Historical as of
+day | Current population, with no Apply button
+([#1535](https://github.com/epiphany40223/parishkit/issues/1535)): each
+segment links to the page with that scope, keeping the daily table's sort
+and page size and the browser's time zone (its page returns to the first),
+and choosing one refreshes the statistics, chart and export panels in
+place.
 
 ## Campaign statistics
 
@@ -587,7 +595,7 @@ no giving definition for the campaign, an answer whose amount is not known
 (current annual pledges), or a snapshot that does not hold every pledge for
 last year's period (last year's pledges). No reason promises that a later
 refresh will fix it.
-Applying report options redraws the chart in place, keeping its space until
+Choosing a Chart population redraws the chart in place, keeping its space until
 it is drawn.
 
 ## Response funnel
