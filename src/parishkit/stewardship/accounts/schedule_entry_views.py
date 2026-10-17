@@ -198,6 +198,10 @@ MISSED = _(
 )
 # The browser's IANA time zone, which ui-v1.js fills in (#558).
 ZONE = "zone"
+# New scheduled email's one address parameter: the day the Campaign
+# calendar's Add on a day opened it for (#1521), an ISO date in the browser's
+# zone. That New fills it in as the send date and returns to the calendar.
+ADD_ON = "date"
 # Edit's refusal of a save that changes nothing. The page's change gate
 # keeps Review unavailable until something changed, so only a request that
 # bypasses the page script meets it, in the review dialog (#750).
@@ -534,7 +538,14 @@ def _carry_errors(entry, window, schedules, identifiers, targets):
 
 
 def entry_form(
-    data, templates, saved, schedule=None, kept=None, test_mail=True, drawn=None
+    data,
+    templates,
+    saved,
+    schedule=None,
+    kept=None,
+    test_mail=True,
+    drawn=None,
+    on=None,
 ):
     """The page's one schedule form: blank for New, filled in for Edit.
 
@@ -550,7 +561,9 @@ def entry_form(
     test mail, see ``campaign_mail.admits_test_mail``) replaces each test link
     with a note saying why, so the page never links a test that cannot work
     (#923). ``drawn`` is the moment Edit draws the schedule from (its
-    ``drawn_at`` field, posted back; ``schedule_local.instant``).
+    ``drawn_at`` field, posted back; ``schedule_local.instant``). ``on``
+    is New's send date from the calendar's Add on a day (#1521), drawn as
+    a reminder on that day.
     """
     labels = dict(
         zip((row["id"] for row in saved), schedule_labels(saved), strict=True)
@@ -565,7 +578,11 @@ def entry_form(
         label=labels.get(schedule["id"]) if schedule else None,
         initial=schedule["values"] | {"id": schedule["id"], "drawn_at": drawn or ""}
         if schedule
-        else None,
+        # A day from the calendar is drawn as a reminder on that date: the
+        # page script clears (and hides) the date of a row with no mail
+        # type, so a date alone would be lost. The Initial invitation also
+        # sends on a date, so choosing it keeps the day.
+        else ({"kind": "reminder", "date": on} if on else None),
         browser_times=True,
     )
     # The address names the schedule; a posted ID is never read.
@@ -1017,6 +1034,29 @@ def _kept(posted, schedule, values, now):
         return None
 
 
+def added_on(parameters):
+    """The day New was opened for by the calendar's Add on a day, or None.
+
+    ``parameters`` are the address's checked ones (``filters``). The day is
+    an ISO date (``2054-10-12``), the browser-local day of the grid cell;
+    anything else is refused as an unknown address (a ``ValueError``, as
+    ``filters`` refuses). Whether it falls inside the campaign is the
+    review's to say, at the field, as for a typed date.
+    """
+    text = parameters.get(ADD_ON)
+    if text is None:
+        return None
+    try:
+        day = date.fromisoformat(text)
+    except ValueError:
+        day = None
+    # fromisoformat also reads "20541012" and other ISO forms; only the
+    # form the date field shows is the calendar's.
+    if day is None or day.isoformat() != text:
+        raise ValueError("Unknown filter input.")
+    return text
+
+
 def _entry(request, campaign_id, schedule_id=None):
     """New (``schedule_id`` None) or Edit scheduled email, GET or POST.
 
@@ -1036,11 +1076,16 @@ def _entry(request, campaign_id, schedule_id=None):
     rule is remembered as a series (``_remember``). On Edit of a series'
     reminder, "this and following" or "the whole series" (``SeriesScope``)
     plans the series edit instead (``_series_edit``); the send date is not
-    posted then, so the date the page showed stands in for it.
+    posted then, so the date the page showed stands in for it. New opened by
+    the Campaign calendar's Add on a day (``?date=``, ``added_on``, #1521)
+    has that send date filled in, and its Cancel and Apply return to the
+    calendar; the page posts to its own path, without the parameter.
     """
     service = runtime()
     actor = principal(request, service)
-    filters(request.GET, allowed=set())
+    on = added_on(
+        filters(request.GET, allowed={ADD_ON} if schedule_id is None else set())
+    )
     if request.FILES:
         raise unexpected_fields(request.FILES, allowed=())
     new = schedule_id is None
@@ -1095,6 +1140,7 @@ def _entry(request, campaign_id, schedule_id=None):
             ).isoformat()
             if schedule
             else None,
+            on=on,
         )
         repeat = RepeatRule(posted, prefix="repeat") if new else None
         part_of = series_context(entry, record, posted, refusals)
@@ -1119,7 +1165,10 @@ def _entry(request, campaign_id, schedule_id=None):
             "series": part_of,
             "base_digest": state[0].active_configuration.digest,
             "post_url": request.path,
-            "list_url": reverse("admin:schedule_settings"),
+            # Where Cancel goes and Apply returns: the calendar for its Add.
+            "list_url": reverse(
+                "admin:schedule_calendar" if on else "admin:schedule_settings"
+            ),
             # The review dialog's Apply confirms on the list, then returns.
             "apply_url": reverse("admin:schedule_settings"),
             "window_text": window_text(values),

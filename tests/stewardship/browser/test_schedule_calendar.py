@@ -1,4 +1,4 @@
-"""The read-only Campaign calendar (#469).
+"""The Campaign calendar (#469) and its Add on a day (#1521).
 
 The page script draws the table of sends as month grids, each send on its day
 in the browser's time zone. The campaign (October 1–31, 2054) is in New
@@ -9,14 +9,29 @@ Initial invitation (sent, October 1), Reminder 1 (October 10), Reminder 2
 plus a daily digest at 7:00 AM from October 2 through November 1, the day
 after the campaign closes; "now" is October 5, so its first four sends have
 passed.
+
+Each campaign day's Add opens New scheduled email with that send date
+(``ADD_ON``, October 12), whose Cancel and Apply return to the calendar.
 """
+
+import re
 
 import pytest
 
-from .schedule_list_components import CALENDAR, LIST
+from .keyboard import tab_to_next
+from .schedule_list_components import ADD_DAY, ADD_ON, APPLY, CALENDAR, LIST, NEW
 from .test_components import axe_violations
-from .test_schedule_list import watch
-from .waits import visible
+from .test_schedule_list import (
+    ADD,
+    APPLIED_LINE,
+    FOCUSED,
+    choose,
+    email_for,
+    near,
+    review,
+    watch,
+)
+from .waits import eventually, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -125,3 +140,138 @@ def test_the_list_links_the_calendar(page, component_origin):
     page.goto(component_origin + LIST)
     link = page.get_by_role("link", name="Campaign calendar")
     assert link.get_attribute("href") == "/admin/campaign/schedules/calendar/"
+
+
+def add_link(page, day):
+    """October ``day``'s Add, by the name a screen reader hears."""
+    return page.get_by_role("link", name=f"Add an email on October {day}, 2054")
+
+
+def test_each_campaign_day_has_an_add_named_with_its_date(
+    page, component_origin, axe_source
+):
+    """Every day October 1–31 has one Add; November 1, after the campaign,
+    has none. Each opens New with its own day, and the grid is the same
+    before and after an Add takes focus (nothing moves)."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + CALENDAR)
+    failures = watch(page)
+    adds = page.locator("table.calendar-month a.calendar-add")
+    assert adds.count() == 31
+    assert set(adds.all_inner_texts()) == {"Add"}
+    first = add_link(page, 1)
+    assert first.get_attribute("href") == f"{NEW}?date=2054-10-01"
+    assert add_link(page, 31).get_attribute("href") == f"{NEW}?date=2054-10-31"
+    assert cell(page, 1, month=1).locator("a.calendar-add").count() == 0
+    # The Add sits on its day's number line, inside the cell.
+    twelve = cell(page, 12)
+    link = add_link(page, 12)
+    number = twelve.locator(".calendar-day").bounding_box()
+    box = link.bounding_box()
+    holder = twelve.bounding_box()
+    assert (
+        box["x"] >= holder["x"]
+        and box["x"] + box["width"] <= holder["x"] + holder["width"] + 1
+    )
+    assert box["y"] < number["y"] + number["height"]
+    # A target at least 24px square (WCAG 2.2 SC 2.5.8).
+    assert box["width"] >= 24 and box["height"] >= 24
+    reminder = cell(page, 10).get_by_role("link", name="6:00 AM Reminder 1")
+    before = reminder.bounding_box()
+    link.hover()
+    link.focus()
+    after = reminder.bounding_box()
+    assert near(before["x"], after["x"]) and near(before["y"], after["y"])
+    assert axe_violations(page, axe_source) == []
+    assert page.evaluate("window.notReloaded === true")
+    assert not failures
+
+
+def test_a_zone_a_day_ahead_keeps_add_on_the_campaign_dates(
+    browser_engine, component_origin
+):
+    """The campaign's dates are calendar dates: in Auckland the Adds are
+    still October 1–31, though the sends move a day on."""
+    context = browser_engine.new_context(timezone_id="Pacific/Auckland")
+    try:
+        page = context.new_page()
+        page.set_viewport_size({"width": 1280, "height": 900})
+        page.goto(component_origin + CALENDAR)
+        adds = page.locator("table.calendar-month a.calendar-add")
+        assert adds.count() == 31
+        assert adds.first.get_attribute("href") == f"{NEW}?date=2054-10-01"
+    finally:
+        context.close()
+
+
+def test_a_keyboard_reaches_a_day_add_and_opens_new_with_that_date(
+    page, component_origin
+):
+    """Tab reaches each day's Add in reading order; Enter opens New with
+    the day filled in, and its Cancel returns to the calendar."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + CALENDAR)
+    # From October 11's Add, Tab reaches that day's send (a daily digest),
+    # then October 12's Add: each day's Add comes before its sends.
+    add_link(page, 11).focus()
+    tab_to_next(page)
+    assert page.evaluate("document.activeElement.textContent") == (
+        "4:00 AM Daily Admin digest"
+    )
+    tab_to_next(page)
+    assert page.evaluate("document.activeElement.getAttribute('aria-label')") == (
+        "Add an email on October 12, 2054"
+    )
+    with page.expect_navigation():
+        page.keyboard.press("Enter")
+    assert page.url.endswith(ADD_ON)
+    failures = watch(page)
+    # Drawn as a reminder on that day; the Initial invitation keeps the day.
+    assert page.locator('[name="schedule-kind"]').input_value() == "reminder"
+    date = page.locator('[name="schedule-date"]')
+    visible(date)
+    assert date.input_value() == ADD_DAY
+    choose(page, "kind", "initial")
+    assert date.input_value() == ADD_DAY
+    cancel = page.get_by_role("link", name="Cancel")
+    assert cancel.get_attribute("href") == CALENDAR
+    assert not failures
+
+
+def test_add_on_a_day_applies_and_returns_to_the_calendar(page, component_origin):
+    """A pointer click on October 12's Add, then New's Review and Apply: the
+    page returns to the calendar, whose reserved status line says what was
+    applied and takes focus."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + CALENDAR)
+    line = page.locator("#schedules-outcome")
+    assert line.inner_text() == ""
+    heading = page.locator("#calendar-months-title").bounding_box()["y"]
+    with page.expect_navigation():
+        add_link(page, 12).click()
+    assert page.url.endswith(ADD_ON)
+    failures = watch(page)
+    # The day (and its type) is the form as drawn: nothing to add yet.
+    button = page.get_by_role("button", name=ADD)
+    assert button.is_disabled()
+    visible(page.get_by_text("Fill in the scheduled email to add it."))
+    assert page.locator('[name="schedule-date"]').input_value() == ADD_DAY
+    page.locator('[name="schedule-time"]').fill("9am")
+    assert not button.is_disabled()
+    choose(page, "template_version", email_for(page, "reminder"))
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        shown = review(page)
+    assert "schedule-date=2054-10-12" in (sent.value.post_data or "")
+    assert page.evaluate("window.notReloaded === true")
+    assert not failures
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        shown.get_by_role("button", name="Apply").click()
+    assert sent.value.url.endswith(APPLY)
+    page.wait_for_url(re.compile(re.escape(CALENDAR) + "$"))
+    eventually(page, "document.getElementById('schedules-outcome').textContent !== ''")
+    line = page.locator("#schedules-outcome")
+    assert line.inner_text().startswith("Scheduled email added. ")
+    assert APPLIED_LINE.search(line.inner_text())
+    assert page.evaluate(FOCUSED) == "schedules-outcome"
+    # The reserved line kept its space: the grids did not move down.
+    assert near(page.locator("#calendar-months-title").bounding_box()["y"], heading)
