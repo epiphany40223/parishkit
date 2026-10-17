@@ -2052,10 +2052,8 @@ field, such as having no emails to schedule, always stays visible. The field
 remains described by its full help, so screen readers announce it without
 opening the tip. Checkbox help is a toggletip beside the box. A toggletip in a
 table heading is described by its bubble alone, and it closes when the table's
-box scrolls its button out of view. The export forms' shared format help (how
-CSV, XLSX and PDF write dates and money) opens from the "i" beside the format
-label where its menu sits in a filter-bar cell, so the narrow cell never wraps
-it into a tall column (the Active parishioner family directory, #1158).
+box scrolls its button out of view. An export form carries no
+help about its format menu (see [Downloaded files](#downloaded-files)).
 
 An "i" button always opens a floating toggletip, on Family and Admin pages
 alike and wherever the button sits: a label row, a filter bar, a table heading
@@ -3327,7 +3325,10 @@ the audit log, not a download; the recorded exceptions are the System logs
 export and the command line's Census changes JSON Lines below. Every data export is offered as CSV, XLSX and PDF unless a
 recorded technical or design reason says otherwise (Administrator decision,
 2026-10-10); a page may add a format, such as the participation chart's PNG
-or System logs' JSON Lines. **Shared code.** `reports/pdf_design.py` and
+or System logs' JSON Lines. An export form is its format menu and its
+button; it carries no explanation of how each format writes dates or money
+(Administrator decision, 2026-10-17,
+[#1538](https://github.com/epiphany40223/parishkit/issues/1538)). **Shared code.** `reports/pdf_design.py` and
 `reports/xlsx_design.py`; `web/design_tokens.py`. The format rules for each file type (CSV neutralizing,
 money, headers) are in the reports'
 [shared report behavior](../reports/spec.md#shared-report-behavior).

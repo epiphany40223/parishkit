@@ -101,3 +101,16 @@ def test_pk_admin_file_commands_default_to_xlsx_and_still_take_csv():
     ):
         assert parse(*command).format == "xlsx"
         assert parse(*command, "--format", "csv").format == "csv"
+
+
+def test_no_template_explains_how_formats_write_dates_or_money():
+    """An export form is its format menu and button only (#1538).
+
+    The shared "Dates in CSV ..." help is gone from every Admin export form;
+    the rules live in the ui-conventions spec, not on the page.
+    """
+    assert not (TEMPLATES / "stewardship" / "export-dates-help.html").exists()
+    for path in TEMPLATES.rglob("*.html"):
+        text = path.read_text()
+        assert "export-dates-help" not in text, path
+        assert "Dates in CSV" not in text, path

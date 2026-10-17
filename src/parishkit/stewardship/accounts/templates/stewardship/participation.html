@@ -61,7 +61,7 @@
 <p class="notice">{% translate "Sensitive parish report: download only to a trusted device and share only with authorized recipients." %}</p>
 <form method="post" action="{% url 'admin:report_export_create' %}">{% csrf_token %}
 <input type="hidden" name="fact_set_id" value="{{ chart.fact_set_id }}"><input type="hidden" name="browser_timezone" value="{{ query.timezone }}"><input type="hidden" name="request_key" value="{{ export_key }}">
-<label for="export-format">{% translate "Export format" %}</label><select id="export-format" name="format">{% export_format_options "csv" "xlsx" "png" "pdf" %}</select>{% include 'stewardship/export-dates-help.html' %}
+<label for="export-format">{% translate "Export format" %}</label><select id="export-format" name="format">{% export_format_options "csv" "xlsx" "png" "pdf" %}</select>
 {% button type="submit" enabled=export_allowed aria-describedby=export_allowed|yesno:",participation-export-locked" %}{% translate "Generate export" %}{% endbutton %}</form>
 {# Without a chart (or, below, without the data for a new export) the button is still drawn, unavailable and named by the sentence that says why (#563); the server refuses a forged request all the same. #}
 {% else %}<p id="participation-chart-export-unavailable">{% translate "Exports of the chart become available once a complete chart has been calculated." %}</p>
@@ -73,7 +73,7 @@
 <p class="notice">{% translate "Sensitive parish report: download only to a trusted device and share only with authorized recipients." %}</p>
 <form data-submit-waits method="post" action="{% url 'admin:report_exact_create' %}">{% csrf_token %}
 <input type="hidden" name="population_scope" value="{{ query.scope }}"><input type="hidden" name="browser_timezone" value="{{ query.timezone }}"><input type="hidden" name="request_key" value="{{ exact_key }}">
-<label for="exact-format">{% translate "Latest-data export format" %}</label><select id="exact-format" name="format">{% export_format_options "csv" "xlsx" "png" "pdf" %}</select>{% include 'stewardship/export-dates-help.html' %}
+<label for="exact-format">{% translate "Latest-data export format" %}</label><select id="exact-format" name="format">{% export_format_options "csv" "xlsx" "png" "pdf" %}</select>
 {% button type="submit" enabled=export_allowed aria-describedby=export_allowed|yesno:",participation-export-locked" %}{% translate "Queue export with the latest data" %}{% endbutton %}</form>
 {% else %}<p id="participation-exact-export-unavailable">{% translate "The data for a new export is not available right now, so no export can be queued yet." %}</p>
 {% button type="submit" enabled=False aria-describedby="participation-exact-export-unavailable" %}{% translate "Queue export with the latest data" %}{% endbutton %}{% endif %}
