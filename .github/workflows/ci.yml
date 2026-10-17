@@ -115,7 +115,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: python -m parishkit.stewardship.quality_select --count 16 --map-directory "$RUNNER_TEMP/test-maps" --selection "$RUNNER_TEMP/database-selection.json" --output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"
+        run: python -m parishkit.stewardship.quality_select --count 22 --map-directory "$RUNNER_TEMP/test-maps" --selection "$RUNNER_TEMP/database-selection.json" --output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"
 
       - name: Retain the database test selection
         if: ${{ steps.select.outputs.database_selection == 'subset' }}
@@ -377,14 +377,15 @@ jobs:
           fi
           test "$BROWSER_RESULT" = success
 
-  # Each job runs PARTITIONS_PER_JOB (quality_ci.py) of the 16 coverage
+  # Each job runs PARTITIONS_PER_JOB (quality_ci.py) of the 22 coverage
   # partitions concurrently, each against its own PostgreSQL/Valkey pair
   # (service pair N on the ports quality_ci.slot_ports assigns slot N-1),
   # because SQL roles are cluster-wide fixtures. Packing leaves runner slots
   # for other runs (#625). Job 1 runs only partition 1, beside the
-  # non-database baseline's parts (#1200, #1205). To retune, change that
-  # constant or the count; the contract tests then name the matrix and
-  # service pairs to update here.
+  # non-database baseline's parts (#1200, #1205). Sixteen partitions left
+  # the slowest only 2-10% under SHARD_TIMEOUT, so the count is 22
+  # (#1529). To retune, change that constant or the count; the contract
+  # tests then name the matrix and service pairs to update here.
   stewardship-postgresql-shard:
     needs: validate
     if: ${{ needs.validate.outputs.postgresql != 'false' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)) }}
@@ -394,7 +395,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        job: [1, 2, 3, 4, 5, 6]
+        job: [1, 2, 3, 4, 5, 6, 7, 8]
     # Services start before any step, so they cannot use the daemon mirror
     # that tools/ci-docker-mirror.sh configures. Name Google's Docker Hub
     # mirror directly (#892): the digest pins the same bytes as Docker Hub's
@@ -492,7 +493,7 @@ jobs:
           if test "$SELECTION" = subset; then
             set -- "$@" --select "$RUNNER_TEMP/database-selection/database-selection.json"
           fi
-          python -m parishkit.stewardship.quality_ci job --index ${{ matrix.job }} --count 16 --output "$RUNNER_TEMP/stewardship-partitions" "$@"
+          python -m parishkit.stewardship.quality_ci job --index ${{ matrix.job }} --count 22 --output "$RUNNER_TEMP/stewardship-partitions" "$@"
       # One artifact holds this job's partition-N directories; the gate
       # merges every job's artifact into one directory before combining.
       - name: Retain successful partition evidence
@@ -563,7 +564,7 @@ jobs:
           merge-multiple: true
       - name: Scoped line and branch coverage
         if: ${{ steps.gate.outputs.intentional != 'true' && inputs.jobs != 'affected' }}
-        run: python -m parishkit.stewardship.quality_ci combine --count 16 --input "$RUNNER_TEMP/stewardship-shards" --report "$RUNNER_TEMP/stewardship-coverage.json" --map "$RUNNER_TEMP/stewardship-test-map.json"
+        run: python -m parishkit.stewardship.quality_ci combine --count 22 --input "$RUNNER_TEMP/stewardship-shards" --report "$RUNNER_TEMP/stewardship-coverage.json" --map "$RUNNER_TEMP/stewardship-test-map.json"
       - name: Retain combined coverage
         if: ${{ steps.gate.outputs.intentional != 'true' && inputs.jobs != 'affected' }}
         uses: actions/upload-artifact@v4
