@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from parishkit.stewardship.web import design_tokens as tokens
+from parishkit.stewardship.web import report_markup
 from parishkit.stewardship.web.buttons import email_button
 from parishkit.stewardship.web.report_markup import button as report_button
 
@@ -179,6 +180,7 @@ def test_no_token_value_contains_a_quote():
         *tokens.COLORS.values(),
         *tokens.RADII.values(),
         *tokens.BUTTON.values(),
+        *tokens.HEADINGS.values(),
         tokens.EMAIL_SANS,
     ]
     assert not [value for value in values if '"' in value or "'" in value]
@@ -188,6 +190,28 @@ def test_report_emails_draw_the_shared_email_button():
     """The daily and weekly reports' button is email_button(), not a copy."""
     url = "https://example.org/reports/1?a=1&b=2"
     assert report_button(url, "Open <it>") == email_button("Open <it>", url)
+
+
+def test_report_emails_take_every_colour_and_heading_size_from_the_tokens():
+    """Every colour a report compiles is a token's light value (#732).
+
+    The report styles and cell colours are inlined, since mail programs
+    cannot read the portal's custom properties, so this test is what ties
+    them to the tokens. The frozen styles kept only for retained reports are
+    not compiled and are not checked.
+    """
+    palette = {
+        tokens.hex6(value)
+        for value in (*tokens.COLORS.values(), *tokens.CHART_COLORS.values())
+    }
+    styles = " ".join(report_markup.STYLES.values())
+    assert set(re.findall(r"#[0-9a-fA-F]{3,8}\b", styles)) <= palette
+    assert not re.findall(r"rgba?\(|hsla?\(", styles)
+    assert palette >= report_markup.CELL_COLOURS
+    assert "border-bottom:2px solid #c9d1cf;" in report_markup.STYLES["th"]
+    # A report heading is the portal's subsection heading size, in pixels.
+    assert "font-size:18px;" in report_markup.STYLES["heading"]
+    assert tokens.px(tokens.HEADINGS["heading-3"]) == 18
 
 
 def test_only_the_shared_component_builds_email_buttons():

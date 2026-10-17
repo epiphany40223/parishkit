@@ -611,6 +611,69 @@ def test_admin_stay_signed_in_renews_and_closes_the_dialog(page, component_origi
     expect(dialog).to_be_hidden()
 
 
+HEADING_SIZES = """() => {
+    const main = document.querySelector('main');
+    const probe = document.createElement('div');
+    probe.innerHTML = '<h2>a</h2><h3>b</h3><fieldset class="panel"><legend>c'
+        + '</legend></fieldset><fieldset><legend>d</legend></fieldset>'
+        + '<div class="notice"><h2>e</h2></div><table><caption>f</caption>'
+        + '</table>';
+    main.append(probe);
+    const size = (selector) => parseFloat(
+        getComputedStyle(probe.querySelector(selector)).fontSize);
+    const sizes = {
+        h2: size(':scope > h2'), h3: size(':scope > h3'),
+        panelLegend: size('fieldset.panel > legend'),
+        legend: size('fieldset:not(.panel) > legend'),
+        noticeHeading: size('.notice h2'), caption: size('caption'),
+        root: parseFloat(getComputedStyle(document.documentElement).fontSize),
+    };
+    probe.remove();
+    return sizes;
+}"""
+
+
+def test_section_and_card_headings_take_the_heading_tokens(page, component_origin):
+    """Every section and card heading is drawn at its heading token (#732)."""
+    from parishkit.stewardship.web.design_tokens import HEADINGS
+
+    page.goto(component_origin + "/home")
+    sizes = page.evaluate(HEADING_SIZES)
+    rem = sizes.pop("root")
+    expected = {
+        "h2": HEADINGS["heading-2"],
+        "panelLegend": HEADINGS["heading-2"],
+        "h3": HEADINGS["heading-3"],
+        "noticeHeading": HEADINGS["heading-3"],
+        "legend": HEADINGS["card-heading"],
+        "caption": HEADINGS["card-heading"],
+    }
+    for name, token in expected.items():
+        assert abs(sizes[name] - float(token[:-3]) * rem) <= 0.5, (name, sizes)
+
+
+def test_session_dialog_is_the_shared_dialog_card(page, component_origin):
+    """The inactivity warning has the panel corners and a section heading."""
+    from playwright.sync_api import expect
+
+    from parishkit.stewardship.web.design_tokens import HEADINGS, RADII
+
+    page.clock.install(time=NOW)
+    page.goto(component_origin + "/home")
+    page.clock.fast_forward(56 * 60 * 1000)
+    dialog = page.locator("dialog.session-dialog")
+    expect(dialog).to_be_visible()
+    rem = page.evaluate(
+        "parseFloat(getComputedStyle(document.documentElement).fontSize)"
+    )
+    radius = dialog.evaluate("(el) => parseFloat(getComputedStyle(el).borderRadius)")
+    heading = dialog.locator("h2:visible").first.evaluate(
+        "(el) => parseFloat(getComputedStyle(el).fontSize)"
+    )
+    assert abs(radius - float(RADII["radius"][:-3]) * rem) <= 0.5
+    assert abs(heading - float(HEADINGS["heading-2"][:-3]) * rem) <= 0.5
+
+
 def test_admin_dialog_defers_to_activity_in_another_tab(page, component_origin):
     """A passive status read showing a later deadline suppresses the warning."""
     from playwright.sync_api import expect

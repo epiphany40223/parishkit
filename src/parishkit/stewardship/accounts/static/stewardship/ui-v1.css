@@ -63,6 +63,11 @@
   --button-padding: .6rem 1.25rem;
   --button-weight: 650;
   --button-min-height: 44px;
+  /* Headings: sections, subsections, and a plain fieldset or table caption */
+  --heading-2: 1.3rem;
+  --heading-3: 1.1rem;
+  --card-heading: 1.05rem;
+  --heading-weight: 650;
   --shadow: 0 1px 2px rgb(16 24 40 / 5%), 0 4px 16px rgb(16 24 40 / 6%);
   --gutter: max(1rem, calc((100% - 72rem) / 2));
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
@@ -342,9 +347,9 @@ main nav.breadcrumbs [aria-current=page] { color: var(--ink); font-weight: 600; 
 /* Typography */
 h1, h2, h3, h4 { color: var(--ink); text-wrap: balance; }
 h1 { font-family: var(--serif); font-size: clamp(1.75rem, 4vw, 2.4rem); font-weight: 600; line-height: 1.2; letter-spacing: -.005em; margin-block: .25rem 1.25rem; }
-h2 { font-size: 1.3rem; font-weight: 650; line-height: 1.35; margin-block: 1.75rem .75rem; }
-h3 { font-size: 1.1rem; font-weight: 650; line-height: 1.4; margin-block: 1.5rem .5rem; }
-h4 { font-size: 1rem; font-weight: 650; margin-block: 1.25rem .5rem; }
+h2 { font-size: var(--heading-2); font-weight: var(--heading-weight); line-height: 1.35; margin-block: 1.75rem .75rem; }
+h3 { font-size: var(--heading-3); font-weight: var(--heading-weight); line-height: 1.4; margin-block: 1.5rem .5rem; }
+h4 { font-size: 1rem; font-weight: var(--heading-weight); margin-block: 1.25rem .5rem; }
 p, ul, ol, dl { margin-block: 0 1rem; }
 code, pre { font-family: var(--mono); font-size: .9em; }
 pre { padding: .85rem 1rem; background: var(--paper-soft); border: 1px solid var(--border); border-radius: var(--radius-small); }
@@ -426,13 +431,13 @@ label + .help, label + .helptext { margin-block: -.15rem .5rem; }
 .error { color: var(--error-ink); font-weight: 600; }
 /* Legends float inside the box so a fieldset reads as a titled card. */
 fieldset { border: 1px solid var(--border); border-radius: var(--radius); background: var(--paper); margin-block: 1.25rem; min-width: 0; padding: 1rem 1.25rem 1.25rem; }
-fieldset > legend { float: left; width: 100%; padding: 0; margin-bottom: .5rem; font-size: 1.05rem; }
+fieldset > legend { float: left; width: 100%; padding: 0; margin-bottom: .5rem; font-size: var(--card-heading); }
 /* Every sibling after the floated legend clears it, not just the next one:
    a hidden element (e.g. an error line) there would otherwise leave the
    first visible row flowing beside the float, so a checkbox label's text
    dropped below its absolutely positioned box. */
 fieldset > legend ~ * { clear: both; }
-fieldset.panel > legend { font-size: 1.3rem; font-weight: 650; }
+fieldset.panel > legend { font-size: var(--heading-2); font-weight: var(--heading-weight); }
 input, textarea, select, button { font: inherit; max-width: 100%; }
 input:not([type=checkbox], [type=radio], [type=hidden]), textarea, select { display: block; width: 100%; min-height: 44px; padding: .65rem .85rem; border: 1px solid var(--control-border); border-radius: var(--radius-small); background: var(--paper); color: var(--ink); box-shadow: inset 0 1px 2px rgb(16 24 40 / 6%); transition: border-color .15s, box-shadow .15s; }
 input:not([type=checkbox], [type=radio], [type=hidden]):hover, textarea:hover, select:hover { border-color: var(--ink); }
@@ -651,7 +656,7 @@ button.is-busy::after, .button.is-busy::after { content: ""; display: inline-blo
 .notice { padding: 1rem 1.25rem; background: var(--warning-bg); border: 1px solid var(--warning-border); border-inline-start-width: .35rem; border-radius: var(--radius-small); margin-block: 1rem; }
 .notice-error { background: var(--error-bg); border-color: var(--error-border); }
 .notice-info { background: var(--accent-soft); border-color: var(--accent); }
-.notice h2 { margin-top: 0; font-size: 1.1rem; }
+.notice h2 { margin-top: 0; font-size: var(--heading-3); }
 .notice ul { margin-bottom: 0; }
 /* System health's problems: one notice per problem, without list bullets. */
 .health-problems { list-style: none; padding: 0; }
@@ -766,7 +771,7 @@ details.about-page > summary::after { content: "\24D8" / ""; font-weight: 400; }
 /* Tables */
 .table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); margin-block: 1.25rem; background: var(--paper); }
 table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
-caption { text-align: start; font-weight: 650; font-size: 1.05rem; padding: 1rem 1.25rem; }
+caption { text-align: start; font-weight: var(--heading-weight); font-size: var(--card-heading); padding: 1rem 1.25rem; }
 th, td { text-align: start; padding: .75rem 1rem; border-bottom: 1px solid var(--border); vertical-align: top; }
 thead { background: var(--paper-soft); }
 thead th { color: var(--muted); font-size: .875rem; font-weight: 650; letter-spacing: .01em; border-bottom-color: var(--rule-strong); }
@@ -840,7 +845,7 @@ td > :last-child { margin-bottom: 0; }
    and by its status in words in the table below. */
 .calendar-months { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
 .calendar-month { width: 100%; min-width: 42rem; table-layout: fixed; border-collapse: collapse; }
-.calendar-month caption { text-align: start; font-weight: 650; padding-block: .25rem; }
+.calendar-month caption { text-align: start; font-weight: var(--heading-weight); padding-block: .25rem; }
 .calendar-month th, .calendar-month td { border: 1px solid var(--border); padding: .3rem .4rem; overflow-wrap: normal; }
 /* Positioned, so the grid's visually hidden text (weekday names, a send's
    status) is clipped by its scrolling region instead of widening the page
@@ -1209,7 +1214,7 @@ label.limitation { display: block; margin-block: 1rem; font-weight: 600; }
 .ministry-choices.is-locked :is(label, .ministry-join > summary) { cursor: not-allowed; }
 /* Ministry rows: the ministry name, then the choice, stated once. */
 .ministry-row { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1.25rem; padding: .6rem .9rem; margin-block: .5rem; }
-.ministry-row > legend { float: none; width: auto; flex: 1 1 100%; font-weight: 650; margin: 0; }
+.ministry-row > legend { float: none; width: auto; flex: 1 1 100%; font-weight: var(--heading-weight); margin: 0; }
 /* The choice labels are long ("Stop participating in this ministry"): let them
    wrap inside the row on a phone, keeping the radio beside the first line. */
 .ministry-row > label { display: inline-flex; align-items: center; gap: .4rem; min-height: 44px; margin: 0; min-width: 0; max-width: 100%; }
