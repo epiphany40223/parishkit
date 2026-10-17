@@ -103,8 +103,8 @@ parish.example {
             <meta http-equiv="refresh" content="60">
             <title>Updating the site</title>
             </head>
-            <body style="margin:0;background:#f6f4ef;color:#1b2a31;font:18px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif">
-            <main style="max-width:34rem;margin:12vh auto;padding:2rem 1.5rem;background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.12)">
+            <body style="margin:0;background:#f6f5f1;color:#1b2a31;font:18px/1.5 system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
+            <main style="max-width:34rem;margin:12vh auto;padding:2rem 1.5rem;background:#fff;border:1px solid #dfe3e2;border-radius:.75rem;box-shadow:0 1px 2px rgb(16 24 40 / 5%), 0 4px 16px rgb(16 24 40 / 6%)">
             <h1 style="margin:0 0 .75rem;font-size:1.5rem">We&rsquo;re updating the site</h1>
             <p style="margin:0 0 .75rem">Please try again in a couple of minutes. This page will reload by itself.</p>
             <p style="margin:0;color:#4f5e66">Thank you for your patience.</p>

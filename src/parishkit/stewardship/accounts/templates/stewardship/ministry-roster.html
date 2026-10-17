@@ -50,7 +50,7 @@
 <td>{% if row.roster_entered %}{{ row.roster_by }}{% endif %}</td>
 <td>{% if row.roster_entered and row.roster_at %}<time datetime="{{ row.roster_at|date:'c' }}" data-local-instant data-compact>{{ row.roster_at|date:'c' }}</time>{% endif %}</td>
 {% include "stewardship/roster-tick-row.html" with row=row %}</tr>
-{% empty %}<tr><td colspan="{% if mutable %}15{% else %}14{% endif %}">{% translate "No roster changes to enter." %}</td></tr>{% endfor %}</tbody></table></div>
+{% empty %}<tr><td colspan="{% if mutable %}15{% else %}14{% endif %}">{% if ministry and show == 'todo' %}{% translate "No roster changes to enter for this Ministry. Set Ministry to “All Ministries”, or set Show to “All, including entered” to see ones already marked." %}{% elif ministry %}{% translate "No roster changes for this Ministry. Set Ministry to “All Ministries” to see the rest." %}{% elif show == 'todo' %}{% translate "No roster changes to enter. A change is listed here when a Ministry request is resolved as Joined or Left; to see ones already marked, set Show to “All, including entered”." %}{% else %}{% translate "No roster changes yet. A change is listed here when a Ministry request is resolved as Joined or Left." %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
 </div>
 {% include "stewardship/table-navigator.html" with table=table label=pages_label %}
 </div>

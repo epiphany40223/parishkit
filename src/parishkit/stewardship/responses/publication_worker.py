@@ -61,6 +61,7 @@ from parishkit.stewardship.source.leases import (
     verify_source,
 )
 
+from .accepted_base import with_accepted_base
 from .models import ProposedChange
 from .publication import Outcome, payload_digest, plan_entity
 from .publication_gateway import ContactGatewayError
@@ -163,7 +164,11 @@ class _Entity:
 
     def rows(self):
         """The current proposals, queued ones shown as they were planned."""
-        rows = ProposedChange.objects.filter(pk__in=self.recorded).order_by("pk")
+        # Annotated as preflight's are (accepted_base), so the rebuilt plan
+        # merges a resolved conflict against the same accepted value.
+        rows = with_accepted_base(
+            ProposedChange.objects.filter(pk__in=self.recorded)
+        ).order_by("pk")
         return [_Unqueued(row) if self.queued_by_plan(row) else row for row in rows]
 
     def landed(self, rows, fresh):

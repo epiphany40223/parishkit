@@ -309,7 +309,7 @@ Specification: [Admin automation interface](../../specs/stewardship/admin-automa
 - [x] ADM-11.05 — PR 4: add schedule preview and confirm and configuration request status.
 - [x] ADM-11.06 — PR 5: let fresh-gated SQL guards and checks accept full-scope automation sessions (migration) and add the confirmation prompt.
 - [x] ADM-11.07 — PR 6: add refresh and Testing send commands.
-- [ ] ADM-11.08 — PR 7: add delivery control (7b) and Family portal maintenance (7a) commands.
+- [x] ADM-11.08 — PR 7: add delivery control (7b) and Family portal maintenance (7a) commands.
 - [ ] ADM-11.09 — PR 8: add report, export, digest and log commands.
 - [x] ADM-11.10 — PR 9: add task retry, delivery and refusal commands.
 - [ ] ADM-11.11 — PR 10: add the remaining configuration commands, including secret replacement.
@@ -636,7 +636,20 @@ rebound key, an unchanged decision `invalid`, the open-state matrix with
 every queued review and a Conflict's Approve refused, By-hand `invalid`, a
 stale version, an unknown or another campaign's change `not_available`, a
 read-only session, Staff and a Ministry leader denied, an ended session, no
-current campaign).
+current campaign). #1434 adds `census edit` (Edit value, Clear edit) and
+`census resolve-conflict` (Use the Family's value anyway) through the same
+command scope and the page's `edit_census_change` and
+`resolve_census_conflict`, recording `admin_cmd_census_edit` and
+`admin_cmd_census_resolve_conflict` once per request key, with no schema
+change and no prompt; `export census --format jsonl` gains `editable` and
+`resolvable`; proven by `tests/stewardship/test_admin_census.py`,
+`tests/stewardship/test_admin_census_export.py`,
+`tests/stewardship/test_admin_cli.py` and
+`tests/stewardship/database/test_admin_census_edit_cli_postgresql.py`
+(edit, clear, a repeat and a rebound key, unchanged edits recording
+nothing, a refused value with its reason, By-hand, queued, stale, unknown
+and Staff refusals; a resolution with both events, its repeat and rebound
+key, its undo by `census review`, and its refusals).
 A follow-up (#682) lets `delivery resolve` retry Family emails too, loading
 the web's general and public token keyrings only for that, checked against
 the web's published receipts; proven by `tests/stewardship/test_admin_cli.py`,
@@ -749,7 +762,26 @@ holds a queued email, its recovery counts against the page's SQL reads, a
 paused, closed campaign's resolution choices with held receipts and weekly
 reports, no event, no current campaign `not_available`, a Staff reader
 denied, an ended session) and the unchanged
-`test_delivery_control_postgresql.py`.
+`test_delivery_control_postgresql.py`. Its second part (#463) adds
+`send pause-preview`, `send resume-preview`, `send resolve-preview` and
+`send confirm` (fresh-gated, always prompts) in the same module, through
+the page's own previews and `confirm` (which gains an optional `record`
+hook for the command event), with no schema change and no new send path;
+proven by `tests/stewardship/test_admin_send_controls.py` (the preview
+documents without fingerprints, the prompt's lines, the catalog entries,
+the parser's types against the page's, usage errors),
+`tests/stewardship/test_admin_cli.py`, `tests/stewardship/test_pk_admin.py`
+(the `PROMPTING` list), `tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_send_controls_cli_postgresql.py`
+(previews equal to the page's for a pause, a resume before the start and a
+closed campaign's cancellation; refused prompts change nothing; the
+control, the command event, the fresh-gate event and notice; an exact
+repeat recording nothing; a page token confirmed by the command and a
+command token by the page; a resume refused by the page's preview while a
+delivery is unknown and, for a token that skipped it, by the SQL guard,
+with nothing recorded; bad reasons, an altered or expired token, a
+read-only session, a Testing draft, no current campaign, Staff denied
+before the prompt and an ended session).
 ADM-11.11 lands in parts. The first adds `files list`, the Hosted files
 page's library, in `parishkit.stewardship.admin_hosted_files`, through the
 page's own capability, order and row builder, with no schema change;
@@ -879,7 +911,29 @@ locked field refused, its leader roles, its end date with
 `campaign_end_date_requested` and its intent, its Ministries with
 `campaign_ministries_requested`, no current campaign, a read-only session
 and Staff denied, an ended session) and the unchanged Campaign settings,
-live end date and live Ministries page suites.
+live end date and live Ministries page suites. Another part adds `campaign
+shares-preview` and `campaign shares-confirm`, Share options' Review and
+Apply, in `parishkit.stewardship.admin_shares`, through the page's own
+target and editability checks, formset, review (moved into
+`option_editing.review_options`, which the page's Review now calls) and
+`admin_editing.confirm_intent`, with no schema change; proven by
+`tests/stewardship/test_admin_shares.py` (the change document's parser,
+the Review post it becomes bound to the page's formset, the catalog
+entries, the described event, the documents' names, the ledger, usage
+errors), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_settings.py`,
+`tests/stewardship/database/test_admin_shares_cli_postgresql.py` (a
+relabel, move, addition and deletion previewed and confirmed with the
+request and event and applied once installed, a repeated confirm, the
+document on standard input with `--campaign`, a command token confirmed on
+the page and a page token by the command, a stale version, no change, a
+saved option left out, an unknown id, a label the page refuses, an unknown
+member, a census-only draft, an unknown campaign, a locked draft, a draft
+background work holds, a live campaign and its stale token, a token for
+another or an unknown campaign, an altered, another page's or another Administrator's token,
+a token reviewed before the options changed, no current campaign, a
+read-only session, an ended session and Staff denied before reading input)
+and the unchanged Share options page suite.
 
 ADM-11.12 lands in parts. The first adds `events list` and `events
 acknowledge`, the Admin home page's security events and critical-problem
@@ -901,6 +955,31 @@ session, an ended session and Staff refused) and the unchanged
 `tests/stewardship/database/test_security_events_postgresql.py` and
 `tests/stewardship/database/test_critical_events_postgresql.py`.
 
+ADM-11.12's PR 11a adds `followup list`, `followup show`, `followup
+update` and `followup bulk`, the Ministry requests follow-up queue, in
+`parishkit.stewardship.admin_followup`, through the page's own admission,
+selection, history and services (`update_request`, `apply_bulk_outcome`)
+in its command scope, with no schema change; proven by
+`tests/stewardship/test_admin_followup.py` (golden documents and the
+personal-data allowlist, catalog flags, the parser's choices against the
+page's, the ledger, the page's refusals as field errors, usage errors),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_role_first.py`,
+`tests/stewardship/test_pk_admin.py`,
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_followup_cli_postgresql.py` (the
+queue and a request with the page's events and filters for a read-only
+session, a Save with its events once for each revision its key binds, a
+key shared with the page, notes kept or replaced, contact notes from
+standard input, stale and closed requests checked before the field rules,
+options without effect refused as usage, lengths and the page's refusals
+as field errors, the bulk outcome's prompt, a mixed or stale choice saving
+nothing, a choice too long refused before the prompt, a repeat, Staff
+reading and changing, a leader's out-of-scope request answered as an
+unknown one, another campaign's request, a read-only session refused, an
+ended session and no current campaign). The roster tick, the queue's export and Family
+information follow-up remain.
+
 Another part adds `content show`, the content editor's read
 of one page's or email's text, in `parishkit.stewardship.admin_content`,
 through the editor's own lookup (moved into
@@ -915,6 +994,28 @@ and the default text, the confirmation email, a re-save notice, an unknown
 slot or revision, no current campaign, a held campaign `stale_version`, a
 Staff reader denied, an ended session) and the unchanged content page
 suites.
+
+Another part adds `content preview` and `content confirm`, the email
+tables' Delete and the editors' plain-text preview, in
+`parishkit.stewardship.admin_content`, through the page's own removal
+build (moved into `content_delete_views.review_deletion` and `chosen_ids`,
+which the Delete now calls), its conversion (moved into
+`content_views.plain_text`, which the plain-text preview now calls) and
+`admin_editing.confirm_intent`, with no schema change; proven by
+`tests/stewardship/test_admin_content_changes.py` (catalog flags, the
+described event, usage errors, the choice check, the conversion),
+`tests/stewardship/test_admin_content.py` (the ledger),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_content_changes_cli_postgresql.py`
+(a preview and confirm of two unused emails recording the request and
+event with the sent email kept once installed, a repeat, a sent email,
+the confirmation email, an unknown or repeated id, a stale version, a
+held campaign, an altered or another page's token, another
+Administrator's token denied, a token built before the settings changed,
+no current campaign, the plain-text preview equal to the page's answer
+with no event and no renewed session, a read-only session and Staff
+denied, an ended session) and the unchanged content page suites.
 
 Another part adds `integration list`, `integration show` and `integration
 status`, the Integrations pages' reads, in

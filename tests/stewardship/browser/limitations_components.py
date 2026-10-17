@@ -76,11 +76,23 @@ def components(context, admin):
             ),
         )
 
+    # No Member or Family listed, and a summary that agrees.
+    nobody = result | {
+        "summary": {"cannot_serve": 0, "cannot_attend": 0},
+        "members": [],
+        "families": [],
+    }
     return {
         "/limitations-report": page({}),
         "/limitations-report-families-desc": page({"families_sort": "-family"}),
         "/limitations-report-both": page(
             {"families_sort": "-family", "members_sort": "member"}
+        ),
+        # Nobody has a limitation yet, and a search that matches nobody:
+        # the unfiltered and filtered empty states differ (#227).
+        "/limitations-report-none": page({}, nobody),
+        "/limitations-report-none-searched": page(
+            {}, nobody, LimitationsQuery(search="Nobody")
         ),
         # What Show "Cannot participate in ministries" returns (#484), here
         # narrowed as a search would be: one Member, one Family and a smaller

@@ -29,6 +29,7 @@ from parishkit.stewardship.source.snapshot_names import snapshot_family_names
 from parishkit.stewardship.storage import StaleRecordError
 
 from .auth_builders import signed_in
+from .test_admin_refusal_log_postgresql import entries as refusals
 from .test_background_grants_postgresql import task_login
 from .test_export_views_postgresql import post
 from .test_report_workspace_postgresql import read
@@ -189,7 +190,10 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
         assert b'value="name_desc"' in body and b'value="newest"' in body
         assert b"search=" not in body
         for invalid in ({"sort": "submitted_at"}, {"size": "250"}, {"size": "5"}):
+            seen = len(refusals())
             assert search(browser, route, invalid)[0].status_code == 400
+            # The error page is not streamed: its one entry, at once.
+            assert len(refusals()) == seen + 1
         # A date the reader can fix at its field draws the queue again
         # (#1332): 400, the values sent in the filters, the error at both
         # dates and in the summary, and the results for no filters.
@@ -200,6 +204,7 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
                 "pk", flat=True
             )
         )
+        seen = len(refusals())
         response, body = search(
             browser,
             route,
@@ -213,6 +218,15 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
         )
         assert response.status_code == 400 and response["Cache-Control"] == "no-store"
         assert response.stewardship_codes == ("invalid",)
+        # The streamed page leaves its durable entry once it closes (#1484),
+        # and System logs lists it.
+        (entry,) = refusals()[seen:]
+        assert entry.actor_id == actor
+        assert entry.context["route"] == "admin:information_queue"
+        assert (entry.context["status"], entry.context["codes"]) == (400, ["invalid"])
+        logs = search(browser, "/admin/system/logs/", {"applied": "yes", "info": "yes"})
+        assert logs[0].status_code == 200
+        assert f'<tr id="log-info-{entry.pk}"'.encode() in logs[1]
         assert b'value="2026-11-05" aria-invalid="true"' in body
         assert b'id="end" type="date" name="end" value="2026-11-01"' in body
         assert body.count(b'aria-invalid="true"') == 2

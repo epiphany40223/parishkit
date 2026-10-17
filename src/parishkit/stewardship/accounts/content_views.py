@@ -30,6 +30,7 @@ from parishkit.stewardship.web.refusals import (
     UserFacingError,
     UserFacingStale,
     stale_page,
+    with_default_code,
 )
 
 from . import admin_navigation, schedule_local, setup_help
@@ -386,6 +387,7 @@ def _page(
     started=False,
     refusal=None,
     stale=None,
+    folded=False,
 ):
     """Never insert rejected user HTML into the visual editor without sanitizing it.
 
@@ -393,6 +395,8 @@ def _page(
     configured one) from its default text; ``started`` says the form now
     holds that unsaved default. ``stale`` is the saved revision's
     stale_markup result, shown as a "re-save recommended" notice (#832).
+    ``folded`` says the confirmation email shows a retired receipt closing
+    note folded in (#260), which previewing the form unchanged saves.
     """
     try:
         visual = sanitize_html(form["html"].value() or "")
@@ -416,6 +420,13 @@ def _page(
             "started_from_default": started,
             "refusal": refusal,
             "stale": stale,
+            # Preview waits for a change (#1330) unless the page offers saving
+            # what is shown as it is: the unsaved default text, a saved text
+            # that needs re-saving, a confirmation email with a retired
+            # closing note folded in, or a refused Preview drawn with its posts.
+            "change_gate": not (
+                form.is_bound or started or folded or stale is not None
+            ),
             # Post to the clean path: a "?start=default" GET must not carry its
             # query into the POST, which accepts no query parameters.
             "post_url": request.path,
@@ -424,6 +435,8 @@ def _page(
     )
     if status == 400:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return response
 
 
@@ -688,6 +701,7 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                         started=start,
                         # Only the saved text, not a default being started.
                         stale=None if start else stale_markup(shown),
+                        folded=note is not None,
                     )
                 )
         # Recheck access after the observation ends, so a GET's read-only
@@ -710,6 +724,23 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
         signing.BadSignature,
     ) as error:
         return error_response(error)
+
+
+def plain_text(source):
+    """What the server makes of HTML source: cleaned HTML, plain text, removals.
+
+    Request-free, so the editors' live preview (``plain_text_preview``) and
+    ``pk-admin content preview --html`` (#463) answer alike: ``html`` is the
+    sanitized HTML, ``text`` the plain text generated from it and
+    ``removed`` the markup the sanitizer drops, in plain words. Nothing
+    saves. Source the sanitizer cannot read raises ``ValueError``.
+    """
+    prepared = prepare_content(source)
+    return {
+        "html": prepared.html,
+        "text": prepared.text,
+        "removed": removed_markup(source),
+    }
 
 
 @require_POST
@@ -736,9 +767,7 @@ def plain_text_preview(request):
             Capability.CONFIGURE,
         ):
             raise PermissionError("Content access was revoked.")
-        source = request.POST["html"]
-        prepared = prepare_content(source)
-        removed = removed_markup(source)
+        answer = plain_text(request.POST["html"])
     except (
         ConfigError,
         DatabaseError,
@@ -747,8 +776,6 @@ def plain_text_preview(request):
         ValueError,
     ) as error:
         return error_response(error)
-    response = JsonResponse(
-        {"html": prepared.html, "text": prepared.text, "removed": removed}
-    )
+    response = JsonResponse(answer)
     response["Cache-Control"] = "no-store"
     return response

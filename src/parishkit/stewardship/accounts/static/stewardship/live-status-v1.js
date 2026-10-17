@@ -113,6 +113,19 @@
 // listeners removed, its status line taken away), and a fresh region that
 // is still pending is watched anew, from the parishkit:swap event ui-v1.js
 // dispatches on the swapped-in content.
+//
+// A region marked [data-live-recheck-shown] (Loading parish data, #1353) is
+// read once more, while settled, each time its page is shown again: the tab
+// becomes visible, or the page comes back from the back/forward cache. What
+// it says can change without any work running (a load discarded from another
+// tab), and a settled region is otherwise never read again. A region still
+// being watched is left to its watcher. Such a re-check never retries and
+// never says anything under the region: any failed read (a 503 once setup
+// has finished, a 409, a refusal or a network error) stops it quietly and
+// leaves the settled region as it was, so nothing moves and nothing is
+// polled again. A settled answer's data-live-follow link is followed as
+// usual, so the page's other in-place regions (the step bar) are re-read
+// with it.
 (function () {
   "use strict";
   const DELAYS = [2000, 2000, 3000, 4000, 6000, 8000, 10000];
@@ -133,6 +146,9 @@
   // The regions that said they are not current (data-live-not-current),
   // kept across a restart's new watcher so the next success is announced.
   const notCurrent = new WeakSet();
+  // The regions a watcher is following now, so a settled region's re-check
+  // when shown (data-live-recheck-shown) never starts a second watcher.
+  const watched = new WeakSet();
   const announcerFor = (name) => [...document.querySelectorAll("[data-live-announcer]")]
     .find((node) => node.getAttribute("data-live-announcer") === name);
   // Read out ``region``'s coarse status when it differs from the last one.
@@ -145,8 +161,11 @@
     announcer.textContent = text;
   };
   // Watch ``region``; ``now`` checks at once instead of after the first delay.
-  const watch = (region, now = false) => {
-    if (!region || !region.hasAttribute("data-live-pending")) return;
+  // ``once`` watches a settled region too: it is checked, and watching goes
+  // on only if the fresh region is pending again.
+  const watch = (region, now = false, once = false) => {
+    if (!region || (!once && !region.hasAttribute("data-live-pending"))) return;
+    watched.add(region);
     // This watcher's page-wide listeners, removed when it stops.
     const listening = new AbortController();
     const signal = listening.signal;
@@ -258,7 +277,10 @@
       window.clearInterval(ticker);
       listening.abort();
       watchers.delete(gone);
+      watched.delete(region);
       if (message !== undefined) say(message);
+      // A settled region's quiet re-check leaves no empty status line behind.
+      if (once && !problem.textContent) problem.remove();
     }
 
     function current(value) {
@@ -649,6 +671,11 @@
         // an in-place refresh replaced the region, must not swap, finish or
         // navigate.
         if (stopped || gone()) return;
+        // A settled region's quiet re-check stops at any failed read.
+        if (once && (!response.ok || response.redirected)) {
+          stop("");
+          return;
+        }
         if ([400, 401, 403, 404].includes(response.status) || response.redirected) {
           // Signed out, no longer allowed, or refused as a bad request (such
           // as Slack turned off): retrying cannot help.
@@ -691,6 +718,10 @@
         else finish();
       } catch {
         if (stopped) return;
+        if (once) {
+          stop("");
+          return;
+        }
         failures += 1;
         if (!saysCurrent) say("Couldn't check status — retrying.");
         else if (failures >= 3) current(false);
@@ -747,6 +778,15 @@
     // A [data-live-restart="<name>"] button checks that region again now.
     const button = event.target instanceof Element && event.target.closest("[data-live-restart]");
     if (button) recheck(button.getAttribute("data-live-restart"));
+  });
+  // Read each settled region marked data-live-recheck-shown once more.
+  const recheckShown = () => {
+    document.querySelectorAll("[data-live-status][data-live-recheck-shown]:not([data-live-pending])")
+      .forEach((region) => { if (!watched.has(region)) watch(region, true, true); });
+  };
+  window.addEventListener("pageshow", (event) => { if (event.persisted) recheckShown(); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") recheckShown();
   });
   const first = document.querySelector("[data-live-status]");
   if (first) spoken.set(first.getAttribute("data-live-status"), first.getAttribute("data-live-announce") || "");

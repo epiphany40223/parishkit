@@ -137,6 +137,9 @@ def add_refresh_worker_grants(tables, columns):
     columns["stewardship_ministry_request"] = {
         "UPDATE": {"state", "outcome", "resolved_at", "resolution_source_id", "version"}
     }
+    # The decision only so reconciliation can send an approval resting on a
+    # now stale accepted ParishSoft value back to To review (#528,
+    # ADM-09.03); the derived guard admits no other decision change here.
     columns["stewardship_proposed_change"] = {
         "UPDATE": {
             "current_available",
@@ -144,8 +147,12 @@ def add_refresh_worker_grants(tables, columns):
             "current_source_id",
             "execution",
             "version",
+            "decision",
         }
     }
+    # Whether a proposal's conflict was resolved at its current ParishSoft
+    # value (the accepted base), read by reconciliation and publication.
+    tables["stewardship_proposal_review"] = {"SELECT"}
     columns["stewardship_submission"] = {
         "SELECT": {
             "id",

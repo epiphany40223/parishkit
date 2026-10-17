@@ -414,7 +414,10 @@ class ScheduleForm(AdminForm):
     inapplicable value on that field in words that say what to do.
     """
 
-    id = forms.UUIDField(required=False, widget=forms.HiddenInput)
+    # A saved schedule's identity: the change gate counts it (ui-v1.js formState).
+    id = forms.UUIDField(
+        required=False, widget=forms.HiddenInput(attrs={"data-change-setting": True})
+    )
     # The send moment a browser-local page drew a saved row from (#558),
     # posted back so a digest drawn on one side of a daylight-saving change
     # and posted on the other still reads as unchanged (schedule_local.instant
@@ -698,6 +701,21 @@ class ScheduleSet(AdminFormSet):
     def has_templates(self):
         """Whether any email is saved that a schedule could send."""
         return schedulable(self.templates)
+
+    @property
+    def repeat_rule(self):
+        """A blank repeat rule for the date-change review's Repeat a reminder.
+
+        The panel draws the shared rule controls
+        (``components/repeat-rule.html``) from New scheduled email's own
+        ``RepeatRule``, so both repeat panels offer the same choices (#1129).
+        The panel posts nothing, so the form is never bound. It is imported
+        here, not at the top, because ``schedule_entry_views`` imports this
+        module.
+        """
+        from .schedule_entry_views import RepeatRule
+
+        return RepeatRule()
 
     @property
     def window(self):
