@@ -308,6 +308,14 @@ def test_a_gender_code_reads_as_its_census_word(raw, expected):
     assert decode_member_value("gender", raw) == expected
 
 
+@pytest.mark.parametrize("raw", [["F"], {}, 1])
+def test_a_non_text_gender_read_is_unreadable_not_a_crash(raw):
+    """A gender that is not text raises the same ValueError as any unreadable
+    value, so it is reported as unreadable (never an unhashable TypeError)."""
+    with pytest.raises(ValueError, match="cannot be read"):
+        decode_member_value("gender", raw)
+
+
 def test_confirmed_gender_codes_plan_the_code(monkeypatch):
     """Once confirmed, a gender change sends its code and compares by word.
 

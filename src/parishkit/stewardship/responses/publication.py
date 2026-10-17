@@ -167,7 +167,7 @@ def decode_member_value(field, raw):
     try:
         if definition.kind is ValueKind.DATE:
             return source_value(definition, _civil_date(raw))
-        if field == "gender" and raw in _GENDER_WORDS:
+        if field == "gender" and type(raw) is str and raw in _GENDER_WORDS:
             # A one-character code compares as its census word.
             return _GENDER_WORDS[raw]
         if definition.kind is ValueKind.EMAIL and raw is not None:
@@ -258,11 +258,11 @@ def _unwritable(row, provider):
     A blank value (None, or text that is empty or only whitespace) would ask
     to clear the field, which the API cannot do (``null`` is ignored and
     ``""`` refused, #528). A value the recorded PUT schema refuses (a phone
-    under ten characters, an over-long name, a gender longer than one
-    character) would be refused with HTTP 400. The encoded form is checked,
-    so a phone whose display text is empty counts as blank too. Gender is by
-    hand until its codes are confirmed (``GENDER_CODES_CONFIRMED``), and a
-    gender with no code (Unspecified) encodes as blank.
+    under ten characters, an over-long name) would be refused with HTTP 400.
+    The encoded form is checked, so a phone whose display text is empty
+    counts as blank too. Gender is by hand until its codes are confirmed
+    (``GENDER_CODES_CONFIRMED``), and a gender with no code (Unspecified)
+    encodes as blank.
     """
     if row.field == "gender" and not GENDER_CODES_CONFIRMED:
         return True
