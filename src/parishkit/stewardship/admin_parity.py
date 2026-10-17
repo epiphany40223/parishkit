@@ -161,7 +161,10 @@ LEDGER = {
         "the browser Campaign setup stepper's own progress; the command line "
         "has no stepper"
     ),
-    "share_settings": command("campaign shares", owed="PR 10"),
+    # The page's read, Review and Apply (#463).
+    "share_settings": command(
+        "campaign shares", "campaign shares-preview", "campaign shares-confirm"
+    ),
     # The page's read, Review and Apply (#750), all on the page itself.
     "reminder_workgroup": command(
         "workgroup show", "workgroup preview", "workgroup confirm"
@@ -195,6 +198,9 @@ LEDGER = {
     "artwork_settings": command(
         "artwork show", "artwork remove-preview", "artwork remove"
     ),
+    # Applying logos is owed with the uploads: staged logos belong to the
+    # sign-in that uploaded them, and each pk-admin run is its own sign-in,
+    # so a command cannot apply logos staged in the browser (#463).
     "branding_settings": command("branding show", owed="PR 10"),
     "hosted_file_upload": permanent(UPLOAD),
     "artwork_upload": permanent(UPLOAD),

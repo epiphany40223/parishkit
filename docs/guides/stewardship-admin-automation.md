@@ -1202,8 +1202,9 @@ and **Share options**. Like the pages, they need an Administrator; a
 session of any scope may run them, and they record nothing in System
 logs, as opening the pages records nothing. Each prints `version`, the
 applied configuration's version. Changing the parish profile is
-`parish preview` and `parish confirm` (below); changing the other settings
-stays on the pages for now.
+`parish preview` and `parish confirm`, and changing Share options is
+`campaign shares-preview` and `campaign shares-confirm` (both below);
+uploading logos stays on the page for now.
 
 ```sh
 pk-admin parish show
@@ -1264,6 +1265,49 @@ no longer current, or an expired token, is exit 1 (`stale_version`): read
 `parish show` again. `parish confirm` records `admin_cmd_parish_confirm`
 in System logs with the request; repeating it with the same token returns
 the same request.
+
+`campaign shares-preview` and `campaign shares-confirm` are the Share
+options page's **Review** and **Apply**. They need a full-scope session
+and, like the page, change only an unlocked current Testing draft with the
+financial module (`campaign shares` prints `editable`). `--changes` lists
+the whole new list in `options`, in order: a saved option by its `id` with
+its `name` (the label) and `free_text` (`false` when left out), and a new
+option without an `id`. Each saved option the change removes goes in
+`delete`, as the page's Delete box. Every saved option must be in one of
+the two, so leaving one out by mistake is refused rather than deleting it.
+Both commands take `--campaign`, the current campaign unless it names
+another.
+
+```sh
+pk-admin campaign shares > shares.json
+VERSION=$(jq -r .result.version shares.json)
+jq '{options: [.result.options[] | .name |= sub("check"; "cheque")]}' \
+    shares.json > change.json
+pk-admin campaign shares-preview --expected-version "$VERSION" \
+    --changes - < change.json |
+  jq -r .result.preview.token | pk-admin campaign shares-confirm --token -
+```
+
+| Field | What it holds |
+| --- | --- |
+| `version`, `campaign_id` (`campaign shares-preview`) | The version the change was reviewed against, and the campaign |
+| `changes` | The page's review, one line per change: `label` (such as `Added`, `Removed`, `Label` or `Position of …`), `before` (null for an added or removed option) and `after` |
+| `options` | The list the change saves, in order: `id`, `name` and `free_text`; a new option's `id` is the one it will have |
+| `preview.token` | What `campaign shares-confirm --token` takes, valid for fifteen minutes |
+| `created`, `request` (`campaign shares-confirm`) | As `parish confirm` prints them; follow the change with `config request show --watch` |
+
+A label the page refuses is exit 1 (`invalid`) at `options.<n>.name`, `n`
+counting from 0 in your `options`. No change, an `id` the campaign does
+not have or gives twice, or a saved option in neither list is exit 1
+(`invalid`) at `options`. A campaign the page does not edit now (live,
+locked or without the financial module), a version that is no longer
+current, or an expired token is exit 1 (`stale_version`): read `campaign
+shares` again. An altered token, or a token confirmed against another or
+an unknown campaign, is exit 1 (`invalid`). No current campaign, or an
+unknown one for `campaign shares-preview`, is exit 1 (`not_available`).
+`campaign shares-confirm` records `admin_cmd_campaign_shares_confirm` in System logs
+with the request; repeating it with the same token returns the same
+request.
 
 ## Integrations
 
@@ -3242,6 +3286,11 @@ campaign's, or is outside your Ministries, is exit 1 (`not_available`).
   prompting; `census_change_updated` and `admin_cmd_census_edit` or
   `admin_cmd_census_resolve_conflict`). `export census --format jsonl`
   records gain `editable` and `resolvable`.
+- `pk-admin/1` (#463 PR 10): additive. `campaign shares-preview --changes
+  JSON|- --expected-version VERSION [--campaign ID]` and `campaign
+  shares-confirm --token TOKEN|- [--campaign ID]`, Share options' Review
+  and Apply (full scope, Administrators only; the confirm records
+  `admin_cmd_campaign_shares_confirm`).
 - `pk-admin/1` (#463): additive. `content preview --delete ID [--delete
   ID ...] --expected-version VERSION` and `content confirm --token
   TOKEN|-`, the Pages and emails email tables' Delete (full scope,
