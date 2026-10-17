@@ -23,6 +23,7 @@ session may clear a halt, from the page or the command line.
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 
 from .admin_reads import ReadModel, plain
 
@@ -43,6 +44,19 @@ CLEAR_SALT = "parishkit.stewardship.mail_halt_clear"
 CLEAR_MAX_AGE = 15 * 60
 # At most this many unsettled message ids are listed; the count is exact.
 UNSETTLED_LISTED = 50
+# The critical-problems banner's entries the halt raised: its banner events'
+# CRITICAL entries from this long before the halt began (the outcome that
+# caused it is stored a moment before the consumer halts) up to the
+# preview, at most the banner's own 500 (admin-portal spec, "An action
+# that resolves a problem clears its banner entries").
+HALT_ENTRIES_BEFORE = timedelta(minutes=10)
+HALT_ENTRIES_LIMIT = 500
+# How long after a clear (or after a mail sender began reporting Halted) the
+# senders may still take to lift, or the halt to be recorded: the consumers
+# poll about every 30 seconds and a status record is up to 10 more behind.
+# Past this a Halted sender is not explained by timing, and the page says to
+# restart the mail sender (runbook "Mail-provider outage").
+LIFT_WINDOW = timedelta(minutes=2)
 
 # Why Clear the halt cannot be used now, in the order they are checked, and
 # their words for the page and the command line.
@@ -226,9 +240,12 @@ def reason(halt, check, unsettled, now):
 class ClearPreview:
     """What Clear the halt's preview states before the Administrator confirms.
 
-    ``token`` is the signed binding the confirmation takes (None while the
-    halt cannot be cleared, with ``reason`` saying why). ``waiting`` counts
-    the emails waiting to be sent, ``unsettled`` the ones in
+    ``token`` is the signed binding the confirmation takes: it names the
+    halt and the banner entries the preview saw (``entries``), and is made
+    even while ``reason`` says why the halt cannot be cleared yet, so the
+    page's Confirm can become usable in place once the mailbox check passes
+    (the command line prints it only once it can be used). ``waiting``
+    counts the emails waiting to be sent, ``unsettled`` the ones in
     delivery_unknown (``unsettled_ids`` lists the first of them), and
     ``paused`` says whether delivery is also paused.
     """
@@ -241,6 +258,90 @@ class ClearPreview:
     paused: bool
     reason: str | None
     token: str | None
+    entries: tuple = ()
+
+
+@dataclass(frozen=True)
+class ClearState:
+    """Whether Clear the halt can be used now, for System health's page and
+    its polled status: the current halt (None while none is recorded), the
+    newest mailbox check, how many emails are unsettled and the reason the
+    halt cannot be cleared (None when it can). While no halt is recorded,
+    ``phase`` says why: ``clearing`` (a clear was just recorded and the
+    senders have not lifted yet), ``unrecorded`` (the halt began a moment
+    ago and is not recorded yet) or ``stuck`` (neither, for longer than
+    ``LIFT_WINDOW``: the senders need a restart); it is ``recorded`` when
+    ``halt`` is set."""
+
+    halt: Halt | None
+    check: MailboxCheckStatus | None
+    unsettled: int
+    reason: str | None
+    phase: str = "recorded"
+
+
+def clear_state(now):
+    """The page's ``ClearState``, in the caller's read snapshot. Only read
+    while a mail consumer reports Halted, so other reads add no query."""
+    halt = current_halt(now)
+    if halt is None:
+        return ClearState(
+            halt=None,
+            check=None,
+            unsettled=0,
+            reason="not_halted",
+            phase=_unrecorded_phase(now),
+        )
+    check = _newest_check(now)
+    unsettled = _unsettled()[0]
+    return ClearState(
+        halt=halt,
+        check=check,
+        unsettled=unsettled,
+        reason=reason(halt, check, unsettled, now),
+    )
+
+
+def _unrecorded_phase(now):
+    """Why a Halted sender has no current halt: see ``ClearState.phase``.
+
+    Two extra reads, made only while a sender reports Halted with no halt
+    current: the newest clear signal's time, then the newest Halted report's
+    ``sender_since`` (when the sender began reporting Halted).
+    """
+    from django.db.models import Max
+
+    from .jobs.mail_halt_models import MailHaltClear
+    from .jobs.service_status_models import ServiceStatus
+
+    cleared = MailHaltClear.objects.aggregate(at=Max("created_at"))["at"]
+    if cleared is not None and cleared > now - LIFT_WINDOW:
+        return "clearing"
+    since = ServiceStatus.objects.filter(
+        service="mail-dispatch",
+        sender_state="halted",
+        reported_at__gt=now - REPORTED,
+    ).aggregate(at=Max("sender_since"))["at"]
+    if since is not None and since > now - LIFT_WINDOW:
+        return "unrecorded"
+    return "stuck"
+
+
+def _halt_entries(halt, now):
+    """The halt's critical-problems banner entries up to ``now`` (ids)."""
+    from .audit.models import OperationalLog
+    from .system_health import banner_events
+
+    return tuple(
+        OperationalLog.objects.filter(
+            level="CRITICAL",
+            event__in=banner_events("sender_halted"),
+            created_at__gte=halt.began_at - HALT_ENTRIES_BEFORE,
+            created_at__lte=now,
+        )
+        .order_by("created_at", "id")
+        .values_list("id", flat=True)[:HALT_ENTRIES_LIMIT]
+    )
 
 
 def _admit(caller, store):
@@ -285,18 +386,27 @@ def request_check(caller, store, actor=None):
         return check_status(row, database_now())
 
 
-def _sign(actor, key, halt_id):
-    """The preview binding for ``actor``'s clear ``key`` of ``halt_id``."""
+def _sign(actor, key, halt_id, entries=()):
+    """The preview binding for ``actor``'s clear ``key`` of ``halt_id``, with
+    the banner ``entries`` the preview saw."""
     from django.core import signing
 
+    # Compressed: up to 500 entry ids ride in each hidden input and in the
+    # command line's --token.
     return signing.dumps(
-        {"key": str(key), "actor": str(actor.identity), "halt": str(halt_id)},
+        {
+            "key": str(key),
+            "actor": str(actor.identity),
+            "halt": str(halt_id),
+            "entries": [str(entry) for entry in entries],
+        },
         salt=CLEAR_SALT,
+        compress=True,
     )
 
 
 def _unsign(actor, token):
-    """The binding's ``(key, halt_id)``, for ``actor`` only.
+    """The binding's ``(key, halt_id, entries)``, for ``actor`` only.
 
     An expired binding is ``StaleRecordError`` (review it again); an altered
     one, or another Administrator's, is ``ValueError``.
@@ -315,11 +425,12 @@ def _unsign(actor, token):
         raise ValueError("The preview token is not valid.") from None
     try:
         key, halt_id = UUID(value["key"]), UUID(value["halt"])
+        entries = tuple(UUID(entry) for entry in value.get("entries", ()))
         if value["actor"] != str(actor.identity):
             raise ValueError
     except (KeyError, TypeError, ValueError):
         raise ValueError("The preview token is not valid.") from None
-    return key, halt_id
+    return key, halt_id, entries
 
 
 def read_preview(store, actor):
@@ -342,7 +453,7 @@ def read_preview(store, actor):
         unsettled, ids = _unsettled()
         waiting = _waiting()
         paused = _paused(store)
-    why = reason(halt, check, unsettled, now)
+        entries = _halt_entries(halt, now)
     return ClearPreview(
         halt=halt,
         check=check,
@@ -350,8 +461,9 @@ def read_preview(store, actor):
         unsettled=unsettled,
         unsettled_ids=ids,
         paused=paused,
-        reason=why,
-        token=None if why is not None else _sign(actor, uuid4(), halt.halt_id),
+        reason=reason(halt, check, unsettled, now),
+        token=_sign(actor, uuid4(), halt.halt_id, entries),
+        entries=entries,
     )
 
 
@@ -373,6 +485,44 @@ def preview_clear(caller, store):
     return actor, preview
 
 
+def check_again(caller, store):
+    """**Check again**: ask for a new mailbox check (unless one is live) and
+    return the preview with it. Refused (``StaleRecordError``) while no halt
+    is current."""
+    actor = _admit(caller, store)
+    request_check(caller, store, actor)
+    return read_preview(store, actor)
+
+
+def _acknowledge(store, actor, row, entries):
+    """Acknowledge the halt's banner entries the preview saw, for ``actor``,
+    inside the clear's transaction, with the clear signal as subject.
+
+    A courtesy to the banner, never a condition of the clear, as Accept this
+    change once's (``system_health._acknowledge_refusal``): a configuration
+    refusal (a restore under review) or a permission refusal is logged, and
+    the clear stands; ``acknowledge_now`` runs in its own savepoint.
+    """
+    from django.db import DatabaseError
+
+    from parishkit.config import ConfigError
+
+    from .accounts.critical_event_views import acknowledge_now
+    from .observability import emit_failure
+
+    if not entries:
+        return
+    service = SimpleNamespace(store=store)
+    try:
+        acknowledge_now(service, actor, list(entries), subject_id=row.pk)
+    except ConfigError as error:
+        emit_failure(error, level=logging.WARNING, name_class=True)
+    except DatabaseError as error:
+        if getattr(error.__cause__, "sqlstate", None) != "42501":
+            raise
+        emit_failure(error, level=logging.WARNING, name_class=True)
+
+
 def clear_halt(caller, store, *, token, command=False):
     """Record the clear signal for the reviewed halt; return ``(row, created)``.
 
@@ -383,7 +533,8 @@ def clear_halt(caller, store, *, token, command=False):
     with the reason in words. The guard repeats each check under its lock.
     Records ``mail_halt_cleared`` with the signal as subject, and from the
     command line (``command``) ``admin_cmd_system_mail_clear`` too, in the
-    signal's transaction.
+    signal's transaction, which also acknowledges the halt's banner entries
+    the preview saw (``_acknowledge``).
     """
     from django.db import DatabaseError, IntegrityError, transaction
 
@@ -395,7 +546,7 @@ def clear_halt(caller, store, *, token, command=False):
     from .storage import StaleRecordError
 
     actor = _admit(caller, store)
-    key, halt_id = _unsign(actor, token)
+    key, halt_id, entries = _unsign(actor, token)
 
     def first():
         """The signal already recorded with this key, or None."""
@@ -446,6 +597,7 @@ def clear_halt(caller, store, *, token, command=False):
                     subject_id=caller.automation_session_id,
                     context={"outcome": Outcome.SUCCEEDED},
                 )
+            _acknowledge(store, actor, row, entries)
             return row, True
     except IntegrityError as error:
         # A simultaneous second click with the same key lost the race and
@@ -545,7 +697,8 @@ def mail_clear_preview(caller, service, *, wait=True, sleep=None, clock=None):
         unsettled_ids=list(preview.unsettled_ids),
         delivery_paused=preview.paused,
         reason=preview.reason,
-        preview={"token": preview.token},
+        # Printed only once it can be used; the page holds it from the start.
+        preview={"token": preview.token if preview.reason is None else None},
     )
 
 
@@ -555,7 +708,7 @@ def clear_prompt_lines(service, token, caller):
     from .accounts.sessions import authenticated_admin
 
     actor = authenticated_admin(caller, store=service.store, read_only=True)
-    _, halt_id = _unsign(actor, token)
+    _, halt_id, _ = _unsign(actor, token)
     return (
         f"Clear the mail sender's halt {halt_id}.",
         "Both mail senders start again with one email as a probe. If the fault "

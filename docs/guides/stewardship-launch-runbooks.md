@@ -319,7 +319,8 @@ to `DATA`, for example), becomes
    mail sender for its own mailbox check, and `pk-admin system mail-clear
    --token …` once it passes (the
    [automation guide](stewardship-admin-automation.md#system-mail-clear-preview-and-system-mail-clear)
-   describes both; System health's **Clear the halt** button follows). One
+   describes both), or System health's **Clear the halt** in the Mail
+   tile, which runs the same check and asks the same. One
    probe email per consumer is then sent; if the fault is still there,
    sending halts again. If System health still shows a halted mail sender
    but the preview says nothing is halted (a halt the sender could not

@@ -5913,12 +5913,10 @@ time, and the
 backup now** (PR 3), **Accept this change once** (PR 5a to 5c, with its
 example Families) and **Turn off debug logging** (PR 6a
 and 6b, with Testing's **Allow debug logging again** in PR 6c). **Clear
-the halt** lands in two parts: PR 4a adds its server side and its commands
-(`system mail-clear-preview` and `system mail-clear`), and PR 4b the
-button. Until 4b no panel offers a button; its problem sentence names the
-runbook step instead, and that step, listed under
-[runbook steps the page replaces](#runbook-steps-the-page-replaces), or
-the commands, remain the way to do it.
+the halt** landed in two parts: PR 4a added its server side and its
+commands (`system mail-clear-preview` and `system mail-clear`), and PR 4b
+the Mail tile's control, drawn while a mail sender is halted. All four
+actions have landed.
 
 ### System health page
 
@@ -6098,9 +6096,9 @@ existing kind, the split of a grouped process problem, and `severity` and
 Working summaries in a fixed order (see
 [why sends are waiting](#why-sends-are-waiting)), one line for both mail
 senders while they agree, and its explanations moved into toggletips and
-"About this page". A halt's kind and **Clear the halt** wait for ADM-13
-PR 4b, which draws them from PR 4a's halt records, so the Mail tile has no
-action region yet. Slice 4 delivered the ParishSoft refresh tile: its Working summaries
+"About this page". ADM-13 PR 4b added the Mail tile's action region,
+**Clear the halt**, whose preview names the halt's kind from PR 4a's halt
+records. Slice 4 delivered the ParishSoft refresh tile: its Working summaries
 in a fixed order (see the
 [ParishSoft refresh panel](#parishsoft-refresh-panel)), the refused
 counts inside the refusal's own problem item, listed last so Accept this
@@ -6573,9 +6571,10 @@ The same problem never appears twice in ways that disagree.
   the group's count, ahead of the System logs button. A problem counts as
   current while its group has not ended, by the banner's own #633 check.
   The banner therefore stays at its one query, and an ended group reads
-  "ended" with no tile link. `mail_provider_failed` links no tile until
-  ADM-13 PR 4b reads PR 4a's halt records, because that one query cannot tell
-  whether a halt is current. The mapping (`BANNER_PROBLEMS`) sits beside
+  "ended" with no tile link. `mail_provider_failed` links no tile: that
+  one query cannot tell whether a halt is current, and reading the halt
+  records (ADM-13 PR 4a) would add a query to every Admin page for a link
+  System health's Mail tile already gives. The mapping (`BANNER_PROBLEMS`) sits beside
   the registry in `system_health.py`. The table's `source_invalid` is the
   event recorded as `source_refresh_invalid`.
 - **An action that resolves a problem clears its banner entries.** When an
@@ -6600,7 +6599,10 @@ The same problem never appears twice in ways that disagree.
     preview's binding therefore names the refusal rather than carrying
     entry ids.
   - **Clear the halt** (ADM-13 PR 4b) acknowledges the halt's
-    `mail_provider_failed` entries.
+    `mail_provider_failed` entries: the CRITICAL entries of that event from
+    ten minutes before the halt began (the outcome that caused it is
+    stored a moment before the consumer halts) up to the preview, whose
+    signed binding carries their ids (at most 500).
   - **Take a backup now** and **Turn off debug logging** acknowledge
     nothing: an overdue backup ends only when a backup finishes (the
     banner then reads "ended"), and debug logging raises no CRITICAL
@@ -7402,7 +7404,9 @@ without a restart). A request left from before a restart or a clear is
 never run, so it cannot hold up normal sending; it stops being live after
 two minutes, and the page by then says nothing is halted. On the page it appears in place: "Checking the mailbox…" while it
 runs, then its result in words. A check not answered within two minutes
-says that the mail sender did not answer; a request it never claimed stays
+says that the mail sender did not answer, and that a sender answers only
+while it is running and halted (so a check never claimed because nothing
+is halted ends there, not in a spinner); a request it never claimed stays
 waiting and is no longer live. **Check again** starts a new one.
 A passed check proves only that signing in works. It cannot show that Gmail
 accepts the sending address, or rule out a fault after `DATA`; the preview
@@ -7452,9 +7456,34 @@ halt.
 the halt record, the clear signal and the mailbox check request with their
 guards (frozen migration 0114), the consumers recording halts, reading the
 signal and running the check, `mail_halt_cleared` and the two commands;
-**4b** the **Clear the halt** button in the Mail tile with its preview, the
+**4b** the **Clear the halt** control in the Mail tile with its preview, the
 in-place mailbox check, and the critical-problems banner's acknowledgement
 of the halt's `mail_provider_failed` entries.
+
+**Where it appears.** In the [Mail tile](#health-tiles)'s details, right
+after its problems, and only while a mail consumer that is running reports
+**Halted** (the conditional-fields rule); the page reads the halt records
+only then, so other reads gain no query. Until the halt is recorded (up to
+about 30 seconds) the button is greyed with that reason; right after a
+clear, while a sender still reports **Halted**, it says the halt was cleared
+and the senders start again within about 30 seconds; and when a sender has
+reported Halted for more than two minutes with no halt recorded, it says
+to restart the mail sender and links the
+[mail-provider outage runbook](../../../guides/stewardship-launch-runbooks.md#mail-provider-outage),
+rather than promising 30 seconds for ever (two more reads, only in that
+case). **Clear the halt** opens the preview in place: when the halt began and its kind, the waiting
+and unsettled emails (with a link to settle them on Outgoing mail),
+whether mail is also paused, and the mailbox check, which opening it asks
+for. The check's line and the two buttons, **Check again** and **Confirm:
+clear the halt**, follow the page's 10-second status read in place: the
+line says "Checking the mailbox…", then its result, and Confirm stays
+greyed with its reason (reserved lines, so nothing moves) until every
+condition holds. The preview names the halt it reviews; once the status
+shows another halt or none, it is marked "This changed since you looked"
+and both buttons are held for good: a later status read never draws usable
+buttons under the note, and the reader reopens the preview. Confirm's answer, and every refusal in the
+service's own words, are drawn in the same region. No step needs a recent
+sign-in (#1547), so there is no step-up.
 
 #### Accept a large ParishSoft change once
 

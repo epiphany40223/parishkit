@@ -9,6 +9,12 @@ from django.template.loader import render_to_string
 from django.utils.http import urlencode
 
 from parishkit.stewardship.accounts.system_health_views import POLL_MILLISECONDS
+from parishkit.stewardship.mail_halt_clear import (
+    ClearPreview,
+    ClearState,
+    Halt,
+    MailboxCheckStatus,
+)
 from parishkit.stewardship.source.data_age import Connection
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.system_health import (
@@ -118,6 +124,22 @@ ALLOW_CLEARED = "/system-health-allow-cleared"
 # Allow debug logging again's steps answer the review dialog with this
 # fragment (#1356).
 ALLOW_ANSWER = "stewardship/system-health-debug-allow-review.html"
+# Clear the halt (ADM-13 PR 4b): a page whose mail senders are halted, its
+# poll (the mailbox check has passed), and the answers its steps get: the
+# preview (the check still running) and the clear. The browser test serves
+# the page at the real address (BACKUP_PAGE) by routing, as the POSTs are.
+CLEAR_PAGE = "/system-health-clear"
+CLEAR_STATUS = "/system-health-clear/status"
+CLEAR_PREVIEW = "/system-health-clear-preview"
+CLEAR_DONE = "/system-health-clear-done"
+# The same page's polled status once the halt is no longer recorded, and with
+# the newest mailbox check refused; and pages whose senders still report
+# Halted with no halt recorded (just cleared, and for too long).
+CLEAR_NONE_STATUS = "/system-health-clear/status-none"
+CLEAR_REFUSED_STATUS = "/system-health-clear/status-refused"
+CLEAR_CLEARING_PAGE = "/system-health-clear-clearing"
+CLEAR_STUCK_PAGE = "/system-health-clear-stuck"
+CLEAR_HALT = UUID(int=9)
 # A healthy page whose next poll changes only a time's datetime attribute.
 DATED = "/system-health-dated"
 DATED_STATUS = "/system-health-dated/status"
@@ -376,12 +398,29 @@ def mail_state(model, now, state):
             _row(now, "mail-dispatch", age=600),
             _row(now, "mail-dispatch", "mail"),
         ],
+        # Both mail senders halted (Clear the halt, ADM-13 PR 4b).
+        "halted": [
+            _row(
+                now,
+                "mail-dispatch",
+                sender_state="halted",
+                sender_since=now - timedelta(minutes=12),
+            ),
+            _row(
+                now,
+                "mail-dispatch",
+                "mail",
+                sender_state="halted",
+                sender_since=now - timedelta(minutes=12),
+            ),
+        ],
     }.get(state)
     values = {
         "sending": {"send_active": True},
         "paused": {"delivery_paused": True, "paused_at": now - timedelta(minutes=30)},
         "daily": {"daily_sent": 1612, "daily_resume_at": now + timedelta(hours=5)},
         "stopped": {},
+        "halted": {},
     }[state]
     if rows:
         kept = [line for line in model.processes if not line.sender]
@@ -401,6 +440,52 @@ def mail_state(model, now, state):
             ),
         }
     return replace(model, **values)
+
+
+def clear_state(now, status, phase=None):
+    """Clear the halt's state for the halted pages: the newest mailbox check
+    in ``status`` (None: none asked for yet), and the reason it gives. With
+    a ``phase`` no halt is recorded, a sender still reporting Halted."""
+    if phase is not None:
+        return ClearState(
+            halt=None, check=None, unsettled=0, reason="not_halted", phase=phase
+        )
+    halt = Halt(
+        halt_id=CLEAR_HALT, kind="before_data", began_at=now - timedelta(minutes=12)
+    )
+    check = (
+        None
+        if status is None
+        else MailboxCheckStatus(
+            check_id=UUID(int=10),
+            status=status,
+            created_at=now - timedelta(minutes=1),
+            claimed_at=now - timedelta(seconds=50),
+            finished_at=now - timedelta(seconds=30) if status == "passed" else None,
+        )
+    )
+    reason = {
+        None: "check_needed",
+        "waiting": "checking",
+        "passed": None,
+        "refused": "check_failed",
+    }[status]
+    return ClearState(halt=halt, check=check, unsettled=0, reason=reason)
+
+
+def clear_preview(now):
+    """Clear the halt's preview, the mailbox check just asked for."""
+    state = clear_state(now, "waiting")
+    return ClearPreview(
+        halt=state.halt,
+        check=state.check,
+        waiting=37,
+        unsettled=0,
+        unsettled_ids=(),
+        paused=False,
+        reason="checking",
+        token="signed-binding",
+    )
 
 
 def components(context, admin):
@@ -997,6 +1082,91 @@ def components(context, admin):
                         "created": True,
                     },
                     debug_off_shown=True,
+                ),
+            ),
+        ),
+        CLEAR_PAGE: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(
+                    False,
+                    mail="halted",
+                    status_url=CLEAR_STATUS,
+                    clear_halt=clear_state(now, None),
+                ),
+            ),
+        ),
+        CLEAR_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html",
+                values(False, mail="halted", clear_halt=clear_state(now, "passed")),
+            ),
+        ),
+        CLEAR_NONE_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html",
+                values(
+                    False,
+                    mail="halted",
+                    clear_halt=clear_state(now, None, phase="unrecorded"),
+                ),
+            ),
+        ),
+        CLEAR_REFUSED_STATUS: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health-status.html",
+                values(False, mail="halted", clear_halt=clear_state(now, "refused")),
+            ),
+        ),
+        CLEAR_CLEARING_PAGE: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(
+                    False,
+                    mail="halted",
+                    clear_halt=clear_state(now, None, phase="clearing"),
+                ),
+            ),
+        ),
+        CLEAR_STUCK_PAGE: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(
+                    False,
+                    mail="halted",
+                    clear_halt=clear_state(now, None, phase="stuck"),
+                ),
+            ),
+        ),
+        CLEAR_PREVIEW: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(
+                    False,
+                    mail="halted",
+                    status_url=CLEAR_STATUS,
+                    clear_halt=clear_state(now, "waiting"),
+                    clear={"preview": clear_preview(now)},
+                ),
+            ),
+        ),
+        CLEAR_DONE: (
+            "text/html",
+            render_to_string(
+                "stewardship/system-health.html",
+                values(
+                    False,
+                    mail="halted",
+                    status_url=CLEAR_STATUS,
+                    clear_halt=clear_state(now, "passed"),
+                    clear={"cleared": SimpleNamespace(), "created": True},
                 ),
             ),
         ),
