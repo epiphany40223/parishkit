@@ -7,7 +7,7 @@ again. Runtime exposure belongs to the compiled delivery owners, not these ORM
 declarations or possession of a message UUID.
 """
 
-from django.contrib.postgres.indexes import GinIndex
+from django.contrib.postgres.indexes import GinIndex, OpClass
 from django.db import models
 from django.db.models.functions import Cast, Lower, Now
 
@@ -342,13 +342,18 @@ class OutboxRender(ImmutableRecord):
             # address, in any case, through an Administrator-only definer
             # read (#1562, frozen migration 0115). Lower-casing the JSON
             # text keeps it valid JSON, so containment works on the result.
-            # The default jsonb_ops operator class: Django names another for
-            # an expression (OpClass) only with django.contrib.postgres
-            # installed, which this project does not install.
+            # The jsonb_path_ops operator class: the read uses only
+            # containment (@>), which it answers with a smaller index than
+            # the default jsonb_ops. Django writes OpClass on an expression
+            # correctly only once OpClass is an index wrapper, which the
+            # jobs app registers (apps.JobsConfig.ready).
             GinIndex(
-                Cast(
-                    Lower(Cast("intended_recipients", models.TextField())),
-                    models.JSONField(),
+                OpClass(
+                    Cast(
+                        Lower(Cast("intended_recipients", models.TextField())),
+                        models.JSONField(),
+                    ),
+                    name="jsonb_path_ops",
                 ),
                 name="outbox_render_intended_lower",
             ),

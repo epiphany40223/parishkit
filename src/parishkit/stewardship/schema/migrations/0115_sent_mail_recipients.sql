@@ -13,9 +13,11 @@
 -- file adds narrow SECURITY DEFINER reads rather than widen the web login's
 -- grants, plus the index the address read needs:
 --
--- outbox_render_intended_lower is a GIN index (jsonb_ops) over the
--- intended recipients lower-cased, so an address typed in any case finds
--- the emails meant for it without reading every rendering. Lower-casing the
+-- outbox_render_intended_lower is a GIN index over the intended recipients
+-- lower-cased, so an address typed in any case finds the emails meant for
+-- it without reading every rendering. Its operator class is jsonb_path_ops:
+-- the read uses only containment (@>), which that class answers with a
+-- smaller index than the default jsonb_ops. Lower-casing the
 -- JSON text keeps it valid JSON: lower() changes only letters, and JSON's
 -- escapes (É and É alike) read the same in either case. Made only
 -- when missing, so the users swap's test can install this file again.
@@ -47,7 +49,7 @@ SET LOCAL search_path = public;
 
 CREATE INDEX IF NOT EXISTS outbox_render_intended_lower
     ON public.stewardship_outbox_render
-    USING gin (((lower((intended_recipients)::text))::jsonb));
+    USING gin (((lower((intended_recipients)::text))::jsonb) jsonb_path_ops);
 
 CREATE FUNCTION public.stewardship_delivery_ids_for_address_v1(address_text text, actor_uuid uuid)
 RETURNS SETOF uuid
@@ -126,7 +128,7 @@ BEGIN
        OR has_function_privilege('public',
           'public.stewardship_delivery_page_recipients_v1(uuid[],uuid)', 'EXECUTE')
        OR pg_get_indexdef('public.outbox_render_intended_lower'::regclass)
-          <>'CREATE INDEX outbox_render_intended_lower ON public.stewardship_outbox_render USING gin (((lower((intended_recipients)::text))::jsonb))' THEN
+          <>'CREATE INDEX outbox_render_intended_lower ON public.stewardship_outbox_render USING gin (((lower((intended_recipients)::text))::jsonb) jsonb_path_ops)' THEN
         RAISE EXCEPTION 'Migration 0115 (Sent mail recipient reads) is not installed as declared';
     END IF;
 END

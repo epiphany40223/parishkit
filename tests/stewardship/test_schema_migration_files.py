@@ -364,7 +364,7 @@ FROZEN = {
         "f89490777c7145a1b0213dc2976d4c1c2bc14289fe08926c502667f0ca9cb5d8"
     ),
     "0115_sent_mail_recipients.sql": (
-        "357da6e19bb0607ab28f6fc039cddbcaff8bfe318a244606fcf13226cc679a7a"
+        "15e9a4be4446908bfa4587d5e654ab5e58f6a0d736c04543f6a75af5cd556417"
     ),
 }
 

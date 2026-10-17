@@ -258,6 +258,11 @@ def test_the_check_passes_on_the_installed_reads():
         "CREATE INDEX outbox_render_intended_lower ON "
         "public.stewardship_outbox_render USING gin "
         "(intended_recipients)",
+        # Nor is the same expression with the default operator class.
+        "DROP INDEX public.outbox_render_intended_lower; "
+        "CREATE INDEX outbox_render_intended_lower ON "
+        "public.stewardship_outbox_render USING gin "
+        "(((lower((intended_recipients)::text))::jsonb))",
     ],
 )
 def test_the_check_refuses_a_missing_or_different_read(change):

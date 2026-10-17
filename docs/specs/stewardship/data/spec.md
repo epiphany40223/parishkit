@@ -1630,7 +1630,8 @@ kind, with the same caller and actor checks, fixed search path and grants
 ids of the emails any of whose renderings has `address` among its intended
 recipients, compared in lower case; the expression GIN index
 `outbox_render_intended_lower` (over
-`lower(intended_recipients::text)::jsonb`, default `jsonb_ops`) answers it
+`lower(intended_recipients::text)::jsonb`, operator class `jsonb_path_ops`,
+since the read uses only containment) answers it
 without reading every rendering. `stewardship_delivery_page_recipients_v1(messages, actor)` returns
 `(message, address)` for the intended addresses of the current rendering of
 each given email that has no Family (an Administrator report or notice), at
