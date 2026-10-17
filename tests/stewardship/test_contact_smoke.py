@@ -200,6 +200,8 @@ def test_the_encoder_check_and_the_schema_check_name_their_fields():
     assert fields["emailAddress"]["encoder_matches_read"] is False
     assert fields["emailAddress"]["separators"] == [", "]
     assert fields["gender"]["sendable"] is False
+    # A whole word is not the code the encoder sends (#1603).
+    assert fields["gender"]["encoder_matches_read"] is False
     assert "encoder_matches_read" not in fields["homePhone"]
     assert result["unsendable"] == ["dateOfBirth", "gender", "homePhone"]
     assert "homePhone" in result["unsettled"]
