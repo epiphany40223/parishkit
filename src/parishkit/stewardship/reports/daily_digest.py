@@ -505,15 +505,21 @@ def day_table_html(headings, rows, plain):
     span = len(values)
 
     def cells(tag, items, style, extra=""):
-        """One row of right-aligned cells; only the later ones are padded."""
+        """One row of cells; the first is left-aligned under its date.
+
+        The later cells are right-aligned and padded.
+        """
         return "".join(
-            f'<{tag}{extra} align="right"{_style(style if index else style + "-lead")}>'
+            f'<{tag}{extra} align="{"right" if index else "left"}"'
+            f"{_style(style if index else style + '-lead')}>"
             f"{plain(item)}</{tag}>"
             for index, item in enumerate(items)
         )
 
     html = (
-        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        # No role="presentation": this is a data table, and that role would strip
+        # the header semantics from the table and every cell (#1559 review).
+        '<table width="100%" cellpadding="0" cellspacing="0" '
         f'border="0"{_style("table")}><caption{_style("table-caption")}>'
         "Day by day</caption><thead><tr>"
         + cells("th", values, "th", ' scope="col"')

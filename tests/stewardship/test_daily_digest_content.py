@@ -238,7 +238,7 @@ def test_day_table_gives_each_day_a_date_row_then_its_values(financial, span):
         value = replace(value, participation=chart, statistics=statistics)
     table = day_table(render(value).html)
     headings = re.findall(
-        r'<th scope="col" align="right" style="([^"]+)">([^<]+)<', table
+        r'<th scope="col" align="(?:left|right)" style="([^"]+)">([^<]+)<', table
     )
     expected = ["First submissions", "Cumulative participation"]
     expected += ["Cumulative annual pledges (USD)"] if financial else []
@@ -250,7 +250,8 @@ def test_day_table_gives_each_day_a_date_row_then_its_values(financial, span):
     for row in digest_rows(value):
         date, *figures = row
         cells = "".join(
-            f'<td align="right" style="{STYLES["td-lead" if index == 0 else "td"]}">'
+            f'<td align="{"right" if index else "left"}" '
+            f'style="{STYLES["td-lead" if index == 0 else "td"]}">'
             f"{figure}</td>"
             for index, figure in enumerate(figures)
         )
@@ -259,6 +260,19 @@ def test_day_table_gives_each_day_a_date_row_then_its_values(financial, span):
             f'style="{STYLES["day"]}">{date}</th></tr><tr>{cells}</tr></tbody>'
         ) in table
     assert table.count("<tbody>") == len(digest_rows(value)) == 5
+
+
+def test_day_table_is_a_data_table_with_headers_and_no_role():
+    """No role: presentation would hide the headers from screen readers."""
+    html = render(long_document(12)).html
+    table_open = html[html.rindex("<table", 0, html.index("Day by day</caption>")) :]
+    assert table_open.startswith('<table width="100%"')
+    assert "role=" not in table_open[: table_open.index(">")]
+    table = day_table(html)
+    # Column headings, then per day one row-group heading and one value row.
+    assert table.count('<th scope="col"') == 3
+    assert table.count('<th scope="rowgroup"') == table.count("<tbody>") == 5
+    assert table.count("<td ") == 15
 
 
 def test_retained_reports_with_the_four_column_day_table_still_validate():
