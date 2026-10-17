@@ -126,6 +126,9 @@ LEDGER = {
     "schedule_new": command("schedule preview", "schedule confirm"),
     "schedule_edit": command("schedule show", "schedule preview", "schedule confirm"),
     "schedule_delete": command("schedule preview", "schedule confirm"),
+    # The campaign wizard's suggested schedules (#1404 PR 6) are three
+    # ordinary schedules, which a schedule change document adds.
+    "schedule_suggested": command("schedule preview", "schedule confirm"),
     # A test of New and Edit scheduled email's unsaved email text (#446):
     # the command line takes no unsaved text; ``test sample`` tests a saved
     # email, and the content commands save text to test.

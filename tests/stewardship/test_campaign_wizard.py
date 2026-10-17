@@ -385,6 +385,49 @@ def test_dates_with_no_schedules_continue_without_them():
     assert "Continue to Campaign images" in actions(stepper)
 
 
+def test_dates_with_suggested_schedules_add_them_and_continue():
+    """Suggested schedules make Add these schedules and continue the primary.
+
+    #1404 PR 6a: Continue without schedules for now stays, as the secondary
+    before it; the primary submits the suggested schedules' form and is not
+    change-gated (data-campaign-add, not data-campaign-save). The row names
+    the next step an applied save opens, and its status line is reserved.
+    """
+    stepper = wizard.build(
+        True,
+        "schedules",
+        done={"settings"},
+        mail_test_url=None,
+        no_schedules=True,
+        suggest=True,
+    )
+    assert stepper.direct and stepper.save_key is not None
+    assert stepper.direct_form == wizard.SUGGESTED_FORM
+    html = actions(stepper)
+    assert re.search(
+        r'<form method="post" action="[^"]+" data-campaign-continue>.*'
+        r'<button type="submit" class="[^"]*secondary[^"]*"[^>]*>Continue without '
+        r'schedules for now</button></form><div class="campaign-step-primary" '
+        r'data-campaign-primary><button type="submit" form="suggested-schedules-'
+        r'form" [^>]*data-campaign-add[^>]*>Add these schedules and continue'
+        r"</button></div>",
+        html,
+        re.S,
+    )
+    assert "data-campaign-save" not in html
+    assert f'data-next-url="{reverse("admin:artwork_settings")}"' in html
+    assert 'id="campaign-step-status" role="status"' in html
+    # Without suggestions the step keeps its one primary Continue, and still
+    # names its next step for a save made elsewhere on the page.
+    plain = actions(
+        wizard.build(
+            True, "schedules", done={"settings"}, mail_test_url=None, no_schedules=True
+        )
+    )
+    assert "Add these schedules" not in plain and "data-campaign-add" not in plain
+    assert f'data-next-url="{reverse("admin:artwork_settings")}"' in plain
+
+
 def test_test_email_continues_only_after_an_accepted_test():
     """Preview and test email's purpose is the test, so Continue waits for it."""
     before = actions(

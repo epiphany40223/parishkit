@@ -1941,7 +1941,10 @@ Save and continue saves directly, follows the change and opens the next
 step not done yet. The sub-pages that save (an email's editor, New and
 Edit scheduled email) meet rule 10's Save and go back (#1404 PR 4b): it
 saves directly and returns to the step, whose status line says what was
-saved. On Campaign images, until its direct save lands (planned, #1404
+saved. Dates and mail schedules meets rule 9's empty step with its
+suggested schedules (#1404 PR 6a): Add these schedules and continue saves
+them directly, and Continue without schedules for now keeps the step as
+is. On Campaign images, until its direct save lands (planned, #1404
 PR 4c), Continue is unavailable while an image is chosen but not uploaded,
 so the page's own upload, with its review dialog, is the way on, and after
 it the page redraws in place and stays on its step;

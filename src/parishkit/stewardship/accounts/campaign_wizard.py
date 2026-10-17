@@ -37,7 +37,11 @@ follows the change and then opens the next step not done yet. The
 sub-pages that save (Pages and emails' editor, New and Edit scheduled email;
 ``DIRECT_SUBPAGES``, #1404 PR 4b) save the same way with **Save and go
 back**, and then open their step again. Outside the wizard those pages keep
-their own Save and review dialog (or Preview changes page).
+their own Save and review dialog (or Preview changes page). Dates and mail
+schedules with no schedule saved proposes a starting set (``suggest``, #1404
+PR 6, ``schedule_suggestions``): its primary is then **Add these schedules
+and continue**, which saves them directly the same way, and Continue without
+schedules for now becomes the secondary.
 """
 
 from dataclasses import dataclass
@@ -94,6 +98,9 @@ DIRECT_SUBPAGES = frozenset(
     {"content_edit", "content_revision", "schedule_new", "schedule_edit"}
 )
 SUBPAGE_FORMS = {"content": "content-form", "schedules": "schedule-entry-form"}
+# The form Dates and mail schedules' Add these schedules and continue posts
+# (#1404 PR 6; schedule-settings.html).
+SUGGESTED_FORM = "suggested-schedules-form"
 
 
 @dataclass(frozen=True)
@@ -112,7 +119,9 @@ class CampaignWizard(Wizard):
     shared row draws nothing. ``direct`` marks a step page whose form the
     primary saves directly (``DIRECT_STEPS``), or a sub-page whose form Save
     and go back saves directly (``DIRECT_SUBPAGES``), with ``save_key``, the
-    request key that form posts.
+    request key that form posts. ``suggest`` marks Dates and mail schedules
+    proposing its suggested schedules (no schedule saved, and an Initial
+    invitation email to send; #1404 PR 6), which its primary adds directly.
     """
 
     upcoming: Step | None = None
@@ -123,16 +132,20 @@ class CampaignWizard(Wizard):
     creating: bool = False
     direct: bool = False
     save_key: object = None
+    suggest: bool = False
 
     @property
     def direct_form(self):
         """The id of the form a direct save posts, or None.
 
         ``DIRECT_FORM`` on a step page; a sub-page's form by its step
-        (``SUBPAGE_FORMS``).
+        (``SUBPAGE_FORMS``); the suggested schedules' form while they are
+        proposed (``SUGGESTED_FORM``).
         """
         if not self.direct:
             return None
+        if self.suggest:
+            return SUGGESTED_FORM
         return SUBPAGE_FORMS[self.current.key] if self.sub else DIRECT_FORM
 
     @property
@@ -215,6 +228,7 @@ def build(
     no_schedules=False,
     load=None,
     direct=False,
+    suggest=False,
 ):
     """Derive the stepper for the page ``current`` (a step key) as a ``Wizard``.
 
@@ -225,9 +239,9 @@ def build(
     invitation's current revision, or None when there is none to test. Every
     other step is always a link: Back and Continue never save or discard
     anything on the page, and each page keeps its own prerequisites.
-    ``sub``, ``no_schedules``, ``load`` and ``direct`` are carried
-    through (``CampaignWizard``); a ``direct`` stepper draws a fresh
-    ``save_key``.
+    ``sub``, ``no_schedules``, ``load``, ``direct`` and ``suggest`` are
+    carried through (``CampaignWizard``); a ``direct`` (or ``suggest``)
+    stepper draws a fresh ``save_key``.
     """
     pages = [page for page in PAGES if page.key != "share_options" or financial]
     steps = []
@@ -278,8 +292,9 @@ def build(
         no_schedules=no_schedules,
         load=load,
         refresh_key=uuid4() if load == "offer" else None,
-        direct=direct,
-        save_key=uuid4() if direct else None,
+        direct=direct or suggest,
+        save_key=uuid4() if direct or suggest else None,
+        suggest=suggest,
     )
 
 
@@ -511,11 +526,38 @@ def for_request(match, campaign, configuration):
     if current == "mail_test" and str(match.kwargs.get("revision_id")) != str(revision):
         return None
     sub = name in SUBPAGES
-    no_schedules = False
+    no_schedules = suggest = False
     if current == "schedules" and not sub:
+        from django.utils import timezone
+
+        from parishkit.stewardship.campaigns.domain import CampaignState
+        from parishkit.stewardship.campaigns.lifecycle import structural_edit_admitted
+
+        from .content_views import _records
         from .schedule_reads import campaign_schedules
+        from .schedule_suggestions import entries
 
         no_schedules = not campaign_schedules(configuration, campaign.pk)
+        # The same set the page lists and its save adds (#1404 PR 6); read
+        # from the applied document already in hand, so no query.
+        # Only while the campaign's dates may still change, as the page
+        # draws the panel and its form only then (``schedule_views``).
+        suggest = (
+            no_schedules
+            and campaign.pk == configuration.current_campaign_id
+            and structural_edit_admitted(
+                CampaignState(campaign.state),
+                ever_active=campaign.ever_active,
+                locked=campaign.structural_locked,
+            )
+            and bool(
+                entries(
+                    campaign.active_configuration.values,
+                    _records(configuration, campaign.pk),
+                    timezone.now(),
+                )
+            )
+        )
     return build(
         financial,
         current,
@@ -525,6 +567,7 @@ def for_request(match, campaign, configuration):
         no_schedules=no_schedules,
         load=_load_state(campaign),
         direct=name in DIRECT_SUBPAGES if sub else current in DIRECT_STEPS,
+        suggest=suggest,
     )
 
 

@@ -27,6 +27,10 @@ views act on them:
   ``series_edits.plan``. Delivery never reads a series.
 - **Delete** answers the list's confirmation dialog: it removes the chosen
   schedules in one configuration change.
+- **Add these schedules and continue**, inside the campaign wizard on a
+  campaign with no schedule saved (#1404 PR 6), adds the suggested starting
+  schedules (``schedule_suggestions``) in one change, saved directly
+  (``schedule_suggested``).
 
 Neither path has validation of its own. Each turns its request into the
 change document the schedule commands take (``admin_changes.form_data``),
@@ -75,11 +79,18 @@ from parishkit.stewardship.web.refusals import (
     UserFacingError,
     UserFacingMissing,
     UserFacingStale,
+    stale_page,
     unexpected_fields,
     with_default_code,
 )
 
-from . import admin_navigation, campaign_wizard, schedule_email, schedule_local
+from . import (
+    admin_navigation,
+    campaign_wizard,
+    schedule_email,
+    schedule_local,
+    schedule_suggestions,
+)
 from .admin_editing import (
     confirm_intent,
     direct_key,
@@ -1498,8 +1509,12 @@ def _chosen(parameters):
     return [str(UUID(value)) for value in values]
 
 
-def _refusal(window, schedules):
-    """A refused delete, with every rule it would break, as one message."""
+def _refusal(window, schedules, *, fallback=None, fix=None):
+    """A refused delete, with every rule it would break, as one message.
+
+    ``fallback`` and ``fix`` replace the delete's own wording for another
+    change refused the same way (the suggested schedules, #1404 PR 6).
+    """
     messages = [
         *_messages(schedules.non_form_errors()),
         *_messages(window.non_field_errors()),
@@ -1512,8 +1527,10 @@ def _refusal(window, schedules):
     ]
     return UserFacingError(
         " ".join(dict.fromkeys(messages))
+        or fallback
         or _("These scheduled emails can't be deleted together."),
-        fix=_("Nothing was deleted. Change the other schedules first, then try again."),
+        fix=fix
+        or _("Nothing was deleted. Change the other schedules first, then try again."),
     )
 
 
@@ -1577,5 +1594,116 @@ def schedule_delete(request, campaign_id):
         return HttpResponseRedirect(
             reverse("admin:configuration_request", args=[receipt.request_id])
         )
+    except ERRORS as error:
+        return error_response(error)
+
+
+# Why Add these schedules and continue saved nothing because the campaign
+# no longer has a set to suggest (a schedule was saved, or its Initial
+# invitation email removed, since the page was drawn).
+NOTHING_TO_SUGGEST = _("The suggested schedules no longer apply, so nothing was saved.")
+NOTHING_TO_SUGGEST_FIX = _(
+    "Reload the page to see the campaign's schedules, then add any you need."
+)
+# The fix when the suggested set breaks a schedule rule (an email that no
+# longer fits its mail type, say): the schedules can still be added one by one.
+NOT_ADDED_FIX = _(
+    "Nothing was saved. Add the schedules one at a time with New scheduled email."
+)
+
+
+@require_http_methods(["POST"])
+def schedule_suggested(request, campaign_id):
+    """Add the suggested starting schedules directly (#1404 PR 6).
+
+    Dates and mail schedules' **Add these schedules and continue**, inside
+    the campaign wizard on a campaign with no schedule saved. The form posts
+    only the page's version (``base_digest``) and request key; the server
+    works the set out again from the applied values
+    (``schedule_suggestions.entries``), so the change is exactly what the
+    page listed for that version. It is reviewed as New scheduled email
+    reviews its schedules (``review``), signed with the save's request key
+    (``admin_editing.direct_key``), and recorded at once by
+    ``campaign_wizard.save_step``, which rechecks under the work lock that
+    the wizard still applies. A repeat of the same submit is answered with
+    the first change's status. Refused, with nothing saved: a stale page,
+    setup that has ended, a campaign with a schedule saved meanwhile (or
+    whose Initial invitation time has passed) or a stale page.
+    The answer is the change's status, which the page follows.
+    """
+    try:
+        service = runtime()
+        actor = principal(request, service)
+        filters(request.GET, allowed=set())
+        if request.FILES:
+            raise unexpected_fields(request.FILES, allowed=())
+        values = filters(
+            request.POST,
+            allowed={"csrfmiddlewaretoken", "base_digest", "request_key"},
+        )
+        key = direct_key(request.POST)
+        if answered := campaign_wizard.repeated_save(request, actor, key):
+            return answered
+        with work_transaction():
+            state, campaign, editable = schedule_state(service, campaign_id, page=True)
+            if campaign_wizard.current() is None:
+                raise campaign_wizard.setup_ended()
+            # Asked before the page's version: saving any schedule changes
+            # the version, so a stale page would otherwise always hide this
+            # more specific answer.
+            entries = schedule_suggestions.entries(
+                campaign.active_configuration.values,
+                _records(state[0], campaign_id),
+                timezone.now(),
+            )
+            if not editable or campaign_schedules(state[0], campaign_id) or not entries:
+                raise UserFacingStale(
+                    NOTHING_TO_SUGGEST,
+                    fix=NOTHING_TO_SUGGEST_FIX,
+                    reason="stale_page",
+                )
+            if values.get("base_digest") != state[0].active_configuration.digest:
+                raise stale_page()
+            reviewed, window, schedules, _forms = review(
+                service,
+                actor,
+                state,
+                campaign,
+                editable,
+                entries,
+                base_digest=values["base_digest"],
+                key=key,
+            )
+            if reviewed is None:
+                raise _refusal(
+                    window,
+                    schedules,
+                    fallback=_("The suggested schedules don't fit the campaign."),
+                    fix=NOT_ADDED_FIX,
+                )
+            if not reviewed["preview"]:
+                # A draft with no schedule has no send work to block the
+                # change; should any, refuse it as New scheduled email does.
+                raise UserFacingStale(
+                    BLOCKED,
+                    fix=BLOCKED_FIX,
+                    link=reverse("admin:deliveries"),
+                    link_label=_("Outgoing mail"),
+                    reason="send_work_blocks",
+                )
+        # Recorded once the work transaction has ended.
+        response = campaign_wizard.save_step(
+            request,
+            service,
+            actor,
+            token=reviewed["preview"],
+            salt=preview_salt(campaign_id),
+            current_scope=lambda service: confirm_scope(
+                service, campaign_id, page=True
+            ),
+            campaign_id=campaign_id,
+        )
+        _recheck(request, service)
+        return response
     except ERRORS as error:
         return error_response(error)
