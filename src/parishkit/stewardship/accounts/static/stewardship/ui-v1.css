@@ -357,7 +357,9 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
 /* A card inside a card is a flat inset rather than a second floating layer. */
 .panel .panel { background: var(--paper-soft); box-shadow: none; }
 .empty-state { text-align: center; background: transparent; border-style: dashed; border-color: var(--control-border); box-shadow: none; color: var(--muted); }
-/* Report stat tiles (the response dashboard, Home's Family participation): a count per tile, wrapping. */
+/* Stat tiles (ui-conventions "Stat tiles", #1540), drawn by components/stat-tiles.html: a row of
+   cards, wrapping, each its label, value and up to two explanation lines; a row's tiles stretch
+   to one height. */
 .stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .75rem; list-style: none; margin: 0 0 1.25rem; padding: 0; }
 .stat-tile { display: flex; flex-direction: column; gap: .2rem; padding: .85rem 1rem; border: 1px solid var(--border); border-radius: var(--radius-small); background: var(--paper-soft); }
 /* The Campaign comparison's Compare on day (#1018): a short day field with
@@ -380,6 +382,11 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
 .stat-label { font-weight: 600; }
 .stat-value { font-size: 1.75rem; font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; }
 .stat-detail { color: var(--muted); font-size: .875rem; }
+/* An unknown value's "—" carries its reason in a toggletip beside it (#1540), its "i" at the
+   size it has elsewhere. The 1.75rem button is centred in the value's 2.1rem line from its top,
+   so it never makes the line taller: a value that becomes unknown in place moves nothing. */
+.stat-value .toggletip { vertical-align: top; line-height: 1; margin-top: .175rem; }
+.stat-value .toggletip-button { font-size: 1rem; }
 /* A tile's share bar (#720) sits at the tile's foot, so the bars of a row's tiles (stretched to one height) line up. */
 .stat-bar { display: block; margin-top: auto; padding-top: .35rem; }
 /* The empty track must read as the whole against the tile's --paper-soft:
