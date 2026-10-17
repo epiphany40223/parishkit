@@ -255,6 +255,10 @@ class Action(StrEnum):
     )
     # integration key replace: a settings page's Save with a new key pasted.
     ADMIN_CMD_INTEGRATION_KEY_REPLACE = "admin_cmd_integration_key_replace"
+    # integration backup-key confirm: the Backup encryption key page's Confirm.
+    ADMIN_CMD_INTEGRATION_BACKUP_KEY_CONFIRM = (
+        "admin_cmd_integration_backup_key_confirm"
+    )
     # workgroup confirm: the No-reminders WorkGroup page's Apply (ADM-11 PR 10).
     ADMIN_CMD_WORKGROUP_CONFIRM = "admin_cmd_workgroup_confirm"
     # campaign confirm: Campaign settings' Apply (ADM-11 PR 10).

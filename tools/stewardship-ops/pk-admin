@@ -39,6 +39,13 @@
 #       a terminal, and needs --yes when piped. At most 128 KiB. At a
 #       terminal the wrapper never returns before the key is read to its
 #       end: if the command ends first, what is still pasted is discarded.
+#   pk-admin [--session NAME] integration backup-key challenge \
+#            --public-key-file PATH
+#   pk-admin [--session NAME] integration backup-key preview --intent TOKEN \
+#            (--code-file PATH | --code-stdin)
+#       Send the new backup public key, or the code backup-prove printed,
+#       after the preamble in the same way (at most 200 bytes); a piped
+#       --code-stdin needs no --yes, as the preview does not prompt.
 #
 # Session files live in ${PARISHKIT_ROOT:-/opt/parishkit}/run/admin-automation
 # (or --session-dir), a directory owned by you with mode 0700; each file is
@@ -87,11 +94,12 @@ set +x
 set -eu
 
 TAG="pk-admin-session/1"
-# The tag of the line after the preamble that carries a key (see below), and
-# the page's limit on a key, in bytes (accounts.key_files.MAX_FILE_BYTES,
-# which a test keeps equal).
-SECRET_TAG="pk-admin-secret/1"
+# The page's limit on a key, in bytes (accounts.key_files.MAX_FILE_BYTES),
+# and on the Backup encryption key page's public key and code fields
+# (accounts.backup_key.MAX_FIELD); a test keeps each equal. The tags of the
+# lines that carry them are in secret_row below.
 KEY_LIMIT=131072
+FIELD_LIMIT=200
 ROOT=${PARISHKIT_ROOT:-/opt/parishkit}
 
 refuse() {
@@ -628,16 +636,32 @@ fi
 # Every catalog command with `prompts` is listed, except one that accepts
 # only `--yes` (YES_ONLY in tests/stewardship/test_pk_admin.py, which checks
 # this list).
-PROMPTING="integration_key_replace test_sample test_families digest_weekly-request export_financial export_directory export_postal export_archive delivery_resend delivery_refusal-clear delivery_bounce-report portal_maintenance_set files_delete history_confirm history_remove system_backup-now system_debug-off system_debug-allow system_refresh-accept export_family-timeline census_resolve integration_confirm integration_key_finish-switching send_confirm followup_bulk followup_roster-bulk"
+PROMPTING="integration_backup-key_confirm integration_key_replace test_sample test_families digest_weekly-request export_financial export_directory export_postal export_archive delivery_resend delivery_refusal-clear delivery_bounce-report portal_maintenance_set files_delete history_confirm history_remove system_backup-now system_debug-off system_debug-allow system_refresh-accept export_family-timeline census_resolve integration_confirm integration_key_finish-switching send_confirm followup_bulk followup_roster-bulk"
 
-# Commands that take a key, each its full name joined by `_`. The key is
-# never an argument: `--secret-file PATH` (replaced by `--secret-stdin` in the
-# command line the container sees) or `--secret-stdin` makes the wrapper send
-# it after the preamble as one line, `pk-admin-secret/1 <base64>`. Its bytes
-# pass only through pipes (`head -c`, `base64`, `tr`) into the input FIFO,
-# never through a shell variable, an argument, the environment or a file.
-SECRET="integration_key_replace"
+# Commands that take a value the wrapper reads itself: an integration key,
+# a new backup public key or a backup key proof code. The value is never an
+# argument: `--X-file PATH` (replaced by `--X-stdin` in the command line the
+# container sees) or `--X-stdin` makes the wrapper send it after the
+# preamble as one line, `<tag> <base64>`. Its bytes pass only through pipes
+# (`head -c`, `base64`, `tr`) into the input FIFO, never through a shell
+# variable, an argument, the environment or a file. secret_row prints, for a
+# command's full name joined by `_`, its file option, its standard input
+# option (`-` when there is none: a public key is read from a file only, and
+# `--public-key-stdin` is the container's alone), the line's tag, the page's
+# limit in bytes and the value's name in messages (the rest of the line);
+# nothing for any other command.
+secret_row() {
+    case $1 in
+        integration_key_replace)
+            echo "--secret-file --secret-stdin pk-admin-secret/1 $KEY_LIMIT key" ;;
+        integration_backup-key_challenge)
+            echo "--public-key-file - pk-admin-public-key/1 $FIELD_LIMIT public key" ;;
+        integration_backup-key_preview)
+            echo "--code-file --code-stdin pk-admin-proof/1 $FIELD_LIMIT code" ;;
+    esac
+}
 key_source=""
+key_option=""
 key_file=""
 taking=no
 first=yes
@@ -652,23 +676,28 @@ for argument in "$@"; do
         continue
     fi
     case $argument in
-        --secret-file | --secret-stdin)
-            [ -z "$key_source" ] || refuse "give the key once: --secret-file PATH or --secret-stdin"
-            if [ "$argument" = --secret-file ]; then
-                key_source="file"
-                taking=yes
-                argument=--secret-stdin
-            else
-                key_source=stdin
-            fi
+        --public-key-stdin)
+            refuse "write --public-key-file PATH"
             ;;
-        --secret-file=* | --secret-stdin=*)
-            refuse "write --secret-file PATH or --secret-stdin, with no ="
+        --secret-file | --secret-stdin | --public-key-file | --code-file | --code-stdin)
+            [ -z "$key_source" ] || refuse "give the value once: one --...-file PATH or --...-stdin"
+            key_option=$argument
+            case $argument in
+                *-file)
+                    key_source="file"
+                    taking=yes
+                    argument=${argument%-file}-stdin
+                    ;;
+                *) key_source=stdin ;;
+            esac
+            ;;
+        --secret-file=* | --secret-stdin=* | --public-key-file=* | --code-file=* | --code-stdin=*)
+            refuse "write ${argument%%=*} with no ="
             ;;
     esac
     set -- "$@" "$argument"
 done
-[ "$taking" = no ] || refuse "--secret-file needs a path"
+[ "$taking" = no ] || refuse "$key_option needs a path"
 if [ -n "$key_source" ]; then
     # No core dump of this run or its children (`head`, `base64`) can hold
     # key bytes, whatever the account's default. POSIX leaves `ulimit -c`
@@ -682,21 +711,39 @@ for argument in "$@"; do
         --yes) yes_given=yes ;;
     esac
 done
-if [ -n "$key_source" ]; then
-    takes_key=no
-    for command in $SECRET; do
-        if [ "$command" = "$1${2:+_$2}${3:+_$3}" ]; then
-            takes_key=yes
+# Whether the command prompts: its first two or three words, joined by `_`,
+# are in PROMPTING.
+prompts() {
+    for command in $PROMPTING; do
+        if [ "$command" = "$1${2:+_$2}" ] || [ "$command" = "$1${2:+_$2}${3:+_$3}" ]; then
+            return 0
         fi
     done
-    [ "$takes_key" = yes ] || refuse "only integration key replace takes a key"
+    return 1
+}
+key_tag=""
+key_limit=""
+key_noun=""
+if [ -n "$key_source" ]; then
+    row=$(secret_row "$1${2:+_$2}${3:+_$3}")
+    row_file=""
+    row_stdin=""
+    if [ -n "$row" ]; then
+        # The last name takes the rest of the line (a name of two words).
+        read -r row_file row_stdin key_tag key_limit key_noun <<EOF
+$row
+EOF
+    fi
+    if [ -z "$row" ] || { [ "$key_option" != "$row_file" ] && [ "$key_option" != "$row_stdin" ]; }; then
+        refuse "this command takes no $key_option"
+    fi
     for argument in "$@"; do
-        [ "$argument" != - ] || refuse "standard input carries the key; give no - input"
+        [ "$argument" != - ] || refuse "standard input carries the $key_noun; give no - input"
     done
 fi
-if [ "$key_source" = stdin ] && [ ! -t 0 ] && [ "$yes_given" = no ]; then
+if [ "$key_source" = stdin ] && [ ! -t 0 ] && [ "$yes_given" = no ] && prompts "$@"; then
     # Checked before anything is read: the same input cannot also answer.
-    refuse "a piped --secret-stdin needs --yes"
+    refuse "a piped $key_option needs --yes"
 fi
 if [ "$key_source" = file ]; then
     # Refuse anything but a regular file before opening it, so opening a
@@ -728,7 +775,7 @@ if [ "$key_source" = file ]; then
     case $size in
         '' | *[!"$DIGITS"]*) refuse "$key_file cannot be checked" ;;
     esac
-    [ "$size" -le "$KEY_LIMIT" ] || refuse "$key_file is larger than 128 KiB"
+    [ "$size" -le "$key_limit" ] || refuse "$key_file is larger than the limit ($key_limit bytes)"
 fi
 
 # Forward this standard input after the preamble only for a `-` input; a
@@ -741,12 +788,8 @@ for argument in "$@"; do
     fi
 done
 prompt=no
-if [ -t 0 ]; then
-    for command in $PROMPTING; do
-        if [ "$command" = "$1${2:+_$2}" ] || [ "$command" = "$1${2:+_$2}${3:+_$3}" ]; then
-            prompt=yes
-        fi
-    done
+if [ -t 0 ] && prompts "$@"; then
+    prompt=yes
 fi
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/pk-admin.XXXXXX")
@@ -811,7 +854,7 @@ if [ "$key_source" = stdin ]; then
         # Typed or pasted at a terminal: never echoed, or refused.
         tty_state=$(stty -g 2>/dev/null) || refuse "the terminal's echo cannot be turned off"
         stty -echo 2>/dev/null || refuse "the terminal's echo cannot be turned off"
-        printf 'pk-admin: paste the key, then press Ctrl-D at the start of a line (twice in mid-line); it is not shown\n' >&2
+        printf 'pk-admin: paste the %s, then press Ctrl-D at the start of a line (twice in mid-line); it is not shown\n' "$key_noun" >&2
     fi
 fi
 {
@@ -828,9 +871,9 @@ fi
         # the run reads it to Ctrl-D with echo off, never leaving it for the
         # shell. Draining here instead would need a second Ctrl-D whenever
         # the key fits.
-        printf '%s ' "$SECRET_TAG"
+        printf '%s ' "$key_tag"
         {
-            head -c "$((KEY_LIMIT + 1))" <&3 &
+            head -c "$((key_limit + 1))" <&3 &
             printf '%s\n' "$!" >"$work/key-reader"
             # The PID goes once head has ended, so no later kill can hit a
             # reused one. A read error (status 1, not a signal's 128+) is
@@ -844,7 +887,7 @@ fi
         } | LC_ALL=C dd 2>"$work/key-count" | base64 | tr -d '\n'
         # dd's summary starts "N bytes" (GNU, BSD and busybox alike).
         count=$(sed -n 's/^\([0-9][0-9]*\) bytes.*/\1/p' "$work/key-count")
-        if [ -n "$tty_state" ] && [ "${count:-0}" -gt "$KEY_LIMIT" ]; then
+        if [ -n "$tty_state" ] && [ "${count:-0}" -gt "$key_limit" ]; then
             : >"$work/key-long"
             rm -f "$work/key-read"
         fi
@@ -912,10 +955,11 @@ if [ -n "$tty_state" ] && [ ! -e "$work/key-read" ]; then
     # stays off and the rest of the key is read here, to Ctrl-D, and
     # discarded; only then does the EXIT trap turn echo back on.
     stty -echo 2>/dev/null || :
+    if [ "$key_limit" = "$KEY_LIMIT" ]; then limit_text="128 KiB"; else limit_text="$key_limit bytes"; fi
     if [ -e "$work/key-long" ]; then
-        printf 'pk-admin: the key is longer than 128 KiB (see above); finish any paste and press Ctrl-D at the start of a line; the key is discarded\n' >&2
+        printf 'pk-admin: the %s is longer than %s (see above); finish any paste and press Ctrl-D at the start of a line; the %s is discarded\n' "$key_noun" "$limit_text" "$key_noun" >&2
     else
-        printf 'pk-admin: the command ended before it read the key (see above); finish any paste and press Ctrl-D at the start of a line; the key is discarded\n' >&2
+        printf 'pk-admin: the command ended before it read the %s (see above); finish any paste and press Ctrl-D at the start of a line; the %s is discarded\n' "$key_noun" "$key_noun" >&2
     fi
     cat >/dev/null || :
 fi

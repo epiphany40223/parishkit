@@ -101,10 +101,10 @@ def test_the_replacement_catalog_entry():
 
 
 def test_the_ledger_covers_the_status_and_the_switch():
-    """Both routes are covered, and key replacement on the settings page;
-    the Backup encryption key is still owed by PR 10."""
+    """Both routes are covered, and key replacement on the settings page,
+    which with the Backup encryption key's steps owes nothing more."""
     entry = LEDGER["integration_settings"]
-    assert "integration key replace" in entry.detail and entry.owed == "PR 10"
+    assert "integration key replace" in entry.detail and entry.owed is None
     entry = LEDGER["credential_status"]
     assert entry.kind == "command" and entry.owed is None
     assert entry.detail == ("integration key status",)
