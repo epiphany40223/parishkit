@@ -3888,6 +3888,12 @@
       anchor.textContent = link.text;
       error.append(anchor);
     }
+    // A review dialog's body keeps its height while the refusal shows
+    // (#1482): its height limit then rises by the refusal's room (ui-v1.css),
+    // and the body, flexing, would otherwise take that room and move the
+    // buttons. A max-height, so a window made smaller still shrinks it.
+    const body = state.review && state.dialog.querySelector("[data-review-body]");
+    if (body && error.hidden) body.style.maxHeight = `${body.getBoundingClientRect().height}px`;
     error.hidden = false;
     state.dialog.querySelector("[data-confirm-status]").textContent = "";
     const accept = state.dialog.querySelector("[data-confirm-accept]");
@@ -4376,6 +4382,7 @@
     const token = carried.find((field) => field.hasAttribute("data-review-preview"))?.value || "";
     dialog.querySelector("[data-review-body]").replaceChildren(
       ...(answer ? [...answer.childNodes].map((node) => document.importNode(node, true)) : []));
+    dialog.querySelector("[data-review-body]").style.maxHeight = "";
     // An editor whose Review is a confirmation only for some changes (#1356:
     // New scheduled email, Import Ministry leaders) has its answer name the
     // confirmation's question (data-review-title) and the sentence that

@@ -12,6 +12,7 @@ stays on the form; any other refusal shows in the dialog. Pages and POST
 answers are user_components'.
 """
 
+import json
 import re
 from urllib.parse import parse_qs
 
@@ -21,6 +22,7 @@ from .test_components import axe_violations
 from .user_components import (
     APPLY,
     APPLY_REFUSAL,
+    APPLY_REFUSED,
     EDIT,
     LIST,
     NEW,
@@ -354,3 +356,112 @@ def test_cancel_never_moves_while_apply_is_sent(page, component_origin):
     assert accept.get_attribute("aria-disabled") == "true"
     held[0].continue_()
     page.wait_for_url(re.compile(re.escape(LIST) + "$"))
+
+
+# A refusal as long as #1464's (message, fix and a second sentence), the
+# kind a phone shows on several lines.
+LONG_REFUSAL = {
+    "errors": [{"code": "stale_version"}],
+    "refusal": {
+        "message": "A send time in this change has passed since it was "
+        "reviewed, so that email would send at once.",
+        "fix": "Nothing was changed. Choose a later time, then review the changes.",
+    },
+}
+LONG_REFUSAL_TEXT = " ".join(LONG_REFUSAL["refusal"].values())
+
+
+def long_review(page, origin, size, refusal=None):
+    """New user's review made taller than a window of ``size`` (#1482),
+    whose Apply is refused with the fixture's sentence or ``refusal``."""
+    page.set_viewport_size({"width": size[0], "height": size[1]})
+    if refusal:
+        page.route(
+            "**" + APPLY_REFUSED,
+            lambda route: route.fulfill(
+                status=409, content_type="application/json", body=json.dumps(refusal)
+            ),
+        )
+    fill_new(page, origin, NEW_REFUSED)
+    dialog = review(page)
+    # A long review (a repeat's thirty reminders) stands in as a tall block,
+    # sized through the CSSOM (the page's CSP refuses style attributes).
+    page.evaluate(
+        "document.querySelector('#user-review [data-review-body]')"
+        ".appendChild(document.createElement('div')).style.height = '2000px'"
+    )
+    body = dialog.locator("[data-review-body]")
+    assert body.evaluate("node => node.scrollHeight > node.clientHeight + 100")
+    return dialog
+
+
+def refuse(dialog, text):
+    """Press Apply and wait for the refusal ``text`` below the buttons."""
+    dialog.get_by_role("button", name="Apply").click()
+    error = dialog.locator("[data-confirm-error]")
+    visible(error)
+    assert error.inner_text() == text
+    return error
+
+
+SIZES = [(320, 480), (640, 360), (1280, 480)]
+REFUSALS = {
+    "short": (None, APPLY_REFUSAL + " Nothing was changed."),
+    "long": (LONG_REFUSAL, LONG_REFUSAL_TEXT),
+}
+
+
+@pytest.mark.parametrize("kind", REFUSALS)
+@pytest.mark.parametrize("size", SIZES, ids=lambda size: "x".join(map(str, size)))
+def test_a_refusal_moves_the_buttons_of_a_long_review_only_by_its_excess(
+    page, component_origin, size, kind
+):
+    """A review taller than the window (#1482): its body scrolls, and a
+    refused Apply shows below the buttons, whole and inside the window. A
+    refusal that fits the room the review left (min(7rem, 20dvh)) does not
+    move the buttons; a taller one squeezes the body and raises them by
+    exactly what does not fit."""
+    refusal, text = REFUSALS[kind]
+    failures = watch(page)
+    dialog = long_review(page, component_origin, size, refusal)
+    body = dialog.locator("[data-review-body]")
+    cancel = dialog.get_by_role("button", name="Cancel")
+    before = cancel.bounding_box()
+    height = body.bounding_box()["height"]
+    error = refuse(dialog, text)
+    # The refusal's outer height (its 1rem margins too) beyond the room.
+    outer = error.evaluate(
+        "node => node.getBoundingClientRect().height"
+        " + parseFloat(getComputedStyle(node).marginTop)"
+        " + parseFloat(getComputedStyle(node).marginBottom)"
+    )
+    excess = max(0, outer - min(7 * 16, size[1] * 0.2))
+    if size == (1280, 480) and kind == "short":
+        # The everyday case: a one-line refusal fits and nothing moves.
+        assert excess == 0
+    after = cancel.bounding_box()
+    assert abs(after["x"] - before["x"]) < 1
+    assert abs(before["y"] - after["y"] - excess) < 1
+    assert abs(height - body.bounding_box()["height"] - excess) < 1
+    # Never cut short or scrolled: the whole refusal shows, in the window.
+    assert error.evaluate("node => node.scrollHeight <= node.clientHeight")
+    edge = error.bounding_box()
+    assert edge["y"] >= 0 and edge["y"] + edge["height"] <= size[1]
+    box = dialog.bounding_box()
+    assert box["y"] + box["height"] <= size[1]
+    assert not failures
+
+
+@pytest.mark.parametrize("kind", REFUSALS)
+@pytest.mark.parametrize(
+    "size", [(320, 480), (640, 360)], ids=lambda size: "x".join(map(str, size))
+)
+def test_a_long_review_with_a_refusal_passes_axe_on_a_phone(
+    page, component_origin, axe_source, size, kind
+):
+    """With a refusal shown on a phone-sized window (#1482), nothing in the
+    dialog is a scroller the keyboard cannot reach, and axe finds nothing."""
+    refusal, text = REFUSALS[kind]
+    dialog = long_review(page, component_origin, size, refusal)
+    refuse(dialog, text)
+    assert axe_violations(page, axe_source) == []

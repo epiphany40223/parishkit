@@ -1333,7 +1333,14 @@ the campaign wizard in #1404 PR 4).
   **Confirm with Google** and its step-up page, as it does today. A
   refusal the server draws itself (a fragment marked `data-review-refusal`,
   such as the shared step-up notice with its **Confirm with Google**) is
-  shown in the dialog as drawn.
+  shown in the dialog as drawn. This holds at the dialog's height limit
+  too (#1482): a review too long for the window stops short of the limit
+  by room for a refusal (7rem, or a fifth of the window's height if less),
+  and once a refusal shows the review keeps its height and the dialog grows
+  into that room, so the buttons stay put. A refusal taller than the room
+  (a long one on a phone) is never cut short or scrolled: the review
+  shrinks instead, and the buttons rise only by the part of the refusal
+  that does not fit in the room.
 - **Uploads.** In an upload editor (Campaign images, Parish logos), choosing
   the file and selecting Review uploads it as the first step of Review: the
   server stages it and the dialog shows its preview (each generated size, the
