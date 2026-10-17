@@ -51,6 +51,8 @@ delete`` and ``files rename`` (PR 10, in ``admin_hosted_files``),
 and ``content confirm`` (PR 10, in
 ``admin_content``), ``integration list``, ``integration show``, ``integration status``
 and ``integration schedule-preview`` (PR 10, in ``admin_integrations``),
+``integration key replace`` (PR 10, in ``admin_integration_keys``), which
+takes a key from the host wrapper on the line after the preamble,
 ``parish show``, ``ministries list``, ``branding show`` and ``campaign
 shares`` (PR 10, in ``admin_settings``), ``parish preview`` and
 ``parish confirm`` (PR 10, in ``admin_parish``), and ``events list`` and
@@ -1512,6 +1514,81 @@ def integration_key_finish_switching(args, preamble, runtime, context):
     return confirm_finish(
         context["caller"], runtime, args.target, token=token, context=context
     )
+
+
+# The tag of the line after the preamble that carries a key: the host
+# wrapper's --secret-file or --secret-stdin sends it as base64.
+SECRET_TAG = "pk-admin-secret/1"
+
+
+def read_secret(stream):
+    """Read the key line the host wrapper sends after the preamble.
+
+    One line, ``pk-admin-secret/1 <base64>``: the wrapper pipes the file or
+    standard input through ``head -c`` (the page's limit plus one byte) and
+    ``base64``, so the key is never an argument, a variable or a file. A
+    missing, overlong or malformed line is a usage error (exit 2) that names
+    no part of it. Returns the decoded bytes; ``key_text`` checks their size
+    and encoding. Nothing of the line is logged or kept.
+    """
+    import base64
+    import binascii
+
+    from .accounts.key_files import MAX_FILE_BYTES
+
+    prefix = f"{SECRET_TAG} ".encode("ascii")
+    # Base64 of one byte over the limit, the most the wrapper ever sends.
+    limit = len(prefix) + 4 * -(-(MAX_FILE_BYTES + 1) // 3) + 1
+    raw = stream.readline(limit + 1)
+    if len(raw) > limit or not raw.endswith(b"\n") or not raw.startswith(prefix):
+        raise UsageError("The key line is missing or malformed.")
+    try:
+        return base64.b64decode(raw[len(prefix) : -1], validate=True)
+    except (binascii.Error, ValueError):
+        raise UsageError("The key line is malformed.") from None
+
+
+def integration_key_replace(args, preamble, runtime, context):
+    """Replace an integration's key, as its settings page's Save with a key.
+
+    The role first (#1339), so Staff is denied before the key is read.
+    Then the key line, the page's checks in one snapshot, the prompt
+    naming the integration and the settings saved with it (never a value
+    or the key), and the page's own staging. ``--yes`` answers the prompt;
+    the wrapper requires it when the key itself came on standard input.
+    """
+    from .admin_integration_changes import parse_settings
+    from .admin_integration_keys import (
+        key_text,
+        replace_key,
+        replace_prompt_lines,
+        review_replacement,
+    )
+
+    _role_first(context, runtime)
+    key = key_text(read_secret(context["stdin"]))
+    fields = {} if args.changes is None else parse_settings(args.changes, args.target)
+    review = review_replacement(
+        context["caller"],
+        runtime,
+        args.target,
+        expected_version=args.expected_version,
+        fields=fields,
+        key=key,
+    )
+    confirm(context, replace_prompt_lines(review))
+    try:
+        return replace_key(
+            context["caller"],
+            runtime,
+            args.target,
+            expected_version=args.expected_version,
+            fields=fields,
+            key=key,
+            context=context,
+        )
+    finally:
+        del key
 
 
 def parish_show(args, preamble, runtime, context):
@@ -3414,6 +3491,29 @@ def _integration_key_finish_options(parser):
         required=True,
         help="preview.token from integration key finish-switching-preview, or - "
         "for standard input (needs --yes)",
+    )
+
+
+def _integration_key_replace_options(parser):
+    """Options of ``integration key replace``: the integration, version, key."""
+    parser.add_argument("target", choices=INTEGRATION_KEY_TARGETS, metavar="TARGET")
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_digest,
+        help="the version integration show printed",
+    )
+    parser.add_argument(
+        "--changes",
+        help="settings saved with the key, as integration preview's JSON "
+        "document (not -: standard input carries the key)",
+    )
+    parser.add_argument(
+        "--secret-stdin",
+        action="store_true",
+        required=True,
+        help="read the key from the line after the preamble, which the host "
+        "wrapper's --secret-file PATH or --secret-stdin sends",
     )
 
 
@@ -5424,11 +5524,18 @@ def _integration_specs():
     and ``integration key finish-switching-preview`` and
     ``integration key finish-switching`` (``admin_integration_keys``), the
     confirmation fresh-gated and prompting, as ``integration confirm``.
-    Replacing a key comes later in PR 10.
+    ``integration key replace`` is a settings page's Save with a new key
+    (full scope, fresh-gated and prompting); the host wrapper sends the key
+    after the preamble, never as an argument.
     """
     from .admin_integration_actions import BackupProbe, KeyDismissal
     from .admin_integration_changes import IntegrationConfirm, IntegrationPreview
-    from .admin_integration_keys import FinishConfirm, FinishPreview, KeyStatus
+    from .admin_integration_keys import (
+        FinishConfirm,
+        FinishPreview,
+        KeyReplacement,
+        KeyStatus,
+    )
     from .admin_integrations import (
         IntegrationList,
         IntegrationShow,
@@ -5560,6 +5667,19 @@ def _integration_specs():
             options=(_integration_key_finish_options,),
             fresh_gated=True,
             prompts=True,
+        ),
+        CommandSpec(
+            "integration key replace",
+            "Replace an integration's key, or set Slack up with its first key.",
+            integration_key_replace,
+            "full",
+            True,
+            KeyReplacement.field_names(),
+            10,
+            options=(_integration_key_replace_options,),
+            fresh_gated=True,
+            prompts=True,
+            expected_version=True,
         ),
     )
 
@@ -7784,6 +7904,9 @@ def main(argv=None, *, stdin=None, stdout=None, stderr=None):
             # The Delete is built against a version; the plain-text preview
             # reads no configuration, so it takes none.
             raise UsageError("--expected-version goes with --delete, and only there.")
+        if args.command_name == "integration key replace" and args.changes == "-":
+            # Standard input carries the key (and the prompt's answer).
+            raise UsageError("Give --changes as JSON; standard input holds the key.")
         if hasattr(args, "watch"):
             # --timeout belongs to --watch; alone it would silently do nothing.
             if args.watch is None:

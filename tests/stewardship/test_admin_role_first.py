@@ -53,6 +53,8 @@ ROLE_FIRST = {
     "history remove": None,
     "integration confirm": None,
     "integration key finish-switching": None,
+    # A settings page's Save with a new key: before the key line is read.
+    "integration key replace": None,
     # Pause and resume mail's Confirm (PR 7b, #463).
     "send confirm": None,
 }
@@ -93,6 +95,8 @@ LATER = (
     (admin_integration_changes, "applied_settings"),
     (admin_integration_changes, "prompt_lines"),
     (admin_integration_keys, "finish_prompt_lines"),
+    (admin_cli, "read_secret"),
+    (admin_integration_keys, "review_replacement"),
     (admin_delivery_control, "confirm_prompt_lines"),
     (admin_delivery_control, "confirm_control"),
 )

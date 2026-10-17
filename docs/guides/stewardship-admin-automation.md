@@ -457,8 +457,8 @@ Ctrl-C (or TERM, or a closed terminal or SSH session) stops the watch inside
 the web container too: `pk-admin` sends it SIGINT there, waits up to 10
 seconds for that stop and reports it if it fails or finds no watch, shows
 the watch's last document (`watch_interrupted`, the last state) if it
-arrives within 5 seconds (after Ctrl-C only), and exits 130 (143 for
-TERM, 129 for HUP). A second Ctrl-C meanwhile changes nothing. On a host
+arrives within 5 seconds (after Ctrl-C only), and exits 130 (131 for
+QUIT, Ctrl-\, 143 for TERM, 129 for HUP). A second Ctrl-C meanwhile changes nothing. On a host
 without util-linux `setsid -w`, Ctrl-C also ends the docker client at once,
 so the watch still stops but its last document is not shown, and a second
 Ctrl-C can cut the stop off. If the stop fails, the watch runs until its timeout
@@ -1330,8 +1330,10 @@ and `integration key status` and the Finish switching commands follow a key
 change and finish switching to it (see
 [Following a key change and finishing the switch](#following-a-key-change-and-finishing-the-switch)),
 and `integration schedule-preview` previews the ParishSoft refresh schedule
-(see [Previewing the refresh schedule](#previewing-the-refresh-schedule));
-pasting a new key stays on the pages for now.
+(see [Previewing the refresh schedule](#previewing-the-refresh-schedule)),
+and `integration key replace` saves a new key (see
+[Replacing a key](#replacing-a-key)); the Backup encryption key stays on its
+page for now.
 
 ```sh
 pk-admin integration list
@@ -1538,10 +1540,87 @@ needs Finish switching, or a request the page no longer shows is not
 dismissed: `dismissed` is false, exit 0, and nothing is recorded, as the
 page's Dismiss does nothing then.
 
+### Replacing a key
+
+`integration key replace TARGET` is a settings page's **Save** with a new
+key pasted: an API key (`parishsoft`), the mail service-account key
+(`google_workspace`) or the bot token (`slack`). It needs a full-scope
+session and an Administrator, stands in for the page's recent sign-in, and
+always asks before it does anything. The key is never an argument: the
+wrapper reads it from a file or from standard input and sends it to the
+command on its own line after the session preamble, so it never appears in
+the process list, shell history, the command's output, System logs or the
+audit trail, and never in the wrapper's work directory.
+
+```sh
+pk-admin integration show slack                # note the version
+pk-admin integration key replace slack --expected-version VERSION \
+    --secret-file ~/slack-token                # prompts at the terminal
+pk-admin integration key replace slack --expected-version VERSION \
+    --secret-stdin                             # paste, then Ctrl-D, then yes
+```
+
+- `--secret-file PATH` reads a regular file you own with no group or other
+  permissions (`chmod 600`), at most 128 KiB. A symbolic link, a FIFO, a
+  larger file or a file others may read is refused (exit 2) before
+  anything runs. Delete the file once the change is done. Keep it in a
+  directory only you can write to (your home directory, or one made with
+  `mkdir -m 700`): the shell cannot refuse a symbolic link that someone
+  swaps in at the instant between the wrapper's checks and its open. What
+  it reads must still be your own private regular file, but a private
+  directory leaves no such instant to anyone else.
+- `--secret-stdin` at a terminal turns echo off, so the key is not shown,
+  and reads until you press Ctrl-D at the start of a line (twice in the
+  middle of one); a multi-line Google Workspace JSON key can be pasted
+  whole. Echo comes back for the prompt's answer. If the command ends
+  before it reads the key (Staff is `denied`, the session has ended, the
+  web container is down), or what you paste is longer than 128 KiB,
+  `pk-admin` says so, keeps echo off and waits: finish the paste and press
+  Ctrl-D, and what you pasted is discarded, never left for your shell to
+  run or keep in its history. A terminal
+  takes at most 1024 bytes on one line on macOS (4096 on Linux), and a
+  Google Workspace JSON key's `private_key` line is longer, so on a Mac
+  give that key with `--secret-file`. From a pipe it needs
+  `--yes`, because standard input then holds only the key, so read what
+  `integration show` says first. Never pipe a key from `echo` or a
+  variable: the value would stay in shell history or the process list.
+  Piping from a password manager's command (`pass show slack | ...`) is
+  fine.
+- `--changes JSON` saves settings with the key, in `integration preview`'s
+  shape (`{"settings": {"channel_id": "C0123ABC"}}`): for example the
+  channel that sets Slack up with its first token, or a new ParishSoft
+  organization ID before any data is loaded. It is literal JSON, never
+  `-`, since standard input carries the key. A refresh schedule change is
+  refused with a key, as on the page: change it first.
+
+The prompt names the integration, whether this sets it up or replaces its
+key, and the settings saved with it (never their values). Then the key is
+sealed for the integration's own installer and staged exactly as from the
+page; the installer checks it with the provider, installs it, and the
+configuration switches to it. If the check fails, nothing changes and the
+current key stays in use. The command prints `version`, `target`, `name`,
+`setup`, `changes`, `key_request_id` and `request` (the configuration
+request that switches to the key); follow the key change with
+`integration key status TARGET --request-id KEY_REQUEST_ID --watch 5`.
+It records the page's own events, the fresh gate's event and notice,
+`admin_cmd_integration_key_replace` and a `policy_change` notice for every
+Administrator.
+
+Refusals: Staff is exit 1 (`denied`) before the key is read; another
+version is `stale_version` (run `integration show` again); a key change for
+the integration still running is `not_available` (wait for it, or follow
+it with `integration key status`); a refused setting is `invalid` at
+`settings.NAME`, and an empty key, one that is not UTF-8, is too long or is
+in the wrong format at `key`, never quoting it. Each run is a new key
+change: if the outcome is unknown (exit 6), read the named request with
+`config request show` and the key change with `integration key status`
+before you try again.
+
 ### Following a key change and finishing the switch
 
-A new key (API key, service-account key or bot token) is still pasted on
-the integration's settings page. `integration key status` is the **Key
+A new key (API key, service-account key or bot token) is pasted on the
+integration's settings page or given to `integration key replace` (see
+[Replacing a key](#replacing-a-key)). `integration key status` is the **Key
 replacement status** page for one of your own key changes: by default your
 latest for the integration, or the one `--request-id` names. Any session of
 an Administrator may run it, and it records nothing. It prints `target`,
@@ -3319,6 +3398,14 @@ Each change is recorded in System logs as on the page
   fresh-gated and prompting, recording
   `admin_cmd_integration_key_finish_switching` and a `policy_change`
   notice).
+- `pk-admin/1` (#463): additive. `integration key replace TARGET
+  --expected-version V --secret-stdin [--changes JSON] [--yes]`, a settings
+  page's Save with a new key (full scope, fresh-gated and prompting,
+  recording `admin_cmd_integration_key_replace` and a `policy_change`
+  notice). The key follows the preamble as one `pk-admin-secret/1 <base64>`
+  line, which the host wrapper's `--secret-file PATH` or `--secret-stdin`
+  sends; the result has `version`, `target`, `name`, `setup`, `changes`,
+  `key_request_id` and `request`.
 - `pk-admin/1` (#463): additive. `export roster [--show todo|all]
   [--ministry DUID] [--format csv|xlsx|pdf] [--timezone ZONE]`, the Roster
   changes to enter download (full scope, Administrators and Staff, the

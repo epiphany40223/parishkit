@@ -8094,7 +8094,7 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   (`admin_cmd_workgroup_confirm`), Campaign settings changes
   (`admin_cmd_campaign_confirm`), Share options changes
   (`admin_cmd_campaign_shares_confirm`), integration settings
-  changes and removals (`admin_cmd_integration_confirm`), the command line's backup folder checks (`admin_cmd_integration_backup_probe`) and key change dismissals (`admin_cmd_integration_dismiss`), Finish switching to a new key (`admin_cmd_integration_key_finish_switching`), hosted files (`hosted_file_*`), stored key
+  changes and removals (`admin_cmd_integration_confirm`), the command line's backup folder checks (`admin_cmd_integration_backup_probe`) and key change dismissals (`admin_cmd_integration_dismiss`), Finish switching to a new key (`admin_cmd_integration_key_finish_switching`), the command line's key replacements (`admin_cmd_integration_key_replace`), hosted files (`hosted_file_*`), stored key
   replacements
   (`secret_replacement_requested`, `secret_request_*`,
   `credential_consumer_acknowledged`) and initial setup, which is
