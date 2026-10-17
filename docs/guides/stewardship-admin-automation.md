@@ -1883,7 +1883,7 @@ open it on the page.
 ```sh
 pk-admin delivery list --state delivery_unknown
 pk-admin delivery list --recipient 1234
-pk-admin delivery list --state needs_attention --purpose operational --from 2026-10-01
+pk-admin delivery list --state needs_attention --purpose daily_digest --from 2026-10-01
 pk-admin delivery show MESSAGE_ID
 pk-admin delivery resolve MESSAGE_ID --action accept --expected-version 3 --note - < note.txt
 pk-admin delivery refusals
@@ -1899,13 +1899,15 @@ pk-admin delivery bounce-report MESSAGE_ID --address ADDRESS \
 email address or a delivery id, as input only), `--purpose` (`initial`,
 `reminder`, `receipt`, `family_test`, `daily_digest`, `weekly_digest`,
 `operational` or `security_event`), `--state` (a state, or the groups
-`needs_attention`, `not_delivered` and `still_sending`), `--mode`
+`needs_attention`, `not_delivered` and `still_sending`, as the page
+defines them), `--mode`
 (`production` or `testing`; both when left out), `--from` and `--to` (whole
 days, in the time zone `--zone` names, the parish's time zone by default),
 `--send` (send history's `send` value), `--page`, `--size` and `--sort`. The
 list includes operational and security notices, as the page does. `--sort` takes the page's tokens:
 `changed` (when the email last changed; the default is `-changed`, latest
-first), `name`, `duid`, `purpose`, `mode`, `state` and `attempts`, and also
+first), `name` (emails to Administrators last, by their Name or address),
+`duid`, `purpose`, `mode`, `state` and `attempts`, and also
 `created`. `delivery refusals` takes `--duid`, and its `--sort` takes
 `refused`, `name` (the Family's name, as `delivery list`), `duid`
 (the default), `address` and `id`.

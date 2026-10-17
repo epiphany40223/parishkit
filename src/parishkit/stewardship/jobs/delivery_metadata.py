@@ -5,8 +5,8 @@ import re
 from uuid import UUID
 
 from django.db import connection
-from django.db.models import F, Q
-from django.db.models.functions import Lower
+from django.db.models import F, Func, JSONField, OuterRef, Q, Subquery, TextField, Value
+from django.db.models.functions import Cast, Lower
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.source.snapshot_name_sql import SnapshotFamilyName
@@ -49,13 +49,14 @@ PURPOSES = (
 LISTED_PURPOSES = PURPOSES + ("operational", "security_event")
 # Sent mail is a log of emails (#931): it sorts on the server by When
 # (changed: the time of the email's current state, its last change; the
-# default, newest first), Recipient (name), Purpose and Delivery (state).
-# The command line's --sort also takes the tokens of the columns Sent mail
-# no longer shows (#1562): Family DUID (duid), Mode, Provider attempts
+# default, newest first), Recipient (name), Family DUID (duid), Purpose and
+# Delivery (state). The command line's --sort also takes the tokens of the
+# columns Sent mail no longer shows (#1562): Mode, Provider attempts
 # (attempts) and created (when the email was created). Emails to
-# Administrators, which have no Family, sort last
-# under name and duid in either direction, as do, under name, Families the
-# latest ParishSoft data no longer has. Only the state filter is indexed
+# Administrators, which have no Family, sort last under name and duid in
+# either direction, as do, under name, Families the latest ParishSoft data
+# no longer has; under name, the Administrators' emails then sort by the
+# Name or address Recipient shows (recipient_sort_key). Only the state filter is indexed
 # (outbox_due, outbox_campaign_state); the orderings themselves are not, so
 # a page is a top-N sort of the filtered messages. The default "all" view
 # therefore scans the outbox, as its newest-first order always did; the
@@ -72,6 +73,7 @@ DELIVERY_SORTING = Sorting.by_column(
             "family_sort_surname",
             "family_sort_name",
             "family__family_duid",
+            "recipient_sort_key",
             *_FAMILY_EMAILS,
         ),
         "duid": ("family__family_duid", *_FAMILY_EMAILS),
@@ -130,7 +132,8 @@ def with_name_keys(selected, snapshot, duid="family__family_duid"):
 # Sent mail's grouped Delivery choices (#1562), each a set of outbox
 # states. They overlap on purpose: they are filters, not a partition. Not
 # sure it arrived is not "not delivered", since such an email may have
-# arrived.
+# arrived. Needs attention also leaves out the emails of those states that
+# nobody can act on (needs_attention).
 STATE_GROUPS = {
     "needs_attention": ("delivery_unknown", "permanent_failure"),
     "not_delivered": ("permanent_failure", "cancelled"),
@@ -320,7 +323,9 @@ def listing(
         # About one id per Family, read through the definition index; the
         # messages are then found by primary key.
         selected = selected.filter(pk__in=email_ids(send))
-    if state in STATE_GROUPS:
+    if state == "needs_attention":
+        selected = needs_attention(selected)
+    elif state in STATE_GROUPS:
         selected = selected.filter(state__in=STATE_GROUPS[state])
     elif state != "all":
         selected = selected.filter(state=state)
@@ -348,11 +353,79 @@ def listing(
             selected = selected.filter(pk__in=address_deliveries(value, actor))
     total = bounded_count(selected)
     if DELIVERY_SORTING.tokens[sort][0] == "name":
-        selected = with_name_keys(selected, snapshot)
+        selected = with_name_keys(selected, snapshot).annotate(
+            recipient_sort_key=recipient_sort_key(selected, actor)
+        )
     window, rows, has_next = read_window(
         window, DELIVERY_SORTING.order(selected, sort).values(*FIELDS), total
     )
     return window, rows, has_next, total
+
+
+def needs_attention(selected):
+    """Narrow ``selected`` to Sent mail's Needs attention (#1562).
+
+    Only emails a person can still act on: Not sure it arrived, or Failed
+    unless its latest decision (a resolution other than a note) was to
+    record it as not sent, which settles it ("Confirm not sent", or Fix
+    many's "record as not sent"). Either must be of a kind whose page offers
+    resolutions (``PURPOSES``: operational and security notices offer none)
+    in a campaign that is not archived (whose page offers nothing). One
+    correlated lookup per candidate email, through the resolutions' history
+    index; no per-row admission read.
+    """
+    from .delivery_resolution_models import DeliveryResolution
+
+    decided = (
+        DeliveryResolution.objects.filter(message_id=OuterRef("pk"))
+        .exclude(action="note")
+        .order_by("-created_at", "-id")
+        .values("action")[:1]
+    )
+    return (
+        selected.filter(purpose__in=PURPOSES)
+        .exclude(campaign__state="archived")
+        .annotate(last_decision=Subquery(decided))
+        .filter(
+            Q(state="delivery_unknown")
+            | (Q(state="permanent_failure") & ~Q(last_decision="confirm_unsent"))
+        )
+    )
+
+
+def recipient_sort_key(selected, actor):
+    """The Recipient sort's key for each Administrator email (#1562).
+
+    Emails with no Family (reports and notices, to one Administrator
+    address each) have no Family name to sort by, so under the name sort
+    they come after every Family; among themselves they sort by what
+    Recipient shows, the Users-page Name or else the address, case-folded.
+    Those keys come from the definer read of their addresses
+    (``delivery_reads.administrator_addresses``), so they are read in
+    Python for every such email the filters match, and the database then
+    looks each one up by id in a JSON object: one id query, one definer
+    read per 500 such emails and one query of the users. Family emails get
+    NULL. Without an actor (no definer read is possible) every key is NULL,
+    so they keep newest first, as before.
+    """
+    from .delivery_reads import administrator_addresses, administrator_names
+
+    keys = {}
+    if actor is not None:
+        ids = list(selected.filter(family__isnull=True).values_list("pk", flat=True))
+        addresses = administrator_addresses(ids, actor)
+        names = administrator_names(addresses.values())
+        keys = {
+            str(message): (names.get(address.lower()) or address).casefold()
+            for message, address in addresses.items()
+        }
+    return Func(
+        Cast(Value(json.dumps(keys)), JSONField()),
+        Cast(F("pk"), TextField()),
+        template="(%(expressions)s)",
+        arg_joiner=" ->> ",
+        output_field=TextField(),
+    )
 
 
 def family_duid(value):

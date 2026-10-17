@@ -406,6 +406,34 @@ def administrator_names(addresses):
     )
 
 
+# The most ids one call of stewardship_delivery_page_recipients_v1 takes.
+PAGE_RECIPIENTS_LIMIT = 500
+
+
+def administrator_addresses(ids, actor_id):
+    """``{message id: address}`` for emails with no Family (#1562).
+
+    Read through ``stewardship_delivery_page_recipients_v1`` (frozen
+    migration 0115), one call per ``PAGE_RECIPIENTS_LIMIT`` ids: a page
+    makes one, the Recipient sort one per 500 such emails. A report or
+    notice goes to one address; the first is kept. Raises
+    ``PermissionError`` when the read refuses ``actor_id``.
+    """
+    ids = list(ids)
+    addresses = {}
+    for start in range(0, len(ids), PAGE_RECIPIENTS_LIMIT):
+        found = _definer_rows(
+            "SELECT message_id, address FROM "
+            "public.stewardship_delivery_page_recipients_v1(%s::uuid[],%s)",
+            (ids[start : start + PAGE_RECIPIENTS_LIMIT], actor_id),
+        )
+        if found is None:
+            raise PermissionError("Email recipients require an Administrator.")
+        for message_id, address in found:
+            addresses.setdefault(message_id, address)
+    return addresses
+
+
 def with_recipients(rows, actor_id):
     """Each listed email with whom it is for, for Sent mail's Recipient (#1562).
 
@@ -418,19 +446,9 @@ def with_recipients(rows, actor_id):
     lists only Family emails. Raises ``PermissionError`` when the read
     refuses ``actor_id``.
     """
-    ids = [row["id"] for row in rows if row["family_id"] is None]
-    addresses = {}
-    if ids:
-        found = _definer_rows(
-            "SELECT message_id, address FROM "
-            "public.stewardship_delivery_page_recipients_v1(%s::uuid[],%s)",
-            (ids, actor_id),
-        )
-        if found is None:
-            raise PermissionError("Email recipients require an Administrator.")
-        for message_id, address in found:
-            # A report or notice goes to one address; keep the first.
-            addresses.setdefault(message_id, address)
+    addresses = administrator_addresses(
+        [row["id"] for row in rows if row["family_id"] is None], actor_id
+    )
     names = administrator_names(addresses.values())
     return [
         row
