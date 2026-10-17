@@ -1,14 +1,15 @@
-"""Sent mail's filter bar and Production / Testing links in a browser (#1562).
+"""Sent mail's filter bar and Production / Testing choices in a browser (#1562).
 
-The filters and the mode links act in place: the page is not reloaded, the
-reader keeps their scroll position, the address follows the view, and
-nothing above the table moves. The bar fits one row on a desktop screen and
+The filters, the mode choices and the rows' Recipient act in place: the page
+is not reloaded, the reader keeps their scroll position, the address follows
+the view's linkable filters (never the Recipient, which is private POST
+state), and nothing above the table moves. The bar fits one row on a desktop screen and
 wraps on a phone without sideways scrolling. The fixture server answers each
 in-place request with a pre-rendered page (``delivery_components``), routed
 here, so each test also sees the exact request the control sent.
 """
 
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs
 
 import pytest
 
@@ -23,7 +24,7 @@ MARK = "document.querySelector('h1').dataset.mark = 'kept'"
 MARKED = "document.querySelector('h1').dataset.mark"
 # Where each control of the filter bar and the mode links sits on the page.
 PLACES = """() => [...document.querySelectorAll(
-    '#delivery-mode a, #table-filters input:not([type=hidden]), '
+    '#delivery-mode button, #table-filters input:not([type=hidden]), '
     + '#table-filters select, #table-filters button')]
     .map(node => { const box = node.getBoundingClientRect();
         return [node.id || node.textContent.trim(), Math.round(box.x),
@@ -31,9 +32,9 @@ PLACES = """() => [...document.querySelectorAll(
 
 
 def answer_with(page, component_origin, fixture):
-    """Answer every query of the list page with ``fixture``'s page.
+    """Answer every POST to the list page with ``fixture``'s page.
 
-    Returns the queries sent, each parsed. The page itself (no query) keeps
+    Returns the bodies posted, each parsed. The page itself (a GET) keeps
     its ordinary fixture.
     """
     body = page.request.get(component_origin + fixture).text()
@@ -41,14 +42,13 @@ def answer_with(page, component_origin, fixture):
 
     def handle(route):
         """Fulfil a filtered read with the fixture; let the page through."""
-        query = urlsplit(route.request.url).query
-        if not query:
+        if route.request.method != "POST":
             route.continue_()
             return
-        sent.append(parse_qs(query, keep_blank_values=True))
+        sent.append(parse_qs(route.request.post_data or "", keep_blank_values=True))
         route.fulfill(status=200, body=body, content_type="text/html")
 
-    page.route(component_origin + PAGE + "?*", handle)
+    page.route(component_origin + PAGE + "*", handle)
     return sent
 
 
@@ -69,18 +69,44 @@ def test_the_bar_fits_one_row_and_wraps_on_a_phone(page, component_origin):
     """At 1280 px every field and the button share one row; at 390 px the bar
     wraps inside the screen and the page never scrolls sideways."""
     open_list(page, component_origin)
-    tops = page.evaluate(
+    # The fields line up at their tops (a date control can be a little
+    # taller than a text box), and Apply sits in the same row.
+    boxes = page.evaluate(
         """() => [...document.querySelectorAll(
             '#table-filters > div, #table-filters > button')]
+            .map(node => { const box = node.getBoundingClientRect();
+                return [Math.round(box.top), Math.round(box.bottom)]; })"""
+    )
+    assert len(boxes) == 6
+    tops = [top for top, _ in boxes[:5]]
+    assert max(tops) - min(tops) <= 2, boxes
+    assert boxes[5][0] < min(bottom for _, bottom in boxes[:5]), boxes
+    # Every label, the Recipient's with its toggletip too, shares one line.
+    labels = page.evaluate(
+        """() => [...document.querySelectorAll(
+            '#table-filters > div > :is(label, .label-row)')]
             .map(node => Math.round(node.getBoundingClientRect().bottom))"""
     )
-    assert len(tops) == 6
-    assert max(tops) - min(tops) <= 2, tops
-    # Each field is wide enough for what it shows: no date is clipped.
+    assert len(labels) == 5 and max(labels) - min(labels) <= 1, labels
+    # Each field is wide enough for what it shows: no date is clipped, and
+    # an empty one has room for the "mm/dd/yyyy" placeholder beside the
+    # picker button (which scrollWidth cannot see).
     assert page.evaluate(
         """() => [...document.querySelectorAll('#table-filters input[type=date]')]
             .every(node => node.scrollWidth <= node.clientWidth + 1)"""
     )
+    room = page.evaluate(
+        """() => [...document.querySelectorAll('#table-filters input[type=date]')]
+            .map(node => {
+                const style = getComputedStyle(node);
+                const context = document.createElement('canvas').getContext('2d');
+                context.font = style.font;
+                return [node.clientWidth - parseFloat(style.paddingLeft)
+                    - parseFloat(style.paddingRight),
+                    context.measureText('mm/dd/yyyy').width];
+            })"""
+    )
+    assert all(inner >= text + 28 for inner, text in room), room
     page.set_viewport_size({"width": 390, "height": 800})
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     assert page.evaluate(
@@ -95,9 +121,9 @@ def test_the_bar_fits_one_row_and_wraps_on_a_phone(page, component_origin):
 
 
 def test_filters_apply_in_place(page, component_origin):
-    """Apply filters sends the form as a GET, swaps the table in without a
-    reload or a scroll jump, records the view in the address bar and moves
-    no control above the table."""
+    """Apply filters posts the form, swaps the table in without a reload or a
+    scroll jump, records the view's linkable filters in the address bar
+    (never the Recipient) and moves no control above the table."""
     sent = answer_with(page, component_origin, "/deliveries-applied")
     open_list(page, component_origin)
     page.locator("#delivery-recipient").fill("12345")
@@ -118,28 +144,34 @@ def test_filters_apply_in_place(page, component_origin):
     assert query["mode"] == ["production"]
     assert query["purpose"] == ["all"]
     assert query["zone"] == ["America/Los_Angeles"]
-    assert "recipient=12345" in page.url and "state=needs_attention" in page.url
+    assert query["csrfmiddlewaretoken"]
+    assert "state=needs_attention" in page.url
+    assert "recipient" not in page.url and "12345" not in page.url
     assert abs(page.evaluate("window.scrollY") - offset) < 40
     assert page.evaluate(PLACES) == before
-    # The mode links now carry the applied filters.
-    testing = page.locator("#delivery-mode").get_by_role("link", name="Testing")
-    assert "recipient=12345" in testing.get_attribute("href")
+    # The mode choices now post the applied filters, the Recipient too.
+    testing = page.locator("#delivery-mode form").filter(
+        has=page.get_by_role("button", name="Testing")
+    )
+    assert testing.locator("input[name=recipient]").get_attribute("value") == "12345"
+    assert testing.get_attribute("method") == "post"
 
 
-def test_the_mode_links_switch_in_place(page, component_origin):
-    """Testing redraws the list in place: the link becomes current, the
+def test_the_mode_choices_switch_in_place(page, component_origin):
+    """Testing redraws the list in place: its choice becomes current, the
     filter form's hidden mode follows, and nothing above the table moves."""
     sent = answer_with(page, component_origin, "/deliveries-testing")
     open_list(page, component_origin)
-    links = page.locator("#delivery-mode")
-    assert links.get_by_role("link", name="Production").get_attribute(
-        "aria-current"
-    ) == ("page")
+    choices = page.locator("#delivery-mode")
+    assert (
+        choices.get_by_role("button", name="Production").get_attribute("aria-current")
+        == "true"
+    )
     before = page.evaluate(PLACES)
-    links.get_by_role("link", name="Testing").click()
+    choices.get_by_role("button", name="Testing").click()
     eventually(
         page,
-        "document.querySelector('#delivery-mode a[aria-current]').textContent",
+        "document.querySelector('#delivery-mode [aria-current=true]').textContent",
         "Testing",
     )
     assert page.evaluate(MARKED) == "kept"
@@ -151,7 +183,27 @@ def test_the_mode_links_switch_in_place(page, component_origin):
     assert "mode=testing" in page.url
     assert page.evaluate(PLACES) == before
     # The row's Recipient now lists that Family's Testing email.
-    visible(page.locator('tbody a[href^="?recipient=12345&mode=testing"]'))
+    visible(page.locator("tbody form:has(input[name=mode][value=testing]) button"))
+
+
+def test_a_rows_recipient_lists_it_in_place(page, component_origin):
+    """A row's Recipient posts that recipient and mode, redraws the list in
+    place, sets the filter bar to it and never puts it in the address."""
+    sent = answer_with(page, component_origin, "/deliveries-applied")
+    open_list(page, component_origin)
+    page.locator("tbody tr").first.get_by_role(
+        "button", name="Castellanos, Maximiliana and Bartholomew"
+    ).click()
+    eventually(
+        page,
+        "document.querySelector('tbody tr td:last-child').textContent.trim()",
+        "Failed",
+    )
+    assert page.evaluate(MARKED) == "kept"
+    (query,) = sent
+    assert query["recipient"] == ["12345"] and query["mode"] == ["production"]
+    assert page.locator("#delivery-recipient").input_value() == "12345"
+    assert "recipient" not in page.url and "12345" not in page.url
 
 
 def test_a_through_day_before_from_holds_apply(page, component_origin):

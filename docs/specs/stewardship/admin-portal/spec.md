@@ -4365,18 +4365,22 @@ inside its own region.
   listed here: they are on its Mail message page, with what each address's
   latest attempt recorded. In Testing mode the Recipient is still the
   intended Family or Administrator; the Mail message page names the Testing
-  recipient it was sent to. Recipient opens this list filtered to that
-  recipient (the Family's DUID, or the Administrator's address) in the same
-  mode, so the reader sees everything that recipient was sent, until the
-  recipient history pages of a later #1562 slice take that link.
+  recipient it was sent to. Recipient redraws this list in place filtered
+  to that recipient (the Family's DUID, or the Administrator's address) in
+  the same mode, so the reader sees everything that recipient was sent,
+  until the recipient history pages of a later #1562 slice take that
+  control. It is a link-styled button posting the recipient in a small CSRF
+  form, since the Recipient filter is private (below).
   Recipient sorts on the server over the whole list (sort token `name`): by
   surname, then the whole shown name, then Family DUID for Families that show
   the same name, as the Active parishioner family directory orders them, each
   email's name read inside the page's query from the same ParishSoft
   snapshot the shown names come from. That keeps each Family's emails
   together, newest change first (then newest email) in both directions;
-  emails to Administrators, and Families no longer in the data, sort last in
-  both directions.
+  Families no longer in the data, then emails to Administrators, sort last
+  in both directions. Emails to Administrators sort among themselves by
+  what Recipient shows (the Name, else the address, case-folded), read
+  through the definer read below for every such email the filters match.
 - **Family DUID** is the Family's DUID in its own column, as
   [table column order](../ui-conventions/spec.md#table-column-order)
   requires (a DUID never shares a cell with a name), and sorts (token
@@ -4421,8 +4425,14 @@ a phone, without sideways scrolling) holds:
   while either is so, saying why.
 - **Delivery**: All; three grouped choices; then each single state as
   before. The groups overlap on purpose: they are filters, not a partition.
-  - **Needs attention**: what an Administrator can act on, Not sure it
-    arrived and Failed (`delivery_unknown`, `permanent_failure`).
+  - **Needs attention**: what an Administrator can still act on: Not sure
+    it arrived (`delivery_unknown`), and Failed (`permanent_failure`) unless
+    its latest decision other than a note recorded it as not sent (Confirm
+    not sent, or Fix many's record as not sent), which settles it. Either
+    must be of a kind whose Mail message page offers resolutions (not an
+    operational or security notice) in a campaign that is not archived.
+    One set-based condition: the campaign join and one correlated lookup of
+    the latest resolution per candidate, through its history index.
   - **Not delivered**: emails that finished without being delivered, Failed
     and Not sent (cancelled) (`permanent_failure`, `cancelled`). Not sure it
     arrived is not in it, since such an email may have arrived; a Delivered
@@ -4431,9 +4441,14 @@ a phone, without sideways scrolling) holds:
     service (`pending`, `retry_wait`, `submitting`).
 
 Beside the filter bar, a two-choice **Production / Testing** control picks
-the mode of the emails listed, Production by default. It is a pair of
-links, the chosen one marked current, that redraw the list in place and keep
-the other applied filters, returning to page 1; it follows the shared
+the mode of the emails listed. It defaults to the system's current
+operating mode: Testing on a system in Testing mode (before Production is
+activated), Production on a Production system, so every link into the page
+from the status bar, Home, Family email progress, System health or the
+chosen-Family test lists that system's emails. It is a pair of link-styled
+buttons, the chosen one marked current, each a small CSRF form that posts
+the applied filters (the Recipient too) with its mode, redraws the list in
+place and returns to page 1; it follows the shared
 two-choice pattern (the Family timeline's Records shown) until the shared
 segmented control of
 [#1535](https://github.com/epiphany40223/parishkit/issues/1535) replaces it
@@ -4441,15 +4456,20 @@ everywhere. A link from Family email history that names a send
 (`send=<schedule>:<revision>:<mode>:<cycle>`) shows that send's mode unless
 it names a mode itself.
 
-The filters, sort, page and size are query parameters (`recipient`,
-`purpose`, `start`, `end`, `zone`, `state`, `mode`, `send`, `page`, `size`,
-`sort`), so a filtered view can be bookmarked or linked. An address in the
-query string stays out of the server's records: the application's log
-formatter replaces every query-string value
-([production ingress](../operations/spec.md#production-ingress-and-tls)). It
-does reach the Administrator's own browser history, as the Family DUID
-filter always has, which an Administrator may already see on every Mail
-message page; an address is never put in a path. Applying the filters, sorting, paging
+The Recipient filter names a person (an email address or a Family DUID),
+so it is private filter state
+([Admin tables](../ui-conventions/spec.md#admin-tables)) and never reaches
+a URL: the filter form posts every filter in a CSRF-protected POST body,
+the table's navigator and headings, the mode buttons and the rows'
+Recipient buttons post them again, and the bulk actions' forms carry the
+applied Recipient beside their own fields so their answer's list keeps it.
+The other filters, sort and size may be linked: a GET (a bookmark, or a link
+from another page) carries `purpose`, `start`, `end`, `zone`, `state`,
+`mode`, `send`, `page`, `size` and `sort`, and one carrying `recipient` is
+refused (400, without echoing it). After each in-place answer the address
+bar shows the view's linkable filters, sort and size, never the Recipient
+or the page (`data-page-address`, as System logs does), so a reload keeps
+them. Applying the filters, sorting, paging
 and the mode control all act in place
 ([in-place controls](../ui-conventions/spec.md#in-place-controls)), and
 nothing appears or vanishes under the pointer
@@ -4461,7 +4481,9 @@ Administrator-only definer read over the renderings' intended recipients,
 backed by an index (below), then finds the emails by primary key. The
 Recipient names of a page's Administrator emails take one definer read for
 the page's ids and one query of the current configuration's users,
-however many rows. The orderings are not indexed, so a page is a top-N sort of
+however many rows. The Recipient sort adds one query of the matching
+Administrator emails' ids, one definer read per 500 of them and one query
+of the users, and then orders by a JSON object of their keys. The orderings are not indexed, so a page is a top-N sort of
 the filtered emails, as before.
 
 **Recipient reads (frozen migration 0115).** The web login has no grant on

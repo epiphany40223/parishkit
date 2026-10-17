@@ -224,10 +224,12 @@ def test_sent_mail_names_each_family_with_its_duid(family_mail, google):  # noqa
         )
     assert response.status_code == 200
     html = response.content.decode()
+    # Recipient posts the Family's DUID, never a link (#1562).
     assert (
-        f'<td><a href="?recipient={duid}&amp;mode=testing#table">'
-        f"{escape(name)}</a></td>"
+        f'<input type="hidden" name="recipient" value="{duid}">'
+        '<input type="hidden" name="mode" value="testing">'
     ) in html
+    assert f">{escape(name)}</button></form></td>" in html
     assert f'<td class="numeric nowrap">{duid}</td>' in html
     # Recipient is the sorted heading (token name).
     heading = html.split('aria-sort="descending"')[1].split("</th>")[0]
@@ -291,9 +293,10 @@ def test_outgoing_mail_names_reports_and_families_no_longer_in_the_data(
     assert response.status_code == 200
     html = response.content.decode()
     assert (
-        '<td><a href="?recipient=admin%40example.org&amp;mode=testing#table">'
-        "admin@example.org</a></td>"
+        '<input type="hidden" name="recipient" value="admin@example.org">'
+        '<input type="hidden" name="mode" value="testing">'
     ) in html
+    assert ">admin@example.org</button></form></td>" in html
     assert escape(family_name(message)) in html
 
     # The listed rows, plus one whose Family DUID the snapshot lacks.
@@ -330,7 +333,7 @@ def test_outgoing_mail_names_reports_and_families_no_longer_in_the_data(
             assert response.status_code == 200
             html = response.content.decode()
             assert html.index(escape(family_name(message))) < html.index(
-                "admin@example.org</a>"
+                "admin@example.org</button>"
             )
 
 
@@ -724,7 +727,12 @@ def test_delivery_lists_sort_on_the_server_and_count_pages(response_service, goo
     assert listing.status_code == 200
     html = listing.content.decode()
     assert 'aria-sort="descending"' in html and "Page 1 of 1" in html
-    assert "state=all&amp;size=25&amp;sort=purpose" in html
+    # Its headings are POST forms carrying the filters (#1562).
+    assert (
+        '<input type="hidden" name="state" value="all">'
+        '<input type="hidden" name="size" value="25">'
+        '<input type="hidden" name="sort" value="purpose">'
+    ) in html
     # The command line's tokens of columns Sent mail no longer shows still
     # sort it (#1562); no heading is then marked sorted.
     listing = browser.get("/admin/mail/sent/", {"sort": "-attempts"})

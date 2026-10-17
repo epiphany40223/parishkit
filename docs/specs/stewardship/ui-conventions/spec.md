@@ -2805,11 +2805,13 @@ exporting keeps the order the table shows.
 Page, size and sort are query parameters (`page`, `size`, `sort`), optionally
 prefixed so two tables on one page keep their own place, and every navigator
 link, heading and filter form keeps the page's filters and the others' choices.
-Reports whose filters are private (the active parishioner family directory, System logs and the
-campaign reports) keep them in POST state: their navigator and headings are
+Reports whose filters are private (the active parishioner family directory, System logs, the
+campaign reports and Sent mail's Recipient) keep them in POST state: their navigator and headings are
 small CSRF-protected forms that carry the filters as hidden fields, so no
-private value reaches a URL. System logs also accept a link carrying only its
-non-private filters ([Logs](../admin-portal/spec.md#logs)). A control on
+private value reaches a URL. System logs and Sent mail also accept a link
+carrying only their non-private filters ([Logs](../admin-portal/spec.md#logs),
+[Sent mail](../admin-portal/spec.md#sent-mail)), and refuse one carrying a
+private value. A control on
 another page that opens such a report narrowed by a private value (Edit
 user's "Sign-in activity", narrowed to one Google identity) is a link-styled
 button posting a small CSRF form with that value as a hidden field, never a

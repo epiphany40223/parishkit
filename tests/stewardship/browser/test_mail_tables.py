@@ -99,11 +99,12 @@ def test_sent_mail_names_each_recipient(page, component_origin):
         "Purpose",
         "Delivery",
     ]
-    # When is the default sort, newest first, so its link reverses it.
+    # When is the default sort, newest first, so its heading reverses it.
+    # The headings are POST forms: the filters are private state (#1562).
     assert headings.nth(0).get_attribute("aria-sort") == "descending"
-    assert "sort=changed" in headings.nth(0).locator(".sort-link").get_attribute("href")
-    assert "sort=name" in headings.nth(1).locator(".sort-link").get_attribute("href")
-    assert "sort=duid" in headings.nth(2).locator(".sort-link").get_attribute("href")
+    for column, sort in ((0, "changed"), (1, "name"), (2, "duid")):
+        field = headings.nth(column).locator("form input[name=sort]")
+        assert field.get_attribute("value") == sort
     rows = table.locator("tbody tr")
     assert [rows.nth(i).locator("td").first.inner_text() for i in range(4)] == [
         "Castellanos, Maximiliana and Bartholomew",
@@ -130,18 +131,34 @@ def test_sent_mail_names_each_recipient(page, component_origin):
     assert when.evaluate("node => node.getClientRects().length") == 1
     assert when.locator("a").get_attribute("href").startswith("/admin/mail/sent/")
     assert "Changed" not in table.inner_text()
-    # Recipient lists everything sent to that recipient, in the same mode.
-    recipient = rows.nth(0).get_by_role(
-        "link", name="Castellanos, Maximiliana and Bartholomew"
-    )
-    assert recipient.get_attribute("href").startswith(
-        "?recipient=12345&mode=production"
-    )
+
+    # Recipient lists everything sent to that recipient, in the same mode:
+    # a link-styled button posting it, never a link (#1562).
+    def posted(row, name):
+        """The recipient and mode a row's Recipient button posts."""
+        form = (
+            rows.nth(row)
+            .locator("form")
+            .filter(has=page.get_by_role("button", name=name))
+        )
+        assert form.get_attribute("method") == "post"
+        return [
+            form.locator(f"input[name={field}]").get_attribute("value")
+            for field in ("recipient", "mode")
+        ]
+
+    assert posted(0, "Castellanos, Maximiliana and Bartholomew") == [
+        "12345",
+        "production",
+    ]
+    assert posted(2, "Morgan Administrator") == ["morgan@example.org", "production"]
+    assert table.locator("a[href*=recipient]").count() == 0
+    # It reads as a link in its cell: link colour, no button box.
+    button = rows.nth(2).get_by_role("button", name="Morgan Administrator")
+    assert button.evaluate("node => getComputedStyle(node).borderTopStyle") == "none"
     assert (
-        rows.nth(2)
-        .get_by_role("link", name="Morgan Administrator")
-        .get_attribute("href")
-        .startswith("?recipient=morgan%40example.org&mode=production")
+        button.evaluate("node => getComputedStyle(node).backgroundColor")
+        == "rgba(0, 0, 0, 0)"
     )
     # A Family the latest data no longer has shows the shared badge (#1216),
     # boxed so it does not read as a name.

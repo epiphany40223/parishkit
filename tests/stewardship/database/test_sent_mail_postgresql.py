@@ -10,6 +10,7 @@ Sent mail's Recipient, Purpose, Delivery, date and mode filters through the
 real page, including operational notices, which no campaign owns.
 """
 
+import re
 from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlencode
@@ -129,11 +130,28 @@ def call_as(service, sql, parameters, *, exact=True):
             return error.__cause__.sqlstate
 
 
-def sent_mail(browser, **query):
-    """Sent mail as the web login serves it for ``query``: (status, HTML)."""
+def sent_mail(browser, *, link=False, **query):
+    """Sent mail as the web login serves it for ``query``: (status, HTML).
+
+    A query with a Recipient is posted, as the page's filter form posts it
+    (#1562: the Recipient is private filter state); any other is a link
+    (a GET), as is every query when ``link`` is set.
+    """
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response = browser.get("/admin/mail/sent/?" + urlencode(query))
+        if "recipient" in query and not link:
+            token = browser.cookies["pk_admin_csrf"].value
+            response = browser.post(
+                "/admin/mail/sent/", {"csrfmiddlewaretoken": token, **query}
+            )
+        else:
+            response = browser.get("/admin/mail/sent/?" + urlencode(query))
     return response.status_code, response.content.decode()
+
+
+def region(html, element_id):
+    """The markup of the element ``element_id`` opens, up to its next div end."""
+    start = html.index(f'id="{element_id}"')
+    return html[start : html.index("</div>", start)]
 
 
 def listed(html, ids):
@@ -280,7 +298,8 @@ def test_the_check_refuses_a_missing_or_different_read(change):
 def test_sent_mail_filters_by_recipient_purpose_delivery_and_mode(
     response_service, google
 ):
-    """Each filter narrows the real page, and Production is the default."""
+    """Each filter narrows the real page, and a Production system shows
+    Production email by default."""
     # Testing mail is admitted before the campaign goes live, Production
     # mail after.
     testing = family_message(response_service, mode="testing")
@@ -312,9 +331,26 @@ def test_sent_mail_filters_by_recipient_purpose_delivery_and_mode(
     ):
         status, html = sent_mail(browser, state=state)
         assert status == 200 and listed(html, ids) == shown, state
-    # The mode links keep the applied filters and start again at page 1.
-    status, html = sent_mail(browser, purpose="reminder", page="1")
-    assert 'href="?purpose=reminder&amp;mode=testing#table"' in html
+    # The mode choices post the applied filters, the Recipient too, and
+    # start again at page 1; the page's address keeps only the linkable
+    # filters, never the Recipient (#1562).
+    status, html = sent_mail(
+        browser, purpose="reminder", page="1", recipient="first.head@example.org"
+    )
+    assert status == 200
+    modes = region(html, "delivery-mode")
+    assert '<input type="hidden" name="purpose" value="reminder">' in modes
+    assert '<input type="hidden" name="mode" value="testing">' in modes
+    assert 'name="recipient" value="first.head@example.org"' in modes
+    assert 'name="page"' not in modes
+    assert 'id="mode-production" aria-current="true"' in modes
+    (address,) = re.findall(r'<a href="([^"]*)" data-page-address hidden>', html)
+    assert "purpose=reminder" in address
+    assert "recipient" not in address and "first.head" not in address
+    assert "page=" not in address
+    # A link (a GET) never carries a Recipient: it is refused, unechoed.
+    status, html = sent_mail(browser, link=True, recipient="first.head@example.org")
+    assert status == 400 and "first.head" not in html
     # Refused filters answer 400, never a wider list.
     for query in (
         {"recipient": "not an address"},
@@ -383,13 +419,35 @@ def test_reports_and_notices_name_their_administrator(response_service, google):
     assert status == 200
     named = recipients["morgan@example.org"].outbox_id
     assert listed(html, {named}) == {named}
+    # Recipient posts that Administrator's address, never a link (#1562).
     assert (
-        '<a href="?recipient=morgan%40example.org&amp;mode=production#table">'
-        "Morgan Administrator</a>"
+        '<input type="hidden" name="recipient" value="morgan@example.org">'
+        '<input type="hidden" name="mode" value="production">'
     ) in html
+    assert f'id="recipient-{named}">Morgan Administrator</button>' in html
+    assert "?recipient=" not in html
     # The converted Administrator shows the Name the upgrade gave, or the
     # address when it gave none.
-    assert f">{admin_name or 'admin@example.org'}</a></td>" in html
+    assert f">{admin_name or 'admin@example.org'}</button></form></td>" in html
+    # Sorting by Recipient orders the Administrators' emails by what it
+    # shows, the Name or else the address, in both directions (#1562).
+    shown = {
+        each.outbox_id: (
+            "Morgan Administrator" if address == "morgan@example.org" else None
+        )
+        or (admin_name if address == "admin@example.org" else None)
+        or address
+        for address, each in recipients.items()
+    }
+    expected = sorted(shown, key=lambda message: shown[message].casefold())
+    for sort, order in (("name", expected), ("-name", expected[::-1])):
+        status, html = sent_mail(browser, purpose="operational", sort=sort)
+        assert status == 200
+        place = {
+            message: html.index(f'href="/admin/mail/sent/{message}/"')
+            for message in shown
+        }
+        assert sorted(shown, key=place.get) == order, sort
     assert "Operational notice" in html
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         own = browser.get(f"/admin/mail/sent/{named}/")
@@ -402,6 +460,20 @@ def test_reports_and_notices_name_their_administrator(response_service, google):
     status, html = sent_mail(browser, recipient="Morgan@Example.org")
     assert status == 200
     assert listed(html, {each.outbox_id for each in recipients.values()}) == {named}
+
+
+def test_a_testing_system_shows_testing_email_by_default(response_service, google):
+    """Before Production is activated the system is in Testing mode, so the
+    page (and every link into it) lists Testing email by default (#1562)."""
+    testing = family_message(response_service, mode="testing")
+    browser, _ = signed_in()
+    status, html = sent_mail(browser)
+    assert status == 200 and listed(html, {testing}) == {testing}
+    assert 'id="mode-testing" aria-current="true"' in html
+    status, html = sent_mail(browser, state="delivery_unknown")
+    assert status == 200 and 'id="mode-testing" aria-current="true"' in html
+    status, html = sent_mail(browser, mode="production")
+    assert status == 200 and listed(html, {testing}) == set()
 
 
 def test_recipient_names_take_one_read_and_one_query(response_service, google):

@@ -8,6 +8,7 @@ served at its real address too (``DELIVERED``), with a "reported" view
 (``REPORTED``), for the in-place bounce report (#806 slice 4).
 """
 
+from dataclasses import replace
 from datetime import timedelta
 from uuid import UUID, uuid4
 
@@ -36,9 +37,28 @@ DELIVERED = reverse("admin:delivery", args=[DELIVERED_ID])
 BOUNCE = reverse("admin:delivery_bounce_report", args=[DELIVERED_ID])
 REPORTED = DELIVERED + "?reported=1"
 POSTS = {CLEAR: (303, CLEARED, ""), BOUNCE: (303, REPORTED, "")}
+# Where Sent mail's POST controls post (#1562): the list fixture the
+# filter tests open, whose in-place requests they route.
+LIST_ACTION = "/deliveries-names"
+
+
+def mode_choices(shown, *kept):
+    """The Production / Testing choices' fields, as the view draws them."""
+    view = [("size", "25"), ("sort", "-changed")]
+    return [
+        (mode, [*kept, *view, ("mode", mode)], mode == shown)
+        for mode in ("production", "testing")
+    ]
+
+
+def sent_table(*args, **kwargs):
+    """A Sent mail table: its filters are private POST state (#1562)."""
+    return replace(window_table(*args, **kwargs), method="post", action=LIST_ACTION)
+
+
 # Sent mail's filter bar as the view draws it with no filter applied
-# (#1562): every Delivery and Purpose choice, Production shown, and the
-# Production / Testing links.
+# (#1562): every Delivery and Purpose choice, Production shown, the
+# Production / Testing choices and the view's linkable address.
 LIST_FILTERS = dict(
     purposes=PURPOSE_CHOICES,
     selected_purpose="all",
@@ -47,7 +67,8 @@ LIST_FILTERS = dict(
     end="",
     zone="",
     mode="production",
-    mode_links=[("production", "mode=production"), ("testing", "mode=testing")],
+    mode_choices=mode_choices("production"),
+    page_address=LIST_ACTION + "?size=25&sort=-changed",
 )
 
 
@@ -58,7 +79,7 @@ def components(now):
         family_id=uuid4(),
         family__family_duid=12345,
         # Recipient lists everything sent to this Family (#1562).
-        recipient_query="recipient=12345&mode=production",
+        recipient_fields=[("recipient", "12345"), ("mode", "production")],
         # The Family's name beside its DUID (#931), long enough to wrap.
         family_name="Castellanos, Maximiliana and Bartholomew",
         state="delivery_unknown",
@@ -87,7 +108,7 @@ def components(now):
         "/deliveries",
         "deliveries",
         dict(
-            table=window_table(
+            table=sent_table(
                 PageWindow(1, 25),
                 [message],
                 True,
@@ -110,7 +131,7 @@ def components(now):
         "deliveries",
         dict(
             refusal_count=3,
-            table=window_table(
+            table=sent_table(
                 PageWindow(1, 25),
                 [
                     message | dict(refused=2),
@@ -133,7 +154,10 @@ def components(now):
                         state="delivered",
                         recipient_name="Morgan Administrator",
                         recipient_address="morgan@example.org",
-                        recipient_query="recipient=morgan%40example.org&mode=production",
+                        recipient_fields=[
+                            ("recipient", "morgan@example.org"),
+                            ("mode", "production"),
+                        ],
                     ),
                     message
                     | dict(
@@ -145,7 +169,10 @@ def components(now):
                         state="permanent_failure",
                         recipient_name=None,
                         recipient_address="pat@example.org",
-                        recipient_query="recipient=pat%40example.org&mode=production",
+                        recipient_fields=[
+                            ("recipient", "pat@example.org"),
+                            ("mode", "production"),
+                        ],
                     ),
                 ],
                 False,
@@ -165,13 +192,13 @@ def components(now):
         "/deliveries-testing",
         "deliveries",
         dict(
-            table=window_table(
+            table=sent_table(
                 PageWindow(1, 25),
                 [
                     message
                     | dict(
                         mode="testing",
-                        recipient_query="recipient=12345&mode=testing",
+                        recipient_fields=[("recipient", "12345"), ("mode", "testing")],
                     )
                 ],
                 False,
@@ -181,14 +208,19 @@ def components(now):
             ),
             states=STATES,
             selected_state="all",
-            **LIST_FILTERS | dict(mode="testing"),
+            **LIST_FILTERS
+            | dict(
+                mode="testing",
+                mode_choices=mode_choices("testing"),
+                page_address=LIST_ACTION + "?mode=testing&size=25&sort=-changed",
+            ),
         ),
     )
     yield (
         "/deliveries-applied",
         "deliveries",
         dict(
-            table=window_table(
+            table=sent_table(
                 PageWindow(1, 25),
                 [message | dict(state="permanent_failure")],
                 False,
@@ -202,13 +234,13 @@ def components(now):
             **LIST_FILTERS
             | dict(
                 recipient="12345",
-                mode_links=[
-                    (
-                        "production",
-                        "recipient=12345&state=needs_attention&mode=production",
-                    ),
-                    ("testing", "recipient=12345&state=needs_attention&mode=testing"),
-                ],
+                mode_choices=mode_choices(
+                    "production",
+                    ("recipient", "12345"),
+                    ("state", "needs_attention"),
+                ),
+                page_address=LIST_ACTION
+                + "?state=needs_attention&size=25&sort=-changed",
             ),
         ),
     )
@@ -218,7 +250,7 @@ def components(now):
         "/deliveries-holds",
         "deliveries",
         dict(
-            table=window_table(
+            table=sent_table(
                 PageWindow(1, 25),
                 [message | dict(state="retry_wait")],
                 False,
@@ -242,7 +274,7 @@ def components(now):
     # in-place Preview and Confirm get (a test routes each POST to one).
     failed = message | dict(state="permanent_failure")
     bulk = dict(
-        table=window_table(
+        table=sent_table(
             PageWindow(1, 25),
             [failed],
             False,
@@ -282,7 +314,7 @@ def components(now):
         "deliveries",
         bulk
         | dict(
-            table=window_table(
+            table=sent_table(
                 PageWindow(1, 25),
                 [failed | dict(state="pending")],
                 False,
