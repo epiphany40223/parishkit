@@ -16,7 +16,6 @@ from types import MappingProxyType
 from urllib.parse import urlsplit
 
 from parishkit.config import ConfigError, load_yaml_config
-from parishkit.parishsoft_http_worker import admitted_base_url, default_base_url
 from parishkit.paths import runtime_root
 
 from .authentication_policy import AuthenticationLimits
@@ -83,6 +82,10 @@ def recorded_parishsoft_base_url():
     reached outside LOCAL whatever the settings say.
     """
     from django.conf import settings
+
+    # Lazy: the helper module imports requests and parishkit.parishsoft, which
+    # the healthcheck and argument-registration paths must not load.
+    from parishkit.parishsoft_http_worker import admitted_base_url, default_base_url
 
     profile = recorded_profile().value
     value = getattr(settings, "STEWARDSHIP_PARISHSOFT_BASE_URL", None)
@@ -750,6 +753,13 @@ def load_deployment(
     if base_url in (None, ""):
         base_url = deployment.get("parishsoft_base_url")
     if base_url is not None:
+        # Lazy for the same reason as in recorded_parishsoft_base_url: only a
+        # named base URL needs the helper's (provider-importing) rule.
+        from parishkit.parishsoft_http_worker import (
+            admitted_base_url,
+            default_base_url,
+        )
+
         try:
             admitted_base_url(profile.value, base_url)
         except ValueError:
