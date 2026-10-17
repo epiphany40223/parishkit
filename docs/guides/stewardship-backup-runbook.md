@@ -652,6 +652,16 @@ layout; where the deployment YAML overrides a path, use that path instead.
        --input /set/database.pgdump.sealed --destination /out/database.pgdump
    ```
 
+   **Which image opens a set.** Run `backup-open` from the image the
+   set was taken under: the manifest's `image` (its `application_version`
+   is the release). A different release's image may refuse the set, and
+   then prints only that the sealed backup could not be opened. When the
+   `manifest.json` beside the file names another release, the refusal
+   says which release and image to use instead; if it does, switch images
+   before suspecting the key. A set taken before the manifest recorded its
+   image is opened with the release the operators' records name for it.
+   In a drill, record which image opened each set.
+
    Copy `database.pgdump` and `files.tar` to the host over a private
    channel.
 
