@@ -1167,6 +1167,57 @@ sessions, and no key or fingerprint in any output outside the page's own
 signed token, which is decoded and checked apart) and the unchanged
 integration key page suites.
 
+Another part adds `integration key replace` (a settings page's Save with a
+new key) in `parishkit.stewardship.admin_integration_keys` and the host
+wrapper's `--secret-file` and `--secret-stdin`, through the page's own
+forms and its request-free `integration_views.sign_key_intent`,
+`key_intent` and `stage_key` (moved out of `_save`, which now calls them)
+and the unchanged `save_credential` path (now with an `attach` callback, an
+unrecorded first freshness check in its own transaction, and the caller's
+authority runtime passed to `admit_admin_action`), with no schema change;
+proven by `tests/stewardship/test_admin_integration_keys.py` (catalog
+flags, the described event, the ledger, usage errors, the key line's
+parser, size and encoding refusals, the prompt's words, the role first),
+`tests/stewardship/test_admin_role_first.py`,
+`tests/stewardship/test_pk_admin.py` (the tagged line after the preamble
+and never an argument or file, the limit equal to the page's, a
+group-readable, linked, FIFO, missing or oversized file refused, a piped
+key needing `--yes`, misused options refused, echo off at a terminal and
+back for the answer),
+`tests/stewardship/database/test_admin_integration_key_replace_cli_postgresql.py`
+(a key staged, installed by the isolated installer, acknowledged and
+switched with its events and notices, a declined prompt staging nothing,
+settings saved with the key, refused settings and keys at their fields, a
+malformed key line, a pending key change and a stale version, read-only,
+Staff and ended sessions, Slack set up by its first token, a refused Slack
+format before the prompt, and no key in any output, log or audit row) and
+the unchanged integration key page suites.
+
+Another part adds the Backup encryption key's steps,
+`integration backup-key challenge`, `preview` and `confirm`, in
+`parishkit.stewardship.admin_backup_key`, through the page's own
+`check_new_key`, `start_proof`, `finish_proof`, a request-free
+`backup_key.review_change` (moved out of the page's `_review`, which now
+calls it) and `admin_editing.confirm_intent` with the page's salt, and
+generalizes the host wrapper's secret input to a per-command table
+(`--public-key-file`, `--code-file` and `--code-stdin` beside
+`--secret-file` and `--secret-stdin`), with no schema change; proven by
+`tests/stewardship/test_admin_backup_key.py` (catalog flags, the described
+event, no option taking a value, the field limit equal to the page's, the
+tagged lines' parser, size and encoding refusals, usage errors, the role
+first), `tests/stewardship/test_admin_role_first.py`,
+`tests/stewardship/test_pk_admin.py` (each value on its own tagged line
+and never an argument, an oversized code file refused, a piped code with
+no `--yes`, misused options refused, a code typed at a terminal not
+echoed), `tests/stewardship/database/test_admin_backup_key_cli_postgresql.py`
+(challenge, a real proof, a wrong code, review, a declined prompt,
+confirmation with its trail, the installer applying it with
+`backup_key_replaced`, a repeat; a private key, a non-key, the key in use
+and an over-long paste refused without echo; an altered, expired or
+out-of-date intent and an altered token; read-only, ended and Staff
+sessions; no private key, code or pasted text in any output, log or audit
+row) and the unchanged backup key page suites.
+
 ## ADM-12: Admin navigation overhaul
 
 Scope and dependencies: [ADM-12 work package](../../plans/stewardship/admin-portal.md#adm-12-admin-navigation-overhaul).

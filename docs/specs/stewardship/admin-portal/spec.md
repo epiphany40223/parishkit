@@ -903,7 +903,7 @@ The Family participation panel is a row of tiles
 ([#720](https://github.com/epiphany40223/parishkit/issues/720)): the active
 Families; the responses from Families who can use the Family form now, as
 the count, "out of 400 (10%)" and a
-[share bar](../ui-conventions/spec.md#charts); and all Families with a
+[share bar](../ui-conventions/spec.md#stat-tiles); and all Families with a
 response, not counting Testing. That last count can include Families no
 longer active, so it is not drawn as a share. While in Testing mode, a line
 under the tiles says Testing responses are not counted there.
@@ -1671,10 +1671,32 @@ required and Save waits for it
 ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)). Non-secret integration setting changes use the YAML
 configuration-request path rather than the credential installer. The ParishSoft
 organization ID can change only until the first ParishSoft data load. After
-that the page shows it read-only and refuses a different value, with or without
-a new key, in plain language: every refresh must read the organization whose
-data is loaded, and a refresh for another organization is refused as a tenant
-mismatch.
+that the page shows it as an
+[unavailable control](../ui-conventions/spec.md#conditional-fields): disabled,
+still showing the loaded ID, with the one-line hint "Locked: ParishSoft data
+for this organization is loaded." under its label and the why in its tip
+([#1492](https://github.com/epiphany40223/parishkit/issues/1492)). The browser
+sends no disabled field, so the server uses the loaded ID, and it refuses a
+request that posts a different value, with or without a new key, in plain
+language: every refresh must read the organization whose data is loaded, and a
+refresh for another organization is refused as a tenant mismatch.
+A new ParishSoft key that authenticates but sees a different organization than
+the one configured is refused at once by its check, as a rejected key is
+(the check's `mismatch` outcome, never the temporary `unavailable` that waits
+and tries again): nothing is installed and the current key stays in use. The
+installer records that cause with the request's failure, as one value-free
+audit event about the request (the request itself stays `failed`), so the
+page's failed line names exactly one cause
+([#1495](https://github.com/epiphany40223/parishkit/issues/1495)). For a key
+for another organization it says "This key belongs to a different ParishSoft
+organization than the data already loaded. Paste the key for the loaded
+organization." (before the first load, when the organization ID may still be
+the wrong one: "This key belongs to a different ParishSoft organization than
+the configured organization ID. Check the key and the organization ID, then
+try again."); for a key ParishSoft rejects it keeps the general line that
+ParishSoft did not accept the key. System health names a refresh refused
+because the key sees another organization as "ParishSoft organization does
+not match", never "ParishSoft could not be reached".
 
 An integration's settings are saved through the
 [review dialog](../ui-conventions/spec.md#review-dialog) (#750). An ordinary edit
@@ -8190,10 +8212,10 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   (`admin_cmd_workgroup_confirm`), Campaign settings changes
   (`admin_cmd_campaign_confirm`), Share options changes
   (`admin_cmd_campaign_shares_confirm`), integration settings
-  changes and removals (`admin_cmd_integration_confirm`), the command line's backup folder checks (`admin_cmd_integration_backup_probe`) and key change dismissals (`admin_cmd_integration_dismiss`), Finish switching to a new key (`admin_cmd_integration_key_finish_switching`), hosted files (`hosted_file_*`), stored key
+  changes and removals (`admin_cmd_integration_confirm`), the command line's backup folder checks (`admin_cmd_integration_backup_probe`) and key change dismissals (`admin_cmd_integration_dismiss`), Finish switching to a new key (`admin_cmd_integration_key_finish_switching`), the command line's key replacements (`admin_cmd_integration_key_replace`) and backup encryption key changes (`admin_cmd_integration_backup_key_confirm`), hosted files (`hosted_file_*`), stored key
   replacements
   (`secret_replacement_requested`, `secret_request_*`,
-  `credential_consumer_acknowledged`) and initial setup, which is
+  `credential_key_organization_mismatch`, `credential_consumer_acknowledged`) and initial setup, which is
   configuration too (`setup_started`, `setup_credential_staged`,
   `setup_credential_scrubbed`, the test email's `setup_mail_*` and Slack
   message's `setup_slack_*` steps, `setup_frozen`, `setup_expired`).

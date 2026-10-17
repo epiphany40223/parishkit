@@ -119,6 +119,19 @@ def components(context, admin):
     )
     pages = {
         "/participation": ("participation", page),
+        # No ParishSoft data yet (#1540): every statistics tile reads "—"
+        # with its reason, and no progress chart is drawn.
+        "/participation-unknown": (
+            "participation",
+            page
+            | statistics_panel(
+                replace(
+                    value.statistics,
+                    active=None,
+                    comparison_pledge_all=MoneyAmount(None),
+                )
+            ),
+        ),
         "/participation-long": (
             "participation",
             page | {"daily_chart": participation_chart(long_campaign(chart))},

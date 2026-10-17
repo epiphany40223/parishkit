@@ -5,7 +5,10 @@ from uuid import UUID
 from django.db import connection, connections
 
 from parishkit.parishsoft_transport import BoundedSourceSession
-from parishkit.stewardship.deployment import recorded_profile
+from parishkit.stewardship.deployment import (
+    recorded_parishsoft_base_url,
+    recorded_profile,
+)
 from parishkit.stewardship.jobs.dispatch import Execution
 from parishkit.stewardship.storage import StorageInvariantError
 
@@ -24,6 +27,15 @@ def runtime_profile():
     ``deployment.recorded_profile``, which the mail parents use too.
     """
     return recorded_profile()
+
+
+def runtime_base_url():
+    """The ParishSoft base URL this process's deployment chose (#1399).
+
+    Every source read, its ``ParishSoftConfig`` and its helper session, and
+    census publication take it from here.
+    """
+    return recorded_parishsoft_base_url()
 
 
 def source_session(execution, claim, *, attempt_id, credential):
@@ -84,6 +96,7 @@ def source_session(execution, claim, *, attempt_id, credential):
         before_request=before_request,
         check=execution.check,
         profile=runtime_profile().value,
+        base_url=runtime_base_url(),
         on_timeout=source_timeout_recorder(execution),
     )
     session.headers["x-api-key"] = credential.api_key

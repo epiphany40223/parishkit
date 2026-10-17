@@ -345,9 +345,10 @@ one Administrator until it expires or ends. It is a delegation from a
 Google-authenticated Admin session, not a new way to sign in; the Google-only
 rule in
 [identity and session security](../architecture/spec.md#identity-and-session-security)
-stands. In LOCAL, where Google sign-in is replaced by the
-[local test sign-in](../local-environment/spec.md#local-test-sign-in), the
-approval page accepts that sign-in's step-up exactly as other Admin pages do.
+stands. In LOCAL, where the
+[local test sign-in](../local-environment/spec.md#local-test-sign-in) stands
+in for Google sign-in or sits beside it, the approval page accepts that
+sign-in's step-up exactly as other Admin pages do.
 
 ### Session records
 
@@ -863,11 +864,12 @@ Every event also appears in the [system logs](../admin-portal/spec.md#logs).
 Nothing carries the secret, digests or Family data.
 
 A row applies once a command can take its action. On `main` no command yet
-confirms Production, withdraws, runs Testing cleanup (PR 12) or replaces a
-key (PR 10), so nothing records an `irreversible` notice or observes
-`automation_irreversible` yet. `users confirm`'s high-impact changes and
-`integration confirm`'s Slack changes and removals record the
-`policy_change` notice and observe `automation_policy_change`; the
+confirms Production, withdraws or runs Testing cleanup (PR 12), so nothing
+records an `irreversible` notice or observes `automation_irreversible` yet.
+`users confirm`'s high-impact changes, `integration confirm`'s Slack changes
+and removals, `integration key finish-switching`, `integration key
+replace` and `integration backup-key confirm` record the `policy_change`
+notice and observe `automation_policy_change`. The
 [delivery plan](#delivery-plan) says which commands have landed.
 
 ### High-impact changes
@@ -1031,7 +1033,7 @@ inside the command session's 60-minute idle limit. A watch stops when:
 - the process receives SIGINT (exit 7, `watch_interrupted`, with the last
   state and no traceback). `docker exec` forwards no signal, so the host
   wrapper starts a watch with a random token in its environment
-  (`PK_ADMIN_RUN`), and on INT, TERM or HUP sends SIGINT, through a second
+  (`PK_ADMIN_RUN`), and on INT, QUIT, TERM or HUP sends SIGINT, through a second
   `docker compose exec`, to the container process whose environment holds
   that token. It starts that stop before anything else, reports its
   failure (waiting at most 10 seconds), and, after INT only, waits at most
@@ -1040,7 +1042,7 @@ inside the command session's 60-minute idle limit. A watch stops when:
   client and the stop command run in their own sessions (`setsid -w`, where
   it works), so the terminal's SIGINT, on which `docker compose` exits at
   once, cannot cut that document or a second Ctrl-C the stop off. It then
-  stops its own processes and exits 130, 143 or 129
+  stops its own processes and exits 130, 131, 143 or 129
   ([#598](https://github.com/epiphany40223/parishkit/issues/598)). Only a
   watch, a passive read, is signalled; any other interrupted command runs
   to its end in the container, so a write never becomes an unknown outcome;
@@ -1276,8 +1278,11 @@ call in `confirmation_views` (in `_fresh_after_cleanup`), and the #547 sites:
 `directory_export_views.create`,
 `financial_export_views.create`, `integration_views.integration_settings`
 (previews, removals and confirmations of settings) and
-`go_live_commands.start_cleanup`. Each command reuses the service below its
-view, so it adapts the view's check rather than skipping it.
+`go_live_commands.start_cleanup`; and, for key replacement,
+`integration_credentials.save_credential` and `admit_admin_action` for
+`SECRET_REPLACEMENT` (see [secret replacement](#secret-replacement)). Each
+command reuses the service below its view, so it adapts the view's check
+rather than skipping it.
 
 The Production confirmation also requires, in Python, a sign-in after cleanup
 finished: `confirmation_commands` refuses when the fresh instant precedes the
@@ -1340,47 +1345,98 @@ Integration key replacement and the backup encryption key change run from the
 command line (decision 15) through the same service functions, validation,
 sealing, confirmation and audit as the portal, and the same
 [credential installer protocol](../../../guides/stewardship-credential-installers.md),
-unchanged. The database and `require_fresh` side below is built (PR 5a);
-the commands and the wrapper's secret input come with PR 10 and are not
-built yet.
+unchanged. The database and `require_fresh` side below is built (PR 5a),
+and so are `integration key replace`, the backup key commands and the
+wrapper's secret input
+([#463](https://github.com/epiphany40223/parishkit/issues/463)).
 
-- **Reading a secret file.** `--secret-file <path>` first refuses a path that
-  is not a regular file (`test -f` and not `test -p`), so opening a FIFO
-  cannot block, then opens the file once (`exec 3<"$path"`), checks the open
-  descriptor, not the path (`stat -L /dev/fd/3`: a regular file owned by the
-  wrapper's account with no group or other permissions, 0600 or stricter),
-  and reads only descriptor 3, so the file cannot be swapped between the
-  check and the read. Any failed check exits 2. The value is never an
-  argument. The wrapper's `stat`, `base64` and `/dev/fd` usage is GNU and
-  Linux only, like the deployment host.
+- **Which commands.** The wrapper's `secret_row` table names, for each
+  command that takes a value it reads itself, the file option, the
+  standard input option, the line's tag and the page's limit:
+  `integration key replace` (`--secret-file`, `--secret-stdin`,
+  `pk-admin-secret/1`, 128 KiB), `integration backup-key challenge`
+  (`--public-key-file` only, `pk-admin-public-key/1`, 200 bytes) and
+  `integration backup-key preview` (`--code-file`, `--code-stdin`,
+  `pk-admin-proof/1`, 200 bytes; the page's field limit,
+  `backup_key.MAX_FIELD`). It accepts each option only for its command,
+  only once, and never with a `-` input: standard input then carries the
+  value. In the command line the container sees, `--X-file PATH` becomes
+  `--X-stdin`, so the path never reaches it either; `--public-key-stdin` is
+  the container's alone and refused from the operator. The rest of this
+  section says "key" for any of the three values; a piped value needs
+  `--yes` only for a command that prompts.
+- **Reading a secret file.** `--secret-file PATH` first refuses a path that
+  is a symbolic link or not a regular file (`test -L`, `test -f` and not
+  `test -p`), so opening a FIFO cannot block, then opens the file once
+  (`command exec 3<"$path"`, so a failed open is a refusal), checks the open
+  descriptor, not the path (`test -f /dev/fd/3` and `stat -L` of
+  `/dev/fd/3`: a regular file owned by the wrapper's account with no group
+  or other permissions, 0600 or stricter, and no larger than the page's
+  limit), and reads only descriptor 3, so the file read is the file
+  checked. Any failed check exits 2. The value is never an argument. POSIX
+  `sh` has no `O_NOFOLLOW`, so a symbolic link swapped in between the path
+  checks and the open is followed (what is read must still pass the
+  descriptor's checks), and a FIFO swapped in blocks the open; both need
+  write access to the key's directory, which the operator guide says to
+  keep private. The wrapper reads GNU `stat` on
+  the host and BSD `stat` on developers' machines, as it does for the
+  session directory.
 - **Reading standard input.** `--secret-stdin` from a terminal turns echo off
-  (restored by a `trap` on every exit path) and reads until Ctrl-D, so a
-  multi-line Google Workspace service-account JSON can be pasted. Piped
-  `--secret-stdin` requires `--yes`, checked before anything is read, because
-  the same input cannot also answer the prompt. The operator guide warns
-  against `echo <key> |` and other forms that leave the value in shell
-  history or the process list.
+  (refusing with exit 2 if it cannot; restored by the `EXIT` trap on every
+  exit path, an interruption's included) and reads until Ctrl-D, so a
+  multi-line Google Workspace service-account JSON can be pasted; echo comes
+  back on for the prompt's one answer line. At a terminal the wrapper never
+  returns before the key is read to its end: if the command ends first (a
+  refusal such as Staff's `denied`, an ended session, the web container or
+  docker missing), the operator may still be pasting, and a returned shell
+  would run the key as a command and keep it in its history. So the
+  wrapper stops the writer's key reader (`head`, by its recorded PID, so
+  without pgrep too), keeps echo off, says that the command ended and that
+  what is pasted is discarded, reads the terminal to Ctrl-D and discards
+  it, and only then exits. A paste longer than the limit is treated the
+  same way: the key reader stops one byte past it (`dd` counts what it
+  passed), so the rest of the paste is read to Ctrl-D with echo off and
+  discarded, and the command refuses the key. Reading the key before the command runs instead
+  would need somewhere to hold it while the command starts, and the value
+  never goes into a variable or a file, while the pipes cannot hold a
+  key of the page's limit. Canonical-mode terminals bound one input line
+  (1024 bytes on macOS, 4096 on Linux), so a Google Workspace JSON key,
+  whose `private_key` line is longer, is given with `--secret-file` on
+  macOS. Piped `--secret-stdin` requires
+  `--yes`, checked before anything is read, because the same input cannot
+  also answer the prompt. The operator guide warns against `echo <key> |`
+  and other forms that leave the value in shell history or the process list.
 - **Passing it in.** The wrapper sends the value as one line after the
-  preamble, `pk-admin-secret/1 <base64>`, by piping the source straight into
-  `base64 -w0` (never `$(cat …)` or a shell variable), with the size limit
-  enforced by `head -c` on the way in; the value passes only through pipes
-  and shell builtins, never through an argument or the environment. It runs
-  without `xtrace` and with `ulimit -c 0`; the command sets `RLIMIT_CORE` to 0
-  before reading. Both the wrapper (on the raw bytes) and the command (after
-  decoding) refuse a value over the page's size limit, and the command also
-  refuses a value containing NUL or empty after normalization. The operator
-  guide explains that Ctrl-D ends input at the start of a line (or twice
-  mid-line).
-- **Normalizing.** The command decodes the value and normalizes it exactly as
-  the page's `InlineCredentialForm` does: UTF-8 decoding, and surrounding
-  whitespace stripped for every target except `google_workspace`, whose JSON
-  is kept as given. It then validates and seals it in process as the
-  receiving view does and drops the plain value; it never writes it to
-  output, logs, exceptions or the audit trail.
-- **Commands.** `integration key replace --target parishsoft|google_workspace|slack`
-  (`google_workspace` holds the mail key; Slack's token and channel go
-  together, as on the page) runs the page's validation, prints the safe
-  fingerprint and what will change, prompts, and submits the sealed request.
+  preamble, `pk-admin-secret/1 <base64>`, by piping descriptor 3 through
+  `head -c` (the page's limit plus one byte) into `base64` and `tr -d '\n'`
+  (never `$(cat …)` or a shell variable), into the input FIFO the wrapper
+  already writes the preamble to; the value passes only through pipes, never
+  through an argument, the environment or a file (a FIFO holds no data on
+  disk), so the work directory never holds it. The wrapper runs without
+  `xtrace` and with its core size limit at 0 (`ulimit -c 0`, for `head` and
+  `base64` too), and the command sets `RLIMIT_CORE` to 0 before reading, as for
+  every command. The wrapper refuses a file over the limit; piped or typed
+  input is bounded by `head -c`, and the command refuses a decoded value over
+  the limit. A line that is not the wrapper's (missing, mistagged, not
+  base64, too long) is a usage error (exit 2) that names no part of it. The
+  operator guide explains that Ctrl-D ends input at the start of a line (or
+  twice mid-line).
+- **Normalizing.** The command decodes the value and normalizes it with the
+  page's own `InlineCredentialForm`: UTF-8 decoding (other bytes are
+  `invalid` at `key`), a NUL refused, and surrounding whitespace stripped
+  for every target except `google_workspace`, whose JSON is kept as given.
+  An empty key is `required` at `key` (on the page, blank keeps the current
+  key). A Google Workspace or Slack key then gets the page's format check
+  under the deployment profile (`admit_candidate`). It is sealed in process
+  as the receiving view does and the plain value dropped; it is never
+  written to output, logs, exceptions or the audit trail.
+- **Commands.** `integration key replace TARGET --expected-version V
+  (--secret-file PATH | --secret-stdin) [--changes JSON] [--yes]`
+  (`parishsoft`, `google_workspace` or `slack`; `google_workspace` holds the
+  mail key; Slack's token and channel go together, as on the page) runs the
+  page's validation, prints what will change (never the key or its
+  fingerprint), prompts, and submits the sealed request; see
+  [Integrations and credentials](#integrations-and-credentials).
   `integration key status --watch` follows staged, testing, installing and
   acknowledged progress, and `integration key finish-switching-preview`
   and `integration key finish-switching` are the page's **Finish switching
@@ -1398,9 +1454,13 @@ built yet.
   The paths are host paths the container cannot read: the wrapper reads the
   public key file and the proof code (file or terminal) exactly as it reads a
   secret, and sends each after the preamble on its own tagged base64 line,
-  `pk-admin-public-key/1 <base64>` and `pk-admin-proof/1 <base64>`.
+  `pk-admin-public-key/1 <base64>` and `pk-admin-proof/1 <base64>`. A
+  value over the page's 200-byte field limit, or not UTF-8, is `invalid` at
+  `public_key` or `code`, never quoting it.
   Its configuration request has no SQL freshness check (only Python's
-  `require_fresh`), so it needs no SQL change.
+  `require_fresh`), so it needs no SQL change. See
+  [Integrations and credentials](#integrations-and-credentials) for each
+  step.
 - **Setup wizard credentials** stay with the one-time first-Admin wizard,
   which is a permanent exemption (see [setup wizard](#setup-wizard)); its
   offline counterpart is `pk-stewardship bootstrap`. As defense in depth,
@@ -1764,7 +1824,14 @@ signatures:
   its transaction. `integration key status` and the Finish switching
   commands needed none: they call the pages' own `secret_request_status`,
   `_selectable`, `_selection` and `_changes` (which now also names each
-  setting's stored field).
+  setting's stored field). `integration key replace` moved the Save with a
+  key's request-free tail into `integration_views.sign_key_intent` (the key
+  field's signed intent), `key_intent` and `stage_key`, which the page now
+  calls; `save_credential` takes an `attach` callback for the selection
+  request's transaction and checks the recent sign-in first in its own
+  transaction without recording it; `admit_admin_action` and
+  `sealed_secret_request` take the caller's authority runtime (the web's
+  when left out).
   `workgroup preview` moved the No-reminders WorkGroup page's review into
   `reminder_workgroup_views.review_change`, which the page's Review now
   calls (`workgroup show` needed none: the page's campaign check and
@@ -3623,9 +3690,9 @@ lists them.
 | `refresh_schedule_check` | `integration schedule-preview [--refresh-schedule DOCUMENT\|-]` ([#632](https://github.com/epiphany40223/parishkit/issues/632)): the ParishSoft page's no-save live check of the refresh schedule editor's rows, with the same validation, preview and cost summary (any session; no event, as the check records none; see below) |
 | `dismiss_credential_result` | `integration dismiss TARGET --request-id ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
 | `credential_status` | `integration key status TARGET [--request-id ID] [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
-| Key replacement through `integration_settings` | `integration key replace --target …` (PR 10; see [secret replacement](#secret-replacement)) |
+| Key replacement through `integration_settings` | `integration key replace TARGET` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see [secret replacement](#secret-replacement) and below) |
 | `select_credential` | `integration key finish-switching-preview TARGET` and `integration key finish-switching TARGET` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
-| Backup encryption key change, through `integration_settings` with proof of possession | `integration backup-key challenge`, `integration backup-key preview`, `integration backup-key confirm` (PR 10) |
+| Backup encryption key change, through `integration_settings` with proof of possession | `integration backup-key challenge`, `integration backup-key preview` and `integration backup-key confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see [secret replacement](#secret-replacement) and below) |
 
 The refresh schedule is given to `integration preview parishsoft` as
 `--refresh-schedule DOCUMENT` (`-` reads standard input), with or without
@@ -3810,6 +3877,95 @@ event and `fresh_gated` notice and, as it selects a new integration key, a
 `policy_change` notice and the `automation_policy_change` incident (see
 [notifications](#notifications)). A repeat returns the original request and
 records nothing new.
+
+`integration key replace TARGET --expected-version V (--secret-file PATH |
+--secret-stdin) [--changes JSON] [--yes]` (`parishsoft`, `google_workspace`
+or `slack`) is a settings page's **Save** with a new key pasted, through the
+page's own pieces: the key arrives from the host wrapper on the line after
+the preamble (see [secret replacement](#secret-replacement)). It is full
+scope, fresh-gated and prompting. The Administrator check comes first, so
+Staff is `denied` before the key is read. Then, admitting as the page's
+post does and passing its recent sign-in with the live session (unrecorded:
+nothing is done yet), it binds `--changes` (the `integration preview`
+document, `{"settings": {...}}`, as literal JSON: standard input carries
+the key; omitted settings keep their applied value; no refresh schedule,
+which the page refuses with a key) to the page's `IntegrationForm`, and the
+key to its `InlineCredentialForm`, in one read snapshot. Another version is
+`stale_version`; a key change for `TARGET` still being checked or installed
+is `not_available` (the page hides its key field then); installer
+discovery not yet published is `unavailable`; each refused setting is
+`invalid` at `settings.<name>` and a refused key at `key`, in the page's
+words, never quoting it. Slack not yet set up is set up by its key, with
+`channel_id` in `--changes`. The prompt names the integration, says
+whether this sets it up or replaces its key, names the settings saved with
+it (never their values) and says the current key stays in use if the
+installer's check fails; `--yes` answers it. It then binds the forms again,
+verifies the signed intent as the page does (`integration_views.key_intent`)
+and stages through the page's `stage_key` and `save_credential`: sealed for
+the target installer's published handoff, staged under the SQL intake
+guard (`admit_admin_action` for `SECRET_REPLACEMENT`, which records the
+fresh gate's event and `fresh_gated` notice), then the selection request,
+whose durable transaction also records
+`admin_cmd_integration_key_replace` (subject: the automation session) and,
+as it selects a new integration key, a `policy_change` notice observing
+`automation_policy_change`. If the selection cannot be recorded, the staged
+key is cancelled, as on the page. Nothing is written directly: the
+target's installer checks the key with the provider and installs it, the
+consumer acknowledges it and the configuration installer switches to it,
+as for the page. It prints `version`, `target`, `name`, `setup`,
+`changes` (`field`, `before`, `after`: public settings only),
+`key_request_id` (which `integration key status --request-id ID --watch S`
+follows) and `request` (the selection, as `config request show`); never
+the key or its fingerprint. Each run is a new key change, with no
+`--request-key`: a repeat while the first is pending is `not_available`,
+and a later error is `outcome_unknown` naming the selection request.
+
+The Backup encryption key page's three steps run through the page's own
+pieces in `accounts.backup_key` (full scope, as the page's posts record
+activity; Administrators only, the role checked before the value's line is
+read, so Staff is `denied` before anything else; a read-only session is
+refused, and a live full-scope session stands in for the page's recent
+sign-in, so the page's step-up resume has no counterpart):
+
+- `integration backup-key challenge --public-key-file PATH` runs the page's
+  `check_new_key` and `start_proof` in one read snapshot: a private key
+  (the top bit set, or the private half of the key in use), a text that is
+  not one public key or the key already in use is `invalid` at
+  `public_key` in the page's words, never quoting the paste. It prints
+  `version`, `current` (the page's "Key in use": `source`, `fingerprint`,
+  `backup_at`), `fingerprint` (the new key's), `challenge` (the sealed code
+  line `pk-stewardship backup-prove` opens on the key machine) and
+  `intent`, the page's own signed intent, in which the pasted key is
+  encrypted under a server key exactly as in the page's hidden field
+  (valid fifteen minutes). It records nothing.
+- `integration backup-key preview --intent TOKEN (--code-file PATH |
+  --code-stdin)` runs the page's `finish_proof`: a code that does not
+  match is `invalid` at `code` in the page's words (the same intent may be
+  tried again); an expired intent, or one made before the settings
+  changed, is `stale_version`; an altered one is `invalid` at `intent`;
+  another Administrator's is `denied`. A match is reviewed by the page's
+  `review_change` (which the page's review also calls): it prints
+  `version`, `changes` (one row, `field` `fingerprint`, `before` (null
+  where the page says "Not known yet") and `after`) and `preview.token`.
+  It records nothing.
+- `integration backup-key confirm --token TOKEN|-` (fresh-gated and
+  prompting) refuses a token the page did not sign before the prompt. The
+  prompt names the old and new fingerprints, as the review shows them,
+  says every Administrator is told and that backups already made stay
+  sealed to the old key; `--yes` answers it (`--token -` needs it). It
+  then confirms through `admin_editing.confirm_intent` with the page's
+  salt, with the fresh gate under the work lock (its event and
+  `fresh_gated` notice), and in the request's durable transaction records
+  `admin_cmd_integration_backup_key_confirm` (subject: the automation
+  session) and a `policy_change` notice observing
+  `automation_policy_change`. The configuration installer applies it and
+  its activation records the `backup_key_replaced` security event, as for
+  the page. It prints `created` and `request`; a repeat returns the
+  original request and records nothing new, and a later error is
+  `outcome_unknown` naming the request.
+
+No private key, typed code or pasted text appears in any output, log or
+audit row; the fingerprints are printed only where the page shows them.
 
 Secret values never pass through command output. The backup destination is an
 `integration` target; backups themselves already run as `pk-stewardship
@@ -4101,7 +4257,10 @@ MUST prove:
   descriptor, so a file swapped after opening is not read), piped
   `--secret-stdin` without `--yes`, and an oversize value, and the command
   refuses an oversize decoded value; terminal input restores echo on every
-  exit path and accepts multi-line JSON ending with Ctrl-D; the base64 line
+  exit path (QUIT included, exit 131) and accepts multi-line JSON ending
+  with Ctrl-D; a key pasted at a terminal only after the command ended is
+  neither shown, run nor kept in an interactive shell's history, with or
+  without pgrep; a run with a key has a core size limit of 0; the base64 line
   leaves the prompt input intact; normalization matches
   `InlineCredentialForm` per target; a FIFO or other non-regular path is
   refused before it is opened; a value with NUL or empty after normalization
@@ -4245,7 +4404,8 @@ exactly the commands that exist.
   branding confirmation, integration settings
   (`integration list`, `integration show` and `integration status`, then
   `integration preview` and `integration confirm`) with the
-  backup folder probe, and secret replacement: integration key replacement,
+  backup folder probe, and secret replacement: integration key replacement
+  (`integration key replace`),
   finish switching and the backup key change, with the wrapper's secret
   input.
 - **PR 11, users and follow-up:** users (including the

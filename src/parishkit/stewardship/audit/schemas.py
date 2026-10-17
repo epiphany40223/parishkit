@@ -201,6 +201,10 @@ class Action(StrEnum):
     SECURITY_EVENT_ACKNOWLEDGED = "security_event_acknowledged"
     CRITICAL_EVENTS_ACKNOWLEDGED = "critical_events_acknowledged"
     CREDENTIAL_RESULT_DISMISSED = "credential_result_dismissed"
+    # A ParishSoft key change refused because the key sees another
+    # organization (#1495); the subject is the key change request. Recorded
+    # by the target installer with the request's failure, never with values.
+    CREDENTIAL_KEY_ORGANIZATION_MISMATCH = "credential_key_organization_mismatch"
     FAMILY_MAINTENANCE_STARTED = "family_maintenance_started"
     FAMILY_MAINTENANCE_ENDED = "family_maintenance_ended"
     HOSTED_FILE_UPLOADED = "hosted_file_uploaded"
@@ -252,6 +256,12 @@ class Action(StrEnum):
     # integration key finish-switching: Finish switching to the new key.
     ADMIN_CMD_INTEGRATION_KEY_FINISH_SWITCHING = (
         "admin_cmd_integration_key_finish_switching"
+    )
+    # integration key replace: a settings page's Save with a new key pasted.
+    ADMIN_CMD_INTEGRATION_KEY_REPLACE = "admin_cmd_integration_key_replace"
+    # integration backup-key confirm: the Backup encryption key page's Confirm.
+    ADMIN_CMD_INTEGRATION_BACKUP_KEY_CONFIRM = (
+        "admin_cmd_integration_backup_key_confirm"
     )
     # workgroup confirm: the No-reminders WorkGroup page's Apply (ADM-11 PR 10).
     ADMIN_CMD_WORKGROUP_CONFIRM = "admin_cmd_workgroup_confirm"

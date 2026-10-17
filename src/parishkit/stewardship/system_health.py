@@ -64,6 +64,10 @@ SOURCE_INCIDENTS = (
 )
 BACKUP_INCIDENTS = ("backup_rpo_breach", "backup_offsite_failed", "backup_key_changed")
 INCIDENTS = MAIL_INCIDENTS + SOURCE_INCIDENTS + BACKUP_INCIDENTS
+# Read with the incidents above but not listed as a problem of its own (the
+# refresh status already says it): a provider failure opened it, which tells
+# a real outage from an organization mismatch (#1492).
+PROVIDER_FAILURE_INCIDENT = "source_refresh_failed"
 # The operator runbooks the page links, in the public repository's guides.
 RUNBOOKS = {
     "deployment": (
@@ -879,7 +883,17 @@ def find_problems(
         )
     if refresh is not None:
         connection = refresh.connection
-        if connection is not None and connection.state == "failing":
+        # A refresh refused because the key sees another organization did
+        # reach ParishSoft: the mismatch says so itself, and "could not be
+        # reached" would send the Administrator after a network fault (#1492).
+        # A mismatch alone opens no provider-failure incident, so a real
+        # outage after the key is fixed (that incident opens, the mismatch
+        # one waits for the next good refresh) is still said.
+        unreachable = (
+            "source_tenant_mismatch" not in incidents
+            or PROVIDER_FAILURE_INCIDENT in incidents
+        )
+        if connection is not None and connection.state == "failing" and unreachable:
             problems.append(Problem("source_failing", at=connection.at))
         elif refresh.failed_at is not None:
             problems.append(Problem("source_failed", at=refresh.failed_at))
@@ -1730,7 +1744,7 @@ def health_params():
     from .source.workgroups import EVIDENCE_KEY
 
     return {
-        "health_incidents": list(INCIDENTS),
+        "health_incidents": [*INCIDENTS, PROVIDER_FAILURE_INCIDENT],
         "critical_window": int(WINDOW.total_seconds()),
         "workgroup_key": EVIDENCE_KEY,
     }

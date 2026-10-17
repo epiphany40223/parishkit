@@ -34,6 +34,7 @@ from .accounts.key_files import read_private
 from .accounts.policy_schema import normalized_email
 from .accounts.provider_context import validated_context
 from .deployment import DeploymentProfile, ServiceRole, load_deployment
+from .local import source_base_url
 from .observability import Event, configure_logging, emit_failure
 from .runtime_paths import RuntimeLayout
 
@@ -91,6 +92,10 @@ def check_parishsoft_contact(
     restores the original, the value-free marker result goes to standard
     error, so it survives a process that dies during the restore.
     """
+    if configuration.profile is DeploymentProfile.LOCAL:
+        # It may write to ParishSoft, which LOCAL never does (#1399); refuse
+        # before even the tenant read.
+        raise ConfigError("The Member contact check never runs in the local profile.")
     if configuration.service_role is not ServiceRole.WORKER:
         raise ConfigError("Run the Member contact check in the worker.")
     if member_id is None or member_id != confirm_member_id:
@@ -113,6 +118,9 @@ def check_parishsoft_contact(
     gateway = ParishSoftContactGateway.open_operator(
         SourceCredential(_credential(configuration, "parishsoft")),
         profile=configuration.profile.value,
+        base_url=source_base_url(
+            configuration.profile, configuration.parishsoft_base_url
+        ),
         on_timeout=_contact_timeout,
     )
     try:
@@ -249,11 +257,17 @@ def _slack_post(token, channel):
 
 
 def check_google_oauth(configuration):
-    """Validate the client document's shape and name the redirect URI to register."""
-    from .runtime_web import parse_google_client
+    """Validate the client document as web would and name the redirect URI.
 
-    parse_google_client(
-        _credential(configuration, "google_oauth"), profile=configuration.profile
+    The same admission web applies at start, including the fake-clock rule
+    for a real client in LOCAL (#1399), so a refusal shows before a restart.
+    """
+    from .runtime_web import admit_google_clock, parse_google_client
+
+    admit_google_clock(
+        parse_google_client(
+            _credential(configuration, "google_oauth"), profile=configuration.profile
+        )
     )
     return {
         "credential": "valid",
@@ -352,7 +366,13 @@ def _outcome(target, value, settings, configuration):
     """The installer's own classification of one check, word for word."""
     from .provider_check_worker import classify
 
-    return classify(target, value, settings, profile=configuration.profile)
+    return classify(
+        target,
+        value,
+        settings,
+        profile=configuration.profile,
+        base_url=configuration.parishsoft_base_url,
+    )
 
 
 def execute_smoke(args):
@@ -415,6 +435,12 @@ def execute_smoke(args):
             # A contact round trip interrupted after a write: its value-free
             # partial result says whether the original was put back.
             print(json.dumps({"target": args.target, **partial}, sort_keys=True))
+        from .runtime_web import GoogleClockRefused
+
+        if isinstance(error, GoogleClockRefused):
+            # Fixed text with nothing from the client document (#1399).
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
         print(
             "ERROR: smoke check refused or failed; check the target, the "
             "consumer's credential mount and the operator options",

@@ -426,14 +426,18 @@ LEDGER = {
     "ministry_roster_bulk": command("report roster", "followup roster-bulk"),
     # Integrations and credentials.
     "integrations": command("integration list"),
-    # The settings page as it opens, its Save, its Remove and the backup
-    # folder check (#463); the key replacement is still owed.
+    # The settings page as it opens, its Save, its Remove, the backup
+    # folder check, its Save with a new key and the Backup encryption key's
+    # three steps (#463).
     "integration_settings": command(
         "integration show",
         "integration preview",
         "integration confirm",
         "integration backup-probe",
-        owed="PR 10",
+        "integration key replace",
+        "integration backup-key challenge",
+        "integration backup-key preview",
+        "integration backup-key confirm",
     ),
     "integration_status": command("integration status"),
     # The ParishSoft page's live refresh schedule check (#632).

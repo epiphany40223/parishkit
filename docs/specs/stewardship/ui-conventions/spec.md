@@ -64,7 +64,8 @@ when it lands.
 - Admin page layout: [page help](#page-help),
   [button labels](#button-labels), [shared visual style](#shared-visual-style),
   [colour scheme](#colour-scheme),
-  [status indicators](#status-indicators), [time entry](#time-entry),
+  [status indicators](#status-indicators), [stat tiles](#stat-tiles),
+  [time entry](#time-entry),
   [schedules](#schedules), [schedule previews](#schedule-previews).
 - Tables: [Admin tables](#admin-tables),
   [empty tables and lists](#empty-tables-and-lists),
@@ -347,11 +348,22 @@ A chart's caption never repeats figures its table, legend or drawn values
 already show; it keeps only what they don't, such as a scope note, and the
 chart keeps its accessible name and description
 ([chart engine](../reports/spec.md#chart-engine)).
-A stat tile that states a share may also draw it as a **share bar**: a plain
-progress bar at the tile's foot, so the bars of a row of tiles line up. Its
-exact figures are always printed in the tile, so it has no tooltip, and it is
-hidden from assistive technology, which reads the text instead
-([#720](https://github.com/epiphany40223/parishkit/issues/720)).
+A stat tile that states a share may also draw it as a
+[share bar](#stat-tiles).
+
+**Hover guide line.** A chart whose x axis is dates, times or campaign days
+and that shows tooltips draws a faint vertical guide line at the x value the
+pointer, a tap or (where the chart has one) its slider is on, through every
+panel of the chart, and that x value's tooltip lists its figures. Pointing
+anywhere over the plot picks the nearest x value (each x value has an
+invisible full-height hover band), so no one has to find a thin line or a
+small point. The line is one shared colour (the ink colour at half opacity,
+following the colour scheme), appears only while an x value is inspected, is
+drawn over the chart without moving anything, is hidden from assistive
+technology, is cleared when the page starts to print (so a pointer resting on
+a chart does not leave it in the printout) and never appears in a download or
+email image. Category and bar charts, whose rows or bars react as a whole, have no guide
+line ([#1536](https://github.com/epiphany40223/parishkit/issues/1536)).
 
 ## Admin portal interaction
 
@@ -1501,7 +1513,10 @@ around it, two gates keep it in place instead:
   the field), and gives back the reader's own value (kept in a hidden field)
   when the rule stops holding. First use:
   the directory's "Campaign mail can reach" while Include mailing columns is
-  ticked.
+  ticked. When the Administrator needs to see why a locked field cannot
+  change, the reason may also be one line in the field's own hint slot (the
+  line a hint would take, so nothing shifts), as the locked ParishSoft
+  organization ID shows ([#1492](https://github.com/epiphany40223/parishkit/issues/1492)).
 
 The two overlap, and are to be merged into one shared gate once both have
 landed. The Ministry follow-up request form greys its outcome and contact
@@ -2112,10 +2127,8 @@ field, such as having no emails to schedule, always stays visible. The field
 remains described by its full help, so screen readers announce it without
 opening the tip. Checkbox help is a toggletip beside the box. A toggletip in a
 table heading is described by its bubble alone, and it closes when the table's
-box scrolls its button out of view. The export forms' shared format help (how
-CSV, XLSX and PDF write dates and money) opens from the "i" beside the format
-label where its menu sits in a filter-bar cell, so the narrow cell never wraps
-it into a tall column (the Active parishioner family directory, #1158).
+box scrolls its button out of view. An export form carries no
+help about its format menu (see [Downloaded files](#downloaded-files)).
 
 An "i" button always opens a floating toggletip, on Family and Admin pages
 alike and wherever the button sits: a label row, a filter bar, a table heading
@@ -2421,6 +2434,72 @@ warning and error marks are now cut out, so they take the status border
 colours, which are dark enough for that. **Precedent.** #601 (log level icons), #1214 (the
 [System health dashboard](../admin-portal/spec.md#health-dashboard), its
 first user).
+
+### Stat tiles
+
+**Rule.** A page's headline figures (a few counts, money totals or shares
+that sum up the page) are **stat tiles**, all drawn by one component: the
+server helper `parishkit.stewardship.web.stat_tiles` and the template
+`components/stat-tiles.html`. Each tile has a short label, one big value
+and up to two short explanation lines. A long list of figures, or facts
+that are not numbers (file names, dates, yes or no), stays a key/value
+list (`<dl>`). A state (Working, Warning, Error) is a
+[status indicator](#status-indicators), not a stat tile.
+**Why.** The same card had been drawn by hand in several templates, with
+different markup, three ways of formatting numbers, three ways of showing
+a missing value (the word "Unavailable", "—", or a misleading zero) and
+two ways of reading to a screen reader. **Precedent.**
+[#1540](https://github.com/epiphany40223/parishkit/issues/1540)
+(Administrator, 2026-10-17), built like the
+[schedule previews](#schedule-previews) component.
+
+- **Look.** A row of flat cards (`--paper-soft` background, `--border`
+  edge, `--radius-small` corners) that wraps on narrow screens: the label
+  above the value, the value large and in tabular figures, the
+  explanation lines below in the muted text colour. Every colour and
+  radius comes from the [design tokens](#shared-visual-style), so the
+  [colour scheme](#colour-scheme) applies.
+- **Numbers.** The helper formats every value from its type, following
+  [numbers and money](#numbers-and-money): a count is grouped, money is
+  USD with cents and a share is a percentage. Templates never format a
+  tile's value. A tile that states a share prints the count and what it
+  is compared with as well as the percentage.
+- **Unknown values.** A value that is not known reads "—" with a
+  [toggletip](#page-help) saying why, in plain language. The toggletip's
+  button is described by its reason, so a screen reader announces it when
+  the button gets focus. A value never reads zero, and never a word such
+  as "Unavailable" in the value's place. The helper refuses an unknown
+  value without a reason, and the include refuses a row with no
+  accessible name.
+- **Words.** The label is short plain language naming what is counted.
+  An explanation line says what the value is compared with or what it
+  leaves out; it never repeats a figure another tile or the page already
+  shows, as for [chart captions](#charts). A tile has no heading of its
+  own: the label is not a heading, and the row is named by its panel's
+  heading.
+- **Trend.** Where a comparison exists, a tile may end with one trend
+  line, written in words with an arrow ("↑ 12.5% more"), never colour
+  alone.
+- **Share bar.** A tile that states a share may also draw it as a plain
+  progress bar at the tile's foot, so the bars of a row of tiles line up.
+  Its exact figures are always printed in the tile, so it has no tooltip,
+  and it is hidden from assistive technology, which reads the text instead
+  ([#720](https://github.com/epiphany40223/parishkit/issues/720)).
+- **Reading order.** The row is a list with an accessible name. Each tile
+  reads its label, then its value, then its explanation, in that order;
+  no visible text is hidden from assistive technology, and nothing uses a
+  mouse-only `title` tooltip.
+- **Times.** A time in a tile is shown in the browser's time zone, with no
+  "UTC" label ([dates and times](#dates-and-times)).
+- **No layout shift.** The tiles of a row stretch to one height. An
+  in-place update replaces their contents and keeps the row's tiles, so
+  nothing below moves ([no layout shift](#no-layout-shift)).
+- **Shared code.** The helper's `tile()` builds each tile and the include
+  draws a row of them. A guard test fails when a template outside
+  `components/` draws stat-tile markup by hand; the templates not yet
+  moved onto the component are listed in it, each with why, and the list
+  may only shrink. Email and PDF reports cannot load the stylesheet and
+  keep their own layouts.
 
 ### Time entry
 
@@ -3388,7 +3467,10 @@ the audit log, not a download; the recorded exceptions are the System logs
 export and the command line's Census changes JSON Lines below. Every data export is offered as CSV, XLSX and PDF unless a
 recorded technical or design reason says otherwise (Administrator decision,
 2026-10-10); a page may add a format, such as the participation chart's PNG
-or System logs' JSON Lines. **Shared code.** `reports/pdf_design.py` and
+or System logs' JSON Lines. An export form is its format menu and its
+button; it carries no explanation of how each format writes dates or money
+(Administrator decision, 2026-10-17,
+[#1538](https://github.com/epiphany40223/parishkit/issues/1538)). **Shared code.** `reports/pdf_design.py` and
 `reports/xlsx_design.py`; `web/design_tokens.py`. The format rules for each file type (CSV neutralizing,
 money, headers) are in the reports'
 [shared report behavior](../reports/spec.md#shared-report-behavior).

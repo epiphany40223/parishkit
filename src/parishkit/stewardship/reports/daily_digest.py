@@ -237,45 +237,6 @@ def comparison_url(section, public_origin):
     return f"{path}?day={int(section['day'])}"
 
 
-# The one comparison figure (#728): the parish-wide total, plainly labelled.
-ALL_FAMILIES_COMPARISON = "Last year's pledges (all Families)"
-
-
-def statistics_cards(statistics):
-    """Format the active population's cards; an absent observation is never zero.
-
-    With giving enabled, the cards end with the current annual pledges and the
-    all-Families comparison total (#728). The comparison figure is not a
-    subtotal of these Families: it covers every Family in the ParishSoft data.
-    """
-    active = statistics.active
-    labels = [
-        "Active Families",
-        "Active Members",
-        "Families with eligible email",
-        "Families with deliverable email",
-        "Families that have responded",
-    ]
-    values = (
-        [
-            f"{active.families:,}",
-            f"{active.active_members:,}",
-            active.proportion("eligible_email"),
-            active.proportion("deliverable_email"),
-            active.proportion("responses"),
-        ]
-        if active
-        else ["Unavailable"] * len(labels)
-    )
-    if statistics.financial_enabled:
-        labels += ["Current annual pledges", ALL_FAMILIES_COMPARISON]
-        values += [
-            active.annual_pledge.display if active else "Unavailable",
-            statistics.comparison_pledge_all.display,
-        ]
-    return tuple(zip(labels, values, strict=True))
-
-
 # One label for the card, the table column and the spec (#721).
 PLEDGE_HEADING = "Cumulative annual pledges (USD)"
 RESPONDED_LABEL = "Families that have responded"
