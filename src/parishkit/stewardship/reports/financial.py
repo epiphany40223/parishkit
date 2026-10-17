@@ -68,6 +68,8 @@ FREQUENCY_LABELS = {
     "annual": "Annual",
     "none": "No frequency",
 }
+# The short unit after an installment on the page ("$1,000.00/mo", #1544).
+FREQUENCY_UNITS = {"weekly": "wk", "monthly": "mo", "quarterly": "qtr", "annual": "yr"}
 DATES = ("first_start", "first_end", "latest_start", "latest_end")
 # What each filter field the reader can fix says when the server refuses
 # it (#1332): the words of the page's own hints (data-missing-hint), which
@@ -366,6 +368,7 @@ def shape_result(result, *, campaign_id, parish_name, configuration):
             if row["frequency"] and annual.available
             else MoneyAmount(None)
         )
+        row["frequency_short"] = FREQUENCY_UNITS.get(row["frequency"], "")
         # A Family that cannot contribute has no frequency; say why instead.
         row["frequency_label"] = (
             "Cannot contribute"

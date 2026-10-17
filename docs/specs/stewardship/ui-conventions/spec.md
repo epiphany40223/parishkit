@@ -197,8 +197,10 @@ add seconds and the time-zone abbreviation to the compact form, with no UTC
 offset, so entries can be compared exactly
 ([Logs](../admin-portal/spec.md#logs)). In templates a table cell's
 `<time data-local-instant>` carries `data-compact` (and an in-place refresh
-re-renders it the same way); a calendar date uses the `parish_date_compact`
-filter; `tests/stewardship/test_date_format.py` guards both. Background output
+re-renders it the same way), plus `data-day-only` where the cell shows the
+instant's day without its time (#1544, guarded in every style by the browser
+`test_date_format.py`); a calendar date uses the `parish_date_compact`
+filter; `tests/stewardship/test_date_format.py` guards the compact forms. Background output
 uses the format of the configuration it pinned, not whichever is active when
 it runs (issue #280): a PDF export uses its requesting configuration, a daily
 or weekly digest its snapshot's configuration, and a receipt the configuration
@@ -3386,13 +3388,36 @@ in ParishSoft".
 
 **Rule.** A table fits the page at laptop width; a table that cannot scrolls
 sideways inside its own box, never the whole page. Rows stay short: a cell
-holds one value, long text wraps within a sensible width, and detail that
+holds one value, or one value with a short related value or chip (a date with
+its Staff chip; an installment with its unit); long text wraps within a sensible width, and detail that
 makes rows several lines tall belongs on the item's own page or in a
 disclosure. Dates and times in cells use the compact
-[date format](#date-format). **Why.** A page that scrolls sideways hides its
-own controls; tall rows make a table unscannable. **Shared code.** The `table-scroll` class in
-`ui-v1.css`; the button-label browser test at 320 px and 1280 px.
-**Precedent.** #614, #952 (Portal users' rows wrapping to several lines).
+[date format](#date-format). Long free text never sits in a cell: a list of
+choices shows as short chips (the shared `status-badge`), and any longer
+text that goes with one sits in a [toggletip](#page-help) beside it. Where a
+list of chips would widen a table, the cell shows the first chip and a "+N"
+chip, a toggletip button named by its text ("+2 more share methods") whose
+bubble lists every item, one per line, with any text that goes with it.
+Where two related values would each need a column, one cell may stack them,
+one line each, when the heading names them in the same order and each value
+carries its name for screen readers (`stack-line`); a row is then as tall
+as its stacked lines and no taller. A money cell may show whole dollars,
+rounded half away from zero, where cents would widen a table; screen readers
+hear the exact amount, and exports and totals keep the cents. Money
+and date cells never wrap (`nowrap`), and a cell that holds only money is
+right-aligned (`numeric`) in tabular figures; money inside a mixed text cell
+stays left-aligned with its text. **Why.** A page that scrolls sideways hides
+its own controls; tall rows make a table unscannable; a sum or a date broken
+across two lines is easy to misread. **Shared code.** The `table-scroll`
+class in `ui-v1.css`, and the `data-table whole-words` classes with their
+`numeric` and `nowrap` cell classes (a table gets the rule from the shared
+classes, not from a copy of them); the `stack-line` class; the toggletip
+component's `tip_button_text` and `tip_lines` for a "+N" chip; the
+`whole_dollars` template tag;
+the button-label browser test at 320 px and 1280 px.
+**Precedent.** #614, #952 (Portal users' rows wrapping to several lines), and
+the Financial stewardship report's chips, "+N" chip, stacked ParishSoft
+totals and whole dollars (#1544).
 
 Recorded exception: the Users page keeps every row to one line (the
 Administrator asked for one-line rows on #952). A long email or Name is cut
