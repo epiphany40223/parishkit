@@ -109,11 +109,12 @@ def test_fresh_authentication_offers_confirm_with_google():
 
 
 @pytest.mark.parametrize("outage", [False, True])
-def test_local_step_up_never_mentions_google(monkeypatch, outage):
-    """LOCAL's step-up page names the laptop command, not Google (#619).
+def test_local_step_up_mentions_google_only_with_a_real_client(monkeypatch, outage):
+    """LOCAL's step-up page names the laptop command, and Google only with a
+    real OAuth client (#619, #1399).
 
     The outage fallback renders without context processors, so the page's
-    own context must carry LOCAL's flag.
+    own context must carry LOCAL's flags.
     """
     real = error_pages.render_to_string
 
@@ -131,6 +132,15 @@ def test_local_step_up_never_mentions_google(monkeypatch, outage):
     assert response.status_code == 403
     assert "Google" not in body
     assert "For security, this action needs a sign-in" in body
+    assert "tools/stewardship-local.sh sign-in" in body
+    # With a real OAuth client (#1399) the same page also offers Google.
+    with override_settings(
+        STEWARDSHIP_DEPLOYMENT_PROFILE=DeploymentProfile.LOCAL,
+        STEWARDSHIP_GOOGLE_SIGN_IN=True,
+    ):
+        response = through(request, error_response(FreshAuthenticationRequired()))
+    body = response.content.decode()
+    assert "Confirm with Google" in body
     assert "tools/stewardship-local.sh sign-in" in body
 
 

@@ -39,9 +39,11 @@
     });
   });
 
-  // The LOCAL step-up (components/reauthenticate.html, #613). There is no
-  // Google in LOCAL: the Administrator mints a sign-in link on the laptop
-  // and opens it, often in a new tab, so the page that asked records its
+  // The LOCAL step-up (components/reauthenticate.html, #613). LOCAL starts
+  // with no Google (the sentinel OAuth client; with a real client, #1399,
+  // reauthenticate.html adds the Google button too): the Administrator
+  // mints a sign-in link on the laptop and opens it, often in a new tab, so
+  // the page that asked records its
   // return path (never an answer or credential) for local-sign-in-v1.js to
   // send as the sign-in's "next". The key "pk-local-step-up" and the
   // ten-minute limit pair with STEP_UP_KEY and STEP_UP_SECONDS in

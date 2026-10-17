@@ -287,7 +287,8 @@ def error_page(request, response):
         "local_environment": _is_local(),
     }
     if context["local_environment"]:
-        # The banner's ParishSoft wording too (#1399).
+        # The banner's ParishSoft wording and the Google sign-in flag too
+        # (#1399).
         from ..accounts.branding_context import local_banner
 
         context.update(local_banner())
