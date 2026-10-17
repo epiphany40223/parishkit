@@ -375,7 +375,7 @@ def test_the_worklist_edits_in_place_for_an_administrator_only(
     browser, login = signed_in()
     assert login.status_code == 302
     _, body = search(browser, ROUTE, {"status": "all"})
-    assert b'value="edit"' in body and b'value="clear_edit"' not in body
+    assert b'value="edit"' in body and b"resolve=clear_edit&amp;" not in body
     assert b'maxlength="30"' in body and b'value="Requested"' in body
     response, body = search(browser, ROUTE, form | {"value": "x" * 31})
     assert response.status_code == 400
@@ -387,7 +387,7 @@ def test_the_worklist_edits_in_place_for_an_administrator_only(
     assert response.status_code == 200
     assert b"now has an edited value." in body
     assert b"<td>Corrected</td>" in body and b"<td>Requested</td>" in body
-    assert b'value="clear_edit"' in body
+    assert b"resolve=clear_edit&amp;" in body
     name = fresh(name)
     response, body = search(
         browser,

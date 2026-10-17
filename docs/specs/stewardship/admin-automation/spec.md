@@ -2865,7 +2865,7 @@ lists the fields.
 `census resolve PROPOSAL_ID --action entered|ignored|reopened
 --expected-version VERSION [--note TEXT|-] [--request-key KEY]`
 ([#463](https://github.com/epiphany40223/parishkit/issues/463)) is a Census
-changes row's Record outcome
+changes row's Mark entered in ParishSoft, Ignore and Reopen
 ([#528](https://github.com/epiphany40223/parishkit/issues/528)): full scope,
 keyed, and not fresh-gated, as the page asks for no recent sign-in. Entered
 in ParishSoft cannot be undone and the page asks first, so `--action

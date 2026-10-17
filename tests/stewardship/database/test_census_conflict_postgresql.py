@@ -48,7 +48,7 @@ MIGRATIONS = Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/sc
 FROZEN = MIGRATIONS / "migrations/0108_conflict_resolution.sql"
 ROUTE = "/admin/reports/census/"
 # The Review form's Use the Family's value anyway button.
-USE = b'name="resolve" value="use_family"'
+USE = b"resolve=use_family&amp;"
 
 
 def conflicted(row, value="Parish value"):

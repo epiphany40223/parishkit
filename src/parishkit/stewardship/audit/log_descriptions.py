@@ -238,13 +238,13 @@ DESCRIPTIONS = {
     ),
     "admin_cmd_census_resolve": _(
         "An automation session recorded a census change's outcome (entered "
-        "in ParishSoft, ignored or reopened), as the Census changes page's "
-        "Record outcome does."
+        "in ParishSoft, ignored or reopened), as the row's actions on the "
+        "Census changes page do."
     ),
     "admin_cmd_census_review": _(
         "An automation session reviewed an automatic census change "
-        "(approved, ignored or sent back to To review), as the Census "
-        "changes page's Review does."
+        "(approved, ignored or sent back to To review), as the row's "
+        "actions on the Census changes page do."
     ),
     "admin_cmd_followup_update": _(
         "An automation session recorded follow-up on a Ministry request, as "

@@ -429,7 +429,7 @@ def test_leaders_testing_responses_and_gated_campaigns_are_refused(
     assert login.status_code == 302
     response, body = search(browser, "/admin/reports/census/", {"status": "all"})
     assert response.status_code == 200 and b"Other campaign work" in body
-    assert b'name="resolve"' not in body and b"census-enter-confirm" not in body
+    assert b'name="resolve"' not in body and b"census-enter-dialog" not in body
 
 
 def test_testing_responses_take_no_resolution(response_service):
@@ -485,15 +485,15 @@ def test_staff_and_admin_see_their_own_actions_over_http(
     browser, login = signed_in()
     assert login.status_code == 302
     _, body = search(browser, route, {"status": "all"})
-    assert b'value="entered"' in body and b'value="ignored"' in body
+    assert b"resolve=entered&amp;" in body and b"resolve=ignored&amp;" in body
     assert b"cannot be undone" in body
     resolve(harness, staff, home, "ignored")
     _, body = search(browser, route, {"status": "all"})
-    assert b'value="reopened"' not in body
+    assert b"resolve=reopened&amp;" not in body
     google[0]["email"] = "admin@example.org"
     admin_browser, _ = signed_in()
     _, body = search(admin_browser, route, {"status": "all"})
-    assert b'value="reopened"' in body and b"Why reopen? (required)" in body
+    assert b"resolve=reopened&amp;" in body and b"Why reopen? (required)" in body
     home.refresh_from_db()
     form = {
         "status": "all",
