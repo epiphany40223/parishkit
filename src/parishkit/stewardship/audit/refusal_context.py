@@ -80,6 +80,14 @@ REASONS = frozenset(
         # System health: allowing debug logging again in Production, which
         # only the server operator may do.
         "production_only",
+        # Publish to ParishSoft's Check ParishSoft (#528, ADM-09): the
+        # switch off, nothing approved, a run unfinished, or other campaign
+        # work holding the campaign. INFO: the page already draws each one
+        # unavailable with its reason, so only a stale page meets them.
+        "publication_off",
+        "publication_nothing_approved",
+        "publication_running",
+        "publication_campaign_held",
         "unclassified",
         "usage",
         "configuration",

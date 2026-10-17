@@ -302,6 +302,17 @@ def census_changes(campaign_id, query, principal):
     """Read, word and filter the campaign's census changes for Admin or Staff."""
     if not allows(principal, Capability.VIEW_CENSUS):
         raise PermissionError("Census changes are unavailable.")
+    administrator = allows(principal, Capability.PUBLISH_CENSUS)
+    return select(census_rows(campaign_id), query, administrator=administrator)
+
+
+def census_rows(campaign_id):
+    """Every census change of the campaign, read and worded, unfiltered.
+
+    The caller has checked who may read them. Publish to ParishSoft (#528)
+    reads its plan's values from these rows, so both pages word a change
+    the same way.
+    """
     with connection.cursor() as cursor:
         cursor.execute("SELECT 1 FROM stewardship_campaign WHERE id=%s", [campaign_id])
         if cursor.fetchone() is None:
@@ -313,8 +324,7 @@ def census_changes(campaign_id, query, principal):
         # own JSON handling, and are decoded once here.
         for name in JSON_COLUMNS:
             row[name] = None if row[name] is None else json.loads(row[name])
-    administrator = allows(principal, Capability.PUBLISH_CENSUS)
-    return select([shape(row) for row in rows], query, administrator=administrator)
+    return [shape(row) for row in rows]
 
 
 def automatic(row):
