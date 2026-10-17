@@ -306,6 +306,7 @@ def host(tmp_path):
     )
     yaml = tmp_path / "deployment.yaml"
     yaml.write_text("deployment: {}\n")
+    yaml.chmod(0o644)  # a world-readable file, as Production keeps it
     (tmp_path / "state").mkdir()
     (tmp_path / "work").mkdir()
     (tmp_path / "cron.d").mkdir()
@@ -562,6 +563,29 @@ def test_every_guard_refuses_before_anything_stops(host, fake, typed, message):
     assert "nothing changed" in output(result)
     assert not stopped(calls)
     assert not list(host["root"].glob("*.pre-restore-*"))
+
+
+def test_an_unreadable_yaml_is_named_not_called_an_unknown_field(host):
+    """A YAML the container user cannot read gets the plain refusal."""
+    host["yaml"].chmod(0o200)  # the test user is the container user
+    result, calls = restore(host)
+    assert result.returncode == 1, output(result)
+    text = output(result)
+    assert "not readable by the container's user" in text
+    assert str(host["yaml"]) in text
+    assert "0644" in text
+    assert "does not load" not in text
+    assert not stopped(calls)
+
+
+def test_a_readable_but_invalid_yaml_keeps_the_unknown_field_message(host):
+    """A world-readable YAML that fails validation keeps the old advice."""
+    host["yaml"].chmod(0o644)
+    result, calls = restore(host, FAKE_VALIDATE="2")
+    assert result.returncode == 1, output(result)
+    assert "does not load" in output(result)
+    assert "not readable" not in output(result)
+    assert not stopped(calls)
 
 
 def test_the_system_crontab_is_checked(host):

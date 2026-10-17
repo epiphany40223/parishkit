@@ -794,7 +794,9 @@ layout; where the deployment YAML overrides a path, use that path instead.
    backup was taken under, in that image, then `pull`. The manifest's
    `image` is its complete reference and `application_version` its release;
    for a set taken before the manifest recorded the image, the operators'
-   notes have its digest. The deployment YAML is not in the set: if it names a
+   notes have its digest. The deployment YAML is not in the set, and must be readable by the
+   container's user (mode 0644, as Production keeps it; `pk-restore` refuses
+   plainly otherwise): if it names a
    field that release does not know, `retarget-image` refuses with no
    cause, so remove such a field first, as the deployment runbook's
    [rollback](stewardship-deployment-runbook.md#rollback) says. Then give
