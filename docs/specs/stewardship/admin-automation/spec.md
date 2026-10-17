@@ -1004,7 +1004,11 @@ success or failure, to standard error:
   addresses, aliases or redirects
   ([#864](https://github.com/epiphany40223/parishkit/issues/864)). The
   command follows the page it mirrors, so a version bump would only carry
-  a legacy form the Administrator declined.
+  a legacy form the Administrator declined. The same holds for `delivery
+  list`'s filters in
+  [#1562](https://github.com/epiphany40223/parishkit/issues/1562):
+  `--search` became `--recipient` (which also takes an email address) and
+  stayed on `pk-admin/1`.
 - A documented exception: the `content` commands' state value `custom`
   was renamed `edited` (#1404) and stayed on `pk-admin/1`, with a guide
   changelog entry, for the same reasons as the #931 exception above.
