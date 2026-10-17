@@ -8540,10 +8540,27 @@ BEGIN
             USING ERRCODE='23514';
     END IF;
     IF TG_OP='UPDATE' AND NEW.scrubbed_at IS NOT NULL THEN
-        IF attempt.state NOT IN ('expired','completed')
-           OR NEW.ciphertext IS NOT NULL OR NEW.actor_id IS NOT NULL
-           OR NEW.settings<>'{}'::jsonb
+        IF NEW.ciphertext IS NOT NULL OR NEW.settings<>'{}'::jsonb
            OR NEW.fingerprint IS DISTINCT FROM OLD.fingerprint THEN
+            RAISE EXCEPTION 'Setup credential scrub requires its terminal fence'
+                USING ERRCODE='23514';
+        END IF;
+        -- Turning Slack off during setup discards the staged Slack token at
+        -- once (#1499): only the web, for the attempt's owner, while it is
+        -- collecting and its saved Slack step is off. Every other scrub
+        -- needs the terminal fence, by the system.
+        IF attempt.state='collecting' THEN
+            IF current_user<>'pk_stewardship_web' OR NEW.target<>'slack'
+               OR NEW.actor_id IS DISTINCT FROM attempt.owner_id
+               OR NOT EXISTS (SELECT 1 FROM public.stewardship_setup_draft_section slack
+                    WHERE slack.attempt_id=attempt.id AND slack.step='slack'
+                        AND slack.scrubbed_at IS NULL
+                        AND slack.values->'enabled'='false'::jsonb) THEN
+                RAISE EXCEPTION 'Only a setup with Slack turned off discards its Slack token'
+                    USING ERRCODE='23514';
+            END IF;
+        ELSIF attempt.state NOT IN ('expired','completed')
+           OR NEW.actor_id IS NOT NULL THEN
             RAISE EXCEPTION 'Setup credential scrub requires its terminal fence'
                 USING ERRCODE='23514';
         END IF;
