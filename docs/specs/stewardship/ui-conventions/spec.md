@@ -46,6 +46,7 @@ when it lands.
   [step bars](#step-bars), [charts](#charts).
 - Admin interaction: [JavaScript requirement](#javascript-requirement),
   [in-place controls](#in-place-controls),
+  [pages that update themselves](#pages-that-update-themselves),
   [no layout shift](#no-layout-shift),
   [disclosures](#disclosures),
   [prerequisite gates](#prerequisite-gates),
@@ -406,14 +407,11 @@ never scrolls to show it (Administrator, pk-local review of
   the [response dashboard](../reports/spec.md#response-dashboard)'s mode and
   grain, the
   [Family timeline](../reports/spec.md#family-timeline)'s mode and When sort,
-  "Refresh current work" on "Background work", "Refresh list" on
-  "Families on the form now", the page links of a mail delivery's
+  the page links of a mail delivery's
   evidence and attempt history, an information item's and a Ministry
   follow-up request's history, and a weekly information report, and the
-  Refresh links of the key replacement status, Family email progress,
-  Family test, Background task, Change status, report export and
-  latest-data export pages; Refresh task also keeps the task history's
-  sort and page) or a form whose answer is the page again
+  hidden periodic re-read links of
+  [pages that update themselves](#pages-that-update-themselves)) or a form whose answer is the page again
   (`form[data-in-place]`, such as a POST whose server redirects back to the
   page: Save follow-up on an information item and on a
   [Ministry follow-up request](../admin-portal/spec.md#follow-up-workflows); System logs'
@@ -485,9 +483,9 @@ never scrolls to show it (Administrator, pk-local review of
   (no answer, a refusal, another page), and never sends a state that
   failed again until the reader changes the box or its own request succeeds, so
   a server that cannot answer gets one attempt and the fallback, not a
-  loop (Automation access's "Include ended sessions"). "Refresh current work" keeps
-  the reader's state filter, sort, rows per page and page; "Refresh list"
-  keeps sort and rows per page and returns to the first page. A form's
+  loop (Automation access's "Include ended sessions"). The periodic re-read
+  of Background work and Families on the form now re-reads the address
+  shown, so it keeps the reader's filter, sort, rows per page and page. A form's
   submit button belongs to its form even outside it (`form="…"`); a table's
   sort heading or navigator inside a `form[data-in-place]` (a selection form
   around its table) is still a table control. A POST form should carry a
@@ -516,7 +514,7 @@ never scrolls to show it (Administrator, pk-local review of
   history. A resolution posts in place: it lands on the Admin evidence,
   whose heading takes focus, and lists the state and recipient lines,
   history, forms and bounce panel to replace too. An export's Retry and
-  Cancel swap its status panel and hand focus to Refresh status below.
+  Cancel swap its status panel and hand focus to the panel's heading.
   Preview and test email's Send this test email posts in place too: its
   notices and form are one region and Recent test results another, whose
   heading takes focus. The list updates by itself while a test is on its
@@ -605,8 +603,8 @@ never scrolls to show it (Administrator, pk-local review of
   loads the sign-in page (in LOCAL, the page records the return path for a
   swapped-in step-up as it does for one it loaded with). A Send refused for a
   stale sign-in is answered with the step-up page, shown whole. That page's
-  Refresh status replaces only the recent tests (and the critical-problems
-  banner), so Family DUIDs typed but not yet checked are kept, and after
+  recent tests update by themselves only inside their status region, so
+  Family DUIDs typed but not yet checked are kept, and after
   Send the requested notice takes focus. A file upload is
   sent in place as the multipart body a native submission sends: on
   [Hosted files](../hosted-files/spec.md#admin-page), Upload follows its
@@ -637,7 +635,7 @@ never scrolls to show it (Administrator, pk-local review of
   `parishkit:swap` event on it lets any other script do the same. A page
   that watches background work (`live-status-v1.js`) stops watching a
   status region an in-place refresh replaced, and watches the fresh one
-  while it is still pending, so a Refresh or Dismiss that brings back work
+  while it is still pending, so a Dismiss or an action that brings back work
   in progress keeps updating by itself; there is always one watcher per
   status region. A quiet follow-up refresh (a settled status re-reading its
   page in place) keeps focus: a focused element in a region it replaces is
@@ -657,8 +655,9 @@ never scrolls to show it (Administrator, pk-local review of
   marked `data-live-keyed` with that name is marked changed the same way
   (System health's
   [Accept this change once](../admin-portal/spec.md#accept-a-large-parishsoft-change-once),
-  in its tile's details under the refused change it answers). A Refresh reads out the region's coarse status sentence
-  when it changed, as a poll does. Dismiss refreshes only an integration's
+  in its tile's details under the refused change it answers). An in-place
+  swap reads out the region's coarse status sentence when it changed, as a
+  poll does. Dismiss refreshes only an integration's
   status line: if it brings back a new key change in progress (another
   Administrator started one), the settings form and notes below it keep the
   state the page was loaded with until the next load.
@@ -749,6 +748,67 @@ never scrolls to show it (Administrator, pk-local review of
   (the Parish website's included) stays on the form; a stale page or an
   out-of-date preview is refused in the dialog, and the form is not
   redrawn, so it is refused again until the page is reloaded.
+
+### Pages that update themselves
+
+**Rule.** An Admin page that shows state that can change updates itself
+where the reader is, and has no manual page-refresh link or button. A
+browser reload lands on the same page and view with the current status.
+**Why.** The Administrator asked why pages still had Refresh links
+("Shouldn't all pages be auto-refreshing?") and that a reload while waiting
+"should just go right back to where it was, with the updated status"
+([#1586](https://github.com/epiphany40223/parishkit/issues/1586),
+2026-10-17). **Shared code.** `live-status-v1.js` status regions and
+`ui-v1.js`'s periodic quiet re-read (`a[data-reread-every]`), both built on
+the [in-place controls](#in-place-controls); no other mechanism.
+**Precedent.** System health (#1214), Family email progress, #869, #1353.
+
+- **Passive reads only.** Every automatic read is one the page already
+  makes: a status region's passive status read
+  ([admin portal](../admin-portal/spec.md#background-indicators)'s
+  rule for pages that follow background work), or a quiet in-place re-read
+  of the page's own address when that view is itself passive (Background
+  work, Families on the form now). A read never extends the sign-in and
+  never records an audited view.
+- **Pace.** While background work is pending a status region reads fast
+  (2 s backing off to 10 s, or the fixed pace the page asks for). A page
+  whose state changes without the reader's own action re-reads every 30
+  seconds (Background work, Families on the form now). A watch that passes
+  its time limit (an hour, or the page's own) slows to every 30 seconds
+  instead of stopping, so a page left open never goes quiet while it still
+  says "running". Reads pause while the tab is hidden, and the page catches
+  up at once when it is shown again (`visibilitychange`) or comes back from
+  the back/forward cache (`pageshow`).
+- **The reader keeps their place.** An update never moves focus or scroll
+  and never replaces a control the reader is using: while a form control
+  has focus or was edited, text is selected, or a dialog is open, the
+  update waits for the next read. A disclosure the reader opened inside a
+  re-read region is marked `details[data-keep-open][id]`, so it stays open.
+  A screen reader hears only meaningful changes, politely (a status
+  region's coarse sentence when it changes); a table's periodic re-read
+  announces nothing, since its visible count and time say what changed.
+- **No manual refresh.** There is no Refresh link or button that re-reads
+  the page's own state. Controls that start work (Refresh from ParishSoft,
+  Refresh now) are actions, not page refreshes, and stay. When reads fail,
+  the page says so under the region it could not read and keeps trying: a
+  status region at once ("Couldn't check status — retrying."), and System
+  health and a table's periodic re-read after three failures in a row, so
+  one blip says nothing; the line goes away on the next read that works. A
+  read that is refused (the sign-in ended, or access was removed)
+  stops the updates and says so; the Admin session's own dialog offers to
+  sign in again. A failed automatic read never navigates.
+- **Reload.** The page's address always identifies what is shown: view
+  choices replace the address, and an in-place POST follows its
+  Post/Redirect/Get redirect and puts that GET address in the address bar
+  ([in-place controls](#in-place-controls)), so a POST is never the current
+  history entry. A browser reload therefore re-renders the same page and
+  view on the server with the current status (no resubmit prompt, no
+  other step, no blank or expired state), keeps the sort, filters, page
+  and other choices the address carries, and resumes updating if work is
+  still pending.
+- **Go-live pages.** Go-live readiness, Testing cleanup, Prepare Family
+  links and Production activation still have their Refresh links until the
+  go-live redesign applies this rule there (#1586 slice 2).
 
 ### No layout shift
 
@@ -3497,7 +3557,7 @@ the longer of its two sentences from the start, so nothing moves
 server's clock, and checks again when it is shown again (such as by Back)
 and whenever its status is redrawn, so a copy shown at or after the end
 shows Download unavailable at once. The server stays authoritative: after
-the end, the page's next load, Refresh status, Download or Retry answers
+the end, the page's next load or status read, Download or Retry answers
 the fixed page, as the in-place controls show any other refusal, so the
 server never draws the status page in that state. A failed export's Retry
 is not held this way; its "Retry is available until" time says when it
