@@ -1482,6 +1482,7 @@ pk-admin campaign shares [--campaign ID]
 | `logos` | The current logos the page shows, in the order `large`, `menu`, `icon`, `favicon`: `slot`, `id`, `width` and `height` (pixels), `size` (bytes) and `sha256` |
 | `campaign_id` (`campaign shares`) | The campaign, the current one unless `--campaign` names another |
 | `editable` | Whether the page would edit the options now: an unlocked current Testing draft that no background work holds, with the financial module |
+| `short_names_editable` | Whether the short labels can change now: wherever `editable` is true, and on a locked campaign, where nothing else can |
 | `financial` | Whether the campaign has the financial module |
 | `options` | Its Share options in order: `id`, `name` (the option's label), `short_name` (its short label for Admin tables and charts, empty when unset) and `free_text` |
 
@@ -1528,8 +1529,9 @@ the same request.
 
 `campaign shares-preview` and `campaign shares-confirm` are the Share
 options page's **Review** and **Apply**. They need a full-scope session
-and, like the page, change only an unlocked current Testing draft with the
-financial module (`campaign shares` prints `editable`). `--changes` lists
+and, like the page, change the whole list only on an unlocked current
+Testing draft with the financial module (`campaign shares` prints
+`editable`), and a locked campaign's short labels only (below). `--changes` lists
 the whole new list in `options`, in order: a saved option by its `id` with
 its `name` (the label), `short_name` (the short label, at most 12
 characters; blank when left out) and `free_text` (`false` when left out),
@@ -1538,6 +1540,14 @@ and a new option without an `id`. Each saved option the change removes goes in
 the two, so leaving one out by mistake is refused rather than deleting it.
 Both commands take `--campaign`, the current campaign unless it names
 another.
+
+On a locked campaign (a live one, or any campaign outside Testing mode;
+`campaign shares` prints `short_names_editable` true and `editable` false),
+only the short labels can change, as on the page:
+keep every saved option, in its order, with its `name` and `free_text`
+unchanged and no `delete`, and change only `short_name`. Anything else is
+exit 1 (`invalid`) at the field that changed. The change never alters what
+Families see.
 
 ```sh
 pk-admin campaign shares > shares.json
@@ -1562,8 +1572,9 @@ a short label it refuses (too long, a placeholder, or the same as another
 option's) at `options.<n>.short_name`, `n` counting from 0 in your
 `options`. No change, an `id` the campaign does
 not have or gives twice, or a saved option in neither list is exit 1
-(`invalid`) at `options`. A campaign the page does not edit now (live,
-locked or without the financial module), a version that is no longer
+(`invalid`) at `options`. A campaign the page does not edit now
+(archived, held by background work or without the financial module), a
+version that is no longer
 current, or an expired token is exit 1 (`stale_version`): read `campaign
 shares` again. An altered token, or a token confirmed against another or
 an unknown campaign, is exit 1 (`invalid`). No current campaign, or an

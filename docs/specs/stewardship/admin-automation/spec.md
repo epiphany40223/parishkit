@@ -2609,8 +2609,11 @@ organization is `unavailable`, as the page answers 503. `campaign shares`
 defaults to the current campaign (none, or an unknown campaign, is
 `not_available`) and prints the page's `editable` check with the options
 (each `id`, `name`, `short_name`, empty when unset, and `free_text`);
-unlike the page, which only edits and refuses a locked campaign, it reads
-a locked or live campaign too, with `editable` false. The values are the
+the page edits an unlocked draft's options and only a locked campaign's
+short labels ([#1569](https://github.com/epiphany40223/parishkit/issues/1569)),
+and `campaign shares` reads a locked or live campaign too, with `editable`
+false and `short_names_editable` saying whether its short labels can
+change. The values are the
 parish's and the campaign's own, never a Family's. The
 [operator guide](../../../guides/stewardship-admin-automation.md#parish-ministry-logo-and-share-option-settings)
 lists the fields.
@@ -2662,7 +2665,14 @@ field errors are `invalid` at `options.<n>.name` or
 `options.<n>.short_name` (the document's position)
 and its formset errors and unchanged safeguard at `options`; another
 version is `stale_version`. An unknown campaign is `not_available` for
-`campaign shares-preview`; `campaign shares-confirm` never looks the
+`campaign shares-preview`. On a locked campaign, whose page edits only the
+short labels ([#1569](https://github.com/epiphany40223/parishkit/issues/1569)),
+the preview admits a document that keeps every saved option, in order,
+with its `name` and `free_text` and no `delete`, changing only
+`short_name`; anything else is `invalid` at its place (`options.<n>.name`,
+`options.<n>.free_text`, `options` or `delete`), and `campaign shares`
+prints `short_names_editable` (true there, and wherever `editable` is).
+`campaign shares-confirm` never looks the
 campaign up (it only binds the salt), so a token confirmed against another
 or an unknown campaign fails its signature as `invalid`, as the page's
 Apply does. `campaign shares-confirm` records the request
