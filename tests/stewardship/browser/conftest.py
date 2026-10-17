@@ -136,6 +136,10 @@ from .in_place_components import SLOW as IN_PLACE_SLOW
 from .in_place_components import components as in_place_components
 from .information_components import POSTS as INFORMATION_POSTS
 from .information_components import components as information_components
+from .integration_dialog_components import POSTS as INTEGRATION_DIALOG_POSTS
+from .integration_dialog_components import (
+    components as integration_dialog_components,
+)
 from .integration_gate_components import (
     components as integration_gate_components,
 )
@@ -770,14 +774,20 @@ def component_origin():
             },
         ),
         (
+            # The Backup encryption key change's review page; the other
+            # integrations review in the review dialog (#750).
             "/integration-preview",
             "integration-preview",
             {
-                "target": "parishsoft",
-                "label": "ParishSoft",
+                "target": "backup_key",
+                "label": "Backup encryption key",
                 "preview": "synthetic-preview",
                 "changes": [
-                    {"label": "Organization ID", "before": "12345", "after": "54321"}
+                    {
+                        "label": "Key fingerprint",
+                        "before": "0123456789abcdef",
+                        "after": "fedcba9876543210",
+                    }
                 ],
             },
         ),
@@ -2281,6 +2291,7 @@ def component_origin():
     responses.update(step_up_components(context, admin))
     responses.update(stepper_components(context, admin))
     responses.update(refresh_schedule_components(context, admin, NOW))
+    responses.update(integration_dialog_components(context, admin, NOW))
     # The in-place form page's POST answers (#519, #562): refusals answer
     # with the page the view would render (400 with the summary in the
     # region, 200 with it outside, or a 400 denial page without the region),
@@ -2302,6 +2313,7 @@ def component_origin():
         | LIVE_STATUS_POSTS
         | SETUP_LIVE_POSTS
         | SETTINGS_POSTS
+        | INTEGRATION_DIALOG_POSTS
         | STEPPER_POSTS
         | CAMPAIGN_SETTINGS_POSTS
         | CAMPAIGN_CREATE_POSTS
