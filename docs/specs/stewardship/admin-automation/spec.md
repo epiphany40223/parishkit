@@ -1239,12 +1239,15 @@ sign-in, with no browser step:
 - integration key replacement, finish switching and the backup key change
   (see [secret replacement](#secret-replacement));
 - the [System health](../admin-portal/spec.md#health-actions) actions
-  (ADM-13): take a backup now, clear a halted mail sender, accept a large
-  ParishSoft change once, and turn off debug logging. None of them is built
-  yet (ADM-13 PR 3 to PR 6), so PR 5's migration amended no ADM-13 guard,
-  and each action's SQL guard accepts `stewardship_automation_fresh_v1` from
-  the start (see
-  [shared rules for health actions](../admin-portal/spec.md#shared-rules-for-health-actions));
+  (ADM-13): take a backup now, accept a large ParishSoft change once, and
+  turn off debug logging. None of them was built before PR 5 (ADM-13 PR 3
+  to PR 6), so PR 5's migration amended no ADM-13 guard, and each action's
+  SQL guard accepts `stewardship_automation_fresh_v1` from the start (see
+  [shared rules for health actions](../admin-portal/spec.md#shared-rules-for-health-actions)).
+  Clearing a halted mail sender (ADM-13 PR 4a) came after the recent
+  sign-in requirement was removed
+  ([#1547](https://github.com/epiphany40223/parishkit/issues/1547)), so it
+  is not on this list: its guard needs only a live session;
 - the code and financial reads and files
   ([#547](https://github.com/epiphany40223/parishkit/issues/547)): creating
   a Family-directory, mail-merge, Family timeline or financial export,
@@ -3216,7 +3219,7 @@ other publication types in their
 | `delivery_bounce_report` (#806 slice 4) | `delivery bounce-report` ([#1211](https://github.com/epiphany40223/parishkit/issues/1211)) |
 | `system`, `system_health`, `system_health_status` (ADM-13) | `system health`, `system health --watch`, counts and states only |
 | `system_health` POST, Take a backup now (ADM-13 PR 3b) | `system backup-now [--request-key UUID]` (fresh-gated, always prompts); its progress is `system health` `backup_request`, with `--watch` |
-| `system_mail_check`, `system_mail_clear` (ADM-13) | `system mail-clear-preview` (starts the mailbox check and waits for it), `system mail-clear --token …` |
+| `system_health` POST, Clear the halt (ADM-13 PR 4a, its button in 4b) | `system mail-clear-preview` (the page's preview: the halt, the waiting and unsettled `delivery_unknown` Family emails by count and message id, whether delivery is paused, and the mailbox check, which it requests when none is live and waits up to two minutes for; with `preview.token` while the halt can be cleared), `system mail-clear --token …` (always prompts; no recent sign-in, #1547); its effect is `system health`'s mail senders, with `--watch` |
 | `system_health` POST, Accept this change once (ADM-13 PR 5b, 5c) | `system refresh-accept-preview` (the page's preview: every recorded count, the example Family DUIDs without names, and `preview.token`), `system refresh-accept --token …` (fresh-gated, always prompts with the page's tick box); its effect is `system health`'s `drop_acceptance`, with `--watch` |
 | `system_health` POST, Turn off debug logging (ADM-13 PR 6b) | `system debug-off [--request-key UUID]` (fresh-gated, always prompts); its effect is `system health`'s `debug_switch` and each process's `debug_logging`, with `--watch` |
 | `system_health` POST, Allow debug logging again (ADM-13 PR 6c, Testing only) | `system debug-allow [--switch UUID]` (fresh-gated, always prompts, refused in Production); its effect is `system health`'s `debug_switch` |
