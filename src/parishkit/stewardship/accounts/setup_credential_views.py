@@ -15,7 +15,6 @@ from . import setup_help
 from .authentication import runtime
 from .integration_forms import LABELS, CredentialForm
 from .secret_input import SecretInput
-from .sessions import SETUP_FRESH_SECONDS, require_fresh
 from .setup_credentials import TARGETS, credential_status, stage_credential
 from .setup_drafts import view_draft
 from .setup_policy import SetupState
@@ -173,8 +172,6 @@ def setup_credential(request, target):
         draft = view_draft(request, service)
         if draft is None or draft.status.state != SetupState.COLLECTING:
             return _checked(request, service, HttpResponseRedirect("/admin/setup"))
-        # A sign-in from the last hour is enough during setup (#1402).
-        require_fresh(request, within=SETUP_FRESH_SECONDS)
         _closed(request, {*SetupCredentialForm(target).fields, "version"})
         receipts = credential_status(request, service, draft.status.attempt_id)
         context = _context(draft, STEP[target])

@@ -104,7 +104,7 @@ class RuntimeTransition(ImmutableRecord):
     backup_at = UTCDateTimeField(null=True)
     reason = models.CharField(max_length=1024, default="")
     # A restore release's Administrator session and its sign-in instant,
-    # which the guard checks is within five minutes (migration 0017, #537).
+    # which the guard binds to the live session (migrations 0017 and 0113).
     session_id = models.UUIDField(null=True)
     authenticated_at = UTCDateTimeField(null=True)
 

@@ -289,9 +289,8 @@ PAGES = {
     # the key belongs to; their views supply the target the routes lack. The
     # status is readable only by the Administrator who saved the key, so
     # Finish switching (open to every Administrator) never runs through it.
-    # Finish switching is a one-time review that needs a fresh Google
-    # sign-in, so a switch's status page names it but returns to the
-    # integration.
+    # Finish switching is a one-time review, so a switch's status page
+    # names it but returns to the integration.
     "credential_status": Page(
         "system", _("Key replacement status"), "integration_settings"
     ),

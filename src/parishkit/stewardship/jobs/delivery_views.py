@@ -584,9 +584,9 @@ def bounce_report(request, message_id):
     The Mail message page's in-place form; an explicit current-Admin command
     that never runs in a GET. It needs the address, a note and the tick, as
     the page's gate does, and answers with the page again (Post/Redirect/
-    Get), whose bounce panel lists the report. No fresh sign-in, as for
-    Clear verified refusal: the report only sets an address aside, touches
-    no credential, and clearing undoes it.
+    Get), whose bounce panel lists the report. As for Clear verified
+    refusal, the report only sets an address aside, touches no credential,
+    and clearing undoes it.
     """
     try:
         service = runtime()

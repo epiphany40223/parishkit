@@ -38,16 +38,13 @@
 {% else %}
 <section class="panel" aria-labelledby="code-heading">
   <h2 id="code-heading">{% translate "Enter the user code" %}</h2>
-  {% if not fresh %}
-  {% translate "approving a session" as step_up_action %}{% translate "The code still works for ten minutes after it was shown." as step_up_note %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action note=step_up_note next=next id="approval-unavailable" %}
-  {% endif %}
   {% comment %}The code is checked as it is typed, leniently (eight of the code's letters and digits, in either case, with any spaces or hyphens, as automation_sessions.normalized_code reads it), and Continue waits for it (data-require-complete, #1330), with the reason in the line reserved after it. A code the server refuses is shown at the field.{% endcomment %}
   <form method="post" data-require-complete>{% csrf_token %}
     <input type="hidden" name="action" value="lookup">
     <label for="automation-code">{% translate "User code" %}</label>
-    <input id="automation-code" name="code" autocomplete="off" spellcheck="false" maxlength="16" required pattern="[\s\-]*([2-9A-HJ-NP-Za-hj-np-z][\s\-]*){8}" data-missing-hint="{% translate 'Enter the user code the command line showed, such as ABCD-EFGH.' %}"{% if not fresh %} disabled aria-describedby="approval-unavailable"{% elif refused %} aria-invalid="true" aria-describedby="automation-code-error"{% endif %}>
+    <input id="automation-code" name="code" autocomplete="off" spellcheck="false" maxlength="16" required pattern="[\s\-]*([2-9A-HJ-NP-Za-hj-np-z][\s\-]*){8}" data-missing-hint="{% translate 'Enter the user code the command line showed, such as ABCD-EFGH.' %}"{% if refused %} aria-invalid="true" aria-describedby="automation-code-error"{% endif %}>
     {% if refused %}<ul class="errorlist" id="automation-code-error"><li>{% translate "That code does not match a pending request for your address. Check the code, and that the operator entered your address; a code expires ten minutes after it was shown." %}</li></ul>{% endif %}
-    {% button type="submit" enabled=fresh aria-describedby=fresh|yesno:"automation-code-hint,approval-unavailable" %}{% translate "Continue" %}{% endbutton %}<p class="help" id="automation-code-hint" data-complete-hint="reserve"></p>
+    {% button type="submit" aria-describedby="automation-code-hint" %}{% translate "Continue" %}{% endbutton %}<p class="help" id="automation-code-hint" data-complete-hint="reserve"></p>
   </form>
 </section>
 {% endif %}

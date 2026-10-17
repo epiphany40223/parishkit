@@ -18,11 +18,10 @@ from parishkit.stewardship.web.refusals import (
 )
 
 from . import go_live_commands
-from .admin_caller import is_automation
 from .admin_editing import editable_configuration, principal
 from .confirmation_preview import collect_preview
 from .confirmation_readiness import collect_readiness
-from .sessions import require_fresh
+from .sessions import sign_in_instant
 
 SALT = "stewardship-production-confirmation-v1"
 
@@ -175,19 +174,12 @@ def confirm(
             or state.target_state != binding["target"]
         ):
             raise StaleRecordError("Review a fresh Production confirmation preview.")
-        authenticated = require_fresh(request, irreversible=True)
-        completed = (
-            ProductionTransitionEvent.objects.filter(
-                request_id=transition_id, action="complete"
-            )
-            .latest("created_at")
-            .created_at
-        )
-        # A full-scope automation session stands in for the sign-in after
-        # cleanup, as its SQL guard accepts (ADM-11 PR 5); cleanup must still
-        # be complete, which the lookup above requires.
-        if authenticated < completed and not is_automation(request):
-            raise PermissionError("Authenticate with Google after cleanup finishes.")
+        authenticated = sign_in_instant(request, irreversible=True)
+        # Cleanup must be complete, as the SQL guard also requires; a sign-in
+        # of any age, before or after it, confirms (#1547).
+        ProductionTransitionEvent.objects.filter(
+            request_id=transition_id, action="complete"
+        ).latest("created_at")
         expires = datetime.fromisoformat(binding["expires"])
         observed = datetime.fromisoformat(binding["observed"])
         if any(value.utcoffset() != timedelta(0) for value in (expires, observed)):

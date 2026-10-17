@@ -41,7 +41,7 @@ from parishkit.stewardship.web.refusals import load_preview
 from .admin_editing import editable_configuration, principal
 from .campaign_mail import recipient_digest
 from .content_models import ContentVersion
-from .sessions import require_fresh
+from .sessions import sign_in_instant
 
 SALT = "stewardship-family-mail-test-v1"
 BINDING_KEYS = frozenset(
@@ -313,9 +313,10 @@ def request_tests(
 ):
     """Persist one reviewed request as one ticket per Family, or replay it.
 
-    Confirmation needs a fresh Google sign-in and an explicit acknowledgement
-    that real Family data goes to the Testing recipient. Retries within the
-    preview lifetime return the original tickets; nothing is sent twice.
+    Confirmation needs a live signed-in session and an explicit
+    acknowledgement that real Family data goes to the Testing recipient.
+    Retries within the preview lifetime return the original tickets; nothing is
+    sent twice.
     """
     if acknowledge is not True:
         raise ValueError(
@@ -361,7 +362,7 @@ def request_tests(
             raise StaleRecordError("A chosen Family can no longer be tested.")
         if len(preview.families) > preview.available:
             raise StaleRecordError("Too many Family tests are in progress.")
-        reauthenticated_at = require_fresh(request)
+        reauthenticated_at = sign_in_instant(request)
         rows = []
         for sequence, choice in enumerate(preview.families, start=1):
             ticket_id = uuid5(

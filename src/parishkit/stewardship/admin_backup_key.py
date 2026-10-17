@@ -19,16 +19,16 @@ pieces so the two cannot drift:
   and the page's signed preview token.
 - ``integration backup-key confirm`` is the page's Confirm: the page's
   configuration request (``confirm_intent`` with the page's salt), with the
-  fresh gate under the work lock and, in the request's durable
+  privileged check under the work lock and, in the request's durable
   transaction, ``admin_cmd_integration_backup_key_confirm`` and a
   ``policy_change`` notice observing ``automation_policy_change``. The
   configuration installer applies it, and the activation records the
   ``backup_key_replaced`` security event every Administrator is told
   about, as for the page.
 
-The page asks for a Google sign-in within five minutes before the challenge
-and at Confirm; a live full-scope automation session stands in for it
-(``require_fresh``), so the page's step-up resume has no counterpart here.
+Each step needs a live full-scope automation session
+(``sessions.sign_in_instant``); a sign-in of any age does on the page
+(#1547).
 The challenge and preview record no event, as the page's steps record none.
 No private key, typed code or pasted text is ever printed, logged or
 recorded; the only key facts printed are the fingerprints the page shows.
@@ -121,27 +121,27 @@ def _current(status):
     }
 
 
-def _fresh_then(caller, service, step):
-    """Admit as the page's post, pass its fresh gate, then run ``step``.
+def _privileged_then(caller, service, step):
+    """Admit as the page's post, pass the privileged check, then run ``step``.
 
-    ``step(actor)`` runs in one read snapshot after the page's recent
-    sign-in is stood in for by the live full-scope session (the session's
-    ``FOR SHARE`` lock needs a writable transaction, so it is checked just
-    before the snapshot; neither step has a command type, so nothing is
-    recorded). Access is checked again afterwards, as the page does.
+    ``step(actor)`` runs in one read snapshot after the live full-scope
+    session is checked (the session's ``FOR SHARE`` lock needs a writable
+    transaction, so it is checked just before the snapshot; neither step
+    has a command type, so nothing is recorded). Access is checked again
+    afterwards, as the page does.
     """
     from django.db import transaction
 
     from .accounts.policy import Capability
-    from .accounts.sessions import require_fresh
+    from .accounts.sessions import sign_in_instant
     from .campaigns.work_locks import read_transaction
 
     actor = _admit_change(caller, service)
 
     def run():
-        """The fresh gate, then the step in one snapshot."""
+        """The privileged check, then the step in one snapshot."""
         with transaction.atomic():
-            require_fresh(caller)
+            sign_in_instant(caller)
         with read_transaction():
             return step(actor)
 
@@ -184,7 +184,7 @@ def challenge(caller, service, text):
             intent=intent,
         )
 
-    return _fresh_then(caller, service, step)
+    return _privileged_then(caller, service, step)
 
 
 def _open_intent(actor, configuration, intent, code):
@@ -254,7 +254,7 @@ def preview(caller, service, *, intent, code):
             preview={"token": token},
         )
 
-    return _fresh_then(caller, service, step)
+    return _privileged_then(caller, service, step)
 
 
 def prompt_lines(caller, service, token):
@@ -327,7 +327,7 @@ def confirm(caller, service, *, token, context):
     Admits as the page does, then ``confirm_intent`` checks the token with
     the page's salt (expired or out of date is ``stale_version``, altered or
     another page's ``invalid``, another Administrator's ``denied``), passes
-    the page's fresh gate again under the work lock and records the request
+    the privileged check again under the work lock and records the request
     with ``admin_cmd_integration_backup_key_confirm`` and a ``policy_change``
     notice in its own durable transaction. ``context["committed"]`` and
     ``context["request_id"]`` follow ``integration confirm``'s rules, so a
@@ -382,9 +382,9 @@ def confirm(caller, service, *, token, context):
             link=None,
             current_scope=lambda service: (editable_configuration(service), None),
             attach=attach,
-            # The page asks for a recent sign-in at Confirm; here it is
-            # checked under the work lock, in the request's transaction.
-            fresh=True,
+            # The live full-scope session is checked under the work lock,
+            # in the request's transaction.
+            privileged=True,
         )
     except signing.BadSignature:
         # Altered, or signed for another page (an expired one is stale).

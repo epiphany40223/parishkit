@@ -363,7 +363,7 @@ def reason_of(error):
     """The closed reason code an exception carries for the refusal log, or None.
 
     Only a ``TypedRefusal`` (the ``web.refusals`` types, ``AccessDenied``
-    and a missing fresh sign-in) carries its own; a tampered or foreign
+    and an ended session) carries its own; a tampered or foreign
     signed value is ``bad_signature``. Anything else has none, and the log
     records it as ``unclassified`` with its class name (#1403).
     """
@@ -471,15 +471,15 @@ def with_codes(response, *codes):
     return response
 
 
-# The marker on a 200 answer that is a refusal drawn in place: the step-up
-# notice an action's region shows instead of its result (#1403).
+# The marker on a 200 answer that is a refusal drawn in place: the notice
+# an action's region shows instead of its result (#1403).
 IN_PLACE = "stewardship_refused_in_place"
 
 # The reason each refused-step key of an in-place region means (Restore
 # review, Held emails, System health): the region words the key for people,
 # the refusal log records the reason with the key as its code.
 STEP_REASONS = {
-    "reauthenticate": "fresh_authentication_required",
+    "signed_out": "denied",
     "changed": "stale_page",
     "busy": "stale_page",
     "denied": "denied",

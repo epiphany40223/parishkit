@@ -2,10 +2,10 @@
 
 The host command line acts as one named Administrator through an automation
 session that Administrator approved once in a browser signed in with Google
-within five minutes (see the Admin automation specification, "Automation
-sessions"). The session secret lives only in an owner-only file on the host;
-this module sees it once per command, keeps only its SHA-256 digest, and never
-logs, prints or stores it.
+(see the Admin automation specification, "Automation sessions"). The session
+secret lives only in an owner-only file on the host; this module sees it once
+per command, keeps only its SHA-256 digest, and never logs, prints or stores
+it.
 
 - **Pairing** stores a pending request in Valkey under a short user code. The
   approval page reads it, and the Administrator approves it into a durable
@@ -345,10 +345,10 @@ def approve(principal, portal_session, request, *, scope, days):
     """Approve one pending pairing as the signed-in Administrator.
 
     Runs in the caller's transaction, after the page re-admitted the
-    Administrator with a fresh Google sign-in. The approver may lower the
-    requested scope and lifetime, never raise them, and must be the address
-    the operator expected. The SQL guard re-checks the browser session, its
-    five-minute sign-in and the Administrator role.
+    signed-in Administrator. The approver may lower the requested scope and
+    lifetime, never raise them, and must be the address the operator
+    expected. The SQL guard re-checks the live browser session, its recorded
+    sign-in instant and the Administrator role.
     """
     from parishkit.stewardship.jobs.operational_content import IncidentKind
 

@@ -50,11 +50,10 @@ from parishkit.stewardship.web.refusals import (
 
 from .admin_editing import editable_configuration
 from .authentication import runtime
-from .branding_context import local_environment
 from .content_views import resave_recommended
 from .policy import Capability, allows
 from .runtime_models import SystemConfiguration
-from .sessions import authenticated_admin, freshness
+from .sessions import authenticated_admin
 from .source_form_views import source_form_summary
 
 # How often the open page re-reads the status, in ms (the specification's
@@ -161,19 +160,11 @@ def _read(request, template, *, page):
             context["source_form_tile"] = source_form_tile(source_form)
             context["resave_tile"] = resave_tile(resave)
             context["status_url"] = _status_url(loaded)
-            # Whether the sign-in is recent now, fixed for the page's life:
-            # it picks Accept this change once's offered or step-up form,
-            # and no poll changes it (#1159, #1331 item 18). A sign-in that
-            # ages later gets the step-up answer when the form is sent.
-            context["fresh"] = freshness(request)[0]
             # The Admin chrome reuses this instant instead of reading the clock.
             request._stewardship_display_now = health.checked_at
             response = render(request, template, context)
         else:
             context = _context(health, extra, loaded=parse_loaded(query.get("loaded")))
-            # The step-up notice's LOCAL wording, which a full page render
-            # gets from its context processor (#619).
-            context |= local_environment(request)
             # The fragment needs no Admin chrome, so it skips the context
             # processors (and their queries) a full page render runs.
             response = HttpResponse(render_to_string(template, context))
@@ -250,7 +241,7 @@ _ACTION_FIELDS = {
 # What a refusal is answered with (HTTP status; the words are the region's,
 # or the review dialog fragment's).
 _REFUSALS = {
-    "reauthenticate": 403,
+    "signed_out": 403,
     "busy": 409,
     "invalid": 400,
     "denied": 403,
@@ -279,7 +270,7 @@ def _step(action, request, service):
     """Run one action step; return what its region shows.
 
     Previews and confirmations go to ``system_health``'s service functions,
-    which check the Administrator and the fresh sign-in themselves. Cancel
+    which check the Administrator and the live session themselves. Cancel
     only closes the preview, so it only rechecks the Administrator.
     """
     from uuid import UUID
@@ -338,12 +329,11 @@ def _act(request):
     The step's result goes to the template as ``backup_now``, ``accept`` or
     ``debug_off`` (where an Allow debug logging again step's result is
     marked ``allow``). A step
-    the server refuses for a reason the reader can act on (a stale sign-in,
-    a request already live or a switch already set or already cleared, Allow
+    the server refuses for a reason the reader can act on (a session that
+    ended, a request already live or a switch already set or already cleared, Allow
     debug logging again in Production, a malformed form) is
     answered the same way, the region saying why, with a status ui-v1.js
-    treats as refused; the stale sign-in offers the "Confirm with Google"
-    step-up, which returns to this page. Anything else (not an
+    treats as refused (an ended session is ``signed_out``). Anything else (not an
     Administrator, the system unavailable) is the usual closed refusal. No
     step records a page view; confirming records the action's audit event
     (``backup_requested``, ``source_drop_accepted``,
@@ -358,7 +348,7 @@ def _act(request):
 
     from .admin_editing import error_response
     from .integration_views import ERRORS
-    from .sessions import FreshAuthenticationRequired
+    from .sessions import SignInEnded
     from .setup_views import _closed
 
     action = request.POST.get("action", "")
@@ -375,14 +365,15 @@ def _act(request):
                 raise unexpected_fields()
             _closed(request, _ACTION_FIELDS[action])
             result = _step(action, request, service)
-        except FreshAuthenticationRequired:
-            result = {"refused": "reauthenticate"}
+        except SignInEnded:
+            # The session ended between admission and the guard's write.
+            result = {"refused": "signed_out"}
         except health_actions.DebugAllowProduction:
             # Only the server operator clears the switch in Production.
             result = {"refused": "production"}
         except health_actions.ActionRefused:
-            # The database refused it for a reason a new sign-in would not
-            # fix; the service function logged why.
+            # The database refused it for a reason signing in again would
+            # not fix; the service function logged why.
             result = {"refused": "denied"}
         except StaleRecordError:
             result = {"refused": "busy"}

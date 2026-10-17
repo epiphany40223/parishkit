@@ -19,7 +19,7 @@ capture table exists.
   pin, as the Participation export does, and records
   ``campaign_archive_exported`` with the cutoff's campaign day as ``count``.
   Only an Administrator (``CONFIGURE`` and ``FINANCIAL_DETAIL``) may; the
-  view and the command add the five-minute fresh sign-in.
+  command also needs a live full-scope automation session (privileged).
 - ``archive_document`` is the worker's load: the written file and its row
   count, which ``render_archive`` copies to the stored file.
 

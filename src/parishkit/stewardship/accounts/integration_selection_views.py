@@ -36,7 +36,6 @@ from .integration_views import ERRORS, _checked, place_key_page
 from .request_admission import intake_base
 from .request_patch import build_candidate, credential_request_schema
 from .secret_models import SecretReplacementRequest
-from .sessions import require_fresh
 
 SALT = "stewardship-integration-selection-v1-"
 
@@ -157,11 +156,10 @@ def _locked_page(request, request_id):
 
 @require_http_methods(["GET", "HEAD", "POST"])
 def select_credential(request, request_id):
-    """Any fresh Admin may select a receipt using their own exact signed preview."""
+    """Any Admin may select a receipt using their own exact signed preview."""
     try:
         service = runtime()
         actor = principal(request, service)
-        require_fresh(request)
         if request.FILES:
             raise ValueError("Credential selection accepts no files.")
         filters(request.GET, allowed=set())
@@ -170,8 +168,7 @@ def select_credential(request, request_id):
                 raise ValueError("Confirm the exact credential selection.")
 
             def scope(service):
-                """Intake repeats freshness and current receipt proof under its lock."""
-                require_fresh(request)
+                """Intake repeats the current receipt proof under its lock."""
                 configuration, _, _, _ = _selection(service, request_id)
                 return configuration, None
 
@@ -200,7 +197,7 @@ def select_credential(request, request_id):
                 return _checked(request, service, _locked_page(request, request_id))
             # Preview/render work uses the captured immutable inputs without
             # blocking task claims or source promotion. Confirmation rechecks
-            # current receipt, freshness and base under the owning work lock.
+            # current receipt and base under the owning work lock.
             selected = patch is None
             preview = None
             if not selected:

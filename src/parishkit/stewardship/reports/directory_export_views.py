@@ -3,19 +3,12 @@
 from uuid import UUID
 
 from django.core.exceptions import ObjectDoesNotExist
-from django.urls import reverse
 from django.views.decorators.http import require_POST
 
-from parishkit.stewardship.accounts import admin_navigation
-from parishkit.stewardship.accounts.admin_editing import step_up_response
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.cryptography import CryptographicError
 from parishkit.stewardship.accounts.family_authentication import (
     runtime as family_runtime,
-)
-from parishkit.stewardship.accounts.sessions import (
-    FreshAuthenticationRequired,
-    require_fresh,
 )
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.dates import parish_zone, unasked_zone
@@ -35,11 +28,6 @@ def create(request, campaign_id):
     The page's hidden ``mailing`` field chooses the mail-merge export.
     ``browser_timezone`` is the asked zone when the file has response
     columns (``export_asks_zone``), else the browser's, sent unasked.
-
-    The file holds every listed Family's live code, so creating it needs a
-    Google sign-in within the last five minutes (#547). A stale one gets the
-    step-up page, which returns to the directory (filters are private POST
-    state, so only the mailing-columns preset comes back) and creates nothing.
     """
     try:
         service = runtime()
@@ -47,14 +35,6 @@ def create(request, campaign_id):
         parameters = request.POST.copy()
         parameters.pop("csrfmiddlewaretoken", None)
         postal = mailing_option(parameters)
-        try:
-            require_fresh(request)
-        except FreshAuthenticationRequired:
-            page = reverse("admin:family_directory")
-            return step_up_response(
-                page + ("?mailing=yes" if postal else ""),
-                admin_navigation.PAGES["family_directory"].label,
-            )
         fields = {"format", "request_key"}
         # A Testing page's form names the rehearsal it showed (#933), so the
         # export reads that one or is refused (409), never a later one.

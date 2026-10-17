@@ -22,9 +22,9 @@ and the file is fetched with the host wrapper's owner-only ``export fetch``
 page's own admission function and capability (recording activity, so a
 full-scope session); the export's own service then rechecks the capability
 inside its lock, as for the page. Creating a financial export is one of
-the specification's fresh-gated actions (#547): a live full-scope session
-stands in for the page's recent sign-in through the caller-aware
-``require_fresh``; it adds no hold of its own.
+the specification's privileged actions (#547): it needs a live full-scope
+session through the caller-aware ``sign_in_instant``; it adds no hold of
+its own.
 
 Each runs in the export lifecycle's command scope (the campaign's export
 lock, the command session's row locked, the Administrator rechecked before
@@ -145,10 +145,10 @@ def export_financial(caller, service, *, filters, fmt, zone, request_key, contex
     As the page, the campaign must be one reports read (``admit_report_read``
     before the filters are read), and the capability is ``FINANCIAL_DETAIL``.
     As the page's view (``financial_export_views.create``), it then calls
-    ``require_fresh`` before ``create_financial_export``: the gate lives in
+    ``sign_in_instant`` before ``create_financial_export``: the check is in
     the view, not the service, so the command makes the call itself.
     """
-    from .accounts.sessions import require_fresh
+    from .accounts.sessions import sign_in_instant
     from .audit.schemas import Action
     from .reports.financial import FinancialQuery
     from .reports.financial_exports import create_financial_export
@@ -161,15 +161,15 @@ def export_financial(caller, service, *, filters, fmt, zone, request_key, contex
         return FinancialQuery.parse(filter_values(filters))
 
     def create(actor, campaign_id, query):
-        """The page's fresh gate and service, rechecking the campaign inside
-        its lock."""
+        """The page's privileged check and service, rechecking the campaign
+        inside its lock."""
         admit_report_read(campaign_id)
         # The automation branch locks the session row and records the
         # automation_fresh_gate event and notice in this transaction, so they
         # commit or roll back with the export; a read-only session is denied.
         # The notice names the campaign.
         caller.campaign_id = campaign_id
-        require_fresh(caller)
+        sign_in_instant(caller)
         return create_financial_export(
             service.store,
             actor.identity,
@@ -197,14 +197,14 @@ def export_archive(caller, service, *, request_key, context):
 
     As the page, only an Administrator may (``CONFIGURE`` and
     ``FINANCIAL_DETAIL``), the campaign must be one reports read, and,
-    as the page's view does, ``require_fresh`` comes before
+    as the page's view does, ``sign_in_instant`` comes before
     ``create_archive_export``. A download unavailable now (no Family
     responded, before day 1 has ended, the figures still being calculated)
     is ``not_available``. A campaign closed before its end date gets its
     final file through its last full day (2026-10-13, #1018), once no
     response falls after that day; until then it is ``not_available``.
     """
-    from .accounts.sessions import require_fresh
+    from .accounts.sessions import sign_in_instant
     from .audit.schemas import Action
     from .reports.archive_exports import create_archive_export, require_administrator
     from .reports.export_views import _principal as page_principal
@@ -223,14 +223,14 @@ def export_archive(caller, service, *, request_key, context):
         return None
 
     def create(actor, campaign_id, parsed):
-        """The page's fresh gate, then its service, inside the export lock.
+        """The page's privileged check, then its service, in the export lock.
 
-        As the page, the fresh sign-in comes before availability: an
+        As the page, the session check comes before availability: an
         unavailable download (``FactUnavailable``) is ``not_available``.
         """
         admit_report_read(campaign_id)
         caller.campaign_id = campaign_id
-        require_fresh(caller)
+        sign_in_instant(caller)
         try:
             return create_archive_export(
                 service.store,
@@ -456,9 +456,9 @@ def export_directory(
     ``postal`` is the page's mailing-columns choice: the mail merge
     (``postal_outreach``) or the Family-code directory (``family_directory``),
     whose codes the worker decrypts into the file. The page's admission
-    (``FAMILY_CODES``) applies. Creating either export is fresh-gated
+    (``FAMILY_CODES``) applies. Creating either export is privileged
     (#547): as the page's view (``directory_export_views.create``) does for
-    every post, a repeated key included, the command calls ``require_fresh``
+    every post, a repeated key included, the command calls ``sign_in_instant``
     inside the export lock, where a live full-scope session passes.
 
     The code MAC keyring
@@ -476,7 +476,7 @@ def export_directory(
     from django.db import transaction
 
     from .accounts.cryptography import CryptographicError
-    from .accounts.sessions import require_fresh
+    from .accounts.sessions import sign_in_instant
     from .audit.schemas import Action
     from .reports.directories import DirectoryQuery, NoRehearsal
     from .reports.directory_exports import admit_directory, create_directory_export
@@ -535,13 +535,13 @@ def export_directory(
 
     @rehearsal_conflict
     def create(actor, campaign_id, parsed):
-        """The page's fresh gate, then its service, or the export a repeated
-        key already made."""
+        """The page's privileged check, then its service, or the export a
+        repeated key already made."""
         query, mac = parsed
         # The automation branch records automation_fresh_gate (and its
         # notice, which names the campaign) in this transaction.
         caller.campaign_id = campaign_id
-        require_fresh(caller)
+        sign_in_instant(caller)
         if mac is None:
             # A repeated key: the service's own admission, inside the same
             # export lock, then the record the key already made, compared as
@@ -605,9 +605,9 @@ def export_family_timeline(
     (``timeline_exports.create_timeline_export``); the file is fetched with
     ``export fetch``. A Family of another campaign is ``not_available``. The
     file can hold the Family's live code, so, as the page's view does, the
-    command calls ``require_fresh`` in the export lock (#547).
+    command calls ``sign_in_instant`` in the export lock (#547).
     """
-    from .accounts.sessions import require_fresh
+    from .accounts.sessions import sign_in_instant
     from .audit.schemas import Action
     from .reports.family_timeline_views import _principal
     from .reports.read_admission import admit_report_read
@@ -623,13 +623,13 @@ def export_family_timeline(
         return None
 
     def create(actor, campaign_id, parsed):
-        """The page's fresh gate and service, rechecking the campaign inside
-        its lock."""
+        """The page's privileged check and service, rechecking the campaign
+        inside its lock."""
         admit_report_read(campaign_id)
         # The automation branch records automation_fresh_gate (and its
         # notice, which names the campaign) in this transaction.
         caller.campaign_id = campaign_id
-        require_fresh(caller)
+        sign_in_instant(caller)
         return create_timeline_export(
             service.store,
             actor.identity,

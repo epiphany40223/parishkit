@@ -702,10 +702,7 @@ button.is-busy::after, .button.is-busy::after { content: ""; display: inline-blo
 [data-health-dashboard]:not([data-not-current]) .health-restart { visibility: hidden; }
 [data-health-dashboard]:not([data-not-current]) .health-unknown,
 [data-health-dashboard][data-not-current] .health-counted { display: none !important; }
-/* Accept this change once's offer is drawn offered and with its step-up;
-   the page's sign-in, as of when it was drawn, picks one (#1331 item 18). */
-[data-health-dashboard]:not([data-health-fresh]) .accept-when-fresh,
-[data-health-dashboard][data-health-fresh] .accept-when-stale { display: none; }
+
 .health-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, max(22rem, calc((100% - 1.5rem) / 3))), 1fr)); grid-auto-flow: row dense; gap: .75rem; align-items: start; }
 .health-tile { position: relative; min-width: 0; }
 .health-band { grid-column: 1 / -1; min-width: 0; padding: 1rem 1.25rem; background: var(--paper); border: 1px solid var(--status-line, var(--border)); border-inline-start-width: calc(1px + var(--status-bar, 0rem)); border-radius: var(--radius-small); }

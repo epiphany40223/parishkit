@@ -1,7 +1,7 @@
 """Durable Admin automation sessions, their command logins and their notices.
 
 An automation session lets the host command line act as one Administrator,
-who approved it once in a freshly signed-in browser, for at most 30 days (see
+who approved it once in a signed-in browser, for at most 30 days (see
 the Admin automation specification's "Automation sessions"). The database
 holds only the SHA-256 digest of the session secret; the secret itself stays
 in an owner-only file on the host. Each command opens a short-lived ordinary
