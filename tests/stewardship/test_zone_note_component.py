@@ -18,7 +18,7 @@ TEMPLATES = (
     / "src/parishkit/stewardship/accounts/templates/stewardship"
 )
 COMPONENT = "components/zone-note.html"
-# The toggletip draws the same note as a tip when given zone_note=True
+# The toggletip draws the same note as a tip when given tip_zone_note=True
 # (Sent mail's From, #1562), so it is a component too, not a hand copy.
 TIP = "components/toggletip.html"
 INCLUDE = '{% include "stewardship/components/zone-note.html" with note_text='
@@ -104,11 +104,11 @@ def test_pages_draw_the_shared_note():
 
 
 def test_the_toggletip_form_of_the_note():
-    """With zone_note=True the toggletip is the note as a tip: hidden until
+    """With tip_zone_note=True the toggletip is the note as a tip: hidden until
     the script knows the zone, its bubble ending in the zone name's slot.
     Without it, the toggletip is unchanged."""
     context = {"tip_id": "zone-tip", "tip_text": TEXT}
-    html = render_to_string("stewardship/" + TIP, {**context, "zone_note": True})
+    html = render_to_string("stewardship/" + TIP, {**context, "tip_zone_note": True})
     assert html.startswith('<span class="toggletip" data-browser-zone-note hidden>')
     assert (
         '<span class="toggletip-bubble" id="zone-tip" hidden>'
@@ -118,3 +118,18 @@ def test_the_toggletip_form_of_the_note():
     plain = render_to_string("stewardship/" + TIP, context)
     assert plain.startswith('<span class="toggletip"><button')
     assert "data-browser-zone" not in plain
+
+
+def test_a_page_zone_note_variable_leaves_plain_tips_plain():
+    """Pages keep the note's text in a zone_note variable (translate-as), and
+    an include sees the page's whole context, so a plain toggletip drawn after
+    that line must stay a plain toggletip: only tip_zone_note makes the note."""
+    engine = engines["django"]
+    html = engine.from_string(
+        '{% load i18n %}{% translate "' + TEXT + '" as zone_note %}'
+        '{% include "stewardship/' + TIP + '" with tip_id="plain-tip"'
+        ' tip_text="Help." %}'
+    ).render({})
+    assert '<span class="toggletip"><button' in html
+    assert "data-browser-zone" not in html
+    assert '<span class="toggletip-bubble" id="plain-tip" hidden>Help.</span>' in html
