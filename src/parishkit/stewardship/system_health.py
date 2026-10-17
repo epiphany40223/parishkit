@@ -150,10 +150,11 @@ BANNER_PROBLEMS = {
     "mail_provider_failed": "sender_halted",
     "retry_refusal_unrecorded": "refusal_unrecorded",
 }
-# Mapped events whose banner group links no tile yet. "Email sending failed"
+# Mapped events whose banner group links no tile. "Email sending failed"
 # is also recorded for failures that halt nothing, so it should link the
 # Mail tile only while a halt is current; the banner's one query cannot tell
-# that until ADM-13 PR 4 adds halt identities.
+# that, and reading the halt records (ADM-13 PR 4a) would add a query to
+# every Admin page.
 UNLINKED_EVENTS = frozenset({"mail_provider_failed"})
 # Kinds whose sentence on Home already links its own tile ("See Mail
 # sender", "See the counts", "See Version"), so Home's line adds no second
@@ -2208,6 +2209,16 @@ def home_problems(configuration, now, refresh):
     return find_problems(refresh=refresh, **inputs)
 
 
+def _clear_state(processes, now):
+    """Clear the halt's state (``mail_halt_clear.ClearState``) while a running
+    mail consumer reports Halted, else None (no section is drawn)."""
+    if not any(line.running and line.sender_state == "halted" for line in processes):
+        return None
+    from .mail_halt_clear import clear_state
+
+    return clear_state(now)
+
+
 def read_health(store):
     """Read the System health model in one read-only snapshot.
 
@@ -2267,6 +2278,9 @@ def read_health(store):
             # Which refusal the panel shows, so an open Accept this change
             # once preview of another one is marked changed (live-status).
             "refused_attempt": refused_attempt,
+            # Clear the halt (ADM-13 PR 4b): read only while a running mail
+            # consumer reports Halted, so every other read adds no query.
+            "clear_halt": _clear_state(processes, now),
         }
     model = SystemHealth(
         checked_at=now,

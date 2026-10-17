@@ -441,7 +441,7 @@ pk-admin system debug-allow
 
 ### `system mail-clear-preview` and `system mail-clear`
 
-System health's **Clear the halt** (its button comes with ADM-13 PR 4b),
+System health's **Clear the halt**, in the Mail tile,
 for a mail sender halted by a fault that waiting cannot fix, once the
 cause is fixed (the
 [mail-provider outage runbook](stewardship-launch-runbooks.md#mail-provider-outage)
@@ -466,7 +466,10 @@ halt is not recorded yet (within about 30 seconds of the halt).
 `system mail-clear --token TOKEN` clears that halt. It always prompts (or
 takes `--yes`) with what clearing does. It records the clear signal (the
 token's key names it, so a repeat returns the first, `created` false) and
-`mail_halt_cleared` with `admin_cmd_system_mail_clear`, and prints
+`mail_halt_cleared` with `admin_cmd_system_mail_clear`. Like the page,
+it also acknowledges the halt's own entries in the critical-problems banner
+that the preview saw (`critical_events_acknowledged`, with the clear signal
+as its subject). It prints
 `clear_id`, `halt_id`, `created` and `created_at`. Both mail senders act on
 it within about 30 seconds and send one probe email per consumer (so up to
 two); if the fault is still there, sending halts again under a new halt. A halt that changed
@@ -3654,3 +3657,6 @@ Each change is recorded in System logs as on the page
   [--no-wait]` (asks for a mailbox check, records no event) and `system
   mail-clear --token TOKEN` (always prompts; its event), Clear the halt
   ahead of System health's button. Neither needs a recent sign-in (#1547).
+- `pk-admin/1` (ADM-13 PR 4b, #530): additive. `system mail-clear` also
+  acknowledges the halt's critical-problems banner entries the preview saw,
+  as System health's Clear the halt does.
