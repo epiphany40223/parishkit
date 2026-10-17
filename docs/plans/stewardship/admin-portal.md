@@ -274,8 +274,8 @@ page ([#528](https://github.com/epiphany40223/parishkit/issues/528)) is
 delivered in these slices, each its own pull request with publication left
 switched off:
 
-1. **Already in ParishSoft at the check** (forward migration 0111, the next
-   free number, reserved here): the derived-proposal guard's worker branch
+1. **Already in ParishSoft at the check** (forward migration 0112, the number
+   assigned to it centrally): the derived-proposal guard's worker branch
    for `pending|failed → resolved_upstream` backed by a Production-mode
    plan's `already_in_parishsoft` field row, the confirmation guard
    checking such rows at their next version, the preflight marking them,
