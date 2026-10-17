@@ -10,6 +10,7 @@ import pytest
 from django.utils import timezone
 
 from parishkit.stewardship.accounts import integration_credentials as credentials
+from parishkit.stewardship.accounts.automation_models import AutomationSession
 from parishkit.stewardship.accounts.configuration_errors import (
     ConfigurationReadinessUnavailable,
 )
@@ -28,7 +29,10 @@ from parishkit.stewardship.accounts.key_files import (
 )
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
-from parishkit.stewardship.accounts.secret_models import SecretReplacementRequest
+from parishkit.stewardship.accounts.secret_models import (
+    SealedCredentialStaging,
+    SecretReplacementRequest,
+)
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.credential_runtime import acknowledge_rotations
 from parishkit.stewardship.deployment import ServiceRole, load_deployment
@@ -121,6 +125,31 @@ def install(value, request_id):
         return install_request(
             value["service"].store, request_id=request_id, correlation_id=uuid4()
         )
+
+
+def test_key_paste_after_the_approved_sessions_ended_says_sign_in_again(working):
+    """An ended automation session makes the browser's key paste a 403 sign-in.
+
+    The browser approved a full-scope automation session and then ended it, so
+    no session holds its sign-in instant live and the intake guard would refuse
+    (#1547). The page says so, with the sign-in link, instead of an outage.
+    """
+    from parishkit.stewardship.accounts import automation_sessions as automation
+
+    from .automation_builders import approve_now, start
+    from .test_automation_sessions_postgresql import owner
+
+    service = working["service"]
+    secret, code = start(service)
+    approve_now(service, code)
+    row = AutomationSession.objects.get(secret_digest=automation.secret_digest(secret))
+    assert automation.revoke(row.pk, owner(service), reason="revoked_by_owner")
+    response = save(working)
+    assert response.status_code == 403
+    assert b"Your sign-in has ended" in response.content
+    assert b"/admin/login" in response.content
+    assert not SecretReplacementRequest.objects.exists()
+    assert not SealedCredentialStaging.objects.exists()
 
 
 def test_saved_key_installs_acknowledges_and_is_selected(working):
