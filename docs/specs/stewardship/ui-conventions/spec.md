@@ -853,7 +853,12 @@ line while it is empty (#959); `data-required-when` and
 `data-required-when-shown`; `data-enabled-when` and `data-locked-when`
 ([conditional fields](#conditional-fields));
 the acknowledgment gate (`data-acknowledgment-gated`); the time-entry gate;
-the change gate `data-require-change` (#924); the shared `holdButton` /
+the change gate `data-require-change` (#924) and, on such a form,
+`data-change-alone` with `data-change-alone-hint`, a group of field names
+that must change on their own: while one of them and any field outside the
+group differ from the saved values, Review waits and the hint line gives the
+words (Campaign settings: a live campaign's Ministries; a draft's dates and
+time zone while it has mail schedules, #1330); the shared `holdButton` /
 `releaseButton` pair and `GATE_MARKS` list (#924), so gates never release a
 button another gate still holds; the `pageshow` re-check;
 `test_campaign_setup_gates.py`, `test_prerequisite_gates.py` (#946).

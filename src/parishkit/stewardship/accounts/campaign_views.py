@@ -125,6 +125,15 @@ MINISTRIES_ALONE_FIX = _(
     "Put the end date and leader roles back as they were and review the "
     "Ministries; once that is applied, change the rest."
 )
+# A draft's dates and time zone, while it has mail schedules, are reviewed
+# with every mailing on Dates and mail schedules (``_draft_review``), so they
+# change on their own there; Save waits with these words meanwhile (#1330).
+WINDOW_FIELDS = ("start_date", "end_date", "timezone")
+DATES_ALONE = _(
+    "Change the dates and time zone on their own: this campaign has mail "
+    "schedules, and Dates and mail schedules reviews the new dates with every "
+    "mailing. Save the other settings separately."
+)
 # A live campaign's end date: the help that replaces the draft's, since the
 # date may move either way (#912).
 LIVE_END_HELP = _(
@@ -573,6 +582,9 @@ def _page(
             # Review waits while the Ministries and another setting both
             # changed, in the words the server refuses that with (#1330).
             "ministries_alone": MINISTRIES_ALONE,
+            # A draft with mail schedules changes its dates on their own.
+            "dates_alone": editable and has_schedules(configuration, campaign),
+            "dates_alone_hint": DATES_ALONE,
             "family_test_url": chosen_family_test_url(configuration, campaign),
             # Review posts here, and the review dialog's Apply too.
             "page_url": request.path,
@@ -680,6 +692,16 @@ def review_settings(service, actor, state, campaign, editable, opened, form, rea
     return _live_review(service, actor, state, campaign, form, (open_fields, live_at))
 
 
+def has_schedules(configuration, campaign):
+    """Whether ``configuration`` holds a mail schedule of ``campaign``."""
+    return any(
+        row["values"]["campaign_id"] == str(campaign.pk)
+        for row in configuration.active_configuration.canonical_document[
+            "sections"
+        ].get("schedules", [])
+    )
+
+
 def _answer(request, review, page):
     """Answer a Review post with ``review_settings``' result.
 
@@ -717,27 +739,16 @@ def _draft_review(service, actor, state, campaign, form):
     }
     if not changed:
         raise UserFacingError(UNCHANGED, fix=_("Nothing was changed."))
-    window_fields = {"start_date", "end_date", "timezone"}
-    if window_fields.intersection(changed) and any(
-        row["values"]["campaign_id"] == str(campaign.pk)
-        for row in configuration.active_configuration.canonical_document[
-            "sections"
-        ].get("schedules", [])
-    ):
-        if set(changed) - window_fields:
+    window = [name for name in WINDOW_FIELDS if name in changed]
+    if window and has_schedules(configuration, campaign):
+        if set(changed) - set(WINDOW_FIELDS):
+            # At the first changed window field, in the words the page's
+            # Save already waits with (data-change-alone, #1330).
             form.add_error(
-                None,
-                ValidationError(
-                    _(
-                        "No settings have been saved. Reconcile dates and mail "
-                        "schedules first using the schedule editor, then save other "
-                        "draft settings."
-                    ),
-                    code="schedules_first",
-                ),
+                window[0], ValidationError(DATES_ALONE, code="schedules_first")
             )
             return None
-        return {"reconcile": {name: values[name] for name in sorted(window_fields)}}
+        return {"reconcile": {name: values[name] for name in sorted(WINDOW_FIELDS)}}
     patch = [
         {
             "operation": "update",

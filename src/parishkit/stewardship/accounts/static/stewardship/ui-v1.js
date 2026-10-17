@@ -2858,20 +2858,27 @@
       });
     });
   };
-  // A field that must change on its own (data-change-alone="<name>" on a
-  // data-require-change form, with its words in data-change-alone-hint): a
-  // live campaign's Ministries, whose review is applied by itself (#1330).
-  // While it and any other field differ from the saved values, the field
+  // Fields that must change on their own (data-change-alone="<name> ..." on
+  // a data-require-change form, with its words in data-change-alone-hint):
+  // a live campaign's Ministries, whose review is applied by itself, or a
+  // draft's dates and time zone while it has mail schedules (#1330). The
+  // names listed are one group: while a field of it and any field outside
+  // it differ from the saved values, the group's first changed field
   // carries the hint as its data-client-error, so the gate below holds
   // Review with those words. The server still refuses such a change.
   const changeAlone = (form) => {
-    const name = form.dataset.changeAlone;
-    const field = name && form.id && form.elements.namedItem(name);
-    if (!(field instanceof HTMLElement) || !form.hasAttribute("data-require-change")) return;
+    const group = (form.dataset.changeAlone || "").split(/\s+/).filter(Boolean);
+    const fields = group.map((name) => form.elements.namedItem(name))
+      .filter((field) => field instanceof HTMLElement);
+    if (!fields.length || !form.id || !form.hasAttribute("data-require-change")) return;
     const names = changedNames(form, savedState(form));
     const hint = form.dataset.changeAloneHint || "";
-    if (names.has(name) && names.size > 1) field.dataset.clientError = hint;
-    else if (field.dataset.clientError === hint) delete field.dataset.clientError;
+    const mixed = [...names].some((name) => !group.includes(name));
+    const marked = mixed ? fields.find((field) => names.has(field.name)) : null;
+    fields.forEach((field) => {
+      if (field === marked) field.dataset.clientError = hint;
+      else if (field.dataset.clientError === hint) delete field.dataset.clientError;
+    });
   };
   const gateComplete = (form) => {
     if (!form || !form.hasAttribute("data-require-complete")) return;
