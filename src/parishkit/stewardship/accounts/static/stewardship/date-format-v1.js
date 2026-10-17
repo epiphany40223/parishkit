@@ -128,14 +128,20 @@
   // data-other-zone-time, above); data-compact marks
   // Admin table cells (ui-conventions#date-format), data-precise adds
   // seconds and the zone name (System logs), data-time-only a recent
-  // instant shown as its clock time ("started 10:00 PM"), and data-time-day
-  // with it a coming instant that may fall tomorrow (dayTime).
+  // instant shown as its clock time ("started 10:00 PM"), data-time-day
+  // with it a coming instant that may fall tomorrow (dayTime), and
+  // data-day-only an instant's day alone, in this browser's time zone and
+  // compact when data-compact is set (the Financial report's Latest
+  // response, #1544).
   function localize(scope) {
     otherZoneTimes(scope);
     (scope || document).querySelectorAll("time[data-local-instant]").forEach((node) => {
       const date = new Date(node.dateTime);
       if (Number.isFinite(date.getTime())) {
-        node.textContent = node.hasAttribute("data-time-only")
+        node.textContent = node.hasAttribute("data-day-only")
+          ? fields(date.getFullYear(), date.getMonth() + 1, date.getDate(),
+            node.hasAttribute("data-compact"))
+          : node.hasAttribute("data-time-only")
           ? (node.hasAttribute("data-time-day") ? dayTime(date, new Date()) : clock(date))
           : instant(date, {
             compact: node.hasAttribute("data-compact"),
