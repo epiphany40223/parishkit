@@ -45,7 +45,7 @@ TICKET_LABELS = {
     "cancelled": _("Cancelled before preparation"),
     "failed": _("Preparation failed"),
 }
-# A test email is an ordinary outbox message, listed on Outgoing mail too,
+# A test email is an ordinary outbox message, listed on Sent mail too,
 # so it reads in the same plain words there and here (#678).
 MESSAGE_LABELS = STATE_LABELS
 REASON_LABELS = {
@@ -110,7 +110,7 @@ def _label(item):
         # toward the ten-test limit and Testing cleanup until then.
         return _(
             "Waiting: another email to this Family is marked “Not sure it "
-            "arrived”. Resolve it on Outgoing mail; until then this test waits."
+            "arrived”. Resolve it on Sent mail; until then this test waits."
         )
     if item["message_state"] is not None:
         return MESSAGE_LABELS.get(item["message_state"], _("Unknown status"))

@@ -13,7 +13,7 @@
 <dt>{% translate "Corrections" %}</dt><dd>{{ correction_count|number }}</dd>
 </dl>
 <details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Responses included up to number" %}</dt><dd>{{ snapshot.submission_watermark|number }}</dd></dl></details>
-{% if not total %}<p>{% translate "No new requests needing follow-up, and no corrections, arrived in the period this report covers. Whether the report email was delivered is shown under Outgoing mail." %}</p>{% endif %}
+{% if not total %}<p>{% translate "No new requests needing follow-up, and no corrections, arrived in the period this report covers. Whether the report email was delivered is shown under Sent mail." %}</p>{% endif %}
 {# The requests and their page links are one region; Previous and Next page refresh it in place (ui-v1.js, a[data-in-place], #519), and the "Page 2 of 5" line (.table-count) is announced. #}
 <div id="weekly-report-page" data-in-place-region>
 {% for row in rows %}

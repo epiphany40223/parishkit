@@ -139,7 +139,7 @@ def test_a_ministry_leader_is_refused(scenario, google):
     response, body = get(browser, PAGE)
     assert response.status_code in {403, 404}
     assert b"census change" not in body
-    # The shared denial, not Outgoing mail's error page (#1036 review).
+    # The shared denial, not Sent mail's error page (#1036 review).
     assert b"Delivery action unavailable" not in body
     assert viewed() == []
 

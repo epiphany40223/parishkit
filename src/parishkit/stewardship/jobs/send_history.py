@@ -9,7 +9,7 @@ Family counts once, by its newest occurrence of the send. Every send is
 counted with the panel's own statements (``send_progress._count``), so the
 history and the panel always agree.
 
-The Outgoing mail page (``delivery_views.delivery_list``) can list exactly the
+The Sent mail page (``delivery_views.delivery_list``) can list exactly the
 emails of one send: each Family's newest occurrence's email, the same rows
 the counts read. Combined with its state filter, each linked count opens
 exactly the emails it counts.
@@ -110,7 +110,7 @@ class SendKey:
 
     @property
     def token(self):
-        """The ``send`` query value that selects this send on Outgoing mail."""
+        """The ``send`` query value that selects this send on Sent mail."""
         return f"{self.definition}:{self.revision}:{self.mode}:{self.cycle}"
 
     @classmethod
@@ -162,7 +162,7 @@ class ListedSend(NamedTuple):
 
     @property
     def mode_label(self):
-        """The send's mode, as Outgoing mail names it."""
+        """The send's mode, as Sent mail names it."""
         return _("Production") if self.key.mode == "production" else _("Testing")
 
 
@@ -170,9 +170,9 @@ class ListedSend(NamedTuple):
 class Outcome:
     """One linked count: ``count`` Families, ``listed`` of them with an email.
 
-    ``state`` is the outbox state Outgoing mail filters on and ``label`` its
+    ``state`` is the outbox state Sent mail filters on and ``label`` its
     plain name. ``listed`` can be below ``count`` when some failed before an
-    email was prepared; ``query`` is the Outgoing mail filter listing them.
+    email was prepared; ``query`` is the Sent mail filter listing them.
     ``send`` names the send and its mode, so each link's accessible name
     says which send it lists.
     """
@@ -351,7 +351,7 @@ def mark_live(rows, panel):
 def describe(key):
     """The ``ListedSend`` for ``key``, or None when it names no Family send.
 
-    The send may belong to any campaign: an Outgoing mail link stays valid
+    The send may belong to any campaign: an Sent mail link stays valid
     after the next campaign becomes current. Reads only the named schedule's
     occurrences and the campaign's reminder schedules.
     """

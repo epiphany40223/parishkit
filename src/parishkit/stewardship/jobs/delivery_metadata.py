@@ -32,6 +32,9 @@ FIELDS = (
     "updated_at",
     "finished_at",
 )
+# The purposes an Administrator resolves on an email's page: each belongs
+# to a campaign, whose admission rules decide what may be done. The banner's
+# count, the bulk actions and the resolution commands read these.
 PURPOSES = (
     "initial",
     "reminder",
@@ -40,12 +43,17 @@ PURPOSES = (
     "daily_digest",
     "weekly_digest",
 )
-# Outgoing mail is a log of emails (#931): it sorts on the server by When
+# Sent mail lists every email of every kind (#1562): also the operational
+# and security notices, which belong to no campaign, so their page shows
+# their history but offers no resolution.
+LISTED_PURPOSES = PURPOSES + ("operational", "security_event")
+# Sent mail is a log of emails (#931): it sorts on the server by When
 # (changed: the time of the email's current state, its last change; the
-# default, newest first), Family (name), Family DUID (duid), Purpose, Mode,
-# State and Provider attempts. The command line's --sort takes these same
-# tokens, plus created (when the email was created), which the page no
-# longer shows. Administrator reports, which have no Family, sort last
+# default, newest first), Recipient (name), Purpose and Delivery (state).
+# The command line's --sort also takes the tokens of the columns Sent mail
+# no longer shows (#1562): Family DUID (duid), Mode, Provider attempts
+# (attempts) and created (when the email was created). Emails to
+# Administrators, which have no Family, sort last
 # under name and duid in either direction, as do, under name, Families the
 # latest ParishSoft data no longer has. Only the state filter is indexed
 # (outbox_due, outbox_campaign_state); the orderings themselves are not, so
@@ -119,8 +127,18 @@ def with_name_keys(selected, snapshot, duid="family__family_duid"):
     )
 
 
+# Sent mail's grouped Delivery choices (#1562), each a set of outbox
+# states. They overlap on purpose: they are filters, not a partition. Not
+# sure it arrived is not "not delivered", since such an email may have
+# arrived.
+STATE_GROUPS = {
+    "needs_attention": ("delivery_unknown", "permanent_failure"),
+    "not_delivered": ("permanent_failure", "cancelled"),
+    "still_sending": ("pending", "retry_wait", "submitting"),
+}
 STATES = (
     "all",
+    *STATE_GROUPS,
     "delivery_unknown",
     "permanent_failure",
     "pending",
@@ -131,7 +149,7 @@ STATES = (
 )
 # How each outbox state reads to an Administrator, in the plain words the
 # Family-question pages use (#523, #589). The Family timeline shows the
-# outcome; Outgoing mail and the Mail message page show the state, which
+# outcome; Sent mail and the Mail message page show the state, which
 # adds where a "Still sending" email is, so a delivery problem (waiting to
 # retry) stays visible. "Delivered" means the mail service accepted the
 # email; the pages' About panels say that does not prove it reached the inbox.
@@ -151,9 +169,50 @@ STATE_LABELS = OUTCOMES | {
 }
 
 
+# Sent mail's Purpose filter, and its Production / Testing choice.
+PURPOSE_CHOICES = ("all", *LISTED_PURPOSES)
+MODES = ("production", "testing")
+RECIPIENT_HINT = "Use a Family DUID, an email address or a delivery ID."
+# An email address as Sent mail's Recipient filter takes it: one "@" with
+# no spaces around it. The provider and the render guard check the rest.
+_ADDRESS = re.compile(r"[^@\s]+@[^@\s]+")
+
+
 def messages():
     """Expose implemented delivery owners, never private rendered payloads."""
     return OutboxMessage.objects.filter(purpose__in=PURPOSES)
+
+
+def listed_messages():
+    """Every email Sent mail lists, of every kind (#1562)."""
+    return OutboxMessage.objects.filter(purpose__in=LISTED_PURPOSES)
+
+
+def recipient_scope(value):
+    """Read Sent mail's Recipient filter: whose emails to list (#1562).
+
+    Returns None for a blank filter, else ``(kind, value)``: ``("duid",
+    int)`` for a Family DUID (with or without its thousands commas),
+    ``("address", text)`` for an email address (lower-cased; the definer
+    read compares in lower case) or ``("id", UUID)`` for a delivery ID
+    (which also matches the Family record with that id, as before). Anything
+    else raises ``ValueError``.
+    """
+    if type(value) is not str or len(value) > 254:
+        raise ValueError(RECIPIENT_HINT)
+    value = value.strip()
+    if not value:
+        return None
+    if value.isascii() and (value.isdecimal() or "," in value):
+        return ("duid", family_duid(value))
+    if "@" in value:
+        if _ADDRESS.fullmatch(value) is None:
+            raise ValueError(RECIPIENT_HINT)
+        return ("address", value.lower())
+    try:
+        return ("id", UUID(value))
+    except ValueError:
+        raise ValueError(RECIPIENT_HINT) from None
 
 
 def unknown_count():
@@ -216,9 +275,20 @@ def alert_counts(since, *, limit):
 
 
 def listing(
-    window, *, state, query, sort=DELIVERY_SORTING.default, send=None, snapshot=None
+    window,
+    *,
+    state,
+    query,
+    sort=DELIVERY_SORTING.default,
+    send=None,
+    snapshot=None,
+    purpose="all",
+    mode=None,
+    since=None,
+    until=None,
+    actor=None,
 ):
-    """Accept a bounded exact Family DUID or delivery UUID, not arbitrary SQL.
+    """Sent mail's filtered page: closed choices and exact identifiers only.
 
     Returns (window, rows, has_next, total): ``total`` is a bounded count of
     every matching message (``web.tables.bounded_count``), and ``window`` the
@@ -229,25 +299,53 @@ def listing(
     ``snapshot`` is the ParishSoft snapshot id the Family name sort reads
     (``read_listing`` passes the current one, which the page also names its
     Families from); without one every name key is NULL.
+
+    ``state`` is a state, a ``STATE_GROUPS`` group or "all"; ``purpose`` one
+    of ``PURPOSE_CHOICES``; ``mode`` "production", "testing" or None (both);
+    ``since`` and ``until`` UTC bounds on When (``updated_at``), ``until``
+    exclusive. ``query`` is the Recipient filter (``recipient_scope``). An
+    address is resolved to its emails through the Administrator-only
+    definer read for ``actor``, which raises ``PermissionError`` when it
+    refuses.
     """
-    if state not in STATES or type(query) is not str or len(query) > 64:
+    if (
+        state not in STATES
+        or purpose not in PURPOSE_CHOICES
+        or mode not in (None, *MODES)
+    ):
         raise ValueError("Invalid delivery filter.")
-    selected = messages()
+    scope = recipient_scope(query)
+    selected = listed_messages()
     if send is not None:
         # About one id per Family, read through the definition index; the
         # messages are then found by primary key.
         selected = selected.filter(pk__in=email_ids(send))
-    if state != "all":
+    if state in STATE_GROUPS:
+        selected = selected.filter(state__in=STATE_GROUPS[state])
+    elif state != "all":
         selected = selected.filter(state=state)
-    if query:
-        if query.isascii() and (query.isdecimal() or "," in query):
-            selected = selected.filter(family__family_duid=family_duid(query))
+    if purpose != "all":
+        selected = selected.filter(purpose=purpose)
+    if mode is not None:
+        selected = selected.filter(mode=mode)
+    if since is not None:
+        selected = selected.filter(updated_at__gte=since)
+    if until is not None:
+        selected = selected.filter(updated_at__lt=until)
+    if scope is not None:
+        kind, value = scope
+        if kind == "duid":
+            selected = selected.filter(family__family_duid=value)
+        elif kind == "id":
+            selected = selected.filter(Q(pk=value) | Q(family_id=value))
         else:
-            try:
-                identifier = UUID(query)
-            except ValueError:
-                raise ValueError("Use an exact Family DUID or delivery ID.") from None
-            selected = selected.filter(Q(pk=identifier) | Q(family_id=identifier))
+            # Imported here: delivery_reads imports this module.
+            from .delivery_reads import address_deliveries
+
+            # The ids are found through the index on the renderings, then
+            # the messages by primary key: an address has a few emails per
+            # mailing, or one report a day.
+            selected = selected.filter(pk__in=address_deliveries(value, actor))
     total = bounded_count(selected)
     if DELIVERY_SORTING.tokens[sort][0] == "name":
         selected = with_name_keys(selected, snapshot)

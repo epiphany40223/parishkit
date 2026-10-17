@@ -16,7 +16,7 @@ the automation session, only when it created the retry. The request key is
 the page's ``command_id`` (``request_key`` for an export cleanup): repeating
 it returns the original retry and records nothing new.
 
-The delivery commands (PR 9b) read and resolve Outgoing mail as its pages
+The delivery commands (PR 9b) read and resolve Sent mail as its pages
 do, through ``jobs.delivery_reads`` and ``delivery_resolution``:
 ``delivery list``, ``delivery show``, ``delivery refusals`` and ``delivery
 refusal-show`` admit passively (any session), read in the page's
@@ -247,13 +247,19 @@ NOTE_LIMIT = 2000
 
 @dataclass(frozen=True)
 class DeliveryList(ReadModel):
-    """One page of Outgoing mail: delivery metadata, never a recipient.
+    """One page of Sent mail: delivery metadata, never a recipient.
 
     Each row adds ``refused``, the page's count of the email's unresolved
-    refused addresses (#1004); ``delivery show`` has no such count.
+    refused addresses (#1004); ``delivery show`` has no such count. The
+    filters are echoed except the recipient, which is input only (#1562):
+    ``mode`` is None for both modes, ``start`` and ``end`` the days given.
     """
 
     state: str
+    purpose: str
+    mode: str | None
+    start: str | None
+    end: str | None
     send: str | None
     page: int
     size: int
@@ -352,6 +358,10 @@ def delivery_list_model(data):
     count, capped = data["total"]
     return DeliveryList(
         state=values["state"],
+        purpose=values["purpose"],
+        mode=values["mode"],
+        start=values.get("start") or None,
+        end=values.get("end") or None,
         send=values.get("send"),
         page=window.page,
         size=window.size,
@@ -431,7 +441,7 @@ def refusal_show_model(data):
 
 
 def _delivery_read(caller, service, read, project, *, subject=None, audit=True):
-    """Read as an Outgoing mail page does (``delivery_views._page``).
+    """Read as an Sent mail page does (``delivery_views._page``).
 
     Admits passively with ``BACKGROUND_WORK``, reads in one transaction
     unless a restore is under review, rechecks the session and the restore
@@ -447,14 +457,18 @@ def _delivery_read(caller, service, read, project, *, subject=None, audit=True):
     from .audit.schemas import Action
 
     def step():
-        """Admit, read, recheck and audit, as the page."""
+        """Admit, read, recheck and audit, as the page.
+
+        ``read`` gets the admitted principal, whom a definer read names as
+        its caller (the address filter of ``delivery list``, #1562).
+        """
         actor = _admit(caller, service.store, Capability.BACKGROUND_WORK)
         missing = False
         with transaction.atomic():
             if _restore_review():
                 raise Unavailable("A restore is under review.")
             try:
-                model, count = project(read())
+                model, count = project(read(actor))
             except ObjectDoesNotExist:
                 missing, count = True, 0
         with transaction.atomic():
@@ -471,19 +485,24 @@ def _delivery_read(caller, service, read, project, *, subject=None, audit=True):
 
 
 def read_deliveries(caller, service, parameters):
-    """``delivery list``: one filtered page of Outgoing mail."""
+    """``delivery list``: one filtered page of Sent mail."""
     from .jobs.delivery_reads import read_listing, with_refusal_counts
 
     def project(data):
         """The document, and the page's audited row count.
 
         The rows take the page's refused counts (#1004), in the read's
-        transaction, from the same query Outgoing mail runs.
+        transaction, from the same query Sent mail runs.
         """
         rows = with_refusal_counts(data["rows"])
         return delivery_list_model(data | {"rows": rows}), len(rows)
 
-    return _delivery_read(caller, service, lambda: read_listing(parameters), project)
+    return _delivery_read(
+        caller,
+        service,
+        lambda actor: read_listing(parameters, actor=actor.identity),
+        project,
+    )
 
 
 def read_delivery(caller, service, message_id, parameters):
@@ -497,7 +516,7 @@ def read_delivery(caller, service, message_id, parameters):
     return _delivery_read(
         caller,
         service,
-        lambda: read_detail(message_id, parameters),
+        lambda actor: read_detail(message_id, parameters),
         project,
         subject=message_id,
     )
@@ -511,7 +530,9 @@ def read_refusal_list(caller, service, parameters):
         """The document, and the page's audited row count."""
         return refusal_list_model(data), len(data["rows"])
 
-    return _delivery_read(caller, service, lambda: read_refusals(parameters), project)
+    return _delivery_read(
+        caller, service, lambda actor: read_refusals(parameters), project
+    )
 
 
 def read_refusal_detail(caller, service, refusal_id):
@@ -523,7 +544,7 @@ def read_refusal_detail(caller, service, refusal_id):
     return _delivery_read(
         caller,
         service,
-        lambda: read_refusal(refusal_id, QueryDict()),
+        lambda actor: read_refusal(refusal_id, QueryDict()),
         lambda data: (refusal_show_model(data), 1),
         subject=refusal_id,
     )

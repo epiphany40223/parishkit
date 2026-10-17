@@ -284,7 +284,7 @@ def test_manual_form_requires_csrf_confirmation_and_reviewed_configuration(
             # The refusal links the pages it names (navigation rule 6, #521).
             for name, label in (
                 ("background", "Background work"),
-                ("deliveries", "Outgoing mail"),
+                ("deliveries", "Sent mail"),
             ):
                 link = f'<a href="{reverse(f"admin:{name}")}">{label}</a>'
                 assert link.encode() in response.content

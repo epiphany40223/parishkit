@@ -25,7 +25,7 @@ from .setup_wizard import BY_KEY
 
 # A setup test email has its own states, named with the outbox's nearest
 # plain words (STATE_LABELS) so a test result reads like the same result on
-# Outgoing mail (#678).
+# Sent mail (#678).
 LABELS = {
     "queued": STATE_LABELS["pending"],
     "submitting": STATE_LABELS["submitting"],

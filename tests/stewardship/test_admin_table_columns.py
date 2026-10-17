@@ -62,7 +62,8 @@ LABEL = re.compile(r'\{% translate "([^"]+)" %\}')
 # Each DUID heading and the name headings it may follow. Census changes'
 # Member column is headed Who.
 NAMED_BY = {
-    "Family DUID": {"Family"},
+    # Sent mail's Recipient names the Family of a Family email (#1562).
+    "Family DUID": {"Family", "Recipient"},
     "Member DUID": {"Member", "Who"},
 }
 # DUID columns that do not follow a name, on purpose, with the reason.

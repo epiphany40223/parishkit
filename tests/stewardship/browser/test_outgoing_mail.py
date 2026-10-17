@@ -1,4 +1,4 @@
-"""Outgoing mail's sending limit note and bulk actions in the browser (#382)."""
+"""Sent mail's sending limit note and bulk actions in the browser (#382)."""
 
 import pytest
 
@@ -73,7 +73,7 @@ def answer_posts(page, component_origin, answers):
 
 
 def open_panel(page, component_origin):
-    """Open Outgoing mail's bulk panel; marks the window to detect a reload."""
+    """Open Sent mail's bulk panel; marks the window to detect a reload."""
     page.goto(component_origin + "/deliveries-bulk")
     page.evaluate("window.notReloaded = true")
     page.locator("#bulk-panel summary").click()
