@@ -394,10 +394,12 @@ def filter_line(error, line, sizes=None):
 
 
 @register.inclusion_tag("stewardship/table-sort-heading.html", takes_context=True)
-def sort_heading(context, table, column, label, css_class=""):
+def sort_heading(context, table, column, label, css_class="", rowspan=None):
     """A column heading that re-sorts a shared Admin table (web/tables.py).
 
     Usage: ``{% sort_heading table "created" _("Created") "numeric" %}``.
+    ``rowspan`` spans a heading over a two-row head whose other row groups
+    columns under one heading (the Financial report's ParishSoft, #1544).
     ``column`` must be one of the table's sortable columns (a typo fails
     loudly instead of silently rendering a dead heading). A GET table's
     heading is a link; a POST table's is a small CSRF form whose button
@@ -409,6 +411,7 @@ def sort_heading(context, table, column, label, css_class=""):
         "column": column,
         "label": label,
         "css_class": css_class,
+        "rowspan": rowspan,
         "state": table.aria_sort(column),
         "descends": table.sort_descends(column),
         "fields": table.heading_fields(column),
