@@ -794,17 +794,24 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
     tested = browser.get(URL).content
     assert f'value="{LINK}"'.encode() in tested
     assert b"Folder tested:" in tested
+    # Save's change gate compares with the saved (here, no) folder, so the
+    # tested one drawn in the field can be saved as it is (#1330).
+    (field,) = re.findall(rb'<input[^>]*name="target"[^>]*>', tested)
+    assert b'data-saved-value=""' in field
+    assert b'data-require-change="base_digest"' in tested
     BackupDriveProbe.objects.filter(pk=probe.pk).update(
         state="failed", failure_kind="permission", completed_at=database_now_sql()
     )
     failed = browser.get(URL).content
     assert f'value="{LINK}"'.encode() in failed and b"Folder tested:" in failed
     assert b"Test access:" in failed
+    # A link that isn't a Drive folder is refused at the field, as Save
+    # refuses it (#1330), and nothing is queued.
     invalid = post(browser, URL, {"action": "test", "target": "x"})
     assert invalid.status_code == 400
-    assert invalid.json()["refusal"]["message"] == (
-        "That is not a link to a Google Drive folder."
-    )
+    assert b"Enter a link to a folder on drive.google.com." in invalid.content
+    assert b'aria-invalid="true"' in invalid.content
+    assert BackupDriveProbe.objects.count() == 1
     preview = hidden(
         post(
             browser,
@@ -1002,7 +1009,12 @@ def test_test_access_answers_in_place(workspace):
 
 
 def test_test_access_refusals_say_what_to_fix(workspace):
-    """A missing or wrong folder link names the problem, not "Check your entries"."""
+    """A missing or wrong folder link names the problem, not "Check your entries".
+
+    A wrong link is refused at the field, with the page drawn again around
+    what was entered, as Save does (#1330); a missing one, with no folder
+    saved, says to enter it.
+    """
     browser, _ = signed_in()
     empty = page_post(browser, {"action": "test", "target": ""})
     assert empty.status_code == 400
@@ -1011,10 +1023,12 @@ def test_test_access_refusals_say_what_to_fix(workspace):
     document = "https://docs.google.com/document/d/x"
     wrong = page_post(browser, {"action": "test", "target": document})
     assert wrong.status_code == 400
-    assert b"That is not a link to a Google Drive folder." in wrong.content
-    assert b"https://drive.google.com/drive/folders/" in wrong.content
-    # The error page never repeats what was submitted.
-    assert b"docs.google.com" not in wrong.content
+    html = wrong.content.decode()
+    error = 'id="id_target_error"'
+    assert error in html and "Enter a link to a folder on drive.google.com." in html
+    (field,) = re.findall(r'<input[^>]*name="target"[^>]*>', html)
+    assert 'aria-invalid="true"' in field and "id_target_error" in field
+    assert f'value="{document}"' in field
     assert not BackupDriveProbe.objects.exists()
 
 

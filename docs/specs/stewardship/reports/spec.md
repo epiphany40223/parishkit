@@ -1068,8 +1068,14 @@ filtered rows, in the same statement as the total and the page (schema
 migration 0100), so the counts follow the filters in place, and paging and
 sorting leave them unchanged.
 
-Editing is audited and uses optimistic concurrency. This report is also the
-source for the weekly Admin digest.
+Editing is audited and uses optimistic concurrency. Clearing a completed
+follow-up needs its confirmation box ticked, and Save waits until it is. A
+Save that reaches the server without it is refused at that box
+([field errors](../ui-conventions/spec.md#field-errors-and-live-checks),
+[#1332](https://github.com/epiphany40223/parishkit/issues/1332)): the item
+is drawn again (400), in place, with the values and version sent and the
+message in the Save hint row and in the summary; nothing is saved. This
+report is also the source for the weekly Admin digest.
 
 ## Active parishioner family directory
 
@@ -1743,7 +1749,12 @@ more are ticked, Queue is unavailable and its reason line gives the count and
 says to untick some or all
 ([#1332](https://github.com/epiphany40223/parishkit/issues/1332)); the server
 still refuses more with a message saying to tick fewer or leave every box
-unticked, which includes them all. The list is
+unticked, which includes them all. A person's request refused that way is
+answered with Ministry requests drawn again (400), refused at the boxes
+([field errors](../ui-conventions/spec.md#field-errors-and-live-checks)):
+the ticks sent among the boxes kept, every box marked, and the message in
+the packet's hint row and in the summary; the queue is the default view.
+A script gets the same refusal as JSON. The list is
 read through the same scoped Ministry report selection as By Ministry, whose
 whole-scope read it reuses. It shows
 only each Ministry's full name (no DUID,

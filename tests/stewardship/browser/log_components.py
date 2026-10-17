@@ -8,16 +8,28 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 
 from parishkit.stewardship.audit.log_rows import (
+    AUDIT_ONLY_MESSAGE,
+    FIELD_MESSAGES,
     LEVEL_LABELS,
     LogQuery,
+    NothingShown,
     audit_row,
     log_table,
     merge,
     operational_row,
     page_context,
 )
-from parishkit.stewardship.audit.log_views import ZONE_MESSAGE
+from parishkit.stewardship.audit.log_views import (
+    FIELD_LINES,
+    ZONE_MESSAGE,
+    field_ids,
+    refusal_sizes,
+)
 from parishkit.stewardship.web.contracts import MESSAGES, ErrorCode
+from parishkit.stewardship.web.filter_errors import (
+    FilterError,
+    error_context,
+)
 
 # Where the in-place cross-link tests serve System logs (#519 PR 3).
 LIVE = "/logs-live"
@@ -130,22 +142,45 @@ def components(context, admin):
     audit[0]["task_subject"] = True
     audit[1]["has_related"] = False
 
-    def page(query, rows, *, number=1, total=None, action="/logs", linked=False):
+    def page(
+        query,
+        rows,
+        *,
+        number=1,
+        total=None,
+        action="/logs",
+        linked=False,
+        refusal=None,
+    ):
         """Render the production context builder's output, as the view does.
 
         Navigator and heading forms post back to this fixture's own path, or
         to ``action`` (the fixture server's redirecting path, for #478).
         ``linked`` draws the page as a followed link's answer (#536).
+        ``refusal`` draws it refused at a field (a ``FilterError``, #1332):
+        the form shows what was sent, the rest ``query``, the unfiltered one.
         """
         table = log_table(
             query, rows, through=moment, action=action, number=number, total=total
         )
+        refused = {}
+        if refusal is not None:
+            refused = error_context(refusal, field_ids(refusal.query), FIELD_LINES)
+            # The hint row reserves the message's size, as the view does.
+            refused["filter_sizes"] = refusal_sizes(refusal)
         return render_to_string(
             "stewardship/logs.html",
             context
             | {"admin_chrome": admin}
             # The Ministry filter's choices, by name (#1123).
-            | page_context(query, table, linked=linked, ministries=MINISTRIES),
+            | page_context(
+                query,
+                table,
+                linked=linked,
+                ministries=MINISTRIES,
+                sent=refusal and refusal.query,
+            )
+            | refused,
         )
 
     everything = LogQuery.parse(
@@ -277,6 +312,52 @@ def components(context, admin):
         ),
     ):
         result[path] = ("text/html", live(LogQuery.parse(parameters), found))
+
+    # Filters the server refused at a field (#1332), as the view draws them:
+    # the values sent in the form, the error at the field, and the entries
+    # for no filters (the default kinds of entry). Served at LIVE's
+    # addresses, so an in-place answer's forms post where the page's do.
+    def refused(field, sent, *, pair=None, kind=FilterError, message=None):
+        """``live`` for ``sent`` refused at ``field``, with the default rows.
+
+        ``message`` is the refusal's words when not the field's own (nothing
+        ticked under an audit-only Activity).
+        """
+        error = kind(field, message or FIELD_MESSAGES[field], sent, pair=pair)
+        return live(LogQuery(sort=sent.sort, size=sent.size), rows, refusal=error)
+
+    result["/logs-refused-dates"] = (
+        "text/html",
+        refused(
+            "end",
+            replace(shown, start="2026-09-20", end="2026-09-19", zone="UTC"),
+            pair="start",
+        ),
+    )
+    result["/logs-refused-none"] = (
+        "text/html",
+        refused("show", LogQuery(applied="yes", text="lag"), kind=NothingShown),
+    )
+    # Nothing ticked under an audit-only Activity: the level boxes are
+    # greyed, so the summary links to Audit record.
+    result["/logs-refused-none-sign-in"] = (
+        "text/html",
+        refused(
+            "show",
+            LogQuery(applied="yes", activity="sign_in"),
+            kind=NothingShown,
+            message=AUDIT_ONLY_MESSAGE,
+        ),
+    )
+    result["/logs-refused-subject"] = (
+        "text/html",
+        refused("subject", replace(shown, subject=str(UUID(int=304))[:-1])),
+    )
+    # A hostile value sent back into a refused identifier stays text.
+    result["/logs-refused-hostile"] = (
+        "text/html",
+        refused("actor", replace(shown, actor='"><script>window.__pwned = 1</script>')),
+    )
     # A followed link whose days were applied in Tokyo (#536).
     result["/logs-linked-tokyo"] = (
         "text/html",

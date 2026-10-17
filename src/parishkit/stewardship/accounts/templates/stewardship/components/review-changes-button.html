@@ -10,5 +10,6 @@
   keeps describing it (a data-require-complete form's hint), which the gate
   leaves in place beside its own. ``label`` replaces "Review changes" on a
   form whose Review is a confirmation (UX conventions, "A confirmation when
-  Review would only repeat the page", #1356), such as "Save".
+  Review would only repeat the page", #1356), such as "Save", or names
+  another action (Pages and emails' Preview changes, #1330).
 {% endcomment %}{% translate "Change a setting to review it." as default_hint %}{% button type="submit" autocomplete="off" aria-describedby=describedby|default:None %}{% if label %}{{ label }}{% else %}{% translate "Review changes" %}{% endif %}{% endbutton %} <span class="help unchanged-hint" data-unchanged-hint data-idle>{{ hint|default:default_hint }}</span>

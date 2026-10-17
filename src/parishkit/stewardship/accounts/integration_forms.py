@@ -11,6 +11,9 @@ from .key_files import MAX_FILE_BYTES
 from .policy_schema import normalized_email
 from .refresh_schedule_forms import ScheduleEditor
 
+# A field group with a reserved error line (file-size-field.html).
+ERROR_LINE_TEMPLATE = "stewardship/file-size-field.html"
+
 LABELS = {
     "parishsoft": _("ParishSoft"),
     "google_workspace": _("Google Workspace mail"),
@@ -28,6 +31,15 @@ MISSING_HINTS = {
     "channel_id": _("Enter a Slack channel ID, such as C0123456789."),
     "target": _("Paste the Google Drive folder link."),
 }
+
+# What the browser checks of an off-site folder link (#1330), leniently: a
+# bare folder ID or any https link on drive.google.com, as folder_id_from_url
+# reads them (case-blind scheme and host, spaces around it). The server
+# decides whether the link names a folder. Written for the "v" pattern flag.
+FOLDER_LINK_PATTERN = (
+    r"\s*([A-Za-z0-9_\-]{10,200}|[Hh][Tt][Tt][Pp][Ss]:\/\/([^\/?#]*@)?"
+    r"[Dd][Rr][Ii][Vv][Ee]\.[Gg][Oo][Oo][Gg][Ll][Ee]\.[Cc][Oo][Mm]([:\/?#].*)?)\s*"
+)
 
 
 class IntegrationForm(AdminForm):
@@ -132,6 +144,8 @@ class IntegrationForm(AdminForm):
                 self.fields[name].widget.attrs["data-missing-hint"] = hint
         if "channel_id" in self.fields:
             self.fields["channel_id"].widget.attrs["pattern"] = "[CG][A-Z0-9]{1,63}"
+        if "target" in self.fields:
+            self.fields["target"].widget.attrs["pattern"] = FOLDER_LINK_PATTERN
         field_tips.shorten(
             self,
             {
@@ -142,6 +156,12 @@ class IntegrationForm(AdminForm):
                 "organization_id": setup_help.HINTS["organization_id"],
             },
         )
+        # The folder link keeps a line for its error, shown or not, so Test
+        # access's in-place refusal there never moves the buttons below
+        # (#1334 review; ui-conventions "No layout shift"). Set after the tip,
+        # which only a field with no template of its own takes.
+        if "target" in self.fields:
+            self.fields["target"].template_name = ERROR_LINE_TEMPLATE
 
     def clean_target(self):
         """Store one canonical folder link, whichever form the Admin pasted."""
