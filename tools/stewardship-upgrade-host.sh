@@ -37,7 +37,12 @@
 #     unset or "keep" carries the current value over, as Production does
 #     for the bulk switch. A rollback never renders the latency (the
 #     previous release may not know the setting, and its loader would refuse
-#     it after web had stopped). Production mode never reads either variable.
+#     it after web had stopped). Production mode never reads either variable;
+#   - the caller may choose which ParishSoft pk-local reads (#1399):
+#     PARISHKIT_LOCAL_PARISHSOFT=real|fake, unset or "keep" carrying the
+#     current choice over. Like the latency, a rollback never renders the
+#     real API (it falls back to the fake), and Production mode never reads
+#     the variable.
 #
 # In both modes the export download window (#1398) is carried over, and
 # PARISHKIT_STEWARDSHIP_EXPORT_DOWNLOAD_WINDOW_MINUTES (15-240) changes it.
@@ -408,6 +413,33 @@ if [ "$profile" = local ]; then
     if [ "$latency" != 0 ]; then
         switches+=(-e "PARISHKIT_STEWARDSHIP_LOCAL_SMTP_LATENCY_MS=$latency")
         echo "    modeled SMTP latency ${latency} ms per message"
+    fi
+    # Which ParishSoft pk-local reads (#1399): the fake (the default, not
+    # rendered) or the real API (parishkit.parishsoft.DEFAULT_API_BASE_URL;
+    # a test keeps the two equal). The deployment never writes to either.
+    parishsoft_api=https://ps-fs-external-api-prod.azurewebsites.net/api/v2
+    parishsoft=$(jq -r '.deployment.parishsoft_base_url // empty' "$services/worker.yaml")
+    case "${PARISHKIT_LOCAL_PARISHSOFT:-keep}" in
+        keep) ;;
+        real) parishsoft=$parishsoft_api ;;
+        fake) parishsoft="" ;;
+        *) echo "PARISHKIT_LOCAL_PARISHSOFT must be real, fake or keep; refusing." >&2; exit 1 ;;
+    esac
+    if [ -n "$parishsoft" ] && [ "$parishsoft" != "$parishsoft_api" ]; then
+        echo "The rendered ParishSoft base URL is not the real API; refusing." >&2
+        exit 1
+    fi
+    if [ "$mode" = rollback ] && [ -n "$parishsoft" ]; then
+        echo "    the real ParishSoft API is not carried into a rollback (it reads the fake); deploy --parishsoft real sets it again"
+        parishsoft=""
+    fi
+    if [ -n "$parishsoft" ]; then
+        switches+=(-e "PARISHKIT_STEWARDSHIP_PARISHSOFT_BASE_URL=$parishsoft")
+        echo "    reading the real ParishSoft API (never writing)"
+        # A faked process checks ParishSoft's certificate against a past
+        # date: it may refuse a renewed one and accept a recently expired one.
+        [ "$clock" != fake ] ||
+            echo "    WARNING: the real ParishSoft API under the fake clock; prefer a normal-clock deployment" >&2
     fi
 fi
 
@@ -783,6 +815,8 @@ done
 if [ "$profile" = local ]; then
     rendered=$(jq -r '.deployment.local_smtp_latency_ms // 0' "$services/mail-dispatch.yaml")
     [ "$rendered" = "$latency" ] || problems+=("mail-dispatch: SMTP latency is $rendered ms, not $latency")
+    rendered=$(jq -r '.deployment.parishsoft_base_url // empty' "$services/worker.yaml")
+    [ "$rendered" = "$parishsoft" ] || problems+=("worker: ParishSoft base URL is '${rendered:-the fake}', not '${parishsoft:-the fake}'")
 fi
 version=$("${dc[@]}" exec -T web python -c 'import parishkit; print(parishkit.__version__)' 2>/dev/null || echo unknown)
 echo "    application version: $version"

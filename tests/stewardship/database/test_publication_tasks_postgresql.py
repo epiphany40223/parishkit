@@ -384,14 +384,20 @@ def test_the_real_gateway_gets_the_timeout_recorder(monkeypatch, tmp_path):
     the source timeout recorder and reads the credential at run time."""
     from types import SimpleNamespace
 
+    from parishkit.parishsoft import DEFAULT_API_BASE_URL
     from parishkit.stewardship.responses import publication_gateway
     from parishkit.stewardship.source import credentials
 
     seen = {}
 
-    def opened(cls, execution, credential, *, profile, on_timeout):
+    def opened(cls, execution, credential, *, profile, base_url, on_timeout):
         """Capture what the task passed."""
-        seen.update(credential=credential, profile=profile, on_timeout=on_timeout)
+        seen.update(
+            credential=credential,
+            profile=profile,
+            base_url=base_url,
+            on_timeout=on_timeout,
+        )
         return "gateway"
 
     monkeypatch.setattr(
@@ -404,6 +410,8 @@ def test_the_real_gateway_gets_the_timeout_recorder(monkeypatch, tmp_path):
     path = tmp_path / "parishsoft"
     assert tasks.parishsoft_gateway(path)(execution) == "gateway"
     assert seen["credential"] == path
+    # The test profile's default, the real API: no recorded choice.
+    assert seen["base_url"] == DEFAULT_API_BASE_URL
     assert seen["on_timeout"].__qualname__.startswith("source_timeout_recorder")
 
 
