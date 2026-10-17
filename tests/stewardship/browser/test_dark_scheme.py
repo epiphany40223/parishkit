@@ -18,6 +18,7 @@ import pytest
 
 from parishkit.stewardship.web.design_tokens import COLORS, DARK_COLORS, hex6
 
+from .artwork_components import PAGE as ARTWORK
 from .keyboard import tab_to_next, tab_to_previous
 from .system_health_components import PAGE as SYSTEM_HEALTH
 from .test_editor_mode import basic_from_saved, toggle
@@ -45,12 +46,13 @@ PREVIEWS = ("/clone-preview",)
 CONTRAST = """async () => (await axe.run(document, {
     runOnly: {type: 'rule', values: ['color-contrast']}
 })).violations.map(({id, nodes}) => ({id, targets: nodes.map(n => n.target)}))"""
-# Every visible element's own background and text colour, except the
-# parish logo (an image whose white backing is deliberate) and an email
-# sample preview's light card.
+# Every visible element's own background and text colour, except an
+# uploaded image (whose white backing is deliberate, see IMAGE_PREVIEWS) and
+# an email sample preview's light card.
 COLOURS = """() => [...document.querySelectorAll('body, body *')]
     .filter((el) => el.checkVisibility()
-        && !el.closest('.brand img, .light-card'))
+        && !el.closest('.brand img, .branding-preview, .hosted-file-thumbnail, '
+            + '.light-card'))
     .map((el) => {
         const style = getComputedStyle(el);
         return [el.tagName + (el.className && typeof el.className === 'string'
@@ -459,3 +461,40 @@ def test_appearance_switch_sits_at_the_top_right(page, component_origin, path, w
     for other in (shape["menu"], shape["heading"]):
         if other:
             assert not overlaps(box, other)
+
+
+# Every Admin page that previews an uploaded image, and its images (#1264
+# slice 4). The parish logo in the header is covered by the same rule.
+IMAGE_PREVIEWS = {
+    "/branding-settings": "img.branding-preview",
+    "/setup-branding-saved": ".branding-preview img",
+    ARTWORK: "img.branding-preview",
+    "/hosted-files": ".hosted-file-thumbnail",
+}
+# Each matching image's background and box.
+BACKINGS = """(selector) => [...document.querySelectorAll(selector)].map((img) => {
+    const box = img.getBoundingClientRect();
+    return [getComputedStyle(img).backgroundColor, box.x, box.y, box.width,
+        box.height];
+})"""
+
+
+@pytest.mark.parametrize("path", sorted(IMAGE_PREVIEWS))
+def test_uploaded_images_get_a_white_backing_in_dark(page, component_origin, path):
+    """An uploaded image was drawn for the light Family pages and emails, so
+    in dark it sits on white, which keeps a dark logo on a transparent
+    background visible. Light is unchanged (no backing), and switching in
+    place moves no image and raises no page error."""
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.emulate_media(color_scheme="light")
+    page.goto(component_origin + path)
+    visible(page.locator("main"))
+    eventually(page, "() => [...document.images].every((img) => img.complete)")
+    light = page.evaluate(BACKINGS, IMAGE_PREVIEWS[path])
+    assert light and {background for background, *_ in light} == {"rgba(0, 0, 0, 0)"}
+    choose(page, "dark")
+    dark = page.evaluate(BACKINGS, IMAGE_PREVIEWS[path])
+    assert {background for background, *_ in dark} == {"rgb(255, 255, 255)"}
+    assert [box for _, *box in dark] == [box for _, *box in light]
+    assert errors == []
