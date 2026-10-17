@@ -72,9 +72,10 @@ def sign_in(store, google, role):
         (
             "administrator",
             [
-                # The Campaign setup stepper's way back in (#1404): adding
-                # the invitation completed Pages and emails.
-                "Continue campaign setup: Dates and mail schedules",
+                # The Campaign setup stepper's way back in (#1404): the
+                # draft has no Families yet, so Load ParishSoft data, step 2
+                # (PR 5), is the first step not done.
+                "Continue campaign setup: Load ParishSoft data",
                 "Campaign settings",
                 "Pages and emails",
                 "Dates and mail schedules",

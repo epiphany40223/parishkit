@@ -901,6 +901,13 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 .export-window { display: grid; }
 .export-window > span { grid-area: 1 / 1; min-width: 0; }
 .export-window > [data-window-off] { visibility: hidden; }
+/* Load ParishSoft data's button (source-refresh.html, #1404 PR 5): each
+   state also holds the longest label, hidden, in the same grid cell, so
+   the in-place answer that swaps the label keeps the button's width and
+   the pointer stays on it (no layout shift). */
+.load-step-button { display: inline-grid; place-items: center; }
+.load-step-button > span { grid-area: 1 / 1; }
+.load-step-button > [data-label-reserve] { visibility: hidden; }
 .button-large { font-size: 1.1rem; padding: .8rem 1.75rem; }
 .spinner { display: inline-block; width: 1em; height: 1em; margin-inline-end: .35em; vertical-align: -.15em; border: 2px solid var(--accent); border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
 /* An export panel collapsed below a report's filters. */

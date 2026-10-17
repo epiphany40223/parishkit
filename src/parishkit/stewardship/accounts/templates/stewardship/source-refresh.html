@@ -1,13 +1,23 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
 {% block title %}{% translate "Refresh from ParishSoft" %}{% endblock %}
 {% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
-{% block content %}
+{% block content %}{% with wizard=admin_chrome.campaign_wizard %}{% with load_step=wizard.current.key %}
 <h1>{% translate "Refresh from ParishSoft" %}</h1>
-{% aboutpage "source-refresh" %}<p>{% translate "A full refresh reads every Family, Member and Ministry from ParishSoft again and uses the result once it completes. It runs in the background, and this page shows its progress below the button." %}</p>
+{% aboutpage "source-refresh" %}{% if load_step == 'load' %}<p>{% translate "A full refresh adds the campaign's Families, Family codes and giving. It usually takes a few minutes. You can go on to the next steps while it runs; Go-live readiness waits for it." %}</p>
+{% endif %}<p>{% translate "A full refresh reads every Family, Member and Ministry from ParishSoft again and uses the result once it completes. It runs in the background, and this page shows its progress below the button." %}</p>
 <p>{% translate "A full refresh re-downloads everything, including Ministry rosters and giving, so it usually takes a few minutes. The progress counts every record checked; when the refresh finishes, its page also says how many records changed." %}</p>
 <p>{% blocktranslate trimmed with minutes=lateness_minutes %}“ParishSoft data as of” is when the newest data was read from ParishSoft, normally the last full refresh. “Connection” says only whether ParishSoft answers. If a scheduled full refresh is more than {{ minutes }} minutes late, Administrators are alerted.{% endblocktranslate %}</p>
 <p>{% translate "Refreshing changes nothing in ParishSoft and sends no mail. Requesting another refresh while a full refresh is waiting to run may join that run rather than adding another." %}</p>
 <p>{% translate "Re-read every Family, Member and Ministry from ParishSoft now, instead of waiting for the next scheduled refresh." %}</p>{% endaboutpage %}
+{% comment %}Load ParishSoft data, step 2 of the Campaign setup stepper (#1404 PR 5): while the stepper is drawn on this page (wizard.current.key
+  "load"), the page says in one line what the load does for the campaign (the About panel says more), its own button is the step's primary until a load is under way (Load the
+  campaign's ParishSoft data, or Try again after a failed one, whose notice is in the run's region after the button so Try again's answer clears it
+  without moving the button), and its
+  answer also redraws the stepper's action row (campaign-step-actions.html), which then offers Continue to the next step while the load runs.
+  Once a load is under way or the campaign has its Families, Refresh now is secondary, since that Continue is the step's one primary. Outside
+  the stepper the page is unchanged. On the step every state of the button also holds the longest label, hidden (load-step-button in
+  ui-v1.css), so the button keeps one width and the pointer stays on it after its answer, and the run's region keeps its height
+  (data-keep-height), so clearing a failed notice at the foot of the page does not pull the page down under the pointer (no layout shift).{% endcomment %}{% if load_step == 'load' %}<p data-campaign-load-intro>{% translate "This adds the campaign's Families, Family codes and giving. You can continue while it runs." %}</p>{% endif %}
 {# A region of its own, so the in-place re-read once the requested run ends shows the new data age too; data-keep-height keeps that re-read from moving the button or the status below it if the panel shrinks. #}<div id="refresh-latest" data-in-place-region data-keep-height><section class="panel">
   {% if full_refresh %}{% include "stewardship/full-refresh-status.html" with status=full_refresh can_view_task=True on_refresh_page=True %}{% endif %}
   {% if pending.running %}<p class="notice">{% translate "A refresh is running now. No second refresh starts beside it; the one you request will follow it as soon as it finishes." %}</p>
@@ -18,12 +28,13 @@
   signed-in session and redirects back, and only this region is replaced (data-in-place-only), so nothing above the button moves. The
   region draws a fresh request key and, below the button, the remembered run's live status, which polls the task's passive status
   fragment; when the run ends, live-status-v1.js re-reads this page in place, so the panel above (its own region) shows the new data age too. The
-  breadcrumb is the way back, so there is no Cancel link.{% endcomment %}<div id="refresh-run" data-in-place-region>
-<form method="post" action="{% url 'admin:source_refresh' %}#refresh-run" data-in-place="refresh-request" data-in-place-only data-in-place-message="{% translate 'Refresh requested.' %}">
+  breadcrumb is the way back, so there is no Cancel link.{% endcomment %}<div id="refresh-run" data-in-place-region{% if load_step == 'load' %} data-keep-height{% endif %}>
+<form method="post" action="{% url 'admin:source_refresh' %}#refresh-run" data-in-place="refresh-request" data-in-place-only{% if load_step == 'load' %}="campaign-step-actions"{% endif %} data-in-place-message="{% translate 'Refresh requested.' %}">
   {% csrf_token %}<input type="hidden" name="request_key" value="{{ request_key }}">
-  {% button type="submit" %}{% translate "Refresh now" %}{% endbutton %}
+  {% if load_step != 'load' %}{% button type="submit" %}{% translate "Refresh now" %}{% endbutton %}{% else %}{% translate "Load the campaign's ParishSoft data" as load_label %}{% if wizard.load == 'offer' %}{% button type="submit" class="load-step-button" data-campaign-load-start %}<span>{{ load_label }}</span>{% endbutton %}{% elif wizard.load == 'failed' %}{% button type="submit" class="load-step-button" data-campaign-load-start %}<span>{% translate "Try again" %}</span><span aria-hidden="true" data-label-reserve>{{ load_label }}</span>{% endbutton %}{% else %}{% button type="submit" variant="secondary" class="load-step-button" %}<span>{% translate "Refresh now" %}</span><span aria-hidden="true" data-label-reserve>{{ load_label }}</span>{% endbutton %}{% endif %}{% endif %}
 </form>
+{% if load_step == 'load' and wizard.load == 'failed' %}<div class="notice notice-error">{% include 'stewardship/campaign-load-failed.html' %}</div>{% endif %}
 {% if run_task_id %}{% include 'stewardship/background-task-status.html' with region_id="refresh-run" %}
 <p><a href="{% url 'admin:background_task_page' run_task_id %}">{% translate "View this refresh's Background task" %}</a></p>{% endif %}
 </div>
-{% endblock %}
+{% endwith %}{% endwith %}{% endblock %}
