@@ -201,6 +201,10 @@ class Action(StrEnum):
     SECURITY_EVENT_ACKNOWLEDGED = "security_event_acknowledged"
     CRITICAL_EVENTS_ACKNOWLEDGED = "critical_events_acknowledged"
     CREDENTIAL_RESULT_DISMISSED = "credential_result_dismissed"
+    # A ParishSoft key change refused because the key sees another
+    # organization (#1495); the subject is the key change request. Recorded
+    # by the target installer with the request's failure, never with values.
+    CREDENTIAL_KEY_ORGANIZATION_MISMATCH = "credential_key_organization_mismatch"
     FAMILY_MAINTENANCE_STARTED = "family_maintenance_started"
     FAMILY_MAINTENANCE_ENDED = "family_maintenance_ended"
     HOSTED_FILE_UPLOADED = "hosted_file_uploaded"
