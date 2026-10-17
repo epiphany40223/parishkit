@@ -115,6 +115,10 @@ SERVER_INSTANTS = {
     # stale bulk row's day in the browser zone the dialog posts (the page's
     # duplicate-row labels are localized by date-format-v1.js, #558).
     "reports/ministry_roster_views.py": "export in the chosen zone",
+    # The schedule preview's daylight-saving words name the time a shifted
+    # send really happens only when the list is shown in its schedule zone,
+    # which is then the browser's (ui-conventions "Schedule previews", #1129).
+    "occurrence_preview.py": "shown zone is the schedule zone",
 }
 # Form fields whose label, help or errors name a fixed zone, by (form class,
 # field).

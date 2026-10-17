@@ -423,6 +423,7 @@ def review(
     content=(),
     series=(),
     series_changes=(),
+    zone=None,
 ):
     """Bind a change document to the review's forms and build the review.
 
@@ -436,7 +437,8 @@ def review(
     ``schedule_email.copy``); the forms offer them as saved emails, so an
     entry may send one. ``series`` and ``series_changes`` are
     ``build_preview``'s reminder series to remember and series operations
-    (#469).
+    (#469). ``zone`` is the browser's posted zone, which the review's send
+    times are shown in (#1129); the command line passes none.
     """
     # The schedule commands' own binding, so the page and the command line
     # cannot read the same change differently.
@@ -475,6 +477,7 @@ def review(
         content=content,
         series=series,
         series_changes=series_changes,
+        zone=zone,
     )
     return context, window, schedules, identifiers
 
@@ -1241,6 +1244,7 @@ def _entry(request, campaign_id, schedule_id=None):
             content=[added] if added else (),
             series=series,
             series_changes=series_changes,
+            zone=posted.get(ZONE),
         )
         if reviewed is None and str(NO_CHANGES) in _messages(window.non_field_errors()):
             # Only Edit can post its schedule as saved. Its change gate keeps

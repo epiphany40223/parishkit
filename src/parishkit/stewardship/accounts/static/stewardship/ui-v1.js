@@ -4391,8 +4391,12 @@
       field.remove();
     });
     const token = carried.find((field) => field.hasAttribute("data-review-preview"))?.value || "";
-    dialog.querySelector("[data-review-body]").replaceChildren(
+    const reviewBody = dialog.querySelector("[data-review-body]");
+    reviewBody.replaceChildren(
       ...(answer ? [...answer.childNodes].map((node) => document.importNode(node, true)) : []));
+    // Instants in the review (the schedules a content change switches) are
+    // shown in this browser's time zone, as on the page (#558).
+    if (window.ParishDates) window.ParishDates.localize(reviewBody);
     // An editor whose Review is a confirmation only for some changes (#1356:
     // New scheduled email, Import Ministry leaders) has its answer name the
     // confirmation's question (data-review-title) and the sentence that
