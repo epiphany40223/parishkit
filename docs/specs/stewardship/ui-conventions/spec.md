@@ -780,10 +780,24 @@ the [in-place controls](#in-place-controls); no other mechanism.
   up at once when it is shown again (`visibilitychange`) or comes back from
   the back/forward cache (`pageshow`).
 - **The reader keeps their place.** An update never moves focus or scroll
-  and never replaces a control the reader is using: while a form control
-  has focus or was edited, text is selected, or a dialog is open, the
-  update waits for the next read. A disclosure the reader opened inside a
-  re-read region is marked `details[data-keep-open][id]`, so it stays open.
+  and never replaces a control the reader is editing. For a page's
+  periodic re-read, a control is being edited while it is inside a region
+  the re-read replaces and either has focus as a text-entry field (a text,
+  search, number, date or time box, or a text area) or shows a change not
+  yet applied (its value differs from the one the page drew). While a
+  control is being edited, text is selected, or a dialog is open, the
+  re-read waits for the next tick. A choice that was applied (Rows per
+  page, which keeps focus on the fresh choice) or a link or button that
+  merely has focus does not hold it, and neither does a control outside
+  the regions (a filter bar), which the re-read never replaces. Focus
+  returns to the same element in the fresh copy: by its id, or else by its
+  nearest ancestor's id and its position among the elements alike there,
+  so focus on the bottom navigator's Next or on one row's Technical
+  details stays there, never on a twin. A status region waits while a
+  form control inside it (a button included) has focus or was edited, or
+  text in it is selected (`live-status-v1.js`). A disclosure the reader
+  opened inside a re-read region is marked `details[data-keep-open][id]`,
+  so it stays open.
   A screen reader hears only meaningful changes, politely (a status
   region's coarse sentence when it changes); a table's periodic re-read
   announces nothing, since its visible count and time say what changed.
@@ -795,8 +809,9 @@ the [in-place controls](#in-place-controls); no other mechanism.
   health and a table's periodic re-read after three failures in a row, so
   one blip says nothing; the line goes away on the next read that works. A
   read that is refused (the sign-in ended, or access was removed)
-  stops the updates and says so; the Admin session's own dialog offers to
-  sign in again. A failed automatic read never navigates.
+  stops the updates and says so in the same words on every page
+  ("Couldn't check for updates. Reload the page or sign in again."); the
+  Admin session's own dialog offers to sign in again. A failed automatic read never navigates.
 - **Reload.** The page's address always identifies what is shown: view
   choices replace the address, and an in-place POST follows its
   Post/Redirect/Get redirect and puts that GET address in the address bar
