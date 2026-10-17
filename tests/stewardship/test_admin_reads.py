@@ -38,6 +38,9 @@ from .campaign_factory import campaign as campaign_record
 from .campaign_factory import schedule as schedule_record
 
 NOW = datetime(2054, 10, 5, 14, tzinfo=UTC)
+# A review's clock before the factory campaign, so each of its sends is
+# still ahead (schedules list their sends from now, #1129).
+REVIEWED_AT = datetime(2054, 9, 1, tzinfo=UTC)
 CAMPAIGN = UUID("00000000-0000-4000-8000-000000000001")
 # Accept this change once (ADM-13 PR 5b): an acceptance.
 ACCEPTANCE = UUID("00000000-0000-4000-8000-0000000000a5")
@@ -363,7 +366,7 @@ def schedule_show():
             "end_date": values["end_date"],
             "timezone": values["timezone"],
         },
-        schedules=[admin_reads.schedule_entry(row, values)],
+        schedules=[admin_reads.schedule_entry(row, values, now=REVIEWED_AT)],
         series=admin_reads.campaign_series(SERIES_CONFIGURATION, CAMPAIGN),
     )
 

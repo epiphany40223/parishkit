@@ -604,6 +604,15 @@ def _review(
     )
 
 
+def _side(values, campaign):
+    """One side of a reviewed change, as the page's review describes it.
+
+    Its sends are listed from ``NOW`` and grouped by the browser's days in
+    the zone the test browser runs in, which the page posts (#1129).
+    """
+    return describe(values, campaign, now=NOW, zone="America/Los_Angeles")
+
+
 def _dates_review(owner, first):
     """The date-change review's fragment: the new end date and a re-planned
     reminder."""
@@ -615,8 +624,8 @@ def _dates_review(owner, first):
                 {
                     "label": "Reminder",
                     "operation": "update",
-                    "before": describe(first["values"], owner["values"]),
-                    "after": describe(first["values"], owner["values"]),
+                    "before": _side(first["values"], owner["values"]),
+                    "after": _side(first["values"], owner["values"]),
                     "impact": {"cancellable": 3, "occurrences": 1},
                 }
             ],
@@ -636,7 +645,7 @@ def _added(owner, values):
         "label": "Reminder",
         "operation": "add",
         "before": None,
-        "after": describe(values, owner["values"]),
+        "after": _side(values, owner["values"]),
         "impact": {},
     }
 
@@ -837,10 +846,8 @@ def components(context, admin):
             {
                 "label": "Reminder",
                 "operation": "update",
-                "before": describe(first["values"], owner["values"]),
-                "after": describe(
-                    first["values"] | {"time": "13:30:00"}, owner["values"]
-                ),
+                "before": _side(first["values"], owner["values"]),
+                "after": _side(first["values"] | {"time": "13:30:00"}, owner["values"]),
                 "impact": {"cancellable": 3, "occurrences": 1, "outboxes": 3},
             }
         ],
@@ -878,7 +885,7 @@ def components(context, admin):
         {
             "label": "Reminder",
             "operation": "remove",
-            "before": describe(row["values"], owner["values"]),
+            "before": _side(row["values"], owner["values"]),
             "after": None,
             "impact": {"cancellable": 3, "occurrences": 1},
         }
@@ -900,8 +907,8 @@ def components(context, admin):
             {
                 "label": "Weekly Admin digest",
                 "operation": "update",
-                "before": describe(digest["values"], owner["values"]),
-                "after": describe(
+                "before": _side(digest["values"], owner["values"]),
+                "after": _side(
                     digest["values"] | {"skip_dates": [SKIP_DAY]}, owner["values"]
                 ),
                 "impact": {},
@@ -917,8 +924,8 @@ def components(context, admin):
             {
                 "label": "Reminder",
                 "operation": "update",
-                "before": describe(first["values"], owner["values"]),
-                "after": describe(first["values"], owner["values"]),
+                "before": _side(first["values"], owner["values"]),
+                "after": _side(first["values"], owner["values"]),
                 "impact": {"blocking": 2},
             }
         ],

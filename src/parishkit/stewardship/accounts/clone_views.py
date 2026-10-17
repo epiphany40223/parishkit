@@ -31,7 +31,13 @@ from parishkit.stewardship.web.refusals import (
 )
 
 from . import admin_navigation, setup_help
-from .admin_editing import confirm, error_response, principal, sign_preview
+from .admin_editing import (
+    confirm,
+    database_now,
+    error_response,
+    principal,
+    sign_preview,
+)
 from .authentication import runtime
 from .campaign_cloning import clone_initial, clone_patch, clone_structures
 from .campaign_forms import CampaignForm
@@ -154,6 +160,8 @@ def _preview(
         )
         return _page(request, source, form, schedules, seed, status=400)
     admin_navigation.place(request, flow="change", step="review")
+    # The copied schedules list their next sends from the database's now.
+    now = database_now()
     return render(
         request,
         "stewardship/clone-preview.html",
@@ -168,7 +176,7 @@ def _preview(
                 funds=form.fields["fund_duids"].choices,
             ),
             "schedules": [
-                _describe(row["values"], values)
+                _describe(row["values"], values, now=now)
                 for row in patch
                 if row["section"] == "schedules"
             ],

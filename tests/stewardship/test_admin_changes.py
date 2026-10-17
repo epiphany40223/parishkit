@@ -25,7 +25,13 @@ from parishkit.stewardship.storage import StaleRecordError
 from .campaign_factory import campaign as campaign_record
 from .campaign_factory import financial
 from .campaign_factory import schedule as schedule_record
-from .test_admin_reads import FORBIDDEN, SERIES, SERIES_RULE, members
+from .test_admin_reads import (
+    FORBIDDEN,
+    REVIEWED_AT,
+    SERIES,
+    SERIES_RULE,
+    members,
+)
 
 CAMPAIGN = UUID("00000000-0000-4000-8000-000000000001")
 SCHEDULE = "00000000-0000-4000-8000-000000000003"
@@ -61,8 +67,8 @@ def preview_context(*, blocking=0):
             {
                 "id": SCHEDULE,
                 "operation": "update",
-                "before": describe(row["values"], values),
-                "after": describe(after, values),
+                "before": describe(row["values"], values, now=REVIEWED_AT),
+                "after": describe(after, values, now=REVIEWED_AT),
                 "impact": {
                     "revision": "x",
                     "versions": 3,

@@ -610,8 +610,8 @@ class ScheduleShow(ReadModel):
     change (PR 4) is previewed against. ``editable`` says whether the
     campaign's dates may still change. Each schedule lists its civil values
     (a daily digest's ``comparison`` too, #1018)
-    and its first resolved send times (``resolved``, at most five, with
-    ``more`` when there are others). ``series`` lists the campaign's
+    and its next resolved send times after now (``resolved``, at most five,
+    with ``more`` when there are others). ``series`` lists the campaign's
     remembered reminder series (#469): each one's ``id``, repeat ``rule``
     and the ids of the reminders it holds (``schedules``).
     """
@@ -624,15 +624,17 @@ class ScheduleShow(ReadModel):
     series: list
 
 
-def schedule_entry(row, campaign):
-    """One schedule record with its first resolved send times.
+def schedule_entry(row, campaign, *, now):
+    """One schedule record with its next resolved send times after ``now``.
 
-    ``campaign`` is the campaign's applied values (its time zone and dates).
+    ``campaign`` is the campaign's applied values (its time zone and dates);
+    ``now`` is the database's clock, so the sends listed are the ones the
+    Dates and mail schedules review lists (#1129).
     """
-    from .campaigns.schedule_evaluation import preview_slots
+    from .campaigns.schedule_evaluation import upcoming_slots
 
     values = row["values"]
-    page = preview_slots(values, campaign)
+    page = upcoming_slots(values, campaign, now=now)
     return {
         "id": row["id"],
         "kind": values["kind"],
@@ -674,6 +676,7 @@ def read_schedule(caller, service, campaign_id):
     at all, is ``not_available``; a campaign that is not the current one,
     or that background work holds, is ``stale_version``.
     """
+    from .accounts.admin_editing import database_now
     from .accounts.policy import Capability
     from .accounts.schedule_reads import campaign_schedules, schedule_state
     from .campaigns.work_locks import read_transaction
@@ -698,6 +701,8 @@ def read_schedule(caller, service, campaign_id):
             except LookupError:
                 raise NotAvailable("No such campaign.") from None
             values = campaign.active_configuration.values
+            # Every schedule lists its sends from the database's one now.
+            now = database_now()
             model = ScheduleShow(
                 campaign_id=campaign.pk,
                 version=state[0].active_configuration.digest,
@@ -708,7 +713,7 @@ def read_schedule(caller, service, campaign_id):
                     "timezone": values["timezone"],
                 },
                 schedules=[
-                    schedule_entry(row, values)
+                    schedule_entry(row, values, now=now)
                     for row in campaign_schedules(state[0], target)
                 ],
                 series=campaign_series(state[0], target),

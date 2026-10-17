@@ -524,6 +524,7 @@ def review(
     series_changes=(),
     key=None,
     skips=None,
+    zone=None,
 ):
     """Bind a change document to the review's forms and build the review.
 
@@ -539,7 +540,9 @@ def review(
     ``build_preview``'s reminder series to remember and series operations
     (#469). ``key`` signs the review with a direct save's request key
     (#1404 PR 4b, ``admin_editing.direct_key``). ``skips`` names the one
-    digest send the change skips (#1658, ``build_preview``'s).
+    digest send the change skips (#1658, ``build_preview``'s). ``zone`` is
+    the browser's posted zone, which the review's send times are shown in
+    (#1129); the command line passes none.
     """
     # The schedule commands' own binding, so the page and the command line
     # cannot read the same change differently.
@@ -580,6 +583,7 @@ def review(
         series_changes=series_changes,
         request_key=key,
         skips=skips,
+        zone=zone,
     )
     return context, window, schedules, identifiers
 
@@ -1530,6 +1534,7 @@ def _entry(request, campaign_id, schedule_id=None):
             series=series,
             series_changes=series_changes,
             key=key,
+            zone=posted.get(ZONE),
         )
         if reviewed is None and str(NO_CHANGES) in _messages(window.non_field_errors()):
             # Only Edit can post its schedule as saved. Its change gate keeps

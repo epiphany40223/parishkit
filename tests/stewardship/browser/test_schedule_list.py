@@ -500,6 +500,34 @@ def test_change_scheduled_email_is_filled_in_and_saves_that_schedule(
     assert not failures
 
 
+def test_a_reviews_send_times_name_their_day_and_browser_time(page, component_origin):
+    """The shared schedule preview (#1129): each side lists its next sends
+    as one compact line, its day in words, then the time alone in this
+    browser's zone and what sends; no date key and no always-on sentences."""
+    from playwright.sync_api import expect
+
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + EDIT)
+    failures = watch(page)
+    page.locator('[name="schedule-time"]').fill("10:30")
+    page.get_by_role("button", name=REVIEW).click()
+    dialog = page.get_by_role("dialog", name="Review scheduled email change")
+    visible(dialog)
+    lines = dialog.locator("ul.occurrence-list li")
+    # 9:00 AM in New York is 6:00 AM here; the proposed 10:30 is typed here.
+    expect(lines).to_have_text(
+        [
+            re.compile(r"^Saturday, October 10, 2054, 6:00\sAM Reminder$"),
+            re.compile(r"^Saturday, October 10, 2054, 10:30\sAM Reminder$"),
+        ]
+    )
+    text = dialog.inner_text()
+    assert text.count("When it sends (shown in your computer's time zone):") == 2
+    for gone in ("once —", "not a list of who", "When clocks change", "Only the"):
+        assert gone not in text
+    assert not failures
+
+
 def test_edit_review_waits_for_a_change_and_greys_again_on_revert(
     page, component_origin
 ):
