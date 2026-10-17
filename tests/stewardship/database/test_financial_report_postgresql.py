@@ -659,19 +659,23 @@ def test_native_page_filters_privately_and_denies_leaders(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = get(browser, route)
         assert response.status_code == 200 and response["Cache-Control"] == "no-store"
-        assert name in body and b"$1,234.50" in body and b"$102.88" in body
-        assert b"$1,200.00" in body and b"$100.00" in body
+        # Whole dollars on the page; a screen reader hears the cents (#1544).
+        assert name in body and b'aria-hidden="true">$1,235</span>' in body
+        assert b'<span class="visually-hidden">$1,234.50</span>' in body
+        assert b'<span aria-hidden="true">$103</span>' in body
+        assert b"</span>$1,200</span>" in body and b"</span>$100</span>" in body
         # The ParishSoft heading names the comparison period's years, and
-        # its Pledged and Contributed headings each have a toggletip with the
-        # period's dates (#1544).
-        assert b"ParishSoft (" + years + b")</th>" in body
+        # its stacked Pledged and Contributed lines each have a toggletip
+        # with the period's dates (#1544).
+        assert b"ParishSoft (" + years + b')<span class="stack-line">' in body
         assert b'aria-controls="financial-source-pledged-tip"' in body
         assert b'aria-controls="financial-source-contributed-tip"' in body
         # Each tip's button is described by its bubble, not its whole heading.
         assert b'aria-describedby="financial-source-pledged-tip"' in body
         # The page's shorter columns in order (#1544): Family leads, then
-        # Family DUID; ParishSoft groups its two in a second heading row.
-        # First response and Entered by Staff are left to the downloads.
+        # Family DUID; one ParishSoft heading names its stacked Pledged and
+        # Contributed lines. First response and Entered by Staff are left to
+        # the downloads.
         head = body[body.index(b"Current live pledges by Family</caption>") :]
         head = head[: head.index(b"</thead>")]
         shown = [
@@ -681,11 +685,11 @@ def test_native_page_filters_privately_and_denies_leaders(
             "Installment",
             "Share methods",
             "ParishSoft",
-            "Latest response",
             "Pledged",
             "Contributed",
+            "Latest response",
         ]
-        assert head.count(b'scope="col"') == len(shown)
+        assert head.count(b"<tr>") == 1 and head.count(b'scope="col"') == 7
         assert b"First response" not in head and b"Entered by Staff" not in head
         places = [head.index(b">" + heading.encode()) for heading in shown]
         assert places == sorted(places)

@@ -82,7 +82,8 @@ def components(context, admin):
     )
     # Rows as a parish's typically read (#1544): a longer surname-first
     # name, a seven-digit DUID, five-figure sums and up to three methods,
-    # one with Other text, and an inactive Family with its badge.
+    # one with Other text, an inactive Family with its badge, and a Family
+    # with a single Other method.
     typical = [
         row
         | dict(
@@ -99,7 +100,12 @@ def components(context, admin):
             source_contributions=MoneyAmount(1098765),
         ),
         unproven | dict(family_name="Nguyen, Thanh", active=False),
-        row | dict(family_name="Smith, John", staff_entered=False),
+        row
+        | dict(
+            family_name="Smith, John",
+            staff_entered=False,
+            shares=[dict(label="Other", text="Payroll gift")],
+        ),
     ]
     # Share methods are stable option identities, as the closed grammar requires.
     online, other = str(UUID(int=98)), str(UUID(int=99))

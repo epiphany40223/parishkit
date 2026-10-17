@@ -1090,6 +1090,11 @@ details.technical-details dd { overflow-wrap: anywhere; }
 /* A 44px touch target around the 28px circle, without enlarging the icon. */
 .toggletip-button::before { content: ""; position: absolute; inset: -.5rem; }
 .toggletip-button:not(:disabled):hover, .toggletip-button[aria-expanded=true] { background: var(--accent); color: var(--paper); box-shadow: none; }
+/* A "+N" chip (ui-conventions "Table fit and row height", #1544): a
+   toggletip whose button looks like the status-badge chip it follows and
+   shows "+2" for the rest of a list, which its bubble lists one per line. */
+.toggletip-button.toggletip-chip { width: auto; height: auto; padding: .1rem .5rem; border-width: 1px; border-radius: 999px; font-family: inherit; font-size: .8125rem; font-style: normal; font-weight: 600; }
+.toggletip-line { display: block; }
 .toggletip-bubble { position: fixed; inset: auto; z-index: 3; display: block; width: max-content; max-width: min(20rem, calc(100vw - 2rem)); padding: .6rem .8rem; border: 1px solid var(--border); border-inline-start: .3rem solid var(--accent); border-radius: var(--radius-small); background: var(--paper-soft, var(--paper)); color: var(--ink); font-size: .925rem; font-weight: 450; font-style: normal; line-height: 1.4; box-shadow: var(--shadow); }
 
 /* A Member's section groups fields without a second box around them. */
@@ -1248,7 +1253,8 @@ label.limitation { display: block; margin-block: 1rem; font-weight: 600; }
 }
 
 /* The Financial stewardship report's Family table (#1544, ui-conventions
-   "Table fit and row height"): one line per row at laptop width. The table
+   "Table fit and row height"): short rows that fit beside the Admin menu
+   at laptop width. The table
    is a .data-table.whole-words (#931), which already gives it the .nowrap
    and .numeric cell classes and between-word wrapping, so a table wider than
    the screen scrolls in its .table-scroll box. Only what is specific to
@@ -1257,14 +1263,16 @@ label.limitation { display: block; margin-block: 1rem; font-weight: 600; }
    slightly smaller body, so typical rows fit beside the Admin menu; a tip's
    bubble inside a no-wrap cell wraps its own text again; cells are
    positioned so the Staff chip's absolutely placed screen-reader text stays
-   inside its cell and the scroll box, never widening the page (as in #933);
-   and ParishSoft, which heads two columns in a second heading row, is
-   centred over them. */
+   inside its cell and the scroll box, never widening the page (as in #933). */
 .financial-table.data-table th, .financial-table.data-table td,
 .financial-table.data-table tbody th, .financial-table.data-table tbody td { position: relative; padding: .45rem .5rem; vertical-align: middle; }
 .financial-table tbody { font-size: .9375rem; }
-.financial-table th[colspan] { text-align: center; }
 .financial-table .toggletip-bubble { white-space: normal; }
+
+/* Two related values stacked in one table cell, each on its own line
+   (ui-conventions "Table fit and row height", #1544), with the heading
+   naming them in the same order on its own stacked lines. */
+.data-table .stack-line { display: block; }
 
 /* Family codes are short fixed-length tokens; never wrap one mid-code. */
 td.family-code, td.family-code code { white-space: nowrap; }

@@ -2426,24 +2426,34 @@ as the last column, Entered by Staff (described below), in exactly this
 order (the Administrator's decisions B1 and E1, #932), and no format
 carries internal references (Family version or response reference).
 
-The page shows the same pledges in fewer, shorter columns, so each row is
-one line at laptop width
+The page shows the same pledges in fewer, narrower columns, so rows stay
+short at laptop width
 ([#1544](https://github.com/epiphany40223/parishkit/issues/1544), following
-the [table fit](../ui-conventions/spec.md#table-fit-and-row-height) rules):
+the [table fit](../ui-conventions/spec.md#table-fit-and-row-height) rules,
+with the Administrator's three width decisions of 2026-10-17):
 Family, Family DUID (still its own sortable column, as the
 [column order](../ui-conventions/spec.md#table-column-order) requires),
-Annual pledge, Installment (a compact "$102.88/mo", with /wk, /qtr or /yr
-for the other frequencies and the unit spoken in full to a screen reader; the
-frequency alone, or why there is none, when there is no installment), Share methods, the two
-ParishSoft aggregates as "Pledged" and "Contributed" under one "ParishSoft"
-heading, and Latest response. Each chosen share method is a small chip with
-its label; a method with Other text has a toggletip beside its chip that
-holds the label and that text. Latest response is the compact date alone, in
-the browser's time zone, with a "Staff" chip when Staff entered the current
-response. The page has no First response column (its date filter stays) and
-no Entered by Staff column; the exports keep both. No cell wraps: a
-wider table scrolls in its own box, and money and DUIDs are
-right-aligned. The page marks a Family the data no longer has, or marks
+Annual pledge, Installment (a compact "$103/mo", with /wk, /qtr or /yr
+for the other frequencies and the unit spoken in full to a screen reader;
+the frequency alone, or why there is none, when there is no installment),
+Share methods, ParishSoft, and Latest response. Money on the page is in
+whole dollars, rounded half away from zero; a screen reader hears the exact
+amount, and the exports and the summary keep the cents. Share methods shows
+the first chosen method as a chip; with more, a "+N" chip opens a toggletip
+listing every method in order, with any Other text after its label ("Other:
+stock gift"); a single method with Other text has an "i" toggletip with that
+text. The ParishSoft column stacks the comparison pledge total ("Pledged")
+with the contribution total ("Contributed") under it in one cell, each named
+for a screen reader; its heading carries the comparison years and names
+Pledged and Contributed in that order, each with its period toggletip.
+Neither ParishSoft total is sortable: like frequency and share methods, the
+projection cannot order them without a schema change. Latest response is the
+compact date alone, in the browser's time zone, with a "Staff" chip when
+Staff entered the current response. The page has no First response column
+(its date filter stays) and no Entered by Staff column; the exports keep
+both. No cell wraps (the ParishSoft cell has one line per total): a table
+still wider than the space beside the Admin menu scrolls in its own box,
+and money and DUIDs are right-aligned. The page marks a Family the data no longer has, or marks
 inactive, with the shared
 [ParishSoft status](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
 badge in or beside its Family cell, and the exports split it into a
@@ -2451,7 +2461,8 @@ ParishSoft status column right after Family, blank for a current Family
 (#1216). The page's ParishSoft heading carries the
 comparison period's years, as the Family form words them ("ParishSoft
 (2026)", or "(2026–2027)" for a period spanning two years), and its Pledged
-and Contributed headings each have a toggletip naming the period's dates. The comparison period is the
+and Contributed lines each have a toggletip naming the period's dates. The
+comparison period is the
 campaign's configured comparison financial period, usually the giving year
 before the upcoming stewardship year that Families pledge for; the pledge
 total counts ParishSoft pledges dated in it, and the contribution total gifts

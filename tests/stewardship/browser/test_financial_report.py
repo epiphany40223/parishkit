@@ -94,8 +94,10 @@ def test_financial_mobile_keyboard_and_accessibility(
     # Unproven giving is explained and shown as unavailable, never as zero.
     page.goto(component_origin + "/financial-unproven")
     visible(page.get_by_text("Unavailable does not mean zero", exact=False))
-    assert page.get_by_role("cell", name="Unavailable", exact=True).count() == 2
-    assert page.get_by_role("cell", name="$0.00", exact=True).count() == 1
+    # Both ParishSoft sums in the one cell, each named (#1544).
+    both = "Pledged Unavailable Contributed Unavailable"
+    assert page.get_by_role("cell", name=both, exact=True).count() == 1
+    assert page.get_by_role("cell", name="$0", exact=True).count() == 1
     assert page.get_by_text("Status unavailable", exact=False).count() >= 1
     assert page.get_by_text("None chosen", exact=True).count() == 1
     page.goto(component_origin + "/financial-empty")
@@ -173,8 +175,9 @@ def test_financial_columns_lead_with_family_and_name_the_parishsoft_year(
     """The page's shorter columns in order; the ParishSoft year has a tip.
 
     Family first, then Family DUID in its own column (ui-conventions), and
-    Latest response last. ParishSoft heads Pledged and Contributed in a
-    second heading row. First response and Entered by Staff are left to
+    Latest response last. The ParishSoft heading names Pledged, then
+    Contributed, as its cells stack them. First response and Entered by
+    Staff are left to
     the downloads, whose columns are unchanged (#1544); Latest response
     shows its day alone with the Staff chip.
     """
@@ -182,29 +185,25 @@ def test_financial_columns_lead_with_family_and_name_the_parishsoft_year(
 
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + "/financial-report")
-    rows = page.locator("[data-table-region] table thead tr")
+    head = page.locator("[data-table-region] table thead")
+    assert head.locator("tr").count() == 1
     # A sortable heading or a tip's "i" button adds text after the name.
-    shown = [
-        rows.nth(0).locator("th").all_inner_texts(),
-        rows.nth(1).locator("th").all_inner_texts(),
-    ]
+    shown = head.locator("th").all_inner_texts()
     expected = [
-        [
-            "Family",
-            "Family DUID",
-            "Annual pledge",
-            "Installment",
-            "Share methods",
-            "ParishSoft (2025–2026)",
-            "Latest response",
-        ],
-        ["Pledged", "Contributed"],
+        "Family",
+        "Family DUID",
+        "Annual pledge",
+        "Installment",
+        "Share methods",
+        "ParishSoft (2025–2026)",
+        "Latest response",
     ]
-    for texts, names in zip(shown, expected, strict=True):
-        assert len(texts) == len(names), texts
-        assert all(
-            text.startswith(name) for text, name in zip(texts, names, strict=True)
-        ), texts
+    assert len(shown) == len(expected), shown
+    assert all(
+        text.startswith(name) for text, name in zip(shown, expected, strict=True)
+    ), shown
+    lines = head.locator("th").nth(5).locator(".stack-line").all_inner_texts()
+    assert [line.strip() for line in lines] == ["Pledged i", "Contributed i"]
     # The downloads keep First response and Entered by Staff (#1544).
     download = headings("2025-07-01", "2026-06-30")
     assert download[-2:] == ("First response", "Entered by Staff")
@@ -219,20 +218,24 @@ def test_financial_columns_lead_with_family_and_name_the_parishsoft_year(
 
 # Whether any cell of the results table's body wraps to a second line: the
 # client rectangles of each cell's content must all share one line (every
-# rectangle starts above every other one's bottom). Returns the offending
-# cells' text with each row's height.
+# rectangle starts above every other one's bottom). A cell that stacks two
+# values (.stack-line, #1544) is checked one stacked line at a time.
+# Returns the offending cells' text with each row's height.
 WRAPPED = """() => {
     const rows = [...document.querySelectorAll("[data-table-region] table tbody tr")];
     const wrapped = [];
     for (const row of rows) {
         for (const cell of row.children) {
+          const lines = cell.querySelectorAll(".stack-line");
+          for (const unit of lines.length ? lines : [cell]) {
             const range = document.createRange();
-            range.selectNodeContents(cell);
+            range.selectNodeContents(unit);
             // Not a 1px screen-reader span.
             const rects = [...range.getClientRects()].filter((r) => r.width > 1);
             const top = Math.max(...rects.map((r) => r.top));
             const bottom = Math.min(...rects.map((r) => r.bottom));
-            if (rects.length && top >= bottom) wrapped.push(cell.innerText);
+            if (rects.length && top >= bottom) wrapped.push(unit.innerText);
+          }
         }
     }
     return [wrapped, rows.map((row) => row.getBoundingClientRect().height)];
@@ -250,19 +253,20 @@ def test_rows_stay_one_line_and_scroll_in_their_box_on_a_phone(
 ):
     """No row wraps at laptop width, and a phone scrolls the table (#1544).
 
-    At 1280 px every cell is on one line, so each row is about one line
-    tall (a chip or tip button sets that height); a table wider than the
-    space beside the Admin menu scrolls in its own box, never the page. At
-    320 px the rows stay one line and the table scrolls in its box, a
-    focusable region.
+    At 1280 px every cell is on one line, except that the ParishSoft cell
+    stacks Contributed under Pledged, one line each, so each row is two
+    short lines tall; a table wider than the space beside the Admin menu
+    (the typical rows, by about 50-60 px) scrolls in its own box, never the
+    page. At 320 px the rows keep that shape and the table scrolls in its
+    box, a focusable region.
     """
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + path)
     wrapped, heights = page.evaluate(WRAPPED)
     assert wrapped == [], wrapped
-    # One line: the 1.75rem tip button plus the cell padding, well under two
-    # lines of text.
-    assert heights and max(heights) < 52, heights
+    # The two stacked ParishSoft lines plus the cell padding (about 63 px),
+    # well under three lines of text.
+    assert heights and max(heights) < 72, heights
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     page.set_viewport_size({"width": 320, "height": 900})
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
@@ -276,33 +280,46 @@ def test_rows_stay_one_line_and_scroll_in_their_box_on_a_phone(
     assert box.get_attribute("role") == "region"
 
 
-def test_share_method_tip_shows_the_other_text_without_moving_the_table(
+def test_share_methods_show_the_first_chip_and_a_plus_chip_with_all_of_them(
     page, component_origin
 ):
-    """A share method's Other text opens in its tip beside the chip (#1544).
+    """The first share method is a chip; "+N" opens every method (#1544).
 
-    The chips name each method; the tip holds the label and the Family's
-    words, and opening it never moves or resizes the table's box.
+    The "+1" chip is a toggletip button, reached and opened by keyboard,
+    named by its visible text, whose bubble lists each method in order with
+    any Other text; opening it never moves or resizes the table's box. A
+    lone method with Other text keeps its "i" tip with that text.
     """
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + "/financial-report")
     cell = page.locator("[data-table-region] table tbody tr").first.locator("td").nth(3)
-    assert cell.locator(".status-badge").all_inner_texts() == [
-        "Online <giving>",
-        "Another way",
-    ]
-    # Only the method with Other text has a tip.
+    assert cell.locator(".status-badge").all_inner_texts() == ["Online <giving>"]
     button = cell.locator(".toggletip-button")
     assert button.count() == 1
+    assert button.evaluate("b => b.firstChild.textContent") == "+1"
+    assert page.get_by_role("button", name="+1 more share method", exact=True).count()
     bubble = cell.locator(".toggletip-bubble")
     assert bubble.is_hidden()
     before = page.evaluate(TABLE_BOX)
-    button.click()
+    button.focus()
+    page.keyboard.press("Enter")
     visible(bubble)
-    assert bubble.inner_text() == "Another way: Stock <gift>"
+    assert bubble.locator(".toggletip-line").all_inner_texts() == [
+        "Online <giving>",
+        "Another way: Stock <gift>",
+    ]
     assert page.evaluate(TABLE_BOX) == before
     page.keyboard.press("Escape")
     assert bubble.is_hidden()
+    # A Family with one method that has Other text: its chip and an "i" tip.
+    page.goto(component_origin + "/financial-typical")
+    rows = page.locator("[data-table-region] table tbody tr")
+    cell = rows.nth(2).locator("td").nth(3)
+    assert cell.locator(".status-badge").all_inner_texts() == ["Other"]
+    button = cell.get_by_role("button", name="More information", exact=True)
+    button.click()
+    visible(cell.locator(".toggletip-bubble"))
+    assert cell.locator(".toggletip-bubble").inner_text() == "Other: Payroll gift"
 
 
 # The results table's scroll box (not a chart's exact-values table, #720),
