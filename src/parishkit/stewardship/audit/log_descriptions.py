@@ -191,6 +191,10 @@ DESCRIPTIONS = {
         "An automation session finished switching an integration to its new "
         "key, which became a configuration request."
     ),
+    "admin_cmd_integration_key_replace": _(
+        "An automation session submitted a new key for an integration, which "
+        "its installer checks before a configuration request switches to it."
+    ),
     "admin_cmd_workgroup_confirm": _(
         "An automation session confirmed a reviewed change to the campaign's "
         "No-reminders WorkGroup, which became a configuration request."

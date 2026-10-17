@@ -119,6 +119,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "integration key status",
         "integration key finish-switching-preview",
         "integration key finish-switching",
+        "integration key replace",
         "workgroup show",
         "workgroup preview",
         "workgroup confirm",
@@ -286,6 +287,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "export archive",
                 "integration confirm",
                 "integration key finish-switching",
+                "integration key replace",
                 "send confirm",
             }
         ), name
@@ -897,6 +899,7 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_integration_backup_probe",
         "admin_cmd_integration_dismiss",
         "admin_cmd_integration_key_finish_switching",
+        "admin_cmd_integration_key_replace",
         # The roster tick and information follow-up (PR 11b).
         "admin_cmd_followup_roster_entered",
         "admin_cmd_followup_roster_bulk",

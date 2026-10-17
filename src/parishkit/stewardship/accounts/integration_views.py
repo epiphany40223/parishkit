@@ -483,10 +483,23 @@ def _inline_credential_form(configuration, request, target, *, required=False):
     ``required`` is true for an optional integration that is not set up yet,
     whose key is what sets it up (#563).
     """
+    intent = sign_key_intent(configuration, request.portal_session.principal_id, target)
+    return InlineCredentialForm(target, initial={"intent": intent}, required=required)
+
+
+def sign_key_intent(configuration, actor_id, target):
+    """A fresh signed request identity for one new key (request-free).
+
+    The settings page draws it in its new-key field and ``pk-admin
+    integration key replace`` signs one per run: it fixes the secret
+    request's and staging's identities and the configuration it was drawn
+    against. The target's installer must have published its handoff;
+    otherwise ``IntegrationUnavailable``.
+    """
     _handoff(target)
-    intent = signing.dumps(
+    return signing.dumps(
         {
-            "actor": str(request.portal_session.principal_id),
+            "actor": str(actor_id),
             "target": target,
             "base": configuration.active_configuration.digest,
             "request": str(uuid4()),
@@ -494,7 +507,6 @@ def _inline_credential_form(configuration, request, target, *, required=False):
         },
         salt=CREDENTIAL_SALT,
     )
-    return InlineCredentialForm(target, initial={"intent": intent}, required=required)
 
 
 def _refused_key(configuration, request, target, message=None, *, code=None):
@@ -548,18 +560,7 @@ def _save(request, service, configuration, actor, target):
             credential=credential,
             status=400,
         )
-    if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
-        raise StaleRecordError("Reload integration settings.")
-    intent = signing.loads(
-        credential.cleaned_data["intent"],
-        salt=CREDENTIAL_SALT,
-        max_age=INLINE_INTENT_SECONDS,
-    )
-    if intent["actor"] != str(actor.identity) or intent["target"] != target:
-        raise PermissionError("Credential intent does not belong to this session.")
-    if intent["base"] != configuration.active_configuration.digest:
-        raise StaleRecordError("Integration settings changed.")
-    record = _optional(configuration, target)
+    intent = key_intent(configuration, actor, target, form, credential)
     if form.schedule is not None and form.schedule.changed:
         # A key save never changes the refresh schedule: change it first.
         # The refusal is shown at the key field, with the schedule edits
@@ -582,25 +583,86 @@ def _save(request, service, configuration, actor, target):
             ),
             status=400,
         )
-    settings = form.public_settings()
-    from .key_files import MAX_FILE_BYTES
-
-    value = credential.cleaned_data.pop("candidate").encode("utf-8")
-    if len(value) > MAX_FILE_BYTES:
-        raise ValueError("Credential exceeds its byte bound.")
-    save_credential(
+    stage_key(
         request,
         service,
         configuration,
         actor,
-        target=target,
+        target,
+        form=form,
+        credential=credential,
         intent=intent,
-        value=value,
-        record=record,
-        settings=settings,
     )
-    del value
     return HttpResponseRedirect(request.path)
+
+
+def key_intent(configuration, actor, target, form, credential):
+    """The verified signed intent of a validated key save (request-free).
+
+    ``form`` and ``credential`` are the bound, valid settings and new-key
+    forms. A version other than the applied one raises ``StaleRecordError``;
+    an intent older than an hour, altered or signed for another
+    Administrator or integration is refused (``BadSignature`` or
+    ``PermissionError``). The page's Save with a key and ``pk-admin
+    integration key replace`` share it.
+    """
+    if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
+        raise StaleRecordError("Reload integration settings.")
+    intent = signing.loads(
+        credential.cleaned_data["intent"],
+        salt=CREDENTIAL_SALT,
+        max_age=INLINE_INTENT_SECONDS,
+    )
+    if intent["actor"] != str(actor.identity) or intent["target"] != target:
+        raise PermissionError("Credential intent does not belong to this session.")
+    if intent["base"] != configuration.active_configuration.digest:
+        raise StaleRecordError("Integration settings changed.")
+    return intent
+
+
+def stage_key(
+    caller,
+    service,
+    configuration,
+    actor,
+    target,
+    *,
+    form,
+    credential,
+    intent,
+    attach=None,
+):
+    """Seal the new key and queue its selection with the form's settings.
+
+    Request-free, so the page's Save with a key and ``pk-admin integration
+    key replace`` stage it identically through ``save_credential``: sealed
+    for the target's installer, staged under the SQL intake guard, then the
+    selection request (with ``attach`` in its transaction). Returns the
+    secret request's id. The plain key is taken out of the form's cleaned
+    data and dropped here; it is never returned, logged or stored.
+    """
+    from .key_files import MAX_FILE_BYTES
+
+    record = _optional(configuration, target)
+    settings = form.public_settings()
+    value = credential.cleaned_data.pop("candidate").encode("utf-8")
+    if len(value) > MAX_FILE_BYTES:
+        raise ValueError("Credential exceeds its byte bound.")
+    try:
+        return save_credential(
+            caller,
+            service,
+            configuration,
+            actor,
+            target=target,
+            intent=intent,
+            value=value,
+            record=record,
+            settings=settings,
+            attach=attach,
+        )
+    finally:
+        del value
 
 
 def review_settings(service, actor, configuration, target, form):
