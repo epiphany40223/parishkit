@@ -2,11 +2,12 @@
 
 import json
 from dataclasses import dataclass, replace
-from datetime import date, datetime
+from datetime import datetime
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import connection
 from django.utils.datastructures import MultiValueDict
+from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.responses.models import AdditionalInformationRevision
@@ -16,6 +17,7 @@ from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import PageWindow, filters
 from parishkit.stewardship.web.dates import UnknownZone
+from parishkit.stewardship.web.filter_errors import FilterError, iso_date
 from parishkit.stewardship.web.tables import Sorting
 
 from .weekly_presentation import DISPOSITIONS
@@ -42,6 +44,17 @@ INFORMATION_SORTING = Sorting(
     },
     "newest",
 )
+# What each date filter says when the server refuses it at its field
+# (#1332): the words of the page's own hints (data-missing-hint), which the
+# browser shows first, so the two never disagree. The end's message covers
+# both its own date and its order after the start.
+FIELD_MESSAGES = {
+    "start": _("Enter a whole Submitted on or after date, or clear it."),
+    "end": _(
+        "Enter a Submitted on or before date no earlier than Submitted on or "
+        "after, or clear it."
+    ),
+}
 
 
 @dataclass(frozen=True, repr=False)
@@ -69,6 +82,10 @@ class InformationQuery:
         :class:`UnknownZone` (a tab opened before #558, or a zone outside the
         catalog), never read as another zone. Without dates the zone is
         unused, and one the catalog does not know is dropped.
+
+        A rule the reader can fix at one field (a whole date, the dates'
+        order) raises ``FilterError`` naming that field (#1332); anything
+        else, the zone included, is a plain ``ValueError``.
         """
         if not hasattr(parameters, "getlist"):
             if not isinstance(parameters, dict) or any(
@@ -88,11 +105,14 @@ class InformationQuery:
         ):
             raise ValueError("Invalid information filters.")
         bounded_text(query.search)
-        for value in (query.start, query.end):
-            if value and date.fromisoformat(value).isoformat() != value:
-                raise ValueError("Invalid date filter.")
+        for name in ("start", "end"):
+            if not iso_date(getattr(query, name)):
+                raise FilterError(name, FIELD_MESSAGES[name], query)
+        # Out of order is refused at the end, whose hint names the order
+        # (data-not-before), with the start marked too: fixing either end
+        # fixes it.
         if query.start and query.end and query.start > query.end:
-            raise ValueError("Invalid date interval.")
+            raise FilterError("end", FIELD_MESSAGES["end"], query, pair="start")
         if query.zone not in timezone_names():
             if query.start or query.end:
                 raise UnknownZone("Date filters need the browser's time zone.")
@@ -101,16 +121,16 @@ class InformationQuery:
 
     @classmethod
     def retained(cls, values):
-        """Rebuild the filters of a retained export capture for its retry.
+        """Rebuild filters recorded without a ``zone`` key, unchanged.
 
-        A capture made before migration 0064 has no ``zone`` key: its days
-        were the campaign's zone, and its retry must ask for exactly the same
-        filters, so the zone stays None and :meth:`form_values` leaves it out.
+        Filters from before migration 0064 (an older release, as a rollback
+        would write them) have no zone: their days are the campaign's, so
+        the zone stays None and :meth:`form_values` leaves it out.
         """
         if "zone" in values:
             return cls.parse(values)
         # Any catalog zone lets the old dates through validation; it is then
-        # dropped, so the retry's filters equal the retained ones.
+        # dropped, so the rebuilt filters equal the recorded ones.
         return replace(cls.parse(values | {"zone": "Etc/UTC"}), zone=None)
 
     def form_values(self):

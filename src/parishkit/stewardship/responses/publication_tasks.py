@@ -51,6 +51,7 @@ from parishkit.stewardship.observability import correlation
 from parishkit.stewardship.reports.export_services import admit_campaign
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 
+from .accepted_base import with_accepted_base
 from .models import ProposedChange
 from .publication import PLANNABLE_EXECUTIONS, plan_entity
 from .publication_gateway import ContactGatewayError
@@ -204,14 +205,18 @@ def _preflight_scope():
     current = SourceCurrent.objects.get(singleton=True)
     if current.snapshot_id is None or current.organization_id is None:
         raise PermissionError("Census publication needs promoted ParishSoft data.")
+    # Annotated with each row's active accepted base (#528, ADM-09.03), so
+    # a resolved conflict plans against the ParishSoft value accepted.
     rows = list(
-        ProposedChange.objects.filter(
-            submission__campaign_id=campaign_id,
-            submission__mode="live",
-            entity_kind="member",
-            handling="api",
-            decision="approved",
-            execution__in=PLANNABLE_EXECUTIONS,
+        with_accepted_base(
+            ProposedChange.objects.filter(
+                submission__campaign_id=campaign_id,
+                submission__mode="live",
+                entity_kind="member",
+                handling="api",
+                decision="approved",
+                execution__in=PLANNABLE_EXECUTIONS,
+            )
         ).order_by("entity_key", "field", "pk")
     )
     members = {}

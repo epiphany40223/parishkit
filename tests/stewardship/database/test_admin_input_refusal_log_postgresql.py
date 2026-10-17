@@ -21,6 +21,7 @@ from uuid import uuid4
 import pytest
 from django.db import DatabaseError, connection, transaction
 
+from parishkit.stewardship import admin_cli
 from parishkit.stewardship.audit import refusals
 from parishkit.stewardship.audit.models import OperationalLog
 from parishkit.stewardship.audit.refusal_context import clean
@@ -399,6 +400,102 @@ def _body(text, name, end):
     return text[start : text.index(end, start) + len(end)]
 
 
+def command_refused(actor_id):
+    """A refused pk-admin command's record for ``actor_id`` (#1403, PR 6)."""
+    return RefusalRecord(
+        reason="unclassified",
+        actor_id=actor_id,
+        command="schedule edit",
+        fields=("window-start",),
+        codes=("invalid", "required"),
+        mode="testing",
+        error=ValueError,
+    )
+
+
+def test_a_refused_command_is_recorded_on_its_private_connection(caplog, monkeypatch):
+    """The command line's writer closes the command's connections, then the
+    web login records the entry on a private connection of its own, with
+    the invocation's correlation, and closes that connection again."""
+    from parishkit.stewardship.audit import timeouts
+
+    made = []
+
+    def private(settings):
+        """The real private connection, kept so the test can check it."""
+        made.append(_private_connection(settings))
+        return made[-1]
+
+    monkeypatch.setattr(timeouts, "_private_connection", private)
+    actor, invocation = uuid4(), uuid4()
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        caplog.at_level(logging.INFO),
+        correlation(invocation),
+    ):
+        admin_cli.write_refusal(command_refused(actor))
+    # One private connection, opened and closed again.
+    (db,) = made
+    assert db.connection is None
+    (line,) = lines(caplog)
+    (entry,) = entries(actor)
+    assert entry.correlation_id == invocation
+    assert (entry.level, entry.schema) == ("INFO", "refusal")
+    assert (
+        line["extra"]["refusal"]
+        == entry.context
+        == {
+            "command": "schedule edit",
+            "fields": ["window-start"],
+            "codes": ["invalid", "required"],
+            "reason": "unclassified",
+            "exception_class": "value_error",
+            "mode": "testing",
+        }
+    )
+
+
+def test_a_private_connection_lock_wait_rolls_back(caplog):
+    """Stopped at its lock limit on the private connection, as the web
+    login: the line, then the refusal_log_write timeout, no row, and the
+    transaction rolled back, leaving the connection clean."""
+    actor = uuid4()
+    holder = _private_connection(None)
+    db = None
+    try:
+        holder.set_autocommit(False)
+        with holder.cursor() as cursor:
+            cursor.execute(
+                "SELECT pg_advisory_xact_lock(%s, hashtext(%s))",
+                [refusals.LOCK_NAMESPACE, f"{actor}:INFO"],
+            )
+        with (
+            task_login(ServiceRole.WEB, exact=True, reconnect=True),
+            caplog.at_level(logging.INFO),
+        ):
+            db = _private_connection(None)
+            record_refusal(command_refused(actor), db=db)
+            # Rolled back, so the private connection is usable and clean.
+            assert not db.in_atomic_block and db.get_autocommit() is False
+            with db.cursor() as cursor:
+                cursor.execute("SELECT current_user")
+                assert cursor.fetchone() == ("pk_stewardship_web",)
+                cursor.execute("SHOW lock_timeout")
+                assert cursor.fetchone() == ("0",)
+            db.close()
+            assert db.connection is None
+    finally:
+        if db is not None:
+            db.close()
+        holder.rollback()
+        holder.close()
+    (line,) = lines(caplog)
+    assert line["extra"]["refusal"]["command"] == "schedule edit"
+    (timeout,) = lines(caplog, Event.TASK_TIMED_OUT)
+    assert timeout["extra"]["limit_seconds"] == refusals.LOCK_SECONDS
+    assert not entries(actor)
+
+
 def test_the_migration_check_passes_installed_and_fails_otherwise():
     """The DO block accepts the installed objects and refuses the event
     check and the writer as 0089 left them, the safe context as 0104 left
@@ -426,5 +523,9 @@ def test_the_migration_check_passes_installed_and_fails_otherwise():
             cursor.execute(statement)
             cursor.execute(CHECK)
     # Running the whole file again, as the users swap test does, is harmless.
+    # Rolling it back keeps the installed (later) safe context, which 0109
+    # (#1398) widens again, for the tests that follow in this transactional
+    # database.
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(FROZEN)
+        transaction.set_rollback(True)

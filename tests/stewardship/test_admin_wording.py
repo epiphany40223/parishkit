@@ -59,3 +59,18 @@ def test_admin_templates_avoid_implementation_wording(path):
         )
     ]
     assert offending == []
+
+
+def test_admin_templates_carry_no_sensitive_data_banner():
+    """No Admin page shows a "Sensitive parish ..." download banner (#1539).
+
+    The Administrator removed the on-page banners from export forms and the
+    export status page (ui-conventions, Downloaded files). The privacy line
+    inside each downloaded file is separate and stays.
+    """
+    offending = [
+        path.name
+        for path in sorted(TEMPLATES.rglob("*.html"))
+        if re.search(r"trusted device|Sensitive parish", path.read_text())
+    ]
+    assert offending == []

@@ -28,7 +28,11 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.campaigns import restore_review as review
 from parishkit.stewardship.storage import StaleRecordError
-from parishkit.stewardship.web.refusals import refusal_text, unexpected_fields
+from parishkit.stewardship.web.refusals import (
+    refusal_text,
+    refused_step,
+    unexpected_fields,
+)
 
 from .access_gate import status_page
 from .admin_editing import error_response
@@ -130,6 +134,9 @@ def restore_review(request):
     if status != 200:
         # The answer carries its own explanation; keep it as rendered.
         response.stewardship_safe_error = True
+    if "refused" in step:
+        # The refusal log records why the step was refused (#1403).
+        refused_step(response, step["refused"], step.get("_error"))
     response["Cache-Control"] = "no-store"
     return response
 
@@ -169,16 +176,23 @@ def _answer(step):
         return {"refused": "reauthenticate"}
     except (ValueError, TypeError, KeyError) as error:
         # A stale form's unexpected fields say so in the region (#1401).
-        return {"refused": "invalid", "refusal_text": refusal_text(error)}
+        # ``_error`` is for the refusal log only: a template cannot read it.
+        return {
+            "refused": "invalid",
+            "refusal_text": refusal_text(error),
+            "_error": error,
+        }
 
 
 def _step(request, principal, state):
     """Run one posted step; returns what the region shows next."""
     action = request.POST.get("action", "")
-    if action not in _FIELDS or set(request.POST) - _FIELDS[action] - {
-        "csrfmiddlewaretoken"
-    }:
+    if action not in _FIELDS:
+        # No sources: an unknown action value, not an unexpected field.
         raise unexpected_fields()
+    allowed = _FIELDS[action] | {"csrfmiddlewaretoken"}
+    if set(request.POST) - allowed:
+        raise unexpected_fields(request.POST, allowed=allowed)
     actor = principal.identity
     if action == "cancel":
         return {}
@@ -295,6 +309,9 @@ def held_emails(request):
     if status != 200:
         # The answer carries its own explanation; keep it as rendered.
         response.stewardship_safe_error = True
+    if "refused" in step:
+        # The refusal log records why the step was refused (#1403).
+        refused_step(response, step["refused"], step.get("_error"))
     response["Cache-Control"] = "no-store"
     return response
 
@@ -302,10 +319,12 @@ def held_emails(request):
 def _held_step(request, actor, state):
     """Run one posted Held emails step; returns what the region shows next."""
     action = request.POST.get("action", "")
-    if action not in _HELD_FIELDS or set(request.POST) - _HELD_FIELDS[action] - {
-        "csrfmiddlewaretoken"
-    }:
+    if action not in _HELD_FIELDS:
+        # No sources: an unknown action value, not an unexpected field.
         raise unexpected_fields()
+    allowed = _HELD_FIELDS[action] | {"csrfmiddlewaretoken"}
+    if set(request.POST) - allowed:
+        raise unexpected_fields(request.POST, allowed=allowed)
     if action == "cancel":
         return {}
     # A decision needs a fresh sign-in first, so the step-up comes before

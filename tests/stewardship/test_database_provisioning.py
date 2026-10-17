@@ -45,6 +45,10 @@ TABLE_WRITERS = {
     "stewardship_outbox_address_retry": "pk_stewardship_mail_dispatch",
     "stewardship_source_drop_example": "pk_stewardship_worker",
     **dict.fromkeys(PUBLICATION_WORKER_TABLES, "pk_stewardship_worker"),
+    # Point-in-time exports' discard record (0109, #1398). No login writes
+    # it (only its owner-run functions do); this names the role whose grant
+    # on it, SELECT for fact compaction, the check below looks for.
+    "stewardship_export_discard": "pk_stewardship_worker",
 }
 
 

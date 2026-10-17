@@ -52,6 +52,38 @@ REASONS = frozenset(
         # A retired action or another campaign's address (UserFacingGone,
         # HTTP 410): INFO, although it is a PermissionError.
         "gone",
+        # The Administrator's 2026-10-15 review cases (#1403, PR 5): a
+        # cloned campaign's zone that is not the parish's, a logo or image
+        # refused for its size or its file, and the Off-site backups page's
+        # Test access refusals.
+        "campaign_zone_not_parish",
+        "image_too_large",
+        "image_unsupported",
+        "drive_not_in_local",
+        "workspace_mail_missing",
+        "drive_folder_missing",
+        "drive_folder_link_invalid",
+        # Scheduled email's Send test: a test still on its way (INFO), or one
+        # whose result the mail provider left uncertain (WARNING: the
+        # provider's state, not the input).
+        "test_pending",
+        "test_result_uncertain",
+        # Automation access approval: an unknown code, or another's pairing
+        # (one answer for both, drawn in place). INFO: the code typed is the
+        # input's own fault, and repeated probes are bounded by the pairing
+        # limiter and the cap.
+        "pairing_code_refused",
+        # Restore review and Held emails: a release or a resend the
+        # restored site's state refuses (the step's own key is the code).
+        "release_refused",
+        "resend_refused",
+        # System health: allowing debug logging again in Production, which
+        # only the server operator may do.
+        "production_only",
+        # A schedule change's Apply (or schedule confirm) whose reviewed send
+        # time has passed since its review (#1464): INFO, the reader reviews
+        # again.
+        "send_time_passed",
         "unclassified",
         "usage",
         "configuration",
@@ -63,14 +95,29 @@ REASONS = frozenset(
 # a step-up request included, is INFO; ``unclassified`` is WARNING only for
 # a PermissionError (see ``audit.refusals.level_of``).
 WARNING_REASONS = frozenset(
-    {"denied", "csrf_failed", "configuration", "credential_mismatch"}
+    {
+        "denied",
+        "csrf_failed",
+        "configuration",
+        "credential_mismatch",
+        # Server state or configuration, not the input.
+        "campaign_zone_not_parish",
+        "drive_not_in_local",
+        "workspace_mail_missing",
+        "test_result_uncertain",
+        "release_refused",
+        "resend_refused",
+        "production_only",
+    }
 )
 # Reasons whose ``expected`` and ``actual`` are allow-listed settings. This
 # set is the only gate on which reasons carry values: the database checks
-# only their shape, which a token or a phone number can also fit. No
-# shared refusal has such values yet; the refusals that do (a campaign zone
-# that is not the parish's) add their reasons here.
-SETTING_REASONS = frozenset()
+# only their shape, which a token or a phone number can also fit. Each
+# reason here says which setting its values are:
+# - ``campaign_zone_not_parish``: the parish's IANA zone and the zone chosen
+#   (both from the server's zone catalog);
+# - ``image_too_large``: the limit and the file's size, in bytes.
+SETTING_REASONS = frozenset({"campaign_zone_not_parish", "image_too_large"})
 
 # The keys, in the order an entry lists them.
 KEYS = (

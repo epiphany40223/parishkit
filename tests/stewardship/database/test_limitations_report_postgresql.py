@@ -172,7 +172,7 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert b"Painter" not in body and b"Members who cannot participate" in body
         assert get(browser, route + "?search=x")[0].status_code == 400
         response, body = search(browser, route, {"show": "cannot_attend"})
-        assert response.status_code == 200 and b"No matching Members." in body
+        assert response.status_code == 200 and b"No Members match these" in body
         assert search(browser, route, {"show": "bad"})[0].status_code == 400
         # The filter's old name and a talent's id are refused (#970).
         assert search(browser, route, {"talent": "any"})[0].status_code == 400

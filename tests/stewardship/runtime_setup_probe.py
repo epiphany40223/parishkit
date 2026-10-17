@@ -154,8 +154,7 @@ def main():
         time.sleep(0.5)
     assert not runtime().configured() and not SetupCompletion.objects.exists()
     # Setup collects no campaign (#142), and the load is the last data step
-    # (#1353), so the review follows it.
-    get("/admin/setup/preview")
+    # (#1353), so the email test follows it, then Review (#1476).
     mail = get("/admin/setup/mail-test")
     post("/admin/setup/mail-test", fields(mail.context["form"]))
     deadline = time.monotonic() + 120
@@ -166,6 +165,7 @@ def main():
             break
         assert time.monotonic() < deadline, status
         time.sleep(0.5)
+    get("/admin/setup/preview")
     confirmation = get("/admin/setup/confirm")
     assert confirmation.context["readiness_problem"] is None
     post(

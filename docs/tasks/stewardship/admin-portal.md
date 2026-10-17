@@ -92,6 +92,7 @@ Scope and dependencies: [ADM-04 work package](../../plans/stewardship/admin-port
 - [x] ADM-04.04 — Build page previews and readiness-test emails.
 - [x] ADM-04.05 — Build atomic schedule reconciliation previews.
 - [x] ADM-04.06 — Test campaign editing, previews, and schedule races.
+- [ ] ADM-04.07 — Shared schedule preview (#1129), in three slices: 7a specify the component and its adoption (docs only); 7b add the component and draw the refresh schedule's seven-day list with it; 7c draw the mail schedule review's send times with it.
 
 Evidence: Implemented with passing integrated acceptance and review closure. Guarded
 draft creation, archived cloning, structural forms, current-source Ministry/fund
@@ -105,6 +106,8 @@ three-engine browser tests cover these boundaries; see
 [review ledger](../../guides/stewardship-phase-2-reviews.md) for evidence.
 Production transitions and live campaign delivery remain with their later
 phase owners, not this preparation package.
+
+ADM-04.07 is post-launch work for #1129. Slice 7b draws the refresh schedule's seven-day list with the shared `occurrence_preview` component and `components/occurrences.html`, render-identical except the `data-day`, `data-today` and `data-other-zone-time` hooks (`test_refresh_preview_render.py`); slice 7c remains. Slice 7a is a docs-only change that adds the [schedule previews](../../specs/stewardship/ui-conventions/spec.md#schedule-previews) convention (with its traceability entry), the adoption paragraphs in the admin-portal spec's seven-day preview and mail schedule review, the command line's from-now send times in the admin-automation spec, and this item's delivery plan.
 
 ## ADM-05: Production transition and pre-start withdrawal
 
@@ -309,7 +312,7 @@ Specification: [Admin automation interface](../../specs/stewardship/admin-automa
 - [x] ADM-11.05 — PR 4: add schedule preview and confirm and configuration request status.
 - [x] ADM-11.06 — PR 5: let fresh-gated SQL guards and checks accept full-scope automation sessions (migration) and add the confirmation prompt.
 - [x] ADM-11.07 — PR 6: add refresh and Testing send commands.
-- [ ] ADM-11.08 — PR 7: add delivery control (7b) and Family portal maintenance (7a) commands.
+- [x] ADM-11.08 — PR 7: add delivery control (7b) and Family portal maintenance (7a) commands.
 - [ ] ADM-11.09 — PR 8: add report, export, digest and log commands.
 - [x] ADM-11.10 — PR 9: add task retry, delivery and refusal commands.
 - [ ] ADM-11.11 — PR 10: add the remaining configuration commands, including secret replacement.
@@ -636,7 +639,20 @@ rebound key, an unchanged decision `invalid`, the open-state matrix with
 every queued review and a Conflict's Approve refused, By-hand `invalid`, a
 stale version, an unknown or another campaign's change `not_available`, a
 read-only session, Staff and a Ministry leader denied, an ended session, no
-current campaign).
+current campaign). #1434 adds `census edit` (Edit value, Clear edit) and
+`census resolve-conflict` (Use the Family's value anyway) through the same
+command scope and the page's `edit_census_change` and
+`resolve_census_conflict`, recording `admin_cmd_census_edit` and
+`admin_cmd_census_resolve_conflict` once per request key, with no schema
+change and no prompt; `export census --format jsonl` gains `editable` and
+`resolvable`; proven by `tests/stewardship/test_admin_census.py`,
+`tests/stewardship/test_admin_census_export.py`,
+`tests/stewardship/test_admin_cli.py` and
+`tests/stewardship/database/test_admin_census_edit_cli_postgresql.py`
+(edit, clear, a repeat and a rebound key, unchanged edits recording
+nothing, a refused value with its reason, By-hand, queued, stale, unknown
+and Staff refusals; a resolution with both events, its repeat and rebound
+key, its undo by `census review`, and its refusals).
 A follow-up (#682) lets `delivery resolve` retry Family emails too, loading
 the web's general and public token keyrings only for that, checked against
 the web's published receipts; proven by `tests/stewardship/test_admin_cli.py`,
@@ -749,7 +765,26 @@ holds a queued email, its recovery counts against the page's SQL reads, a
 paused, closed campaign's resolution choices with held receipts and weekly
 reports, no event, no current campaign `not_available`, a Staff reader
 denied, an ended session) and the unchanged
-`test_delivery_control_postgresql.py`.
+`test_delivery_control_postgresql.py`. Its second part (#463) adds
+`send pause-preview`, `send resume-preview`, `send resolve-preview` and
+`send confirm` (fresh-gated, always prompts) in the same module, through
+the page's own previews and `confirm` (which gains an optional `record`
+hook for the command event), with no schema change and no new send path;
+proven by `tests/stewardship/test_admin_send_controls.py` (the preview
+documents without fingerprints, the prompt's lines, the catalog entries,
+the parser's types against the page's, usage errors),
+`tests/stewardship/test_admin_cli.py`, `tests/stewardship/test_pk_admin.py`
+(the `PROMPTING` list), `tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_send_controls_cli_postgresql.py`
+(previews equal to the page's for a pause, a resume before the start and a
+closed campaign's cancellation; refused prompts change nothing; the
+control, the command event, the fresh-gate event and notice; an exact
+repeat recording nothing; a page token confirmed by the command and a
+command token by the page; a resume refused by the page's preview while a
+delivery is unknown and, for a token that skipped it, by the SQL guard,
+with nothing recorded; bad reasons, an altered or expired token, a
+read-only session, a Testing draft, no current campaign, Staff denied
+before the prompt and an ended session).
 ADM-11.11 lands in parts. The first adds `files list`, the Hosted files
 page's library, in `parishkit.stewardship.admin_hosted_files`, through the
 page's own capability, order and row builder, with no schema change;
@@ -879,7 +914,29 @@ locked field refused, its leader roles, its end date with
 `campaign_end_date_requested` and its intent, its Ministries with
 `campaign_ministries_requested`, no current campaign, a read-only session
 and Staff denied, an ended session) and the unchanged Campaign settings,
-live end date and live Ministries page suites.
+live end date and live Ministries page suites. Another part adds `campaign
+shares-preview` and `campaign shares-confirm`, Share options' Review and
+Apply, in `parishkit.stewardship.admin_shares`, through the page's own
+target and editability checks, formset, review (moved into
+`option_editing.review_options`, which the page's Review now calls) and
+`admin_editing.confirm_intent`, with no schema change; proven by
+`tests/stewardship/test_admin_shares.py` (the change document's parser,
+the Review post it becomes bound to the page's formset, the catalog
+entries, the described event, the documents' names, the ledger, usage
+errors), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_settings.py`,
+`tests/stewardship/database/test_admin_shares_cli_postgresql.py` (a
+relabel, move, addition and deletion previewed and confirmed with the
+request and event and applied once installed, a repeated confirm, the
+document on standard input with `--campaign`, a command token confirmed on
+the page and a page token by the command, a stale version, no change, a
+saved option left out, an unknown id, a label the page refuses, an unknown
+member, a census-only draft, an unknown campaign, a locked draft, a draft
+background work holds, a live campaign and its stale token, a token for
+another or an unknown campaign, an altered, another page's or another Administrator's token,
+a token reviewed before the options changed, no current campaign, a
+read-only session, an ended session and Staff denied before reading input)
+and the unchanged Share options page suite.
 
 ADM-11.12 lands in parts. The first adds `events list` and `events
 acknowledge`, the Admin home page's security events and critical-problem
@@ -901,6 +958,77 @@ session, an ended session and Staff refused) and the unchanged
 `tests/stewardship/database/test_security_events_postgresql.py` and
 `tests/stewardship/database/test_critical_events_postgresql.py`.
 
+ADM-11.12's PR 11a adds `followup list`, `followup show`, `followup
+update` and `followup bulk`, the Ministry requests follow-up queue, in
+`parishkit.stewardship.admin_followup`, through the page's own admission,
+selection, history and services (`update_request`, `apply_bulk_outcome`)
+in its command scope, with no schema change; proven by
+`tests/stewardship/test_admin_followup.py` (golden documents and the
+personal-data allowlist, catalog flags, the parser's choices against the
+page's, the ledger, the page's refusals as field errors, usage errors),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_role_first.py`,
+`tests/stewardship/test_pk_admin.py`,
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_followup_cli_postgresql.py` (the
+queue and a request with the page's events and filters for a read-only
+session, a Save with its events once for each revision its key binds, a
+key shared with the page, notes kept or replaced, contact notes from
+standard input, stale and closed requests checked before the field rules,
+options without effect refused as usage, lengths and the page's refusals
+as field errors, the bulk outcome's prompt, a mixed or stale choice saving
+nothing, a choice too long refused before the prompt, a repeat, Staff
+reading and changing, a leader's out-of-scope request answered as an
+unknown one, another campaign's request, a read-only session refused, an
+ended session and no current campaign). The roster tick, the queue's export and Family
+information follow-up remain.
+
+ADM-11.12's PR 11b adds `followup roster-entered` and `followup
+roster-bulk` (in `parishkit.stewardship.admin_roster_tick`), the Entered in
+ParishSoft tick and Roster changes to enter's bulk mark, and `followup
+information-show` and `followup information-update` (in
+`parishkit.stewardship.admin_information`), an Additional information
+item's page and Save, through the pages' own admissions, reads and
+services (`set_roster_entered`, `mark_many_entered`, `update_information`)
+in the page's command scope, with no schema change; proven by
+`tests/stewardship/test_admin_roster_information.py` (golden documents and
+the personal-data allowlist, catalog flags, the ledger, the service's
+refusals as field errors, limits checked before admission, usage errors),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_role_first.py`,
+`tests/stewardship/test_pk_admin.py`,
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_roster_information_cli_postgresql.py`
+(a tick set, repeated, rebound, already set, stale and cleared with its
+events once per key, a page tick making the command's sequence stale, the
+bulk mark's prompt, all-or-none refusals and repeat, Staff ticking, a
+leader denied before the bulk prompt, another campaign's request, the item
+read with the page's event and no Family text, a Save with kept values,
+the clearing confirmation, a stale version, a key shared with the page, a
+leader denied, a read-only session refused and an ended session). The
+queue's export remains.
+
+ADM-11.12's PR 11c adds `followup export` (in
+`parishkit.stewardship.admin_followup_export`), the follow-up queue's
+Export these requests, streamed as `export roster` is, through the
+queue's own admission, choice check (`_choices`) and file read and writer
+(`ministry_followup_exports.export_body` and `export_file_name`, extracted
+from the page's view) under the shared report read, recording the page's
+`ministry_followup_exported` with its count and Ministries, with no schema
+change; proven by `tests/stewardship/test_admin_followup_export.py` (the
+options against the page's choices, the choice check, the file name),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_followup.py` (the ledger),
+`tests/stewardship/test_pk_admin.py` (the wrapper's streaming list),
+`tests/stewardship/test_export_default_format.py`,
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_followup_export_cli_postgresql.py`
+(the page's CSV byte for byte, XLSX, PDF, the filters, the page's event
+with its count and Ministries, a PDF above the limit `invalid` at
+`format` and recorded as failed, refused choices `invalid` with nothing
+recorded, Staff, a role the selection refuses, a read-only session
+refused, an ended session, no current campaign). This completes PR 11.
+
 Another part adds `content show`, the content editor's read
 of one page's or email's text, in `parishkit.stewardship.admin_content`,
 through the editor's own lookup (moved into
@@ -915,6 +1043,28 @@ and the default text, the confirmation email, a re-save notice, an unknown
 slot or revision, no current campaign, a held campaign `stale_version`, a
 Staff reader denied, an ended session) and the unchanged content page
 suites.
+
+Another part adds `content preview` and `content confirm`, the email
+tables' Delete and the editors' plain-text preview, in
+`parishkit.stewardship.admin_content`, through the page's own removal
+build (moved into `content_delete_views.review_deletion` and `chosen_ids`,
+which the Delete now calls), its conversion (moved into
+`content_views.plain_text`, which the plain-text preview now calls) and
+`admin_editing.confirm_intent`, with no schema change; proven by
+`tests/stewardship/test_admin_content_changes.py` (catalog flags, the
+described event, usage errors, the choice check, the conversion),
+`tests/stewardship/test_admin_content.py` (the ledger),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_content_changes_cli_postgresql.py`
+(a preview and confirm of two unused emails recording the request and
+event with the sent email kept once installed, a repeat, a sent email,
+the confirmation email, an unknown or repeated id, a stale version, a
+held campaign, an altered or another page's token, another
+Administrator's token denied, a token built before the settings changed,
+no current campaign, the plain-text preview equal to the page's answer
+with no event and no renewed session, a read-only session and Staff
+denied, an ended session) and the unchanged content page suites.
 
 Another part adds `integration list`, `integration show` and `integration
 status`, the Integrations pages' reads, in
@@ -1017,6 +1167,57 @@ sessions, and no key or fingerprint in any output outside the page's own
 signed token, which is decoded and checked apart) and the unchanged
 integration key page suites.
 
+Another part adds `integration key replace` (a settings page's Save with a
+new key) in `parishkit.stewardship.admin_integration_keys` and the host
+wrapper's `--secret-file` and `--secret-stdin`, through the page's own
+forms and its request-free `integration_views.sign_key_intent`,
+`key_intent` and `stage_key` (moved out of `_save`, which now calls them)
+and the unchanged `save_credential` path (now with an `attach` callback, an
+unrecorded first freshness check in its own transaction, and the caller's
+authority runtime passed to `admit_admin_action`), with no schema change;
+proven by `tests/stewardship/test_admin_integration_keys.py` (catalog
+flags, the described event, the ledger, usage errors, the key line's
+parser, size and encoding refusals, the prompt's words, the role first),
+`tests/stewardship/test_admin_role_first.py`,
+`tests/stewardship/test_pk_admin.py` (the tagged line after the preamble
+and never an argument or file, the limit equal to the page's, a
+group-readable, linked, FIFO, missing or oversized file refused, a piped
+key needing `--yes`, misused options refused, echo off at a terminal and
+back for the answer),
+`tests/stewardship/database/test_admin_integration_key_replace_cli_postgresql.py`
+(a key staged, installed by the isolated installer, acknowledged and
+switched with its events and notices, a declined prompt staging nothing,
+settings saved with the key, refused settings and keys at their fields, a
+malformed key line, a pending key change and a stale version, read-only,
+Staff and ended sessions, Slack set up by its first token, a refused Slack
+format before the prompt, and no key in any output, log or audit row) and
+the unchanged integration key page suites.
+
+Another part adds the Backup encryption key's steps,
+`integration backup-key challenge`, `preview` and `confirm`, in
+`parishkit.stewardship.admin_backup_key`, through the page's own
+`check_new_key`, `start_proof`, `finish_proof`, a request-free
+`backup_key.review_change` (moved out of the page's `_review`, which now
+calls it) and `admin_editing.confirm_intent` with the page's salt, and
+generalizes the host wrapper's secret input to a per-command table
+(`--public-key-file`, `--code-file` and `--code-stdin` beside
+`--secret-file` and `--secret-stdin`), with no schema change; proven by
+`tests/stewardship/test_admin_backup_key.py` (catalog flags, the described
+event, no option taking a value, the field limit equal to the page's, the
+tagged lines' parser, size and encoding refusals, usage errors, the role
+first), `tests/stewardship/test_admin_role_first.py`,
+`tests/stewardship/test_pk_admin.py` (each value on its own tagged line
+and never an argument, an oversized code file refused, a piped code with
+no `--yes`, misused options refused, a code typed at a terminal not
+echoed), `tests/stewardship/database/test_admin_backup_key_cli_postgresql.py`
+(challenge, a real proof, a wrong code, review, a declined prompt,
+confirmation with its trail, the installer applying it with
+`backup_key_replaced`, a repeat; a private key, a non-key, the key in use
+and an over-long paste refused without echo; an altered, expired or
+out-of-date intent and an altered token; read-only, ended and Staff
+sessions; no private key, code or pasted text in any output, log or audit
+row) and the unchanged backup key page suites.
+
 ## ADM-12: Admin navigation overhaul
 
 Scope and dependencies: [ADM-12 work package](../../plans/stewardship/admin-portal.md#adm-12-admin-navigation-overhaul).
@@ -1033,21 +1234,21 @@ Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#a
 - [x] ADM-12.07 — NAV-5a: give Parish data, Users and access, System and Home pages, and the remaining setup wizard steps, one name each.
 - [x] ADM-12.08 — NAV-5b: give report pages one name each.
 - [x] ADM-12.09 — NAV-6: add the URL plumbing, per-group URL modules, legacy redirects and System URLs.
-- [ ] ADM-12.10 — NAV-7: move Parish data and Users URLs and the change status URL.
+- [x] ADM-12.10 — NAV-7: move Parish data and Users URLs and the change status URL.
 - [x] ADM-12.11 — NAV-8: move Mail and Family portal URLs.
 - [x] ADM-12.12 — NAV-9: move Campaign setup URLs, part A, and add the group root.
 - [x] ADM-12.13 — NAV-10: move Campaign setup URLs, part B (go-live chain, test email, Campaign Ministries).
 - [x] ADM-12.14 — NAV-11: move report URLs, including response lists and the reports root.
 - [x] ADM-12.15 — NAV-12: move export and digest URLs and fold the latest-data export into the shared export page.
-- [ ] ADM-12.16 — NAV-13 (optional): add trailing slashes to sign-in, setup and maintenance URLs.
+- [ ] ~~ADM-12.16 — NAV-13~~ — Dropped, not done: sign-in, setup and maintenance keep their addresses without a trailing slash (#522).
 - [x] ADM-12.17 — NAV-14: add the Emailed reports page.
 - [ ] ~~ADM-12.18 — NAV-15~~ — Dropped, not done: the Users revamp (#952) replaces the planned Portal users split (#535).
-- [ ] ADM-12.19 — NAV-16: add the ways back (#521), including the test-email origin kept in the session.
+- [x] ADM-12.19 — NAV-16: add the ways back (#521), including the test-email origin kept in the session.
 - [x] ADM-12.20 — NAV-17: add the reachability and no-UUID crawl test.
-- [ ] ADM-12.21 — NAV-18: add Home's Next steps for each state and role and the per-role Today line.
+- [x] ADM-12.21 — NAV-18: add Home's Next steps for each state and role and the per-role Today line.
 - [x] ADM-12.22 — NAV-19: add the Find a Family header search (#561).
 
-Evidence: In progress. ADM-12.00 merged in PR #568: the
+Evidence: Done (ADM-12.16 and ADM-12.18 dropped). ADM-12.00 merged in PR #568: the
 specification states the JavaScript requirement once and links it from the
 architecture, reports and hosted-files specifications; adds the Response list
 row, the Find a Family header search, the non-page route, trailing-slash,
@@ -1199,8 +1400,9 @@ ADM-12.10 (NAV-7, in part) moves the Parish data pages under
 change's status page to `/admin/changes/<request>/`, each old address and
 no-slash form redirecting. The ingress admits large uploads at both upload
 addresses, and the two hard-coded redirects are reversed. The Users and
-access URLs move with the Users revamp (#952), so this task stays
-open until then. It is proven by the expected-redirect table in
+access URLs moved with the Users revamp (#952) in PR #994, under
+`/admin/users/`, which completes this task. It is proven by the
+expected-redirect table in
 `tests/stewardship/test_admin_url_scheme.py`, the Caddyfile render tests and
 golden files, and the updated Parish data and change suites.
 ADM-12.11 (NAV-8) moves the Mail and Family portal pages under `/admin/mail/`
@@ -1354,6 +1556,24 @@ addresses resolve to nothing, every slashless row) and
 addresses are 404 through the real middleware, the presence count still
 polls).
 
+ADM-12.19 (NAV-16) adds the ways back for #521: Preview and test email
+returns to the page it was opened from, kept in the signed-in session
+(PR #1230); the breadcrumb is the way back on deep pages (PR #1250); help
+text and status messages link the pages they name (PRs #1265 and #1277);
+and hand-written "Return to" links that repeat the trail are dropped
+(PRs #1344 and #1348). It is proven by
+`tests/stewardship/database/test_admin_reachability_postgresql.py` and the
+updated page suites.
+ADM-12.21 (NAV-18) adds Home's Next steps for each campaign state and role
+and the per-role Today line (`accounts/home_steps.py`, PR #1246). It is
+proven by `tests/stewardship/database/test_home_next_steps_postgresql.py`
+and `tests/stewardship/browser/test_home_next_steps.py`.
+ADM-12.16 (NAV-13) is dropped (#522): moving sign-in, setup and
+maintenance to the trailing-slash rule changes exact paths in the access
+gate's allowlists and about 300 test lines for no visible gain, and
+under #864 it would turn their current addresses into 404s or extra
+redirects.
+
 ## ADM-13: System health page
 
 Scope and dependencies: [ADM-13 work package](../../plans/stewardship/admin-portal.md#adm-13-system-health-page).
@@ -1361,20 +1581,20 @@ Specification: [System health](../../specs/stewardship/admin-portal/spec.md#syst
 
 - [x] ADM-13.00 — PR 0: specify the System health page and its actions, record the Administrator's decisions, and add this package and its checklist.
 - [x] ADM-13.01 — PR 1: add service status records and record every drop count with a refused refresh (migration).
-- [ ] ADM-13.02 — PR 2: add the read-only System health page, with its read command or its pending exemption.
-- [ ] ADM-13.03 — PR 3: add Take a backup now through a durable request and request mode (migration), with its command or its pending exemption.
+- [x] ADM-13.02 — PR 2: add the read-only System health page, with its read command or its pending exemption.
+- [x] ADM-13.03 — PR 3: add Take a backup now through a durable request and request mode (migration), with its command or its pending exemption.
 - [ ] ADM-13.04 — PR 4: add Clear the halt with halt identities, the mailbox check and the clear signal (migration), with its commands or their pending exemption.
 - [x] ADM-13.05 — PR 5: add Accept this change once, bound to every recorded count, with example Families (migration), with its commands or their pending exemption.
 - [x] ADM-13.06 — PR 6: add the debug-off switch, its in-process override, its host clear command and Allow debug logging again (Testing only, refused in Production) (migration), with its command or its pending exemption.
 - [x] ADM-13.07 — specify the System health dashboard (#1214): the overall status line, the tiles, the problem registry, opening and closing tiles, Home and the critical-problems banner, and the delivery slices.
-- [ ] ADM-13.08 — dashboard slice 1: the problem registry, its severities and tiles, and the new warning kinds. (The registry's tiles and severities for the existing kinds, the split of a grouped process problem and the document's `severity` and `tiles` came with ADM-13.09 and ADM-13.10; the new kinds, the backup key rule, Home's key fallback and the shared banner words remain.)
+- [x] ADM-13.08 — dashboard slice 1: the problem registry, its severities and tiles, and the new kinds. (The registry's tiles and severities for the existing kinds, the split of a grouped process problem and the document's `severity` and `tiles` came with ADM-13.09 and ADM-13.10, and the shared banner words with ADM-13.15; the new shared kinds, read in the statement Home already runs, the unknown WorkGroup's error while Reminders are scheduled, the backup key rule and Home's key fallback came last.)
 - [x] ADM-13.09 — dashboard slice 2a: the overall status line, its Not current state, the status indicator icons and the contrast test.
 - [x] ADM-13.10 — dashboard slice 2b: the tile frame, the tile grid and its bands, its mirror targets, the tiles' Not current state, and the moved, always-drawn controls.
 - [x] ADM-13.11 — dashboard slice 3: the Mail tile: its Working summaries in a fixed order, one line for both mail senders while they agree, and its explanations in toggletips and "About this page". (A halt's kind and Clear the halt remain with ADM-13.04.)
 - [x] ADM-13.12 — dashboard slice 4: the ParishSoft refresh tile: its Working summaries in a fixed order, the refused counts inside the refusal's problem item with Accept this change once right under them, and a panel that repeats none of its problems.
 - [x] ADM-13.13 — dashboard slice 5: the Backups and Debug logging tiles: their Working summaries in a fixed order, the Backups page findings as Warning items of the tile's problems, and panels that repeat none of their tiles' problems.
 - [x] ADM-13.14 — dashboard slice 6: the page-load and services tiles: their summaries and states chosen in one place, each page-load finding as its tile's problem item with its link drawn only while relevant, a Version panel that repeats none of its problems, and Accept this change once's step-up notice only while the sign-in is stale.
-- [ ] ADM-13.15 — dashboard slice 7: Home and the critical-problems banner.
+- [x] ADM-13.15 — dashboard slice 7: Home and the critical-problems banner.
 
 Evidence: In progress. ADM-13.00 is this docs-only change: the Admin portal
 specification's System health section (panels, actions, service status
@@ -1394,7 +1614,7 @@ checks in full and the worker records with each refused attempt, checked by
 `tests/stewardship/database/test_system_health_records_postgresql.py`,
 `tests/stewardship/database/test_automation_maintenance_postgresql.py`, the
 migration-file and upgrade-parity tests and the regenerated schema baseline.
-ADM-13.02 is in progress in parts. Part 2a adds the read model
+ADM-13.02 landed in three parts. Part 2a (#670) adds the read model
 `parishkit.stewardship.system_health` (`SystemHealth`), the Administrator-only
 page at `/admin/system/health/` with its problems list and six panels, the
 passive 10-second status fragment, `/admin/system/` opening it, the first
@@ -1404,14 +1624,14 @@ logging and critical-problems banners' links, with no schema or grant change, ch
 `tests/stewardship/database/test_system_health_postgresql.py`,
 `tests/stewardship/browser/test_system_health.py` and the navigation and
 route-parity tests. Part 2b adds Home's System health problem lines for
-viewers who may open the page (the page's own sentences, shared through
+viewers who may open the page (#679; the page's own sentences, shared through
 one template, read in the statement Home already runs for its ParishSoft
 status, so Home's query count is unchanged) and the
 `system health` command with `--watch` (stopping once nothing needs
 attention), checked by the golden document and allowlist in
 `tests/stewardship/test_admin_reads.py`, `tests/stewardship/test_admin_cli.py`
 and `tests/stewardship/database/test_system_health_postgresql.py`. Part 2c
-shows the 24-hour count, through the definer function of frozen migration
+(#684, #1082) shows the 24-hour count, through the definer function of frozen migration
 0012, and the limit Family email stops at in the "Why sends are waiting"
 panel and as `daily_sent` and `daily_limit` in the command's document,
 with no schema or grant change, checked by
@@ -1422,8 +1642,9 @@ with no schema or grant change, checked by
 after the daily limit follows, through the definer function of frozen
 migration 0076 (web EXECUTE only), shown while the count is at the limit
 and as `daily_resume_at` in the command's document, checked by the same
-tests and `tests/stewardship/database/test_mail_daily_limit_postgresql.py`.
-ADM-13.03 is in progress in parts. Part 3a adds the frozen forward
+tests and `tests/stewardship/database/test_mail_daily_limit_postgresql.py`
+(#1171). ADM-13.02 is complete.
+ADM-13.03 landed in two parts. Part 3a (#1039) adds the frozen forward
 migration `0062_backup_request.sql` (the request record and its guard),
 the web's and backup login's request grants and the web's read of the
 newest backup's size and version, request mode (`backup --request`) with
@@ -1432,7 +1653,7 @@ the backup runbook's request-mode cron entry, restore step and drill
 warning, checked by `tests/stewardship/test_system_health.py`,
 `tests/stewardship/test_runtime_grants.py` and
 `tests/stewardship/database/test_backup_request_postgresql.py`. The Take a
-backup now button (part 3b) remains. Part 3b adds the button on System
+backup now button follows as part 3b (#1040), which adds the button on System
 health: a preview (the last backup and its size, off-site copies,
 retention, and the wait during a bulk send), confirmation answered in place
 with a repeated confirmation returning the first request, the fresh
@@ -1442,7 +1663,7 @@ by the page's poll), the steps posted to the System health page itself so
 they are answered in place, refusals and the step-up answered inside the
 section, and the commands owed by ADM-11 PR 5,
 checked by `tests/stewardship/database/test_backup_now_postgresql.py` and
-`tests/stewardship/browser/test_system_health.py`.
+`tests/stewardship/browser/test_system_health.py`. ADM-13.03 is complete.
 ADM-13.05 landed in three parts. Part 5a adds the frozen forward migration
 `0080_drop_acceptance.sql` (`stewardship_source.0008`): the acceptance
 record and its guard, the shared SQL lifetime check and the worker's read

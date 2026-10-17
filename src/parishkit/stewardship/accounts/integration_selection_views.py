@@ -8,7 +8,10 @@ from django.views.decorators.http import require_http_methods
 from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.refusals import load_preview
+from parishkit.stewardship.web.refusals import (
+    load_preview,
+    with_default_code,
+)
 
 from .admin_editing import (
     confirm,
@@ -147,6 +150,8 @@ def _locked_page(request, request_id):
         status=409,
     )
     response.stewardship_safe_error = True
+    # The refusal log's code for this page's own refusal (#1444).
+    with_default_code(response)
     return response
 
 

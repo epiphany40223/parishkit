@@ -8,6 +8,7 @@ from uuid import UUID
 from django.db import connection
 from django.db.models import Q
 from django.utils.datastructures import MultiValueDict
+from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.accounts.cryptography import canonical_code
 from parishkit.stewardship.campaigns.credential_keys import key_set_lock
@@ -28,12 +29,18 @@ from parishkit.stewardship.source.source_status import (
 )
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.filter_errors import FilterError
 from parishkit.stewardship.web.tables import Sorting
 
 from .directory_query import DIRECTORY
 from .information import parse_page
 
 PAGE_SIZE = 50
+# What the server says when it refuses a malformed Exact Family code at
+# its field (#1332): the words of the field's own hint (data-missing-hint
+# in directory.html), which the browser shows first, so the two never
+# disagree.
+CODE_MESSAGE = _("Type the whole eight-letter Family code, or clear it.")
 REASONS = {
     "no_head": "No active Family head",
     "no_address": "No head email address",
@@ -239,7 +246,11 @@ class DirectoryQuery:
         if query.exact_code:
             code = canonical_code(query.exact_code)
             if code is None:
-                raise ValueError("Invalid exact-code filter.")
+                # Every closed choice above was checked first, so only this
+                # field is wrong: the page is drawn again with the error at
+                # it (#1332). A caller that refused it before (an export, a
+                # ``pk-admin`` command) still does: it is a ``ValueError``.
+                raise FilterError("exact_code", CODE_MESSAGE, query)
             values["exact_code"] = code
         if not query.sorted_column_shown():
             values["sort"] = "name"
@@ -368,7 +379,7 @@ def selection_parameters(campaign_id, query, *, postal, mac, rehearsal=None):
     """Bind private exact-code input to an immutable Family ID under key locks.
 
     Persisting this selection never persists a plaintext code or a MAC key
-    version. Regeneration therefore remains stable after ordinary key rotation.
+    version. A retry therefore remains stable after ordinary key rotation.
     Unknown codes retain an explicit empty exact selection, not an unfiltered
     query. A postal (mail-merge) selection always has reach ``mail``; see
     ``DirectoryQuery.postal``. Callers hold the campaign read/work barrier and
@@ -502,7 +513,7 @@ def add_responses(rows):
 # One statement chooses the snapshot to read head contacts from and reads
 # them. It is the captured snapshot while that is still promoted and not
 # compacted; otherwise, only when ``current`` is true, the current promoted
-# snapshot (an export rendered, retried or regenerated after the 15-minute
+# snapshot (an export rendered or retried after the 15-minute
 # refresh compacted its capture's source). Compaction marks a snapshot
 # compacted before deleting any of its memberships, so within this one
 # statement's view the chosen snapshot's memberships are all there; missing

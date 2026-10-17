@@ -6,7 +6,7 @@ reads the page's comparison under the campaign's read guard and reduces it
 at once to the protected capture (``comparison_exports.read_capture``),
 then stores it and queues the file (``create_comparison_export``) and
 answers with the export's status page, where the shared lifecycle
-publishes, downloads, cancels, retries and regenerates it.
+publishes, downloads, cancels and retries it.
 
 The form posts exactly ``day`` (the page's comparison day, blank before day
 1 has ended), ``format`` and ``request_key``, each once, and no query, plus
@@ -29,6 +29,7 @@ from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.observability import debug_swallowed
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.dates import parish_zone, unasked_zone
+from parishkit.stewardship.web.refusals import with_status_code
 
 from .comparison_exports import create_comparison_export, read_capture
 from .comparison_reads import DayOutOfRange
@@ -55,7 +56,8 @@ def _error(*, status):
     response.stewardship_safe_error = True
     if status == 503:
         response["Retry-After"] = "5"
-    return response
+    # The refusal log's codes for this page of its own (#1403).
+    return with_status_code(response)
 
 
 def form_day(value):

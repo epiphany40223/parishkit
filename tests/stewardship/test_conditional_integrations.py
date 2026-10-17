@@ -95,13 +95,16 @@ def test_integration_settings_wait_for_their_required_fields(target):
     """Save is held by the complete gate, its hint after the buttons."""
     html = settings_page(target, workspace_configured=True)
     assert "data-require-complete" in tag(
-        html, r'<form method="post" class="panel"[^>]*>'
+        html, r'<form method="post"[^>]*id="integration-form"[^>]*>'
     )
     assert HINT in html
     save = tag(html, r"<button[^>]*>(?=Save<)")
     assert 'aria-describedby="integration-complete-hint"' in save
-    # The hint follows every button, so it never moves one.
-    assert html.index(HINT) > html.rindex("</button>")
+    # The hint follows every button of the form (the review dialog's own
+    # come after it, #750), so it never moves one.
+    form = html[html.index('id="integration-form"') :]
+    form = form[: form.index("</form>")]
+    assert form.index(HINT) > form.rindex("</button>")
 
 
 def test_a_slack_page_not_set_up_requires_its_token():
@@ -157,9 +160,13 @@ def test_a_refused_key_is_shown_at_the_key_field(monkeypatch):
     assert missing.errors["candidate"] == ["Paste the Slack bot token to set up Slack."]
     message = "Nothing was saved: save the schedule change first."
     paired = integration_views._refused_key(
-        configuration, request, "parishsoft", message
+        configuration, request, "parishsoft", message, code="key_with_schedule_change"
     )
     assert paired.errors["candidate"] == [message]
+    assert paired.has_error("candidate", "key_with_schedule_change")
+    # A message needs its closed code (#1437).
+    with pytest.raises(TypeError):
+        integration_views._refused_key(configuration, request, "parishsoft", message)
     html = str(paired["candidate"])
     assert 'aria-invalid="true"' in html and "value=" not in html
     assert paired["intent"].value()

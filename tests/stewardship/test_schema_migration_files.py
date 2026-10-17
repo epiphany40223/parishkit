@@ -351,6 +351,18 @@ FROZEN = {
     "0106_admin_input_refusal_log.sql": (
         "a7eda23b477757f1155947c7c8fbef02d1d5dc5c7d6c5cc55c481cf034c82de4"
     ),
+    "0107_proposal_review_edit.sql": (
+        "460a43df40c847fa725ac7699ba4a97a4941b3e4f1352a792b97d6d0a6fe823c"
+    ),
+    "0108_conflict_resolution.sql": (
+        "13074c17577c9158b464f03462c7b69c482f62fb56d35cde2591afdd93a13d59"
+    ),
+    "0109_point_in_time_exports.sql": (
+        "dfdb910d2ccd4aeea4787222a85e3080ef6b272c37ccddf3eb6329163c96cdee"
+    ),
+    "0110_financial_local_days.sql": (
+        "f89490777c7145a1b0213dc2976d4c1c2bc14289fe08926c502667f0ca9cb5d8"
+    ),
 }
 
 

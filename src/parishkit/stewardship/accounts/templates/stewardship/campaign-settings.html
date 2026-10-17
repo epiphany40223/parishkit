@@ -8,8 +8,10 @@ it stands with the reason in its "i" tip (UX conventions, Conditional
 fields), never in a line of its own. There is one Save (its Review),
 unavailable until the form holds a real change (data-require-change, #921),
 with its hint after it; on a draft it also waits for a complete form (#563), and on a live
-campaign for the end date's live check (#944). Its hint lines keep their
-space, so nothing moves under the pointer.
+campaign for the end date's live check (#944) and, while the Ministries
+are open, for them to change alone (data-change-alone, #1330); on a draft
+with mail schedules the dates and time zone change alone the same way. Its hint
+lines keep their space, so nothing moves under the pointer.
 Review posts the form without a page load (data-review-open, UX conventions
 "Review dialog", #750): an accepted review opens the shared review dialog
 below with campaign-settings-review.html (a compact review for a change of
@@ -37,7 +39,7 @@ in every campaign state (navigation rule 1).
 {% if family_test_url %}<p>{% button variant="secondary" href=family_test_url %}{% translate "Try the Family form as a chosen Family" %}{% endbutton %} <span class="help">{% translate "Sends chosen Families' invitations to the Testing recipient; their links work now." %}</span></p>{% endif %}
 <p class="notice">{% translate "These settings lock when the campaign goes live or is scheduled for Production. The campaign's days are in its time zone; send times are shown and entered in your computer's." %}</p>
 <div id="settings-editor" data-in-place-region data-refresh-url="{{ refresh_url }}">
-<form id="settings-form" method="post" action="{{ page_url }}" class="panel" data-review-open="campaign-review" data-review-redirects data-require-change="base_digest" data-campaign-form data-require-complete{% if end_saved %} data-live-check="{% url 'admin:campaign_end_date_check' %}" data-live-check-field="end_date" data-live-check-saved="{{ end_saved }}" data-checking-hint="{{ end_check.checking }}" data-check-failed-hint="{{ end_check.failed }}" data-signed-out-hint="{{ end_check.signed_out }}"{% endif %}>
+<form id="settings-form" method="post" action="{{ page_url }}" class="panel" data-review-open="campaign-review" data-review-redirects data-require-change="base_digest" data-campaign-form data-require-complete{% if live_ministries %} data-change-alone="ministry_duids" data-change-alone-hint="{{ ministries_alone }}"{% elif dates_alone %} data-change-alone="start_date end_date timezone" data-change-alone-hint="{{ dates_alone_hint }}"{% endif %}{% if end_saved %} data-live-check="{% url 'admin:campaign_end_date_check' %}" data-live-check-field="end_date" data-live-check-saved="{{ end_saved }}" data-checking-hint="{{ end_check.checking }}" data-check-failed-hint="{{ end_check.failed }}" data-signed-out-hint="{{ end_check.signed_out }}"{% endif %}>
 {% csrf_token %}<input type="hidden" name="action" value="preview">
 {% include 'stewardship/campaign-fields.html' %}
 {% if open %}{% translate "Change a setting to save it." as unchanged_hint %}{% else %}{% translate "Nothing on this page can change now; each greyed-out setting's i button says why." as unchanged_hint %}{% endif %}<p>{% translate "Save" as save_label %}{% include 'stewardship/components/review-changes-button.html' with describedby="settings-complete-hint" hint=unchanged_hint label=save_label %}</p><p class="help" id="settings-complete-hint" data-complete-hint hidden></p>

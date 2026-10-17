@@ -404,6 +404,85 @@ def test_page_shows_member_duid_beside_who():
     assert '<td class="numeric">New Member</td>' in html
 
 
+WORK_TO_DO_EMPTY = "No census changes need your work right now."
+NONE_YET = "No census changes yet."
+NO_MATCH = "No census changes match these filters."
+
+
+def empty_page(changes, query, *, administrator):
+    """The page's table cell and Summary when ``query`` keeps none of ``changes``.
+
+    ``changes`` go through the view's own ``select``, so the Summary counts
+    every status while the table shows only what the filters keep.
+    """
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.web.tables import paginate
+
+    result = select(
+        [shape(change) for change in changes], query, administrator=administrator
+    )
+    assert result["rows"] == []
+    return unescape(
+        render_to_string(
+            "stewardship/census-changes.html",
+            result
+            | {
+                "table": paginate(result["rows"], {}, sorting=SORTING),
+                "query": query,
+                "query_fields": {},
+                "status_choices": [],
+                "route_choices": [],
+                "kind_choices": [],
+                "export_timezones": ["UTC"],
+            },
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("changes", "administrator", "counted"),
+    [
+        # To review is an Administrator's work: Staff's Work to do leaves it
+        # out, while their Summary still counts it.
+        ([row(id="1"), row(id="2")], False, "To review"),
+        # Being published needs no one's work: no one's Work to do lists it.
+        ([row(decision="approved", execution="queued")], True, "Being published"),
+    ],
+)
+def test_empty_work_to_do_names_the_list_not_the_summary(
+    changes, administrator, counted
+):
+    """An empty Work to do never claims there is nothing at all (#227).
+
+    The Summary above counts rows that Work to do leaves out, so the
+    message speaks of work for the viewer and points to Every status.
+    """
+    html = empty_page(changes, CensusQuery(), administrator=administrator)
+    assert f"<dt>{counted}</dt>" in html
+    assert WORK_TO_DO_EMPTY in html
+    assert "set Status to “Every status”" in html
+    assert NONE_YET not in html and NO_MATCH not in html
+
+
+@pytest.mark.parametrize(
+    ("query", "message", "absent"),
+    [
+        (CensusQuery(status="all"), "tick Include history", NO_MATCH),
+        # Every status with history is everything: no change at all yet.
+        (CensusQuery(status="all", history="yes"), NONE_YET, NO_MATCH),
+        (CensusQuery(search="Nobody"), NO_MATCH, NONE_YET),
+        (CensusQuery(history="yes"), NO_MATCH, NONE_YET),
+    ],
+)
+def test_empty_table_says_why_for_the_filters(query, message, absent):
+    """Each filter combination's empty table gives its own reason (#227)."""
+    html = empty_page([], query, administrator=True)
+    assert message in html and absent not in html
+    if query.history:
+        assert "tick Include history" not in html
+
+
 def test_xlsx_report_information_states_what_the_pdf_frame_states():
     """The workbook's "Report information" sheet (#926) names the download.
 

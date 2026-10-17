@@ -13,14 +13,17 @@ from argparse import Namespace
 import pytest
 
 from parishkit.stewardship import (
+    admin_backup_key,
     admin_changes,
     admin_cli,
+    admin_delivery_control,
     admin_digests,
-    admin_exports,
+    admin_followup,
     admin_history,
     admin_hosted_files,
     admin_integration_changes,
     admin_integration_keys,
+    admin_roster_tick,
     admin_tests,
     system_health,
 )
@@ -51,6 +54,12 @@ ROLE_FIRST = {
     "history remove": None,
     "integration confirm": None,
     "integration key finish-switching": None,
+    # A settings page's Save with a new key: before the key line is read.
+    "integration key replace": None,
+    # The Backup encryption key page's Confirm.
+    "integration backup-key confirm": None,
+    # Pause and resume mail's Confirm (PR 7b, #463).
+    "send confirm": None,
 }
 
 # The prompting commands Staff may run, as on their pages.
@@ -66,8 +75,11 @@ STAFF_MAY = {
 # (it checks the role before it reads anything), with that read.
 ADMITTING_READ = {
     "files delete": (admin_hosted_files, "preview_deletion", {"file_id": ["a"]}),
-    "export regenerate": (admin_exports, "regeneration_prompts", {"export_id": "a"}),
     "history confirm": (admin_history, "pending_replacement", {"token": "-"}),
+    # The page's own admission, which admits a leader of any Ministry.
+    "followup bulk": (admin_followup, "admit_followup", {}),
+    # Roster changes to enter's admission: Administrators and Staff only.
+    "followup roster-bulk": (admin_roster_tick, "admit_roster", {}),
 }
 
 # Everything a handler may read, look up or prompt with after its role check.
@@ -86,6 +98,11 @@ LATER = (
     (admin_integration_changes, "applied_settings"),
     (admin_integration_changes, "prompt_lines"),
     (admin_integration_keys, "finish_prompt_lines"),
+    (admin_cli, "read_secret"),
+    (admin_integration_keys, "review_replacement"),
+    (admin_backup_key, "prompt_lines"),
+    (admin_delivery_control, "confirm_prompt_lines"),
+    (admin_delivery_control, "confirm_control"),
 )
 
 

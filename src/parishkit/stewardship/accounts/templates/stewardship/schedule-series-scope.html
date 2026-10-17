@@ -1,0 +1,22 @@
+{% load i18n %}{% comment %}
+Edit of a reminder that belongs to a remembered series (#469;
+schedule_entry_views.SeriesScope, series_context): one fieldset whose
+description is "Part of" the series' rule in plain words and the help line,
+so a screen reader hears which series before choosing. The choice is not a
+change by itself (data-not-a-change), so Review changes stays unavailable
+until the time or email changes. "This reminder only" is the ordinary Edit;
+the other two grey the send date in place (its data-enabled-when, set by the
+view), so it is not sent and nothing moves, and ui-v1.js puts the date this
+reminder shows back in the greyed box. A choice the server already knows it
+would refuse (scope_refusals: a reminder from there on has sent or is being
+prepared, or another has passed without sending) is drawn unavailable with
+its reason beside it (UX conventions, "Prerequisite gates"). The error list
+keeps its id, so a refused Review's answer can fill it in place; the help
+line is always shown, never swapped per choice (no layout shift).
+{% endcomment %}{% with field=series.form.scope %}<fieldset class="field schedule-series" data-not-a-change data-series-scope aria-describedby="series-part-of {{ field.auto_id }}_helptext">
+<legend>{{ field.label }}</legend>
+<p id="series-part-of">{% blocktranslate trimmed with rule=series.text %}Part of: {{ rule }}{% endblocktranslate %}</p>
+<ul class="errorlist" id="{{ field.auto_id }}_error"{% if not field.errors %} hidden{% endif %}>{% for error in field.errors %}<li>{{ error }}</li>{% endfor %}</ul>
+{% for option in series.options %}<div><input type="radio" name="{{ field.html_name }}" value="{{ option.value }}" id="{{ field.auto_id }}_{{ forloop.counter0 }}"{% if option.checked %} checked{% endif %}{% if option.reason %} disabled{% endif %}{% if field.errors %} aria-invalid="true"{% endif %}{% if option.reason or field.errors %} aria-describedby="{% if field.errors %}{{ field.auto_id }}_error{% endif %}{% if option.reason %}{% if field.errors %} {% endif %}{{ field.auto_id }}_{{ forloop.counter0 }}_reason{% endif %}"{% endif %}> <label for="{{ field.auto_id }}_{{ forloop.counter0 }}">{{ option.label }}</label>{% if option.reason %} <span class="help" id="{{ field.auto_id }}_{{ forloop.counter0 }}_reason">{% translate "Unavailable:" %} {{ option.reason }}</span>{% endif %}</div>
+{% endfor %}<p class="help" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</p>
+</fieldset>{% endwith %}

@@ -196,9 +196,11 @@ network.
 When no web replica answers, for example while an upgrade has web stopped,
 Caddy answers every request with its own self-contained maintenance page ("We're
 updating the site"): HTTP 503 with `Retry-After: 120` and `Cache-Control:
-no-store`, inline styles only, no scripts or application assets, and a strict
-Content-Security-Policy. Only the proxy's own upstream failures (502 or 503)
-select it: a refused dial or no available upstream, as during an upgrade, but
+no-store`, inline styles only (drawn in the
+[shared design tokens](../ui-conventions/spec.md#shared-visual-style)), no
+scripts or application assets, and a strict Content-Security-Policy. Only
+the proxy's own upstream failures (502 or 503) select it: a refused dial or
+no available upstream, as during an upgrade, but
 also an upstream connection reset mid-request (a worker killed or out of
 memory), whose 502 is shown as this 503 page and recorded as 503 in the access
 log. An application response, including an application 500, passes through
@@ -1281,18 +1283,9 @@ readiness.
 
 ## Temporary retention and housekeeping
 
-Generated export files expire after seven days by default; their metadata
-remains. This is the normative retention policy used by the
-[export worker](../background-processing/spec.md#exports-and-graph-rendering).
-Exports, including Family-code and mail-merge exports, are intentionally stored
-without application-layer encryption during this interval. Plaintext exposure
-to the owning application account and privileged host operators is an accepted
-product risk; the low-sensitivity classification of campaign codes does not
-make the accompanying parishioner information public. Owner-only storage under
-[runtime storage](#runtime-storage), authenticated downloads, and expiration
-are the selected controls. Export encryption or a shorter code-specific
-retention period is not required. This exception does not change encrypted
-backup or database-field encryption requirements.
+Generated export files are point-in-time: they are kept only for a short
+download window, as [point-in-time exports](#point-in-time-exports) below
+defines.
 
 The example Families that a refused large ParishSoft change records (DUID
 and directory name only, in `stewardship_source_drop_example`) are deleted
@@ -1353,6 +1346,94 @@ retention.
 
 Live campaign data otherwise remains indefinitely until the Admin web purge
 defined by the [Admin specification](../admin-portal/spec.md#campaign-purge).
+
+### Point-in-time exports
+
+An export is a point-in-time function: it is prepared, offered for download
+for a short time, then gone. The parish keeps no copy of earlier exports, and
+neither the Admin portal nor the command line keeps a history of them; a
+person who wants to keep a file keeps the copy they downloaded (the
+Administrator, 2026-10-15,
+[#1398](https://github.com/epiphany40223/parishkit/issues/1398)). This is the
+normative rule for every export in the shared lifecycle of the
+[export worker](../background-processing/spec.md#exports-and-graph-rendering),
+including Past campaigns'
+[Download campaign archive](../campaign-history/spec.md#download-campaign-archive)
+and the command line's `export` commands; other specs link here rather than
+restating it. Downloads that stream their file in the response store no copy
+and are point-in-time already.
+
+- **Download window.** A finished file can be downloaded, as often as
+  needed, for one window after it is ready: the window starts when its
+  publication is created and lasts 1 hour by default. A new publication
+  records that end as its `expires_at`. The window ends at the earlier of
+  `expires_at` and the publication's creation time plus the current
+  setting, so a shorter setting applies at once to files already published,
+  and a longer one never extends them. Each download still uses its own
+  short-lived, single-use grant. Repeat downloads within the window cover a
+  transfer the browser did not finish, since a grant used up on the server
+  is no proof that the file arrived.
+- **The window setting.** Deployment YAML sets the window in whole minutes
+  (`export_download_window_minutes`, default 60). Startup validation refuses
+  a value below 15 or above 240, since the plaintext exception below relies
+  on the window staying short.
+- **When an export ends,** the worker's export cleanup deletes its file, if
+  it has one, and the scheduler, within a minute, its saved data: the
+  capture of what the request read
+  (which can hold private contact or giving detail) is discarded, its
+  fact-generation and source-snapshot pins are released, and the request no
+  longer names the fact generation it read, so that generation can be
+  compacted. An export ends at the first of:
+  - its download window ending, for a published file;
+  - its cancellation, for a cancelled request (its saved data goes once its
+    work has stopped, so a render at its safe point never loses its capture);
+  - its latest failed attempt's time plus the current setting, for a failed
+    request that has not been retried by then. Retry is offered only until then, so a
+    failed request that can still be retried keeps its saved data, and one
+    that can no longer be retried keeps nothing.
+
+  Nothing can rebuild a file afterwards, so there is no Regenerate: a person
+  who needs the file again exports it again from its report, which reads the
+  data as it is then. A failed cleanup is retried as
+  [export cleanup recovery](../background-processing/spec.md#export-cleanup-recovery)
+  says.
+- **What stays.** The request and its attempt, publication, grant, download,
+  cancellation and cleanup records stay, without the saved data, as
+  operational and audit history. Every audit event whose subject is an
+  export request carries the context keys `report` (the request's report
+  kind, as `export status` prints it; a latest-data export is
+  `participation`) and `format` (`csv`, `xlsx`, `pdf` or `png`):
+  `export_requested`, `export_cancelled`, `export_downloaded`,
+  `campaign_comparison_exported`, `campaign_archive_exported` and each
+  `admin_cmd_export_*` event. So for events recorded under this rule, "who
+  exported what, and when" needs no export row. Events recorded before it
+  lack those keys and still rely on the request rows, which is one reason
+  the rows stay.
+- **No history.** No page or command lists earlier exports, and an export's
+  status page is only its preparing step; what that page shows, during and
+  after the window, is the portal-wide
+  [point-in-time downloads](../ui-conventions/spec.md#point-in-time-downloads)
+  rule.
+- **Exports made before this rule** follow it too. Their window ends by the
+  same rule, which counts from when the publication was created, so the
+  seven-day `expires_at` their immutable publications recorded no longer
+  keeps them; an older cancelled or failed request ends by the rules
+  above. The forward migration that brings the rule in, under the
+  [post-launch schema policy](#post-launch-schema-policy), makes cleanup use
+  that end. At deploy, cleanup then deletes the saved data and releases the
+  pins of every export that has already ended, including those whose file
+  expired earlier and whose capture was kept only for Regenerate. No applied
+  migration is edited, and no table, row of history or database is dropped.
+
+Exports, including Family-code and mail-merge exports, are intentionally
+stored without application-layer encryption during their download window.
+Plaintext exposure to the owning application account and privileged host
+operators is an accepted product risk; the low-sensitivity classification of
+campaign codes does not make the accompanying parishioner information public.
+Owner-only storage under [runtime storage](#runtime-storage), authenticated
+downloads, and the short window are the selected controls. Export encryption
+or a shorter code-specific window is not required. This exception does not
+change encrypted backup or database-field encryption requirements.
 
 ## Observability and health
 
@@ -1525,7 +1606,10 @@ migration. A refusal is a 400, 403, 404, 409, 410 or 422 answer to a request
 that resolved to an Admin page: a field or form error, a stale page,
 unexpected or duplicated form fields, an expired or altered
 [review](../ui-conventions/spec.md#review-dialog) preview, a denial, an
-action that needs a fresh sign-in, or a CSRF failure. A 404 for an address
+action that needs a fresh sign-in, or a CSRF failure. A page that answers
+a refusal in place with 200 (an action's region showing the step-up
+notice, or Automation access refusing a pairing code) marks its answer as
+a refusal, and it is recorded without a status. A 404 for an address
 that names no Admin page is not input and is not recorded. A control drawn
 [unavailable](../ui-conventions/spec.md#prerequisite-gates) is not a
 refusal, since nothing was submitted, and neither is opening a page its
@@ -1543,13 +1627,34 @@ own. The reason comes from what the refusal already carries: its closed
 refusal itself, which the shared refusals fix (`stale_page`,
 `unexpected_fields`, `expired_preview`, `bad_signature`,
 `fresh_authentication_required`, `csrf_failed`, `denied`, and `gone` for a
-retired action or another campaign's address); and the Django
-error codes of a refused form (`required`, `invalid_choice`, `max_length`
-and so on), which every Admin form records through one shared form base.
+retired action or another campaign's address), or which a refusal names
+for itself (such as `campaign_zone_not_parish`, `image_too_large` or the
+Off-site backups page's Test access refusals); and the error codes of a
+refused form: Django's own (`required`, `invalid_choice`, `max_length`
+and so on) and the closed code every validation error of the package's
+own forms carries (`too_large`, `quarter_hour`, `overlap_unconfirmed` and
+so on), which every Admin form records through one shared form base. A
+page that answers a refusal with a body of its own (a report's error page,
+a page script's JSON answer, an in-place region's refused step) gives that
+answer its closed codes, at least the code its status stands for
+(`invalid` for 400, `denied` for 403, `stale_version` for 409 and `gone`
+for 410; a 404 or 422 has no such code and records its status and any
+codes of its own).
 A refusal with no reason of its own has reason `unclassified`. When an
 exception refused it, `exception_class` names that exception's class; a
 form drawn again with its errors has no exception, and names its form,
 fields and codes instead. Django's CSRF reason text is never used.
+An entry that says nothing about why (reason `unclassified` with no
+`exception_class` and no codes) is a defect: under the test settings
+(`STEWARDSHIP_REFUSAL_LOG_STRICT`) the hook notes it, never raising, and the
+test hook fails the test whose answer made it once that test ends, so every
+Admin page's refusal must carry a reason, codes, a
+typed error or an exception class, and the existing page tests enforce
+it. A page drawn again with a refusal of its own, whose form may or may
+not hold errors, gives a default: the code its status stands for, which
+restates the status, and any further code the page names (such as
+`in_use`), recorded only when no typed error, code of its own or form
+error gives one. Production records such an entry as it is.
 
 **Allow-list.** The context holds closed values only, mirrored by
 `stewardship_safe_context_v1`. Anything not on the list is dropped, not
@@ -1581,11 +1686,16 @@ redacted:
   versions (for example a campaign zone refused because the parish's stored
   zone differs). Each is at most 64 characters of `A-Z`, `a-z`, `0-9` and
   `_+./-`, so never an `@`. Only Python decides which reasons may carry
-  them; the database checks their shape, not their reason;
+  them; the database checks their shape, not their reason. Two reasons
+  carry them: `campaign_zone_not_parish` (the parish's zone and the zone
+  chosen, both from the server's zone catalog) and `image_too_large` (the
+  limit and the file's size, in bytes);
 - `unexpected_count`, for reason `unexpected_fields`, the number of
-  submitted field names that are not the form's own. Those names are
-  client-supplied and are never recorded. A field of a refused form's own
-  that was sent twice is named in `fields`, with the code `duplicate`;
+  submitted field names that are not the form's own, when the check that
+  refused them passes what was sent and the names it allows. Those names
+  are client-supplied and are never recorded. A field of a refused form's
+  own (or one such a check allows) that was sent twice is named in
+  `fields`, with the code `duplicate`;
 - `mode`, `testing` or `production`, the global mode when the refusal was
   made; and
 - `capped`, below.
@@ -1682,6 +1792,20 @@ entry is not written durably, and the process log records a WARNING
 elapsed seconds, after the refusal's own line. That record stays in the
 process log only, one of the
 [exceptions to the durable entry](#observability-and-health) above.
+
+**Streamed pages.** A refused page drawn again as a streamed response
+under its campaign read guard (a report's filters refused at their field,
+[#1332](https://github.com/epiphany40223/parishkit/issues/1332)) still
+holds the guard's read-only transaction when it leaves the view. The hook
+builds its record then, from the same response, and writes the line and
+the entry when the response closes, after the guard has ended that
+transaction ([#1484](https://github.com/epiphany40223/parishkit/issues/1484)),
+under the request's correlation id. Each refusal is still written once:
+a response that is not streamed is written at once, as above. The web
+server closes a response whether its stream finished or the person's
+browser went away, and a stream stopped by the read guard's deadline is
+closed too, so those still leave the entry. Only a server process that
+stops before closing the response loses the record, line included.
 
 **Not duplicated.** Refusals that already leave a record keep it and get no
 second one: refused sign-ins (`admin_login_refused` and the sampled

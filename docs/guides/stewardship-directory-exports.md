@@ -1,5 +1,10 @@
 # Complete-result Family and postal exports
 
+> **Superseded:** exports are now point-in-time, with no kept copies and no
+> Regenerate ([point-in-time exports](../specs/stewardship/operations/spec.md#point-in-time-exports),
+> [#1398](https://github.com/epiphany40223/parishkit/issues/1398)). This
+> record describes the increment as it was delivered.
+
 This Phase 5 increment starts from verified main `8dc00e9c`, after
 [PR #68 protected delivery](stewardship-family-directories.md#protected-delivery).
 It completes [RPT-05.03 and remaining .05](../tasks/stewardship/reports.md#rpt-05-family-code-and-postal-outreach-reports)

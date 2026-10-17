@@ -36,6 +36,7 @@ from .test_admin_logs_cli_postgresql import counted, stream
 from .test_admin_report_cli_postgresql import cli, parity  # noqa: F401
 from .test_admin_status_cli_postgresql import admin, session  # noqa: F401
 from .test_information_followup_postgresql import search
+from .test_publication_plans_postgresql import owner
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -178,6 +179,14 @@ def test_the_page_s_files_and_json_lines(response_service, google, cli):  # noqa
     # review); the By-hand address has no Review.
     assert records["First name"]["reviews"] == ["approved", "ignored"]
     assert records["Home address"]["reviews"] == []
+    # Its value may be edited (census edit); it is in no conflict to resolve
+    # (census resolve-conflict). The By-hand address has neither (#1434).
+    assert (records["First name"]["editable"], records["First name"]["resolvable"]) == (
+        True,
+        False,
+    )
+    assert not records["Home address"]["editable"]
+    assert not records["Home address"]["resolvable"]
     assert records["First name"]["family_answer"] == "Requested"
     # The cells are the CSV's.
     assert sorted(
@@ -198,6 +207,21 @@ def test_the_page_s_files_and_json_lines(response_service, google, cli):  # noqa
     added = AuditEvent.objects.exclude(pk__in=before)
     assert list(added.values_list("event_type", flat=True)) == [EVENT]
 
+    # A Conflict whose ParishSoft value is known may be resolved (#1434).
+    first_name = ProposedChange.objects.get(field="first_name")
+    owner(
+        "UPDATE stewardship_proposed_change SET execution='conflict',"
+        " current_available=true, current_value='\"Parish value\"'::jsonb"
+        " WHERE id=%s",
+        [first_name.pk],
+    )
+    code, body, document = export(run, "--status", "all", "--format", "jsonl")
+    assert code == 0, document
+    assert {record["what"]: record["resolvable"] for record in lines(body)} == {
+        "First name": True,
+        "Home address": False,
+    }
+
     # While other campaign work holds the campaign, no outcome is offered.
     real = export_services.admit_campaign
 
@@ -213,6 +237,8 @@ def test_the_page_s_files_and_json_lines(response_service, google, cli):  # noqa
     assert code == 0, document
     assert [record["actions"] for record in lines(body)] == [[], []]
     assert [record["reviews"] for record in lines(body)] == [[], []]
+    assert [record["editable"] for record in lines(body)] == [False, False]
+    assert [record["resolvable"] for record in lines(body)] == [False, False]
 
 
 def test_refusals_print_nothing_and_record_nothing(response_service, google, cli):  # noqa: F811
@@ -258,8 +284,9 @@ def test_staff_export_and_a_leader_is_denied(
         assert code == 0, document
         actions = {record["what"]: record["actions"] for record in lines(body)}
         assert actions == {"Home address": ["entered", "ignored"], "First name": []}
-        # Staff review nothing.
+        # Staff review, edit and resolve nothing.
         assert [record["reviews"] for record in lines(body)] == [[], []]
+        assert [record["editable"] for record in lines(body)] == [False, False]
     before = AuditEvent.objects.filter(event_type=EVENT).count()
     with_roles(monkeypatch, {"ministry_leader"}, frozenset({4}))
     code, body, document = export(run)

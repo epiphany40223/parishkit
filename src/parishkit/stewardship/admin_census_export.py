@@ -14,9 +14,11 @@ filters (``CensusQuery``, without the search, as ``report census``), its read
 
 ``jsonl`` is the command's own format, offered only on the command line:
 the page's columns with the same text under fixed keys, plus each row's
-``proposal_id`` and ``version`` (what ``census resolve`` and ``census
-review`` take), the ``actions`` this reader may record on it now and the
-``reviews`` (decisions) it may give it now. The page's three files leave
+``proposal_id`` and ``version`` (what ``census resolve``, ``census
+review``, ``census edit`` and ``census resolve-conflict`` take), the
+``actions`` this reader may record on it now, the ``reviews`` (decisions)
+it may give it now, and whether it may edit its value (``editable``) or
+resolve its conflict (``resolvable``) now. The page's three files leave
 those internal references out (UX conventions, "Downloaded files", #956,
 where this format is a recorded exception): they are not personal data,
 the page's Record outcome forms already carry them, and a script resolving
@@ -120,12 +122,27 @@ def reviews(row, actor, *, mutable=True):
     return [decisions[action] for action in row["review_actions"]]
 
 
+def offered(row, actor, key, *, mutable=True):
+    """Whether ``actor`` may use the row's ``key`` control now (#1434).
+
+    ``edit`` is Edit value and Clear edit (``census edit``) and
+    ``resolve_conflict`` Use the Family's value anyway (``census
+    resolve-conflict``), as ``census_changes.shape`` offers them on the row.
+    An Administrator's only, and neither while other campaign work holds
+    the campaign, as the page then offers no Review.
+    """
+    from .accounts.policy import Capability, allows
+
+    return bool(mutable and allows(actor, Capability.PUBLISH_CENSUS) and row.get(key))
+
+
 def census_jsonl(result, zone, actor, *, mutable=True):
     """The filtered rows as JSON Lines: the page's cells, ids and actions.
 
     Each cell is the CSV's text (``census_changes.export_rows``), so the
     formats never disagree about a value; ``proposal_id``, ``version``,
-    ``actions`` and ``reviews`` come from the row the cells were made from.
+    ``actions``, ``reviews``, ``editable`` and ``resolvable`` come from the
+    row the cells were made from.
     ``mutable`` is the page's check that no other campaign work holds the
     campaign.
     """
@@ -139,6 +156,8 @@ def census_jsonl(result, zone, actor, *, mutable=True):
             "version": row["version"],
             "actions": actions(row, actor, mutable=mutable),
             "reviews": reviews(row, actor, mutable=mutable),
+            "editable": offered(row, actor, "edit", mutable=mutable),
+            "resolvable": offered(row, actor, "resolve_conflict", mutable=mutable),
         }
         lines.append(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
     return "".join(lines).encode("utf-8")

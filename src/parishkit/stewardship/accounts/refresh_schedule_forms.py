@@ -44,6 +44,7 @@ from django.forms import formset_factory
 from django.utils.translation import gettext, ngettext, ngettext_lazy
 from django.utils.translation import gettext_lazy as _
 
+from parishkit.stewardship.occurrence_preview import Day, Occurrence, build
 from parishkit.stewardship.source.cadence import MAX_DAILY_TIMES, refresh_settings
 from parishkit.stewardship.source.refresh_rules import (
     DAY,
@@ -60,7 +61,7 @@ from parishkit.stewardship.source.refresh_rules import (
     stored_settings,
     valid_shape,
 )
-from parishkit.stewardship.wall_clock import WEEKDAYS, hhmm, wall_hhmm
+from parishkit.stewardship.wall_clock import hhmm, wall_hhmm
 from parishkit.stewardship.web.admin_forms import AdminForm, AdminFormSet
 from parishkit.stewardship.web.time_entry_fields import FlexibleTimeField
 
@@ -273,10 +274,17 @@ class _Row(AdminForm):
         value = hhmm(self.cleaned_data.get(name))
         if value is None:
             if name not in self.errors:
-                self.add_error(name, gettext("Enter a time."))
+                self.add_error(
+                    name,
+                    forms.ValidationError(
+                        gettext("Enter a time."), code="time_missing"
+                    ),
+                )
             return None
         if _off_quarter(value) and not (allow_kept and value in self.kept):
-            self.add_error(name, QUARTER_HOUR_MESSAGE)
+            self.add_error(
+                name, forms.ValidationError(QUARTER_HOUR_MESSAGE, code="quarter_hour")
+            )
             return None
         return value
 
@@ -292,7 +300,8 @@ class RuleForm(_Row):
         label=_("Kind"),
         choices=KIND_CHOICES,
         initial="full",
-        widget=forms.HiddenInput,
+        # A setting, though hidden: the change gate counts it (ui-v1.js).
+        widget=forms.HiddenInput(attrs={"data-change-setting": True}),
     )
     shape = forms.ChoiceField(label=_("Repeat"), choices=RULE_SHAPES, initial="at")
     every = forms.TypedChoiceField(
@@ -321,14 +330,20 @@ class RuleForm(_Row):
                 self.rule = {"kind": kind, "at": at}
             return data
         if data.get("every") in (None, "") and "every" not in self.errors:
-            self.add_error("every", gettext("Choose how often."))
+            self.add_error(
+                "every",
+                forms.ValidationError(gettext("Choose how often."), code="required"),
+            )
         start, last = self._time("start"), self._time("last")
         if start is not None and last is not None and last < start:
             self.add_error(
                 None,
-                gettext(
-                    "A rule can't cross midnight. Use two rules: one up to 23:45 "
-                    "and one from 00:00."
+                forms.ValidationError(
+                    gettext(
+                        "A rule can't cross midnight. Use two rules: one up to 23:45 "
+                        "and one from 00:00."
+                    ),
+                    code="crosses_midnight",
                 ),
             )
         elif start is not None and last is not None and not self.errors:
@@ -367,11 +382,14 @@ class SkipForm(_Row):
             if start is not None and last is not None and last <= start:
                 self.add_error(
                     None,
-                    gettext(
-                        "A skip can't cross midnight, and its end (which is not "
-                        "skipped) must be after its start. Use two skips: one "
-                        "that ends at 23:45, with a skip at 23:45, and one from "
-                        "00:00."
+                    forms.ValidationError(
+                        gettext(
+                            "A skip can't cross midnight, and its end (which is not "
+                            "skipped) must be after its start. Use two skips: one "
+                            "that ends at 23:45, with a skip at 23:45, and one from "
+                            "00:00."
+                        ),
+                        code="crosses_midnight",
                     ),
                 )
             elif start is not None and last is not None and not self.errors:
@@ -727,6 +745,9 @@ def _no_full(document):
 
 
 TIME_FIELDS = frozenset({"at", "start", "last"})
+# The codes of the form's own time checks (#1437), which the row shows: any
+# other error at a time field is the time entry's own, shown at the field.
+ROW_CODES = frozenset({"time_missing", "quarter_hour"})
 
 
 def _row_errors(scope, index, form):
@@ -756,7 +777,7 @@ def _row_errors(scope, index, form):
                     index,
                     text,
                     f"{row}: {text}",
-                    at_field=name in TIME_FIELDS and error.code is not None,
+                    at_field=name in TIME_FIELDS and error.code not in ROW_CODES,
                 )
             )
     return found
@@ -1013,41 +1034,39 @@ WINDOW_WORDS = {
 }
 
 
-def _time_line(entry, timezone):
-    """One preview line: (text, struck) for a time on a preview day."""
+def _occurrence(entry, day):
+    """One preview time as an ``occurrence_preview.Occurrence`` on ``day``.
+
+    The line reads "<wall time> <what>", then, for a time that will not run,
+    its reason (struck), or for one that runs, the daylight-saving words
+    ``occurrence_preview.build`` adds from ``shift``. A struck time carries
+    no instant, so the page adds no browser time beside it.
+    """
     noun = _noun(entry.kind)
-    if entry.status == "covered":
-        return (
-            gettext("%(time)s %(noun)s covered by the %(by)s full refresh")
-            % {"time": entry.time, "noun": noun, "by": entry.by},
-            True,
+    struck = {
+        "covered": lambda: (
+            gettext("covered by the %(by)s full refresh") % {"by": entry.by}
+        ),
+        "skipped": lambda: (
+            gettext("skipped: %(cause)s") % {"cause": WINDOW_WORDS[entry.window]}
+        ),
+        "joined": lambda: (
+            gettext("runs with the %(by)s one: clocks go forward") % {"by": entry.by}
+        ),
+    }.get(entry.status)
+    if struck is not None:
+        return Occurrence(
+            day, None, noun, entry.kind, wall=entry.time, struck=True, reason=struck()
         )
-    if entry.status == "skipped":
-        return (
-            gettext("%(time)s %(noun)s skipped: %(cause)s")
-            % {"time": entry.time, "noun": noun, "cause": WINDOW_WORDS[entry.window]},
-            True,
-        )
-    if entry.status == "joined":
-        return (
-            gettext("%(time)s %(noun)s runs with the %(by)s one: clocks go forward")
-            % {"time": entry.time, "noun": noun, "by": entry.by},
-            True,
-        )
-    text = f"{entry.time} {noun}"
-    if entry.nightly:
-        text = gettext("%(time)s nightly full refresh") % {"time": entry.time}
-    if entry.shift == "forward":
-        text += gettext(": runs at %(time)s, clocks go forward") % {
-            "time": wall_hhmm(entry.due_at, timezone)
-        }
-    elif entry.shift == "back":
-        text += gettext(": runs once, clocks go back")
-    elif entry.nightly and entry.window:
-        text += gettext(": runs even during the %(cause)s") % {
+    what = gettext("nightly full refresh") if entry.nightly else noun
+    if entry.nightly and entry.window and entry.shift is None:
+        # The nightly refresh is never skipped: say it runs inside the window.
+        what += gettext(": runs even during the %(cause)s") % {
             "cause": WINDOW_WORDS[entry.window]
         }
-    return text, False
+    return Occurrence(
+        day, entry.due_at, what, entry.kind, wall=entry.time, shift=entry.shift
+    )
 
 
 def _day_counts(full, quick, spent, *, with_quick):
@@ -1069,36 +1088,40 @@ def _day_counts(full, quick, spent, *, with_quick):
     return gettext("%(full)s, %(quick)s, about %(time)s of ParishSoft time") % values
 
 
-def preview_context(preview, *, timezone, today, daily):
-    """What the per-day list and the summary show for a ``SchedulePreview``."""
-    days = []
+def preview_context(preview, *, timezone, now, daily, rows):
+    """What the per-day list, the grid and the summary show for a ``SchedulePreview``.
+
+    The list is the shared schedule preview (``occurrence_preview.build``,
+    ui-conventions "Schedule previews"): grouped, in the schedule zone, one
+    ``Day`` per preview day carrying its counts and its grid ``rows`` cells,
+    so the grid draws from the same days as the list.
+    """
+    days, occurrences = [], []
     with_quick = bool(daily.quick)
-    for index, day in enumerate(preview.days):
+    for index, (day, row) in enumerate(zip(preview.days, rows, strict=True)):
         full, quick = len(day.runs("full")), len(day.runs("quick"))
         spent, _share = preview.cost.per_day[index]
         days.append(
-            {
-                "day": day.day,
-                "weekday": WEEKDAYS[day.day.weekday()],
-                "today": day.day == today,
-                "change": day.change,
-                "counts": _day_counts(full, quick, spent, with_quick=with_quick),
-                "times": [
-                    {
-                        "text": text,
-                        "struck": struck,
-                        "kind": entry.kind,
-                        "due_at": (
-                            entry.due_at.astimezone(UTC).isoformat()
-                            if entry.due_at is not None and not struck
-                            else None
-                        ),
-                    }
-                    for entry in day.times
-                    for text, struck in (_time_line(entry, timezone),)
-                ],
-            }
+            Day(
+                day.day,
+                change=day.change,
+                summary=_day_counts(full, quick, spent, with_quick=with_quick),
+                extra={"cells": row["cells"]},
+            )
         )
+        occurrences += [_occurrence(entry, day.day) for entry in day.times]
+    # verb="runs" also leaves out the general daylight-saving sentence:
+    # the refresh list's own words (its feature spec) say what each shifted
+    # time does.
+    shown = build(
+        occurrences,
+        days=days,
+        shown_zone=timezone,
+        schedule_zone=timezone,
+        now=now,
+        layout="grouped",
+        verb="runs",
+    )
     cost, durations = preview.cost, preview.cost.durations
     typical = gettext(" (typical; not yet measured)")
     summary = (
@@ -1146,7 +1169,7 @@ def preview_context(preview, *, timezone, today, daily):
             "end": wall_hhmm(fresh.end, timezone),
         }
     return {
-        "days": days,
+        "list": shown,
         "line": gettext("About %(time)s of ParishSoft time a day.")
         % {"time": _duration(cost.average)},
         "summary": summary,
@@ -1207,6 +1230,25 @@ class EditorView:
     preview: dict | None = None
     links: list = field(default_factory=list)
     status: str = ""
+
+    @property
+    def occurrences(self):
+        """The seven-day list's ``occurrence_preview`` context.
+
+        While the schedule cannot be previewed it is the component's
+        unavailable state, in the words the page has always used.
+        """
+        if self.preview is not None:
+            return self.preview["list"]
+        return build(
+            (),
+            schedule_zone=self.timezone,
+            now=None,
+            unavailable=gettext(
+                "The preview shows once every rule can be read and the schedule "
+                "has a full refresh."
+            ),
+        )
 
     @property
     def nightly(self):
@@ -1354,15 +1396,12 @@ def editor_view(editor, *, timezone, now, preview_reader):
     daily = editor.daily()
     if document is not None and daily.full:
         preview = preview_reader(document, now=now, timezone=timezone)
-        today = now.astimezone(ZoneInfo(timezone)).date()
-        view.preview = preview_context(
-            preview, timezone=timezone, today=today, daily=daily
-        )
         # The seven-day grid (slice 4) draws the same days as the list: each
-        # day's dict carries its 96 cells, and the legend names the shadings.
+        # listed day carries its 96 cells, and the legend names the shadings.
         rows = grid_rows(preview, timezone=timezone, now=now)
-        for shown, row in zip(view.preview["days"], rows, strict=True):
-            shown["cells"] = row["cells"]
+        view.preview = preview_context(
+            preview, timezone=timezone, now=now, daily=daily, rows=rows
+        )
         view.preview["legend"] = legend(rows)
         # The dot of a stored quick rule is named only while one runs: the
         # editor offers none (#1122).

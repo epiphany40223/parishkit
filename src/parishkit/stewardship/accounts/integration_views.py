@@ -3,6 +3,7 @@
 from uuid import UUID, uuid4
 
 from django.core import signing
+from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
 from django.db import DatabaseError
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
@@ -21,7 +22,13 @@ from parishkit.stewardship.source.refresh_status import (
 )
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.refusals import UserFacingError, unexpected_fields
+from parishkit.stewardship.web.error_pages import page_request
+from parishkit.stewardship.web.refusals import (
+    UserFacingError,
+    annotate,
+    unexpected_fields,
+    with_default_code,
+)
 
 from . import admin_navigation
 from .admin_editing import (
@@ -54,12 +61,14 @@ from .request_admission import historical_record_id
 from .request_patch import OPTIONAL_INTEGRATIONS, build_candidate
 from .secret_models import SECRET_PENDING
 from .secret_requests import SecretRequestConflict, secret_request_status
-from .sessions import authenticated_admin, require_fresh
+from .sessions import FreshAuthenticationRequired, authenticated_admin, require_fresh
 
 SALT = "stewardship-integration-settings-v1"
 CREDENTIAL_SALT = "stewardship-integration-credential-v1"
 # A settings page may stay open while the Administrator finds the new key.
 INLINE_INTENT_SECONDS = 3600
+# The refusal of a Save with nothing changed (``review_settings``).
+UNCHANGED = _("No settings have changed.")
 
 
 # Integrations an Administrator may add or remove from the settings page:
@@ -233,11 +242,14 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
         # and once any backup folder has been saved since the test, the saved
         # folder shows instead.
         initial["target"] = probe.folder_url
-    form = (
-        form
-        if form is not None
-        else _form(target, initial=initial, stored=record if configured else None)
-    )
+    if form is None:
+        form = _form(target, initial=initial, stored=record if configured else None)
+        if initial.get("target") != settings.get("target"):
+            # The tested folder is drawn but not saved: Save's change gate
+            # (#1330) compares with the saved link, so Save stays available.
+            form.fields["target"].widget.attrs["data-saved-value"] = settings.get(
+                "target", ""
+            )
     latest = summary(target, record) if target in ROTATING_TARGETS else None
     pending = latest is not None and latest.kind == "pending"
     unavailable = False
@@ -253,6 +265,7 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
     # open), so the page no longer needs to know whether this one is fresh.
     # The settings form is the first step of edit, review, apply (#196).
     admin_navigation.place(request, flow="change", step="edit")
+    page_url = reverse("admin:integration_settings", args=[target])
     response = render(
         request,
         "stewardship/integration-settings.html",
@@ -272,6 +285,10 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
             # refresh schedule editor gates Save itself (refresh-schedule-v1.js,
             # whose gate does not share the page script's), so it keeps that.
             "complete_gate": form.schedule is None,
+            # Save waits for a change (#1330) on the first draw; a refused
+            # Save drawn again with what was posted does not, as its fields'
+            # drawn values are the posted ones, not the saved ones.
+            "change_gate": not form.is_bound,
             "removable": configured and target in REMOVABLE,
             "configuration": configuration,
             "full_refresh": (
@@ -280,6 +297,11 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
                 else None
             ),
             "status_url": reverse("admin:integration_status", args=[target]),
+            # Save, Remove and the review dialog's Apply post here (#750).
+            "page_url": page_url,
+            # Once a change is applied, the dialog redraws the settings
+            # form's region from this page's own address.
+            "refresh_url": page_url,
             # The ParishSoft page offers the manual full refresh directly.
             "refresh_key": uuid4() if target == "parishsoft" else None,
             **backup,
@@ -293,6 +315,8 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
     )
     if status == 400:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return response
 
 
@@ -366,6 +390,7 @@ def _refuse_drive_in_local():
                 "The local laptop environment never reaches Google Drive; its "
                 "backups stay inside the VM."
             ),
+            reason="drive_not_in_local",
         )
 
 
@@ -373,15 +398,21 @@ def _test_access(request, configuration, actor):
     """Queue a "Test access" check of the entered (or saved) Drive folder.
 
     Only the page's own fields may be posted; ``queue_probe`` does the rest.
+    An entered link that isn't a Drive folder is refused at the field, in
+    Save's own words, with the page drawn again (400, #1330); an empty one
+    tests the saved folder.
     """
-    if set(request.POST) - {
-        "action",
-        "csrfmiddlewaretoken",
-        "target",
-        "base_digest",
-    } or any(len(values) != 1 for _, values in request.POST.lists()):
-        raise unexpected_fields()
-    queue_probe(configuration, actor, request.POST.get("target", ""))
+    allowed = {"action", "csrfmiddlewaretoken", "target", "base_digest"}
+    if set(request.POST) - allowed or any(
+        len(values) != 1 for _, values in request.POST.lists()
+    ):
+        raise unexpected_fields(request.POST, allowed=allowed)
+    entered = request.POST.get("target", "")
+    if entered.strip():
+        form = _form("backup", request.POST, stored=_optional(configuration, "backup"))
+        if not form.is_valid() and form.has_error("target"):
+            return _page(request, configuration, "backup", form=form, status=400)
+    queue_probe(configuration, actor, entered)
     return HttpResponseRedirect(request.path)
 
 
@@ -412,6 +443,7 @@ def queue_probe(configuration, actor, entered):
             ),
             link=reverse("admin:integration_settings", args=["google_workspace"]),
             link_label=LABELS["google_workspace"],
+            reason="workspace_mail_missing",
         )
     entered = entered.strip()
     if not entered and "backup" not in records:
@@ -422,6 +454,7 @@ def queue_probe(configuration, actor, entered):
                 "off-site copies into Google Drive folder link, then choose Test "
                 "access."
             ),
+            reason="drive_folder_missing",
         )
     try:
         folder = folder_id_from_url(
@@ -435,6 +468,7 @@ def queue_probe(configuration, actor, entered):
                 "browser address bar or from Share, then Copy link. It starts "
                 "with https://drive.google.com/drive/folders/."
             ),
+            reason="drive_folder_link_invalid",
         ) from None
     return request_probe(
         actor.identity,
@@ -449,10 +483,23 @@ def _inline_credential_form(configuration, request, target, *, required=False):
     ``required`` is true for an optional integration that is not set up yet,
     whose key is what sets it up (#563).
     """
+    intent = sign_key_intent(configuration, request.portal_session.principal_id, target)
+    return InlineCredentialForm(target, initial={"intent": intent}, required=required)
+
+
+def sign_key_intent(configuration, actor_id, target):
+    """A fresh signed request identity for one new key (request-free).
+
+    The settings page draws it in its new-key field and ``pk-admin
+    integration key replace`` signs one per run: it fixes the secret
+    request's and staging's identities and the configuration it was drawn
+    against. The target's installer must have published its handoff;
+    otherwise ``IntegrationUnavailable``.
+    """
     _handoff(target)
-    intent = signing.dumps(
+    return signing.dumps(
         {
-            "actor": str(request.portal_session.principal_id),
+            "actor": str(actor_id),
             "target": target,
             "base": configuration.active_configuration.digest,
             "request": str(uuid4()),
@@ -460,18 +507,21 @@ def _inline_credential_form(configuration, request, target, *, required=False):
         },
         salt=CREDENTIAL_SALT,
     )
-    return InlineCredentialForm(target, initial={"intent": intent}, required=required)
 
 
-def _refused_key(configuration, request, target, message=None):
+def _refused_key(configuration, request, target, message=None, *, code=None):
     """The new-key field redrawn with a refusal at the field (#563).
 
     The field is bound empty, with a freshly signed intent, so the page shows
     the error beside the key field (``aria-invalid``, described by the
     message) and never shows the pasted key again. Without ``message``, the
     refusal is the missing key of an integration not set up yet; ``message``
-    is any other reason the key could not be saved.
+    is any other reason the key could not be saved, and ``code`` its closed
+    error code, which the refusal log records (#1437): required with a
+    ``message``, so no caller can build a code-less error.
     """
+    if message is not None and not code:
+        raise TypeError("A refused key's message needs its closed code.")
     blank = _inline_credential_form(
         configuration, request, target, required=message is None
     )
@@ -481,7 +531,7 @@ def _refused_key(configuration, request, target, message=None):
         required=message is None,
     )
     if credential.is_valid():
-        credential.add_error("candidate", message)
+        credential.add_error("candidate", ValidationError(message, code=code))
     return credential
 
 
@@ -510,18 +560,7 @@ def _save(request, service, configuration, actor, target):
             credential=credential,
             status=400,
         )
-    if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
-        raise StaleRecordError("Reload integration settings.")
-    intent = signing.loads(
-        credential.cleaned_data["intent"],
-        salt=CREDENTIAL_SALT,
-        max_age=INLINE_INTENT_SECONDS,
-    )
-    if intent["actor"] != str(actor.identity) or intent["target"] != target:
-        raise PermissionError("Credential intent does not belong to this session.")
-    if intent["base"] != configuration.active_configuration.digest:
-        raise StaleRecordError("Integration settings changed.")
-    record = _optional(configuration, target)
+    intent = key_intent(configuration, actor, target, form, credential)
     if form.schedule is not None and form.schedule.changed:
         # A key save never changes the refresh schedule: change it first.
         # The refusal is shown at the key field, with the schedule edits
@@ -540,28 +579,90 @@ def _save(request, service, configuration, actor, target):
                     "can't be saved together. Leave this empty and save the "
                     "schedule change first, then paste the new key again."
                 ),
+                code="key_with_schedule_change",
             ),
             status=400,
         )
-    settings = form.public_settings()
-    from .key_files import MAX_FILE_BYTES
-
-    value = credential.cleaned_data.pop("candidate").encode("utf-8")
-    if len(value) > MAX_FILE_BYTES:
-        raise ValueError("Credential exceeds its byte bound.")
-    save_credential(
+    stage_key(
         request,
         service,
         configuration,
         actor,
-        target=target,
+        target,
+        form=form,
+        credential=credential,
         intent=intent,
-        value=value,
-        record=record,
-        settings=settings,
     )
-    del value
     return HttpResponseRedirect(request.path)
+
+
+def key_intent(configuration, actor, target, form, credential):
+    """The verified signed intent of a validated key save (request-free).
+
+    ``form`` and ``credential`` are the bound, valid settings and new-key
+    forms. A version other than the applied one raises ``StaleRecordError``;
+    an intent older than an hour, altered or signed for another
+    Administrator or integration is refused (``BadSignature`` or
+    ``PermissionError``). The page's Save with a key and ``pk-admin
+    integration key replace`` share it.
+    """
+    if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
+        raise StaleRecordError("Reload integration settings.")
+    intent = signing.loads(
+        credential.cleaned_data["intent"],
+        salt=CREDENTIAL_SALT,
+        max_age=INLINE_INTENT_SECONDS,
+    )
+    if intent["actor"] != str(actor.identity) or intent["target"] != target:
+        raise PermissionError("Credential intent does not belong to this session.")
+    if intent["base"] != configuration.active_configuration.digest:
+        raise StaleRecordError("Integration settings changed.")
+    return intent
+
+
+def stage_key(
+    caller,
+    service,
+    configuration,
+    actor,
+    target,
+    *,
+    form,
+    credential,
+    intent,
+    attach=None,
+):
+    """Seal the new key and queue its selection with the form's settings.
+
+    Request-free, so the page's Save with a key and ``pk-admin integration
+    key replace`` stage it identically through ``save_credential``: sealed
+    for the target's installer, staged under the SQL intake guard, then the
+    selection request (with ``attach`` in its transaction). Returns the
+    secret request's id. The plain key is taken out of the form's cleaned
+    data and dropped here; it is never returned, logged or stored.
+    """
+    from .key_files import MAX_FILE_BYTES
+
+    record = _optional(configuration, target)
+    settings = form.public_settings()
+    value = credential.cleaned_data.pop("candidate").encode("utf-8")
+    if len(value) > MAX_FILE_BYTES:
+        raise ValueError("Credential exceeds its byte bound.")
+    try:
+        return save_credential(
+            caller,
+            service,
+            configuration,
+            actor,
+            target=target,
+            intent=intent,
+            value=value,
+            record=record,
+            settings=settings,
+            attach=attach,
+        )
+    finally:
+        del value
 
 
 def review_settings(service, actor, configuration, target, form):
@@ -586,7 +687,7 @@ def review_settings(service, actor, configuration, target, form):
     # a page saved as shown is no change at all.
     settings = form.public_settings()
     if settings == before:
-        form.add_error(None, _("No settings have changed."))
+        form.add_error(None, ValidationError(UNCHANGED, code="unchanged"))
         return None
     patch = [
         {
@@ -633,7 +734,17 @@ def _check_candidate(service, configuration, patch):
 
 
 def _preview(request, service, actor, target):
-    """Prepare public settings while preserving the applied credential receipt."""
+    """The review dialog's answer to Save without a new key (#750).
+
+    A refused value (or the missing key of an optional integration that its
+    key sets up, #563) is the settings page again with status 400, so it
+    stays on the form. A stale page raises ``StaleRecordError``, and no
+    change at all raises its refusal, both shown in the dialog. Otherwise
+    the answer is ``integration-review.html``: a compact review of the
+    changed settings, the full review of a refresh schedule change, or the
+    confirmation of setting Off-site backups up by its folder. The applied
+    credential receipt is never shown or changed.
+    """
     configuration = editable_configuration(service)
     if target == "backup":
         _refuse_drive_in_local()
@@ -654,17 +765,27 @@ def _preview(request, service, actor, target):
         )
     review = review_settings(service, actor, configuration, target, form)
     if review is None:
+        if form.has_error(NON_FIELD_ERRORS, "unchanged"):
+            # The page's change gate keeps this out of reach; it is the
+            # server's safeguard for a request that bypasses it.
+            raise UserFacingError(UNCHANGED, fix=_("Nothing was changed."))
         return _page(request, configuration, target, form=form, status=400)
     before, settings = review["before"], review["after"]
-    admin_navigation.place(request, flow="change", step="review")
+    schedule_changed = form.schedule is not None and form.schedule.changed
     return render(
         request,
-        "stewardship/integration-preview.html",
+        "stewardship/integration-review.html",
         {
+            "kind": (
+                "schedule"
+                if schedule_changed
+                else "setup"
+                if record["id"] is None
+                else "compact"
+            ),
             "target": target,
             "label": LABELS[target],
-            "breadcrumb_label": LABELS[target],
-            "configuration": configuration,
+            # Public settings only (form.fields never holds the key field).
             "changes": [
                 {
                     "label": form.fields[name].label,
@@ -682,7 +803,7 @@ def _preview(request, service, actor, target):
                     form.schedule.document(),
                     timezone=_schedule_zone(configuration),
                 )
-                if form.schedule is not None and form.schedule.changed
+                if schedule_changed
                 else []
             ),
             "preview": review["preview"],
@@ -691,15 +812,16 @@ def _preview(request, service, actor, target):
 
 
 def _shown(field, value):
-    """A setting's value as the review page shows it.
+    """A setting's value as the review shows it.
 
     A choice shows its label ("Once an hour"), not its stored value; a time
     list shows as typed ("02:00, 12:00"). Optional settings (the From name)
-    may be absent.
+    may be absent or empty, shown as "Not set" (as Parish settings' compact
+    review shows an unset value).
     """
     if isinstance(value, (list, tuple)):
-        return ", ".join(value)
-    return dict(getattr(field, "choices", ())).get(value, value)
+        value = ", ".join(value)
+    return dict(getattr(field, "choices", ())).get(value, value) or _("Not set")
 
 
 def review_removal(service, actor, configuration, target):
@@ -724,32 +846,46 @@ def review_removal(service, actor, configuration, target):
 
 
 def _remove(request, service, configuration, actor, target):
-    """Preview removing an optional integration; confirmation uses the usual path.
+    """The review dialog's confirmation of removing an optional integration.
 
-    Removing Slack stops new Slack alerts at once. Its key file stays on the
-    server until it is replaced; setting Slack up again installs a new key.
+    Remove Slack and Turn off off-site copies (#750) answer with
+    ``integration-review.html``'s confirmation; Apply uses the usual
+    confirmation path. Removing Slack stops new Slack alerts at once. Its
+    key file stays on the server until it is replaced; setting Slack up
+    again installs a new key.
     """
-    if set(request.POST) - {"action", "csrfmiddlewaretoken"} or any(
+    allowed = {"action", "csrfmiddlewaretoken"}
+    if set(request.POST) - allowed or any(
         len(values) != 1 for _, values in request.POST.lists()
     ):
-        raise unexpected_fields()
+        raise unexpected_fields(request.POST, allowed=allowed)
     preview = review_removal(service, actor, configuration, target)
-    admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
-        "stewardship/integration-preview.html",
-        {
-            "target": target,
-            "label": LABELS[target],
-            "breadcrumb_label": LABELS[target],
-            "configuration": configuration,
-            "removing": True,
-            "changes": [
-                {"label": LABELS[target], "before": _("On"), "after": _("Removed")}
-            ],
-            "preview": preview,
-        },
+        "stewardship/integration-review.html",
+        {"kind": "remove", "target": target, "preview": preview},
     )
+
+
+def _step_up_refusal(request, target, error):
+    """A stale sign-in's refusal of a review or Apply, for the review dialog.
+
+    Status 403 with the shared step-up notice (``integration-review.html``,
+    marked data-review-refusal), whose Confirm with Google returns to the
+    settings page (#547, #750). Nothing was reviewed or queued. The refusal
+    log records the error's reason, as ``error_response`` would.
+    """
+    response = render(
+        request,
+        "stewardship/integration-review.html",
+        {"refused": True, "target": target},
+        status=403,
+    )
+    # The answer carries its own explanation; keep it as rendered.
+    response.stewardship_safe_error = True
+    # The closed code error_response would give it, for the refusal log.
+    response.stewardship_codes = ("denied",)
+    return annotate(response, error)
 
 
 # A private key pasted by mistake into the backup key field must not reach an
@@ -800,6 +936,10 @@ def integration_settings(request, target=None):
             if target in ROTATING_TARGETS:
                 fields |= {"candidate", "intent"}
             action = form_action(request.POST, preview_fields=fields)
+            # A key was pasted unless the field is empty after str.strip(),
+            # the key field's own cleaning; the page script's SERVER_SPACE
+            # (ui-v1.js) reads it the same way, so the page submits such a
+            # Save natively, never through the review dialog (#750).
             if action == "preview" and request.POST.get("candidate", "").strip():
                 response = _save(request, service, configuration, actor, target)
             else:
@@ -829,6 +969,19 @@ def integration_settings(request, target=None):
         # A reused page carrying a different key: correctable input, not an
         # outage. The key itself is never echoed.
         return error_response(ValueError("Credential intake identity has changed."))
+    except FreshAuthenticationRequired as error:
+        # The review dialog's Save, Remove and Apply (#750) are a script's
+        # requests: their step-up is drawn in the dialog. A page's own post
+        # (Save with a new key, which submits natively) gets the step-up page,
+        # and the backup encryption key's steps keep their own.
+        if (
+            request.method == "POST"
+            and target in LABELS
+            and target != "backup_key"
+            and not page_request(request)
+        ):
+            return _step_up_refusal(request, target, error)
+        return error_response(error)
     except ERRORS as error:
         return error_response(error)
 
@@ -909,15 +1062,17 @@ def refresh_schedule_check(request, target):
         principal(request, service)
         if target != "parishsoft":
             raise LookupError("Integration is unavailable.")
-        if set(request.POST) - posted_names() - {"csrfmiddlewaretoken"} or any(
+        allowed = posted_names() | {"csrfmiddlewaretoken"}
+        if set(request.POST) - allowed or any(
             len(values) != 1 for _, values in request.POST.lists()
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(request.POST, allowed=allowed)
         with read_transaction():
             configuration = editable_configuration(service)
             record = _selected(configuration, target)
             editor = ScheduleEditor(request.POST, stored=record["values"]["settings"])
             if not editor.posted:
+                # No sources: the fields were allowed; none of the editor's was sent.
                 raise unexpected_fields()
             context = _schedule_context(configuration, editor)
         response = render(request, "stewardship/refresh-schedule-check.html", context)

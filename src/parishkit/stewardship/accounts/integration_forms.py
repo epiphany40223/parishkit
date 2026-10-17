@@ -10,6 +10,10 @@ from . import field_tips, setup_help
 from .key_files import MAX_FILE_BYTES
 from .policy_schema import normalized_email
 from .refresh_schedule_forms import ScheduleEditor
+from .secret_input import SecretInput
+
+# A field group with a reserved error line (file-size-field.html).
+ERROR_LINE_TEMPLATE = "stewardship/file-size-field.html"
 
 LABELS = {
     "parishsoft": _("ParishSoft"),
@@ -29,6 +33,24 @@ MISSING_HINTS = {
     "target": _("Paste the Google Drive folder link."),
 }
 
+# What the browser checks of an off-site folder link (#1330), leniently: a
+# bare folder ID or any https link on drive.google.com, as folder_id_from_url
+# reads them (case-blind scheme and host, spaces around it). The server
+# decides whether the link names a folder. Written for the "v" pattern flag.
+FOLDER_LINK_PATTERN = (
+    r"\s*([A-Za-z0-9_\-]{10,200}|[Hh][Tt][Tt][Pp][Ss]:\/\/([^\/?#]*@)?"
+    r"[Dd][Rr][Ii][Vv][Ee]\.[Gg][Oo][Oo][Gg][Ll][Ee]\.[Cc][Oo][Mm]([:\/?#].*)?)\s*"
+)
+
+# Why the ParishSoft organization ID is locked once its data is loaded
+# (#1492): the one line shown under its label, and the why in its tip.
+ORGANIZATION_LOCKED = _("Locked: ParishSoft data for this organization is loaded.")
+ORGANIZATION_LOCKED_TIP = _(
+    "The loaded Families, Members, ministries and giving belong to this "
+    "organization, and every refresh must read the same one, so its ID can no "
+    "longer change. A new API key must be a key for this organization."
+)
+
 
 class IntegrationForm(AdminForm):
     """Non-secret settings never accept fingerprints, keys or arbitrary URLs."""
@@ -42,7 +64,7 @@ class IntegrationForm(AdminForm):
 
         ``loaded_organization`` is the ParishSoft organization ID whose data
         is already loaded, or None before the first load. Once data is
-        loaded, the organization ID is shown read-only and a different value
+        loaded, the organization ID is shown disabled and a different value
         is refused: every later refresh must read that same organization, so
         a changed ID would stop them all (see ``source.requests``).
         ``stored`` are the integration's stored settings: ParishSoft's
@@ -60,11 +82,17 @@ class IntegrationForm(AdminForm):
                 max_value=2**31 - 1,
             )
             if loaded_organization is not None:
-                self.fields["organization_id"].widget.attrs["readonly"] = True
-                self.fields["organization_id"].help_text = _(
-                    "ParishSoft data for this organization is already loaded, "
-                    "so its ID can no longer change."
-                )
+                # Drawn disabled where it stands (ui-conventions, Prerequisite
+                # gates and Conditional fields): not focusable, not sent, and
+                # still showing the loaded ID, which Django's disabled field
+                # takes as its value. A posted value is still refused when it
+                # differs (clean_organization_id). The one-line reason is the
+                # field's visible hint, which the Administrator asked for
+                # (#1492), and the why is in its tip.
+                field = self.fields["organization_id"]
+                field.disabled = True
+                field.initial = loaded_organization
+                field_tips.add(field, ORGANIZATION_LOCKED_TIP, ORGANIZATION_LOCKED)
             else:
                 # Before the first load, explain the value as setup does.
                 self.fields["organization_id"].help_text = setup_help.CREDENTIALS[
@@ -132,6 +160,8 @@ class IntegrationForm(AdminForm):
                 self.fields[name].widget.attrs["data-missing-hint"] = hint
         if "channel_id" in self.fields:
             self.fields["channel_id"].widget.attrs["pattern"] = "[CG][A-Z0-9]{1,63}"
+        if "target" in self.fields:
+            self.fields["target"].widget.attrs["pattern"] = FOLDER_LINK_PATTERN
         field_tips.shorten(
             self,
             {
@@ -142,6 +172,12 @@ class IntegrationForm(AdminForm):
                 "organization_id": setup_help.HINTS["organization_id"],
             },
         )
+        # The folder link keeps a line for its error, shown or not, so Test
+        # access's in-place refusal there never moves the buttons below
+        # (#1334 review; ui-conventions "No layout shift"). Set after the tip,
+        # which only a field with no template of its own takes.
+        if "target" in self.fields:
+            self.fields["target"].template_name = ERROR_LINE_TEMPLATE
 
     def clean_target(self):
         """Store one canonical folder link, whichever form the Admin pasted."""
@@ -150,7 +186,9 @@ class IntegrationForm(AdminForm):
         try:
             folder = folder_id_from_url(self.cleaned_data["target"])
         except ValueError as error:
-            raise forms.ValidationError(str(error)) from None
+            raise forms.ValidationError(
+                str(error), code="invalid_folder_link"
+            ) from None
         return f"https://drive.google.com/drive/folders/{folder}"
 
     def is_valid(self):
@@ -185,8 +223,19 @@ class IntegrationForm(AdminForm):
         return settings
 
     def clean_organization_id(self):
-        """Refuse a different organization once its ParishSoft data is loaded."""
+        """Refuse a different organization once its ParishSoft data is loaded.
+
+        The locked field is disabled, so the browser sends nothing and its
+        value is the loaded ID; a request that posts another value anyway is
+        refused rather than quietly ignored.
+        """
         value = self.cleaned_data["organization_id"]
+        posted = self.data.get(self.add_prefix("organization_id"))
+        if self.loaded_organization is not None and posted not in (None, ""):
+            try:
+                value = int(str(posted).strip())
+            except ValueError:
+                value = None
         if self.loaded_organization is not None and value != self.loaded_organization:
             raise forms.ValidationError(
                 _(
@@ -196,6 +245,7 @@ class IntegrationForm(AdminForm):
                     "same organization. Keep %(loaded)s here."
                 ),
                 params={"loaded": self.loaded_organization},
+                code="organization_locked",
             )
         return value
 
@@ -232,9 +282,11 @@ KEY_FIELDS = {
         _(
             "Paste a new key only to replace the current one, for example after "
             "creating a new key in ParishSoft. It is checked against the "
-            "organization ID above. Leave this blank to keep the current key, "
-            "which is never shown. A new key can't be saved together with a "
-            "refresh schedule change: save the schedule change first."
+            "organization ID above. It must be a key for the organization above; "
+            "a key for another organization is refused. Leave this blank to keep "
+            "the current key, which is never shown. A new key can't be saved "
+            "together with a refresh schedule change: "
+            "save the schedule change first."
         ),
     ),
     "google_workspace": (
@@ -255,16 +307,6 @@ KEY_FIELDS = {
         ),
     ),
 }
-
-
-class WriteOnlyPasswordInput(forms.PasswordInput):
-    """A single-line secret field that never redisplays a submitted value."""
-
-    def __init__(self):
-        super().__init__(
-            render_value=False,
-            attrs={"autocomplete": "off", "spellcheck": "false"},
-        )
 
 
 # Label, help and missing-key message for an optional integration that is not
@@ -313,7 +355,7 @@ class InlineCredentialForm(AdminForm):
                     attrs={"autocomplete": "off", "spellcheck": "false", "rows": 5}
                 )
                 if target == "google_workspace"
-                else WriteOnlyPasswordInput()
+                else SecretInput(target)
             ),
         )
         if missing:

@@ -14,6 +14,7 @@ import re
 import pytest
 
 from parishkit.stewardship.accounts.campaign_views import (
+    DATES_ALONE,
     LOCKED_CLOSED,
     LOCKED_LIVE,
     MINISTRIES_ALONE,
@@ -23,6 +24,7 @@ from .campaign_settings_components import (
     DRAFT,
     DRAFT_REFUSED,
     DRAFT_REVIEW,
+    DRAFT_SCHEDULED,
     ELSEWHERE,
     END_REFUSAL,
     LIVE,
@@ -328,20 +330,67 @@ def test_a_live_ministry_change_is_reviewed_with_its_impact(page, component_orig
     assert not failures
 
 
-def test_a_ministry_change_with_another_is_refused_in_the_dialog(
-    page, component_origin
-):
-    """A Ministry change is reviewed on its own: made with another change,
-    the server's refusal says so in the dialog, with no Apply."""
-    answer_reviews(page, component_origin, LIVE_MIXED, 400, address=LIVE)
+def test_a_ministry_change_with_another_waits_with_the_reason(page, component_origin):
+    """A Ministry change is reviewed on its own (#1330): made with another
+    change, Review waits, with the server's own words as its hint, and comes
+    back once the other change is undone. Nothing is posted meanwhile."""
+    from playwright.sync_api import expect
+
+    reviews = answer_reviews(page, component_origin, LIVE_MIXED, 400, address=LIVE)
     answer_checks(page, component_origin)
     page.goto(component_origin + LIVE)
+    failures = watch(page)
+    review = page.get_by_role("button", name="Save", exact=True)
+    hint = page.locator("#settings-complete-hint")
     page.get_by_label("Included Ministries").select_option(["4"])
+    enabled(review)
     roles = page.get_by_role("group", name="Ministry leader roles")
     roles.get_by_label("Staff").uncheck()
-    page.get_by_role("button", name="Save", exact=True).click()
-    dialog = dialog_of(page)
-    error = dialog.locator("[data-confirm-error]")
-    visible(error)
-    assert str(MINISTRIES_ALONE) in error.inner_text()
-    assert dialog.get_by_role("button", name="Apply").count() == 0
+    expect(review).to_be_disabled()
+    visible(hint)
+    assert hint.inner_text() == str(MINISTRIES_ALONE)
+    # Shown again from history, the page works the hold out again.
+    page.evaluate(RESTORE)
+    expect(review).to_be_disabled()
+    roles.get_by_label("Staff").check()
+    enabled(review)
+    hidden(hint)
+    assert reviews == []
+    assert not failures
+
+
+def test_dates_with_another_change_wait_while_schedules_exist(page, component_origin):
+    """A draft with mail schedules changes its dates and time zone on their
+    own (#1330 item 1): made with another change, Save waits with the
+    server's own words as its hint, and comes back once the other change is
+    undone. A draft without schedules is not held. Nothing is posted."""
+    from playwright.sync_api import expect
+
+    reviews = answer_reviews(
+        page, component_origin, DRAFT_REFUSED, 400, address=DRAFT_SCHEDULED
+    )
+    page.goto(component_origin + DRAFT_SCHEDULED)
+    failures = watch(page)
+    review = page.get_by_role("button", name="Save", exact=True)
+    hint = page.locator("#settings-complete-hint")
+    page.get_by_label("Campaign end date").fill("2054-11-15")
+    page.get_by_label("Campaign timezone").select_option("America/Chicago")
+    enabled(review)
+    name = page.get_by_label("Campaign name")
+    name.fill("Renamed campaign")
+    expect(review).to_be_disabled()
+    visible(hint)
+    assert hint.inner_text() == str(DATES_ALONE)
+    # Shown again from history, the page works the hold out again.
+    page.evaluate(RESTORE)
+    expect(review).to_be_disabled()
+    name.fill("Sample campaign")
+    enabled(review)
+    hidden(hint)
+    assert reviews == []
+    # Without schedules, the same change is one review.
+    page.goto(component_origin + DRAFT)
+    page.get_by_label("Campaign end date").fill("2054-11-15")
+    page.get_by_label("Campaign name").fill("Renamed campaign")
+    enabled(page.get_by_role("button", name="Save", exact=True))
+    assert not failures

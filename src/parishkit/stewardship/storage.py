@@ -39,7 +39,9 @@ class UTCDateTimeField(models.DateTimeField):
             except ValueError:
                 value = None
         if not isinstance(value, datetime) or timezone.is_naive(value):
-            raise ValidationError("A timezone-aware instant is required.")
+            raise ValidationError(
+                "A timezone-aware instant is required.", code="naive_instant"
+            )
         return value.astimezone(UTC)
 
     def get_prep_value(self, value):

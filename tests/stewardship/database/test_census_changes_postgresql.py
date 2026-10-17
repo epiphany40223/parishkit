@@ -160,7 +160,10 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert b"Requested" in body and b"To review" in body
         assert get(browser, route + "?search=x")[0].status_code == 400
         response, body = search(browser, route, {"status": "conflict"})
-        assert response.status_code == 200 and b"No matching census changes." in body
+        assert (
+            response.status_code == 200
+            and b"No census changes match these filters." in body
+        )
         for invalid in ({"status": "bad"}, {"sort": "id"}, {"size": "7"}):
             assert search(browser, route, invalid)[0].status_code == 400
         response, body = search(browser, route, {"sort": "-submitted"})

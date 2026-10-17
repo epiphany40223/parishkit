@@ -50,6 +50,7 @@ when it lands.
   [disclosures](#disclosures),
   [prerequisite gates](#prerequisite-gates),
   [field errors and live checks](#field-errors-and-live-checks),
+  [secret fields](#secret-fields),
   [Review, Apply and Change status](#review-apply-and-change-status),
   [review dialog](#review-dialog),
   [conditional fields](#conditional-fields),
@@ -58,12 +59,12 @@ when it lands.
   [addresses and legacy URLs](#addresses-and-legacy-urls),
   [not-found pages](#not-found-pages),
   [unavailable menu pages](#unavailable-menu-pages),
-  [navigation rules](#navigation-rules).
+  [navigation rules](#navigation-rules), [wizards](#wizards).
 - Admin page layout: [page help](#page-help),
   [button labels](#button-labels), [shared visual style](#shared-visual-style),
   [colour scheme](#colour-scheme),
   [status indicators](#status-indicators), [time entry](#time-entry),
-  [schedules](#schedules).
+  [schedules](#schedules), [schedule previews](#schedule-previews).
 - Tables: [Admin tables](#admin-tables),
   [empty tables and lists](#empty-tables-and-lists),
   [row actions](#row-actions-and-confirmation),
@@ -118,8 +119,8 @@ conversion the reader has to do in their head. **Shared code.**
 `web/dates.py` and the `parish_date` and `parish_time` template filters
 (`accounts/templatetags/stewardship.py`); the hidden
 browser-zone field (`data-browser-zone`) that `ui-v1.js` fills; the
-`test_browser_local_times.py` guard. **Precedent.** #558 (Administrator
-decision, 2026-10-04).
+`test_browser_local_times.py` and `test_browser_zone_guard.py` guards.
+**Precedent.** #558 (Administrator decision, 2026-10-04).
 
 The rule covers schedule send times, campaign and financial date-times and
 report day buckets too (Administrator decision, 2026-10-04,
@@ -135,10 +136,9 @@ the page script fills, and the server converts the typed wall-clock time to
 UTC; the page names the zone next to the fields. The Admin portal requires
 JavaScript ([#565](https://github.com/epiphany40223/parishkit/issues/565)), so
 a missing or unknown zone is refused rather than guessed, and when the browser
-reports none the page keeps Save unavailable, saying why. A time that occurs
-twice when clocks fall back is the first occurrence; a time skipped when clocks
-spring forward is read with the offset in force before the change (2:30 AM
-becomes 3:30 AM daylight time), so the form is never refused for it. Emails,
+reports none the page keeps Save unavailable, saying why. A typed time that
+occurs twice or is skipped at a daylight-saving change follows the one
+[daylight-saving rule](#schedules), so the form is never refused for it. Emails,
 which cannot know a reader's browser, use the parish time zone and name it
 ("9:15 PM Eastern"), never "UTC". Operational and security alert emails
 follow the same rule (Administrator decision, 2026-10-10,
@@ -155,11 +155,13 @@ portal](../admin-portal/spec.md#new-and-edit-scheduled-email)), and the
 submitted-date filters of the Additional information and Ministry reports the
 fourth ([Reports](../reports/spec.md#additional-information)), then the
 date-change review ([Admin
-portal](../admin-portal/spec.md#dates-and-mail-schedules)). A schedule review
+portal](../admin-portal/spec.md#dates-and-mail-schedules)) and the Financial
+stewardship response-date filters
+([Reports](../reports/spec.md#financial-stewardship-detail)). A schedule review
 shows each send only as a moment in the browser's zone, never as the saved
 campaign-local date and time with the campaign's zone.
 Until a page's PR lands, it keeps its current zone, including the campaign
-zone for the retired Copy campaign page, campaign dates and report day buckets (the
+zone for the retired Copy campaign page, campaign date-times and report day buckets (the
 participation chart still buckets by campaign time). One field is a recorded
 exception that stays in the refresh schedule's own time zone (the current
 campaign's, else the parish's, as the scheduler reads it) after every #558 PR:
@@ -270,6 +272,17 @@ gets the Family layout and its home link. A script gets the closed JSON error.
 A not-found error a view reports itself keeps its own, more specific title and
 message. Every other unknown address, including static assets, images, hosted
 files and health probes, keeps the plain not-found response.
+
+Dragging is only a pointer convenience. Every drag has a single-pointer,
+keyboard-operable equivalent that does the same thing, such as a **Move…**
+action with a date field (WCAG 2.2 SC 2.5.7). A drop never applies a change by
+itself: it fills in the same review the equivalent opens, and only Apply
+changes anything ([review dialog](#review-dialog)). Drag uses pointer events
+with a few-pixel threshold, so a click still follows a link, is offered on
+fine pointers only (touch uses the equivalent), and Escape cancels it. The
+first user is the planned
+[Campaign calendar editing](../admin-portal/spec.md#editing-from-the-calendar)
+([#1521](https://github.com/epiphany40223/parishkit/issues/1521)).
 
 Client validation improves feedback but never replaces server validation.
 Browser-local timezone conversion uses UTC ISO timestamps supplied by the
@@ -504,7 +517,6 @@ never scrolls to show it (Administrator, pk-local review of
   whose heading takes focus, and lists the state and recipient lines,
   history, forms and bounce panel to replace too. An export's Retry and
   Cancel swap its status panel and hand focus to Refresh status below.
-  Regenerate, whose answer is a new export's page, stays a navigation.
   Preview and test email's Send this test email posts in place too: its
   notices and form are one region and Recent test results another, whose
   heading takes focus. The list updates by itself while a test is on its
@@ -514,9 +526,10 @@ never scrolls to show it (Administrator, pk-local review of
   Off-site backups' Test access posts in place as well: its status line
   is swapped in and watched while the check runs, focus stays on Test
   access, and the settled check re-reads that line in place, so a folder
-  link typed but not saved is kept. Save in the same form is marked
-  `data-in-place-native` and submits natively; the Integrations Save and
-  Remove forms stay ordinary forms until they move to the review dialog
+  link typed but not saved is kept. Save in the same form opens the
+  [review dialog](#review-dialog), and Test access is marked
+  `data-review-skip`, so it is no Review; the integration settings form's
+  region is `data-in-place-own`, so only its own Review's Apply redraws it
   ([#750](https://github.com/epiphany40223/parishkit/issues/750)). One
   request is in flight at a time: a newer choice cancels an older
   read, but a POST that saves a change is never cancelled, and other
@@ -726,10 +739,13 @@ never scrolls to show it (Administrator, pk-local review of
   never move the form or the status line. The form has an id, so a file
   chosen while it is redrawn is said not to be kept.
 - **Review dialog: Parish settings (#750).** Parish settings reviews in the
-  [review dialog](#review-dialog), titled "Review Parish settings": each
-  changed setting with its current and proposed value, and a new
-  timezone's note. Its form is an in-place region, redrawn after Apply at
-  the applied version, with the status line under it. A field's refusal
+  [review dialog](#review-dialog) as a compact review (#1356): its button
+  reads **Save** and the dialog, "Save the Parish settings?", lists one
+  "Setting: old → new" line per changed setting (every Parish setting is
+  short, so no change keeps a full review), with a new timezone's note; an
+  unset online giving address reads "Not set". Its form is an in-place
+  region, redrawn after Apply at the applied version, with the status line
+  under it. A field's refusal
   (the Parish website's included) stays on the form; a stale page or an
   out-of-date preview is refused in the dialog, and the form is not
   redrawn, so it is refused again until the page is reloaded.
@@ -837,7 +853,12 @@ line while it is empty (#959); `data-required-when` and
 `data-required-when-shown`; `data-enabled-when` and `data-locked-when`
 ([conditional fields](#conditional-fields));
 the acknowledgment gate (`data-acknowledgment-gated`); the time-entry gate;
-the change gate `data-require-change` (#924); the shared `holdButton` /
+the change gate `data-require-change` (#924) and, on such a form,
+`data-change-alone` with `data-change-alone-hint`, a group of field names
+that must change on their own: while one of them and any field outside the
+group differ from the saved values, Review waits and the hint line gives the
+words (Campaign settings: a live campaign's Ministries; a draft's dates and
+time zone while it has mail schedules, #1330); the shared `holdButton` /
 `releaseButton` pair and `GATE_MARKS` list (#924), so gates never release a
 button another gate still holds; the `pageshow` re-check;
 `test_campaign_setup_gates.py`, `test_prerequisite_gates.py` (#946).
@@ -890,8 +911,17 @@ kept, and after an applied change a redrawn form compares with its new
 defaults. A control marked `data-change-ignore` is no change: one that only
 shows other fields (Edit scheduled email's "Edit this schedule's email",
 whose fields count instead), and plain text generated from the HTML, which is
-not sent. The hint
-keeps its space while hidden, so it never moves the page.
+not sent. A row a page script adds or removes counts, and a hidden field
+counts only when it is marked as carrying a setting
+(`data-change-setting`): a saved row's identity, or a saved setting the page
+shows only as words, such as ParishSoft's stored quick updates, whose
+removal is a change (#1334 review). Every other hidden field is no change:
+the version and security tokens, a formset's row counts, a one-time request
+key or signed intent, the browser's time zone, a table's filters, size and
+sort (so a form redrawn with the table at other view settings still waits),
+and the fields a script writes from the visible controls it follows. A form
+redrawn at the same version takes its hidden settings from the new drawing.
+The hint keeps its space while hidden, so it never moves the page.
 The server still refuses an unchanged Review ("No settings have changed."),
 only as a safeguard for requests that bypass the page script: no page draws
 a "nothing has changed" state ([review dialog](#review-dialog)).
@@ -936,6 +966,31 @@ as leniently as the server reads it), and a refusal of either, or of a
 missing Slack token or a new ParishSoft key sent with a refresh schedule
 change, is shown at that field rather than as a notice or an error page
 (#563).
+
+The settings editors follow the same gates (#1330). Save on every
+integration settings page, ParishSoft's included, waits for a change, and a
+pasted key counts as one; Off-site backups' Test access, which can test the
+saved folder, never waits for one (`data-change-exempt`), and a folder link
+that isn't a Drive folder is refused at its field, as Save refuses it. While
+an integration that isn't set up yet can't store its key, its Save is shown
+unavailable, named by the notice that says why. The Pages and emails editor's
+Preview changes waits for a change, except while the page offers saving what
+it shows as it is (the default text filled in, a saved text that needs
+re-saving, a confirmation email with a retired receipt closing note folded
+in, a refused Preview drawn again). On Campaign settings the Ministry
+leader roles need one ticked while Ministry stewardship is on, and on a live
+campaign Save waits while the Ministries and another setting both changed
+(`data-change-alone`), with the server's own words. The automation
+approval's user code and New and Edit user's Email and Name are checked in
+the browser, with their refusals at the field, and Continue, Add the user
+or Save waits for them (a Name the Email lookup fills in or clears counts
+as an entry).
+The Parish website carries a pattern too: on Parish settings, which has no
+complete gate, the browser marks a website with a user name, query or
+fragment at the field when it is left, and the server's refusal is shown
+there; Save still waits only for a change. An integration page drawn
+again after a refused Save shows what was posted, so its Save does not
+wait for a change then.
 
 The same holds for the rest of the Admin portal (#563, the audit's last
 slice): Start Testing cleanup on Go-live readiness and Confirm Production
@@ -1009,17 +1064,59 @@ The server stays the authority: it checks every save, and its refusal is
 shown at the field as above, even when the browser would have allowed the
 value (a wrong computer clock, for example).
 
+A report's filters follow the same rule (#1332). A filter the server
+refuses at one field (a request built by hand, or a browser whose check did
+not run) draws the report again, answered 400: the filters show the values
+sent, with the error at that field and in the summary, and the results are
+those for no filters, as Campaign comparison shows its current day for a
+refused day. A refusal no field can show (an unknown or repeated field, a
+choice no form offers, a sort or page size the table does not accept) keeps
+the report's error page. A range out of order is refused at its end with
+both ends marked, and its message is shown once, after them, in a line
+the form reserves so that a refusal shown in place moves nothing. Where
+that line is apart from the complete gate's hint row (the Additional
+information queue's Submitted dates, Financial stewardship's dates and
+amounts), the gate's hint, in the same words,
+is held hidden in its row while the message shows, so the form says it
+once. A form whose complete gate already has a hint row (System logs, the
+Follow-up packet, an Additional information item's Save) shows the message
+in that row instead, over the gate's hint, which it hides while shown, so
+the page is no taller for a refusal only a request built by hand gets and
+says it once. The same holds for a report's own forms that a field can
+fix (the Follow-up packet's limit, an Additional information item's
+confirmation): the page is drawn again, 400, with the values sent. An
+in-place Apply keeps the filter form and what was typed, and takes the
+marks and message from the answer. The server's mark clears, with its
+message and summary item, on the first edit of a field it marks (either
+end of a range), or when an in-place Apply is answered without it.
+**Shared code.** `web/filter_errors.py` (`FilterError`), the `filter_mark`
+and `filter_line` template tags; used by Financial stewardship, the
+Additional information queue and item, System logs, the Follow-up packet
+and the Family directory's Exact Family code (shown in its gate's hint
+row).
+
 A file field marked `data-max-bytes` (with `data-max-bytes-message`, the
 server's own words) is refused at the field as soon as a file over that
 size is chosen, and the form is not sent until a smaller file is chosen; a
 form marked `data-max-total-bytes` refuses files that together exceed it
 the same way. The message shows where the server's errors for that field
 go, in a reserved line that keeps its height once the error clears and is
-announced to screen readers (`file-size-field.html`). A field that a
+announced to screen readers (`file-size-field.html`; Off-site backups'
+folder link keeps the same line, so Test access refused there in place
+moves nothing, #1334 review). A field that a
 choice hides drops its refusal, and shows it again if it reappears with
 the same file. The reverse proxy refuses an oversized request before the
 page could explain it, so this check is what keeps such a refusal on the
 form. First use: Parish logos (#1062).
+
+An in-place form refused with a typed JSON answer shows the refusal as one
+line after its buttons ([in-place controls](#in-place-controls)). When the
+answer's errors name a field of that form (`FieldError` field identifiers),
+that field is marked the same way: `aria-invalid="true"` and described by
+the line. Like any server-only error, the mark and the line clear on the
+field's first edit (`ui-v1.js` `showRefusal`; first used by Census changes'
+Edit value,
+[#528](https://github.com/epiphany40223/parishkit/issues/528)).
 
 A mark clears as soon as its error does, without waiting for Save (#592). An
 error the browser checks clears once the value is valid. One only the
@@ -1043,6 +1140,43 @@ shared refusal types and builders, give a new kind of refusal its own
 reason code, and build forms on the shared Admin form base. A refusal never
 logs the value it refused.
 
+### Secret fields
+
+**Rule.** Every single-line secret an Admin types (an API key or a bot
+token) is masked by default and has the one shared Show/Hide control beside
+it. **Why.** Keys are pasted, and an Admin needs to check what was pasted
+without giving up the default protection against someone looking at the
+screen or a shared call. **Shared code.** The `SecretInput` widget
+(`accounts/secret_input.py`, template `stewardship/widgets/secret-input.html`)
+and the `data-secret-reveal` handler in `ui-v1.js`;
+`tests/stewardship/test_secret_input.py` fails on any other masked input in
+the Admin portal. **Precedent.**
+[#1475](https://github.com/epiphany40223/parishkit/issues/1475).
+
+The control is a real button, drawn by the server next to the field so it is
+in place on first paint. Tab reaches it, and Enter, Space or a click switch
+the field between masked and plain text; focus stays on the button. Its
+visible text reads Show or Hide, and its width is reserved for the longer
+word, so pressing it moves nothing ([no layout shift](#no-layout-shift)).
+Its accessible name is the visible word followed by the field's name, held
+in the button as visually hidden text ("Show the ParishSoft API key", "Hide
+the ParishSoft API key"), so the name always starts with the word on screen
+(WCAG 2.5.3, Label in Name) and the field's label names only the field. It
+has no `aria-label` and no `aria-pressed`, because the name already says the
+state. A polite status line beside it announces each change ("Your
+ParishSoft API key is shown."). It is always available, also while the field
+is empty.
+
+The control changes only what is shown, never what is submitted: the field's
+name and value post exactly as when masked. It masks the field again by
+itself when the form is submitted and when the reader leaves or returns to
+the page (including a page restored from the back-forward cache). A saved
+secret is never sent back to the browser, so the field starts empty, a
+refused value is not drawn again, and the control shows only what was typed
+in this page view. The page script never logs, stores or sends the value.
+A multi-line secret (the Google service-account JSON key) stays a visible
+text area.
+
 ### Review, Apply and Change status
 
 **Rule.** A change to configuration or data is made by editing, then
@@ -1063,7 +1197,9 @@ then, the separate Review and Change status pages); `data-review-of` in
 **Precedent.** #750 (review dialog, Administrator decision, 2026-10-11), #532
 (in-place review, retired by #1429), #523
 ([preview lifetimes](../admin-portal/spec.md#preview-lifetimes)), #882 (New and
-Edit pages follow it).
+Edit pages follow it). **Exception.** A [wizard](#wizards) step that edits a
+draft nobody can see yet saves directly, with no Review step (wizard rule 5;
+built in the setup wizard, planned for the campaign wizard in #1404 PR 4).
 
 A status that can no longer be read never looks as if it were still
 waiting. When the follow-up's status read is refused (the sign-in ended, or
@@ -1080,7 +1216,7 @@ opens, applies, refuses and follows its change.
 
 **Rule.** Every Admin editor reviews and applies its change in one shared
 modal dialog over the page: **Review changes** (or the action's own label,
-such as **Create the campaign**) opens the dialog with the
+such as **Create the campaign and continue**) opens the dialog with the
 change and its impact (or, when that would only repeat the page, a
 one-sentence confirmation), the dialog offers **Apply** and **Cancel**, and Apply's
 progress and outcome show inside it. Once the change is applied the dialog
@@ -1119,7 +1255,10 @@ An editor is an Admin page whose form changes configuration or saved data
 through Review and Apply: a settings page, a list editor, a New or Edit page,
 an upload editor, or a table's bulk action that is reviewed before it is
 applied. Each feature specification says what its own Review shows; this
-section says how every Review behaves.
+section says how every Review behaves. The exception is a
+[wizard](#wizards) step that edits a draft nobody can see yet: it saves
+directly, without the dialog (rule 5; built in the setup wizard, planned for
+the campaign wizard in #1404 PR 4).
 
 - **Review is available only for a real change.** Review changes is
   unavailable until the form differs from the saved values, and unavailable
@@ -1133,9 +1272,14 @@ section says how every Review behaves.
 - **Preparing the review.** Review changes posts the form without a page
   load, sent as a native submit would send it: multipart when the form's
   enctype is `multipart/form-data` (an upload editor's file), otherwise
-  URL-encoded. Until the answer arrives the form is inert and marked busy, and
-  Review changes says it is working, so nothing can be edited while the
-  review is being prepared.
+  URL-encoded. A form's other submit button marked `data-review-skip`
+  (Off-site backups' Test access) is no Review: it takes the form's other
+  way. A form marked `data-review-native="<field>"` submits natively,
+  without the dialog, while that field holds a value: an integration's
+  pasted new key, whose slow install is followed on the page (a recorded
+  exception, below). Until the answer arrives the form is inert and marked
+  busy, and Review changes says it is working, so nothing can be edited
+  while the review is being prepared.
 - **Field errors stay on the form.** A Review refused for the values in the
   form (a required field, a value out of range) does not open the dialog: the
   form shows its error summary and marks each field, as the
@@ -1148,7 +1292,7 @@ section says how every Review behaves.
   that would move the pane's controls. The line clears on the form's next
   edit or accepted Review (#1410).
 - **Opening the dialog.** An accepted Review opens the dialog. Its title
-  names the change ("Review Parish settings") and labels the dialog
+  names the change ("Review campaign settings") and labels the dialog
   (`aria-labelledby`); focus moves to that title, never to Apply, so the
   reader hears what is being reviewed before reaching the buttons. Its body
   shows the review the feature specification describes: a full review (the
@@ -1167,7 +1311,7 @@ section says how every Review behaves.
   count; a refusal), and offers **Apply** and **Cancel**; the sentence
   describes the dialog (`aria-describedby`), and its title asks the
   question ("Create the campaign?"). The form's button then carries the
-  action's own label ("Create the campaign", "Save") rather than **Review
+  action's own label ("Create the campaign and continue", "Save") rather than **Review
   changes**, since it opens a dialog that does not review, and the dialog's
   button stays **Apply**. Review still posts the form, so field errors stay
   on the form and the server still validates and signs the preview, which
@@ -1222,7 +1366,10 @@ section says how every Review behaves.
 - **After Apply.** On a page that stays (a settings page, a list editor, a
   table's bulk action), every region of the page is redrawn in place from
   the page's own address at the version the change made, with no reload and
-  no jump to the top. A New or Edit page (New user, New scheduled email)
+  no jump to the top. That includes the region holding the form that opened
+  the dialog even when it is marked `data-in-place-own` (so other in-place
+  controls on the page never redraw it): the Apply is that form's own
+  answer. A New or Edit page (New user, New scheduled email)
   returns instead to the table page it was opened from (Users, Dates and
   mail schedules), as [flows end where the reader
   started](#navigation-rules) says. A Review that the
@@ -1279,7 +1426,8 @@ Recorded exceptions (Administrator decision, 2026-10-11):
   wizard](../admin-portal/spec.md#bootstrap-and-first-admin-wizard)).
 - **Integrations' slow key install** shows its status inside the
   Integrations page while the key is installed, not in a dialog or on a
-  second page ([#456](https://github.com/epiphany40223/parishkit/issues/456)).
+  second page ([#456](https://github.com/epiphany40223/parishkit/issues/456)):
+  Save with a new key pasted submits natively (`data-review-native`).
   Integrations' other changes use the dialog.
 
 Operational actions that are not editors (going live, Confirm Production,
@@ -1300,10 +1448,15 @@ Share options, Campaign images, Parish logos, Parish settings, Create the
 campaign and No-reminders WorkGroup use the dialog; Create the campaign, New
 user and No-reminders WorkGroup are confirmations under #1356, and so are a
 one-time New scheduled email, Import selected with nobody skipped and
-Campaign images' Remove this image. Edit user, Share options and a small
-Campaign settings change are compact reviews under #1356; Parish settings
-becomes one under #1356 later, and an Integration settings edit when #750
-reaches it. The in-place review panel of #532 is retired
+Campaign images' Remove this image. Edit user, Share options, a small
+Campaign settings change and Parish settings are compact reviews under the
+same issue. The
+[integration settings pages](../admin-portal/spec.md#parish-and-integration-configuration)
+use the dialog too (#750): an ordinary settings edit is a compact review, a
+refresh schedule change keeps its full review, and setting up Off-site
+backups by its folder, removing Slack and turning off off-site copies are
+confirmations; the Backup encryption key change still uses its separate
+Review page. The in-place review panel of #532 is retired
 ([#1429](https://github.com/epiphany40223/parishkit/issues/1429),
 [in-place controls](#in-place-controls)); the other editors use separate
 Review and Change status pages.
@@ -1346,7 +1499,10 @@ around it, two gates keep it in place instead:
   the field), and gives back the reader's own value (kept in a hidden field)
   when the rule stops holding. First use:
   the directory's "Campaign mail can reach" while Include mailing columns is
-  ticked.
+  ticked. When the Administrator needs to see why a locked field cannot
+  change, the reason may also be one line in the field's own hint slot (the
+  line a hint would take, so nothing shifts), as the locked ParishSoft
+  organization ID shows ([#1492](https://github.com/epiphany40223/parishkit/issues/1492)).
 
 The two overlap, and are to be merged into one shared gate once both have
 landed. The Ministry follow-up request form greys its outcome and contact
@@ -1646,7 +1802,10 @@ registry and the rendered pages.
    (never in the URL); a manual ParishSoft refresh stays on Refresh from
    ParishSoft and shows its progress there; sending a weekly report now ends
    on Emailed reports with a link to the report; Cancel returns to the page it
-   was pressed on, never Home unless the flow started there.
+   was pressed on, never Home unless the flow started there. In a
+   [wizard](#wizards), a completed step opens the next step not done yet
+   instead (rule 8; in the campaign wizard built for Continue, and planned
+   for its saves in #1404 PR 4).
 6. **Messages link what they name.** A message that tells the reader to use
    another page links that page when the viewer may open it. A page is linked
    only when the viewer may open it now: an in-page link to a page the menu
@@ -1679,6 +1838,141 @@ registry and the rendered pages.
     chooser addresses are gone (404, #864). New campaign is removed outright ([decision
     11](../admin-portal/spec.md#navigation-decisions)), not greyed, and so are the "Choose a retained
     campaign" links once greyed on Participation and Ministry requests (#1125).
+
+### Wizards
+
+**Rule.** An Admin wizard is an ordered set of step pages that always says
+where the reader is and what comes next, has one way forward on every step,
+lets a step be kept as is, saves a draft directly, and never asks a question
+twice. The numbered rules below apply to the
+[setup wizard](../admin-portal/spec.md#bootstrap-and-first-admin-wizard), the
+[campaign wizard](../admin-portal/spec.md#create-the-campaign) and any later
+Admin wizard. **Why.** The Administrator found the campaign flow "very
+un-intuitive" (2026-10-15, on
+[#1404](https://github.com/epiphany40223/parishkit/issues/1404)): Create the
+campaign and its first step asked the same questions, a step whose defaults
+were acceptable had only an unavailable Save, defaults never completed a step,
+every save of an unseen draft opened a review dialog, and an editor opened from
+a step dropped the wizard. The setup wizard and the Family portal's steps did
+not have those faults, so one set of rules makes every wizard behave like
+them. **Shared code.** The step model (`setup_wizard.Step` and `Wizard`, which
+`campaign_wizard.py` reuses), the stepper (`stepper-steps.html`, see
+[step bars](#step-bars)) and the action rows (`setup-navigation.html`,
+`campaign-step-actions.html`, which #1404 makes one shared row).
+**Precedent.** #1404 (Administrator, 2026-10-15), #142 (the setup and
+campaign split), #1322 (the campaign stepper), #1402 (the shared stepper).
+The Family portal keeps its own [step rules](#family-portal), which already
+match.
+
+1. **Where you are and what's next.** Every step page starts with the
+   stepper: "Step N of M: *label*", "K of M steps completed", the
+   [step bar](#step-bars) and "Next: *label*" as text, naming the next step
+   that is not done yet, with the full step list as
+   [step bars](#step-bars) describes it.
+2. **One primary action per step**, at the bottom of the page in one action
+   row: **Back** (secondary, first) and one primary control (last). A step
+   never offers only an unavailable Save. Going on is never only in the
+   stepper's summary or its list.
+3. **Accept as is.** While the step's form holds no change, the primary
+   control reads **Continue to *next step***: it records the step as
+   reviewed and opens the next step. Once the form holds a change, the same
+   control reads **Save and continue**. The control's width is reserved for
+   the longer label, so the switch moves nothing
+   ([no layout shift](#no-layout-shift)). A list step with no form of its own
+   always offers Continue to *next step*; its items are edited on its
+   sub-pages (rule 10).
+4. **Save and continue saves and moves on.** It validates; on errors it stays
+   on the page, with the errors at the fields and in the summary
+   ([field errors](#field-errors-and-live-checks)). Otherwise it saves,
+   follows the change's status in place ("Saving…", then the result) and
+   opens the next step once the change is applied. A refusal after
+   validation, such as a stale page or held work, stays on the page with its
+   reason.
+5. **No modal for reversible draft edits.** While what the wizard edits is
+   not yet live (the setup draft, or a campaign that is a Testing draft with
+   no go-live started), Save and continue saves directly, without the
+   [review dialog](#review-dialog). The review dialog, or its
+   confirmation, stays where a change reaches people or cannot be undone:
+   creating the campaign (one campaign only, in the
+   [single-campaign interim](#single-campaign-interim)) and removing a file
+   (confirmations), going live, Confirm Production, and every change to a
+   scheduled, live or closed campaign. A direct save keeps every server
+   check of a confirmed Review except the signed preview, and records the
+   same audited configuration-change request; a request key drawn with the
+   page makes a repeated submit return the same receipt.
+6. **Back never saves.** Back is a link to the previous step. When the form
+   holds unsaved changes, Back first asks in the shared
+   [confirmation dialog](#row-actions-and-confirmation) "Discard your changes
+   and go back?", with **Discard and go back** and **Stay**. Following a
+   step in the bar or the list asks the same.
+7. **Completed means saved or reviewed.** A step is completed once its own
+   save has been applied or its Continue has been pressed (reviewed and kept
+   as is), or, on a step whose purpose is a check, once that check passes (a
+   load finished, a test accepted). The completion is stored, so a reload,
+   another browser or another Administrator sees the same. A step completed
+   by a save or by Continue stays completed: a later change elsewhere never
+   undoes it. A step whose purpose is a check (a final Review, a parish-data
+   load, a test email) is completed only while its check holds for the
+   current state, so it is required again when what it checked changes (a
+   later edit to the draft, a changed credential, a new revision of the
+   tested email). Defaults that another step or the creation wrote never
+   complete a step by themselves; pressing Continue on them does.
+8. **Never land on a completed step.** Once a step completes, the wizard
+   opens the next step that is not done yet (the next step when every later
+   one is done), and after the last step that step's own outcome. This is the
+   wizard's exception to "flows end where the reader started"
+   ([navigation rule 5](#navigation-rules)).
+9. **Every step can be accepted.** No step needs a change before the wizard
+   lets the reader go on. A step that may be left empty for now says so on
+   its Continue (**Continue without schedules for now**), and the wizard's
+   final readiness check names what is still missing. A step whose purpose is
+   a check (a test email) continues only once its check has passed. A
+   wizard's tests come before its final Review, so Review is the last step
+   before finishing and shows their results, and fixing a failed test never
+   passes through Review first
+   ([#1476](https://github.com/epiphany40223/parishkit/issues/1476)).
+10. **Sub-pages stay in the wizard.** A page opened from a step (an editor, a
+    new or edited item, a calendar, a history) draws the same stepper with
+    its parent step current, and its action row starts with **Return to
+    *step*** where Back sits (every Admin way back is named "Return to",
+    [navigation rule 4](#navigation-rules)). Its primary control follows
+    rule 3 for the item: **Keep as is and go back** while unchanged, **Save
+    and go back** once it holds a change. Either returns to the step page
+    with the item's new state, focus on its row and a status line saying
+    what was saved or kept, without a reload unless the page needs one.
+11. **Leaving is explicit.** The stepper's summary offers **Leave campaign
+    setup** (or **Leave setup**), which opens Home; Home then offers
+    **Continue campaign setup:** and the next step not done yet while the
+    wizard applies. A wizard finishes at its last step (Finish setup, or
+    Go-live readiness). The Admin menu works as always, and a menu page that
+    is neither a step nor a sub-page draws no stepper.
+12. **Outside the wizard nothing changes.** The same page outside its wizard
+    (setup has finished, the campaign is no longer a Testing draft, a go-live
+    has started, or the deployment is in Production) has its ordinary Save,
+    unavailable until something changes, and its ordinary review dialog.
+
+Status: these rules are the target; the wizards reach them in steps, as #1404's
+plan lays out. The setup wizard meets rules 2, 4, 5, 7, 8 and 12, and
+rule 1 except the "Next:" line: a saved page stays completed, while its
+Review is asked for again after any later edit of the draft and its parish
+data load goes stale when the ParishSoft credential changes. Its button
+keeps the single label Save and continue on an unchanged page (rule 3), and
+it has no Leave setup in its summary (rule 11) and no sub-pages. The
+campaign wizard meets rules 1, 7, 9, 11 and 12 and the Return to *step*
+link of rule 10 ([#1407](https://github.com/epiphany40223/parishkit/pull/1407)):
+Create the campaign is its step 1 before the campaign exists (#1404 PR 3);
+an applied change or a Continue stays completed, while Preview and test
+email counts only for a test of the invitation's current revision. It meets
+rule 8 for Continue, which opens the next step not done yet; after a save,
+the page redraws in place and stays on the step it completed until the
+direct save (planned, #1404 PR 4). Until the later #1404 pull requests
+land, its Continue is unavailable while the form holds a change, so the
+page's own Save, with its review dialog, is the way on (rules 3 to 5);
+loading the campaign's ParishSoft data is a notice on every step rather than
+a step of its own; and Back asking before it discards (rule 6) and the
+sub-pages' Keep as is and go back and Save and go back (rule 10) are not
+built in either wizard. Each part's precedent moves into the rule above when
+it lands.
 
 ## Admin page layout and help
 
@@ -1743,10 +2037,10 @@ A panel's summary says how many are applied
 ("Filters: 2 applied", or "none applied"), and that count follows an in-place
 Apply while the panel and its form keep their elements. A report's export form
 is likewise a closed disclosure (for example, "Export complete results (CSV,
-XLSX or PDF)") with its sensitive-data notice inside. The Family directory,
-Additional information, Financial stewardship and Limitations follow this
-(#227); System logs, Ministry follow-up and the remaining report pages are
-still to convert.
+XLSX or PDF)"). The Family directory,
+Additional information, Financial stewardship, Limitations and Census
+changes follow this (#227); System logs, Ministry follow-up and the
+remaining report pages are still to convert.
 An edit form's short fields (a status, an outcome,
 a date and a time) likewise share a row on desktop (`.field-row` in
 `ui-v1.css`), top-aligned so a time's reading line fits under its box, while
@@ -1761,10 +2055,8 @@ field, such as having no emails to schedule, always stays visible. The field
 remains described by its full help, so screen readers announce it without
 opening the tip. Checkbox help is a toggletip beside the box. A toggletip in a
 table heading is described by its bubble alone, and it closes when the table's
-box scrolls its button out of view. The export forms' shared format help (how
-CSV, XLSX and PDF write dates and money) opens from the "i" beside the format
-label where its menu sits in a filter-bar cell, so the narrow cell never wraps
-it into a tall column (the Active parishioner family directory, #1158).
+box scrolls its button out of view. An export form carries no
+help about its format menu (see [Downloaded files](#downloaded-files)).
 
 An "i" button always opens a floating toggletip, on Family and Admin pages
 alike and wherever the button sits: a label row, a filter bar, a table heading
@@ -1865,14 +2157,20 @@ The portal and the emails share one visual style
   fallback; only the vendored chart tooltip rules are exempt. The setup
   wizard's Back and Continue buttons take the shared button shape. Email
   components read the same module and inline the values, because mail
-  programs cannot load the stylesheet.
+  programs cannot load the stylesheet. So does the maintenance page shown
+  while the site is updating, which loads no stylesheet: it inlines the
+  light page, panel, ink and muted colours, the panel's corners and shadow,
+  and the sans font stack.
 - **Buttons:** templates draw every button, and every link styled as one,
   with the `{% button %}` tag. Its variants are primary (the default),
   secondary, large and link. It renders the stylesheet's classes and keeps
   each attribute in the order the template gives it, so in-place controls
   keep their `data-` attributes. A guard test counts raw button markup in
   every template against a list of reviewed exceptions that may only
-  shrink.
+  shrink. A button is secondary only when it is drawn so (the secondary
+  variant, or the `button-secondary` class on a button a script builds),
+  never because of where it sits or what attributes it carries, and a test
+  holds the stylesheet's secondary rule to that class alone.
 - **Email buttons:** `email_button()` renders the same primary and
   secondary buttons for email: a one-cell table with inline styles from the
   tokens, `bgcolor`, and Outlook padding. The label is real text, so the
@@ -1896,8 +2194,20 @@ The portal and the emails share one visual style
   sender says whether it sends Family mail; there is no default. A change
   to Family mail's look ships after a Testing send to real mail programs,
   on a night with no reminder the next morning.
+- **Notices:** a portal notice is one of three kinds, each a class on
+  ordinary markup. A warning (`notice`, the default) says something to be
+  careful of, or why something is unavailable; an error (`notice
+  notice-error`) says something failed or was refused; an information
+  notice (`notice notice-info`) is neutral, with nothing to beware of, such
+  as confirming what the reader just did. Testing and sample notices are
+  warnings, as the email notice is. All three share one shape and the ink
+  text colour, and take the background and border tokens of a
+  [status indicator](#status-indicators): the Warning and Error looks, and
+  the Working look for information. A test checks their contrast in the
+  light and dark schemes. Plain notices that are neutral
+  move to the information kind page by page.
 
-Portal notices, cards and headings follow in later slices of #732.
+Cards and headings follow in a later slice of #732.
 
 ### Colour scheme
 
@@ -1944,8 +2254,6 @@ Everything else stays light:
   [email button](#shared-visual-style) to survive a mail program's inverted
   dark mode;
 - [downloaded files](#downloaded-files);
-- for now, each drawn chart, which keeps its white background and its own
-  dark labels as a light card;
 - each email sample preview (the content sample, the setup text editor's
   saved sample and the new campaign's copy preview), a light card that
   shows the email as it is sent.
@@ -1956,13 +2264,39 @@ icons 3:1; where the focus ring sits on an accent surface (the checked
 Basic or Advanced segment), it is drawn in the paper colour. The
 [status indicators](#status-indicators) keep their per-state tokens in
 both. Every colour a scheme changes is a token, so the dark scheme reaches
-each rule with no per-component CSS; only shadows, print rules and the
-logo backing name a colour. An image that draws in the ink
-colour, such as the select arrow, has a dark twin. A parish logo gets a
-white backing in dark, because it was drawn for a light header.
+each rule with no per-component CSS. An image that draws in the ink
+colour, such as the select arrow, has a dark twin.
 
-Dark charts and a guard against new literal colours are later slices of
-[#1264](https://github.com/epiphany40223/parishkit/issues/1264).
+An uploaded image was drawn for the light Family pages and emails, so in
+dark it gets a white backing behind its transparent parts, which keeps a
+dark logo visible and adds no size. That covers the parish logo in the
+header and every Admin preview of an uploaded image: Parish logos (the
+current logos and their review), the setup wizard's logo step, Campaign
+images (the current images and their review) and the Hosted files
+thumbnails.
+
+**No literal colours.** Outside the token declarations, the portal's
+stylesheets, scripts, templates and images name no colour: a rule reads a
+token. The only exceptions are shadows and dialog backdrops (a translucent
+dark shade that works in both schemes), print rules (print is always
+light), the white image backing above, and the select arrow and its dark
+twin (each drawn in its scheme's ink). A comment may still mention an
+issue number such as #565.
+
+**Charts.** A chart drawn on an Admin page takes the page's scheme. Its
+background, axes, gridlines, labels, titles, legend and tooltip are drawn in
+the portal tokens (paper, ink, muted text, border and control border), and
+its marks in the chart palette, a token set with a light and a dark value
+for each colour. A chart's specification names its colours by their light
+values, which an emailed or downloaded chart keeps; the page draws each in
+the matching token's value for its scheme. In dark, the chart's lines, bars
+and markers keep 3:1 against the paper and its text 4.5:1, and the pledge
+bands' ramp turns round (dark bands under light labels for small pledges,
+bright bands under dark labels for large ones), so each band's label keeps
+4.5:1. A change of scheme redraws every drawn chart in place, holding its
+height, so nothing on the page moves. A chart reads the scheme from
+`data-theme`, never from the device's setting, so it always agrees with the
+Appearance choice.
 
 **Why.** Administrators who work in a dark desktop get a portal that
 matches it, without a second stylesheet that would drift from the first.
@@ -1975,12 +2309,19 @@ the saved choice or the operating system, keeps the choice as
 `data-theme-choice` (from which `ui-v1.css` draws the selected icon), and
 runs the switch in `admin-appearance.html`, which `admin-base.html` puts at
 the end of the header. `test_design_tokens.py` checks both token sets and
-their contrast. The browser test `test_dark_scheme.py` checks that key Admin
+their contrast, and `CHART_COLORS` and `DARK_CHART_COLORS` (declared by
+`chart-v1.css`) with theirs; `chart-v1.js` draws each chart in its scheme.
+The browser test `test_dark_scheme.py` checks that key Admin
 pages leave no light surface or light ink in dark. It also checks the
 choice: it overrides the device in place, holds across a reload from the
 first paint, reaches other tabs, and leaves Family pages and print light;
 and the switch: keyboard use, focus ring, axe in both schemes, and its
-place at phone and laptop widths.
+place at phone and laptop widths. `test_chart_scheme.py` checks that every
+chart page draws its charts' text and marks in the tokens of each scheme
+and redraws them in place when the scheme changes. `test_literal_colours.py`
+fails on a literal colour anywhere else in the portal's stylesheets, scripts'
+strings, templates' styles and static images, and on an exception that no
+longer matches anything; `test_dark_scheme.py` checks the image backings.
 **Precedent.** #732 (tokens), #1264 (the switch's place: Administrator,
 pk-local batch 24a).
 
@@ -2163,8 +2504,15 @@ learned once. **Shared code.**
 - `campaigns/recurrence.py`: repeat rules. Its cases
   (`tests/stewardship/fixtures/recurrence_cases.json`) also pin the page
   script's `ParishRecurrence`.
+- `components/repeat-rule.html`: the one repeat rule's controls (how often,
+  the days, the monthly choices, From and Until), with its choices from
+  New scheduled email's `RepeatRule` form.
 - `campaigns/intervals.resolve_local`: the daylight-saving rule.
 - `ParishEditorMode`: the Basic and Advanced modes.
+- `components/zone-note.html`: the note that names the browser's zone
+  beside typed dates and times, hidden until the page script knows the
+  zone. `test_zone_note_component.py` lists the pages that still write it
+  by hand.
 
 **Precedent.** [#1129](https://github.com/epiphany40223/parishkit/issues/1129)
 (Administrator, 2026-10-12).
@@ -2195,27 +2543,37 @@ learned once. **Shared code.**
   when there is no campaign. The page converts a typed time through the
   schedule's next occurrence, as
   [New and Edit scheduled email](../admin-portal/spec.md#new-and-edit-scheduled-email)
-  does. A note beside the fields names the zone the times are typed in. The
+  does. The shared zone note beside the fields names the zone the times
+  are typed in. The
   [ParishSoft refresh schedule](../admin-portal/spec.md#parishsoft-refresh-schedule-settings)
   is the recorded exception: its times are typed and shown in its schedule
   zone (decision 18).
-- **Daylight saving.** When a schedule is evaluated, a wall time that occurs
-  twice (clocks fall back) runs once, at its first occurrence. A wall time
-  that the spring-forward change skips runs at the first instant after the
-  gap, so 2:30 AM runs at 3:00 AM. No occurrence runs twice or is dropped
-  (`resolve_local`). A one-off time typed into a page still reads a skipped
-  time with the offset in force before the change, so 2:30 AM becomes 3:30
-  AM ([dates and times](#dates-and-times)). A later #1129 change moves typed
-  times onto `resolve_local`.
+- **Daylight saving.** One rule turns every local wall time into an instant,
+  whether a schedule is evaluated or a one-off time is typed into a page
+  ([dates and times](#dates-and-times)), on the server (`resolve_local`, and
+  `stewardship_resolve_local_v1` in the database) and in the page script
+  (`ParishLocalTime.moment`). A wall time that occurs twice (clocks fall
+  back) is its first occurrence, so it runs once. A wall time that the
+  spring-forward change skips is the first instant after the gap, so 2:30
+  AM is 3:00 AM, not 3:30 AM. No occurrence runs twice or is dropped, and a
+  form is never refused for a skipped time. The shared cases
+  (`tests/stewardship/fixtures/dst_cases.json`) pin the server and the page
+  script to the same instants
+  ([#1129](https://github.com/epiphany40223/parishkit/issues/1129)).
 - **Preview.** Before Review, an editor shows the schedule's next
   occurrences in plain words, each with its weekday and date, in the
-  browser's zone, and also in the schedule zone when that differs. The
+  browser's zone only, as every review does
+  ([#558](https://github.com/epiphany40223/parishkit/issues/558)); the
+  refresh schedule is the one list shown in its schedule zone
+  ([schedule previews](#schedule-previews)). The
   preview is redrawn in place as the editor changes
   ([in-place controls](#in-place-controls)), in a region that keeps its
   place ([no layout shift](#no-layout-shift)). The review lists every
   occurrence a change adds. A feature-specific view, such as the refresh
   schedule's seven-day preview or the Campaign calendar, is an extra view of
-  the same evaluation, not a second preview.
+  the same evaluation, not a second preview. Every list of a schedule's
+  occurrences, live or in a review, is drawn by the one
+  [schedule preview](#schedule-previews) component.
 - **Limits** are refused at the field in plain words, with the limit named,
   such as the 30-date limit on a reminder repeat.
 - **Host schedules.** Off-site backups are not edited in the Admin portal.
@@ -2225,11 +2583,198 @@ learned once. **Shared code.**
 
 **Adoption.** The ParishSoft refresh schedule follows all of these rules
 except the browser-zone entry, which is its recorded exception
-([#1122](https://github.com/epiphany40223/parishkit/issues/1122)). Later
+([#1122](https://github.com/epiphany40223/parishkit/issues/1122)), so its
+note names its schedule zone instead. The date-change review draws the
+shared zone note, as do System logs and Ministry requests; New and Edit
+scheduled email follows once its open changes land. The two mail
+repeat panels, New scheduled email's Repeat and the date-change review's
+Repeat a reminder, draw one repeat rule, so they offer the same choices in
+the same order and one page script expands both. Later
 [#1129](https://github.com/epiphany40223/parishkit/issues/1129) slices bring
-the shared zone note, preview and Basic and Advanced modes to the mail
-schedule editors, reminder repeats and digests. Until each change lands, an
+the shared preview and Basic and Advanced modes to the mail schedule
+editors, reminder repeats and digests. Until each change lands, an
 editor keeps the behavior its feature spec describes.
+
+### Schedule previews
+
+**Rule.** Every list of when a schedule runs or sends is drawn by one
+component: the server helper `parishkit.stewardship.occurrence_preview`
+and the template `components/occurrences.html`. It lists the schedule's
+occurrences, grouped by day, in plain words. It is read-only.
+**Why.** The refresh schedule's seven-day list and the mail schedule
+review's send times were built separately, with different words, time
+forms, empty states and daylight-saving notes. One component reads the
+same everywhere and is tested once. **Precedent.**
+[#1129](https://github.com/epiphany40223/parishkit/issues/1129)
+(Administrator, 2026-10-12). Each feature's own words and limits stay in
+its feature spec: the
+[seven-day preview](../admin-portal/spec.md#seven-day-preview) and the
+[mail schedule review](../admin-portal/spec.md#dates-and-mail-schedules).
+
+- **What it lists.** Each feature chooses one of two scopes, and its
+  feature spec names it:
+  - *a count from now*: the next occurrences after now, earliest first, up
+    to the feature's limit (the mail review's next five sends). Such a
+    list never shows an occurrence that has already passed; a review that
+    needs a past send (a missed reminder sent at once) says so in its own
+    words.
+  - *a window of whole days*: every occurrence on each local day of the
+    window, starting with today (the refresh schedule's seven days). Today
+    is listed whole, so its earlier times are shown with the rest of the
+    day's schedule. They are not marked as already run: the list shows
+    what the schedule does, not what has run.
+
+  Each occurrence is one line: its time, then what runs ("Full refresh",
+  "Reminder 2", "Daily Admin digest for Monday, October 19"). An
+  occurrence that will not run stays listed, struck through, with its
+  reason in words ("covered by the 06:00 full refresh"), so a struck line
+  never relies on the strike alone.
+- **Days.** Occurrences are grouped by their calendar day in the zone the
+  list is shown in. The day is named with its weekday and its date in the
+  [parish date format](#date-format), with "Today" for today.
+- **Time zone.** A list is shown in the browser's zone
+  ([dates and times](#dates-and-times)). The server groups it, so the
+  request that draws it carries the browser's zone (the hidden
+  `data-browser-zone` field New and Edit scheduled email already post);
+  where a page posts a zone and it is not usable, the preview is not drawn
+  and the page says why, as New scheduled email's missing-zone notice
+  does. A caller with no browser at all (the command line, or a review
+  built for a request that posts no zone) passes no zone: the list is then
+  not grouped by day, and each line is a full `data-local-instant` that the
+  page script writes as a day and time, if a page shows it at all. The
+  [refresh schedule](../admin-portal/spec.md#parishsoft-refresh-schedule-settings)
+  is the recorded exception (decision 18): it is grouped and shown in its
+  schedule zone, and the page script adds each time in the browser's zone
+  when the zones differ ("07:00, 13:00 your time"). No other list shows a
+  schedule-zone time.
+- **Times** are `<time datetime="…" data-local-instant data-time-only>`
+  elements with the UTC instant, so the one browser formatter
+  (`date-format-v1.js`) writes them as the time alone, since the day
+  heading or the line names the day. A schedule-zone list writes the wall
+  time on the server and marks the instant `data-other-zone-time`, which
+  the same script fills with the browser's time when the zones differ, in
+  the list's own 24-hour `HH:MM` form so the two times read alike.
+- **Daylight saving** follows the [one rule](#schedules). A day whose
+  clocks change in the shown zone says so beside its name ("clocks go
+  forward", "clocks go back"). An occurrence whose wall time the change
+  moves, in the zone its schedule is evaluated in, says so in words. When
+  the shown zone is the schedule zone (the refresh list, or a mail review
+  whose browser shares the campaign's zone), the line names the wall time:
+  "Reminder 1, set for 2:30 AM: sends at 3:00 AM, clocks go forward", or
+  "sends once, clocks go back". When the zones differ, the line never
+  names the campaign's wall time ([dates and times](#dates-and-times)):
+  "sends later than set because the campaign's clocks go forward", or
+  "sends once because the campaign's clocks go back". The day note always
+  speaks of the shown zone and the line of the campaign's clocks, so a
+  shifted line on a day with no note, or a note with no shifted line, does
+  not disagree. The general sentence ("a time that happens twice sends
+  once, and a time that is skipped sends right after the change") is shown
+  once, under the list, only when a listed day or occurrence is affected.
+  It speaks of sends, so a list of runs (the refresh list, whose lines
+  already say how each time runs; `verb="runs"` below) does not show it.
+- **More.** When the feature's limit cut a count list short, one line under
+  it says so with the limit named ("Only the next 5 sends are shown. Later
+  sends follow the same pattern."). A window list names its window in its
+  feature's words instead.
+- **States.** The component has four, so no feature writes its own:
+  - *shown*: the days and their occurrences;
+  - *empty*: the schedule is valid and nothing is ahead, in the feature's
+    words ("No more sends: this reminder's time has passed.");
+  - *unavailable*: the schedule cannot be evaluated yet (a rule that
+    cannot be read, a missing zone), in words naming what is missing
+    ("The preview shows once every rule can be read and the schedule has a
+    full refresh.");
+  - *paused*: the occurrences are listed as *shown*, with one notice above
+    them naming why and linking where to see more ("Live campaign email is
+    paused, so these sends are held. Pause and resume mail shows what sends
+    when mail resumes." with a link to Pause and resume mail). Paused sends
+    are not struck: the schedule is unchanged, and resume's recovery plan,
+    not the preview, decides what each held send becomes.
+- **Layouts.** *Grouped*: one collapsible section (`details` and
+  `summary`) per day, the summary giving the day and the feature's counts,
+  today open; for a list of many occurrences a day, such as the refresh
+  schedule. *Compact*: one list, one line per occurrence, each line naming
+  its day and, as a grouped summary does, the day's clock change; for a few
+  occurrences, such as a mail review. Both layouts take
+  the same context, so a feature changes layout without changing its
+  helper. The server groups by day rather than the page script, which
+  could name each line's day from `data-local-day`, because a grouped list
+  also carries per-day counts and clock changes that only the server knows,
+  and one grouping path serves both layouts; a zone-less caller gets the
+  ungrouped lines above.
+- **In place.** A live preview is redrawn in place as its editor changes
+  ([in-place controls](#in-place-controls)), inside a region that keeps its
+  place ([no layout shift](#no-layout-shift)), and the days a reader opened
+  or closed stay so, matched by date, not by position. Only a day whose
+  open state differs from what the server drew is the reader's choice;
+  every other day keeps the drawn state, so after midnight an untouched
+  list opens its new today. The preview is not a live
+  region: the editor's one status line announces a check's result.
+- **Accessibility.** The list is the text equivalent of any picture of the
+  same schedule (the refresh grid, the Campaign calendar's month grids),
+  which points to it. Each day's name is the `summary` (grouped) or begins
+  its line (compact), so a screen reader hears the day with each group.
+  Struck lines carry their reason in words. Color and shape are never the
+  only signal. The component draws no control besides the day sections.
+- **Extra views** read the same day data. The refresh schedule's seven-day
+  grid draws its cells from the component's days, so the two never
+  disagree.
+
+**API.** `occurrence_preview.build(occurrences, *, days=(), shown_zone=None,
+schedule_zone, now, limit=None, more=False, paused=None, layout="compact",
+empty=None, unavailable=None, verb="sends")` returns the include's context.
+`verb` ("sends" or "runs", the refresh list) picks the words of a shifted
+line and of the more line; a "runs" list leaves out the general
+daylight-saving sentence (`dst_note` is false), which speaks of sends.
+
+- Each occurrence is an `Occurrence(day, at, what, kind, wall=None,
+  struck=False, reason=None, shift=None)`. `day` is its local date in the
+  shown zone, which places it even when `at`, the UTC instant, is None (a
+  time that will not run, such as a covered quick time); a zone-less list
+  passes None. `wall` is the
+  schedule-zone wall time for a schedule-zone list, `kind` a class hook,
+  and `shift` "forward" or "back" from the daylight-saving rule.
+- Each `Day(date, change=None, summary=None, extra=None)` carries one
+  day's own data: its clock change in the shown zone, the feature's counts
+  for its summary, and `extra`, a mapping of feature keys copied into the
+  day's context (the refresh grid's `cells`). A window list passes one
+  `Day` per day of its window, so a day with no occurrences is still
+  listed; a count list may pass none, and `build` makes each day from its
+  occurrences, working out its clock change from `shown_zone`.
+- With no `shown_zone`, `build` does not group, makes no day headings and
+  never refuses: it returns one day-less list of lines (above).
+
+The context is:
+
+```text
+{"state": "shown" | "empty" | "unavailable",
+ "layout": "grouped" | "compact",
+ "shown_zone", "schedule_zone", "browser_zone": bool, "grouped": bool,
+ "paused": None | {"text", "url", "label"},
+ "message": text for empty or unavailable,
+ "days": [{"date", "weekday", "today", "change", "summary", "open",
+           ...the Day's extra keys,
+           "items": [{"at", "wall", "text", "kind", "struck",
+                      "reason", "shift_text"}]}],
+ "more": None | text, "dst_note": bool}
+```
+
+The include reads only its own keys; each line is drawn by
+`components/occurrence-line.html`, which only the include uses. A page
+draws it with
+`{% include 'stewardship/components/occurrences.html' with preview=… %}`;
+the include draws no title, so a feature that gives the list one draws it
+itself. In the grouped layout each day's `details` carries `data-day` (its
+ISO date) and today's carries `data-today`, which the page script uses to
+keep a reader's open days by date. `test_occurrences_component.py`
+renders each state and layout, and lists the templates that still draw an
+occurrence list by hand, so no new one is added.
+
+**Adoption.** The refresh schedule's seven-day list draws it (ADM-04
+slice 7b); the next
+[ADM-04](../../../plans/stewardship/admin-portal.md#adm-04-campaign-editor-content-schedules-and-previews)
+slice brings it to the mail schedule review. Until that lands, the review's
+feature spec stands.
 
 ## Tables
 
@@ -2783,12 +3328,26 @@ the audit log, not a download; the recorded exceptions are the System logs
 export and the command line's Census changes JSON Lines below. Every data export is offered as CSV, XLSX and PDF unless a
 recorded technical or design reason says otherwise (Administrator decision,
 2026-10-10); a page may add a format, such as the participation chart's PNG
-or System logs' JSON Lines. **Shared code.** `reports/pdf_design.py` and
+or System logs' JSON Lines. An export form is its format menu and its
+button; it carries no explanation of how each format writes dates or money
+(Administrator decision, 2026-10-17,
+[#1538](https://github.com/epiphany40223/parishkit/issues/1538)). **Shared code.** `reports/pdf_design.py` and
 `reports/xlsx_design.py`; `web/design_tokens.py`. The format rules for each file type (CSV neutralizing,
 money, headers) are in the reports'
 [shared report behavior](../reports/spec.md#shared-report-behavior).
 **Precedent.** #926, #929, and the Administrator's decisions of 2026-10-10
 on [#958](https://github.com/epiphany40223/parishkit/pull/958).
+
+Export forms and export status pages carry no sensitive-data banner
+(Administrator decision, 2026-10-17,
+[#1539](https://github.com/epiphany40223/parishkit/issues/1539)). A sentence
+that says what the file holds or leaves out (for example, that a Family
+link's private email-link part is not included) stays as plain help in the
+export form. The privacy line inside each downloaded file stays: it travels
+with the file to readers who never saw the page
+([file design](../reports/spec.md#file-design)). **Why.** The banner was a
+reminder that gated nothing; the protections are role checks, `no-store`,
+download windows and audit records.
 
 A download may split one combined page cell into its parts, because a
 spreadsheet needs one value per cell to sort, filter or merge on: the parts
@@ -2903,6 +3462,55 @@ must be one of the exceptions above (or the participation chart). The
 Limitations report (formerly Talents and limitations,
 [#970](https://github.com/epiphany40223/parishkit/issues/970)) offers all
 three formats; the guard checks its Members and Families tables in each.
+
+### Point-in-time downloads
+
+**Rule.** A download is a point-in-time copy of what the report shows when
+it is asked for; the portal keeps no copies and no history of earlier
+downloads, and no page lists them. A download made in the background (an
+export) has a status page only for its short life: it says the file is
+being prepared, starts the download once when the file is ready, offers
+Cancel while preparing and Retry after a failed run (until the export
+ends), and says until when the file can be downloaded again, in
+[browser-local time](#dates-and-times): the window's computed end, never a
+later recorded `expires_at`. There is no Regenerate. Once the
+export has ended (its window is over, it was cancelled, or a failed run
+can no longer be retried; see
+[point-in-time exports](../operations/spec.md#point-in-time-exports)), its
+status page and its download answer one fixed page, "This export is no
+longer available. Export it again from _report_.", whose link returns to
+the report the export came from. The page answers 410 Gone, not 404, since
+an open tab or the Back button still lands there. Its checks run in this
+order:
+
+1. the existing owner and capability check, so another user's export or an
+   unknown request id gets the existing denial or 404 and learns nothing of
+   the export or its report;
+2. the [not-current-campaign](#addresses-and-legacy-urls) 410;
+3. this page.
+
+When a ready file's window ends while its status page is open, Download
+becomes unavailable in place, with no reload, and the "until" line, which
+sits directly below Download with nothing between them, says instead "This
+download expired at _time_. Export it again from _report_.", in
+browser-local time, with the report linked
+([prerequisite gates](#prerequisite-gates)). The line keeps the height of
+the longer of its two sentences from the start, so nothing moves
+([no layout shift](#no-layout-shift)). The page counts to the end by the
+server's clock, and checks again when it is shown again (such as by Back)
+and whenever its status is redrawn, so a copy shown at or after the end
+shows Download unavailable at once. The server stays authoritative: after
+the end, the page's next load, Refresh status, Download or Retry answers
+the fixed page, as the in-place controls show any other refusal, so the
+server never draws the status page in that state. A failed export's Retry
+is not held this way; its "Retry is available until" time says when it
+ends. The window's length and setting,
+and what is deleted when an export ends, are the
+[point-in-time exports](../operations/spec.md#point-in-time-exports) rule.
+**Why.** The downloads are a point-in-time function: keeping their own
+copies is up to the people who downloaded them (the Administrator,
+2026-10-15). **Precedent.**
+[#1398](https://github.com/epiphany40223/parishkit/issues/1398).
 
 ## Family portal
 

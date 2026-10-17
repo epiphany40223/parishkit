@@ -23,6 +23,9 @@ and locks it (``campaign_views.lock_settings``):
   Apply posts to ``LIVE``, which the fixture server redirects to
   ``APPLIED``; ``LIVE_REFUSING`` is the same page whose Apply is answered
   with ``NOT_APPLIED``, the status of a change the installer refused.
+- ``DRAFT_SCHEDULED``: the same draft with mail schedules, whose dates and
+  time zone change on their own (#1330): Save waits while one of them and
+  another setting both changed.
 - ``LOCKED``: an archived campaign: nothing can change, so Save
   stays unavailable with its reason.
 
@@ -33,6 +36,7 @@ import json
 from types import SimpleNamespace
 from uuid import UUID
 
+from django import forms
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts import setup_help
@@ -43,6 +47,7 @@ from parishkit.stewardship.accounts.campaign_end_date import (
 )
 from parishkit.stewardship.accounts.campaign_forms import CampaignSettingsForm
 from parishkit.stewardship.accounts.campaign_views import (
+    DATES_ALONE,
     LOCKED_CLOSED,
     LOCKED_LIVE,
     MINISTRIES_ALONE,
@@ -55,6 +60,7 @@ DRAFT = "/campaign-settings-editor"
 DRAFT_REVIEW = "/campaign-settings-editor-review"
 DRAFT_REFUSED = "/campaign-settings-editor-refused"
 DRAFT_SETTLED = "/campaign-settings-editor-settled"
+DRAFT_SCHEDULED = "/campaign-settings-editor-scheduled"
 LIVE = "/campaign-settings-live"
 LIVE_REVIEW = "/campaign-settings-live-review"
 LIVE_MINISTRIES_REVIEW = "/campaign-settings-live-ministries-review"
@@ -118,8 +124,11 @@ def components(context, admin):
     """Every page above, keyed by its path (see the module docstring)."""
     values = context | {"admin_chrome": admin}
 
-    def page(form, *, state, path, refresh=None, live=False, opened=True):
-        """Campaign settings around ``form``, posting to ``path``."""
+    def page(
+        form, *, state, path, refresh=None, live=False, opened=True, scheduled=False
+    ):
+        """Campaign settings around ``form``, posting to ``path``;
+        ``scheduled`` is a draft with mail schedules."""
         return (
             "text/html",
             render_to_string(
@@ -137,6 +146,9 @@ def components(context, admin):
                     "end_saved": "2054-10-31" if live else None,
                     "end_check": end_check_words() if live else None,
                     "live_ministries": live,
+                    "ministries_alone": MINISTRIES_ALONE,
+                    "dates_alone": scheduled,
+                    "dates_alone_hint": DATES_ALONE,
                     "page_url": path,
                     "refresh_url": refresh or path,
                     "errors": summary_errors(form) if form.is_bound else [],
@@ -194,10 +206,13 @@ def components(context, admin):
     late.is_valid()
     late.add_error(
         "end_date",
-        "Some scheduled emails would no longer fit the campaign, such as "
-        "invitations or Reminders after the new end date. Change the end date "
-        "together with those mailings on Dates and mail schedules: reschedule "
-        "or delete each one there.",
+        forms.ValidationError(
+            "Some scheduled emails would no longer fit the campaign, such as "
+            "invitations or Reminders after the new end date. Change the end date "
+            "together with those mailings on Dates and mail schedules: reschedule "
+            "or delete each one there.",
+            code="end_date_refused",
+        ),
     )
     POSTS.update(
         {
@@ -211,6 +226,9 @@ def components(context, admin):
     )
     return {
         DRAFT: page(_form(VALUES), state="draft", path=DRAFT, refresh=DRAFT_SETTLED),
+        DRAFT_SCHEDULED: page(
+            _form(VALUES), state="draft", path=DRAFT_SCHEDULED, scheduled=True
+        ),
         DRAFT_SETTLED: page(
             _form(VALUES | {"name": "Renamed campaign", "base_digest": "b" * 64}),
             state="draft",

@@ -87,6 +87,9 @@ class CampaignWizard(Wizard):
     says it goes on without one. ``load`` is the campaign's ParishSoft
     data while it has no Families: "offer" (with ``refresh_key``, the
     button's request key) or "loading" once a refresh is under way.
+    ``creating`` marks step 1 before the campaign exists (``creation``):
+    Create the campaign draws its own action row inside its form, so the
+    shared row draws nothing.
     """
 
     upcoming: Step | None = None
@@ -94,6 +97,7 @@ class CampaignWizard(Wizard):
     no_schedules: bool = False
     load: str | None = None
     refresh_key: object = None
+    creating: bool = False
 
     @property
     def reviewable(self):
@@ -237,6 +241,64 @@ def build(
         load=load,
         refresh_key=uuid4() if load == "offer" else None,
     )
+
+
+# Why every later step is unavailable on Create the campaign (#1404 PR 3),
+# in both Admin steppers' "Not available yet: <reason>" form.
+CREATE_FIRST = _("Not available yet: Create the campaign first.")
+
+
+def creation():
+    """The stepper on Create the campaign, step 1 before the campaign exists.
+
+    Step 1 is Campaign settings, opened on Create the campaign's own
+    address, and every later step is unavailable until the campaign exists
+    (admin-portal spec, "Create the campaign"; ui-conventions "Wizards").
+    Share options is listed, because the campaign's modules are not chosen
+    yet; once the campaign exists it is shown only with Financial
+    stewardship. ``upcoming`` names step 2 for the summary's "Next:" line;
+    it has no address, so nothing links to it. Built from constants only:
+    drawing it reads nothing from the database.
+    """
+    steps = tuple(
+        Step(
+            number=number,
+            key=page.key,
+            label=page.label,
+            href=reverse("admin:campaign_create") if number == 1 else None,
+            url=reverse("admin:campaign_create") if number == 1 else None,
+            state="todo" if number == 1 else "blocked",
+            status=_("Not done yet") if number == 1 else CREATE_FIRST,
+            current=number == 1,
+        )
+        for number, page in enumerate(PAGES, start=1)
+    )
+    return CampaignWizard(
+        steps=steps,
+        previous=None,
+        next=None,
+        completed=0,
+        total=len(steps),
+        upcoming=steps[1],
+        creating=True,
+    )
+
+
+def for_creation(match, mode, *, admin):
+    """The stepper for Create the campaign while no campaign exists, or None.
+
+    Only an Administrator's Create the campaign page in Testing mode draws
+    it, as the page itself is admitted only then; every other page without
+    a current campaign draws no stepper.
+    """
+    if not (
+        admin
+        and mode == "testing"
+        and getattr(match, "namespace", None) == "admin"
+        and getattr(match, "url_name", None) == "campaign_create"
+    ):
+        return None
+    return creation()
 
 
 def resume(wizard):

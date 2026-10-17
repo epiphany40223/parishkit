@@ -6,7 +6,7 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
-from parishkit.stewardship.schema_primitives import canonical_timezone, typed
+from parishkit.stewardship.schema_primitives import canonical_timezone
 from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.refusals import UserFacingError
 from parishkit.stewardship.web.sender_name_field import SenderNameField
@@ -48,17 +48,6 @@ class SetupParishForm(ParishForm):
         value = self.cleaned_data["timezone"]
         return value if self.fields["timezone"].disabled else canonical_timezone(value)
 
-    def clean_website(self):
-        """Reject credential-bearing or parameterized URLs before temporary storage."""
-        value = self.cleaned_data["website"]
-        try:
-            typed(value, "url")
-        except ConfigError:
-            raise forms.ValidationError(
-                _("Use a website URL without credentials, query or fragment.")
-            ) from None
-        return value
-
 
 class IdentityLines(forms.CharField):
     """Normalize at most fifty distinct email addresses, one per line."""
@@ -78,11 +67,15 @@ class IdentityLines(forms.CharField):
         value = super().clean(value)
         lines = [line.strip() for line in value.splitlines() if line.strip()]
         if len(lines) > 50:
-            raise forms.ValidationError(_("Enter at most fifty addresses."))
+            raise forms.ValidationError(
+                _("Enter at most fifty addresses."), code="too_many"
+            )
         try:
             values = sorted({normalized_email(line) for line in lines})
         except ConfigError:
-            raise forms.ValidationError(_("Check the email addresses.")) from None
+            raise forms.ValidationError(
+                _("Check the email addresses."), code="invalid_email"
+            ) from None
         return values
 
 
@@ -157,7 +150,8 @@ class SetupSlackForm(AdminForm):
                 _(
                     "Enable Slack and supply a channel, "
                     "or disable it and clear the channel."
-                )
+                ),
+                code="channel_mismatch",
             )
         return values
 

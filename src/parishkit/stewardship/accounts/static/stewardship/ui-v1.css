@@ -6,9 +6,9 @@
  *   images, so there are no web fonts, CDN frameworks or data: URI images.
  *   Typography uses system font stacks; decoration is pure CSS.
  * - Templates and tests depend on the existing class names (.panel, .notice,
- *   .notice-error, .actions, .help, .flow, .table-scroll, .changed, .brand,
- *   .site-header, .skip-link, .content-editor, ...). Restyle
- *   them; do not rename them.
+ *   .notice-error, .notice-info, .actions, .help, .flow, .table-scroll,
+ *   .changed, .brand, .site-header, .skip-link, .content-editor, ...).
+ *   Restyle them; do not rename them.
  * - Every text/background pair below meets WCAG AA (4.5:1), and control
  *   boundaries and the focus ring meet the 3:1 non-text minimum. Re-check
  *   contrast when changing any color token.
@@ -115,9 +115,10 @@
   }
   /* The closed select's arrow is an image, so it cannot read --ink. */
   html.admin-document[data-theme="dark"] select:not([multiple]):not([size]) { background-image: url("select-arrow-dark-v1.svg"); }
-  /* A parish logo is drawn for a light header; a white backing behind its
-     transparent parts keeps a dark logo visible. It adds no size. */
-  html.admin-document[data-theme="dark"] .brand img { background-color: #fff; border-radius: var(--radius-small); }
+  /* An uploaded image (the parish logo, a Campaign image, a hosted image)
+     is drawn for the light Family pages and emails; a white backing behind
+     its transparent parts keeps a dark logo visible. It adds no size. */
+  html.admin-document[data-theme="dark"] :is(.brand img, img.branding-preview, .branding-preview img, .hosted-file-thumbnail) { background-color: #fff; border-radius: var(--radius-small); }
   /* A light card keeps its edge clear of the email's text on the dark page. */
   html.admin-document[data-theme="dark"] .light-card:not(.content-sample) { padding: 1rem; border-radius: var(--radius-small); }
 }
@@ -489,6 +490,37 @@ input[data-time-entry=list] { max-width: 24rem; }
 /* Inside a filter bar (the Family directory) the hint takes a line of its
    own under the fields, not a place in their row (#563). */
 .filter-bar > [data-complete-hint] { flex-basis: 100%; margin: 0; }
+/* System logs shows the server's refusal of a filter (#1332) in its gate's
+   reserved hint row, not in a line of its own, so the page is no taller
+   for it: the message and the hint share one grid cell, at the hint's
+   size, and the hint is hidden while the message shows (the two say the
+   same words for the same rule). The message's line is drawn empty, and
+   so takes no height, except on a refused page, where its invisible copy
+   keeps the row's height once the message clears (No layout shift). */
+.log-filter-messages { display: grid; margin-block: 0 1rem; font-size: .925rem; }
+.log-filter-messages > * { grid-area: 1 / 1; margin: 0; }
+.log-filter-messages > .field-error-line { min-height: 0; }
+.log-filter-messages:has(> .field-error-line > .errorlist:not([hidden])) > [data-complete-hint] { visibility: hidden; }
+/* The same for a form's own hint row (#1332: the Follow-up packet's limit,
+   an Additional information item's confirmation): the server's message
+   and the gate's hint share one cell. The row takes the hint's paragraph
+   margin, and only while the hint shows or on a refused page, where the
+   message's invisible copy keeps the row's height once it clears (No
+   layout shift), so the margin collapses as the hint's alone did and an
+   ordinary page lays out exactly as before. */
+.hint-row-messages { display: grid; }
+.hint-row-messages > * { grid-area: 1 / 1; margin: 0; }
+.hint-row-messages > .field-error-line { min-height: 0; font-size: .925rem; }
+.hint-row-messages > .field-error-line > .field-error-size:empty { display: none; }
+/* Not in a filter bar, whose gap spaces its items (below, #1332). */
+.hint-row-messages:not(.filter-bar > *):has(> [data-complete-hint]:not([hidden]), > .field-error-line > .field-error-size:not(:empty)) { margin-block: 0 1rem; }
+.hint-row-messages:has(> .field-error-line > .errorlist:not([hidden])) > [data-complete-hint] { visibility: hidden; }
+/* A form whose message line sits apart from its gate's reserved hint row
+   (the Additional information queue's Submitted dates, #1469): the hint,
+   in the server's words, is held hidden while the line shows them, so the
+   form says it once. Both keep their room, so nothing moves either way and
+   an unrefused page lays out as before. */
+.filter-line-hides-hint:has(> .field-error-line > .errorlist:not([hidden])) > [data-complete-hint] { visibility: hidden; }
 /* A reason line that keeps one line's height while empty, so its text
    coming or going never moves what follows (no layout shift; the Restore
    review's held-email rows, #537). */
@@ -556,6 +588,17 @@ textarea { max-width: 56rem; }
 /* Forms read best at a comfortable measure; forms holding a table keep the
    page width. */
 main form:not(:has(table)) { max-width: 60rem; }
+/* A secret field and its Show/Hide control (SecretInput, Secret fields in
+   the UX conventions spec, #1475) share one row at the text field's usual
+   width. Both words sit in one grid cell with the unused one invisible, so
+   the button keeps the longer word's width and pressing it moves nothing
+   (no layout shift, #736). The field's visually hidden name in the button
+   and the status line anchor to the row (position: relative). */
+.secret-field { position: relative; display: flex; gap: .5rem; align-items: stretch; max-width: 40rem; }
+.secret-field > input { flex: 1 1 auto; min-width: 0; max-width: none; }
+.secret-field > .secret-reveal { flex: none; display: inline-grid; place-content: center; margin: 0; }
+.secret-reveal > span { grid-area: 1 / 1; }
+.secret-reveal[data-shown=true] > .secret-reveal-show, .secret-reveal:not([data-shown=true]) > .secret-reveal-hide { visibility: hidden; }
 
 /* Buttons: primary by default; secondary for cancel, back, paging and tools. */
 button, .button { display: inline-block; vertical-align: middle; border: var(--button-border-width) solid var(--accent); border-radius: var(--radius-small); padding: var(--button-padding); min-height: var(--button-min-height); background: var(--accent); color: var(--paper); font-weight: var(--button-weight); line-height: 1.3; text-align: center; text-decoration: none; cursor: pointer; margin-block: 1rem .5rem; box-shadow: 0 1px 2px rgb(16 24 40 / 12%); transition: background-color .15s, border-color .15s, color .15s, box-shadow .15s; }
@@ -572,8 +615,11 @@ button, .button, .link-button, .sort-link, input[type=submit], input[type=button
 button:not(:disabled):hover, .button:hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--paper); box-shadow: 0 2px 6px rgb(16 24 40 / 16%); }
 button:not(:disabled):active { box-shadow: none; }
 button:disabled { cursor: not-allowed; opacity: .55; box-shadow: none; }
-.button-secondary, .actions > button[type=button], button[name=page], button[data-review-edit], [data-content-toolbar] button { background: var(--paper); color: var(--accent); border-color: var(--accent); box-shadow: none; }
-.button-secondary:not(:disabled):hover, .actions > button[type=button]:not(:disabled):hover, button[name=page]:not(:disabled):hover, button[data-review-edit]:not(:disabled):hover, [data-content-toolbar] button:not(:disabled):hover { background: var(--accent-soft); color: var(--accent-strong); box-shadow: none; }
+/* The secondary look comes only from its class ({% button variant="secondary" %}
+   or class "button-secondary" in script), never from where a button sits, so
+   a button's look is decided where it is drawn (#732). */
+.button-secondary { background: var(--paper); color: var(--accent); border-color: var(--accent); box-shadow: none; }
+.button-secondary:not(:disabled):hover { background: var(--accent-soft); color: var(--accent-strong); box-shadow: none; }
 .actions { display: flex; gap: .75rem 1rem; flex-wrap: wrap; align-items: center; }
 /* A submitted form (ui-v1.js): its clicked button turns muted with a small
    spinner and the form ignores repeat clicks until the next page loads. With
@@ -594,9 +640,14 @@ button.is-busy::after, .button.is-busy::after { content: ""; display: inline-blo
 [data-content-toolbar] { display: flex; flex-wrap: wrap; gap: .5rem; }
 [data-content-toolbar] button { margin: 0; padding-inline: .9rem; font-size: .925rem; }
 
-/* Notices keep a full border (visible in forced-colors mode) plus a status bar. */
+/* Notices keep a full border (visible in forced-colors mode) plus a status bar.
+   Three kinds (ui-conventions "Shared visual style", #732): .notice alone is
+   a warning, .notice-error a failure or refusal, and .notice-info neutral
+   information with nothing to beware of, in the "Working" status look's
+   tokens (test_design_tokens.py checks their contrast in both schemes). */
 .notice { padding: 1rem 1.25rem; background: var(--warning-bg); border: 1px solid var(--warning-border); border-inline-start-width: .35rem; border-radius: var(--radius-small); margin-block: 1rem; }
 .notice-error { background: var(--error-bg); border-color: var(--error-border); }
+.notice-info { background: var(--accent-soft); border-color: var(--accent); }
 .notice h2 { margin-top: 0; font-size: 1.1rem; }
 .notice ul { margin-bottom: 0; }
 /* System health's problems: one notice per problem, without list bullets. */
@@ -844,6 +895,12 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 .export-live > :first-child { margin-top: 0; }
 .export-state { font-size: 1.15rem; font-weight: 650; }
 .export-state-ready { color: var(--accent-strong); }
+/* A ready export's "until" line (#1398): its two sentences share one grid
+   cell, so the line is as tall as the longer one from the start and the
+   switch when the download window ends moves nothing (#736). */
+.export-window { display: grid; }
+.export-window > span { grid-area: 1 / 1; min-width: 0; }
+.export-window > [data-window-off] { visibility: hidden; }
 .button-large { font-size: 1.1rem; padding: .8rem 1.75rem; }
 .spinner { display: inline-block; width: 1em; height: 1em; margin-inline-end: .35em; vertical-align: -.15em; border: 2px solid var(--accent); border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
 /* An export panel collapsed below a report's filters. */
@@ -875,6 +932,18 @@ details.filter-panel > form:not(.filter-bar) > :is(p, [data-complete-hint]) { gr
 details.filter-panel > form:not(.filter-bar) > button { justify-self: start; margin: 0; }
 details.filter-panel > form:not(.filter-bar) > fieldset { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem 1rem; align-items: end; margin: 0; padding: .5rem .75rem .75rem; }
 details.filter-panel > form:not(.filter-bar) > fieldset > legend { grid-column: 1 / -1; margin: 0; font-size: .925rem; }
+/* A range's reserved message line (#1332) spans its fieldset after both
+   ends, or the form after Apply when the range has no fieldset. */
+details.filter-panel > form:not(.filter-bar) > .field-error-line,
+details.filter-panel > form:not(.filter-bar) > fieldset > .field-error-line { grid-column: 1 / -1; margin: 0; }
+/* A range whose message line sits in its fieldset, apart from the gate's
+   reserved hint row (Financial stewardship's dates and amounts, #1469):
+   the hint, in the server's words, is held hidden while a line shows them,
+   so the form says it once. Both keep their room (visibility only), so
+   nothing moves either way and an unrefused page lays out as before. The
+   class is the one the Additional information queue's form uses for a
+   line that is the form's own child. */
+.filter-line-hides-hint:has(> fieldset > .field-error-line > .errorlist:not([hidden])) > [data-complete-hint] { visibility: hidden; }
 /* The theme's short-field rule (a date's div, from 48rem, above) gives a
    date cell an end margin and caps its box at 14rem, which left the dates
    narrower than the selects beside them and ragged against the row above.
@@ -891,12 +960,20 @@ details.filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div
 /* Compact filter bars: short fields share one row on wider screens. */
 .filter-bar { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem 1rem; }
 .filter-bar label { margin: 0 0 .25rem; font-size: .925rem; }
+/* A filter-bar label row is at least as tall as its "i" button (1.75rem), tip or not, so a cell whose tip comes and goes (the directory's Export timezone) never changes its row's height and shifts the end-aligned cells beside it. */
+.filter-bar .label-row { min-height: 1.75rem; }
 .filter-bar > div { flex: 0 1 26rem; min-width: 12rem; }
 .filter-bar > div.short { flex: 0 1 9rem; }
 /* A field as wide as its longest choice, so a long option reads whole
    (Limitations' Show, #227); it still shrinks to the row on a phone. */
 .filter-bar > div.fit { flex: 0 1 auto; }
 .filter-bar button { margin: 0; }
+/* A filter bar's hint row with the server's refusal over the gate's hint
+   (.hint-row-messages, the Family directory's Exact Family code, #1332)
+   is the bar's last, full-width item with no margin of its own (the
+   bar's gap spaces it), as its hint alone was, so an ordinary page lays
+   out as before. */
+.filter-bar > .hint-row-messages { flex: 0 1 100%; }
 /* Short form fields side by side (the Ministry follow-up request, #1014).
    Unlike a filter bar the fields align at the top, since a time field keeps
    a reading line under its box; every label takes the height of a label
@@ -1088,8 +1165,8 @@ main nav.family-track { display: block; margin: 0; }
 .family-track button, .setup-track a { display: block; width: 100%; min-height: 44px; margin: 0; padding: 0; border: 0; background: none; box-shadow: none; cursor: pointer; position: relative; }
 .family-track button::before, .setup-track a::before { content: ""; position: absolute; inset-inline: 0; top: 50%; height: .45rem; transform: translateY(-50%); border-radius: 999px; background: var(--track); }
 .family-track .family-track-done::before, .setup-track .setup-track-done::before { background: var(--accent); }
-.family-track .family-track-current::before, .setup-track .setup-track-current::before { background: var(--gold, #b5862e); height: .6rem; }
-.family-track button::after, .setup-track a::after { content: attr(data-tip); position: absolute; top: calc(100% + .1rem); z-index: 2; display: none; width: max-content; max-width: min(16rem, 60vw); padding: .35rem .6rem; border-radius: .4rem; background: var(--ink, #1b2a31); color: var(--paper, #fff); font-size: .875rem; font-weight: 600; line-height: 1.3; text-align: start; white-space: normal; pointer-events: none; }
+.family-track .family-track-current::before, .setup-track .setup-track-current::before { background: var(--gold); height: .6rem; }
+.family-track button::after, .setup-track a::after { content: attr(data-tip); position: absolute; top: calc(100% + .1rem); z-index: 2; display: none; width: max-content; max-width: min(16rem, 60vw); padding: .35rem .6rem; border-radius: .4rem; background: var(--ink); color: var(--paper); font-size: .875rem; font-weight: 600; line-height: 1.3; text-align: start; white-space: normal; pointer-events: none; }
 /* Anchor each tooltip by where its segment sits (first, middle or last third)
    so, at no more than 60% of the viewport wide, it never runs off a phone. */
 .family-track .family-tip-start::after, .setup-track .setup-tip-start::after { inset-inline-start: 0; }
@@ -1396,14 +1473,16 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
    live-checked date (Campaign settings' end date, #1119) are taller
    than their minimum height, so a thicker border would grow them too; so
    would a Campaign images slot's file field, moving every slot below it
-   (#1410; its scope is in :where(), so the list keeps its specificity).
+   (#1410; its scope is in :where(), so the list keeps its specificity),
+   and so would a report filter's range ends, refused in place (#1332),
+   and a System logs filter field (#1332).
    A select is held at its minimum height and keeps the global 2px border. */
-:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file])[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
-:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file])[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(details.filter-panel > form > div, details.filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
+:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(details.filter-panel > form > div, details.filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 /* Forced colors draw no shadow: an outline inside the border marks it,
    except under keyboard focus, where the global 3px focus ring shows. */
 @media (forced-colors: active) {
-  :is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file])[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
+  :is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(details.filter-panel > form > div, details.filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
 }
 .schedule-row-messages { padding-top: .5rem; min-height: calc(1lh + .5rem); }
 .schedule-row-messages > * { margin: 0; }

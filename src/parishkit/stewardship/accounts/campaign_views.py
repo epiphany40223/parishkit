@@ -13,6 +13,7 @@ from urllib.parse import urlencode
 from uuid import uuid4
 
 from django.core import signing
+from django.core.exceptions import ValidationError
 from django.db import DatabaseError
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
@@ -48,6 +49,7 @@ from parishkit.stewardship.web.refusals import (
     UserFacingStale,
     stale_page,
     unexpected_fields,
+    with_default_code,
 )
 
 from . import admin_navigation, field_tips, setup_help
@@ -122,6 +124,15 @@ MINISTRIES_ALONE = _(
 MINISTRIES_ALONE_FIX = _(
     "Put the end date and leader roles back as they were and review the "
     "Ministries; once that is applied, change the rest."
+)
+# A draft's dates and time zone, while it has mail schedules, are reviewed
+# with every mailing on Dates and mail schedules (``_draft_review``), so they
+# change on their own there; Save waits with these words meanwhile (#1330).
+WINDOW_FIELDS = ("start_date", "end_date", "timezone")
+DATES_ALONE = _(
+    "Change the dates and time zone on their own: this campaign has mail "
+    "schedules, and Dates and mail schedules reviews the new dates with every "
+    "mailing. Save the other settings separately."
 )
 # A live campaign's end date: the help that replaces the draft's, since the
 # date may move either way (#912).
@@ -568,6 +579,12 @@ def _page(
             "end_check": None if live_at is None else end_check_words(),
             # A live campaign's open Ministry list says what a change does.
             "live_ministries": not editable and "ministry_duids" in open_fields,
+            # Review waits while the Ministries and another setting both
+            # changed, in the words the server refuses that with (#1330).
+            "ministries_alone": MINISTRIES_ALONE,
+            # A draft with mail schedules changes its dates on their own.
+            "dates_alone": editable and has_schedules(configuration, campaign),
+            "dates_alone_hint": DATES_ALONE,
             "family_test_url": chosen_family_test_url(configuration, campaign),
             # Review posts here, and the review dialog's Apply too.
             "page_url": request.path,
@@ -580,6 +597,8 @@ def _page(
     )
     if status != 200:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return response
 
 
@@ -673,6 +692,16 @@ def review_settings(service, actor, state, campaign, editable, opened, form, rea
     return _live_review(service, actor, state, campaign, form, (open_fields, live_at))
 
 
+def has_schedules(configuration, campaign):
+    """Whether ``configuration`` holds a mail schedule of ``campaign``."""
+    return any(
+        row["values"]["campaign_id"] == str(campaign.pk)
+        for row in configuration.active_configuration.canonical_document[
+            "sections"
+        ].get("schedules", [])
+    )
+
+
 def _answer(request, review, page):
     """Answer a Review post with ``review_settings``' result.
 
@@ -710,23 +739,16 @@ def _draft_review(service, actor, state, campaign, form):
     }
     if not changed:
         raise UserFacingError(UNCHANGED, fix=_("Nothing was changed."))
-    window_fields = {"start_date", "end_date", "timezone"}
-    if window_fields.intersection(changed) and any(
-        row["values"]["campaign_id"] == str(campaign.pk)
-        for row in configuration.active_configuration.canonical_document[
-            "sections"
-        ].get("schedules", [])
-    ):
-        if set(changed) - window_fields:
+    window = [name for name in WINDOW_FIELDS if name in changed]
+    if window and has_schedules(configuration, campaign):
+        if set(changed) - set(WINDOW_FIELDS):
+            # At the first changed window field, in the words the page's
+            # Save already waits with (data-change-alone, #1330).
             form.add_error(
-                None,
-                _(
-                    "No settings have been saved. Reconcile dates and mail schedules "
-                    "first using the schedule editor, then save other draft settings."
-                ),
+                window[0], ValidationError(DATES_ALONE, code="schedules_first")
             )
             return None
-        return {"reconcile": {name: values[name] for name in sorted(window_fields)}}
+        return {"reconcile": {name: values[name] for name in sorted(WINDOW_FIELDS)}}
     patch = [
         {
             "operation": "update",
@@ -743,9 +765,12 @@ def _draft_review(service, actor, state, campaign, form):
     except ConfigError:
         form.add_error(
             None,
-            _(
-                "Check the campaign name and dates. Existing invitation and "
-                "reminder times must remain within the campaign."
+            ValidationError(
+                _(
+                    "Check the campaign name and dates. Existing invitation and "
+                    "reminder times must remain within the campaign."
+                ),
+                code="candidate_refused",
             ),
         )
         return None
@@ -843,7 +868,12 @@ def _live_review(service, actor, state, campaign, form, opened):
             if refusal is not None
             else [item for errors in end_form.errors.values() for item in errors]
         )
-        form.add_error("end_date", " ".join(str(text) for text in texts if text))
+        form.add_error(
+            "end_date",
+            ValidationError(
+                " ".join(str(text) for text in texts if text), code="end_date_refused"
+            ),
+        )
         return None
     patch = [
         {
@@ -1100,7 +1130,9 @@ def campaign_end_date_check(request, campaign_id):
                 for name, values in request.POST.lists()
             )
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(
+                request.GET, request.POST, allowed=allowed, multiple=MULTIPLE_FIELDS
+            )
         with read_transaction():
             state = _state(service)
             configuration, campaigns, _source, held = state[:4]

@@ -1,0 +1,14 @@
+{% load i18n %}{% comment %}
+  A setup test page's notice for a test that was not sent (#1476), drawn
+  inside the test panel after its action row, so it never moves Back or
+  Send. ``failure`` (setup_mail_views.failure) is set only while the newest
+  test of the current draft revision was not sent; the panel is re-read in
+  place once a test settles, so the notice comes and goes with the result.
+  It repeats the provider's rejected-key advice and links each step that
+  fixes the test; saving a fix there opens the next step not done yet,
+  never Review first.
+{% endcomment %}{% if failure %}<div class="notice notice-error" data-setup-test-failed>
+<p>{% translate "The latest test was not sent." %} {% translate "A common cause:" %} {{ failure.advice }}</p>
+<p>{% translate "What to do: check the steps below and correct what is wrong. After you save a change, setup takes you through any step it affects and back to the tests, to send new ones." %}</p>
+{% for step in failure.steps %}<p><a href="{{ step.url }}">{% blocktranslate trimmed with step=step.label %}Go to “{{ step }}”{% endblocktranslate %}</a></p>{% endfor %}
+</div>{% endif %}

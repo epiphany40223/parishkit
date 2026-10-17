@@ -11,7 +11,6 @@ ACTIONS = {
     "cancel": "report_export_cancel",
     "retry": "report_export_retry",
     "download": "report_export_download",
-    "regenerate": "report_export_regenerate",
 }
 
 

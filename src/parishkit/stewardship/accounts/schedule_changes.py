@@ -12,6 +12,7 @@ transaction.
 
 from uuid import uuid4
 
+from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
@@ -21,6 +22,7 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.wall_clock import WEEKDAYS
 from parishkit.stewardship.web.refusals import stale_page
 
+from . import admin_editing, schedule_local
 from .admin_editing import sign_preview
 from .campaign_views import _state
 from .content_forms import EMAIL_LABELS
@@ -82,6 +84,38 @@ def confirm_scope(service, campaign_id, *, page=False):
     if page:
         refuse_archived(state, campaign_id)
     return state[0], fingerprint(state[-1], work_summary(campaign_id))
+
+
+def reviewed_sends(changes, prior, before_zone, after_zone):
+    """The send instants a schedule change sets that are still ahead (#1464).
+
+    ``changes`` are the change's schedule rows, ``prior`` the saved values by
+    id, and the zones the campaign's before and after the change. Each added
+    or changed dated schedule (a digest has no one send) whose resolved
+    moment differs from its saved one, and is after the database's clock
+    now, is listed as an ISO 8601 instant; the confirmation refuses once any
+    has passed (``admin_editing.refuse_passed_sends``). A moment already
+    past at review is not listed: the ordinary Edit may move its reminder
+    into the past, and a series edit may add a missed reminder again, both
+    meant to send at once. Returns the sorted, distinct instants.
+    """
+    now = admin_editing.database_now()
+    due = set()
+    for row in changes:
+        values = row.get("values")
+        if not values or not values.get("date"):
+            continue  # a delete, or a digest
+        moment = schedule_local.instant(values, after_zone, now)
+        saved = prior.get(row["id"])
+        if (
+            saved is not None
+            and saved.get("date")
+            and schedule_local.instant(saved, before_zone, now) == moment
+        ):
+            continue  # a send time the change leaves as it was
+        if moment > now:
+            due.add(moment.isoformat())
+    return sorted(due)
 
 
 def describe(values, campaign):
@@ -178,7 +212,9 @@ def build_preview(
         len(added) != len(added_forms)
         or any(index >= len(added) for item in series for index in item["added"])
     ):
-        window.add_error(None, SERIES_UNMATCHED)
+        window.add_error(
+            None, ValidationError(SERIES_UNMATCHED, code="series_unmatched")
+        )
         return None
     remembered = [
         {
@@ -222,12 +258,14 @@ def build_preview(
     if base is None or base.digest != digest:
         raise StaleRecordError("The applied configuration changed.")
     if not patch and not remembered:
-        window.add_error(None, NO_CHANGES)
+        window.add_error(None, ValidationError(NO_CHANGES, code="unchanged"))
         return None
     if any(row["operation"] == "add" for row in remembered) and not uses_users(
         base.document()
     ):
-        window.add_error(None, SERIES_NEEDS_USERS)
+        window.add_error(
+            None, ValidationError(SERIES_NEEDS_USERS, code="series_needs_users")
+        )
         return None
     # An added email comes before the schedule that sends it, and a new
     # series follows the reminders it holds.
@@ -240,7 +278,13 @@ def build_preview(
         build_candidate(base, patch, candidate_id=uuid4())
     except (ConfigError, ValueError):
         # With an added email, the email is the likelier cause (#446).
-        window.add_error(None, EMAIL_DOES_NOT_FIT if content else DOES_NOT_FIT)
+        window.add_error(
+            None,
+            ValidationError(
+                EMAIL_DOES_NOT_FIT if content else DOES_NOT_FIT,
+                code="candidate_refused",
+            ),
+        )
         return None
     summary = work_summary(campaign.pk)
     prior = {row["id"]: row["values"] for row in schedules.previous}
@@ -296,5 +340,13 @@ def build_preview(
             patch=patch,
             salt=salt,
             snapshot=fingerprint(state[-1], summary),
+            # Each send time still ahead now, which the confirmation checks
+            # again: a review lives 15 minutes (#1464).
+            due=reviewed_sends(
+                schedule_changes,
+                prior,
+                campaign.active_configuration.values["timezone"],
+                window.values()["timezone"],
+            ),
         ),
     }

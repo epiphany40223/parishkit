@@ -269,6 +269,12 @@ def applied_filters(query, ignore=()):
     )
 
 
+# Also a template filter: an empty report table tells "nothing matches these
+# filters" from "nothing to show yet" with the panel's own count (#227), so
+# the message and the panel summary never disagree.
+register.filter("applied_filters", applied_filters)
+
+
 @register.tag
 def filterpanel(parser, token):
     """Wrap a report's filter form in a collapsible "Filters" panel (#227).
@@ -284,10 +290,12 @@ def filterpanel(parser, token):
     the Family directory passes it (Administrator decision, #227). Otherwise
     the panel starts closed so the report's data
     comes first, and renders open whenever any filter is applied, so an
-    applied filter is never hidden behind it. Its summary names how many are
-    applied; that count is a data-table-sync node with a stable id, so it
-    follows an in-place Apply while the panel and the form keep their
-    elements (ui-v1.js ``syncControls``).
+    applied filter is never hidden behind it, or a filter is refused at its
+    field (``filter_error``, #1332), so the error is never hidden either.
+    Its summary names how many are applied; that count is a
+    data-table-sync node with a stable id, so it follows an in-place Apply
+    while the panel and the form keep their elements (ui-v1.js
+    ``syncControls``).
     """
     bits = token.split_contents()
     # A trailing bare ``open`` makes the panel open by default.
@@ -330,12 +338,59 @@ class FilterPanelNode(template.Node):
             '<details class="filter-panel" data-filter-panel{}>'
             '<summary>{}: <span id="table-filters-applied" data-table-sync>{}</span>'
             "</summary>{}</details>",
-            mark_safe(" open") if count or self.default_open else "",
+            mark_safe(" open")
+            if count or self.default_open or context.get("filter_error")
+            else "",
             _("Filters"),
             label,
             # Template output is already escaped and marked safe.
             self.nodelist.render(context),
         )
+
+
+@register.simple_tag
+def filter_mark(error, field, described=""):
+    """A report filter field's ``aria-describedby``, and its mark if refused.
+
+    Usage: ``<input id="first-end" …{% filter_mark filter_error "first_end"
+    "first-help" %}>`` with the field's query name and the ids that always
+    describe it (none, or a space-separated list). When the server refused
+    it (``filter_error``, ``web.filter_errors``, #1332) the field is marked
+    in error and its line's message id is added to those ids, in the one
+    attribute; otherwise only the given ids are written, if any.
+    """
+    ids = described.split()
+    marked = bool(error) and field in error["fields"]
+    if marked:
+        ids.append(f"{error['line']}_error")
+    return format_html(
+        "{}{}",
+        mark_safe(' aria-invalid="true"') if marked else "",
+        format_html(' aria-describedby="{}"', " ".join(ids)) if ids else "",
+    )
+
+
+@register.simple_tag
+def filter_line(error, line, sizes=None):
+    """A report filter's reserved message line, showing its refusal if any.
+
+    The line is always drawn, hidden and empty until the server refuses a
+    field it serves, and keeps the height of the longest message it may
+    show (``sizes``, from ``web.filter_errors.line_sizes``), so a refusal
+    drawn in place moves nothing (No layout shift). Its list's id,
+    ``<line>_error``, is what ``filter_mark`` describes a field by and what
+    ui-v1.js ``showFieldErrors`` fills on an in-place Apply.
+    """
+    shown = bool(error) and error["line"] == line
+    return format_html(
+        '<div class="field-error-line"><span class="field-error-size" '
+        'aria-hidden="true">{}</span><ul class="errorlist" id="{}_error"{}>'
+        "<li>{}</li></ul></div>",
+        (sizes or {}).get(line, ""),
+        line,
+        "" if shown else mark_safe(" hidden"),
+        error["message"] if shown else "",
+    )
 
 
 @register.inclusion_tag("stewardship/table-sort-heading.html", takes_context=True)

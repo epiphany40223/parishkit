@@ -16,10 +16,11 @@ drop to two digits, while ISO stays ISO.
 import re
 from contextlib import contextmanager
 from contextvars import ContextVar
-from datetime import UTC, date, datetime, time
+from datetime import date, datetime, time
 from typing import NamedTuple
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from parishkit.stewardship.campaigns.intervals import resolve_local
 from parishkit.stewardship.schema_primitives import timezone_names
 
 DEFAULT = "us_long"
@@ -191,17 +192,18 @@ def parish_zone():
     return zone or "UTC"
 
 
-def refuse_zoneless_dates(parameters, expected):
+def refuse_zoneless_dates(parameters, expected, dates=("start", "end")):
     """Refuse an export form from a page loaded before its dates had a zone.
 
     Such a form (a tab opened before #558's release) sends every expected
-    field except ``zone``. With dates in it, :class:`UnknownZone` lets the
-    view say to reload the page rather than call the fields invalid.
+    field except ``zone``. With any of its ``dates`` fields filled,
+    :class:`UnknownZone` lets the view say to reload the page rather than
+    call the fields invalid.
     """
     if (
         "zone" not in parameters
         and expected - {"zone"} <= set(parameters)
-        and (parameters.get("start") or parameters.get("end"))
+        and any(parameters.get(name) for name in dates)
     ):
         raise UnknownZone("The export form came from a page without zones.")
 
@@ -218,21 +220,20 @@ def browser_instant(day, clock, zone):
     outside the IANA catalog raises :class:`UnknownZone`, a ``ValueError``
     the caller can tell apart.
 
-    Daylight-saving edges never reject the form: a time that occurs twice
-    (clocks fall back) is the first occurrence, and a time skipped when clocks
-    spring forward uses the offset in force before the change, so 2:30 AM is
-    stored as 3:30 AM daylight time. Both follow ``zoneinfo``'s ``fold=0``.
-    Within the hour after the change, that shift can turn a skipped time
-    just typed into a future instant, which the caller's not-in-the-future
-    check then refuses.
+    Daylight-saving edges never reject the form. They follow the one rule
+    every schedule uses (ui-conventions#schedules, ``resolve_local``): a time
+    that occurs twice (clocks fall back) is the first occurrence, and a time
+    skipped when clocks spring forward is the first instant after the gap, so
+    2:30 AM is stored as 3:00 AM daylight time (not ``zoneinfo``'s ``fold=0``
+    reading, 3:30 AM).
     """
     if not (_DAY.fullmatch(day) and _CLOCK.fullmatch(clock)):
         raise ValueError("Use the date and time controls' own format.")
-    tzinfo = browser_zone(zone)
+    browser_zone(zone)  # Refuses a blank or unknown zone before resolving.
     local = datetime.combine(date.fromisoformat(day), time.fromisoformat(clock))
     try:
-        return local.replace(tzinfo=tzinfo).astimezone(UTC)
-    except OverflowError:  # e.g. 0001-01-01 east of UTC, 9999-12-31 west
+        return resolve_local(local, zone)
+    except ValueError:  # e.g. 0001-01-01 east of UTC, 9999-12-31 west
         raise ValueError("That date is out of range.") from None
 
 
@@ -241,9 +242,9 @@ def browser_day_start(day, zone):
 
     A day filter covers ``[browser_day_start(day), browser_day_start(day + 1))``,
     so a daylight-saving day is 23 or 25 hours long. Where clocks spring
-    forward at midnight, so the day has no 00:00, 00:00 is read with the
-    offset in force before the change (as :func:`browser_instant` does): the
-    day then starts at the change itself, shown as 01:00.
+    forward at midnight, so the day has no 00:00, the day starts at the first
+    instant after the gap (as :func:`browser_instant` reads it): the change
+    itself, shown as 01:00.
     Raises :class:`UnknownZone` for a blank or unknown zone.
     """
     return browser_instant(day.isoformat(), "00:00", zone)

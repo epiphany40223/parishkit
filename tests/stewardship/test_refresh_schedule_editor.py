@@ -498,14 +498,16 @@ def test_the_line_beside_save_is_the_cost_when_nothing_is_wrong():
         "about 7.3 minutes (typical; not yet measured)."
     )
     # A full-only schedule's days count full refreshes only (#1122).
-    assert shown_view.preview["days"][0]["counts"].startswith("1 full refresh, about")
+    assert shown_view.preview["list"]["days"][0]["summary"].startswith(
+        "1 full refresh, about"
+    )
     assert shown_view.preview["other_mark"] is None
     assert shown_view.preview["freshness"] == (
         "New ParishSoft data arrives at least every 1 day (02:00 to 02:00). If a "
         "full refresh is more than 30 minutes late, Administrators are alerted."
     )
     assert shown_view.nightly == "02:00"
-    assert len(shown_view.preview["days"]) == 7
+    assert len(shown_view.preview["list"]["days"]) == 7
 
 
 def test_the_page_draws_rows_templates_and_the_switch():
@@ -647,7 +649,9 @@ def test_the_editor_has_no_live_region_and_gives_the_script_its_words():
     outside = re.sub(r"<dialog.*?</dialog>", "", html, flags=re.S)
     assert 'role="status"' not in outside and "aria-live" not in outside
     assert 'data-schedule-zone="America/New_York"' in html
-    assert "data-browser-zone-text=" in html and "data-browser-time-text=" in html
+    assert "data-browser-zone-text=" in html
+    # Each listed time's browser time is the shared preview's own words.
+    assert "data-browser-time-text=" not in html
     assert f"has {{count}} times, but a schedule has at most {RULE_ROWS} rules" in html
     assert f"A schedule has at most {RULE_ROWS} rules." in html
     assert f"A schedule has at most {SKIP_ROWS} skips." in html

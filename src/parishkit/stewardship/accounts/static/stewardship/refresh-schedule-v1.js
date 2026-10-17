@@ -32,10 +32,24 @@
 // A stored quick rule (which the editor no longer offers) is a row without
 // controls; Remove quick updates takes every such row out at once, a change
 // reviewed like any other.
-(() => {
+// Once a change is applied in the review dialog (#750), the page redraws the
+// settings form's region with a fresh editor, and this script wires that one
+// (wireEditor runs again, on the region's parishkit:swap). Each wiring's
+// listeners outside the editor, its pending check and its timer end with the
+// next wiring (its AbortController), so only the editor on the page acts.
+(function wireEditor() {
   const root = document.querySelector("[data-refresh-schedule]");
   const form = root && root.closest("form");
   if (!root || !form) return;
+  wireEditor.wiring?.abort();
+  wireEditor.wiring = new AbortController();
+  const {signal} = wireEditor.wiring;
+  if (!wireEditor.watching) {
+    wireEditor.watching = true;
+    document.addEventListener("parishkit:swap", (event) => {
+      if (event.target instanceof Element && event.target.querySelector("[data-refresh-schedule]")) wireEditor();
+    });
+  }
   const csrf = form.querySelector('input[name="csrfmiddlewaretoken"]');
   const basicSets = JSON.parse(document.getElementById("refresh-schedule-basic")?.textContent || "[]");
   const SCOPES = ["rules", "skips"];
@@ -96,7 +110,8 @@
 
   // Save is unavailable while a changed schedule has problems (the check's
   // data-blocking). Real disabled, as the other Save gates use; this gate
-  // only re-enables what it disabled, and leaves the time entry's own mark.
+  // only re-enables what it disabled, and leaves the other gates' marks
+  // (the time entry's, and ui-v1.js's change gate, #1330) holding it.
   let blocking = root.dataset.blocking === "true";
   const submits = () => [...form.elements].filter((node) =>
     (node instanceof HTMLButtonElement || node instanceof HTMLInputElement) && node.type === "submit");
@@ -136,34 +151,26 @@
         node.setAttribute("data-schedule-gated", "");
       } else if (node.hasAttribute("data-schedule-gated")) {
         node.removeAttribute("data-schedule-gated");
-        node.disabled = node.hasAttribute("data-time-gated");
+        node.disabled = [...node.attributes].some(({name}) => /^data-[a-z-]+-gated$/.test(name));
       }
     });
   };
 
   // The browser's own zone, when it is not the schedule's (the current
-  // campaign's, else the parish's): say so once and add each preview time
-  // in the browser's clock.
+  // campaign's, else the parish's): say so once. Each preview time in the
+  // browser's clock is the shared schedule preview's data-other-zone-time,
+  // which date-format-v1.js fills (#1129).
   const scheduleZone = root.dataset.scheduleZone;
   const browserZone = (() => {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch { return ""; }
   })();
   const otherZone = browserZone && browserZone !== "Etc/Unknown" && browserZone !== scheduleZone;
-  const browserClock = otherZone ? new Intl.DateTimeFormat("en-GB",
-    {hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: browserZone}) : null;
-  const browserTimes = (scope) => {
-    if (!browserClock) return;
-    scope.querySelectorAll("[data-browser-time]").forEach((node) => {
-      node.textContent = ` ${words("browserTimeText", {time: browserClock.format(new Date(node.dataset.browserTime))})}`;
-    });
-  };
   // Drawn as the page loads, before anything is pointed at or focused, so
   // not through steady (below).
   if (otherZone) {
     const note = root.querySelector("[data-browser-zone-note]");
     note.textContent = words("browserZoneText", {zone: browserZone});
     note.hidden = false;
-    browserTimes(part("preview"));
   }
 
   // A row's problems belong to its controls: each is described by the row's
@@ -199,13 +206,13 @@
   // the window points at nothing.
   let pointer = null;
   const track = (event) => { pointer = {x: event.clientX, y: event.clientY}; };
-  document.addEventListener("pointermove", track, {passive: true});
-  document.addEventListener("pointerdown", track, {passive: true});
+  document.addEventListener("pointermove", track, {passive: true, signal});
+  document.addEventListener("pointerdown", track, {passive: true, signal});
   document.addEventListener("pointerup", (event) => {
     if (event.pointerType !== "mouse") pointer = null;
-  });
-  document.addEventListener("pointercancel", () => { pointer = null; });
-  document.documentElement.addEventListener("pointerleave", () => { pointer = null; });
+  }, {signal});
+  document.addEventListener("pointercancel", () => { pointer = null; }, {signal});
+  document.documentElement.addEventListener("pointerleave", () => { pointer = null; }, {signal});
   // The browser's own scroll anchoring stays on for the page, so a note the
   // header's polls show above main moves nothing. The regions steady (below)
   // manages opt out of it (ui-v1.css), so it does not add a second
@@ -406,14 +413,21 @@
     if (line && fresh && "basicNeed" in line.dataset) checkedLine = fresh.innerHTML;
     else if (line && fresh && line.textContent.trim() !== fresh.textContent.trim()) line.innerHTML = fresh.innerHTML;
     replaceIfChanged(part("summary"), check.querySelector('[data-schedule-part="summary"]'));
-    // The days a reader opened stay open.
+    // The days a reader opened (or closed) stay so, matched by date
+    // (data-day), not position, so a list that moves on past midnight keeps
+    // them. Only a day whose open state differs from what the server drew
+    // (today open, marked data-today; the rest closed) is the reader's
+    // choice; every other day keeps the server's, so after midnight an
+    // untouched list opens its new today.
     const preview = part("preview");
-    const opened = [...preview.querySelectorAll("details")].map((day) => day.open);
+    const opened = new Map([...preview.querySelectorAll("details[data-day]")]
+      .filter((day) => day.open !== day.hasAttribute("data-today"))
+      .map((day) => [day.dataset.day, day.open]));
     replaceIfChanged(preview, check.querySelector('[data-schedule-part="preview"]'));
-    preview.querySelectorAll("details").forEach((day, index) => {
-      if (index < opened.length) day.open = opened[index];
+    preview.querySelectorAll("details[data-day]").forEach((day) => {
+      if (opened.has(day.dataset.day)) day.open = opened.get(day.dataset.day);
     });
-    browserTimes(preview);
+    if (window.ParishDates) window.ParishDates.localize(preview);
     SCOPES.forEach((scope) => rowList(scope).forEach((row, index) => {
       const messages = row.querySelector("[data-row-messages]");
       const answerRow = check.querySelector(`[data-check-row="${scope}-${index}"]`);
@@ -455,6 +469,13 @@
     const mine = latest;
     timer = window.setTimeout(() => run(mine), delay);
   };
+  // A redrawn editor replaces this one: its waiting or running check is
+  // dropped, so no late answer is drawn into the new editor.
+  signal.addEventListener("abort", () => {
+    window.clearTimeout(timer);
+    latest += 1;
+    if (controller) controller.abort();
+  });
 
   // Adding and removing rows. Each row's Remove is drawn by the server (and
   // in the row template), so every row, saved or new, can be removed.
@@ -652,13 +673,13 @@
   // The time entry re-enables Save as soon as an entry reads again (on
   // input, and on focusout at the document); keep this gate's verdict until
   // the next check answers by gating after it, at the window.
-  window.addEventListener("input", () => { gate(); markRows(); });
-  window.addEventListener("focusout", () => { gate(); markRows(); });
+  window.addEventListener("input", () => { gate(); markRows(); }, {signal});
+  window.addEventListener("focusout", () => { gate(); markRows(); }, {signal});
   // The back/forward cache can restore rows and values without events.
   window.addEventListener("pageshow", (event) => {
     SCOPES.forEach((scope) => rowList(scope).forEach(applyShape));
     if (event.persisted) schedule(0);
-  });
+  }, {signal});
   markRows();
   gate();
 })();

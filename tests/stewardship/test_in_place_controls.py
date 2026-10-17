@@ -322,22 +322,25 @@ def test_campaign_test_send_is_in_place_and_live():
 def test_backup_test_access_is_in_place():
     """Off-site backups' Test access posts in place (#519): only the backup
     page's settings form is data-in-place, naming the status line region,
-    and its Save is marked data-in-place-native so it still submits
-    natively. The settled check's follow-up re-reads the status line in
-    place instead of reloading the page."""
+    and Test access is no Review (data-review-skip), while Save opens the
+    review dialog (#750). The settled check's follow-up re-reads the status
+    line in place instead of reloading the page."""
     text = (TEMPLATES / "integration-settings.html").read_text()
-    form = re.search(
-        r'<form method="post" class="panel" autocomplete="off"[^>]*>', text
-    )
+    form = re.search(r'<form method="post"[^>]*id="integration-form"[^>]*>', text)
     assert (
-        "{% if target == 'backup' %} action=\"#integration-status\" "
+        "{% if target == 'backup' %} action=\"{{ page_url }}#integration-status\" "
         'data-in-place="backup-test"'
     ) in form.group(0)
+    assert 'data-review-open="integration-review"' in form.group(0)
     assert names_region(text, "integration-status")
+    test = re.search(
+        r'\{% button type="submit" name="action" value="test"[^%]*%\}', text
+    ).group(0)
+    assert "data-review-skip" in test
     save = re.search(
         r'\{% button type="submit" name="action" value="preview"[^%]*%\}', text
     )
-    assert "data-in-place-native" in save.group(0)
+    assert "data-in-place-native" not in save.group(0)
     lines = (TEMPLATES / "backup-status-lines.html").read_text()
     follow = re.search(r"<a hidden data-live-follow[^>]*>", lines).group(0)
     assert "data-in-place data-in-place-quiet" in follow

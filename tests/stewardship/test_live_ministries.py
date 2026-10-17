@@ -44,6 +44,7 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         ADDRESS_RETRY_TOKEN_FUNCTION,
         AUTOMATION_FRESH_FUNCTION,
         DEBUG_OFF_FUNCTION,
+        EXPORT_DISCARD_FUNCTION,
         FAMILY_LOGIN_FUNCTION,
         LEADER_CHANGES_FUNCTION,
         LEADER_SCOPE_FUNCTION,
@@ -119,7 +120,11 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         ADDRESS_RETRY_TOKEN_FUNCTION,
         DEBUG_OFF_FUNCTION,
     }
-    assert runtime_functions(ServiceRole.SCHEDULER) == {DEBUG_OFF_FUNCTION}
+    # The scheduler also discards ended exports' saved data (0109, #1398).
+    assert runtime_functions(ServiceRole.SCHEDULER) == {
+        DEBUG_OFF_FUNCTION,
+        EXPORT_DISCARD_FUNCTION,
+    }
 
 
 def test_removal_reads_no_catalog(monkeypatch):

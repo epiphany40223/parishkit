@@ -44,6 +44,11 @@
 #     real API (it falls back to the fake), and Production mode never reads
 #     the variable.
 #
+# In both modes the export download window (#1398) is carried over, and
+# PARISHKIT_STEWARDSHIP_EXPORT_DOWNLOAD_WINDOW_MINUTES (15-240) changes it.
+# A rollback never renders it, for the same reason as the latency: it is
+# 60 minutes there until the next upgrade sets it again.
+#
 # In both modes, the release that converts sign-in rules to users (#952)
 # needs the offline conversion between two migrations (operations
 # specification, "Users upgrade from sign-in rules"). The operator supplies
@@ -361,6 +366,28 @@ if [ "$bulk" = true ]; then
     batch=$(jq -er '.deployment.bulk_send_batch // 20' "$services/worker.yaml")
     switches=(-e PARISHKIT_STEWARDSHIP_BULK_FAMILY_SEND=1 -e "PARISHKIT_STEWARDSHIP_BULK_SEND_BATCH=$batch")
     echo "    bulk Family send is on (batch $batch); keeping it on"
+fi
+# Carry the export download window over too (#1398): a retarget-image
+# without the variable renders the documents with the 60-minute default.
+# An operator changes it with PARISHKIT_STEWARDSHIP_EXPORT_DOWNLOAD_WINDOW_MINUTES.
+window=${PARISHKIT_STEWARDSHIP_EXPORT_DOWNLOAD_WINDOW_MINUTES:-$(jq -er '.deployment.export_download_window_minutes // 60' "$services/worker.yaml")}
+# Bounded here, before anything stops, as the SMTP latency is: the loader's
+# own refusal would come only at the retarget, with web already down.
+if ! [[ $window =~ ^[0-9]{1,3}$ ]] || [ "$((10#$window))" -lt 15 ] || [ "$((10#$window))" -gt 240 ]; then
+    echo "The export download window must be 15-240 minutes; refusing." >&2
+    exit 1
+fi
+# Base ten, so 060 is 60 (the default, which renders nothing).
+window=$((10#$window))
+if [ "$mode" = rollback ] && [ "$window" != 60 ]; then
+    # The previous release may not know the setting; its loader refuses an
+    # unknown variable, after web had stopped. It renders the default.
+    echo "    the export download window (${window} minutes) is not carried into a rollback; it is 60 minutes until the next upgrade sets it again"
+    window=60
+fi
+if [ "$window" != 60 ]; then
+    switches+=(-e "PARISHKIT_STEWARDSHIP_EXPORT_DOWNLOAD_WINDOW_MINUTES=$window")
+    echo "    export download window is $window minutes; keeping it"
 fi
 if [ "$profile" = local ]; then
     # The rehearsal's modeled Gmail latency (BG-12), which the deployment
@@ -778,6 +805,13 @@ if [ "$bulk" = true ]; then
     rendered=$(jq -r '.deployment.bulk_send_batch // 20' "$services/worker.yaml")
     [ "$rendered" = "$batch" ] || problems+=("worker: bulk send batch is $rendered, not $batch")
 fi
+# Every role's document is rendered from the same inputs; web (which
+# enforces the window on pages and downloads), the worker and the
+# scheduler (which publish and clean up exports) are checked.
+for role in web worker scheduler; do
+    rendered=$(jq -r '.deployment.export_download_window_minutes // 60' "$services/$role.yaml")
+    [ "$rendered" = "$window" ] || problems+=("$role: export download window is $rendered minutes, not $window")
+done
 if [ "$profile" = local ]; then
     rendered=$(jq -r '.deployment.local_smtp_latency_ms // 0' "$services/mail-dispatch.yaml")
     [ "$rendered" = "$latency" ] || problems+=("mail-dispatch: SMTP latency is $rendered ms, not $latency")

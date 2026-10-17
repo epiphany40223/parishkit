@@ -62,7 +62,6 @@ def create_family_test_names_export(
     browser_timezone,
     request_key,
     format=DEFAULT_EXPORT_FORMAT,
-    snapshot=None,
 ):
     """Capture the reviewed names once and request their export as ``format``.
 
@@ -71,10 +70,8 @@ def create_family_test_names_export(
     export it made when the selection (revision, DUIDs, format, time zone)
     is the same, and is refused
     (``ExportRequestBound``) otherwise; the names are not compared, as a
-    renamed Family is the same one. ``snapshot`` is the retained capture
-    for regeneration (with ``families`` None), never a caller's input. The
-    caller holds the review's transaction; this takes the campaign's
-    export lock inside it.
+    renamed Family is the same one. The caller holds the review's
+    transaction; this takes the campaign's export lock inside it.
     """
     if any(
         not isinstance(value, UUID)
@@ -85,17 +82,10 @@ def create_family_test_names_export(
         raise ValueError("Export timezone must be an IANA name.")
     if format not in FORMATS:
         raise ValueError("Unsupported names export format.")
-    if snapshot is None:
-        families = tuple(families or ())
-        if not families:
-            raise ValueError("Name at least one Family DUID.")
-        parameters = parameters_for(revision_id, (duid for duid, _ in families))
-    elif not isinstance(snapshot, FamilyTestNamesSnapshot) or families is not None:
-        raise ValueError("Regeneration cannot change the retained selection.")
-    elif snapshot.campaign_id != campaign_id:
-        raise ValueError("Retained names belong to another campaign.")
-    else:
-        parameters = snapshot.parameters
+    families = tuple(families or ())
+    if not families:
+        raise ValueError("Name at least one Family DUID.")
+    parameters = parameters_for(revision_id, (duid for duid, _ in families))
 
     def admit(*args):
         """Both enqueue and its owning transaction recheck current authorization.
@@ -121,32 +111,23 @@ def create_family_test_names_export(
                 previous.parameters,
                 previous.format,
                 previous.browser_timezone,
-                None if snapshot is None else previous.family_test_names_snapshot_id,
-            ) != (
-                REPORT,
-                campaign_id,
-                parameters,
-                format,
-                browser_timezone,
-                None if snapshot is None else snapshot.pk,
-            ):
+            ) != (REPORT, campaign_id, parameters, format, browser_timezone):
                 raise ExportRequestBound("Export request identity is already bound.")
             return previous
         configuration_id = SystemConfiguration.objects.get().active_configuration_id
         correlation_id = uuid4()
-        if snapshot is None:
-            rows = [{"duid": int(duid), "name": name} for duid, name in families]
-            snapshot = FamilyTestNamesSnapshot.objects.create(
-                campaign_id=campaign_id,
-                configuration_id=configuration_id,
-                actor_id=user_id,
-                correlation_id=correlation_id,
-                parameters=parameters,
-                document={"rows": rows},
-                row_count=len(rows),
-            )
-            # The insert trigger sets the capture time.
-            snapshot.refresh_from_db(fields=["created_at"])
+        rows = [{"duid": int(duid), "name": name} for duid, name in families]
+        snapshot = FamilyTestNamesSnapshot.objects.create(
+            campaign_id=campaign_id,
+            configuration_id=configuration_id,
+            actor_id=user_id,
+            correlation_id=correlation_id,
+            parameters=parameters,
+            document={"rows": rows},
+            row_count=len(rows),
+        )
+        # The insert trigger sets the capture time.
+        snapshot.refresh_from_db(fields=["created_at"])
         identifier = uuid4()
         task = enqueue(
             task_type=TASK_TYPE,

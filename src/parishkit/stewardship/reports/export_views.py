@@ -28,6 +28,7 @@ from parishkit.stewardship.jobs.ownership import database_now
 from parishkit.stewardship.jobs.storage import TaskRetryConflict
 from parishkit.stewardship.jobs.task_retries import retry_export_cleanup_task
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web.refusals import with_status_code
 from parishkit.stewardship.web.responses import campaign_response
 
 from .artifacts import ArtifactChunks, ArtifactReceipt
@@ -40,6 +41,7 @@ from .export_services import (
     consume_download,
     directory_mode,
 )
+from .export_window import download_end
 from .facts import FactUnavailable
 
 CONTENT_TYPES = {
@@ -133,7 +135,8 @@ def _cleanup_error(request, task_id, *, status):
     # Only fixed text and the router's parsed UUID reach this typed error page.
     response.stewardship_safe_error = True
     response["Cache-Control"] = "no-store"
-    return response
+    # The refusal log's codes for this page of its own (#1403).
+    return with_status_code(response)
 
 
 @dataclass(frozen=True)
@@ -202,7 +205,7 @@ def prepare_download(subject, service, principal, grant_id):
         authorize(service.store, current.identity, request=job)
         admit_campaign(job.campaign_id, mutating=False)
         retained = ExportPublication.objects.get(pk=publication.pk)
-        if retained.expires_at <= database_now():
+        if download_end(retained) <= database_now():
             raise ReadUnavailable("This export has expired.")
 
     def content():

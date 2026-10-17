@@ -170,6 +170,10 @@ DESCRIPTIONS = {
         "An automation session confirmed a reviewed removal of a campaign "
         "image, which became a configuration request."
     ),
+    "admin_cmd_content_confirm": _(
+        "An automation session confirmed a built delete of unused campaign "
+        "emails, which became a configuration request."
+    ),
     "admin_cmd_integration_confirm": _(
         "An automation session confirmed a reviewed change to an "
         "integration's settings, or its removal, which became a configuration "
@@ -187,6 +191,14 @@ DESCRIPTIONS = {
         "An automation session finished switching an integration to its new "
         "key, which became a configuration request."
     ),
+    "admin_cmd_integration_key_replace": _(
+        "An automation session submitted a new key for an integration, which "
+        "its installer checks before a configuration request switches to it."
+    ),
+    "admin_cmd_integration_backup_key_confirm": _(
+        "An automation session confirmed a proved new backup encryption key, "
+        "which became a configuration request."
+    ),
     "admin_cmd_workgroup_confirm": _(
         "An automation session confirmed a reviewed change to the campaign's "
         "No-reminders WorkGroup, which became a configuration request."
@@ -194,6 +206,10 @@ DESCRIPTIONS = {
     "admin_cmd_campaign_confirm": _(
         "An automation session confirmed a reviewed change to the campaign's "
         "settings, which became a configuration request."
+    ),
+    "admin_cmd_campaign_shares_confirm": _(
+        "An automation session confirmed a reviewed change to the campaign's "
+        "Share options, which became a configuration request."
     ),
     "admin_cmd_users_import_leaders": _(
         "An automation session confirmed a reviewed import of ParishSoft "
@@ -212,6 +228,10 @@ DESCRIPTIONS = {
         "after the Administrator accepted the duplicate risk, as the email's "
         "page does."
     ),
+    "admin_cmd_send_confirm": _(
+        "An automation session confirmed a reviewed pause, resume or "
+        "resolution of held email, as the Pause and resume mail page does."
+    ),
     "admin_cmd_delivery_resolve": _(
         "An automation session resolved an outgoing email, as the email's "
         "page does: a note, external evidence or a retry."
@@ -225,6 +245,36 @@ DESCRIPTIONS = {
         "An automation session reviewed an automatic census change "
         "(approved, ignored or sent back to To review), as the Census "
         "changes page's Review does."
+    ),
+    "admin_cmd_followup_update": _(
+        "An automation session recorded follow-up on a Ministry request, as "
+        "the request's Save on Ministry requests does."
+    ),
+    "admin_cmd_followup_bulk": _(
+        "An automation session resolved several Ministry requests with one "
+        "outcome, as the Ministry requests queue's bulk outcome does."
+    ),
+    "admin_cmd_census_edit": _(
+        "An automation session edited the value publication writes for an "
+        "automatic census change, or cleared that edit, as the Census "
+        "changes page's Edit value does."
+    ),
+    "admin_cmd_census_resolve_conflict": _(
+        "An automation session approved an automatic census change over "
+        "ParishSoft's current value, as the Census changes page's Use the "
+        "Family's value anyway does."
+    ),
+    "admin_cmd_followup_roster_entered": _(
+        "An automation session set or cleared a Ministry request's Entered "
+        "in ParishSoft tick, as the request's tick on Ministry requests does."
+    ),
+    "admin_cmd_followup_roster_bulk": _(
+        "An automation session marked several Ministry requests Entered in "
+        "ParishSoft, as Roster changes to enter's bulk mark does."
+    ),
+    "admin_cmd_followup_information_update": _(
+        "An automation session recorded follow-up on an Additional "
+        "information request, as the request's Save does."
     ),
     "admin_cmd_refresh_start": _(
         "An automation session asked for a full ParishSoft refresh, as the "
@@ -317,7 +367,8 @@ DESCRIPTIONS = {
     ),
     "admin_cmd_export_regenerate": _(
         "An automation session requested an expired report export again, "
-        "as the export's Regenerate button does."
+        "as the export's Regenerate button did before exports became "
+        "point-in-time."
     ),
     "admin_cmd_export_financial": _(
         "An automation session requested a financial report export, as the "
@@ -684,6 +735,10 @@ DESCRIPTIONS = {
     ),
     "credential_result_dismissed": _(
         "An Administrator dismissed the result of a key change."
+    ),
+    "credential_key_organization_mismatch": _(
+        "A new ParishSoft key was refused: it belongs to a different "
+        "ParishSoft organization."
     ),
     "family_maintenance_started": _(
         "An Administrator closed the Family portal for maintenance."

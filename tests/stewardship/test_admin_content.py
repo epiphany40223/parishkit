@@ -429,6 +429,10 @@ def test_the_ledger_covers_the_pages():
         assert LEDGER[route].kind == "command"
         assert LEDGER[route].detail == ("content show",)
         assert LEDGER[route].owed == "PR 10"
+    # The email tables' Delete and the editors' plain-text preview (#463).
+    assert LEDGER["content_delete"].kind == "command"
+    assert LEDGER["content_delete"].detail == ("content preview", "content confirm")
+    assert LEDGER["content_plain_text"].kind == "command"
     assert LEDGER["content_plain_text"].detail == ("content preview",)
     for route in ("content_history", "content_history_revision"):
         assert LEDGER[route].kind == "command"

@@ -9,15 +9,21 @@ the entry says comes from what the response already carries.
 
 - Which requests: one that resolved to an Admin page (a 404 for an address
   no page answers is not input) and was answered 400, 403, 404, 409, 410 or
-  422, unless the code that refused it already wrote its own record and
-  marked the request or response (``web.refusals.mark_recorded``), or the
-  response refuses no input: a greyed-out menu page opened directly
+  422, or a 200 answer marked as a refusal drawn in place
+  (``web.refusals.refused_in_place``), unless the code that refused it
+  already wrote its own record and marked the request or response
+  (``web.refusals.mark_recorded``), or the response refuses no input: a
+  greyed-out menu page opened directly
   (``web.refusals.mark_not_input``).
 - Why: the response's ``stewardship_reason`` (``web.refusals.annotate``,
-  ``web.security.csrf_failure``), else its refusal's reason, else
-  ``unclassified`` with the exception's class name.
+  ``with_reason``, ``web.security.csrf_failure``), else its refusal's
+  reason, else ``unclassified`` with the exception's class name; with a
+  setting reason's expected and actual values, and an unexpected-fields
+  refusal's count of names the form does not have.
 - What: the closed ``ErrorCode`` values and the server-owned field
-  identifiers of its typed errors, then the field names and Django error
+  identifiers of its typed errors, a body of its own's closed codes
+  (``web.refusals.with_codes``), the form's own fields an
+  ``unexpected_fields`` refusal found sent twice, then the field names and Django error
   codes of every Admin form this request validated with errors
   (``web.admin_forms``), and the first such form's name. ``fields`` never
   comes from the keys a request submitted: a ``FieldError``'s identifier is
@@ -30,6 +36,16 @@ the entry says comes from what the response already carries.
 ``audit.refusals.record_refusal`` then writes the process-log line and, for
 a signed-in user, the capped durable entry, on this request's own database
 connection; it never raises, and neither does this hook.
+
+A refused page drawn again as a streamed response under a campaign read
+guard (``web.responses.campaign_response``: a report's filters refused at
+their field, #1332) still holds the guard's read-only transaction when it
+leaves the view, so a durable write then could only be refused. Its record
+is built at the same point, but written when the response closes, after the
+guard has ended that transaction (#1484). The WSGI server closes a response
+whether its stream finished or the client went away, so a disconnect still
+leaves the entry; only a worker that dies before closing the response loses
+the record, line included.
 """
 
 import logging
@@ -37,6 +53,8 @@ from contextlib import suppress
 from uuid import UUID
 
 from django import forms
+from django.conf import settings
+from django.db import connection
 
 from parishkit.stewardship.audit.refusal_context import STATUSES
 from parishkit.stewardship.audit.refusals import (
@@ -44,11 +62,16 @@ from parishkit.stewardship.audit.refusals import (
     exception_class_of,
     record_refusal,
 )
-from parishkit.stewardship.observability import Event, emit_failure
+from parishkit.stewardship.observability import (
+    Event,
+    correlation,
+    current_correlation,
+    emit_failure,
+)
 
 from .admin_forms import AdminFormSet, collecting
 from .namespaces import is_admin
-from .refusals import NOT_INPUT, RECORDED
+from .refusals import DEFAULT_CODES, IN_PLACE, NOT_INPUT, RECORDED
 
 # Where ``process_exception`` keeps the class of a view's uncaught
 # exception (an ``Http404``, say), which Django answers without a typed
@@ -92,10 +115,48 @@ def log_refusal(request, response, validated=()):
         with suppress(Exception):
             emit_failure(error, event=Event.ADMIN_INPUT_REFUSED, level=logging.WARNING)
         return
-    if record is not None:
-        # record_refusal never raises; this keeps the answer safe even so.
-        with suppress(Exception):
-            record_refusal(record)
+    if record is None:
+        return
+    if getattr(response, "streaming", False) and connection.in_atomic_block:
+        # A streamed page still inside its read guard's transaction: write
+        # once the response closes, after the guard's own close (#1484).
+        _record_on_close(response, record)
+        return
+    _record(record)
+
+
+def _record(record):
+    """Write ``record`` with ``record_refusal``; never raise."""
+    # record_refusal never raises; this keeps the answer safe even so.
+    with suppress(Exception):
+        record_refusal(record)
+
+
+def _record_on_close(response, record):
+    """Write ``record`` when the streamed ``response`` closes; never raise.
+
+    Django's ``HttpResponseBase.close`` runs the response's resource closers
+    in order and then forgets them, so this closer runs after the streamed
+    content's own close, which ends the read guard's transaction and gives
+    the request's connection back. A wrapper that closes the response again
+    from inside its own close (as Django's test client does) re-runs the
+    list before it is forgotten, so the closer also empties its own pending
+    record: it writes at most once however often it runs. The close runs
+    after the correlation middleware has returned, so the request's
+    correlation id is bound again for the entry, as ``web.responses`` does
+    for its own close.
+    """
+    identifier = current_correlation()
+    pending = [record]
+
+    def write():
+        """Write the deferred record under the request's correlation id."""
+        # pop() makes a re-entrant close write nothing the second time.
+        if pending:
+            with suppress(Exception), correlation(identifier):
+                record_refusal(pending.pop())
+
+    response._resource_closers.append(write)
 
 
 def refusal_record(request, response, validated=()):
@@ -105,10 +166,11 @@ def refusal_record(request, response, validated=()):
     the entry's limit of 10 keeps the refusal's own codes.
     """
     match = getattr(request, "resolver_match", None)
+    in_place = getattr(response, IN_PLACE, False)
     if (
         match is None
         or not is_admin(request)
-        or response.status_code not in STATUSES
+        or (response.status_code not in STATUSES and not in_place)
         or getattr(request, RECORDED, False)
         or getattr(response, RECORDED, False)
         or getattr(response, NOT_INPUT, False)
@@ -117,7 +179,15 @@ def refusal_record(request, response, validated=()):
     errors = getattr(response, "stewardship_errors", None) or ()
     refusal = getattr(response, "stewardship_refusal", None)
     form, form_fields, form_codes = form_errors(validated)
-    return RefusalRecord(
+    # A shared refusal's own fields sent twice (``unexpected_fields``).
+    duplicates = tuple(getattr(response, "stewardship_duplicates", ()) or ())
+    codes = (
+        tuple(item.code.value for item in errors)
+        + tuple(getattr(response, "stewardship_codes", ()) or ())
+        + ("duplicate",) * bool(duplicates)
+        + form_codes
+    )
+    record = RefusalRecord(
         reason=(
             getattr(response, "stewardship_reason", None)
             or getattr(refusal, "reason", None)
@@ -126,17 +196,70 @@ def refusal_record(request, response, validated=()):
         actor_id=_actor(request),
         route=match.view_name,
         method=request.method,
-        status=response.status_code,
+        # A refusal drawn in place answers 200, which is not recorded.
+        status=response.status_code if response.status_code in STATUSES else None,
         form=form,
         # Server-owned names only (see the module docstring).
-        fields=tuple(item.field_id for item in errors if item.field_id) + form_fields,
-        codes=tuple(item.code.value for item in errors) + form_codes,
-        mode=_mode(),
+        fields=(
+            tuple(item.field_id for item in errors if item.field_id)
+            + duplicates
+            + form_fields
+        ),
+        # A page's default codes only when nothing else says why.
+        codes=codes or tuple(getattr(response, DEFAULT_CODES, ()) or ()),
+        expected=getattr(response, "stewardship_expected", None),
+        actual=getattr(response, "stewardship_actual", None),
+        unexpected_count=getattr(response, "stewardship_unexpected_count", None),
+        mode=current_mode(),
         error=(
             getattr(response, "stewardship_exception_class", None)
             or getattr(request, _EXCEPTION, None)
         ),
     )
+    return _require_reason(record)
+
+
+# Under the strict test settings, what each record that says nothing about
+# why was, for the test hook that fails the test which made it (#1444).
+STRICT_VIOLATIONS = []
+
+
+def _require_reason(record):
+    """Return ``record``; under strict test settings, note one that says
+    nothing about why (#1444).
+
+    A record whose cleaned reason is ``unclassified``, with no exception
+    class and no codes, tells an Administrator only that something was
+    refused. Under ``STEWARDSHIP_REFUSAL_LOG_STRICT`` (the test settings)
+    it is added to ``STRICT_VIOLATIONS``, and the Stewardship tests' hook
+    (``tests/stewardship/conftest.py``) fails the test whose answer made it,
+    so a new view cannot add such an answer unnoticed: give it a reason
+    (``web.refusals.with_reason``), codes (``with_codes``,
+    ``with_default_code``) or a typed error. Nothing is raised here: an
+    exception out of the middleware would leave the request's database
+    connection unusable for every later test. The record is still written,
+    in Production and under the test settings alike.
+    """
+    if not getattr(settings, "STEWARDSHIP_REFUSAL_LOG_STRICT", False):
+        return record
+    context = record.context()
+    if (
+        context.get("reason") == "unclassified"
+        and "exception_class" not in context
+        and not context.get("codes")
+    ):
+        STRICT_VIOLATIONS.append(
+            f"{record.route} answered {record.status} with no reason, no "
+            "codes and no exception class for the refusal log (#1444)."
+        )
+    return record
+
+
+def take_strict_violations():
+    """The strict violations noted so far, which are then forgotten."""
+    taken = list(STRICT_VIOLATIONS)
+    STRICT_VIOLATIONS.clear()
+    return taken
 
 
 def form_errors(validated):
@@ -250,7 +373,7 @@ def _actor(request):
         return None
 
 
-def _mode():
+def current_mode():
     """The global mode, ``testing`` or ``production``; None when unreadable."""
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 

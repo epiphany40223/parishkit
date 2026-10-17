@@ -34,7 +34,7 @@
 <td class="numeric">{{ row.family_duid|duid }}</td>
 <td>{% if row.cannot_serve %}{% translate "Yes" %}{% endif %}</td>
 <td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant data-compact>{{ row.submitted_at|date:'c' }}</time></td></tr>
-{% empty %}<tr><td colspan="6">{% translate "No matching Members." %}</td></tr>{% endfor %}</tbody></table></div>
+{% empty %}<tr><td colspan="6">{% if query.search or query.show == 'cannot_attend' %}{% translate "No Members match these filters. Clear the Search name or Family DUID box, or set Show to “Everything”." %}{% else %}{% translate "No Member has said they cannot participate in any ministries. A Member is listed here once their Family's live response says so." %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=members_table label=members_label %}
 </div>
 <h2>{% translate "Families that cannot attend Mass or prayer services" %}</h2>
@@ -43,7 +43,7 @@
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Families that cannot attend Mass or prayer services' %}"><table>
 <caption>{% translate "Families that cannot attend Mass or prayer services" %}</caption><thead><tr>{% translate "Family" as heading %}{% sort_heading families_table "family" heading %}{% translate "Family DUID" as heading %}{% sort_heading families_table "duid" heading "numeric" %}{% translate "Latest response" as heading %}{% sort_heading families_table "latest" heading %}</tr></thead><tbody>
 {% for row in families_table.rows %}<tr><th scope="row">{% if row.family_name is None %}{% source_status "missing" %}{% else %}{{ row.family_name }}{% endif %}</th><td class="numeric">{{ row.family_duid|duid }}</td><td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant data-compact>{{ row.submitted_at|date:'c' }}</time></td></tr>
-{% empty %}<tr><td colspan="3">{% translate "No matching Families." %}</td></tr>{% endfor %}</tbody></table></div>
+{% empty %}<tr><td colspan="3">{% if query.search or query.show == 'cannot_serve' %}{% translate "No Families match these filters. Clear the Search name or Family DUID box, or set Show to “Everything”." %}{% else %}{% translate "No Family has said it cannot attend Mass or prayer services. A Family is listed here once its live response says so." %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=families_table label=families_label %}
 </div>
 {% endblock %}

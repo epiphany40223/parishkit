@@ -794,29 +794,37 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
     tested = browser.get(URL).content
     assert f'value="{LINK}"'.encode() in tested
     assert b"Folder tested:" in tested
+    # Save's change gate compares with the saved (here, no) folder, so the
+    # tested one drawn in the field can be saved as it is (#1330).
+    (field,) = re.findall(rb'<input[^>]*name="target"[^>]*>', tested)
+    assert b'data-saved-value=""' in field
+    assert b'data-require-change="base_digest"' in tested
     BackupDriveProbe.objects.filter(pk=probe.pk).update(
         state="failed", failure_kind="permission", completed_at=database_now_sql()
     )
     failed = browser.get(URL).content
     assert f'value="{LINK}"'.encode() in failed and b"Folder tested:" in failed
     assert b"Test access:" in failed
+    # A link that isn't a Drive folder is refused at the field, as Save
+    # refuses it (#1330), and nothing is queued.
     invalid = post(browser, URL, {"action": "test", "target": "x"})
     assert invalid.status_code == 400
-    assert invalid.json()["refusal"]["message"] == (
-        "That is not a link to a Google Drive folder."
+    assert b"Enter a link to a folder on drive.google.com." in invalid.content
+    assert b'aria-invalid="true"' in invalid.content
+    assert BackupDriveProbe.objects.count() == 1
+    setup = post(
+        browser,
+        URL,
+        {
+            "action": "preview",
+            "base_digest": store.active().digest,
+            "target": f"{LINK}?usp=sharing",
+        },
     )
-    preview = hidden(
-        post(
-            browser,
-            URL,
-            {
-                "action": "preview",
-                "base_digest": store.active().digest,
-                "target": f"{LINK}?usp=sharing",
-            },
-        ),
-        "preview",
-    )
+    # Setting the folder up is a confirmation in the review dialog (#750).
+    assert b'data-review-title="Turn on off-site copies?"' in setup.content
+    assert b"each backup is also copied to this Google Drive folder" in setup.content
+    preview = hidden(setup, "preview")
     apply(store, post(browser, URL, {"action": "confirm", "preview": preview}))
     # The scheduler's alert sees the folder as configured from now on.
     with task_login(ServiceRole.WORKER, exact=True), transaction.atomic():
@@ -841,7 +849,11 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
     index = browser.get("/admin/system/integrations/").content
     assert f'href="{URL}">Change</a>'.encode() in index
     assert b"copied to Google Drive" in browser.get(URL).content
-    preview = hidden(post(browser, URL, {"action": "remove"}), "preview")
+    removal = post(browser, URL, {"action": "remove"})
+    # Turning it off is a confirmation in the review dialog too (#750).
+    assert b'data-review-title="Turn off off-site copies?"' in removal.content
+    assert b'data-review-done="Off-site copies turned off."' in removal.content
+    preview = hidden(removal, "preview")
     apply(store, post(browser, URL, {"action": "confirm", "preview": preview}))
     assert backups(store) == []
     with task_login(ServiceRole.WORKER, exact=True), transaction.atomic():
@@ -979,15 +991,17 @@ def page_post(browser, values):
 
 def test_test_access_answers_in_place(workspace):
     """Test access posts in place (#519): the page's form names its status
-    line, Save submits natively, and Test access's redirect is this page,
-    whose status line runs the check. Once it settles, the passive status
-    read's follow-up re-reads that line in place rather than reloading."""
+    line, Save opens the review dialog (#750) while Test access is no
+    Review, and Test access's redirect is this page, whose status line runs
+    the check. Once it settles, the passive status read's follow-up re-reads
+    that line in place rather than reloading."""
     browser, _ = signed_in()
     page = browser.get(URL).content.decode()
     form = re.search(r'<form [^>]*data-in-place="backup-test"[^>]*>', page).group(0)
-    assert 'action="#integration-status"' in form
-    save = re.search(r'<button [^>]*value="preview"[^>]*>', page).group(0)
-    assert "data-in-place-native" in save
+    assert f'action="{URL}#integration-status"' in form
+    assert 'data-review-open="integration-review"' in form
+    test = re.search(r'<button [^>]*value="test"[^>]*>', page).group(0)
+    assert "data-review-skip" in test
     response = post(browser, URL, {"action": "test", "target": LINK})
     assert (response.status_code, response["Location"]) == (302, URL)
     probe = BackupDriveProbe.objects.get()
@@ -1002,7 +1016,12 @@ def test_test_access_answers_in_place(workspace):
 
 
 def test_test_access_refusals_say_what_to_fix(workspace):
-    """A missing or wrong folder link names the problem, not "Check your entries"."""
+    """A missing or wrong folder link names the problem, not "Check your entries".
+
+    A wrong link is refused at the field, with the page drawn again around
+    what was entered, as Save does (#1330); a missing one, with no folder
+    saved, says to enter it.
+    """
     browser, _ = signed_in()
     empty = page_post(browser, {"action": "test", "target": ""})
     assert empty.status_code == 400
@@ -1011,10 +1030,12 @@ def test_test_access_refusals_say_what_to_fix(workspace):
     document = "https://docs.google.com/document/d/x"
     wrong = page_post(browser, {"action": "test", "target": document})
     assert wrong.status_code == 400
-    assert b"That is not a link to a Google Drive folder." in wrong.content
-    assert b"https://drive.google.com/drive/folders/" in wrong.content
-    # The error page never repeats what was submitted.
-    assert b"docs.google.com" not in wrong.content
+    html = wrong.content.decode()
+    error = 'id="id_target_error"'
+    assert error in html and "Enter a link to a folder on drive.google.com." in html
+    (field,) = re.findall(r'<input[^>]*name="target"[^>]*>', html)
+    assert 'aria-invalid="true"' in field and "id_target_error" in field
+    assert f'value="{document}"' in field
     assert not BackupDriveProbe.objects.exists()
 
 

@@ -43,7 +43,15 @@ SUMMARIES = {
     ),
     "working": _("The load is running."),
     "done": _("Parish data is loaded. Continue to the next setup step."),
-    "failed": _("The load did not finish."),
+    "failed": _(
+        "The load did not finish. Check the ParishSoft connection, then load "
+        "the parish data again."
+    ),
+    "ended": _("The load did not finish."),
+    "voided": _(
+        "This load is no longer used. Load the parish data again from the "
+        "Load parish data step."
+    ),
 }
 
 # The three parts of a load, in order, as the page names them.
@@ -126,14 +134,26 @@ def collections(progress):
 
 
 def summary(progress):
-    """Choose the plain-language status key for one progress observation."""
-    if progress["setup_state"] == "expired" or progress["task_state"] in {
-        "failed",
-        "cancelled",
-        "abandoned",
-    }:
-        return "failed"
-    if progress["task_state"] == "succeeded" or progress["setup_state"] == "collecting":
+    """Choose the plain-language status key for one progress observation.
+
+    Since #1353 a load that fails for good returns setup to collecting, so
+    "failed" offers the way back (fix the ParishSoft connection, Load again).
+    "ended" is a load that ended with setup itself (expired), or one that
+    stopped while setup still says loading: only a new setup helps. "voided"
+    is a load that is no longer the attempt's valid one: discarded by a
+    changed connection or Load again (no longer bound), or succeeded but
+    stale. ``bound`` and ``loaded`` default to true for observations that
+    predate them.
+    """
+    if progress["setup_state"] == "expired":
+        return "ended"
+    if not progress.get("bound", True):
+        return "voided"
+    if progress["task_state"] in {"failed", "cancelled", "abandoned"}:
+        return "failed" if progress["setup_state"] == "collecting" else "ended"
+    if progress["task_state"] == "succeeded":
+        return "done" if progress.get("loaded", True) else "voided"
+    if progress["setup_state"] == "collecting":
         return "done"
     if progress["task_state"] in {"queued", "retry_wait"}:
         return progress["task_state"]
@@ -186,7 +206,9 @@ def setup_source_progress(request, task_id):
             or set(request.POST) - {"csrfmiddlewaretoken"}
             or any(len(values) != 1 for _, values in request.POST.lists())
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(
+                request.POST, request.FILES, allowed={"csrfmiddlewaretoken"}
+            )
         service = runtime()
         progress = source_progress(
             request, service, task_id, renew=request.method == "POST"

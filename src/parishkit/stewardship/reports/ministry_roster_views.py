@@ -52,6 +52,7 @@ from parishkit.stewardship.web.exports import (
     download_headers,
     page_download,
 )
+from parishkit.stewardship.web.refusals import with_status_code
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 from parishkit.stewardship.workflows.models import (
@@ -351,7 +352,8 @@ def _error(*, status):
     response.stewardship_safe_error = True
     if status == 503:
         response["Retry-After"] = "5"
-    return response
+    # The refusal log's codes for this page of its own (#1403).
+    return with_status_code(response)
 
 
 def _audit(action, principal, campaign_id, outcome, count=0):
@@ -531,11 +533,11 @@ def _respond(request, campaign_id, *, export, parameters, render):
 
 
 def resolved_on(moment, zone):
-    """A resolution's calendar day in ``zone``, in the parish's compact style."""
+    """A resolution's calendar day in the browser's ``zone``, compact style."""
     return dates.format_date(moment.astimezone(ZoneInfo(zone)).date(), compact=True)
 
 
-def row_controls(rows, zone):
+def row_controls(rows):
     """Give each shown row what its tick form and selection box need.
 
     A fresh request key per drawn form makes a repeated submission a replay.
@@ -543,18 +545,24 @@ def row_controls(rows, zone):
     accessible name and tooltip, its box's name and the bulk dialog's title
     (the follow-up queue's bulk outcomes name a row the same way). The same
     change can be listed twice (a Family answered again and both requests
-    were resolved); those rows add their Resolved day in ``zone`` (the
-    parish's), "Member — Ministry, resolved Oct 5, 2054", so each control
-    names its own row, as a stale bulk refusal does.
+    were resolved); those rows add the day they were resolved, "Member —
+    Ministry, resolved Oct 5, 2054", so each control names its own row, as
+    a stale bulk refusal does. That day is the viewer's own (#558), which
+    the server cannot know on a GET: the label carries the resolution's UTC
+    instant, and ``local_day`` (the same instant, the controls'
+    ``data-local-day``) lets date-format-v1.js replace it with the compact
+    day in the browser's time zone.
     """
     for row in rows:
         row["request_key"] = uuid4()
+        row["local_day"] = None
         member = row["member_name"] or row["member_label"]
         row["label"] = f"{member} — {row['ministry_name']}"
     names = Counter(row["label"] for row in rows)
     for row in rows:
         if names[row["label"]] > 1 and row["resolved_at"]:
-            row["label"] += f", resolved {resolved_on(row['resolved_at'], zone)}"
+            row["local_day"] = row["resolved_at"].astimezone(UTC).isoformat()
+            row["label"] += f", resolved {row['local_day']}"
 
 
 @require_GET
@@ -572,7 +580,7 @@ def page(request, campaign_id):
             admit_campaign(campaign_id, mutating=True)
         except PermissionError:
             mutable = False
-        row_controls(table.rows, dates.parish_zone())
+        row_controls(table.rows)
         tick_fields = table.page_fields(table.number)
         return render_to_string(
             "stewardship/ministry-roster.html",
@@ -634,11 +642,15 @@ def bulk_values(parameters):
     Each ``request`` value is ``<request id>:<next sequence>``, as the row's
     box carries it: at most one page of them (``MAX_BULK``), none twice.
     ``bulk_key`` is the page's key, from which each entry's request key is
-    made, so a repeated post replays. Anything else is a malformed form.
+    made, so a repeated post replays. An optional single ``zone`` is the
+    browser's time zone, read only to name a stale row's day (``bulk``).
+    Anything else is a malformed form.
     """
-    keys = set(parameters) - {"csrfmiddlewaretoken", "request"}
+    keys = set(parameters) - {"csrfmiddlewaretoken", "request", "zone"}
     values = parameters.getlist("request")
     if keys != {"bulk_key"} or len(parameters.getlist("bulk_key")) != 1:
+        raise ValueError("Invalid roster bulk form.")
+    if len(parameters.getlist("zone")) > 1:
         raise ValueError("Invalid roster bulk form.")
     if not 1 <= len(values) <= MAX_BULK:
         raise ValueError("Choose between one and a page of changes.")
@@ -687,14 +699,17 @@ def bulk(request, campaign_id):
         if row is None:
             return _error(status=409)
         # The change may be listed twice (row_controls), so the refusal
-        # always names the day it was resolved, which tells the rows apart.
+        # names the day it was resolved, which tells the rows apart, in the
+        # browser's zone the dialog posts (#558). Without a known zone the
+        # day is left out rather than shown in a guessed zone.
+        zone = request.POST.get("zone", "")
         resolved = (
             MinistryRequest.objects.filter(pk=error.request_id)
             .values_list("resolved_at", flat=True)
             .first()
         )
-        if resolved:
-            row += f", resolved {resolved_on(resolved, dates.parish_zone())}"
+        if resolved and zone in timezone_names():
+            row += f", resolved {resolved_on(resolved, zone)}"
         return _bulk_refusal(409, BULK_STALE % {"row": row})
     except StaleRecordError:
         return _error(status=409)

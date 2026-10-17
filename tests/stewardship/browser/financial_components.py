@@ -8,13 +8,37 @@ from django.urls import reverse
 
 from parishkit.stewardship.reports.chart_specs import financial_charts
 from parishkit.stewardship.reports.financial import (
+    FIELD_MESSAGES,
     FINANCIAL_SORTING,
     FREQUENCY_LABELS,
     PAGE_SIZES,
     FinancialQuery,
 )
+from parishkit.stewardship.reports.financial_views import FIELD_IDS, FIELD_LINES
 from parishkit.stewardship.reports.money import MoneyAmount
+from parishkit.stewardship.web.filter_errors import (
+    FilterError,
+    error_context,
+    line_sizes,
+)
 from parishkit.stewardship.web.tables import report_table
+
+# The browser zone of the dated fixture, named alike by every engine.
+DATED_ZONE = "America/Havana"
+
+
+def refused_values(name="pledge_max", pair="pledge_min", **sent_fields):
+    """The view's context for a range out of order, refused at its end.
+
+    By default At most below At least; ``name`` and ``pair`` name another
+    range's ends, and ``sent_fields`` the values sent.
+    """
+    sent = FinancialQuery(**(sent_fields or dict(pledge_min="500", pledge_max="100")))
+    error = FilterError(name, FIELD_MESSAGES[name], sent, pair=pair)
+    shown = FinancialQuery()
+    return error_context(error, FIELD_IDS, FIELD_LINES) | dict(
+        query=sent, applied=shown, query_fields=shown.form_values()
+    )
 
 
 def components(context, admin):
@@ -58,6 +82,15 @@ def components(context, admin):
     online, other = str(UUID(int=98)), str(UUID(int=99))
     query = FinancialQuery.parse(
         dict(search="Example", pledge_min="100.00", share=online)
+    )
+    # What Apply returns for response days in the browser's zone (#558).
+    dated = FinancialQuery.parse(
+        dict(
+            search="Example",
+            first_start="2026-11-01",
+            latest_end="2026-11-02",
+            zone=DATED_ZONE,
+        )
     )
 
     def table(rows, *, number=1, total=51):
@@ -118,6 +151,8 @@ def components(context, admin):
         mutable=True,
         request_key=UUID(int=100),
         export_timezones=("America/New_York", "UTC"),
+        # The filters' reserved message lines (#1332), as the view sizes them.
+        filter_sizes=line_sizes(FIELD_MESSAGES, FIELD_LINES),
         summary=summary,
         # The summary's charts (#720), as the view builds them.
         charts=financial_charts(summary, choices),
@@ -154,6 +189,29 @@ def components(context, admin):
         # bar's label must still fit after it at phone width.
         "/financial-long-labels": values
         | dict(charts=financial_charts(crowded, long_choices)),
+        # Filters the server refused at At most (#1332): drawn again with
+        # the values sent, the error at the field and the unfiltered results.
+        "/financial-refused": values | refused_values(),
+        # Each response-date range refused the same way, a Through date
+        # before its From date (#1469: the message said once).
+        "/financial-refused-first": values
+        | refused_values(
+            "first_end",
+            "first_start",
+            first_start="2026-11-02",
+            first_end="2026-11-01",
+            zone=DATED_ZONE,
+        ),
+        "/financial-refused-latest": values
+        | refused_values(
+            "latest_end",
+            "latest_start",
+            latest_start="2026-11-02",
+            latest_end="2026-11-01",
+            zone=DATED_ZONE,
+        ),
+        "/financial-dated": values
+        | dict(query=dated, query_fields=dated.form_values()),
     }
     result = {
         path: (
@@ -175,4 +233,14 @@ def components(context, admin):
                 | dict(campaign_id=campaign, status=status),
             ),
         )
+    # Dates sent without the browser's zone (#558).
+    result["/financial-error-zone"] = (
+        "text/html",
+        render_to_string(
+            "stewardship/financial-report-error.html",
+            context
+            | {"admin_chrome": admin}
+            | dict(campaign_id=campaign, status=400, zone=True),
+        ),
+    )
     return result

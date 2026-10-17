@@ -391,8 +391,6 @@ def test_export_time_zone_follows_the_applied_response_columns(page, component_o
     controls = (
         page.get_by_label("Export format"),
         page.get_by_role("button", name="Queue complete export"),
-        # The format help's "i" button (#1158), beside the format label.
-        page.locator("#table-export .toggletip-button").first,
     )
 
     def boxes():
@@ -453,52 +451,23 @@ def test_export_time_zone_follows_the_applied_response_columns(page, component_o
 
 
 @pytest.mark.parametrize("width", [320, 1280])
-def test_export_format_help_is_a_toggletip(page, component_origin, width):
-    """The format's dates-and-money help opens beside its label (#1158).
+def test_export_format_field_has_no_dates_explanation(page, component_origin, width):
+    """The export format is its menu and label only (#1538).
 
-    As a line under the menu, the help wrapped into a tall narrow column in
-    the filter bar's short cell. As a toggletip the cell stays one field
-    tall, the menu is still described by the full help, and opening the tip
-    moves no control in the export options.
+    The dates-and-money explanation (#221, #1158) was removed from every
+    export form: the field keeps its label as its accessible name, carries no
+    description or "i", and the filter-bar cell stays one field tall.
     """
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/family-directory")
     page.get_by_text("Export complete results").click()
     menu = page.get_by_label("Export format")
     visible(menu)
-    assert menu.get_attribute("aria-describedby") == "directory-format-tip"
-    tip = page.locator("#directory-format-tip")
-    assert tip.is_hidden() and "ISO 8601" in tip.text_content()
-    assert "$ sign" in tip.text_content()
-    assert page.locator("#table-export p.help", has_text="ISO 8601").count() == 0
+    assert menu.get_attribute("aria-describedby") is None
+    assert page.locator("#table-export #directory-format ~ .toggletip").count() == 0
+    assert "ISO 8601" not in page.locator("#table-export").text_content()
     cell = page.locator("#table-export .filter-bar > div.short").first
-    # A label row and a menu (about 6rem); the old help line made it 15+ lines.
     assert cell.bounding_box()["height"] < 8 * 16
-    controls = page.locator("#table-export :is(label, select, button)")
-
-    options = page.locator("#table-export fieldset")
-
-    def boxes():
-        """Where every export label and control sits within the options.
-
-        Relative to the fieldset, since opening the tip may scroll the page.
-        """
-        frame = options.bounding_box()
-        found = (controls.nth(i).bounding_box() for i in range(controls.count()))
-        return [
-            (box["x"] - frame["x"], box["y"] - frame["y"], box["width"], box["height"])
-            for box in found
-            if box
-        ]
-
-    before = boxes()
-    button = page.locator("#table-export .toggletip-button").first
-    button.click()
-    visible(tip)
-    # Linux Firefox may report the same place a ten-thousandth of a pixel apart.
-    assert same_place(boxes(), before)
-    page.keyboard.press("Escape")
-    assert tip.is_hidden()
 
 
 @pytest.mark.parametrize("width", [320, 375, 1280])

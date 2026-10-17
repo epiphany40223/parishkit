@@ -54,6 +54,7 @@ import json
 from datetime import UTC, datetime
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
+from django import forms
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts.leader_import import (
@@ -295,7 +296,9 @@ def components(context, admin):
     # New user refused for its Name, drawn again as the server draws it.
     invalid = UserForm({"email": "new@example.org", "name": " ", "role": "staff"})
     assert invalid.is_valid()
-    invalid.add_error("name", "Enter a name.")
+    invalid.add_error(
+        "name", forms.ValidationError("Enter a name.", code="name_required")
+    )
     leader_review = render_to_string(
         "stewardship/user-leader-import.html",
         {

@@ -567,6 +567,7 @@ def scheduler_producer(store, *, bulk=False, web_health=None):
     )
     from .reports.digest_ownership import DailyDigestProducer
     from .reports.export_cleanup import produce_cleanup as produce_export_cleanup
+    from .reports.export_cleanup import produce_discards
     from .reports.fact_production import produce_facts
     from .reports.verification_production import produce_verifications
     from .reports.weekly_ownership import WeeklyDigestProducer
@@ -649,6 +650,9 @@ def scheduler_producer(store, *, bulk=False, web_health=None):
             *independent_producer(guard, go_live, guard),
             *independent_producer(guard, produce_cleanup, guard),
             *independent_producer(guard, produce_export_cleanup, guard),
+            # Ended exports' saved data (#1398) goes on its own, so a failing
+            # discard never holds up the expired files' cleanup above.
+            *independent_producer(guard, produce_discards, guard),
             *independent_producer(
                 guard, partial(produce_facts, settings=settings), guard
             ),

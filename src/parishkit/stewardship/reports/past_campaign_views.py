@@ -61,7 +61,11 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.dates import format_date
 from parishkit.stewardship.web.presentation import number
-from parishkit.stewardship.web.refusals import UserFacingStale, unexpected_fields
+from parishkit.stewardship.web.refusals import (
+    UserFacingStale,
+    unexpected_fields,
+    with_default_code,
+)
 from parishkit.stewardship.web.tables import Sorting, whole_table
 
 from .archive_exports import archive_offer, create_archive_export
@@ -365,6 +369,8 @@ def _render(request, actor, selected, *, status=200, problems=(), more=0):
     )
     if status != 200:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return _no_store(response)
 
 
@@ -400,6 +406,7 @@ def _read_upload(request):
             files = request.FILES.lists()
         except MultiPartParserError:
             # A malformed multipart body: Django leaves POST and FILES empty.
+            # No sources: a malformed body, which Django leaves unread.
             raise unexpected_fields() from None
         fields = request.POST.lists()
         if (
@@ -408,7 +415,9 @@ def _read_upload(request):
             or any(len(values) != 1 for _, values in fields)
             or any(len(values) != 1 for _, values in files)
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(
+                request.POST, request.FILES, allowed=REVIEW_FIELDS | {"file"}
+            )
         upload = request.FILES["file"]
         keep = request.POST.get("keep_family_rows") == "yes"
         if upload.size > MAX_ARCHIVE_BYTES:
@@ -478,7 +487,7 @@ def apply(request):
             or set(request.POST) - APPLY_FIELDS
             or any(len(values) != 1 for _, values in request.POST.lists())
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(request.POST, request.FILES, allowed=APPLY_FIELDS)
         preview = UUID(request.POST.get("preview") or "")
         try:
             outcome = imports.apply(
@@ -514,11 +523,13 @@ def remove(request):
     try:
         actor = _administrator(request)
         filters(request.GET, allowed=set())
-        if request.FILES or set(request.POST) - {"archive", "csrfmiddlewaretoken"}:
-            raise unexpected_fields()
+        allowed = {"archive", "csrfmiddlewaretoken"}
         values = request.POST.getlist("archive")
-        match = REMOVE_VALUE.fullmatch(values[0]) if len(values) == 1 else None
+        if request.FILES or set(request.POST) - allowed or len(values) != 1:
+            raise unexpected_fields(request.POST, request.FILES, allowed=allowed)
+        match = REMOVE_VALUE.fullmatch(values[0])
         if match is None:
+            # No sources: the fields were allowed; a value is malformed.
             raise unexpected_fields()
         try:
             imports.remove(
@@ -568,7 +579,11 @@ def archive(request):
             or set(request.POST) - {"csrfmiddlewaretoken"} != {"request_key"}
             or len(request.POST.getlist("request_key")) != 1
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(
+                request.GET,
+                request.POST,
+                allowed={"request_key", "csrfmiddlewaretoken"},
+            )
         request_key = UUID(request.POST["request_key"])
         campaign_id = _current_campaign_id()
         if campaign_id is None:

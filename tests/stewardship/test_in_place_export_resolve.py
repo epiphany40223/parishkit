@@ -49,12 +49,10 @@ def test_export_commands_post_in_place(name, key, route, message):
     assert 'data-in-place="refresh"' in text
 
 
-def test_export_regenerate_stays_a_navigation():
-    """Regenerate answers with a new export's page at another address, so it
-    stays an ordinary submission (#519 PR 7c-4 leaves it for later)."""
+def test_an_export_page_offers_no_regenerate():
+    """Exports are point-in-time (#1398): the status page has no Regenerate."""
     text = (TEMPLATES / "report-export.html").read_text()
-    forms = re.findall(r"<form [^>]*report_export_regenerate[^>]*>", text)
-    assert forms and not [form for form in forms if "data-in-place" in form]
+    assert "regenerat" not in text.lower()
 
 
 def test_delivery_resolutions_post_in_place():

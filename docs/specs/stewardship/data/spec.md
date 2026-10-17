@@ -681,12 +681,13 @@ not duplicate calculated daily rows solely for operational history.
 
 Protect the interactive pointer's generation, including a stale generation
 displayed while its replacement builds; every generation/input set pinned by
-a retained export, digest occurrence, or other retained pinned report; building
-or recoverable failed generations and generations needed by queued/retrying
-work; and generations actively read, rendered, or verified. Export-file expiry
-alone does not release a pin whose retained parent metadata still requires
-that generation. Compaction never changes parent retention or discards a pin
-to reclaim space.
+an export that has not ended (one preparing, downloadable, or failed and
+still retryable), a digest occurrence, or other retained pinned report;
+building or recoverable failed generations and generations needed by
+queued/retrying work; and generations actively read, rendered, or verified.
+An export's pins are released when it ends, with its saved capture (see
+[point-in-time exports](../operations/spec.md#point-in-time-exports)).
+Compaction never changes parent retention or discards a pin to reclaim space.
 
 Selecting a generation and acquiring its read/use protection must be atomic
 with respect to compaction, as must adding a durable pin, publishing a pointer,
@@ -1965,8 +1966,57 @@ current authorization/filter snapshot.
    does not claim the mutation lease.
 2. Validate the upstream organization without cache and fetch uncached current
    contact payloads for every affected entity without holding a database lock.
-3. Re-evaluate each approved field against baseline/proposed/current.
-4. Mark already-matching fields resolved upstream.
+3. Re-evaluate each approved field against baseline/proposed/current. After
+   an Administrator resolved a conflict with *Use the Family's value anyway*
+   ([reports](../reports/spec.md#automatic-census-review), ADM-09.03), the
+   ParishSoft value they accepted takes the baseline's place. That accepted
+   base is recorded on the immutable review row with the source snapshot it
+   came from, and counts only while that snapshot is still the proposal's
+   comparison source and no later decision review (Back to To review or
+   Ignore, which also returns the change to `conflict`) has undone it; a
+   later edit keeps it. Reconciliation moves the comparison source whenever,
+   and only when, ParishSoft's value changes, so the base goes stale by
+   itself. An approval resting on a stale base returns to `unreviewed` while
+   the change stays open (a queued change keeps it, and its plan meets a
+   conflict), and a same-intent Family resubmission carries neither the base
+   nor such an approval.
+4. Mark already-matching fields resolved upstream: in the transaction that
+   records a Production-mode plan, each approved change whose field row
+   says `already_in_parishsoft` moves from `pending` or `failed` to
+   `resolved_upstream` at the next version, its decision and values
+   unchanged. A Testing-mode plan marks nothing. Unlike reconciliation's
+   `resolved_upstream`, this rests on the plan's uncached read rather than a
+   promoted snapshot; the plan's field row is its record, and the final
+   refresh brings the snapshot level. It is also the only path that
+   recognizes an Administrator's edited value already in ParishSoft, which
+   reconciliation, comparing with the Family's answer, would call a
+   conflict. The mark is final: the derived-proposal guard treats
+   `resolved_upstream` as immutable, so Reopen on Census changes cannot
+   undo it, and a wrong mark is corrected only in ParishSoft. Because it
+   rests on one uncached read whose value decoding is provisional until
+   the Member contact round trip is confirmed, it can happen only after
+   that confirmation: the switch, which must be on before any check runs,
+   is turned on only after the read is confirmed (the
+   [publication guide](../../../guides/stewardship-member-requests.md#parishsoft-publication)).
+   The derived-proposal guard admits it only from the worker, with the
+   comparison source unchanged, for a field row with that outcome at the
+   proposal's current version in a non-Testing plan created in the same
+   transaction; a PostgreSQL test proves that "same transaction" check
+   concretely (the plan row's `xmin` is the current transaction's id, or
+   its creation time equals `transaction_timestamp()`), and that a plan
+   committed earlier is refused. The confirmation then checks such a row as
+   `resolved_upstream` at the next version instead of refusing the plan.
+   The worker's pre-PUT comparison (`matches_confirmed`) leaves out exactly
+   the plan's `already_in_parishsoft` field rows whose proposals this check
+   moved to `resolved_upstream` at the version after the one the row
+   recorded; any other planned row that left the open states still
+   invalidates the entity, without relying on a later step to catch it.
+   This ships with a new forward migration, which replaces
+   `stewardship_response_derived_guard_v1` and
+   `stewardship_publication_confirmation_guard_v1` (neither SECURITY
+   DEFINER) with a self-verifying DO block, under the
+   [post-launch schema policy](../operations/spec.md#post-launch-schema-policy)
+   ([Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft)).
 5. If any field on an entity is a three-way conflict, block all writes to that
    entity and return it for re-review.
 6. Merge approved values into the freshly fetched full payload, leaving
@@ -2012,8 +2062,14 @@ on (a recovery retry or an Administrator's rerun) reads them back and closes
 them. This is safe: a `queued` proposal refuses every review and resolution
 and no preflight plans it, so nothing can change it or plan a second write
 while its PUT may have landed. Turning publication off never needs them
-cleared first. After releasing the lease, a final targeted/full refresh reconciles
-the promoted snapshot under a new lease claim. Publication ships switched off;
+cleared first. After releasing the lease, a run that published at least one
+entity requests one full refresh through the shared refresh request path,
+as a manual refresh attributed to the Administrator who confirmed the plan,
+carrying the publication's correlation id and logged as following a
+publication, which coalesces with a full refresh already waiting; it reconciles the
+promoted snapshot under a new lease claim. A failed request leaves the
+run's outcomes as they are and logs a WARNING, and the next scheduled
+refresh catches up. Publication ships switched off;
 the [publication guide](../../../guides/stewardship-member-requests.md#parishsoft-publication)
 says what must happen before it is switched on.
 
@@ -2054,9 +2110,10 @@ Live submissions, protected and policy-anchor normalized snapshot history,
 lightweight source manifests, workflow history, email metadata/content, and
 audit events are retained indefinitely by default. Unprotected redundant source
 corpora follow the compaction policy in
-[Source snapshot](#source-snapshot). Operational HTTP caches, temporary export
-files, and transient task payloads have bounded cleanup policies defined by
-operations.
+[Source snapshot](#source-snapshot). Operational HTTP caches, export files
+and their saved captures, and transient task payloads have bounded cleanup
+policies defined by operations (for exports,
+[point-in-time exports](../operations/spec.md#point-in-time-exports)).
 
 The three exceptions are:
 

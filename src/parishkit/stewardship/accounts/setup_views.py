@@ -11,7 +11,7 @@ from django.views.decorators.http import require_http_methods
 from parishkit.config import ConfigError
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import expected_version, filters
-from parishkit.stewardship.web.refusals import stale_page, unexpected_fields
+from parishkit.stewardship.web.refusals import annotate, stale_page, unexpected_fields
 
 from .access_gate import status_page
 from .admin_editing import error_response
@@ -22,7 +22,7 @@ from .setup_forms import FORMS, form_values, initial_values
 from .setup_policy import SetupState
 from .setup_source import start_source_load
 from .setup_staging import _admit, begin_setup, cancel_setup
-from .setup_wizard import BY_KEY, PAGES, continue_after, wizard_for
+from .setup_wizard import BY_KEY, PAGES, build, continue_after, wizard_for
 
 ERRORS = (
     ConfigError,
@@ -46,7 +46,9 @@ def _closed(request, fields, query=frozenset()):
         or set(request.POST) - {*fields, "csrfmiddlewaretoken"}
         or any(len(values) != 1 for _, values in request.POST.lists())
     ):
-        raise unexpected_fields()
+        raise unexpected_fields(
+            request.POST, request.FILES, allowed={*fields, "csrfmiddlewaretoken"}
+        )
 
 
 def _checked(request, service, response, draft=None):
@@ -62,11 +64,21 @@ def _checked(request, service, response, draft=None):
     return response
 
 
-def _context(draft, current=None):
-    """Render the stepper, the current attempt's safe deadlines and its state."""
+def _context(draft, current=None, *, receipts=None):
+    """Render the stepper, the current attempt's safe deadlines and its state.
+
+    ``receipts`` is the ``(credentials, tests)`` pair from ``observed()`` when
+    the caller already read it (the Review page), so the stepper is built from
+    it rather than read a second time.
+    """
+    if receipts is None:
+        wizard = wizard_for(draft, current)
+    else:
+        credentials, tests = receipts
+        wizard = build(draft, current, credentials=credentials, tests=tests)
     return {
         "draft": draft,
-        "wizard": wizard_for(draft, current),
+        "wizard": wizard,
         "expired": draft is not None and draft.status.state == SetupState.EXPIRED,
     }
 
@@ -144,7 +156,9 @@ def page_error(request, error, current=None, *, fallback=error_response):
     )
     page["Cache-Control"] = "no-store"
     page.stewardship_safe_error = True
-    return page
+    # The refusal log's reason and class, which the JSON answer carried
+    # (#1444).
+    return annotate(page, error)
 
 
 @require_http_methods(["GET", "HEAD", "POST"])

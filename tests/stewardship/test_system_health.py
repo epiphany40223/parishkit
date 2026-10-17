@@ -48,7 +48,6 @@ from parishkit.stewardship.system_health import (
     group_processes,
     loaded_query,
     loaded_states,
-    page_findings,
     parse_loaded,
     resave_tile,
     source_form_tile,
@@ -275,15 +274,7 @@ def page(context, *, request=None):
     """
     context = {"pause": None, "poll_interval": 10000} | context
     model = context["health"]
-    context.setdefault(
-        "dashboard",
-        dashboard(
-            model,
-            findings=page_findings(
-                model, workgroup_missing=context.get("workgroup_missing")
-            ),
-        ),
-    )
+    context.setdefault("dashboard", dashboard(model))
     region = render_to_string(
         "stewardship/system-health-status.html", context, request=request
     )
@@ -372,6 +363,11 @@ def test_every_problem_kind_has_one_home_tile_and_a_severity():
         "debug_logging",
         "versions_differ",
         "schema_mismatch",
+        "workgroup_missing",
+        "backup_key_mismatch",
+        "backup_key_unchecked",
+        "backup_request_failed",
+        "offsite_missing",
         *INCIDENTS,
     }
     assert set(REGISTRY) == kinds
@@ -493,36 +489,132 @@ def test_an_accepted_refusal_is_shown_in_its_tile_but_not_counted():
     assert found.state == "working"
 
 
-def test_page_findings_raise_their_tile_to_a_warning():
-    """Page notices not yet in the shared list still open their tile."""
-    failed = SimpleNamespace(status="not_picked_up")
-    assert page_findings(health()) == ("offsite_missing",)
-    offsite = SimpleNamespace(kind="succeeded", message="", at=NOW, last_copy_at=NOW)
-    assert page_findings(health(offsite=offsite)) == ()
-    assert page_findings(health(mode="testing")) == ()
-    found = page_findings(
-        health(backup_key_matches=False, backup_request=failed),
+def failed_request(status="not_picked_up", at=NOW):
+    """A Take a backup now request that ended without a backup."""
+    return SimpleNamespace(status=status, created_at=at)
+
+
+def test_the_new_shared_kinds_and_where_they_are_listed():
+    """The four former page notices are shared problems (#1214, slice 1):
+    after the other ParishSoft and backup problems, in the registry's
+    order, each raising its tile; off-site copies only in Production."""
+    found = find_problems(
+        mode="production",
+        processes=(),
+        missing=(),
+        schema_current=True,
+        incidents={
+            "source_retention_failing": NOW,
+            "backup_rpo_breach": NOW,
+            "backup_offsite_failed": NOW,
+        },
+        refresh=None,
+        backup_at=NOW,
         workgroup_missing="No reminders",
+        backup_key="mismatch",
+        backup_request=failed_request(),
+        offsite_set_up=False,
     )
-    assert found == (
+    assert [problem.kind for problem in found] == [
+        "source_retention_failing",
         "workgroup_missing",
+        "backup_rpo_breach",
+        "backup_offsite_failed",
         "backup_key_mismatch",
         "backup_request_failed",
         "offsite_missing",
+    ]
+    workgroup, request = found[1], found[5]
+    assert (workgroup.workgroup, workgroup.detail) == ("No reminders", None)
+    assert (request.at, request.detail) == (NOW, "not_picked_up")
+    assert {problem.severity for problem in found[4:]} == {"warning"}
+    tiles = {tile.key: tile for tile in dashboard(health(problems=found)).tiles}
+    assert tiles["source"].state == "warning" and tiles["source"].more == 1
+    assert tiles["backups"].state == "error" and tiles["backups"].more == 4
+    # The words a tile shows when one of them leads it.
+    words = {problem.kind: problem.summary for problem in found}
+    assert (
+        words["workgroup_missing"] == "No-reminders WorkGroup not found in ParishSoft"
     )
-    tiles = {tile.key: tile for tile in dashboard(health(), findings=found).tiles}
-    assert tiles["source"].state == "warning"
-    assert tiles["source"].top_finding == "workgroup_missing"
-    assert tiles["backups"].state == "warning" and tiles["backups"].more == 2
-    # A counted problem names the summary ahead of a finding.
-    tiles = {
-        tile.key: tile
-        for tile in dashboard(
-            health(problems=(Problem("backup_rpo_breach", at=NOW),)), findings=found
-        ).tiles
-    }
-    assert tiles["backups"].state == "error"
-    assert tiles["backups"].top_finding is None
+    assert words["backup_key_mismatch"] == "last backup sealed to a different key"
+    assert words["backup_request_failed"] == "requested backup did not complete"
+    assert words["offsite_missing"] == "off-site copies not set up"
+    # Off-site copies not set up are a problem in Production only, and a
+    # request that is live or finished is none.
+    assert problems(mode="testing", offsite_set_up=False) == []
+    assert problems(offsite_set_up=False) == ["offsite_missing"]
+    for status in ("waiting", "held", "running", "finished", "restored"):
+        assert problems(backup_request=failed_request(status)) == [], status
+    for status in ("failed", "did_not_finish", "not_picked_up"):
+        assert problems(backup_request=failed_request(status)) == [
+            "backup_request_failed"
+        ], status
+
+
+def test_an_unknown_workgroup_is_an_error_while_reminders_are_scheduled():
+    """#861: the next Reminder would reach Families meant to be skipped."""
+    (scheduled,) = find_problems(
+        mode="production",
+        processes=(),
+        missing=(),
+        schema_current=True,
+        incidents={},
+        refresh=None,
+        backup_at=NOW,
+        workgroup_missing="No reminders",
+        reminders_scheduled=True,
+    )
+    assert scheduled.detail == "reminders_scheduled"
+    assert scheduled.severity == "error" and scheduled.tiles == ("source",)
+    (_, source, *_) = dashboard(health(problems=(scheduled,))).tiles
+    assert source.state == "error"
+    details = source_details(tiles({"health": health(problems=(scheduled,))}))
+    assert '<li class="notice notice-error" data-problem="workgroup_missing"' in details
+    assert "Reminders are still scheduled" in details
+    # Nothing is missing: scheduled Reminders alone are no problem.
+    assert problems(reminders_scheduled=True) == []
+
+
+def test_one_backup_key_cause_gives_one_warning():
+    """While the newest backup was sealed to another key than the configured
+    one, the changed-key incident is not listed beside it."""
+    incidents = {"backup_key_changed": NOW}
+    assert problems(incidents=incidents) == ["backup_key_changed"]
+    assert problems(incidents=incidents, backup_key="mismatch") == [
+        "backup_key_mismatch"
+    ]
+    assert problems(backup_key="unchecked") == ["backup_key_unchecked"]
+
+
+@pytest.mark.parametrize(
+    ("configured", "fingerprint", "started", "key_set", "expected"),
+    [
+        # Sealed to another key, started after the configured key was set.
+        ("aaaa", "bbbb", NOW, NOW - timedelta(hours=1), True),
+        # The day between a key change and the next backup, or a backup
+        # that started before the change and finished after it: no problem.
+        ("aaaa", "bbbb", NOW - timedelta(hours=2), NOW - timedelta(hours=1), False),
+        # A key set before any change event was recorded.
+        ("aaaa", "bbbb", NOW, None, True),
+        ("aaaa", "aaaa", NOW, None, False),
+        # No configured key, or no backup yet.
+        (None, "bbbb", NOW, None, False),
+        ("aaaa", None, None, None, False),
+    ],
+)
+def test_the_key_mismatch_rule(configured, fingerprint, started, key_set, expected):
+    """``key_mismatch`` holds only for a backup started after the key was set
+    (a backup reads its key as it starts)."""
+    from parishkit.stewardship.system_health import key_mismatch
+
+    facts = SimpleNamespace(
+        backup_fingerprint=fingerprint,
+        # Finished well after the key was set, whenever it started.
+        backup_at=NOW + timedelta(hours=1),
+        backup_started_at=started,
+        key_set_at=key_set,
+    )
+    assert key_mismatch(configured, facts) is expected
 
 
 def test_the_page_load_tiles_states_and_the_fragments_key():
@@ -587,6 +679,10 @@ def test_the_status_region_states_problems_and_panels_in_words():
         "backup_rpo_breach",
         "backup_offsite_failed",
         "backup_key_changed",
+        "workgroup_missing",
+        "backup_key_mismatch",
+        "backup_request_failed",
+        "offsite_missing",
         "debug_logging",
         "versions_differ",
         "schema_mismatch",
@@ -618,11 +714,8 @@ def test_the_status_region_states_problems_and_panels_in_words():
             "pause": {"actor": "admin@example.org", "reason": "Fixing a typo"},
         }
     )
-    # Each problem in its one tile, and the Production finding that off-site
-    # copies are not set up as the Backups tile's item: the line counts the
-    # tiles.
-    assert body.count("data-problem=") == len(codes) + 1
-    assert 'data-problem="offsite_missing"' in body
+    # Each problem in its one tile: the line counts the tiles.
+    assert body.count("data-problem=") == len(codes)
     line = region[: region.index("</h2>")]
     assert "4 errors" in line and "and 1 warning" in line
     assert "Mail sender 1 has stopped all Family email" in body
@@ -1098,7 +1191,16 @@ def test_a_requested_backup_reads_as_the_page_words_it():
             finished_at=NOW,
             failure_kind=None,
         )
-        body = whole({"health": health(backup_request=request)})
+        # A request that ended without a backup is the tile's problem.
+        failed = code in {"not_picked_up", "did_not_finish", "failed"}
+        listed = (Problem("backup_request_failed", at=NOW, detail=code),)
+        body = whole(
+            {
+                "health": health(
+                    backup_request=request, problems=listed if failed else ()
+                )
+            }
+        )
         assert words in body, code
         assert f'data-backup-request="{code}"' in body
     body = whole({"health": health()})
@@ -2093,22 +2195,18 @@ def test_the_refusal_holds_its_counts_and_ends_the_problems():
         Problem("source_tenant_mismatch", at=NOW),
         Problem("source_retention_failing", at=NOW),
     )
+    listed += (Problem("workgroup_missing", workgroup="No reminders"),)
     model = health(refused_at=NOW, refused_counts=FAILED, problems=listed)
-    (_, source, *_) = dashboard(model, findings=("workgroup_missing",)).tiles
+    (_, source, *_) = dashboard(model).tiles
     assert [part.problem.kind for part in source.listed] == [
         "source_late",
         "source_tenant_mismatch",
         "source_retention_failing",
+        "workgroup_missing",
     ]
     assert source.refusal.problem == DROP_PROBLEM
     details = source_details(
-        tiles(
-            {
-                "health": model,
-                "workgroup_missing": "No reminders",
-                "refused_attempt": REFUSED_ATTEMPT,
-            }
-        )
+        tiles({"health": model, "refused_attempt": REFUSED_ATTEMPT})
     )
     order = re.findall(r'data-problem="([a-z_]+)"', details)
     assert order == [
@@ -2249,6 +2347,49 @@ def test_a_failed_refresh_stays_in_the_tile_while_parishsoft_is_not_answering():
     assert f"/admin/system/background/{task}/" in failed
 
 
+def test_an_organization_mismatch_is_never_said_as_could_not_be_reached():
+    """A refresh refused because the key sees another organization reached
+    ParishSoft: System health names the mismatch, not "ParishSoft could not
+    be reached", though its refreshes fail (#1492). Without the mismatch, a
+    failing connection is still "could not be reached"."""
+    failed_at = NOW.replace(hour=2)
+    refresh = FullRefreshStatus(
+        NOW - timedelta(days=1),
+        failed_at,
+        False,
+        failed_task_id=uuid4(),
+        connection=Connection("failing", failed_at),
+    )
+
+    def kinds(incidents):
+        """The listed problem kinds for these open incidents."""
+        found = find_problems(
+            mode="production",
+            processes=(),
+            missing=(),
+            schema_current=True,
+            incidents=incidents,
+            refresh=refresh,
+            backup_at=NOW,
+        )
+        return [problem.kind for problem in found]
+
+    assert kinds({"source_tenant_mismatch": NOW}) == [
+        "source_failed",
+        "source_tenant_mismatch",
+    ]
+    words = [
+        Problem(kind, at=NOW).summary for kind in kinds({"source_tenant_mismatch": NOW})
+    ]
+    assert "ParishSoft organization does not match" in words
+    assert "ParishSoft could not be reached" not in words
+    assert kinds({}) == ["source_failing"]
+    # A real outage after the key is fixed opens the provider-failure incident
+    # while the mismatch one still waits for a good refresh: said as before.
+    outage = kinds({"source_tenant_mismatch": NOW, "source_refresh_failed": NOW})
+    assert "source_failing" in outage
+
+
 # ------------------------------ the Backups and Debug logging tiles (slice 5)
 
 
@@ -2318,21 +2459,20 @@ def test_the_backup_summary_names_the_first_that_holds():
     assert {kind for _, kind, _ in cases} == set(BACKUP_SUMMARIES)
     for model, kind, words in cases:
         assert model.backup_summary.kind == kind
-        found = dashboard(model, findings=page_findings(model))
+        found = dashboard(model)
         assert found.tiles[2].state == "working", kind
         assert said("health-backups", model) == words, kind
     # A finished, restored or failed request is no longer what the tile
-    # waits on; a failed one is the tile's finding instead.
+    # waits on; a failed one is the tile's problem instead.
     for status in ("finished", "restored", "failed"):
         model = health(backup_request=backup_request(status), offsite=offsite())
         assert model.backup_summary.kind == "backup", status
     # The off-site part: set up but not copied yet, or (Testing only, as
-    # Production makes it a finding) not set up.
+    # Production makes it the offsite_missing problem) not set up.
     assert said("health-backups", health(offsite=offsite(None))) == (
         f"Last backup {stamp}; no off-site copy yet"
     )
     testing = health(mode="testing")
-    assert page_findings(testing) == ()
     assert said("health-backups", testing) == (
         f"Last backup {stamp}; off-site copies not set up"
     )
@@ -2358,15 +2498,25 @@ def backups_details(body):
     return body[start : body.index('id="health-debug"', start)]
 
 
-def test_the_backup_findings_are_warning_items_after_the_problems():
+def request_problem(status):
+    """The ``backup_request_failed`` problem for a request in ``status``."""
+    return Problem("backup_request_failed", at=NOW, detail=status)
+
+
+def test_the_new_backup_problems_are_warning_items_after_the_others():
     """A backup sealed to another key, a requested backup that ended without
-    one and, in Production, no off-site copies follow the shared problems
-    as Warning items, each with its sentence and link; Take a backup now
+    one and, in Production, no off-site copies follow the other problems as
+    Warning items, each with its sentence and link; Take a backup now
     follows them."""
     model = health(
         backup_key_matches=False,
         backup_request=backup_request("not_picked_up"),
-        problems=(Problem("backup_rpo_breach", at=NOW),),
+        problems=(
+            Problem("backup_rpo_breach", at=NOW),
+            Problem("backup_key_mismatch"),
+            request_problem("not_picked_up"),
+            Problem("offsite_missing"),
+        ),
     )
     details = backups_details(tiles({"health": model}))
     assert re.findall(r'data-problem="([a-z_]+)"', details) == [
@@ -2392,7 +2542,9 @@ def test_the_backup_findings_are_warning_items_after_the_problems():
         ("did_not_finish", "did not finish. Ask the server operator"),
         ("failed", "failed. Ask the server operator"),
     ):
-        model = health(backup_request=backup_request(status))
+        model = health(
+            backup_request=backup_request(status), problems=(request_problem(status),)
+        )
         details = backups_details(tiles({"health": model}))
         assert details.count(words) == 1, status
         assert f'data-backup-request="{status}"' in details
@@ -2413,6 +2565,8 @@ def test_the_backups_panel_repeats_no_problem_sentence():
             Problem("backup_rpo_breach", at=NOW),
             Problem("backup_offsite_failed", at=NOW),
             Problem("backup_key_changed", at=NOW),
+            Problem("backup_key_mismatch"),
+            request_problem("failed"),
         ),
     )
     details = backups_details(tiles({"health": model}))
@@ -2677,11 +2831,7 @@ def loaded_page(source_form=0, resave=(), model=None, **context):
     return whole(
         {
             "health": model,
-            "dashboard": dashboard(
-                model,
-                findings=page_findings(model),
-                loaded=loaded_states(source_form, resave),
-            ),
+            "dashboard": dashboard(model, loaded=loaded_states(source_form, resave)),
             "source_form_count": source_form,
             "resave": resave,
             "source_form_tile": source_form_tile(source_form),
@@ -2894,7 +3044,6 @@ def test_only_the_page_judges_the_sign_in(monkeypatch):
     source = Path(system_health_views.__file__).read_text()
     assert source.count('context["fresh"] = freshness(request)[0]') == 1
     extra = {
-        "workgroup_missing": None,
         "campaign_id": None,
         "pause": None,
         "debug_actor": None,
@@ -2968,10 +3117,12 @@ def test_a_home_line_shows_its_state_and_links_its_tile_once(kind):
     assert f'<span class="status-word">{word}</span>' in line
     assert ("notice-error" in line) is (severity == "error")
     anchor = f'href="/admin/system/health/#health-{REGISTRY[kind][0]}"'
-    assert line.count(anchor) == 1, line
+    # An unreadable backup key keeps System health from opening, so its
+    # line links no tile at all.
+    assert line.count(anchor) == (kind != "backup_key_unchecked"), line
     assert line.count('href="/admin/system/health/"') == 0
     own = f"See {problem.tile_name} in System health" in line
-    assert own is not problem.links_tile
+    assert own is problem.tile_link
 
 
 def test_home_words_and_tiles_for_a_split_process_problem():
@@ -3048,6 +3199,7 @@ def test_only_a_listed_failure_gives_the_off_site_line_way():
         "failed": True,
         "late": True,
         "offsite": True,
+        "offsite_unset": False,
     }
     # The incident is open, but the newest copy went through: the line no
     # longer reports a failure, so it stays.
@@ -3059,7 +3211,10 @@ def test_only_a_listed_failure_gives_the_off_site_line_way():
         "failed": False,
         "late": False,
         "offsite": False,
+        "offsite_unset": False,
     }
+    # Off-site copies not set up (Production): the invitation gives way.
+    assert health_listed((Problem("offsite_missing"),), None)["offsite_unset"]
 
 
 def home_page(dashboard):
@@ -3110,4 +3265,39 @@ def test_home_keeps_both_notices_for_a_viewer_without_system_health():
     assert admin.count("did not finish.") == 1
     assert "Copying the newest backup failed." not in admin
     assert admin.count("Run a full refresh now") == 1
-    assert admin.count("Off-site backup settings") == 1
+    assert admin.count("Off-site backups (Google Drive)") == 1
+
+
+@pytest.mark.parametrize(
+    ("status", "backup_after", "listed"),
+    [
+        # A newer finished backup clears a request that failed or did not
+        # finish: backups work again.
+        ("failed", True, False),
+        ("did_not_finish", True, False),
+        ("failed", False, True),
+        ("did_not_finish", False, True),
+        # A request never picked up stays: a good nightly backup does not
+        # prove the server checks for requests.
+        ("not_picked_up", True, True),
+        ("not_picked_up", False, True),
+    ],
+)
+def test_when_a_failed_request_clears(status, backup_after, listed):
+    """B1 of #1461: the tiles table and the backups panel's rule."""
+    backup_at = NOW + timedelta(hours=1) if backup_after else NOW - timedelta(hours=1)
+    found = problems(backup_request=failed_request(status), backup_at=backup_at)
+    assert found == (["backup_request_failed"] if listed else []), status
+
+
+def test_a_watch_stops_when_only_problems_waiting_cannot_clear_remain():
+    """``system health --watch`` ends with only off-site copies not set up or
+    a failed request left, and keeps watching while anything else holds."""
+    from parishkit.stewardship.system_health import WAIT_CANNOT_CLEAR
+
+    assert {"offsite_missing", "backup_request_failed"} == WAIT_CANNOT_CLEAR
+    assert health().terminal
+    stuck = (Problem("offsite_missing"), request_problem("not_picked_up"))
+    assert health(problems=stuck).terminal
+    for other in (Problem("backup_rpo_breach", at=NOW), Problem("backup_key_mismatch")):
+        assert not health(problems=(*stuck, other)).terminal, other.kind

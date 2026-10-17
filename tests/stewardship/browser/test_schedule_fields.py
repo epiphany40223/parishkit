@@ -207,6 +207,37 @@ def test_the_page_expander_runs_the_shared_fixture(page, component_origin):
     assert results == [case["expected"] for case in RECURRENCE["cases"]]
 
 
+DST = json.loads(
+    (Path(__file__).parents[1] / "fixtures" / "dst_cases.json").read_text()
+)["cases"]
+
+
+@pytest.mark.parametrize("zone", sorted({case["zone"] for case in DST}))
+def test_the_page_reads_typed_times_by_the_one_dst_rule(
+    browser_engine, component_origin, zone
+):
+    """The page script turns typed times into the server's instants (#1129).
+
+    In a browser in ``zone``, ``ParishLocalTime.moment`` gives exactly the
+    shared fixture's instant, the one ``browser_instant`` gives: a skipped
+    time is the first instant after the gap and a repeated one the first.
+    """
+    cases = [case for case in DST if case["zone"] == zone]
+    context = browser_engine.new_context(timezone_id=zone)
+    try:
+        page = context.new_page()
+        page.goto(component_origin + "/schedule-editor-mail")
+        moments = page.evaluate(
+            "(cases) => cases.map((item) =>"
+            " new Date(window.ParishLocalTime.moment(item.date, item.time))"
+            ".toISOString())",
+            cases,
+        )
+    finally:
+        context.close()
+    assert moments == [case["utc"].replace("Z", ".000Z") for case in cases]
+
+
 def page_top(locator):
     """The element's top edge from the top of the page, whatever the scroll.
 

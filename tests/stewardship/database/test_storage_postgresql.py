@@ -686,6 +686,7 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                 "download_grant",
                 "download_use",
                 "cleanup",
+                "discard",
             )
         },
         "stewardship_recovery_replacement": (

@@ -27,7 +27,9 @@ deployed consumer and reads only the credential that consumer already mounts:
 | `backup_drive` | `backup-worker` (`docker compose run`) | The Workspace key, acting as `--delegated-email` with the Drive scope, can write to and trash in the folder at `--folder-link` | `--send` uploads the newest complete local backup set, tagged as this deployment's like a real copy (it also reads the database, as the backup login) |
 
 The result is one JSON line, `{"target": ..., "credential": "valid" |
-"invalid" | "unavailable", "sent": true | false}` (plus `redirect_uri` for
+"invalid" | "mismatch" | "unavailable", "sent": true | false}` (`mismatch`
+only for ParishSoft: the key works but sees a different organization than
+`--organization-id`; plus `redirect_uri` for
 the OAuth client), and exit `0`; `backup_drive` instead prints
 `{"target": "backup_drive", "accepted": true, "copied_set": ...}` or
 `"accepted": false` with a `reason` category and its plain-language
@@ -55,9 +57,11 @@ The credential installers already validate each provider credential in an
 endpoint-restricted session: exact-tenant organization validation for
 ParishSoft, a token refresh and an SMTP `AUTH XOAUTH2` for Google Workspace,
 and `auth.test` for Slack, and one classification turns each check's result
-or exception into `valid`, `invalid` or `unavailable` (a rejected key or a
-malformed credential file is invalid; an outage or an unexplained failure is
-unavailable, never a rejection). The smoke command runs that same
+or exception into `valid`, `invalid`, `mismatch` or `unavailable` (a
+rejected key or a malformed credential file is invalid; a ParishSoft key for
+another organization is a mismatch, refused for good like an invalid key,
+[#1492](https://github.com/epiphany40223/parishkit/issues/1492); an outage or
+an unexplained failure is unavailable, never a rejection). The smoke command runs that same
 classification on the mounted credential file, so a passing smoke check
 means what a passing installation means, and no second validation code path
 can drift. It runs

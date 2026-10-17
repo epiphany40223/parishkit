@@ -11,7 +11,7 @@
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Families the form cannot open' %}"><table>
 <caption>{% translate "ParishSoft values to correct" %}</caption><thead><tr>{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "Family DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}{% translate "Member DUID" as heading %}{% sort_heading table "member" heading "numeric" %}{% translate "Correct in ParishSoft" as heading %}{% sort_heading table "field" heading %}</tr></thead><tbody>
 {% for row in table.rows %}<tr><th scope="row">{% if row.family_name %}{{ row.family_name }}{% else %}{% source_status "missing" %}{% endif %}</th><td class="numeric">{{ row.family_duid|duid }}</td>{% if row.member_duid %}<td class="numeric">{{ row.member_duid|duid }}</td>{% else %}<td>{% translate "Unknown" %}</td>{% endif %}<td>{{ row.field }}</td></tr>
-{% empty %}<tr><td colspan="4">{% translate "Every Family that can use the portal can open the form." %}</td></tr>{% endfor %}</tbody></table></div>
+{% empty %}<tr><td colspan="4">{% translate "Every Family that can use the portal can open the form, so there is nothing to correct in ParishSoft. A Family is listed here if a later ParishSoft refresh brings in a value the form cannot accept." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=pages_label %}
 </div>
 {% endif %}
