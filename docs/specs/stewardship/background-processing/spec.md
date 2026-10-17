@@ -2394,7 +2394,12 @@ names no zone), with alt text carrying the same totals, then the day-by-day
 table of the last five campaign days (every covered date of a recovery
 digest, however many), and an "Open the Response dashboard" button, drawn
 like the Admin portal's primary button (its accent colour, radius, padding
-and bold label, as a table cell so every mail program shows it). Both
+and bold label, as a table cell so every mail program shows it). The table
+gives each day two rows: the date across the table, then that day's first
+submissions, participation and pledges under their column headings, so it
+fits a 320px phone without scrolling sideways, which mail programs cannot
+do for a table ([#1559](https://github.com/epiphany40223/parishkit/issues/1559)).
+The text part keeps one line per day. Both
 dashboard links go to the
 [Response dashboard](../reports/spec.md#response-dashboard), its Testing
 view in a Testing digest; the text part lists the link after the opening

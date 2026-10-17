@@ -127,7 +127,10 @@ def test_daily_digest_keeps_exact_values_and_accessible_inline_chart():
         assert jargon not in result.text
     assert ">Day by day</caption>" in result.html
     assert "Historical as of day" not in result.html
-    assert ">Campaign date</th>" in result.html
+    # Each day's date heads its own row (#1559); "Campaign date" stays in
+    # the text part, whose rows keep the four columns.
+    assert ">Campaign date</th>" not in result.html
+    assert ">Nov 2, 2026</th>" in result.html
     assert f"cid:{CHART_ID}" in result.html
     # Visuals first (#720): the as-of caption, then one line per total with
     # its bar, then the chart; the ParishSoft line is small print at the end.
@@ -217,6 +220,87 @@ def test_table_shows_the_last_five_days_and_every_recovered_day():
     )
     assert len(digest_rows(recovery)) == 12
     assert "Oct 22, 2026 | 1 | 1 out of 1,234" in render(recovery).text
+
+
+def day_table(html):
+    """The "Day by day" table's markup, from its caption to its end."""
+    start = html.index("Day by day</caption>")
+    return html[start : html.index("</table>", start)]
+
+
+@pytest.mark.parametrize(("financial", "span"), [(True, "3"), (False, "2")])
+def test_day_table_gives_each_day_a_date_row_then_its_values(financial, span):
+    """Two rows per day fit a phone without losing a value (#1559)."""
+    value = long_document(12)
+    if not financial:
+        chart = replace(value.participation, financial_enabled=False)
+        statistics = replace(value.statistics, financial_enabled=False)
+        value = replace(value, participation=chart, statistics=statistics)
+    table = day_table(render(value).html)
+    headings = re.findall(
+        r'<th scope="col" align="(?:left|right)" style="([^"]+)">([^<]+)<', table
+    )
+    expected = ["First submissions", "Cumulative participation"]
+    expected += ["Cumulative annual pledges (USD)"] if financial else []
+    assert [label for _style, label in headings] == expected
+    # Only the first column has no gap before it, so the table starts flush.
+    assert [style for style, _label in headings] == [STYLES["th-lead"]] + [
+        STYLES["th"]
+    ] * (len(expected) - 1)
+    for row in digest_rows(value):
+        date, *figures = row
+        cells = "".join(
+            f'<td align="{"right" if index else "left"}" '
+            f'style="{STYLES["td-lead" if index == 0 else "td"]}">'
+            f"{figure}</td>"
+            for index, figure in enumerate(figures)
+        )
+        assert (
+            f'<tbody><tr><th scope="rowgroup" colspan="{span}" align="left" '
+            f'style="{STYLES["day"]}">{date}</th></tr><tr>{cells}</tr></tbody>'
+        ) in table
+    assert table.count("<tbody>") == len(digest_rows(value)) == 5
+
+
+def test_day_table_is_a_data_table_with_headers_and_no_role():
+    """No role: presentation would hide the headers from screen readers."""
+    html = render(long_document(12)).html
+    table_open = html[html.rindex("<table", 0, html.index("Day by day</caption>")) :]
+    assert table_open.startswith('<table width="100%"')
+    assert "role=" not in table_open[: table_open.index(">")]
+    table = day_table(html)
+    # Column headings, then per day one row-group heading and one value row.
+    assert table.count('<th scope="col"') == 3
+    assert table.count('<th scope="rowgroup"') == table.count("<tbody>") == 5
+    assert table.count("<td ") == 15
+
+
+def test_retained_reports_with_the_four_column_day_table_still_validate():
+    """A report compiled before the two-row day table (#1559) still delivers."""
+    result = render(document())
+    old_th = (
+        "padding:8px 12px 8px 0;font-size:14px;color:#4f5e66;"
+        "border-bottom:2px solid #c9d1cf;"
+    )
+    old_td = (
+        "padding:7px 12px 7px 0;font-size:15px;color:#1b2a31;"
+        "border-bottom:1px solid #e4e7ec;"
+    )
+    for tag, style in (("th", old_th), ("td", old_td)):
+        assert layout_attribute(tag, "style", style) == style
+    old = (
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'border="0" style="{STYLES["table"]}"><caption '
+        f'style="{STYLES["table-caption"]}">Day by day</caption><thead><tr>'
+        f'<th scope="col" align="left" style="{old_th}">Campaign date</th></tr>'
+        f'</thead><tbody><tr><td align="left" style="{old_td}">Nov 2, 2026</td>'
+        "</tr></tbody></table>"
+    )
+    html = result.html
+    end = html.index("</table>", html.index("Day by day</caption>")) + len("</table>")
+    start = html.rindex("<table", 0, html.index("Day by day</caption>"))
+    html = html[:start] + old + html[end:]
+    validate_digest_body(html, result.text, result.chart.data, result.images)
 
 
 @pytest.mark.parametrize(

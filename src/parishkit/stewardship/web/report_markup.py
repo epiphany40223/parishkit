@@ -45,6 +45,25 @@ _RETAINED_TH = (
     "border-bottom:2px solid #d0d5dd;"
 )
 
+# The day-by-day table's heading and value cells; ``gap`` is the left
+# padding that separates a column from the one before it.
+_TH = (
+    "padding:8px 0 6px {gap}px;font-size:12px;color:" + MUTED + ";"
+    "border-bottom:2px solid " + RULE + ";"
+)
+_TD = (
+    "padding:2px 0 8px {gap}px;font-size:14px;color:" + INK + ";"
+    "border-bottom:1px solid " + TRACK + ";"
+)
+# The day-by-day table's cells before each day took two rows (#1559): a
+# retained report compiled before then still carries them. Frozen history,
+# so literal.
+_RETAINED_TABLE = {
+    "padding:8px 12px 8px 0;font-size:14px;color:#4f5e66;"
+    "border-bottom:2px solid #c9d1cf;",
+    "padding:7px 12px 7px 0;font-size:15px;color:#1b2a31;"
+    "border-bottom:1px solid #e4e7ec;",
+}
 # The only inline styles a compiled report may carry.
 STYLES = {
     "caption": f"margin:0 0 20px;font-size:14px;color:{MUTED};",
@@ -64,12 +83,14 @@ STYLES = {
     "image": "display:block;width:100%;max-width:880px;height:auto;border:0;",
     "table": "border-collapse:collapse;margin:16px 0 0;",
     "table-caption": f"text-align:left;font-size:14px;color:{MUTED};padding:0 0 6px;",
-    "th": (
-        f"padding:8px 12px 8px 0;font-size:14px;color:{MUTED};"
-        f"border-bottom:2px solid {RULE};"
-    ),
-    "td": f"padding:7px 12px 7px 0;font-size:15px;color:{INK};"
-    f"border-bottom:1px solid {TRACK};",
+    # The day-by-day table (#1559): each day's date heads its own row, then
+    # its values. Small headings and tight gaps keep the three value columns
+    # inside a 320px phone; "-lead" is the first column, with no gap before.
+    "th": _TH.format(gap=8),
+    "th-lead": _TH.format(gap=0),
+    "day": f"padding:10px 0 2px;font-size:14px;font-weight:bold;color:{INK};",
+    "td": _TD.format(gap=8),
+    "td-lead": _TD.format(gap=0),
     "link": f"color:{LINK};text-decoration:underline;",
     # The weekly digests' numbered request rows.
     "who": (
@@ -102,6 +123,7 @@ _RETAINED_STYLES = {
     ),
     _RETAINED_TH,
     _RETAINED_AS_OF,
+    *_RETAINED_TABLE,
 }
 _STYLE_VALUES = frozenset(STYLES.values()) | _BUTTON_STYLES | _RETAINED_STYLES
 # Closed values for the presentational table attributes the bars use.
@@ -111,7 +133,10 @@ _FIXED = {
     "cellspacing": {"0"},
     "border": {"0"},
     "align": {"left", "right"},
-    "scope": {"col"},
+    "scope": {"col", "rowgroup"},
+    # A day's date row spans the value columns (#1559): 3, or 2 without
+    # pledges.
+    "colspan": {"2", "3"},
 }
 _PERCENT = re.compile(r"(?:100|[1-9]?[0-9])%")
 
@@ -123,7 +148,7 @@ LAYOUT_ATTRIBUTES = {
     "h2": {"style"},
     "caption": {"style"},
     "table": {"role", "width", "cellpadding", "cellspacing", "border", "style"},
-    "th": {"scope", "align", "style"},
+    "th": {"scope", "colspan", "align", "style"},
     "td": {"width", "bgcolor", "align", "style"},
 }
 
