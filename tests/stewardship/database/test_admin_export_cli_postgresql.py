@@ -158,6 +158,12 @@ def commands(verb):
     return list(AuditEvent.objects.filter(event_type=f"admin_cmd_export_{verb}"))
 
 
+def names_export(event, report="participation", format="csv"):
+    """Whether a command's event names its export's report kind and format."""
+    context = AuditContext.objects.get(event=event).context
+    return (context.get("report"), context.get("format")) == (report, format)
+
+
 @pytest.mark.parametrize("format", ["csv", "png", "pdf"])
 def test_the_command_downloads_the_pages_bytes_with_the_pages_events(
     cli,
@@ -227,11 +233,15 @@ def test_create_follows_the_pages_form_and_repeats_safely(cli, http_scenario):  
     assert result["export"]["state"] == "queued" and result["export"]["can_cancel"]
     # The page's request and the command's: same event, same context.
     requested = contexts("export_requested")
-    assert [entry[3] for entry in requested] == [{"outcome": "started"}] * 2
+    # Each names its report kind and format (#1398).
+    named = {"report": "participation", "format": "csv"}
+    assert [entry[3] for entry in requested] == [{"outcome": "started"} | named] * 2
     assert requested[0][0] == requested[1][0]  # the same Administrator
     assert requested[1][1] == export.pk
     [event] = commands("create")
     assert event.subject_id == UUID(document["session"]["id"])
+    # The command's own event names the export too (#1398).
+    assert names_export(event)
     code, again = run(*argv, secret=secret)
     assert code == 0 and not again["result"]["created"]
     assert again["result"]["export"]["id"] == str(export.pk)
@@ -261,9 +271,10 @@ def test_cancel_is_the_pages_and_a_published_export_is_stale(cli, http_scenario)
     code, document = run("export", "cancel", str(request.pk), secret=secret)
     assert code == 0 and not document["result"]["created"]
     assert [entry[3] for entry in contexts("export_cancelled")] == [
-        {"outcome": "cancelled"}
+        {"outcome": "cancelled", "report": "participation", "format": "csv"}
     ]
-    assert len(commands("cancel")) == 1
+    [event] = commands("cancel")
+    assert names_export(event)
     published = create(http_scenario)
     run_export(setup, published)
     code, document = run("export", "cancel", str(published.pk), secret=secret)
@@ -289,7 +300,8 @@ def test_retry_reruns_a_failed_export(cli, http_scenario):  # noqa: F811
     assert request.task.chain_runs.filter(retry_command_id=key).count() == 1
     code, again = run(*argv, secret=secret)
     assert code == 0 and not again["result"]["created"]
-    assert len(commands("retry")) == 1
+    [event] = commands("retry")
+    assert names_export(event)
     # The queued retry is not a failed run: the page's conflict.
     code, document = run("export", "retry", str(request.pk), secret=secret)
     assert code == 1 and document["error"]["code"] == "stale_version"

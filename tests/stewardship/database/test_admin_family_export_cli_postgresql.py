@@ -137,6 +137,9 @@ def test_a_financial_export_is_the_pages(
     assert count("admin_cmd_export_financial") == 1
     event = AuditEvent.objects.get(event_type="admin_cmd_export_financial")
     assert event.subject_id is not None
+    # It names the export's report kind and format (#1398).
+    context = AuditContext.objects.get(event=event).context
+    assert (context["report"], context["format"]) == ("financial", made.format)
     # The full-scope session stood in for the page's recent sign-in, in the
     # export's own transaction (#547, the caller-aware require_fresh).
     [gate] = AuditEvent.objects.filter(event_type="automation_fresh_gate")
@@ -344,6 +347,10 @@ def test_the_directory_and_mail_merge_exports(
     assert made.report == "family_directory"
     assert harness.code not in str(document) and "Example" not in str(document)
     assert count("admin_cmd_export_directory") == 1 and len(requested()) == 1
+    context = AuditContext.objects.get(
+        event__event_type="admin_cmd_export_directory"
+    ).context
+    assert (context["report"], context["format"]) == ("family_directory", made.format)
     # The session stood in for the page's recent sign-in (#547).
     assert count("automation_fresh_gate") == 1
     # A repeat returns the same export without loading any key.

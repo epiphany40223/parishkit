@@ -190,7 +190,13 @@ def test_download_form_queues_each_format_from_a_protected_capture(
         ).values_list("context", flat=True)
     )
     assert len(contexts) == 3
-    assert all(c == {"outcome": "started", "count": 2} for c in contexts)
+    assert all(
+        c
+        == {"outcome": "started", "count": 2, "report": "campaign_comparison"}
+        | {"format": c["format"]}
+        for c in contexts
+    )
+    assert {c["format"] for c in contexts} == {"csv", "xlsx", "pdf"}
 
 
 def capture_row(harness, actor, document=None, **values):

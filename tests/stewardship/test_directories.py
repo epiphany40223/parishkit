@@ -798,6 +798,7 @@ def test_directory_exports_audit_and_admit_their_mode(monkeypatch, mode):
     request = ExportRequest(
         campaign_id=uuid4(),
         report="family_directory",
+        format="csv",
         parameters=parameters,
         requester_id=requester,
     )
@@ -809,7 +810,11 @@ def test_directory_exports_audit_and_admit_their_mode(monkeypatch, mode):
     )
     export_services.audit(Action.EXPORT_REQUESTED, request, requester, outcome="x")
     shown = mode or "production"
-    assert recorded == [{"outcome": "x", "report_mode": shown}]
+    # The report kind and format too (#1398).
+    assert recorded == [
+        {"outcome": "x", "report": "family_directory", "format": "csv"}
+        | {"report_mode": shown}
+    ]
     assert sanitize(ContextKind.ACTION, {"report_mode": shown})
     monkeypatch.setattr(export_services, "allows", lambda principal, need: True)
     for roles, admitted in (({"administrator"}, True), ({"staff"}, shown != "testing")):

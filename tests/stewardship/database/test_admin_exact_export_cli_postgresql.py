@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 import pytest
 from django.urls import reverse
 
-from parishkit.stewardship.audit.models import AuditEvent
+from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.dispatch import execute_hint
 from parishkit.stewardship.jobs.queues import WorkQueue
@@ -74,6 +74,11 @@ def test_an_exact_export_from_request_to_file(
     assert job.campaign_id == facts.campaign_id
     assert count("export_requested") == 1
     assert count("admin_cmd_export_exact_create") == 1
+    # A latest-data export is a participation export (#1398).
+    context = AuditContext.objects.get(
+        event__event_type="admin_cmd_export_exact_create"
+    ).context
+    assert (context["report"], context["format"]) == ("participation", job.format)
     # The same key from the command or the page's form is the same request.
     code, document = run(*create)
     assert code == 0 and document["result"]["created"] is False

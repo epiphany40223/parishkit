@@ -314,17 +314,26 @@ def _change(caller, service, actor, step, *, context, conflicts=True):
     return model
 
 
-def _command_event(caller, actor, action):
-    """Record the command's ``admin_cmd_export_<verb>`` event (``outcome`` only)."""
+def _command_event(caller, actor, action, export=None):
+    """Record the command's ``admin_cmd_export_<verb>`` event.
+
+    Its context is the outcome and, for the ``export`` request it acted on,
+    that export's report kind and format (#1398), as the page's own events
+    carry them; a latest-data export is the participation report.
+    """
     from .audit.schemas import ActorKind, Outcome
     from .audit.services import record_action
 
+    context = {"outcome": Outcome.SUCCEEDED}
+    if export is not None:
+        context["report"] = getattr(export, "report", "participation")
+        context["format"] = export.format
     record_action(
         action,
         actor_kind=ActorKind.PORTAL_USER,
         actor_id=actor.identity,
         subject_id=caller.automation_session_id,
-        context={"outcome": Outcome.SUCCEEDED},
+        context=context,
     )
 
 
@@ -408,7 +417,7 @@ def create_export_command(
                 request_key=request_key,
             )
             if not repeat:
-                _command_event(caller, actor, Action.ADMIN_CMD_EXPORT_CREATE)
+                _command_event(caller, actor, Action.ADMIN_CMD_EXPORT_CREATE, job)
                 written.append(True)
             document = _status_document(service, actor, job.pk)
         return ExportChange(
@@ -480,7 +489,7 @@ def create_comparison_command(caller, service, *, day, fmt, zone, request_key, c
                 document=document,
             )
             if not repeat:
-                _command_event(caller, actor, Action.ADMIN_CMD_EXPORT_COMPARISON)
+                _command_event(caller, actor, Action.ADMIN_CMD_EXPORT_COMPARISON, job)
                 written.append(True)
             document_out = _status_document(service, actor, job.pk)
         return ExportChange(
@@ -497,7 +506,7 @@ def cancel_export_command(caller, service, export_id, *, context):
     a published one is ``stale_version``, as the page's 409.
     """
     from .audit.schemas import Action
-    from .reports.export_models import ExportCancellation
+    from .reports.export_models import ExportCancellation, ExportRequest
     from .reports.export_services import cancel_export
 
     actor = _admit(caller, service, activity=True)
@@ -508,7 +517,12 @@ def cancel_export_command(caller, service, export_id, *, context):
             repeat = ExportCancellation.objects.filter(request_id=export_id).exists()
             cancel_export(service.store, actor.identity, export_id)
             if not repeat:
-                _command_event(caller, actor, Action.ADMIN_CMD_EXPORT_CANCEL)
+                _command_event(
+                    caller,
+                    actor,
+                    Action.ADMIN_CMD_EXPORT_CANCEL,
+                    ExportRequest.objects.only("report", "format").get(pk=export_id),
+                )
                 written.append(True)
             document = _status_document(service, actor, export_id)
         return ExportChange(created=not repeat, request_key=None, export=document)
@@ -539,7 +553,7 @@ def retry_export_command(caller, service, export_id, *, request_key, context):
                 service.store, actor.identity, export_id, request_key=request_key
             )
             if not repeat:
-                _command_event(caller, actor, Action.ADMIN_CMD_EXPORT_RETRY)
+                _command_event(caller, actor, Action.ADMIN_CMD_EXPORT_RETRY, job)
                 written.append(True)
             document = _status_document(service, actor, export_id)
         return ExportChange(
