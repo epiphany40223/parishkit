@@ -6,7 +6,7 @@
 {% if is_refresh %}{% aboutpage "refresh-task" %}<p>{% translate "Every refresh places every ParishSoft record into a complete new copy, so the progress counts records checked, not records changed. Unchanged records are reused, not stored again. When the refresh finishes, this page also says how many records changed." %}</p>
 <p>{% translate "Refreshing changes nothing in ParishSoft and sends no mail." %}</p>{% endaboutpage %}{% endif %}
 <p>{{ task.name }}{% if refresh_label %}: <strong>{{ refresh_label }}</strong>{% endif %}</p>
-{# Refresh task re-reads the status, Retry panels, history, latest retry and technical details in place (ui-v1.js, a[data-in-place], #519); live-status-v1.js watches the fresh status while it is still pending. #}
+{# live-status-v1.js updates the status by itself while the task runs and, when it ends, re-reads the status, Retry panels, history, latest retry and technical details quietly in place (#869); the page has no Refresh link (#1586). #}
 <div id="task-status" data-in-place-region>{% include 'stewardship/background-task-status.html' %}</div>
 {% comment %}Retry panels appear once a task has failed; as an in-place region the
   page brings them in when a watched task ends, without a reload (#869).{% endcomment %}
@@ -52,8 +52,8 @@
 <dt>{% translate "Created" %}</dt><dd><time datetime="{{ task.created_at }}" data-local-instant>{{ task.created_at }}</time></dd>
 {% if task.heartbeat_at %}<dt>{% translate "Last heartbeat" %}</dt><dd><time datetime="{{ task.heartbeat_at }}" data-local-instant>{{ task.heartbeat_at }}</time></dd>{% endif %}
 {% if task.lease_expires_at %}<dt>{% translate "Lease expires" %}</dt><dd><time datetime="{{ task.lease_expires_at }}" data-local-instant>{{ task.lease_expires_at }}</time></dd>{% endif %}</dl>
-<p>{% translate "These values are as of when this page was opened or last refreshed; select Refresh task to update them. The heartbeat is the last time the worker checked in; the lease is how long it may keep the task before recovery takes over." %}</p>
+<p>{% translate "These values are as of when this page was opened, and update by themselves when the task finishes. The heartbeat is the last time the worker checked in; the lease is how long it may keep the task before recovery takes over." %}</p>
 </details>
-<p><a id="task-refresh"{% if history %} data-table-sync{% endif %} data-in-place="refresh" data-in-place-message="{% translate 'Task refreshed.' %}" href="{% url 'admin:background_task_page' task.id %}{% if history %}?{{ history.current_query }}{% endif %}#task-status">{% translate "Refresh task" %}</a> · <a href="{% url 'admin:background' %}">{% translate "All background work" %}</a></p>
-<p class="help">{% translate "Refreshing this status does not extend your sign-in." %}</p>
+<p><a href="{% url 'admin:background' %}">{% translate "All background work" %}</a></p>
+<p class="help">{% translate "The status updates by itself while the task runs. Watching it does not extend your sign-in." %}</p>
 {% endblock %}

@@ -8,7 +8,7 @@
   change on every poll, so screen readers instead hear data-live-announce,
   copied into the page's announcer only when that coarse status changes. Only
   the page passes status_url.
-{% endcomment %}<section class="panel" data-live-status="send-progress"{% if status_url %} data-live-url="{{ status_url }}"{% endif %} data-live-interval="{{ poll_interval }}" data-live-give-up="{{ give_up }}" data-live-refresh-label="{% translate 'Refresh progress' %}" data-live-announce="{{ announcement }}"{% if follow %} data-live-pending{% endif %} aria-labelledby="send-progress-heading">
+{% endcomment %}<section class="panel" data-live-status="send-progress"{% if status_url %} data-live-url="{{ status_url }}"{% endif %} data-live-interval="{{ poll_interval }}" data-live-give-up="{{ give_up }}" data-live-announce="{{ announcement }}"{% if follow %} data-live-pending{% endif %} aria-labelledby="send-progress-heading">
 {% if send.active %}<h2 id="send-progress-heading">{% if send.counts.kind == 'initial' %}{% translate "Invitation email" %}{% else %}{% translate "Reminder email" %}{% endif %}</h2>
 {% if testing %}<p class="notice">{% translate "Testing mode: these emails go only to the Testing recipient." %}</p>{% endif %}
 {% if send.paused %}<p class="notice"><strong>{% translate "Paused." %}</strong> {% translate "Live delivery is paused. The remaining emails wait until delivery resumes." %}</p>

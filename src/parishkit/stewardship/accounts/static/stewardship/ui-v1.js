@@ -1046,9 +1046,9 @@
   //   the page than a table (the participation report's options, which
   //   refresh its statistics, chart and export panels, #519);
   // - a[data-in-place]: a link that shows another view of this page (the
-  //   response dashboard's mode and grain, a list's Refresh). Its value, if
-  //   any, is a stable key that finds the link again in the fresh page, for
-  //   focus and to announce the view now shown ("By day");
+  //   response dashboard's mode and grain, a page's periodic re-read). Its
+  //   value, if any, is a stable key that finds the link again in the fresh
+  //   page, for focus and to announce the view now shown ("By day");
   // - form[data-in-place]: a form whose answer is this page again, such as a
   //   POST whose server redirects back here (Post/Redirect/Get). A POST
   //   saves a change unless the form is marked data-in-place-read (System
@@ -1060,7 +1060,7 @@
   //   fresh page applied (syncFilters).
   // A data-in-place link or form names the region it changes by its URL's
   // fragment, or else by the region it sits in. Its data-in-place-message
-  // ("List refreshed.") is announced before the region's row count.
+  // ("Saved.") is announced before the region's row count.
   // A submit button marked data-in-place-moves (a follow-up item's Save and
   // next, #534) may be answered by a redirect to another page that draws the
   // same region (the next item): that page's regions are swapped in and the
@@ -1224,7 +1224,7 @@
   };
   // What the live region says (owner as for focusAfter). A data-in-place
   // control says its message
-  // ("List refreshed.") and the rows now shown, or names the view now shown
+  // ("Saved.") and the rows now shown, or names the view now shown
   // (its fresh link's text, "By day"). A table control says the sorted
   // column and its direction after a heading, otherwise the navigator's own
   // "Showing 26–50 of 120 · Page 2 of 5". A filter changes every table on
@@ -1738,10 +1738,20 @@
   };
   const refreshRegions = async (region, control, url, init, fallback, options, controller, form) => {
     const owner = options.owner || null;
+    // A periodic re-read (options.background, #1586) never hands the page
+    // to the browser: the reader did not act, so a failed read is only
+    // reported back (with the answer, or null when there was none) and the
+    // page stays as it is.
+    const background = options.background || null;
     // Every way out below that hands the page to the browser (a full load,
     // a page shown as returned) marks it leaving, so no box resubmits, and
     // marks a box's state as failed.
     const leave = (act) => {
+      if (background) {
+        region.removeAttribute("aria-busy");
+        background.failed(response || null);
+        return;
+      }
       leaving = true;
       if (isBox(control)) failedState.set(control, sentState.get(control));
       act();
@@ -1777,7 +1787,7 @@
       // fall back: the fallback's own navigation would hijack theirs. A
       // saving POST's note is still shown: beforeunload also fires for a
       // download link, and that page stays.
-      if (unloading && !form) return;
+      if (unloading && !form && !background) return;
       if (form) showUnreachable(form);
       else leave(fallback);
       return;
@@ -1942,6 +1952,7 @@
     }
     if (options.quiet && !refused) {
       refocusHeld(held);
+      background?.ok();
       return;
     }
     // A refusal's summary (now in the region) takes focus, as it does on an
@@ -2753,6 +2764,115 @@
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") reread("a[data-reread-on-show][data-in-place]");
   });
+
+  // Pages that update themselves (UX conventions, #1586). A page whose state
+  // changes without the reader's own action (Background work, Families on
+  // the form now) carries one hidden a[data-reread-every="<ms>"][data-in-place]
+  // link, outside its regions, whose fragment names the region to re-read.
+  // Every <ms> (at least 5 s) while the tab is visible, the page's own
+  // address (so the filters, sort, size and page shown) is re-read quietly
+  // through the in-place mechanism: every region is swapped, focus is found
+  // again, nothing is announced, the address keeps its fragment, and a view
+  // that is passive never extends the sign-in. A read is skipped (and tried
+  // at the next tick) while the reader is busy: another in-place request is
+  // in flight, a form control has focus, text is selected or a dialog is
+  // open. Hidden tabs are not read; the page catches up at once when shown
+  // again or brought back from the back/forward cache. A failed read never
+  // navigates: after three in a row, a line after the link says the page is
+  // not current, and the next read that works removes it; a refusal (signed
+  // out, access removed, or an answer from another page) stops the reads
+  // and says so.
+  const REREAD_MIN_MS = 5000;
+  const REREAD_FAILURES = 3;
+  let rereadTimer = 0;
+  let rereadFailures = 0;
+  let rereadStopped = false;
+  const rereadLink = () => document.querySelector("a[data-reread-every][data-in-place][href]");
+  const rereadProblem = (text) => {
+    // Say ``text`` on the line after the link (created on first use), or
+    // hide the line when ``text`` is empty.
+    const link = rereadLink();
+    if (!link) return;
+    let line = document.querySelector("[data-reread-problem]");
+    if (!line && !text) return;
+    if (!line) {
+      line = document.createElement("p");
+      line.className = "notice";
+      line.setAttribute("role", "status");
+      line.setAttribute("data-reread-problem", "");
+      link.after(line);
+    }
+    line.textContent = text;
+    line.hidden = !text;
+  };
+  const readerBusy = () => {
+    // Whether a periodic re-read would get in the reader's way now.
+    const active = document.activeElement;
+    const selection = window.getSelection ? window.getSelection() : null;
+    return Boolean(tableRequest || saving
+      || (active && active.matches("input, select, textarea, [contenteditable]"))
+      || (selection && !selection.isCollapsed)
+      || document.querySelector("dialog[open]"));
+  };
+  const scheduleReread = () => {
+    // Arm the next re-read at the link's pace, unless the page has none,
+    // reads were stopped by a refusal, or the tab is hidden.
+    window.clearTimeout(rereadTimer);
+    const link = rereadLink();
+    const pace = Number(link?.getAttribute("data-reread-every"));
+    if (!link || rereadStopped || !(pace > 0) || document.visibilityState !== "visible") return;
+    rereadTimer = window.setTimeout(rereadNow, Math.max(pace, REREAD_MIN_MS));
+  };
+  const rereadNow = () => {
+    // Re-read the page's own address quietly now, or wait for the next tick
+    // while the reader is busy.
+    const link = rereadLink();
+    const id = link?.getAttribute("href").split("#")[1];
+    const region = id && document.getElementById(id);
+    if (rereadStopped || !isRegion(region) || document.visibilityState !== "visible") return;
+    if (readerBusy()) {
+      scheduleReread();
+      return;
+    }
+    const here = new URL(window.location.href);
+    here.hash = region.id;
+    // Whether this read reported back (ok or failed); an aborted read
+    // (the reader's own choice overtook it) reports nothing.
+    let settled = false;
+    const background = {
+      ok: () => {
+        settled = true;
+        rereadFailures = 0;
+        rereadProblem("");
+        scheduleReread();
+      },
+      failed: (response) => {
+        settled = true;
+        // A refusal (an error status a retry cannot fix, or an answer that
+        // is another page, such as the sign-in page) stops the reads.
+        const elsewhere = response && response.redirected
+          && new URL(response.url).pathname !== window.location.pathname;
+        if (elsewhere || (response && [400, 401, 403, 404, 410].includes(response.status))) {
+          rereadStopped = true;
+          rereadProblem("Couldn't check for updates. Reload the page or sign in again.");
+          return;
+        }
+        rereadFailures += 1;
+        if (rereadFailures >= REREAD_FAILURES) rereadProblem("Couldn't check for updates — retrying.");
+        scheduleReread();
+      },
+    };
+    refreshTable(region, link, here.href, {method: "GET"}, () => {},
+      {owner: link, quiet: true, background}).finally(() => {
+      if (!settled) scheduleReread();
+    });
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") rereadNow();
+    else window.clearTimeout(rereadTimer);
+  });
+  window.addEventListener("pageshow", (event) => { if (event.persisted) rereadNow(); });
+  scheduleReread();
 
   // A control's value for the rules below (data-show-when and
   // data-required-when). A checkbox counts as its value only while it is

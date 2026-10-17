@@ -148,9 +148,9 @@ def test_export_commands_are_in_place(
 ):
     """Retry export and Cancel export post once (a double click included),
     follow the view's redirect back and swap the status panel in. The button
-    is gone then, so focus falls back to Refresh status just below the panel
-    rather than up to the page heading, and the address is the redirect's,
-    with the panel's fragment."""
+    is gone then, so focus falls back into the panel (the page has no
+    Refresh status link, #1586) rather than up to the page heading, and the
+    address is the redirect's, with the panel's fragment."""
     open_marked(page, component_origin, address)
     hold_polls(page, component_origin, address)
     posts = count_requests(page, "POST", post)
@@ -161,7 +161,9 @@ def test_export_commands_are_in_place(
     stayed(page, offset)
     visible(page.locator("#export-status").get_by_text(shown, exact=False))
     hidden(page.get_by_role("button", name=name, exact=True))
-    focused(page.get_by_role("link", name="Refresh status"))
+    assert page.evaluate(
+        "document.getElementById('export-status').contains(document.activeElement)"
+    )
     assert posts == [component_origin + post]
     assert page.url.startswith(component_origin + address + "?")
     assert page.url.endswith("#export-status")

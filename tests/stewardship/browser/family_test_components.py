@@ -30,6 +30,10 @@ SEND = reverse("admin:campaign_mail_families", args=[UUID(int=705)])
 SENT = SEND + "?sent=1"
 # A Send whose sign-in went stale between the review and Send.
 STALE = reverse("admin:campaign_mail_families", args=[UUID(int=706)])
+# A page whose Family test is still on its way, so its recent tests watch
+# themselves (#1586); a route answers its reads with PENDING_SETTLED.
+PENDING = reverse("admin:campaign_mail_families", args=[UUID(int=707)])
+PENDING_SETTLED = "/family-test-settled"
 # Routed answers to CHECK, fetched by GET from these addresses.
 REVIEW = "/family-test-review"
 REVIEW_STALE = "/family-test-review-stale"
@@ -113,6 +117,8 @@ def components(context, admin):
         SEND: _review(context, admin, SEND),
         SENT: _page(context, admin, SEND, sent=1, available=2),
         STALE: _review(context, admin, STALE),
+        PENDING: _page(context, admin, PENDING, refresh=True),
+        PENDING_SETTLED: _page(context, admin, PENDING),
     }
     return {path: ("text/html", body) for path, body in pages.items()}
 

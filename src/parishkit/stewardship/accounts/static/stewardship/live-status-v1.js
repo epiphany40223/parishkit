@@ -5,10 +5,12 @@
 // script re-reads the same page (every status page is a passive read that
 // never extends a sign-in) and swaps in the fresh region's contents: every
 // 2 s at first, backing off to 10 s. It pauses while the tab is hidden,
-// checks again as soon as it is shown, and stops once the region is no
-// longer pending. The region element itself stays in place, so its
-// aria-live announcement reaches screen readers. The page's manual refresh
-// link remains the no-JavaScript fallback.
+// checks again as soon as it is shown (or brought back from the
+// back/forward cache), and stops once the region is no longer pending. The
+// region element itself stays in place, so its aria-live announcement
+// reaches screen readers. Pages have no manual Refresh link (UX
+// conventions, "Pages that update themselves", #1586): past its time limit
+// a watch slows to SLOW_MS instead of stopping (see schedule()).
 //
 // Never disrupt the Admin: while a form control inside the region has focus
 // or has been edited, the swap waits for the next check; while text in it
@@ -50,8 +52,7 @@
 // A region may also set data-live-give-up="<ms>" (at most 3 hours) to
 // replace the one-hour limit; the limit then counts from the last poll that
 // brought new content, so a long send watched from well before it starts
-// keeps updating. data-live-refresh-label names the page's own refresh link
-// in the message shown when watching stops.
+// keeps its pace. Past the limit the region is checked every SLOW_MS.
 //
 // A region may hold an element marked [data-live-keep="<name>"] for a control
 // that must sit inside the status it answers but that a poll must never
@@ -84,22 +85,21 @@
 //
 // A region marked data-live-not-current says when it is no longer current
 // instead of saying "retrying" or "Still working" under itself (System
-// health, #1214): after three checks in a row have failed, or when watching
-// stops at its limit or is refused, it dispatches a parishkit:live-current
+// health, #1214): after three checks in a row have failed, or when a check
+// is refused, it dispatches a parishkit:live-current
 // event (detail.current false) from the region, and on the next successful
 // check one with detail.current true, after which its data-live-announce
 // sentence is read out again even if it did not change. The page draws the
-// state (System health's Not current line and tiles). A button marked
-// [data-live-restart="<name>"] anywhere on the page checks that region again
-// at once, and starts watching it again if watching had stopped. Such a
+// state (System health's Not current line and tiles). It has no manual
+// Refresh button (#1586): failed checks keep being retried. Such a
 // region says nothing under itself even when a check is refused (signed
 // out or no longer allowed): the page's line says Not current, and the
 // Admin session's own dialog offers to sign in again.
 //
 // An in-place region marked [data-live-recheck="<name>"] (System health's
 // action regions, #1317) checks that region again at once when ui-v1.js
-// swaps in the answer to a form submitted inside it, as the restart button
-// does: the action's answer replaces only the page's in-place regions, so
+// swaps in the answer to a form submitted inside it (starting watching
+// again if a refusal had stopped it): the action's answer replaces only the page's in-place regions, so
 // the tile's summary and buttons elsewhere would otherwise keep their old
 // state until the next poll, up to 10 seconds later. Another region's
 // answer, which redraws this one too, does not check again.
@@ -145,19 +145,24 @@
     document.querySelector("[data-admin-session]")?.getAttribute("data-server-now") || "");
   const skew = Number.isFinite(serverNow) ? serverNow - Date.now() : 0;
   const DELAYS = [2000, 2000, 3000, 4000, 6000, 8000, 10000];
-  // Stop after an hour of watching; the manual refresh link still works.
+  // After an hour of watching, slow down to SLOW_MS rather than stop: the
+  // page has no manual Refresh link (#1586), and a page left open must not
+  // go quiet while it still says "running". Reads are passive, so a slow
+  // watch never keeps a sign-in alive; once the sign-in ends a read is
+  // refused and watching stops.
   const GIVE_UP_MS = 60 * 60 * 1000;
+  const SLOW_MS = 30 * 1000;
   // Each watcher's check that stops it once its region has been replaced.
   const watchers = new Set();
   // Each region name's coarse status sentence (data-live-announce) last
   // read out or first shown, shared by the watchers of that name, so a
-  // region swapped in by an in-place Refresh is announced only when its
+  // region swapped in by an in-place answer is announced only when its
   // status changed.
   const spoken = new Map();
   // The copy each mirror target last took (see mirror()), kept across a
   // restart's new watcher, so a target that was held still catches up.
   const mirrored = new WeakMap();
-  // Each region's way to check again at once (data-live-restart).
+  // Each region's way to check again at once (data-live-recheck).
   const restarts = new WeakMap();
   // The regions that said they are not current (data-live-not-current),
   // kept across a restart's new watcher so the next success is announced.
@@ -203,7 +208,6 @@
     const ownLimit = Number(region.getAttribute("data-live-give-up"));
     const renews = Number.isFinite(ownLimit) && ownLimit > 0;
     const giveUp = renews ? Math.min(ownLimit, 3 * GIVE_UP_MS) : GIVE_UP_MS;
-    const refreshLabel = region.getAttribute("data-live-refresh-label") || "Refresh status";
     // A fixed pace, when the region asks for one, within sensible bounds.
     const interval = Number(region.getAttribute("data-live-interval"));
     const fixed = Number.isFinite(interval) && interval > 0
@@ -316,18 +320,14 @@
     }
 
     function schedule() {
+      // The next check: the region's pace, or SLOW_MS once the watch has
+      // passed its limit. Nothing is scheduled while the tab is hidden; the
+      // visibilitychange and pageshow listeners below check again at once.
       window.clearTimeout(timer);
       if (stopped || gone() || document.visibilityState !== "visible") return;
-      if (asked - started > giveUp) {
-        if (saysCurrent) {
-          stop();
-          current(false);
-        } else {
-          stop(`Still working. Use ${refreshLabel} to check again.`);
-        }
-        return;
-      }
-      timer = window.setTimeout(check, fixed || DELAYS[Math.min(attempt, DELAYS.length - 1)]);
+      const slow = asked - started > giveUp;
+      timer = window.setTimeout(check,
+        slow ? SLOW_MS : fixed || DELAYS[Math.min(attempt, DELAYS.length - 1)]);
       attempt += 1;
     }
 
@@ -772,6 +772,14 @@
     // arrives after this (#562). A page kept in the back/forward cache
     // (persisted) resumes as before.
     window.addEventListener("pagehide", (event) => { if (!event.persisted) stop(); }, { signal });
+    // Back from the back/forward cache: the page may be long out of date,
+    // so check at once rather than wait for a timer frozen with it.
+    window.addEventListener("pageshow", (event) => {
+      if (event.persisted && !stopped) {
+        window.clearTimeout(timer);
+        check();
+      }
+    }, { signal });
     // Check again at once: a stopped watcher hands over to a fresh one.
     restarts.set(region, () => {
       if (gone()) return;
@@ -803,11 +811,6 @@
     const owner = event.target instanceof Element && event.target.closest("[data-live-recheck][id]");
     answering = owner ? owner.id : null;
   }, true);
-  document.addEventListener("click", (event) => {
-    // A [data-live-restart="<name>"] button checks that region again now.
-    const button = event.target instanceof Element && event.target.closest("[data-live-restart]");
-    if (button) recheck(button.getAttribute("data-live-restart"));
-  });
   // Read each settled region marked data-live-recheck-shown once more.
   const recheckShown = () => {
     document.querySelectorAll("[data-live-status][data-live-recheck-shown]:not([data-live-pending])")
@@ -832,7 +835,7 @@
     }
     const region = fresh.matches("[data-live-status]") ? fresh : fresh.querySelector("[data-live-status]");
     if (!region) return;
-    // A manual Refresh reads out a changed coarse status, as a poll would.
+    // An in-place swap reads out a changed coarse status, as a poll would.
     speak(region);
     watch(region);
   });

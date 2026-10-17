@@ -15,6 +15,8 @@ import pytest
 
 from .family_test_components import (
     CHECK,
+    PENDING,
+    PENDING_SETTLED,
     REFUSED,
     REVIEW,
     REVIEW_LOCAL,
@@ -207,18 +209,20 @@ def test_a_send_refused_for_a_stale_sign_in_shows_the_step_up(page, component_or
     assert posts == [component_origin + STALE]
 
 
-def test_refresh_keeps_families_typed_but_not_checked(page, component_origin):
-    """Refresh status replaces only the recent tests (data-in-place-only), so
-    DUIDs typed into Check but not yet checked are kept."""
+def test_recent_tests_update_without_touching_families_typed(page, component_origin):
+    """The recent tests update by themselves while a test is on its way, and
+    the page has no Refresh status link (#1586). Only their status section
+    is replaced, so DUIDs typed into Check but not yet checked are kept."""
+    from .test_live_status_in_place import answer_reads, refresh_controls
+
     page.set_viewport_size(VIEWPORT)
-    page.goto(component_origin + CHECK)
+    reads = answer_reads(page, component_origin, PENDING, PENDING_SETTLED)
+    page.goto(component_origin + PENDING)
     page.evaluate(MARK)
+    assert refresh_controls(page).count() == 0
     field = page.get_by_label("Family DUIDs, one per line (at most ten)")
     field.fill("5678")
-    page.get_by_role("link", name="Refresh status").click()
-    has_text(
-        page.get_by_role("status").filter(has_text="Status refreshed."),
-        "Status refreshed.",
-    )
+    hidden(page.get_by_text("Sending Family tests…"))
+    assert len(reads) == 1
     assert field.input_value() == "5678"
     assert page.evaluate(MARKED) == "kept"

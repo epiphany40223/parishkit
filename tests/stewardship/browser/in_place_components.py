@@ -1,10 +1,10 @@
 """Pages for the shared in-place mechanism's own tests (#519).
 
 Background work and Families on the form now are served at their real
-addresses, because their Refresh links name those addresses and the
-mechanism follows a data-in-place link only within the same page: the plain
-page, the page each Refresh link leads to (with changed counts, so the
-refresh is visible) and the background table's page 2.
+addresses, because their periodic re-reads (#1586) read those addresses and
+the mechanism follows a data-in-place link only within the same page: the
+plain page, the answers a test routes those re-reads to (with changed
+counts, so the update is visible) and the background table's page 2.
 
 A small test-only page exercises form[data-in-place] POSTs, which PR 1 of
 #519 does not yet put on a real Admin page: it is the real Admin chrome and
@@ -34,6 +34,10 @@ from parishkit.stewardship.web.tables import window_table
 NOW = datetime(2026, 9, 10, 12, tzinfo=UTC)
 BACKGROUND = reverse("admin:background")
 PRESENCE = reverse("admin:presence")
+# Routed answers to a periodic re-read of each page: more work and more
+# Families than the page first showed.
+BACKGROUND_LATER = "/in-place-background-later"
+PRESENCE_LATER = "/in-place-presence-later"
 FORM = "/in-place-form"
 # Where each fixture POST answers (status, Location or None, body). The
 # conftest adds the answers whose bodies are rendered pages.
@@ -242,11 +246,13 @@ def components(context, admin):
         f"{BACKGROUND}?{first.current_query}": html(
             "stewardship/background.html", refreshed
         ),
-        # Page 2 is also where its own Refresh link leads.
+        BACKGROUND_LATER: html("stewardship/background.html", refreshed),
+        # The table's Next leads to page 2.
         f"{BACKGROUND}?{first.next_query}": html(
             "stewardship/background.html", second_context
         ),
         PRESENCE: html("stewardship/presence.html", presence_context),
+        PRESENCE_LATER: html("stewardship/presence.html", presence_page(2)[1]),
         f"{PRESENCE}?{shown.size_name}={shown.size_value}&{shown.sort_name}="
         f"{shown.sort}": html("stewardship/presence.html", presence_page(2)[1]),
         FORM: form_page("In-place form", 0),
