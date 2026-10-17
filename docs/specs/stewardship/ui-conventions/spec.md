@@ -1071,8 +1071,9 @@ message and summary item, on the first edit of a field it marks (either
 end of a range), or when an in-place Apply is answered without it.
 **Shared code.** `web/filter_errors.py` (`FilterError`), the `filter_mark`
 and `filter_line` template tags; used by Financial stewardship, the
-Additional information queue and item, System logs and the Follow-up
-packet.
+Additional information queue and item, System logs, the Follow-up packet
+and the Family directory's Exact Family code (shown in its gate's hint
+row).
 
 A file field marked `data-max-bytes` (with `data-max-bytes-message`, the
 server's own words) is refused at the field as soon as a file over that

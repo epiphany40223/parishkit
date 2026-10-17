@@ -512,7 +512,8 @@ input[data-time-entry=list] { max-width: 24rem; }
 .hint-row-messages > * { grid-area: 1 / 1; margin: 0; }
 .hint-row-messages > .field-error-line { min-height: 0; font-size: .925rem; }
 .hint-row-messages > .field-error-line > .field-error-size:empty { display: none; }
-.hint-row-messages:has(> [data-complete-hint]:not([hidden]), > .field-error-line > .field-error-size:not(:empty)) { margin-block: 0 1rem; }
+/* Not in a filter bar, whose gap spaces its items (below, #1332). */
+.hint-row-messages:not(.filter-bar > *):has(> [data-complete-hint]:not([hidden]), > .field-error-line > .field-error-size:not(:empty)) { margin-block: 0 1rem; }
 .hint-row-messages:has(> .field-error-line > .errorlist:not([hidden])) > [data-complete-hint] { visibility: hidden; }
 /* A reason line that keeps one line's height while empty, so its text
    coming or going never moves what follows (no layout shift; the Restore
@@ -951,6 +952,12 @@ details.filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div
    (Limitations' Show, #227); it still shrinks to the row on a phone. */
 .filter-bar > div.fit { flex: 0 1 auto; }
 .filter-bar button { margin: 0; }
+/* A filter bar's hint row with the server's refusal over the gate's hint
+   (.hint-row-messages, the Family directory's Exact Family code, #1332)
+   is the bar's last, full-width item with no margin of its own (the
+   bar's gap spaces it), as its hint alone was, so an ordinary page lays
+   out as before. */
+.filter-bar > .hint-row-messages { flex: 0 1 100%; }
 /* Short form fields side by side (the Ministry follow-up request, #1014).
    Unlike a filter bar the fields align at the top, since a time field keeps
    a reading line under its box; every label takes the height of a label

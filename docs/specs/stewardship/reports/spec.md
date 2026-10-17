@@ -1118,7 +1118,15 @@ the matched Member. Searching by a Member's name can still confirm that some
 Family has an active Member by that name, even one the directory does not list
 (for example, with no phone); Staff with report access accept this. Exact
 canonicalized-code search uses a separate CSRF-protected POST body and never places the candidate in a URL or
-query string. The code
+query string. Apply waits until the Exact Family code is a whole
+eight-letter code or blank; a malformed code that reaches the server is
+refused at that field
+([field errors](../ui-conventions/spec.md#field-errors-and-live-checks),
+[#1332](https://github.com/epiphany40223/parishkit/issues/1332)): the page
+is drawn again (400) with the filters sent in the form, the message in the
+filters' hint row and in the summary, and the Families, export and links
+for no filters (keeping the sort and the mailing-columns choice). Its access
+audit ends denied. The code
 is directly visible to Admin and Staff; there is no per-row reveal action,
 reauthentication ceremony, distinct-Family reveal budget, or Valkey dependency.
 The server rechecks the report role and campaign scope on each request and uses
