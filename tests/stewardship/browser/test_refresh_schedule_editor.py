@@ -825,7 +825,8 @@ def test_a_pointer_beside_the_main_column_keeps_its_height_in_place(
 def test_a_pointer_below_the_save_line_keeps_the_outlook_in_place(
     page, component_origin
 ):
-    """Below the Save line, in the form's own blank space, the line growing
+    """Below the Save line, in the form's own blank space (or the reserved
+    status line of the review dialog under the form, #750), the line growing
     with more problems moves nothing under the pointer (#736)."""
     page.set_viewport_size({"width": 360, "height": 640})
     requests = answering(page, PRODUCTION)
@@ -840,7 +841,7 @@ def test_a_pointer_below_the_save_line_keeps_the_outlook_in_place(
     y = (line["y"] + line["height"] + top(outlook)) / 2
     assert top(outlook) - y > 2
     pointed = point_at_height(page, 30, y)
-    assert "panel" in pointed
+    assert "panel" in pointed or "review-outcome" in pointed
     height = status.bounding_box()["height"]
     before = tops(page, "#refresh-schedule-outlook")
     for index in (0, 2, 3, 4):

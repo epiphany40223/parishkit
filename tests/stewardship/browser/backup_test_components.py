@@ -45,9 +45,10 @@ def components(context, admin):
     )
     passed = SimpleNamespace(kind="passed", message="Access works.", folder_url=FOLDER)
 
-    def settings(probe=None, form=None):
-        """The settings page with ``probe`` as the reader's latest check,
-        and ``form`` (a refused entry) in place of the saved settings."""
+    def settings(probe=None, form=None, url=PAGE):
+        """The settings page at ``url`` with ``probe`` as the reader's latest
+        check, and ``form`` (a refused entry) in place of the saved settings;
+        its forms post to ``url`` itself, as the view's do."""
         return render_to_string(
             "stewardship/integration-settings.html",
             values
@@ -60,6 +61,9 @@ def components(context, admin):
                 "probe": probe,
                 "pending": probe is pending,
                 "status_url": STATUS,
+                # Save and Test access post to the page itself (#750).
+                "page_url": url,
+                "refresh_url": url,
                 "form": form
                 or IntegrationForm(
                     "backup", initial={"base_digest": "a" * 64, "target": FOLDER}
@@ -75,9 +79,9 @@ def components(context, admin):
         PAGE: settings(),
         TESTED: settings(pending),
         SETTLED: settings(passed),
-        REFUSED: settings(),
-        REFUSED_LINKED: settings(),
-        BAD_LINK: settings(),
+        REFUSED: settings(url=REFUSED),
+        REFUSED_LINKED: settings(url=REFUSED_LINKED),
+        BAD_LINK: settings(url=BAD_LINK),
         STATUS: status,
     }
     return {path: ("text/html", html) for path, html in responses.items()}
@@ -130,6 +134,9 @@ def bad_link(context, admin):
             "configured": True,
             "workspace_configured": True,
             "status_url": STATUS,
+            # Save and Test access post to the page itself (#750).
+            "page_url": BAD_LINK,
+            "refresh_url": BAD_LINK,
             "form": form,
             # The error summary the view draws on a 400, linking the field.
             "errors": integration_views._summary(form),
