@@ -2963,8 +2963,8 @@ what happens to the series:
   a new series (with its rule).
 
 Changing a series' rule, and deleting a series, stay on the command line for
-now. Editing from the [campaign calendar](#campaign-calendar) is a later slice
-of #469.
+now. Editing from the calendar is planned in
+[Editing from the calendar](#editing-from-the-calendar).
 
 #### Campaign calendar
 
@@ -2999,8 +2999,56 @@ prepared, is listed muted and not linked, as on the list, and so is a digest's
 send whose time has passed (editing the digest changes only its later sends).
 A muted send is told apart by its status, in words in the table and read to
 screen readers in the grid. A week view,
-Production activation and go-live milestones, ParishSoft refresh times, the
-backup window and editing from the calendar are later slices of #469.
+Production activation and go-live milestones, ParishSoft refresh times and the
+backup window are later slices of
+[#1521](https://github.com/epiphany40223/parishkit/issues/1521).
+
+##### Editing from the calendar
+
+Planned ([#1521](https://github.com/epiphany40223/parishkit/issues/1521),
+split from #469; the defaults below stand until the Administrator changes
+them). Until it ships, the calendar stays read-only as above.
+
+The calendar starts the existing edits; it has no write path of its own.
+Every change it starts is the same server-drawn review, signed preview, Apply
+under the work lock (with its recheck of a reviewed send time that has passed)
+and audited configuration request as
+[New and Edit scheduled email](#new-and-edit-scheduled-email), so the server
+checks it exactly as that page does.
+
+- **Add on a day.** Each day of the campaign's dates has a small "Add an
+  email on (date)" button, reachable by keyboard and named with its date. It
+  opens New scheduled email with that day as the send date, in the browser's
+  zone. The time and email still have to be chosen, so Review changes stays
+  unavailable until they are ([prerequisite
+  gates](../ui-conventions/spec.md#prerequisite-gates)). Apply returns to the
+  calendar. Days outside the campaign's dates have no Add button.
+- **Move…** Each send the calendar links (a dated schedule that has not run:
+  the Initial invitation and each reminder) has a **Move…** action beside its
+  link. It opens the [review dialog](../ui-conventions/spec.md#review-dialog)
+  over the calendar with one date field, filled in with the send's date, and
+  the send's time and email shown but not editable. Its Review answers
+  exactly the review Edit scheduled email draws for that schedule with the
+  new date, the same browser-local time and the same email. Apply redraws the
+  calendar in place ([in-place
+  controls](../ui-conventions/spec.md#in-place-controls)).
+- **Drag to move.** Dragging a movable send onto another day opens the same
+  Move dialog with that day filled in. The drop changes nothing: the send
+  stays where it was until Apply, and Cancel leaves it there. Drag follows
+  the [dragging rule](../ui-conventions/spec.md#accessibility-and-client-behavior).
+- **The moved send** keeps its browser-local wall-clock time, converted on
+  the new day as a typed date is, so 9:00 AM stays 9:00 AM across a
+  daylight-saving change. Edit's rules refuse what Edit refuses: a day
+  outside the campaign's dates, a reminder not after the Initial invitation,
+  two Family mailings at one moment, and the hour the clocks repeat. Only the
+  moved send may move into the past.
+- **A series reminder** moves as "This reminder only". On a day its rule does
+  not give, it leaves the series, and the review says so. The series scopes
+  stay on Edit, where every reminder keeps its own date.
+- **Not movable:** a send that has run, is being prepared or was missed, and
+  every send of a Daily or Weekly Admin digest (a digest is one repeating
+  schedule with no single-day exceptions). These keep their look on the
+  calendar and offer neither Move… nor a drag.
 
 ### Ministry leader roles
 
