@@ -364,6 +364,15 @@
   const TIME_LONE_SUFFIX = /^[ap]\.?(?:m\.?)?$/i;
   const TIME_WORDS = new Map([["noon", 12], ["midnight", 0]]);
   const pad2 = (number) => String(number).padStart(2, "0");
+  // The page script's one weekday source (#1129), matching the server's
+  // wall_clock.WEEKDAYS: the day names Monday first, and mondayFirst, which
+  // turns a JavaScript day number (getDay or getUTCDay: Sunday 0) into that
+  // index (Monday 0, as Python's date.weekday() and every stored schedule
+  // count). The test_wall_clock guard keeps every other script from holding
+  // its own list of day names.
+  const WEEKDAY_NAMES = Object.freeze(["Monday", "Tuesday", "Wednesday", "Thursday",
+    "Friday", "Saturday", "Sunday"]);
+  const mondayFirst = (jsDay) => (jsDay + 6) % 7;
   const timeWords = (text) => String(text ?? "").split(TIME_SPACES).filter(Boolean);
   // A read time is {hour, minute, second}; its canonical text is "HH:MM",
   // or "HH:MM:SS" for a kept saved time with seconds.
@@ -917,7 +926,7 @@
         pad2(at.getDate())}`,
       time: canonicalTime({hour: at.getHours(), minute: at.getMinutes(),
         second: at.getSeconds()}),
-      weekday: (at.getDay() + 6) % 7,
+      weekday: mondayFirst(at.getDay()),
     };
   };
   // localMoment: the moment (ms) a date ("YYYY-MM-DD") and canonical time
@@ -4828,8 +4837,6 @@
   const isoDay = (day) => day.toISOString().slice(0, 10);
   const monthDays = (day) => new Date(Date.UTC(day.getUTCFullYear(),
     day.getUTCMonth() + 1, 0)).getUTCDate();
-  // Monday is 0, as in wall_clock.WEEKDAYS and Python's date.weekday().
-  const mondayFirst = (day) => (day.getUTCDay() + 6) % 7;
   const expandRecurrence = (rule) => {
     const start = civilDay(rule?.start);
     const end = civilDay(rule?.end);
@@ -4859,14 +4866,14 @@
       const date = day.getUTCDate();
       if (rule.frequency === "daily") dates.push(isoDay(day));
       else if (rule.frequency === "weekly") {
-        if (weekdays.has(mondayFirst(day))) dates.push(isoDay(day));
+        if (weekdays.has(mondayFirst(day.getUTCDay()))) dates.push(isoDay(day));
       } else if (byDay) {
         if (date === monthly.day) dates.push(isoDay(day));
         // The month's last day in range stands for a missing chosen day.
         else if (date === monthDays(day) && monthly.day > date) {
           missing.push(isoDay(day).slice(0, 7));
         }
-      } else if (mondayFirst(day) === monthly.weekday && (monthly.ordinal === -1
+      } else if (mondayFirst(day.getUTCDay()) === monthly.weekday && (monthly.ordinal === -1
         ? date + 7 > monthDays(day) : Math.ceil(date / 7) === monthly.ordinal)) {
         dates.push(isoDay(day));
       }
@@ -4896,12 +4903,11 @@
     monthly: "Choose a day of the month from 1 to 31, or a weekday.",
     frequency: "Choose how often to repeat.",
   };
-  const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
   const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July",
     "August", "September", "October", "November", "December"];
   const spokenDay = (text) => {
     const day = civilDay(text);
-    return `${DAY_NAMES[mondayFirst(day)]}, ${MONTH_NAMES[day.getUTCMonth()]} ${
+    return `${WEEKDAY_NAMES[mondayFirst(day.getUTCDay())]}, ${MONTH_NAMES[day.getUTCMonth()]} ${
       day.getUTCDate()}, ${day.getUTCFullYear()}`;
   };
   // The rule a repeat panel's controls describe, for expandRecurrence.

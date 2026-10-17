@@ -54,7 +54,6 @@ and "an unchanged schedule keeps its stored keys exactly".
 """
 
 import json
-import re
 from dataclasses import dataclass
 
 from django.db import DatabaseError
@@ -68,6 +67,7 @@ from .admin_changes import (
     unexpected_problem,
 )
 from .admin_reads import NotAvailable, ReadModel, _held, _recheck, config_request
+from .wall_clock import is_hhmm
 
 CHANGES_LIMIT = 64_000
 # The refresh schedule document's members (the stored ``refresh_rules``
@@ -138,16 +138,6 @@ def _schedule_problem(field, message, code="invalid"):
     return _problem(f"{SCHEDULE}{field}", {"code": code, "message": message})
 
 
-def _hhmm(value):
-    """Whether ``value`` is ``HH:MM`` text the page's time field reads as is."""
-    return (
-        isinstance(value, str)
-        and re.fullmatch(r"[0-9]{2}:[0-9]{2}", value) is not None
-        and int(value[:2]) < 24
-        and int(value[3:]) < 60
-    )
-
-
 def _row_problems(rows, scope, shapes, noun):
     """The problems of one list of schedule rows, in fixed words.
 
@@ -167,7 +157,7 @@ def _row_problems(rows, scope, shapes, noun):
             message = f"This is not a {noun}."
         elif "kind" in row and row["kind"] not in ("full", "quick"):
             message = 'Give kind as "full" or "quick".'
-        elif not all(_hhmm(row[name]) for name in set(row) & TIME_MEMBERS):
+        elif not all(is_hhmm(row[name]) for name in set(row) & TIME_MEMBERS):
             message = 'Give each time as quoted HH:MM text, such as "02:00".'
         # Exactly an int: 60.0 equals a step but the form would echo it, and
         # a bool is an int subclass.
