@@ -2037,11 +2037,14 @@ link of rule 10 ([#1407](https://github.com/epiphany40223/parishkit/pull/1407)):
 Create the campaign is its step 1 before the campaign exists (#1404 PR 3);
 an applied change or a Continue stays completed, while Preview and test
 email counts only for a test of the invitation's current revision. It meets
-rule 8 for Continue, which opens the next step not done yet; after a save,
-the page redraws in place and stays on the step it completed until the
-direct save (planned, #1404 PR 4). Until the later #1404 pull requests
-land, its Continue is unavailable while the form holds a change, so the
-page's own Save, with its review dialog, is the way on (rules 3 to 5);
+rule 8 for Continue, which opens the next step not done yet. Campaign
+settings and Share options meet rules 3 to 5 and 8 (#1404 PR 4): their
+Save and continue saves directly, follows the change and opens the next
+step not done yet. On Campaign images and the sub-pages that save (an
+email's editor, New and Edit scheduled email), until their direct save
+lands (planned, #1404), Continue is unavailable while the form holds a
+change, so the page's own Save, with its review dialog, is the way on, and
+after it the page redraws in place and stays on its step;
 loading the campaign's ParishSoft data is a notice on every step rather than
 a step of its own; and Back asking before it discards (rule 6) and the
 sub-pages' Keep as is and go back and Save and go back (rule 10) are not
