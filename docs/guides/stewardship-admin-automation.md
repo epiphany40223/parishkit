@@ -2278,8 +2278,10 @@ pk-admin export fetch EXPORT_ID
   or `frequency=monthly` for the financial export, `disposition=all` or
   `needed=yes` for the information export, and `activity=active` (or,
   with `--ministry`, `state=unresolved`) for the Ministry export. Dates
-  (`start=` and `end=` on the information and Ministry exports) are days in
-  a time zone, so `zone=` is required with them, for example
+  (`start=` and `end=` on the information and Ministry exports, and
+  `first_start=`, `first_end=`, `latest_start=` and `latest_end=` on the
+  financial export) are days in a time zone, so `zone=` is required with
+  them, for example
   `--filter start=2026-11-01 --filter zone=America/New_York`. A filter
   the page would refuse is exit 1 (`invalid`), and so are `page` and
   `size`, which the page's export form never sends. A search is refused:
@@ -3211,3 +3213,8 @@ campaign's, or is outside your Ministries, is exit 1 (`not_available`).
   request key are exit 1 (`not_available`, where they used to run);
   repeating a recorded key still returns its result. Retrying a cancelled
   export, or a published one, is still `stale_version`.
+- `pk-admin/1` (#558, migration 0110): a change of meaning, kept on
+  version 1. The financial export's response dates (`first_start=`,
+  `first_end=`, `latest_start=`, `latest_end=`) are now days in the time
+  zone `--filter zone=…` names, as on the page; a date without it is exit 1
+  (`invalid`). Its only readers are Administrator-run assistants.

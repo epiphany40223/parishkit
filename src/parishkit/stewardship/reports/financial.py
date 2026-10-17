@@ -2,7 +2,7 @@
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 
 from django.db import connection
@@ -20,10 +20,12 @@ from parishkit.stewardship.responses.financial_inputs import (
     giving_observation,
 )
 from parishkit.stewardship.responses.financial_presentation import option_labels
+from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSnapshot
 from parishkit.stewardship.source.snapshot_names import name_file_rows
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.filter_errors import FilterError, iso_date
 from parishkit.stewardship.web.tables import Sorting
 
@@ -34,11 +36,12 @@ from .money import MoneyAmount, source_cents
 PAGE_SIZE = 50
 # Rows per page the page offers; the selection accepts 1-200.
 PAGE_SIZES = (25, 50, 100)
-# The installed selection (stewardship_financial_report_v1) orders and pages
-# the pledges itself, so its closed ``sort`` vocabulary is the whole list of
-# column sorts: Family by name (the shown surname-and-heads name), Family
-# DUID (#960), Annual pledge and Responses (by the latest response time),
-# each either way, largest and newest first on a first click. Frequency,
+# The installed selection (stewardship_financial_report_v1; its dates are
+# browser-zone days since migration 0110) orders and pages the pledges
+# itself, so its closed ``sort`` vocabulary is the whole list of column
+# sorts: Family by name (the shown surname-and-heads name), Family DUID
+# (#960), Annual pledge and Responses (by the latest response time), each
+# either way, largest and newest first on a first click. Frequency,
 # share methods and the source pledge and contribution totals cannot be
 # sorted without a schema change; share methods are also a list with no
 # single value to order by.
@@ -108,6 +111,9 @@ class FinancialQuery:
     frequency: str = "any"
     share: str = "any"
     sort: str = "name"
+    # The browser's IANA time zone, which the page script fills (#558): the
+    # four response dates are whole days there.
+    zone: str = ""
     page: int = 1
 
     @classmethod
@@ -117,7 +123,10 @@ class FinancialQuery:
         A rule the reader can fix at one field (a date, a pledge amount, a
         range's order) raises ``FilterError`` naming that field; anything
         else (an unknown field, a choice no form offers) is a plain
-        ``ValueError``.
+        ``ValueError``. A date needs the browser's zone; a blank or unknown
+        one raises :class:`UnknownZone` (a tab opened before #558, or a zone
+        outside the catalog), never read as another zone. Without dates the
+        zone is unused, and one the catalog does not know is dropped.
         """
         if type(parameters) is dict:
             if any(type(value) is not str for value in parameters.values()):
@@ -162,6 +171,10 @@ class FinancialQuery:
             raise FilterError(
                 "pledge_max", FIELD_MESSAGES["pledge_max"], query, pair="pledge_min"
             )
+        if query.zone not in timezone_names():
+            if any(getattr(query, name) for name in DATES):
+                raise UnknownZone("Financial date filters need the browser's zone.")
+            query = replace(query, zone="")
         return query
 
     def form_values(self):
