@@ -2547,8 +2547,8 @@ unavailability, not a retry conflict.
 Not in use yet: publication is ADM-09
 ([#528](https://github.com/epiphany40223/parishkit/issues/528)), its
 [Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft) page is
-specified but not built, and it ships switched off, so today census changes
-reach ParishSoft by hand from the
+built only up to its check so far, and it ships switched off, so today
+census changes reach ParishSoft by hand from the
 [Census changes](../reports/spec.md#pending-census-changes) page.
 
 Publication runs on the worker's source queue (the low-concurrency

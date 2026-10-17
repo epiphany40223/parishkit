@@ -380,6 +380,7 @@ UNGROUPED_REASONS = {
         "background_viewed",
         "campaign_comparison_viewed",
         "census_changes_viewed",
+        "census_publication_viewed",
         "daily_digest_viewed",
         "dashboard_viewed",
         "data_to_fix_viewed",
