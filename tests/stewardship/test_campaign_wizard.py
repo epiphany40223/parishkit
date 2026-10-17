@@ -478,3 +478,60 @@ def test_a_load_returns_only_to_a_step_the_stepper_offers(
         expected or reverse("admin:source_refresh") + "#refresh-run"
     )
     assert refresh_views.RUN_KEY in request.session
+
+
+def test_create_the_campaign_is_step_one_with_every_later_step_unavailable():
+    """Before the campaign exists, Create the campaign is step 1 (#1404 PR 3).
+
+    Step 1 is Campaign settings on Create the campaign's own address; every
+    later step, Share options included (the modules are not chosen yet), is
+    unavailable for the one reason, and none of them links anywhere.
+    """
+    stepper = wizard.creation()
+    assert keys(stepper) == [page.key for page in wizard.PAGES]
+    first, *later = stepper.steps
+    assert first.current and first.state == "todo"
+    assert str(first.label) == "Campaign settings"
+    assert first.url == reverse("admin:campaign_create")
+    for step in later:
+        assert step.url is None and step.state == "blocked"
+        assert str(step.status) == "Not available yet: Create the campaign first."
+    assert stepper.previous is None and stepper.next is None
+    assert (stepper.completed, stepper.total) == (0, 7)
+    assert stepper.upcoming.key == "share_options" and stepper.creating
+    html = render_to_string(
+        "stewardship/campaign-stepper.html",
+        {"admin_chrome": {"campaign_wizard": stepper}},
+    )
+    region = html[: html.index("</nav>")]
+    assert "Step 1 of 7:" in region and "<strong>Campaign settings</strong>" in region
+    assert "0 of 7 steps completed" in region
+    assert "Next: Share options" in region and "Leave campaign setup" in region
+    # Six unavailable segments in the bar, none a link to a later page.
+    assert region.count("data-step-unavailable") == 6
+    assert reverse("admin:share_settings") not in region
+    assert "data-campaign-load" not in html
+    # The page draws its own action row inside its form, so the shared row
+    # draws nothing: no Back and no Continue.
+    assert actions(stepper).strip() == ""
+
+
+@pytest.mark.parametrize(
+    ("name", "mode", "admin", "drawn"),
+    [
+        ("campaign_create", "testing", True, True),
+        ("campaign_create", "production", True, False),
+        ("campaign_create", "testing", False, False),
+        ("index", "testing", True, False),
+        ("campaign_settings", "testing", True, False),
+    ],
+)
+def test_only_create_the_campaign_draws_the_stepper_before_a_campaign(
+    name, mode, admin, drawn
+):
+    """Without a campaign only an Administrator's Create page in Testing mode."""
+    match = SimpleNamespace(namespace="admin", url_name=name)
+    stepper = wizard.for_creation(match, mode, admin=admin)
+    assert (stepper is not None) is drawn
+    if drawn:
+        assert stepper.creating and stepper.current.key == "settings"

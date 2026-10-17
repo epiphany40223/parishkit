@@ -66,25 +66,76 @@ def body(html):
     return html.split("<h1>", 1)[1]
 
 
-def test_review_has_no_links_to_later_steps_and_continues_to_the_email_test():
-    """Only the standard row moves on; the primary action is Continue."""
-    html = page(
+def review(readiness, **context):
+    """Render Review with these test states (``setup_preview_views._readiness``)."""
+    return page(
         "setup-preview.html",
         "preview",
         parish={"name": "Sample Parish", "website": "https://example.invalid/"},
-        campaign={"name": "Annual", "modules": ["census"]},
-        samples=[],
+        readiness=readiness,
+        tests_accepted=all(item["accepted"] for item in readiness),
+        **context,
+    )
+
+
+def test_review_shows_the_tests_and_continues_to_finish_setup():
+    """Review is the last step before Finish setup (#1476): its Readiness
+    says each required test was accepted, its body links no step, and the
+    primary action is Continue to Finish setup."""
+    readiness = [
+        {"label": "Test email", "accepted": True, "url": reverse("admin:setup_mail")},
+        {
+            "label": "Test Slack",
+            "accepted": True,
+            "url": reverse("admin:setup_notification"),
+        },
+    ]
+    html = review(
+        readiness,
+        wizard=wizard(
+            "preview", slack=True, tests=frozenset({"mail_test", "slack_test"})
+        ),
     )
     content = body(html)
     for route in ("setup_mail", "setup_notification", "setup_confirmation"):
         assert f'href="{reverse(f"admin:{route}")}"' not in content.replace(
             actions(html), ""
         )
+    assert "Test email: accepted for these settings." in content
+    assert "Test Slack: accepted for these settings." in content
+    assert "the tests of these exact settings were accepted" in content
     row = actions(html)
-    assert f'class="setup-continue" href="{reverse("admin:setup_mail")}"' in row
-    assert "Test email" in row and "Back" in row
-    # The row comes last, after the samples and the exact configuration.
+    finish = reverse("admin:setup_confirmation")
+    assert f'class="setup-continue" href="{finish}"' in row
+    assert "Finish setup" in row and "Back" in row
+    assert f'class="setup-back" href="{reverse("admin:setup_notification")}"' in row
+    # The row comes last, after the exact configuration.
     assert content.rindex("setup-actions") > content.index("<details>")
+
+
+def test_review_links_only_a_test_that_was_not_accepted():
+    """A test not accepted for these settings is named, with a link to its
+    step; an accepted one has none."""
+    readiness = [
+        {"label": "Test email", "accepted": True, "url": reverse("admin:setup_mail")},
+        {
+            "label": "Test Slack",
+            "accepted": False,
+            "url": reverse("admin:setup_notification"),
+        },
+    ]
+    html = review(
+        readiness,
+        wizard=wizard("preview", slack=True, tests=frozenset({"mail_test"})),
+    )
+    content = body(html).replace(actions(html), "")
+    assert "Test Slack: not accepted for these settings yet." in content
+    slack = reverse("admin:setup_notification")
+    assert f'<a href="{slack}">Go to “Test Slack”</a>' in content
+    assert f'href="{reverse("admin:setup_mail")}"' not in content
+    assert "setup cannot finish until each test below is accepted" in content
+    # Finish setup waits for the Slack test, so the row offers no Continue.
+    assert "setup-continue" not in actions(html)
 
 
 @pytest.mark.parametrize("slack", [False, True])
@@ -93,7 +144,8 @@ def test_email_test_sends_until_accepted_then_continues(slack):
     form = SetupMailForm(
         initial={"preview_token": "token", "request_key": uuid4(), "slot": "initial"}
     )
-    after = reverse("admin:setup_notification" if slack else "admin:setup_confirmation")
+    # Test Slack, or Review when Slack is off (#1476).
+    after = reverse("admin:setup_notification" if slack else "admin:setup_preview")
     common = {"form": form, "items": [], "testing_recipient": "t@example.org"}
     waiting = page(
         "setup-mail.html",
@@ -126,7 +178,7 @@ def test_email_test_sends_until_accepted_then_continues(slack):
 
 
 def test_slack_test_follows_the_same_pattern():
-    """The Slack test is its own step: send, then Continue to Finish."""
+    """The Slack test is its own step: send, then Continue to Review."""
     form = SetupNotificationForm(
         initial={"preview_token": "token", "request_key": uuid4()}
     )
@@ -200,3 +252,74 @@ def test_only_an_accepted_test_of_this_revision_counts():
     assert not accepted([{"current": False, "state": "accepted"}])
     assert not accepted([{"current": True, "state": "queued"}])
     assert not accepted([])
+
+
+@pytest.mark.parametrize(
+    ("template", "fix", "links"),
+    [
+        (
+            "setup-mail.html",
+            ("google_workspace", ("mail", "google_workspace")),
+            {
+                "Outgoing email settings": "/admin/setup/mail",
+                "Google Workspace connection": (
+                    "/admin/setup/credentials/google_workspace"
+                ),
+            },
+        ),
+        (
+            "setup-notification.html",
+            ("slack", ("slack", "slack_credential")),
+            {
+                "Slack notifications (optional)": "/admin/setup/slack",
+                "Slack connection": "/admin/setup/credentials/slack",
+            },
+        ),
+    ],
+)
+def test_a_test_that_was_not_sent_links_the_steps_that_fix_it(template, fix, links):
+    """A failed test says so in plain language, repeats the provider's
+    rejected-key advice and links each step that fixes it, after the action
+    row so the notice never moves Back or Send (#1476)."""
+    from parishkit.stewardship.accounts.integration_credentials import FAILED
+    from parishkit.stewardship.accounts.setup_mail_views import failure
+
+    items = [{"current": True, "state": "not_sent"}]
+    slack = template == "setup-notification.html"
+    form = (SetupNotificationForm if slack else SetupMailForm)(
+        initial={"preview_token": "token", "request_key": uuid4()}
+    )
+    html = page(
+        template,
+        "slack_test" if slack else "mail_test",
+        wizard=wizard("slack_test" if slack else "mail_test", slack=slack),
+        form=form,
+        items=[],
+        tested=False,
+        pending=False,
+        failure=failure(items, *fix),
+        channel_id="C0123456789",
+        testing_recipient="t@example.org",
+    )
+    (notice,) = re.findall(
+        r"<div class=\"notice notice-error\" data-setup-test-failed>.*?</div>",
+        html,
+        re.S,
+    )
+    assert "The latest test was not sent." in notice
+    assert str(FAILED[fix[0]]) in notice
+    for label, url in links.items():
+        assert f'<a href="{url}">Go to “{label}”</a>' in notice
+    assert html.index(actions(html)) < html.index("data-setup-test-failed")
+
+
+def test_only_the_newest_test_of_this_revision_not_sent_needs_a_fix():
+    """An older revision's failure, or a newer test, drops the fix notice."""
+    from parishkit.stewardship.accounts.setup_mail_views import FIX, failure
+
+    failed = {"current": True, "state": "not_sent"}
+    assert failure([failed], *FIX)["steps"][0].key == "mail"
+    assert failure([{"current": True, "state": "queued"}, failed], *FIX) is None
+    assert failure([{"current": False, "state": "not_sent"}], *FIX) is None
+    assert failure([{"current": True, "state": "delivery_unknown"}], *FIX) is None
+    assert failure([], *FIX) is None

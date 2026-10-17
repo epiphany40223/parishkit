@@ -48,6 +48,7 @@ from ..test_financial_answers import CHECK, OPTIONS, OTHER
 from .auth_builders import signed_in, unguarded
 from .campaign_builders import campaign_clock, change, close_campaign, command
 from .response_builders import activate_response_service, response_source
+from .test_admin_refusal_log_postgresql import entries as refusals
 from .test_background_grants_postgresql import task_login
 from .test_family_auth_postgresql import login as family_login
 from .test_family_mail_dispatch_postgresql import claim
@@ -693,8 +694,11 @@ def test_native_page_filters_privately_and_denies_leaders(
         _, body = search(browser, route, {"pledge_min": "1234.50", "share": CHECK})
         assert name in body and b'value="1234.50"' in body
         for invalid in ({"sort": "random"}, {"extra": "x"}):
+            seen = len(refusals())
             response, body = search(browser, route, invalid)
             assert response.status_code == 400
+            # The error page is not streamed: its one entry, at once.
+            assert len(refusals()) == seen + 1
             # A refusal no field can show gets an explanation and a way
             # back, never an echo.
             assert b"without commas" in body and route.encode() in body
@@ -702,10 +706,15 @@ def test_native_page_filters_privately_and_denies_leaders(
         # A rule the reader can fix at a field draws the page again (#1332):
         # 400, the values sent in the filters, the error at the field and in
         # the summary, and the results for no filters.
+        seen = len(refusals())
         response, body = search(
             browser, route, {"pledge_min": "1,234", "sort": "pledge_desc"}
         )
         assert response.status_code == 400 and response["Cache-Control"] == "no-store"
+        # The streamed page leaves its durable entry once it closes (#1484).
+        (entry,) = refusals()[seen:]
+        assert entry.context["route"] == "admin:financial_report"
+        assert (entry.context["status"], entry.context["codes"]) == (400, ["invalid"])
         assert b'value="1,234" aria-invalid="true"' in body
         assert b'aria-describedby="pledge-range_error"' in body
         assert (

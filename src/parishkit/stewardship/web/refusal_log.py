@@ -36,6 +36,16 @@ the entry says comes from what the response already carries.
 ``audit.refusals.record_refusal`` then writes the process-log line and, for
 a signed-in user, the capped durable entry, on this request's own database
 connection; it never raises, and neither does this hook.
+
+A refused page drawn again as a streamed response under a campaign read
+guard (``web.responses.campaign_response``: a report's filters refused at
+their field, #1332) still holds the guard's read-only transaction when it
+leaves the view, so a durable write then could only be refused. Its record
+is built at the same point, but written when the response closes, after the
+guard has ended that transaction (#1484). The WSGI server closes a response
+whether its stream finished or the client went away, so a disconnect still
+leaves the entry; only a worker that dies before closing the response loses
+the record, line included.
 """
 
 import logging
@@ -44,6 +54,7 @@ from uuid import UUID
 
 from django import forms
 from django.conf import settings
+from django.db import connection
 
 from parishkit.stewardship.audit.refusal_context import STATUSES
 from parishkit.stewardship.audit.refusals import (
@@ -51,7 +62,12 @@ from parishkit.stewardship.audit.refusals import (
     exception_class_of,
     record_refusal,
 )
-from parishkit.stewardship.observability import Event, emit_failure
+from parishkit.stewardship.observability import (
+    Event,
+    correlation,
+    current_correlation,
+    emit_failure,
+)
 
 from .admin_forms import AdminFormSet, collecting
 from .namespaces import is_admin
@@ -99,10 +115,48 @@ def log_refusal(request, response, validated=()):
         with suppress(Exception):
             emit_failure(error, event=Event.ADMIN_INPUT_REFUSED, level=logging.WARNING)
         return
-    if record is not None:
-        # record_refusal never raises; this keeps the answer safe even so.
-        with suppress(Exception):
-            record_refusal(record)
+    if record is None:
+        return
+    if getattr(response, "streaming", False) and connection.in_atomic_block:
+        # A streamed page still inside its read guard's transaction: write
+        # once the response closes, after the guard's own close (#1484).
+        _record_on_close(response, record)
+        return
+    _record(record)
+
+
+def _record(record):
+    """Write ``record`` with ``record_refusal``; never raise."""
+    # record_refusal never raises; this keeps the answer safe even so.
+    with suppress(Exception):
+        record_refusal(record)
+
+
+def _record_on_close(response, record):
+    """Write ``record`` when the streamed ``response`` closes; never raise.
+
+    Django's ``HttpResponseBase.close`` runs the response's resource closers
+    in order and then forgets them, so this closer runs after the streamed
+    content's own close, which ends the read guard's transaction and gives
+    the request's connection back. A wrapper that closes the response again
+    from inside its own close (as Django's test client does) re-runs the
+    list before it is forgotten, so the closer also empties its own pending
+    record: it writes at most once however often it runs. The close runs
+    after the correlation middleware has returned, so the request's
+    correlation id is bound again for the entry, as ``web.responses`` does
+    for its own close.
+    """
+    identifier = current_correlation()
+    pending = [record]
+
+    def write():
+        """Write the deferred record under the request's correlation id."""
+        # pop() makes a re-entrant close write nothing the second time.
+        if pending:
+            with suppress(Exception), correlation(identifier):
+                record_refusal(pending.pop())
+
+    response._resource_closers.append(write)
 
 
 def refusal_record(request, response, validated=()):

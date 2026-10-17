@@ -68,6 +68,12 @@ def test_only_the_portal_stylesheet_reads_the_dark_scheme():
         if "DARK_COLORS" in path.read_text()
     )
     assert readers == ["stewardship/web/design_tokens.py"]
+    chart_readers = sorted(
+        path.relative_to(source).as_posix()
+        for path in source.rglob("*.py")
+        if "DARK_CHART_COLORS" in path.read_text()
+    )
+    assert chart_readers == ["stewardship/web/design_tokens.py"]
 
 
 @pytest.mark.parametrize(
@@ -98,8 +104,8 @@ def test_custom_property_fallbacks_match(name):
 
 
 # Every other stylesheet loads after ui-v1.css and so reads its tokens
-# directly. chart-v1.css is exempt: its vega-tooltip rules are vendored as
-# published.
+# directly. chart-v1.css is exempt: it declares the chart palette (checked
+# below).
 TOKEN_ONLY = sorted(
     p.name for p in STATIC.glob("*.css") if p.name not in {"ui-v1.css", "chart-v1.css"}
 )
@@ -368,3 +374,80 @@ def test_neutral_notices_use_the_information_kind(name):
     for fragment in INFO_NOTICES[name]:
         start = source.rindex('class="notice', 0, source.index(fragment))
         assert source.startswith('class="notice notice-info"', start), fragment
+
+
+# The chart palette (#1264 slice 2; ui-conventions "Colour scheme").
+CHART_CSS = COMMENT.sub("", (STATIC / "chart-v1.css").read_text())
+CHART_LIGHT = re.compile(r":root, \.light-card\s*{(.*?)}", re.S)
+CHART_SCHEMES = {
+    "light": tokens.COLORS | tokens.CHART_COLORS,
+    "dark": tokens.DARK_COLORS | tokens.DARK_CHART_COLORS,
+}
+
+
+def test_chart_stylesheet_declares_exactly_the_chart_palette():
+    """chart-v1.css declares CHART_COLORS on :root and the light card, and
+    DARK_CHART_COLORS for the Admin dark scheme on screen, and names no
+    other colour (its tooltip reads the portal tokens)."""
+    assert set(tokens.DARK_CHART_COLORS) == set(tokens.CHART_COLORS)
+    assert not set(tokens.CHART_COLORS) & set(tokens.CSS_PROPERTIES)
+    light = CHART_LIGHT.search(CHART_CSS)
+    dark = DARK_BLOCK.search(CHART_CSS)
+    assert dict(DECLARATION.findall(light[1])) == tokens.CHART_COLORS
+    assert dict(DECLARATION.findall(dark[1])) == tokens.DARK_CHART_COLORS
+    rest = CHART_CSS.replace(light[0], "").replace(dark[0], "")
+    assert not re.findall(r"#[0-9a-fA-F]{3,8}\b", rest)
+    assert set(re.findall(r"var\(--([a-z0-9-]+)\)", rest)) <= set(root_properties())
+
+
+def test_one_light_value_has_one_dark_value():
+    """chart-v1.js finds a colour's token by its light value, so two tokens
+    that share a light value must share their dark value too."""
+    dark_of = {}
+    for name, value in CHART_SCHEMES["light"].items():
+        dark = tokens.hex6(CHART_SCHEMES["dark"][name])
+        assert dark_of.setdefault(tokens.hex6(value), dark) == dark, name
+
+
+def test_one_dark_chart_value_has_one_light_value():
+    """A printed page is light, so chart-v1.js turns each dark colour a
+    chart drew back into its light one: among the tokens a chart can draw
+    in, two that share a dark value must share their light value too."""
+    light_of = {}
+    for name in (*tokens.CHART_COLORS, *tokens.CHART_PORTAL_TOKENS):
+        light = tokens.hex6(CHART_SCHEMES["light"][name])
+        dark = tokens.hex6(CHART_SCHEMES["dark"][name])
+        assert light_of.setdefault(dark, light) == light, name
+
+
+# The chart's lines, bars and markers on the paper, the bar on its track;
+# the send markers' names; and each pledge band under its label's ink.
+CHART_MARKS_ON = {
+    "chart-blue": ("paper", "chart-track"),
+    "chart-orange": ("paper",),
+    "chart-navy": ("paper",),
+    "chart-marker": ("paper",),
+}
+CHART_TEXT_ON = {
+    "chart-marker": ("paper",),
+    "ink": tuple(f"chart-band-{band}" for band in range(1, 5)),
+    "paper": tuple(f"chart-band-{band}" for band in range(5, 9)),
+}
+
+
+@pytest.mark.parametrize("scheme", sorted(CHART_SCHEMES))
+def test_chart_marks_and_labels_meet_the_contrast_minimums(scheme):
+    """Marks 3:1 and text 4.5:1 in both schemes (#1264 slice 2)."""
+    colors = CHART_SCHEMES[scheme]
+    low = [
+        (mark, surface)
+        for mark, surfaces in CHART_MARKS_ON.items()
+        for surface in surfaces
+        if contrast(mark, surface, colors) < 3
+    ] + [
+        (text, surface)
+        for text, surfaces in CHART_TEXT_ON.items()
+        for surface in surfaces
+        if contrast(text, surface, colors) < 4.5
+    ]
+    assert low == []

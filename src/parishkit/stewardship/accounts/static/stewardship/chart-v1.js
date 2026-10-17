@@ -35,13 +35,97 @@
       const svg = target.querySelector("svg");
       return svg && Math.abs(Number(svg.getAttribute("width")) - target.clientWidth) > 1;
     });
-    if (!off || fitting) return;
+    if (!off || fitting || swapped) return;
     fitting = true;
     window.requestAnimationFrame(() => {
       fitting = false;
       window.dispatchEvent(new Event("resize"));
     });
   });
+  // The colour scheme (#1264; ui-conventions "Colour scheme"). The page's
+  // scheme is data-theme on the root element, which admin-gate-v1.js sets
+  // from the Appearance choice or the device; a chart never asks the device
+  // itself, or it would disagree with an explicit Light or Dark choice.
+  // A specification names its colours by their light (email) values, each
+  // a token's: a portal token in ui-v1.css or a chart token in chart-v1.css,
+  // whose ":root, .light-card" rules declare the light values. The page
+  // draws each in that token's value for the chart's own scheme, so the
+  // server's specification, and the email drawn from it, stay as they are.
+  const HEX = /^#(?:[0-9a-f]{3}){1,2}$/i;
+  const hex6 = (value) => {
+    const color = value.trim().toLowerCase();
+    return color.length === 4 ? `#${[...color.slice(1)].map((d) => d + d).join("")}` : color;
+  };
+  // Each light value's token name, and each token's light value, read once
+  // from the light rules. Two tokens with one light value share their dark
+  // value too (tested), so the first is as good as any.
+  let names = null;
+  const lights = new Map();
+  const tokenNames = () => {
+    if (names && names.size) return names;
+    names = new Map();
+    for (const sheet of document.styleSheets) {
+      let rules;
+      try { rules = sheet.cssRules; } catch (_) { continue; }
+      for (const rule of rules) {
+        if (!(rule instanceof CSSStyleRule)) continue;
+        if (!rule.selectorText.split(",").some((part) => part.trim() === ".light-card")) continue;
+        for (const name of rule.style) {
+          const value = rule.style.getPropertyValue(name).trim();
+          if (!name.startsWith("--") || !HEX.test(value)) continue;
+          lights.set(name, hex6(value));
+          if (!names.has(hex6(value))) names.set(hex6(value), name);
+        }
+      }
+    }
+    return names;
+  };
+  // ``spec`` with each token colour in its value at ``root``, and the
+  // Vega-Lite config that draws the chart's own furniture (background,
+  // axes, gridlines, legend, titles and unstyled text) in the tokens, in
+  // place of Vega's fixed light defaults. A specification's own config
+  // still wins, and its colours are tokens too. ``print`` maps each colour
+  // drawn back to its token's light value, for printing (below); the
+  // tokens a chart uses have distinct values in each scheme (tested).
+  const themed = (spec, root) => {
+    const style = getComputedStyle(root);
+    const known = tokenNames();
+    const print = { colours: new Map(), paper: lights.get("--paper") };
+    const token = (name) => {
+      const value = style.getPropertyValue(name).trim();
+      if (HEX.test(value) && lights.has(name)) print.colours.set(hex6(value), lights.get(name));
+      return value;
+    };
+    const paint = (value) => {
+      if (typeof value === "string") {
+        const name = HEX.test(value) && known.get(hex6(value));
+        return (name && token(name)) || value;
+      }
+      if (Array.isArray(value)) return value.map(paint);
+      if (value && typeof value === "object") {
+        return Object.fromEntries(Object.entries(value).map(([key, part]) => [key, paint(part)]));
+      }
+      return value;
+    };
+    const config = {
+      background: token("--paper"),
+      axis: {
+        labelColor: token("--muted"),
+        titleColor: token("--ink"),
+        domainColor: token("--control-border"),
+        tickColor: token("--control-border"),
+        gridColor: token("--border"),
+      },
+      legend: { labelColor: token("--ink"), titleColor: token("--ink") },
+      title: { color: token("--ink"), subtitleColor: token("--muted") },
+      text: { color: token("--ink") },
+      view: { stroke: token("--border") },
+    };
+    return { spec: paint(spec), config, print };
+  };
+  // Each drawn chart's way back to light, from themed().
+  const printing = new WeakMap();
+  const scheme = () => document.documentElement.dataset.theme || "light";
   const draw = (root) => {
     const source = document.getElementById(root.dataset.chart);
     const view = root.querySelector("[data-chart-view]");
@@ -65,7 +149,10 @@
     // The CSP allows no eval and no inline styles: Vega runs in interpreter
     // mode (ast), nothing injects a stylesheet (chart-v1.css carries the
     // tooltip's), and there is no actions menu to style.
-    vegaEmbed(view, spec, {
+    const drawnIn = scheme();
+    const colours = themed(spec, root);
+    vegaEmbed(view, colours.spec, {
+      config: colours.config,
       mode: "vega-lite",
       renderer: "svg",
       actions: false,
@@ -81,6 +168,7 @@
         return;
       }
       drawn.set(root, result);
+      printing.set(root, colours.print);
       fit.observe(view);
       // Vega makes the view a graphics document named by the spec's
       // description; name it by the chart's title instead (the summary is
@@ -92,6 +180,8 @@
       view.tabIndex = 0;
       view.style.minHeight = "";
       root.dataset.chartState = "rendered";
+      // The scheme changed while it was drawing: draw it again in the new.
+      if (drawnIn !== scheme()) redraw(root);
     }).catch(() => {
       // The summary and table remain; the empty view must not take focus.
       root.dataset.chartState = "failed";
@@ -129,6 +219,100 @@
       }
     });
   };
+  // Draw a drawn chart again, in the page's scheme now. Its view keeps its
+  // height until the new drawing replaces the old, so nothing below moves.
+  const redraw = (root) => {
+    const result = drawn.get(root);
+    const view = root.querySelector("[data-chart-view]");
+    if (!result || !view) return;
+    view.style.minHeight = `${view.offsetHeight}px`;
+    fit.unobserve(view);
+    result.finalize();
+    drawn.delete(root);
+    root.dataset.chartState = "pending";
+    draw(root);
+  };
+  // A change of scheme (the Appearance switch, the device's setting, or
+  // another tab's choice) redraws every drawn chart in place. Charts not
+  // yet drawn take the scheme when they are. While the page prints, the
+  // charts stay light; a change made meanwhile is drawn once it ends.
+  let current = scheme();
+  const follow = () => {
+    if (swapped || scheme() === current) return;
+    current = scheme();
+    [...drawn.keys()].forEach(redraw);
+  };
+  new MutationObserver(follow)
+    .observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  // A printed page is light (ui-conventions "Colour scheme"): the dark
+  // tokens apply to the screen only. A chart drawn dark keeps its colours
+  // in its SVG, so before the page prints, each drawn colour is swapped
+  // for its token's light value in place. The swap is synchronous, so it
+  // is done before the browser lays out the printed page (a fresh Vega
+  // drawing is asynchronous, too late for that). The print layout can
+  // make Vega draw a chart again in its screen colours (it follows the
+  // window's resize), so while printing, an observer swaps whatever Vega
+  // draws as soon as it draws it, before the next paint. Afterwards the
+  // colours go back. The "print" media query is the medium, not the
+  // colour scheme, which comes only from data-theme.
+  let swapped = null;
+  const lighten = (root) => {
+    const print = printing.get(root);
+    const svg = root.querySelector("[data-chart-view] svg");
+    if (!print || !svg) return;
+    svg.querySelectorAll("[fill], [stroke]").forEach((el) => {
+      ["fill", "stroke"].forEach((attribute) => {
+        const value = el.getAttribute(attribute);
+        const light = value && HEX.test(value) && print.colours.get(hex6(value));
+        if (light && light !== hex6(value)) {
+          swapped.push(() => el.setAttribute(attribute, value));
+          el.setAttribute(attribute, light);
+        }
+      });
+    });
+    const background = svg.style.backgroundColor;
+    swapped.push(() => { svg.style.backgroundColor = background; });
+    svg.style.backgroundColor = print.paper;
+  };
+  // Re-swaps a chart Vega has drawn again while printing. It stops
+  // watching while it swaps, so its own changes do not call it back.
+  const redrawn = new MutationObserver((records) => {
+    const roots = new Set(records.map(({target}) => target.closest("[data-chart]")));
+    redrawn.disconnect();
+    roots.forEach((root) => { if (root && drawn.has(root)) lighten(root); });
+    watch();
+  });
+  const watch = () => drawn.forEach((_result, root) => {
+    const view = root.querySelector("[data-chart-view]");
+    if (view) {
+      redrawn.observe(view, { subtree: true, childList: true, attributes: true,
+        attributeFilter: ["fill", "stroke", "style"] });
+    }
+  });
+  const toLight = () => {
+    if (swapped) return;
+    swapped = [];
+    drawn.forEach((_result, root) => lighten(root));
+    watch();
+  };
+  const fromLight = () => {
+    if (!swapped) return;
+    redrawn.disconnect();
+    // Newest first, so each element ends with the colour it had first.
+    swapped.reverse().forEach((undo) => undo());
+    swapped = null;
+    // A scheme chosen while printing is drawn now.
+    follow();
+    // Refitting was paused while printing, and the print layout may have
+    // left a chart at the paper's width: a resize makes Vega measure each
+    // chart's panel again once the screen layout is back.
+    window.requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+  };
+  window.addEventListener("beforeprint", toLight);
+  window.addEventListener("afterprint", fromLight);
+  window.matchMedia("print").addEventListener("change", (event) => {
+    if (event.matches) toLight(); else fromLight();
+  });
   // Vega shows a tooltip on pointermove, which a tap never sends: a touch
   // pointer goes over, down, up and out again, then the page gets a click.
   // So a tap on a drawn chart replays itself as a pointermove there, and

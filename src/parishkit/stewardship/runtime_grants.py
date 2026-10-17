@@ -154,8 +154,11 @@ WEB_READ_TABLES = frozenset(
 # names as the key before it. Sizes, digests and versions stay unread.
 BACKUP_KEY_COLUMNS = frozenset({"id", "completed_at", "recipient_fingerprint"})
 # System health's backups panel (ADM-13) also shows the newest backup's size
-# and the version it was taken with; digests and paths stay unread.
+# and the version it was taken with, and its key check compares when the
+# newest backup started with when the configured key was set (#1214): a
+# backup reads its key as it starts. Digests and paths stay unread.
 BACKUP_PANEL_COLUMNS = BACKUP_KEY_COLUMNS | {
+    "started_at",
     "database_bytes",
     "files_bytes",
     "application_version",

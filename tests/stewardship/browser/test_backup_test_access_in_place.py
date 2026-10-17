@@ -14,10 +14,18 @@ and Save still submits natively.
 
 import pytest
 
-from .backup_test_components import PAGE, REFUSED, REFUSED_LINKED, STATUS, TESTED
+from .backup_test_components import (
+    BAD_FOLDER,
+    BAD_LINK,
+    PAGE,
+    REFUSED,
+    REFUSED_LINKED,
+    STATUS,
+    TESTED,
+)
 from .test_export_resolve_in_place import announced, open_marked, stayed, wheel_to
 from .test_in_place import MARKED, count_requests
-from .waits import focused, visible
+from .waits import focused, hidden, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -120,10 +128,56 @@ def test_a_refusal_s_link_is_shown_with_it(page, component_origin):
     assert page.evaluate(MARKED) == "kept"
 
 
-def test_save_still_submits_natively(page, component_origin):
-    """Save in the same form is marked data-in-place-native: it submits as
-    a native form does, so its answer loads in place of this page."""
+def test_save_opens_the_review_dialog_and_test_access_does_not(page, component_origin):
+    """Save in the same form opens the review dialog (#750), posting the
+    form to the page itself without a page load; Test access, marked
+    data-review-skip, stays in place and never opens it."""
+    from .review_helpers import answer_reviews
+    from .settings_components import PARISH_REVIEW
+
+    reviews = answer_reviews(page, component_origin, PARISH_REVIEW, address=PAGE)
     open_marked(page, component_origin, PAGE)
-    with page.expect_navigation():
-        page.get_by_role("button", name="Save", exact=True).click()
-    assert page.evaluate(MARKED) is None
+    dialog = page.locator("dialog#integration-review")
+    page.get_by_role("button", name="Save", exact=True).click()
+    visible(dialog)
+    assert len(reviews) == 1 and "action=preview" in reviews[0]
+    dialog.get_by_role("button", name="Cancel").click()
+    hidden(dialog)
+    page.get_by_role("button", name=NAME, exact=True).click()
+    visible(page.locator("#integration-status", has_text="Checking access"))
+    assert not dialog.is_visible() and len(reviews) == 1
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_a_refused_folder_link_is_shown_at_its_field(page, component_origin):
+    """Test access with a Drive link that names no folder: the browser's
+    pattern admits it, and the view draws the page again with the link's
+    error and the error summary (400, #1330). In place, that error is shown
+    at the field, in the line the field keeps for it (no list is inserted to
+    push the buttons down), with the link the reader typed and one summary,
+    and the page is not reloaded."""
+    from playwright.sync_api import expect  # imported late: collection needs no browser
+
+    open_marked(page, component_origin, BAD_LINK)
+    link = page.get_by_label("Google Drive folder link")
+    link.fill(BAD_FOLDER)
+    button = page.get_by_role("button", name=NAME, exact=True)
+    expect(button).to_be_enabled()
+    offset = (
+        "node => node.getBoundingClientRect().top"
+        " - node.form.getBoundingClientRect().top"
+    )
+    before = button.evaluate(offset)
+    button.click()
+    field = page.get_by_label("Google Drive folder link")
+    expect(field).to_have_attribute("aria-invalid", "true")
+    expect(page.locator("#id_target_error")).to_contain_text("Google Drive folder")
+    expect(page.locator("[data-error-summary]")).to_have_count(1)
+    assert page.locator(".errorlist[data-review-placed]").count() == 0
+    # No list is inserted; only the settings pages' shared error border,
+    # 1px thicker on each side of the field, remains. Firefox lays the 2px
+    # out on sub-pixel boundaries (2.0000002 in CI), so allow half a pixel;
+    # an inserted error line would move the buttons a whole line.
+    assert 0 <= button.evaluate(offset) - before <= 2.5
+    assert field.input_value() == BAD_FOLDER
+    assert page.evaluate(MARKED) == "kept"

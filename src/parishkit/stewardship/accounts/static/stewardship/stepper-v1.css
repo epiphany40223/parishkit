@@ -92,9 +92,9 @@
    right-aligned, as the setup wizard's row; they stack on a phone. */
 .campaign-step-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-block: 1.5rem .25rem; }
 .campaign-step-actions > * { margin: 0; }
-.campaign-step-actions > [data-campaign-continue] { margin-inline-start: auto; }
+.campaign-step-actions > [data-campaign-continue], .campaign-step-actions > [data-campaign-create] { margin-inline-start: auto; }
 @media (max-width: 26rem) {
-  .campaign-step-actions > [data-campaign-continue], .campaign-step-actions > form button { flex: 1 1 100%; width: 100%; }
+  .campaign-step-actions > [data-campaign-continue], .campaign-step-actions > [data-campaign-create], .campaign-step-actions > form button { flex: 1 1 100%; width: 100%; }
 }
 @media (forced-colors: active) {
   .setup-steps [aria-current="step"] { outline: 3px solid CanvasText; }

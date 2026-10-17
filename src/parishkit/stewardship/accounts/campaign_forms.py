@@ -522,8 +522,8 @@ class CampaignSettingsForm(CampaignForm):
     The leader roles sit with the Ministry selections and matter only while
     Ministry stewardship is on. ``leader_roles`` is the campaign's effective
     list now (its saved value or the default), so leaving the default ticked
-    never writes the key. The setup wizard and Copy campaign keep the shared
-    form: a new campaign starts with the default.
+    never writes the key. Copy campaign keeps the shared form; Create the
+    campaign uses this one, starting on the default list (#1404 PR 3).
     """
 
     ministry_leader_roles = LeaderRoleChoices(required=False)

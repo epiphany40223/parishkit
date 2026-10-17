@@ -9,6 +9,7 @@ from django.http import HttpResponse, QueryDict
 from django.shortcuts import redirect
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
@@ -19,7 +20,10 @@ from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
-from parishkit.stewardship.responses.information import update_information
+from parishkit.stewardship.responses.information import (
+    ClearUnconfirmed,
+    update_information,
+)
 from parishkit.stewardship.responses.models import AdditionalInformationItem
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
@@ -68,6 +72,30 @@ FIELD_IDS = {"start": "start", "end": "end"}
 # The reserved message line both dates are described by, shown once after
 # them (UX conventions, Field errors).
 FIELD_LINES = {"start": "submitted-dates", "end": "submitted-dates"}
+# An item's Save refused for clearing a completed follow-up without its
+# confirmation (#1332): the box it is shown at, and the Save hint row the
+# message is shown in, over the gate's hint, which says the same words.
+CONFIRM_MESSAGE = _("Tick the confirmation to reopen this follow-up.")
+CONFIRM_IDS = {"confirm_clear": "information-confirm-clear"}
+CONFIRM_LINES = {"confirm_clear": "information-save"}
+# The submitted values a refused Save is drawn again with.
+SENT_FIELDS = ("expected_version", "follow_up_needed", "followed_up", "notes")
+
+
+def unconfirmed_context(sent, sizes):
+    """The item page's context for a Save refused at its confirmation.
+
+    ``sent`` is the refused change (``change_values``): the form shows it,
+    with the version sent, so resubmitting it after another edit still
+    reads as a conflict. The confirmation box is marked, and the Save hint
+    row shows the message, sized to it (``sizes`` is the page's other
+    reserved lines), so its clearing on the first edit moves nothing.
+    """
+    error = FilterError("confirm_clear", CONFIRM_MESSAGE, None)
+    return error_context(error, CONFIRM_IDS, CONFIRM_LINES) | {
+        "sent": {key: sent[key] for key in SENT_FIELDS},
+        "filter_sizes": sizes | {CONFIRM_LINES["confirm_clear"]: CONFIRM_MESSAGE},
+    }
 
 
 def _recalled(request, campaign_id, token):
@@ -155,13 +183,16 @@ def _audit(principal, campaign_id, outcome):
         )
 
 
-def _page_response(request, campaign_id, *, item_id=None):
+def _page_response(request, campaign_id, *, item_id=None, sent=None):
     """Guard every data query, template render and byte; audit response completion.
 
     Queue filters refused at a field (``FilterError``) draw the queue again,
     answered 400, with the error at that field and the results for no
     filters, as Financial stewardship does (#1332); the audit then ends
-    denied, not succeeded.
+    denied, not succeeded. An item Save refused at its confirmation
+    (``sent``, the refused change) draws the item page again, answered 400,
+    with the values sent and the error at the box; that page is the item
+    asked for, so its audit ends succeeded.
     """
     finish, handed_off, refusal = None, False, None
     try:
@@ -202,7 +233,10 @@ def _page_response(request, campaign_id, *, item_id=None):
         else:
             values = filters(request.GET, allowed={"page", "queue"})
             history_page = parse_page(values.get("page", "1"))
-            token = queue_token(values.get("queue", ""))
+            # A refused save shows this page again from its own POST body.
+            token = queue_token(
+                request.POST.get("queue", "") if sent else values.get("queue", "")
+            )
             # A token the session doesn't hold (another sign-in, an older
             # view) is not echoed into this page's links and form.
             if token and recall_queue(request, QUEUE, campaign_id, token) is None:
@@ -336,6 +370,8 @@ def _page_response(request, campaign_id, *, item_id=None):
                 # Per request, in the request's language.
                 filter_sizes=line_sizes(FIELD_MESSAGES, FIELD_LINES),
             )
+            if sent is not None:
+                context |= unconfirmed_context(sent, context["filter_sizes"])
             if refusal is not None:
                 # The filter form shows what was sent, with the error at its
                 # field; the panel counts, and the export carries, only the
@@ -360,7 +396,7 @@ def _page_response(request, campaign_id, *, item_id=None):
             on_close=finish,
         )
         handed_off = response.status_code == 200 and response.streaming
-        if handed_off and refusal is not None:
+        if handed_off and (refusal is not None or sent is not None):
             # The refusal was known before the response was made, so its
             # status is set before any byte is sent.
             refused(response)
@@ -445,6 +481,12 @@ def update(request, campaign_id, item_id):
         return response
     except StaleRecordError:
         return _error(campaign_id, item_id=item_id, status=409)
+    except ClearUnconfirmed:
+        # Save waits for the confirmation in the browser, so only a request
+        # built by hand (or a browser whose gate did not run) reaches this:
+        # the item page again, with the error at the box (#1332). The page
+        # answers in place, as a successful save does.
+        return _page_response(request, campaign_id, item_id=item_id, sent=values)
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):

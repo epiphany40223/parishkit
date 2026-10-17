@@ -1738,7 +1738,10 @@ signatures:
   `artwork_views.review_removal`, which the page's review now calls;
   `content show` moved the editor GET's lookup (the slot check, the saved
   record and the folded closing note) into `content_views.editor_content`,
-  which the page now calls.
+  which the page now calls. `content preview` moved the email tables'
+  Delete build into `content_delete_views.review_deletion` (and its choice
+  check into `chosen_ids`) and the editors' plain-text conversion into
+  `content_views.plain_text`, which the pages now call.
   `parish show`, `ministries list` and `campaign shares` needed none: the
   pages' profile, catalog and campaign-target reads were already
   request-free; `branding show` moved the logo page's current-logo query
@@ -1769,6 +1772,11 @@ signatures:
   live and Ministries reviews, each returning the review instead of a
   response), and `campaign confirm` its Apply routing into
   `campaign_views.confirm_route`; the page now calls both.
+  `campaign shares-preview` moved Share options' review (after the page's
+  version and formset checks) into `option_editing.review_options`, which
+  the page's Review now calls; `campaign shares-confirm` needed none, as
+  the page's Apply is `confirm_intent` with its salt and
+  `campaign_views._scope`.
 - **PR 11:** user, event and follow-up actions from their views (the users
   model of #952 replaces the rule actions; #922 retired the assignment and
   Chairperson actions). The event acknowledgements moved each view's
@@ -1945,18 +1953,18 @@ none.
 
 | URL names | Command or exemption |
 | --- | --- |
-| `schedule_settings`, `schedule_new`, `schedule_edit`, `schedule_delete` | `schedule show` (PR 3a); `schedule preview`, `schedule confirm` (PR 4): a change document adds, changes or deletes the same schedules. Its `series` entries (#469) edit or delete a remembered reminder series, ahead of the New/Change page's series scopes (slice 2b-3) |
+| `schedule_settings`, `schedule_new`, `schedule_edit`, `schedule_delete` | `schedule show` (PR 3a); `schedule preview`, `schedule confirm` (PR 4): a change document adds, changes or deletes the same schedules. Its `series` entries (#469) edit or delete a remembered reminder series; Edit scheduled email offers the same "this and following" and "the whole series" for a time or email change, while a new rule or deleting a series is the command line's alone for now |
 | `schedule_calendar` | `schedule show` (PR 3a): the read-only Campaign calendar (#469) draws the saved schedules and campaign dates that `schedule show` lists |
 | `campaign_end_date_check` | `schedule preview` (PR 4): Campaign settings' no-save live check of a live campaign's end date answers what a preview of that end date would refuse |
 | `configuration_request` | `config request show --watch` (PR 4); `config request cancel` ([#944](https://github.com/epiphany40223/parishkit/pull/944)), an operator recovery with no page button |
 | `campaign_settings`, `campaign_create`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), Campaign settings' read, Review and Apply, a live campaign's Ministries included (#1119); `campaign create-preview`, `campaign create` and `campaign clone` (PR 10); until #145, creating or copying a campaign is refused, except the first campaign through [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142) ([navigation rule 10](../ui-conventions/spec.md#navigation-rules)): commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, will get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
-| `share_settings` | `campaign shares` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the Share options read; Share option changes (PR 10) |
+| `share_settings` | `campaign shares`, `campaign shares-preview`, `campaign shares-confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), Share options' read, Review and Apply |
 | `reminder_workgroup` (its review and apply, #750) | `workgroup show`, `workgroup preview`, `workgroup confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
-| `content_catalog`, `content_edit`, `content_revision`, `content_delete`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content history` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `content preview`, `content confirm` (PR 10), the plain-text preview with `content preview` |
+| `content_catalog`, `content_edit`, `content_revision`, `content_delete`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content history`, `content preview` (the Delete and the plain-text preview), `content confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the editor's Review and Apply (PR 10) |
 | `parish_settings`, `ministries` | `parish show`, `parish preview`, `parish confirm`, `ministries list` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); Ministries changes nothing since [#1267](https://github.com/epiphany40223/parishkit/issues/1267) |
 | `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list`, `files delete`, `files rename` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
 | `artwork_settings` (its upload and removal reviews, #750) | `artwork show`, `artwork remove-preview`, `artwork remove` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); uploads are `artwork_upload`'s, below |
-| `branding_settings`: **Apply** in its review dialog (#750) | `branding show` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `branding confirm --expected-version …`, a configuration request for logos already uploaded (PR 10) |
+| `branding_settings`: **Apply** in its review dialog (#750) | `branding show` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); applying logos comes with the uploads below: staged logos belong to the sign-in that uploaded them, and each `pk-admin` run is its own sign-in, so a command cannot apply logos staged in the browser |
 | `hosted_file_upload`, `artwork_upload`, `branding_settings` uploads | Pending: file uploads; a later PR may accept `--file` |
 | `branding_asset` | Permanent: image previews and bytes for the browser |
 
@@ -2022,7 +2030,7 @@ right after confirm, exactly as editing that reminder alone on the page
 does. An edit that gives a `repeat` rule yielding the same reminders still
 saves the new rule; one with no `repeat` and the same reminders changes
 nothing. The planning is the pure `accounts.series_edits.plan`, which
-the New/Change page will share, and its reminders and series records go
+Edit scheduled email shares, and its reminders and series records go
 through the same `schedule_changes.build_preview`, forms, signed preview
 and confirmation, so an in-flight or unknown send still blocks. An unknown
 series, a `from` outside it, a reminder from the cut date that has sent or
@@ -2051,7 +2059,13 @@ Administrator confirmation; the
 shows the format. `schedule confirm` records `admin_cmd_schedule_confirm`
 in the request's own durable transaction, only when it creates the request;
 a repeated confirmation returns the original request and records nothing.
-Its configuration checks before intake are `unavailable` during a restore
+It checks the previewed send times again as the page's Apply does
+([New and Edit scheduled email](../admin-portal/spec.md#new-and-edit-scheduled-email),
+[#1464](https://github.com/epiphany40223/parishkit/issues/1464)): one that
+was ahead at preview and has since passed is `stale_version`, and nothing
+changes; preview again with a later time. A missed reminder a series edit
+adds again on its past date was already past at preview, so it is not
+refused. Its configuration checks before intake are `unavailable` during a restore
 review or an activating change, as for `schedule preview`. A database error
 once the request row is written is `outcome_unknown`, never `unavailable`,
 because it may have struck the commit; one before that rolled back and is
@@ -2184,9 +2198,45 @@ text", which changes nothing. An unknown or hidden slot, `--revision` on a
 page, or a revision the campaign does not hold is `not_available`, as the
 editor answers not found. The editor's live plain-text preview
 (`content_plain_text`) previews typed HTML, not saved text, so it belongs
-with `content preview`, whose review prints the proposed change's cleaned
-HTML and plain text. The positional kind and slot, the field names and
-moving the plain-text preview to `content preview` are defaults, pending
+with `content preview`, below. The positional kind and slot, the field
+names and moving the plain-text preview to `content preview` are defaults,
+pending Administrator confirmation.
+
+`content preview --delete ID … --expected-version …` and `content confirm
+--token …` are the email tables' **Delete** (#879) split into a preview
+verb and a confirm verb, as `schedule preview` and `schedule confirm`
+split a schedule's Delete (#878): the page builds and signs the removal
+and records it at once after its confirmation dialog. The preview admits
+as the page's Delete post does (`CONFIGURE`, recording activity) and, in
+the page's work transaction, reads the page's pinned state and campaign
+check (`content_views._content_campaign`), checks the version (another is
+`stale_version`) and builds the page's own removal
+(`content_delete_views.review_deletion`). As on the page, `--delete`
+names one or more `content list` email revisions (invitation, reminder or
+Admin digest), each once; an email that cannot be deleted (the
+confirmation email, one a schedule still sends, an unknown id), a
+repeated id, or a configuration the removal would make invalid is
+`invalid` at `delete` with the page's words; background work holding the
+campaign is `stale_version`; an archived campaign, or none,
+`not_available`. It prints `action` (`delete`), `version`,
+`campaign_id`, `deleting` (each email's `id`, `slot` and `subject`) and
+`preview.token`, signed with the page's delete salt, and records nothing.
+`content preview --html …` is the editors' live plain-text preview,
+through the page's own `content_views.plain_text`: it admits passively
+(renewing nothing, as the page's read-only check), reads no campaign and
+prints `action` (`plain_text`) and `plain_text` (`html`, `text`,
+`removed`), as the page's JSON answer. `content confirm` records the
+configuration request as the page's Delete does, through
+`admin_editing.confirm_intent` with the page's delete salt for the current
+campaign and scope (`campaign_views._scope`), with
+`admin_cmd_content_confirm` in the request's own transaction; a repeat
+returns the original request. Both need a full-scope session; neither is
+fresh-gated nor prompts, as the page asks for no recent sign-in and the
+reviewed token stands in for its dialog. Each checks the role first
+(#1341). The editor's own Review and Apply join these verbs in a later
+slice. The two modes, `--delete` repeated for several emails, no prompt,
+the `deleting` and `plain_text` fields, the plain-text mode needing a
+full-scope session and the command-only event are defaults, pending
 Administrator confirmation.
 
 `artwork remove-preview SLOT --expected-version …` and `artwork remove
@@ -2351,6 +2401,38 @@ repeat returns the original request. Both need a full-scope session, as
 the page's posts record activity; neither is fresh-gated nor prompts, as
 the page asks for no recent sign-in. The command shapes are defaults,
 pending Administrator confirmation.
+
+`campaign shares-preview --expected-version … --changes … [--campaign ID]`
+and `campaign shares-confirm --token … [--campaign ID]` change a
+campaign's Share options through the page's own pieces: its target and
+editability checks (`campaign_views._target`; a campaign the page does not
+edit now is the page's own refusal, `stale_version`, as its 409), its
+formset (`share_forms.ShareOptions`), its review
+(`option_editing.review_options`) and its Apply (`confirm_intent` with the
+page's salt, bound to the campaign, and `campaign_views._scope`), so a
+token from either channel confirms on the other. The change document is
+`{"options": [...], "delete": [...]}`: `options` is the kept and new
+options in their new order (`id` for a saved one, none for a new one;
+`name`, the label; `free_text`, false when left out) and `delete` the
+saved ids removed, as the page's Delete boxes. The document becomes the
+page's own Review post, so its rules apply unchanged: every saved option
+must be in exactly one of the two lists ("retained or explicitly
+deleted"), so leaving one out never deletes it. The preview prints the
+page's compact review lines (`label`, `before`, `after`), the `options`
+the change saves and `preview.token`, and records nothing; the page's
+field errors are `invalid` at `options.<n>.name` (the document's position)
+and its formset errors and unchanged safeguard at `options`; another
+version is `stale_version`. An unknown campaign is `not_available` for
+`campaign shares-preview`; `campaign shares-confirm` never looks the
+campaign up (it only binds the salt), so a token confirmed against another
+or an unknown campaign fails its signature as `invalid`, as the page's
+Apply does. `campaign shares-confirm` records the request
+with `admin_cmd_campaign_shares_confirm` in its own transaction, and a
+repeat returns the original request. Both need a full-scope session;
+neither is fresh-gated nor prompts, as the page asks for no recent sign-in
+and its Apply is the reviewed token. The names, the explicit `delete` list
+and `--campaign` defaulting to the current campaign are defaults, pending
+Administrator confirmation.
 
 ### Production transition and withdrawal
 
@@ -3964,10 +4046,12 @@ exactly the commands that exist.
   delivery reads and resolution. **PR 9c:** `resend` and refusal clearing, at
   the prompt.
 - **PR 10, other configuration:** campaign, content (`content list`,
-  `content show` and `content history` first), Ministries, parish, logos
+  `content show` and `content history` first, then `content preview` and
+  `content confirm` for the Delete and the plain-text preview), Ministries, parish, logos
   and Share options
   (`parish show`, `ministries list`, `branding show` and `campaign shares`
-  first, then `parish preview` and `parish confirm`), hosted files (`files list`,
+  first, then `parish preview` and `parish confirm`, and `campaign
+  shares-preview` and `campaign shares-confirm`), hosted files (`files list`,
   `files delete`, `files rename`), artwork (`artwork show`, then
   `artwork remove-preview` and `artwork remove`), the No-reminders
   WorkGroup (`workgroup show`, `workgroup preview`, `workgroup confirm`),

@@ -304,6 +304,22 @@ def test_refusals_are_for_the_dialog_or_the_field(auth_service, google):
     assert ConfigurationChangeRequest.objects.count() == requests
 
 
+def test_a_refused_website_is_shown_at_its_field(auth_service, google):
+    """A website with a query or a user name is refused at the field, with
+    the summary linking to it, not as a notice above the form (#1330)."""
+    store = auth_service.store
+    browser, _ = signed_in()
+    for website in ("https://example.org/?a=1", "https://user@example.org/"):
+        refused = post(browser, fields(store, website=website))
+        assert refused.status_code == 400
+        html = refused.content.decode()
+        (field,) = re.findall(r'<input[^>]*name="website"[^>]*>', html)
+        assert 'aria-invalid="true"' in field and "id_website_error" in field
+        assert '<a href="#id_website">Parish website: Use a website URL' in html
+        assert "Website URLs cannot include" not in html
+    assert not ConfigurationChangeRequest.objects.exists()
+
+
 def test_a_stored_alias_is_kept_and_a_new_zone_is_stored_canonically(
     monkeypatch, request
 ):

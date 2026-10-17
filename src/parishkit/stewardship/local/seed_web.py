@@ -737,8 +737,8 @@ def run_wizard(
     (off), a generated parish logo through the real branding staging, the
     access lists, the ParishSoft credential (the fake's key and organization),
     the source load (the worker loads from the fake; ``wait`` blocks until the
-    attempt collects again), the preview, the fixed setup test mail (sent to
-    Mailpit by mail-dispatch) and the final confirmation. The caller then
+    attempt collects again), the fixed setup test mail (sent to Mailpit by
+    mail-dispatch), the preview and the final confirmation. The caller then
     waits for ``setup_is_complete``. Setup collects no campaign (#142); the
     seeder's ``campaign`` step creates it afterwards (``create_campaign``).
     """
@@ -857,8 +857,9 @@ def campaign_fields(form, campaign_dates):
     Every module, every Ministry the form offers, and the first two funds
     (the second only for the comparison period, the first again when there
     is one fund). ``form`` is the unbound creation form, whose initial
-    values (the Parish timezone and the applied configuration's digest) are
-    kept; ``campaign_dates`` is the campaign's (start, end).
+    values (the Parish timezone, the default Ministry leader roles and the
+    applied configuration's digest) are kept; ``campaign_dates`` is the
+    campaign's (start, end).
     """
     funds = [value for value, _ in form.fields["fund_duids"].choices]
     start, end = campaign_dates
@@ -873,6 +874,7 @@ def campaign_fields(form, campaign_dates):
         "ministry": "on",
         "financial_enabled": "on",
         "ministry_duids": [value for value, _ in form.fields["ministry_duids"].choices],
+        "ministry_leader_roles": list(form.initial["ministry_leader_roles"]),
         "financial_start": f"{end.year + 1}-01-01",
         "financial_end": f"{end.year + 1}-12-31",
         "comparison_start": f"{end.year}-01-01",
@@ -947,7 +949,8 @@ def preview_token(request, service):
 
 
 def wizard_confirm(request, service, attempt_id, *, wait):
-    """Review, send the sample mail, wait for the catcher to take it, confirm."""
+    """Send the sample mail, wait for the catcher to take it, then confirm the
+    current preview (the wizard's Test email, Review and Finish setup, #1476)."""
     from parishkit.stewardship.accounts.setup_confirmation import freeze_setup
     from parishkit.stewardship.accounts.setup_delivery_models import SetupMailDelivery
     from parishkit.stewardship.accounts.setup_mail import request_sample

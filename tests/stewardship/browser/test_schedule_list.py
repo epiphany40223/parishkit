@@ -20,19 +20,25 @@ import pytest
 
 from .schedule_list_components import (
     APPLY,
+    APPLY_PASSED,
     BULK,
     DATE_REFUSAL,
     DATES,
     DATES_END,
     DATES_INVALID,
     DATES_STALE,
+    DAY_MOVED_TEXT,
     EDIT,
     EDIT_CLOSED,
     EDIT_DIGEST,
     EDIT_EMAIL_REFUSED,
     EDIT_INITIAL,
+    EDIT_PASSED,
+    EDIT_SERIES,
+    EDIT_SERIES_GATED,
     EMAIL_REFUSAL,
     FAILED,
+    GATED_REASON,
     LIST,
     NEW,
     NEW_BLOCKED,
@@ -41,6 +47,7 @@ from .schedule_list_components import (
     NEW_REPEAT,
     NEW_STALE,
     NOT_OPEN,
+    PASSED_REFUSAL,
     REFUSAL,
     REFUSED,
     STALE_REFUSAL,
@@ -487,6 +494,94 @@ def test_edit_review_waits_for_a_change_and_greys_again_on_revert(
     assert not failures
 
 
+def test_a_series_reminder_changes_this_and_following_in_place(
+    page, component_origin, axe_source
+):
+    """Part of its series (#469): choosing a scope greys the date in place,
+    showing this reminder's own, is no change by itself, and Review posts
+    the scope without the date; the review says what happens to the series."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + EDIT_SERIES)
+    failures = watch(page)
+    choice = page.get_by_role("group", name="Apply this edit to", exact=False)
+    visible(choice)
+    # "Part of" describes the choice, so a screen reader hears it there.
+    described = choice.get_attribute("aria-describedby").split()
+    assert page.locator(f"#{described[0]}").inner_text() == (
+        "Part of: Every day, October 1, 2054 – October 31, 2054"
+    )
+    date = page.locator('[name="schedule-date"]')
+    time = page.locator('[name="schedule-time"]')
+    this = page.get_by_role("radio", name="This reminder only")
+    assert this.is_checked() and date.is_enabled()
+    button = page.get_by_role("button", name=REVIEW)
+    assert button.is_disabled()
+    # A date typed first is not used by a series scope: the box shows the
+    # reminder's own again (Los Angeles, a day the same as New York's).
+    date.fill("2054-10-11")
+    places = [node.bounding_box() for node in (date, time, button)]
+    page.get_by_role("radio", name="This and following").check()
+    # Greyed in place, not hidden: nothing moves, and a scope is no change.
+    assert date.is_disabled() and date.is_visible()
+    assert date.input_value() == "2054-10-10"
+    visible(page.get_by_text("Used only with \u201cThis reminder only\u201d"))
+    assert same_place([node.bounding_box() for node in (date, time, button)], places)
+    assert button.is_disabled()
+    assert axe_violations(page, axe_source) == []
+    this.check()
+    assert date.is_enabled()
+    page.get_by_role("radio", name="The whole series").check()
+    time.fill("10:30")
+    assert button.is_enabled()
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        button.click()
+    fields = posted(sent.value)
+    assert fields["series-scope"] == ["series"]
+    assert fields["schedule-time"] == ["10:30"]
+    assert "schedule-date" not in fields
+    dialog = page.get_by_role("dialog", name="Review scheduled email change")
+    visible(dialog)
+    assert (
+        "From October 10, 2054, every reminder of this series sends at 10:30 AM"
+        in dialog.inner_text()
+    )
+    # A reminder outside a series has no scope.
+    page.goto(component_origin + EDIT)
+    assert page.locator('[name="series-scope"]').count() == 0
+    assert not failures
+
+
+def test_an_unavailable_scope_says_why_and_a_refusal_shows_at_the_choice(
+    page, component_origin, axe_source
+):
+    """A scope the server would refuse is unavailable with its reason
+    (prerequisite gates); a refusal of the typed time stays on the form."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + EDIT_SERIES_GATED)
+    failures = watch(page)
+    whole = page.get_by_role("radio", name="The whole series")
+    assert whole.is_disabled()
+    reason = page.locator(f"#{whole.get_attribute('aria-describedby')}")
+    assert reason.inner_text() == f"Unavailable: {GATED_REASON}"
+    page.get_by_role("radio", name="This and following").check()
+    page.locator('[name="schedule-time"]').fill("23:00")
+    page.get_by_role("button", name=REVIEW).click()
+    error = page.locator("#id_series-scope_error")
+    visible(error)
+    assert error.inner_text() == DAY_MOVED_TEXT
+    assert (
+        page.get_by_role("radio", name="This and following").get_attribute(
+            "aria-invalid"
+        )
+        == "true"
+    )
+    assert not page.get_by_role(
+        "dialog", name="Review scheduled email change"
+    ).is_visible()
+    assert axe_violations(page, axe_source) == []
+    assert not failures
+
+
 def test_edit_fills_and_posts_times_in_a_zone_a_day_ahead(
     browser_engine, component_origin
 ):
@@ -671,6 +766,51 @@ def test_apply_returns_to_the_list_with_the_status_line(page, component_origin):
     assert line.get_attribute("role") == "status"
     assert page.evaluate(FOCUSED) == "schedules-outcome"
     assert near(page.locator("#schedule-table-title").bounding_box()["y"], table)
+
+
+def test_an_apply_whose_reviewed_time_passed_is_refused_in_place(
+    page, component_origin
+):
+    """A reviewed send time that passed before Apply (#1464): the server's
+    refusal shows in the dialog, below its buttons, which do not move; the
+    page is neither reloaded nor redrawn, and Cancel returns to the form
+    with the typed time, ready to review again."""
+    # Tall enough that the review and its refusal stay below the dialog's
+    # 90% height limit: at that limit the shared dialog shrinks its
+    # scrolling body for the refusal and the buttons rise (a shared-dialog
+    # follow-up, #1482, not #1464's; drop this override when it lands).
+    # With CI's Linux fonts this review's body is about 1,040 px tall, so
+    # 1,400 px reached the limit in every engine; 1,800 px leaves room.
+    page.set_viewport_size({"width": 1280, "height": 1800})
+    page.goto(component_origin + EDIT_PASSED)
+    failures = watch(page)
+    time = page.locator('[name="schedule-time"]')
+    time.fill("10:30")
+    form = page.locator("#schedule-entry-form").element_handle()
+    shown = review(page, REVIEW)
+    cancel = shown.get_by_role("button", name="Cancel")
+    places = [cancel.bounding_box()]
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        shown.get_by_role("button", name="Apply").click()
+    assert sent.value.url.endswith(APPLY_PASSED)
+    error = shown.locator("[data-confirm-error]")
+    visible(error)
+    assert PASSED_REFUSAL["message"] in error.inner_text()
+    assert PASSED_REFUSAL["fix"] in error.inner_text()
+    assert shown.is_visible()
+    # The premise above: the body did not shrink to make room (#1482), so a
+    # move below is this page's, not the shared dialog's height limit.
+    body = shown.locator("[data-review-body]")
+    assert body.evaluate("node => node.scrollHeight <= node.clientHeight")
+    assert same_place([cancel.bounding_box()], places)
+    cancel.click()
+    hidden(shown)
+    # The very form the reader used is still there, with the typed time.
+    assert form.evaluate("node => node.isConnected")
+    assert time.input_value() == "10:30"
+    assert page.get_by_role("button", name=REVIEW).is_enabled()
+    assert page.evaluate("window.notReloaded === true")
+    assert not failures
 
 
 def test_once_applying_nothing_dismisses_the_dialog(page, component_origin):

@@ -10,6 +10,8 @@ filter's own GET address, and the second row's tick there redirects to the
 list still on All (``AFTER_ALL``), with that row now marked. The bulk
 dialog's POST (``BULK_POST``) is answered by each test with a route; the
 dialog then redraws the list from ``BULKED``, without the two newest rows.
+``TWICE`` lists one change twice, resolved near midnight UTC, named by the
+view's own ``row_controls`` so each row's day is the browser's (#558).
 """
 
 from dataclasses import replace
@@ -20,7 +22,11 @@ from uuid import UUID
 from django.template.loader import render_to_string
 from django.urls import reverse
 
-from parishkit.stewardship.reports.ministry_roster_views import SHOW, SORTING
+from parishkit.stewardship.reports.ministry_roster_views import (
+    SHOW,
+    SORTING,
+    row_controls,
+)
 from parishkit.stewardship.web.tables import paginate
 
 PATH = reverse("admin:ministry_roster")
@@ -35,6 +41,15 @@ BULKED = PATH + "?bulked=1"
 BULK_POST = reverse("admin:ministry_roster_bulk")
 BULK_KEY = UUID(int=30_000)
 ROWS = 30
+# One change listed twice (#558): both resolved at 03:30 UTC, the evening
+# before in the Americas and the same day in Asia.
+TWICE = "/roster-twice"
+# The same list after its first row's tick: only the second row is left.
+TWICE_TICKED = TWICE + "?ticked=1"
+TWICE_AT = (
+    datetime(2054, 10, 5, 3, 30, tzinfo=UTC),
+    datetime(2054, 10, 2, 3, 30, tzinfo=UTC),
+)
 
 
 def _rows():
@@ -113,6 +128,16 @@ def components(context, admin):
     _, stale = page(rows, {"size": "25"}, changed=True)
     # A fresh key on the redrawn list, as the view draws one per page.
     _, bulked = page(rows[:-2], {"size": "25"}, bulk_key=UUID(int=30_001))
+    # One change listed twice, named as the view names it.
+    twice = [
+        dict(row, resolved_at=when)
+        for row, when in zip(rows[:2], TWICE_AT, strict=True)
+    ]
+    for row in twice:
+        row["member_name"] = "Member 00"
+    row_controls(twice)
+    _, listed_twice = page(twice, {"size": "25"})
+    _, twice_ticked = page(twice[1:], {"size": "25"})
     # The Show filter's own GET: the selects, then its kept size and sort.
     shown = urlencode([("show", "all"), ("ministry", ""), *first.view_fields])
     return {
@@ -123,6 +148,8 @@ def components(context, admin):
         AFTER_ALL: after_all,
         STALE: stale,
         BULKED: bulked,
+        TWICE: listed_twice,
+        TWICE_TICKED: twice_ticked,
         # Nothing left to enter, and nothing for one chosen Ministry: the
         # two empty states name different next steps (#227).
         "/roster-none": page([], {"size": "25"})[1],
@@ -140,4 +167,6 @@ POSTS = {
     _tick(ROWS - 2): (303, AFTER_ALL, ""),
     # The third row's tick lost a race.
     _tick(ROWS - 3): (303, STALE, ""),
+    # The first row of the change listed twice (#558).
+    _tick(0): (303, TWICE_TICKED, ""),
 }

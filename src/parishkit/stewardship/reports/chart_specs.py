@@ -24,6 +24,7 @@ from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.web.dates import format_date, format_instant
+from parishkit.stewardship.web.design_tokens import CHART_COLORS
 from parishkit.stewardship.web.presentation import number, out_of, percentage
 from parishkit.stewardship.web.report_markup import TRACK
 
@@ -34,13 +35,16 @@ from .response_metrics import STAGES, ActivityBucket
 # The email image's CSS width; the browser replaces it with the panel's width
 # and the PNG is rendered at twice this many pixels.
 WIDTH = 720
-# The participation chart's palette (charts.py), so the reports look alike.
-BAR = "#26658b"
+# The participation chart's palette (charts.py), so the reports look alike,
+# from the chart tokens: the page draws each in its scheme (chart-v1.js).
+BAR = CHART_COLORS["chart-blue"]
 SERIES = (
-    ("links", "Link followed", "#26658b", [1, 0]),
-    ("forms", "Form opened", "#8a4f00", [6, 3]),
-    ("submissions", "Submitted", "#173d70", [2, 2]),
+    ("links", "Link followed", CHART_COLORS["chart-blue"], [1, 0]),
+    ("forms", "Form opened", CHART_COLORS["chart-orange"], [6, 3]),
+    ("submissions", "Submitted", CHART_COLORS["chart-navy"], [2, 2]),
 )
+# The send markers' rules and names.
+MARKER = CHART_COLORS["chart-marker"]
 STAGE_LABELS = {
     "invited": "Invited",
     "link_followed": "Link followed",
@@ -442,7 +446,7 @@ def activity_chart(metrics, *, series=SERIES):
             },
             {
                 "data": {"values": markers},
-                "mark": {"type": "rule", "color": "#555555", "strokeDash": [4, 4]},
+                "mark": {"type": "rule", "color": MARKER, "strokeDash": [4, 4]},
                 "encoding": {
                     "tooltip": [
                         {"field": "name", "title": "Send"},
@@ -459,7 +463,7 @@ def activity_chart(metrics, *, series=SERIES):
                     "baseline": "top",
                     "dx": 3,
                     "dy": 2,
-                    "color": "#555555",
+                    "color": MARKER,
                 },
                 "encoding": {"text": {"field": "name"}, "y": {"value": 0}},
             },
@@ -809,7 +813,11 @@ PANEL_HEIGHT = 120
 AXIS_EXTENT = 64
 # The participation drawing's colors (charts.py), so the page matches the
 # exports and the daily email.
-PANEL_COLORS = {"bars": ("#9ecae1", "#26658b"), "line": "#173d70", "money": "#8a4f00"}
+PANEL_COLORS = {
+    "bars": (CHART_COLORS["chart-blue-soft"], CHART_COLORS["chart-blue"]),
+    "line": CHART_COLORS["chart-navy"],
+    "money": CHART_COLORS["chart-orange"],
+}
 # Short dollar ticks, as charts.short_dollars draws them ("$250K", "$1.6M"):
 # d3's SI format writes "k" and "G", which read "K" and "B" here.
 SHORT_DOLLARS = "replace(replace(format(datum.value, '$~s'), 'k', 'K'), 'G', 'B')"
