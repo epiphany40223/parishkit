@@ -447,6 +447,7 @@ sections:
     "Status indicators": [ADM-03, ADM-13]
     "Time entry": [ADM-03]
     "Schedules": [ADM-03, BG-05]
+    "Schedule previews": [ADM-04]
     "Tables": [ADM-03]
     "Admin tables": [ADM-03]
     "Row actions and confirmation": [ADM-03]
