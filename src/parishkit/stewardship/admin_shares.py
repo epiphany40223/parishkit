@@ -24,9 +24,8 @@ and its Apply (``admin_editing.confirm_intent`` with the page's salt and
   durable transaction. A repeat returns the original request and records
   nothing new.
 
-Neither is fresh-gated or prompts, as the page asks for no recent sign-in
-and its Apply is the reviewed token. Both default to the current campaign,
-as ``campaign shares`` does.
+Neither is privileged or prompts, as its Apply is the reviewed token. Both
+default to the current campaign, as ``campaign shares`` does.
 
 The change document (default, pending Administrator confirmation) names
 the whole new list and every saved option it deletes::

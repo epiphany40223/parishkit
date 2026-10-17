@@ -1,8 +1,9 @@
 """System health's debug-off switch under the real logins and guard (#530).
 
-The web login sets a switch only for a freshly signed-in Administrator, one
-at a time; only the schema owner (the admin-recovery login's definer) and, in
-Testing, the web login for a fresh Administrator (0088) clear it, and only
+The web login sets a switch only for a signed-in Administrator's live
+session, one at a time; only the schema owner (the admin-recovery login's
+definer) and, in Testing, the web login for an Administrator (0088) clear
+it, and only
 once; nobody deletes it. Every runtime login reads it
 through its one-boolean definer, the backup login through pg_read_all_data,
 and a login with neither (the download login) cannot tell; only web, for
@@ -53,6 +54,13 @@ OLD_CLEAR = re.search(
     TEXT,
     re.M | re.S,
 )[0]
+# 0078's own guard: 0088 and then 0113 (#1547, any sign-in age) replace it,
+# so 0078's check gets it back inside its rolled-back transaction.
+OLD_GUARD = re.search(
+    r"^CREATE FUNCTION public\.stewardship_debug_off_switch_guard_v1\(\).*?^END \$\$;",
+    TEXT,
+    re.M | re.S,
+)[0].replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION")
 SUBJECT = (MIGRATIONS / "0098_debug_off_clear_subject.sql").read_text(encoding="utf-8")
 SUBJECT_CHECK = re.search(r"^DO \$check\$.*?^\$check\$;", SUBJECT, re.M | re.S)[0]
 CLEAR = "public.stewardship_debug_off_clear_v2()"
@@ -127,8 +135,8 @@ def owner_clear():
         return cursor.fetchone()[0]
 
 
-def test_the_web_sets_one_switch_for_a_fresh_administrator(auth_service, google):
-    """Fresh sign-in, one at a time, set time the database's."""
+def test_the_web_sets_one_switch_for_a_signed_in_administrator(auth_service, google):
+    """The live session's own sign-in, one at a time, set time the database's."""
     signed_in()
     with web_with("SELECT", "INSERT"):
         first = web_set()
@@ -139,8 +147,8 @@ def test_the_web_sets_one_switch_for_a_fresh_administrator(auth_service, google)
     assert owner_clear() == first.pk
     current = session()
     with web_with("SELECT", "INSERT"):
-        # A stale sign-in, another Administrator's id or a made-up session
-        # is refused.
+        # A sign-in instant not the session's, another Administrator's id or a
+        # made-up session is refused.
         for values in (
             {"authenticated_at": current.authenticated_at.replace(year=2000)},
             {"actor_id": uuid4()},
@@ -442,11 +450,13 @@ def test_the_service_status_record_reports_the_effective_state(monkeypatch):
 def test_the_migration_check_passes_and_refuses_drift():
     """The closing DO block passes as installed and refuses each drift.
 
-    0098 dropped the count-only clear this check names, so each run puts it
-    back first, inside the rolled-back transaction.
+    0098 dropped the count-only clear this check names, and 0113 replaced
+    the guard, so each run puts both back first, inside the rolled-back
+    transaction.
     """
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(OLD_CLEAR)
+        cursor.execute(OLD_GUARD)
         cursor.execute(CHECK)
         transaction.set_rollback(True)
     for change, message in (
@@ -491,6 +501,7 @@ def test_the_migration_check_passes_and_refuses_drift():
             transaction.atomic(),
         ):
             cursor.execute(OLD_CLEAR)
+            cursor.execute(OLD_GUARD)
             cursor.execute(change)
             cursor.execute(CHECK)
 

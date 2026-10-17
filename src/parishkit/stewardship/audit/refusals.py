@@ -109,7 +109,7 @@ def exception_class_of(error):
 def level_of(reason, error=None):
     """The level the reason decides: WARNING for a denial or a server-state
     reason, and for an unclassified PermissionError (or a subclass of it);
-    INFO for everything else, a step-up request included."""
+    INFO for everything else."""
     if reason in WARNING_REASONS:
         return "WARNING"
     if (

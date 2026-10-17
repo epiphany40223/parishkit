@@ -50,7 +50,7 @@ class SecretReplacementRequest(MutableRecord):
     """Reserve a target until installation or cleanup has durably completed.
 
     Request UUID and payload reference are never reused, including after cleanup.
-    Actor/reauthentication fields are evidence supplied by authenticated admission,
+    Actor and sign-in fields are evidence supplied by authenticated admission,
     not proof of current authorization. Installer and consumer database identities
     separately own each transition and its append-only checkpoint.
     """

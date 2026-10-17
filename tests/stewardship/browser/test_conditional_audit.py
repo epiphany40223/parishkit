@@ -151,9 +151,9 @@ def test_upload_waits_for_a_file_that_fits(page, component_origin):
     assert upload.get_attribute("aria-describedby") == "hosted-file-full"
 
 
-def test_maintenance_message_and_sign_in_gate_the_switch(page, component_origin):
-    """Close waits while the message holds "@"; without a recent sign-in both
-    switches are unavailable, named by the sign-in step."""
+def test_maintenance_message_gates_the_switch(page, component_origin):
+    """Close waits while the message holds "@", and no sign-in step ever
+    holds it (#1547)."""
     page.goto(component_origin + "/family-portal")
     close = page.get_by_role("button", name="Close the Family portal for maintenance")
     hint = page.locator("#maintenance-close-hint")
@@ -168,11 +168,7 @@ def test_maintenance_message_and_sign_in_gate_the_switch(page, component_origin)
     assert spot(close) == where
     page.get_by_label("Message for Families (optional)").fill("Back by 3 PM.")
     assert close.is_enabled()
-    page.goto(component_origin + "/family-portal-stale")
-    close = page.get_by_role("button", name="Close the Family portal for maintenance")
-    assert close.is_disabled()
-    assert "maintenance-fresh-reason" in close.get_attribute("aria-describedby")
-    visible(page.locator("#maintenance-fresh-reason"))
+    assert close.get_attribute("aria-describedby") == "maintenance-close-hint"
 
 
 @pytest.mark.parametrize(
@@ -284,7 +280,6 @@ def test_rename_waits_for_a_new_valid_name(page, component_origin):
 @pytest.mark.parametrize(
     ("path", "button", "reason"),
     [
-        ("/go-live-stale", "Start Testing cleanup", "cleanup-fresh-reason"),
         ("/weekly-manual-no-schedule", "Queue new manual report", "manual-no-schedule"),
         ("/delivery-held", "Confirm delivery using external evidence", "delivery-held"),
         ("/delivery-held", "Authorize potentially duplicate resend", "delivery-held"),
@@ -293,15 +288,11 @@ def test_rename_waits_for_a_new_valid_name(page, component_origin):
             "Clear verified refusal",
             "refusal-clear-unavailable",
         ),
-        ("/restore-review-stale", "Release the site", "restore-fresh-reason"),
-        ("/restore-review-stale", "Assume these were sent", "restore-fresh-reason"),
-        ("/restore-review-stale", "Send these again", "restore-fresh-reason"),
         (
             "/restore-review-release-blocked",
             "Release the site",
             "restore-release-reason",
         ),
-        ("/held-emails-stale", "Assume these were sent", "restore-fresh-reason"),
         ("/family-timeline-locked", "Open form", "open-form-reason"),
         (
             "/family-timeline-locked",

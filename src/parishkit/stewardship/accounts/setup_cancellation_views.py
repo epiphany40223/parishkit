@@ -67,8 +67,6 @@ def _progress(request, service, *, polled=None):
                 "confirmed_ago": waited_words(
                     progress["server_now"] - progress["confirmed_at"]
                 ),
-                # Return here after the step-up sign-in.
-                "next": reverse("admin:setup_cancel"),
             }
         )
         if polled == "json":

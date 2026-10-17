@@ -119,12 +119,7 @@ def page_error(request, error, current=None, *, fallback=error_response):
     live draft, and the page is released only after re-admitting the sign-in.
     """
     response = fallback(error)
-    # A credential page needing a recent Google sign-in is answered by the
-    # browser-error middleware's "Confirm with Google" page, which refreshes
-    # this same session (and so keeps this setup) and returns here.
-    if request.method not in {"GET", "HEAD"} or getattr(
-        response, "stewardship_reauthenticate", False
-    ):
+    if request.method not in {"GET", "HEAD"}:
         return response
     message = next(
         (text for kinds, text in PAGE_ERRORS if isinstance(error, kinds)),

@@ -173,15 +173,15 @@ WEB_INSERT_TABLES = frozenset(
     [
         "stewardship_hosted_file",
         "stewardship_backup_drive_probe",
-        # Take a backup now (ADM-13 PR 3): its guard admits only a freshly
-        # signed-in Administrator, one request at a time.
+        # Take a backup now (ADM-13 PR 3): its guard admits only a live
+        # Administrator session, one request at a time.
         "stewardship_backup_request",
         # Turn off debug logging (ADM-13 PR 6b): its guard (0078) admits only
-        # a freshly signed-in Administrator, while no switch is set. The web
+        # a live Administrator session, while no switch is set. The web
         # clears one only in Testing (a column UPDATE below, 0088).
         "stewardship_debug_off_switch",
         # Accept this change once (ADM-13 PR 5b): its guard (0080) admits
-        # only a freshly signed-in Administrator, for the newest refusal with
+        # only a live Administrator session, for the newest refusal with
         # its counts exactly as recorded, while no other acceptance is live.
         # No login may update or delete one.
         "stewardship_source_drop_acceptance",
@@ -220,9 +220,9 @@ WEB_INSERT_TABLES = frozenset(
         "stewardship_campaign_config_abort",
         "stewardship_activation_catchup",
         # The restore review (#537): listing held emails (only during a
-        # review; holds only suppress mail, so no fresh sign-in is needed),
-        # and an Administrator's decision on each, which the guard admits
-        # only for a freshly signed-in Administrator.
+        # review; holds only suppress mail), and an Administrator's decision
+        # on each, which the guard admits only for a live Administrator
+        # session.
         "stewardship_restore_delivery_hold",
         "stewardship_restore_hold_resolution",
     ]
@@ -304,6 +304,13 @@ DAILY_RESUME_FUNCTION = "stewardship_family_daily_resume_v1()"
 # read no automation table.
 AUTOMATION_FRESH_FUNCTION = (
     "stewardship_automation_fresh_principal_v1(uuid, timestamp with time zone)"
+)
+# Whether that instant is a full-scope automation session's and every such
+# session has ended (0113, #1547): the same guards call it now that a
+# request's sign-in may be of any age, so ending an automation session still
+# stops its secret requests. Granted to the same logins.
+AUTOMATION_ENDED_FUNCTION = (
+    "stewardship_automation_instant_ended_v1(uuid, timestamp with time zone)"
 )
 # The credential installers whose secret requests an automation session may
 # make (key replacement); the other targets have no such request.
@@ -506,6 +513,8 @@ CLOSURE_FUNCTIONS = {
         "stewardship_reports",
         "0029_point_in_time_exports",
     ),
+    # The ended-automation check of secret requests (0113, #1547).
+    AUTOMATION_ENDED_FUNCTION: ("stewardship_accounts", "0027_no_sign_in_age"),
 }
 
 
@@ -708,7 +717,7 @@ def runtime_functions(role, *, target=None):
     if role is ServiceRole.CREDENTIAL_INSTALLER:
         functions = {DEBUG_OFF_FUNCTION}
         if target in AUTOMATION_SECRET_TARGETS:
-            functions.add(AUTOMATION_FRESH_FUNCTION)
+            functions |= {AUTOMATION_FRESH_FUNCTION, AUTOMATION_ENDED_FUNCTION}
         return frozenset(functions)
     return frozenset(
         {
@@ -717,6 +726,7 @@ def runtime_functions(role, *, target=None):
                 DAILY_SENDS_FUNCTION,
                 DAILY_RESUME_FUNCTION,
                 AUTOMATION_FRESH_FUNCTION,
+                AUTOMATION_ENDED_FUNCTION,
                 LEADER_SCOPE_FUNCTION,
                 PORTAL_IDENTITIES_FUNCTION,
                 MEMBER_NAMES_FUNCTION,
@@ -986,8 +996,8 @@ def runtime_grants(role, *, target=None):
 
         columns["stewardship_task_run"] = {"UPDATE": set(SCHEDULER_CANCEL_COLUMNS)}
         # Allow debug logging again (ADM-13 PR 6c, #1207): the switch's guard
-        # (0088) admits a web clear only in Testing mode, for a freshly
-        # signed-in Administrator, once; it keeps who set the switch and when.
+        # (0088, 0113) admits a web clear only in Testing mode, for a live
+        # Administrator session, once; it keeps who set the switch and when.
         columns["stewardship_debug_off_switch"] = {
             "UPDATE": {"cleared_at", "cleared_by", "cleared_actor_id"}
         }

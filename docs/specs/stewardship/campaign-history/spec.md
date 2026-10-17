@@ -418,11 +418,10 @@ day, and a `note.*` row says the campaign collected no pledges.
 ### Download campaign archive
 
 **Access:** Administrators only, as for Past campaigns (`CONFIGURE` and
-`FINANCIAL_DETAIL`). The file holds Family-level giving, so creating it
-needs a Google sign-in within five minutes, as the
+`FINANCIAL_DETAIL`). The file holds Family-level giving, so creating it is
+audited as the
 [financial stewardship detail](../reports/spec.md#financial-stewardship-detail)
-export does; a stale sign-in gets the step-up page, which returns to Past
-campaigns, and nothing is made.
+export is.
 
 Past campaigns gets a section, **This campaign's archive**, below the
 imported table. It names the current campaign, says whether a download now
@@ -1160,7 +1159,6 @@ importing them.
 | Financial module off | Pledge figures, charts and columns are left out |
 | Checking a file exceeds its 60-second limit | Stopped, logged as a durable timeout entry naming the limit and the elapsed time, and refused as too large to check |
 | Archive download with no current campaign, before day 1 has ended, for a closed campaign with a live submission after the cutoff (closed today with a response today), or with no Family responded by the cutoff | Download campaign archive unavailable with the reason; the command refuses |
-| Archive download with a stale sign-in | The step-up page, returning to Past campaigns; nothing queued |
 | Archive's derived `daily` disagrees with an available fact figure | The generation fails as a fact failure (retried, then failed with its reason); no file is offered |
 | A fact row's population or pledge total is unavailable | Not a disagreement: that figure is left unchecked for the day, and a `note.*` row counts such days |
 | No ready fact set's watermark yet covers every version submitted before the cutoff | Download campaign archive unavailable with that reason (the facts are recalculated automatically after responses); the worker's own coverage check fails a request rather than write a file without it |
@@ -1477,7 +1475,7 @@ Part (a), the [archive export](#archive-export), follows in its own slices
   forward migration for its request arm, which stores the cutoff instant and
   the submission watermark and pins the checked fact-set generation against
   compaction, at the next free number when it is built), the Past campaigns
-  section with its fresh sign-in, `pk-admin export archive`, its rows in the
+  section, `pk-admin export archive`, its rows in the
   admin automation spec's
   [fresh-gated actions](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line)
   and [reports and exports](../admin-automation/spec.md#reports-and-exports)

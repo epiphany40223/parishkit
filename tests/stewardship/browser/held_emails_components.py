@@ -15,15 +15,13 @@ from parishkit.stewardship.campaigns.restore_review import HeldEmails, HeldGroup
 PAGE = "/admin/mail/held-emails/"
 PREVIEW = "/held-emails-preview"
 SETTLED = "/held-emails-settled"
-STEP_UP = "/held-emails-step-up"
+# A step refused because the session ended meanwhile (#1547).
+SIGNED_OUT = "/held-emails-signed-out"
 CHANGED = "/held-emails-changed"
 # "Send these again" unavailable on each send, with its reason.
 BLOCKED = "/held-emails-blocked"
 # No restore held anything for the current campaign.
 NONE = "/held-emails-none"
-# Without a recent sign-in: each decision is unavailable, named by the
-# step-up notice (#1331).
-STALE = "/held-emails-stale"
 
 INVITATION = UUID(int=757)
 REMINDER = UUID(int=758)
@@ -60,13 +58,11 @@ def components(context, admin):
     )
     chrome = admin | {"sections": [], "breadcrumbs": []}
 
-    def page(groups, blocked_reminders=0, fresh=True, **step):
-        """The page as the view renders it after one step; ``fresh`` says the
-        sign-in is recent."""
+    def page(groups, blocked_reminders=0, **step):
+        """The page as the view renders it after one step."""
         values = {
             "held": HeldEmails(groups=groups, reminders_blocked=blocked_reminders),
             "step": step,
-            "fresh": fresh,
             "page_url": PAGE,
         }
         return (
@@ -81,8 +77,7 @@ def components(context, admin):
         PAGE: page(held, 10),
         PREVIEW: page(held, 10, group=held[0], group_action="assume"),
         SETTLED: page(settled, settled=12),
-        STEP_UP: page(held, 10, fresh=False, refused="reauthenticate"),
-        STALE: page(held, 10, fresh=False),
+        SIGNED_OUT: page(held, 10, refused="signed_out"),
         CHANGED: page(held, 10, refused="changed"),
         BLOCKED: page(blocked, 2),
         NONE: page(()),

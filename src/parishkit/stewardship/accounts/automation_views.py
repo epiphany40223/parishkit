@@ -8,10 +8,8 @@ acknowledges automation notices on the dashboard. They live under Users and acce
 ``/admin/users/automation/approval/`` (the approval page), with their POST
 actions on the session and notice collections beneath them.
 
-Approval needs the Administrator role and a Google sign-in within five
-minutes. A stale sign-in never gets a refusal: the page renders its
-"Confirm with Google" step and keeps Continue and Approve unavailable until
-the sign-in is fresh, as the backup key page does. The user code has no
+Approval needs the Administrator role; a sign-in of any age does (#1547).
+The user code has no
 attempt limit (Administrator decision 12): a wrong code, and a code meant for
 another Administrator's address, get the same reply, which names nothing
 about any pairing. The approval page follows the Admin confirmation guidance
@@ -66,7 +64,6 @@ from .limiting import LimiterUnavailable
 from .policy import Capability
 from .policy_models import PortalUser
 from .policy_schema import normalized_email
-from .sessions import FreshAuthenticationRequired, require_fresh
 
 REFUSALS = (
     ConfigError,
@@ -112,15 +109,6 @@ def _administrator(request, service):
     return actor
 
 
-def _fresh(request):
-    """Whether this browser signed in with Google within five minutes."""
-    try:
-        require_fresh(request)
-    except FreshAuthenticationRequired:
-        return False
-    return True
-
-
 def _expected(actor, pending):
     """Whether the pending pairing names this Administrator's own address."""
     email = PortalUser.objects.values_list("email", flat=True).get(pk=actor.identity)
@@ -130,7 +118,7 @@ def _expected(actor, pending):
 def _approval_page(request, context):
     """Render the approval page; it is never cached."""
     context.setdefault("back", reverse("admin:automation_access"))
-    context.setdefault("next", reverse("admin:automation_approval"))
+
     response = render(request, "stewardship/automation-approval.html", context)
     response["Cache-Control"] = "no-store"
     return response
@@ -144,21 +132,13 @@ def approval_view(request):
     address, the requested scope as plain text, the first 12 characters of
     the requesting host's digest, and the requested lifetime, which the form
     lets the Administrator shorten; the scope can only be lowered. ``approve``
-    creates the session and shows the result on this page. Without a fresh
-    sign-in the page offers "Confirm with Google" and accepts no code.
+    creates the session and shows the result on this page.
     """
     try:
         service = runtime()
         actor = _administrator(request, service)
         filters(request.GET, allowed=set())
-        if not _fresh(request):
-            page = _approval_page(request, {"state": "enter", "fresh": False})
-            # A code posted without a fresh sign-in is refused in place: the
-            # page offers "Confirm with Google" instead (#1403). A visit is not.
-            if request.method == "POST":
-                refused_in_place(page, "fresh_authentication_required")
-            return page
-        context = {"state": "enter", "fresh": True}
+        context = {"state": "enter"}
         if request.method == "POST":
             action = request.POST.get("action")
             allowed = {
@@ -214,7 +194,7 @@ def approval_view(request):
             refused_in_place(page, "pairing_code_refused")
         return page
     except PairingRefused:
-        context = {"state": "enter", "fresh": True, "refused": True}
+        context = {"state": "enter", "refused": True}
         return refused_in_place(
             _approval_page(request, context), "pairing_code_refused"
         )
@@ -320,7 +300,7 @@ def access_view(request):
     table of this Administrator's sessions that ended in the last 30 days,
     never offered Revoke. Both tables sort by their headings (``live_sort``
     and ``ended_sort``), and every control refreshes the page in place.
-    Approving a new session first asks for a fresh Google sign-in.
+
     """
     try:
         service = runtime()
@@ -336,7 +316,6 @@ def access_view(request):
                 if not row["live"]
             ]
         context = access_context(state, actor.identity, live_sessions(), ended)
-        context["fresh"] = _fresh(request)
         response = render(request, "stewardship/automation-access.html", context)
         response["Cache-Control"] = "no-store"
         return response

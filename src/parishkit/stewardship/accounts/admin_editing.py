@@ -54,7 +54,7 @@ from .configuration_request_reads import receipt as configuration_receipt
 from .configuration_requests import record_request
 from .policy import Capability, allows
 from .request_models import ConfigurationChangeRequest
-from .sessions import FreshAuthenticationRequired, authenticated_admin, require_fresh
+from .sessions import authenticated_admin, sign_in_instant
 
 
 def principal(
@@ -191,15 +191,16 @@ def confirm(
     request_schema=None,
     capability=Capability.CONFIGURE,
     attach=None,
-    fresh=False,
+    privileged=False,
     region=None,
     first_campaign=False,
 ):
     """Admit one exact intent from the page; redirect to its request status.
 
     The page's form carries the signed preview; ``confirm_intent`` does the
-    rest. The status page leads back to this editor (#196). ``fresh`` asks
-    for a recent Google sign-in again under the work lock (#547). An editor
+    rest. The status page leads back to this editor (#196). ``privileged``
+    marks an integration change, which an automation session must make with
+    a live full-scope session, reported once (``sign_in_instant``). An editor
     that names its ``region`` (Create the campaign's, which its review dialog
     follows) is answered with itself instead, naming the request at that
     region.
@@ -215,7 +216,7 @@ def confirm(
         request_schema=request_schema,
         capability=capability,
         attach=attach,
-        fresh=fresh,
+        privileged=privileged,
         first_campaign=first_campaign,
     )
     admin_navigation.remember_origin(request, receipt.request_id)
@@ -302,7 +303,7 @@ def confirm_intent(
     request_schema=None,
     capability=Capability.CONFIGURE,
     attach=None,
-    fresh=False,
+    privileged=False,
     first_campaign=False,
 ):
     """Admit one exact intent; identical retries return the original receipt.
@@ -314,11 +315,11 @@ def confirm_intent(
     admitted with, so the two cannot diverge if the capability matrix
     changes. `attach(request, extra)` records an editor's companion rows from
     the signed preview inside the request's own durable transaction, and is
-    never called on a retry. With ``fresh``, the sign-in must also still be
-    fresh (``require_fresh``) when rechecked under the work lock, so a
-    sign-in that ages while waiting for the lock is refused. A repeat
-    (the request already exists) still passes that gate, but an automation
-    session's repeated confirm records no second fresh-gate event or notice.
+    never called on a retry. With ``privileged``, an automation caller must
+    still hold a live full-scope session under the work lock
+    (``sign_in_instant``); a repeat (the request already exists) still
+    passes that check, but records no second automation event or notice.
+    A web sign-in of any age confirms (#1547).
     ``first_campaign`` is Create the campaign's confirmation (#142): its
     intent must add exactly one campaign, and its ``current_scope`` refuses
     unless the deployment still has none. A preview that carries reviewed
@@ -346,11 +347,11 @@ def confirm_intent(
             existing = ConfigurationChangeRequest.objects.filter(
                 actor_id=actor.identity, request_key=key
             ).exists()
-            if fresh:
-                # A repeat still needs the gate, but an automation session's
-                # repeat records no second fresh-gate event or notice, as
-                # the export commands' repeats record none.
-                require_fresh(caller, record=not existing)
+            if privileged:
+                # A repeat still needs the check, but an automation session's
+                # repeat records no second event or notice, as the export
+                # commands' repeats record none.
+                sign_in_instant(caller, record=not existing)
             if existing:
                 # An identical retry returns the original receipt (record_request
                 # finds it by key) even when the page's own admission no longer
@@ -395,11 +396,10 @@ def error_response(error):
     """Expose only closed, static error messages, never exception or submitted text.
 
     Scripts receive JSON. A browser page request is shown the same messages as
-    an HTML page by the browser-error middleware, which, for a missing fresh
-    authentication, offers the step-up "Confirm with Google" instead. A
-    user-facing refusal (``web.refusals``) keeps its base type's status but
-    adds its reviewed explanation and fix link. Every response carries the
-    error's reason for the refusal log (``web.refusals.annotate``).
+    an HTML page by the browser-error middleware. A user-facing refusal
+    (``web.refusals``) keeps its base type's status but adds its reviewed
+    explanation and fix link. Every response carries the error's reason for
+    the refusal log (``web.refusals.annotate``).
     """
     return annotate(_error_response(error), error)
 
@@ -411,10 +411,6 @@ def _error_response(error):
         logging.getLogger("parishkit.stewardship.debug").debug(
             "admin request refused", exc_info=error
         )
-    if isinstance(error, FreshAuthenticationRequired):
-        response = validation_response([FieldError(ErrorCode.DENIED)], status=403)
-        response.stewardship_reauthenticate = True
-        return response
     if isinstance(error, UserFacingGone):
         return gone_response(error)
     if isinstance(error, UserFacingUnavailable):
@@ -434,21 +430,3 @@ def _error_response(error):
     return validation_response(
         [FieldError(code)], status=status, refusal=getattr(error, "refusal", None)
     )
-
-
-def step_up_response(return_path=None, return_label=None):
-    """Refuse a stale sign-in with the step-up page; nothing was done.
-
-    A browser sees "Confirm it's you" with the "Confirm with Google" step-up
-    (``web.error_pages``); a script gets the closed JSON denial. A POST-only
-    route names ``return_path``, the Admin page its form came from, so the
-    step-up returns there with a GET rather than to the POST URL, and names it
-    in ``return_label`` (the page's name) so the page says where it returns.
-    The page revalidates the path with ``admin_return_path``.
-    """
-    response = error_response(
-        FreshAuthenticationRequired("Please authenticate with Google again.")
-    )
-    response.stewardship_return_path = return_path
-    response.stewardship_return_label = return_label
-    return response

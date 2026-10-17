@@ -7,7 +7,7 @@ before each PUT, that nothing changed since the Administrator confirmed:
 
 - ``record_plan`` (the worker, after preflight) stores the plans with each
   proposal's version and the read and planned payload hashes;
-- ``confirm_plan`` (web) records an Administrator's freshly signed-in
+- ``confirm_plan`` (web) records an Administrator's signed-in
   confirmation of exactly the counts shown;
 - ``matches_confirmed`` is the pure pre-PUT check of a fresh plan against
   the confirmed one;
@@ -177,7 +177,7 @@ def confirm_plan(
     """Record an Administrator's final confirmation of one plan, replay-safe.
 
     The counts are those the Administrator was shown
-    (``confirmation_counts``). SQL also requires the session's fresh sign-in,
+    (``confirmation_counts``). SQL also requires the live session's sign-in,
     a plan from Production mode less than an hour old, every planned
     proposal still at its recorded version, and no change the plan writes
     being written by another unfinished confirmed plan. The same

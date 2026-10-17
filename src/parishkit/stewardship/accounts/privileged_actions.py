@@ -16,7 +16,7 @@ from .authentication import runtime
 from .configuration_requests import record_request
 from .models import PortalSession, PortalUser, SystemConfiguration
 from .secret_requests import stage_secret_request
-from .sessions import authenticated_admin, require_fresh
+from .sessions import authenticated_admin, sign_in_instant
 
 
 def admit_admin_action(caller, *, actor_id, action, service=None):
@@ -86,7 +86,9 @@ def admit_admin_action(caller, *, actor_id, action, service=None):
     ):
         raise PermissionError("Access is unavailable.")
     if action in {Action.SECRET_REPLACEMENT, Action.DESTRUCTIVE_CONFIRMATION}:
-        require_fresh(caller)
+        # An automation caller needs a live full-scope session, reported;
+        # a web sign-in of any age is enough (#1547).
+        sign_in_instant(caller)
     return True
 
 
@@ -124,10 +126,25 @@ def configuration_request(request, *, base_digest, patch, request_key, correlati
     )
 
 
+def _sign_in_ended(actor, instant):
+    """Whether every full-scope automation session at this sign-in has ended.
+
+    Runs the same function as the intake guard
+    (``stewardship_automation_instant_ended_v1``). It is false for a sign-in
+    no automation session holds, such as a browser that never approved one.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT public.stewardship_automation_instant_ended_v1(%s,%s)",
+            [actor, instant],
+        )
+        return cursor.fetchone()[0] is True
+
+
 def sealed_secret_request(
     request, *, configuration_digest=None, service=None, **intent
 ):
-    """Stage an already target-sealed candidate, deriving freshness server-side.
+    """Stage an already target-sealed candidate, deriving its sign-in server-side.
 
     ARC-06's public handoff seals the value immediately in the receiving view.
     No plaintext parameter is accepted here. Explicit storage parameters reject
@@ -149,6 +166,13 @@ def sealed_secret_request(
     ).first()
     if session is None:
         raise PermissionError("Access is unavailable.")
+    if _sign_in_ended(actor, session.authenticated_at):
+        # The SQL intake guard would refuse this with a database error the
+        # page shows as an outage. Say what helps instead; the guard stays
+        # the authority (#1547).
+        from .admin_editing import signed_out
+
+        raise signed_out()
 
     def admit():
         """Keep previewed public settings bound while locked intake commits."""

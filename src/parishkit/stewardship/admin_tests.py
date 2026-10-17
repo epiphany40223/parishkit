@@ -9,7 +9,7 @@ a Family. They go through the page's own functions in
 preview made on the page can be sent from the command line and the other
 way round.
 
-The page asks for no fresh sign-in. Its one acknowledgement ("A previous
+Its one acknowledgement ("A previous
 test may have arrived; I want to send another test.") is required only
 while an earlier test's outcome is unknown, so ``test sample`` asks for it
 at the prompt only then (``admin_cli.sample_test``). It records one
@@ -593,8 +593,8 @@ def send_families(caller, service, *, token, context):
 
     The command line asked for the page's acknowledgement first. Runs the
     page's ``request_tests`` in the delivery pages' command scope, where
-    ``require_fresh`` takes the automation branch (ADM-11 PR 5a) and records
-    the fresh-gate event and notice. The token's revision is the email it
+    ``sign_in_instant`` takes the automation branch (ADM-11 PR 5a) and records
+    the privileged-command event and notice. The token's revision is the email it
     names. Refusals are as ``request_tests`` raises them: a stale preview
     (including a revision since gone from the active configuration),
     credentials not ready, held work, an ineligible Family or too many in
@@ -627,7 +627,7 @@ def send_families(caller, service, *, token, context):
         """Send inside the page's command scope, with the command's event."""
         written.clear()
         campaign_id = _current_campaign(service)
-        # The fresh-gate notice names the campaign.
+        # The privileged-command notice names the campaign.
         caller.campaign_id = campaign_id
         with command_scope(caller, service, actor, admit=_admit):
             repeat = FamilyMailTest.objects.filter(

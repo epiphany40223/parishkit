@@ -339,15 +339,16 @@ accepted a change, and the page's sentences, are not in it.
 
 System health's **Take a backup now**. It needs a full-scope session and
 always prompts (or takes `--yes`), showing the page's preview: when the
-last backup finished and its size, whether it will also be copied
-off-site, that it follows the usual retention, and that it waits while a
-Family email send is in progress. It is refused (exit 1, `stale_version`) while a
-request is waiting or running or a restore is under review. The session
-stands in for the page's recent sign-in. `--request-key UUID` (a version 4
-UUID, written to standard error when not given) names the request, so a
-repeat returns the first one (`created` false). It prints `request_id`,
-`created`, `status` (as the Backups panel words it; `waiting` until the
-server's five-minute check picks it up) and `created_at`, and records
+last backup finished and its size, whether it will also be copied off-site,
+that it follows the usual retention, and that it waits while a Family email
+send is in progress. It is refused (exit 1, `stale_version`) while a
+request is waiting or running or a restore is under review. It is a
+privileged ([fresh-gated](#confirmations)) action, so System logs record
+`automation_fresh_gate` beside it. `--request-key UUID` (a version 4 UUID,
+written to standard error when not given) names the request, so a repeat
+returns the first one (`created` false). It prints `request_id`, `created`,
+`status` (as the Backups panel words it; `waiting` until the server's
+five-minute check picks it up) and `created_at`, and records
 `backup_requested` and `admin_cmd_system_backup_now`. Follow it with
 `system health --watch 60` (`backup_request`).
 
@@ -374,14 +375,15 @@ newest refusal cannot be accepted: none is shown, it was accepted already
 
 `system refresh-accept --token TOKEN` accepts that refusal. It always
 prompts (or takes `--yes`) with the counts that fell too far and the page's
-tick box, "I checked this in ParishSoft, and the change is real". The
-session stands in for the page's recent sign-in. It records the acceptance
-(the token's key names it, so a repeat returns the first, `created` false),
-asks for a full refresh as **Refresh now** does, and records
-`source_drop_accepted` and `admin_cmd_system_refresh_accept`. Like the
-page, it also acknowledges that refusal's own entry in the critical-problems
-banner (`critical_events_acknowledged`, with the acceptance as its subject),
-so `events list` no longer lists it; other entries stay. It prints
+tick box, "I checked this in ParishSoft, and the change is real". It is a
+privileged ([fresh-gated](#confirmations)) action, so System logs record
+`automation_fresh_gate` beside it. It records the acceptance (the token's
+key names it, so a repeat returns the first, `created` false), asks for a
+full refresh as **Refresh now** does, and records `source_drop_accepted`
+and `admin_cmd_system_refresh_accept`. Like the page, it also acknowledges
+that refusal's own entry in the critical-problems banner
+(`critical_events_acknowledged`, with the acceptance as its subject), so
+`events list` no longer lists it; other entries stay. It prints
 `acceptance_id`, `created`, `created_at`, `expires_at`, `live` and
 `task_root_id` (the requested full refresh's root task, or null when it
 could not be requested; the next full refresh uses the acceptance anyway).
@@ -399,19 +401,20 @@ pk-admin system refresh-accept --token TOKEN
 ### `system debug-off`
 
 System health's **Turn off debug logging**: it sets the debug-off switch,
-which turns debug logging off in every service within about a minute,
-until the server operator clears it offline (`pk-stewardship
-debug-off-clear`, in the
-[deployment runbook](stewardship-deployment-runbook.md#turn-off-debug-logging-530)).
-It needs a full-scope session and always prompts (or takes `--yes`),
-showing the page's preview: the services with debug logging on, that lines
-already written stay in the logs, that the server's setting still says on,
-and that only the server operator clears the switch. It is refused (exit 1,
-`stale_version`) while the switch is set. The session stands in for the
-page's recent sign-in. `--request-key UUID` (a version 4 UUID, written to
-standard error when not given) names the switch, so a repeat returns the
-first one (`created` false). It prints `switch_id`, `created`, `set_at`
-and `active` (whether that switch is still set), and records
+which turns debug logging off in every service within about a minute, until
+the server operator clears it offline (`pk-stewardship debug-off-clear`, in
+the [deployment
+runbook](stewardship-deployment-runbook.md#turn-off-debug-logging-530)). It
+needs a full-scope session and always prompts (or takes `--yes`), showing
+the page's preview: the services with debug logging on, that lines already
+written stay in the logs, that the server's setting still says on, and that
+only the server operator clears the switch. It is refused (exit 1,
+`stale_version`) while the switch is set. It is a privileged
+([fresh-gated](#confirmations)) action, so System logs record
+`automation_fresh_gate` beside it. `--request-key UUID` (a version 4 UUID,
+written to standard error when not given) names the switch, so a repeat
+returns the first one (`created` false). It prints `switch_id`, `created`,
+`set_at` and `active` (whether that switch is still set), and records
 `debug_logging_turned_off` and `admin_cmd_system_debug_off`. Follow it with
 `system health --watch 60` (each process's `debug_logging`).
 
@@ -426,12 +429,13 @@ the debug-off switch, so services started with `PARISHKIT_DEBUG_LOGGING=1`
 log in debug form again within about a minute. It needs a full-scope
 session and always prompts (or takes `--yes`), showing the page's preview:
 when the switch was set, and that it never turns debug logging on in a
-service started without it. It is refused (exit 1, `denied`) in
-Production, where only the server operator clears the switch, and (exit
-1, `stale_version`) while no switch is set. The session stands in for the
-page's recent sign-in. `--switch UUID` names the switch to clear (by
-default the one set now), so a repeat naming a switch you already cleared
-returns it (`created` false). It prints `switch_id`, `created` and
+service started without it. It is refused (exit 1, `denied`) in Production,
+where only the server operator clears the switch, and (exit 1,
+`stale_version`) while no switch is set. It is a privileged
+([fresh-gated](#confirmations)) action, so System logs record
+`automation_fresh_gate` beside it. `--switch UUID` names the switch to
+clear (by default the one set now), so a repeat naming a switch you already
+cleared returns it (`created` false). It prints `switch_id`, `created` and
 `cleared_at`, and records `debug_logging_allowed` and
 `admin_cmd_system_debug_allow`.
 
@@ -482,8 +486,8 @@ covers each Admin page, or why none does yet.
 they may still change, the campaign dates (for a live campaign, its end date
 alone), through the same review and confirmation as the Dates and mail
 schedules page. Both need a full-scope session.
-Neither asks for a fresh Google sign-in or a confirmation at the prompt,
-because the page asks for neither. `config request show` follows the
+Neither asks for a confirmation at the prompt, because the page asks for
+none. `config request show` follows the
 resulting change; any session may run it.
 
 ```sh
@@ -732,8 +736,8 @@ Repeating it with the same `--request-key` returns the same export; System
 logs show `export_requested` and `admin_cmd_export_family_test_names`. `test
 families` always shows the page's words, "I understand that these real
 Families' names and codes will be sent to the Testing recipient.", and
-waits for `yes` (or takes `--yes`). The session stands in for the page's
-recent Google sign-in, so the dashboard shows an automation notice and
+waits for `yes` (or takes `--yes`). It is a privileged action, so the
+dashboard shows an automation notice and
 System logs show `automation_fresh_gate` with `admin_cmd_test_families`. A
 token made on the page works here and the other way round; sending it again
 sends nothing more. An old preview, a Family that can no longer be tested,
@@ -766,8 +770,8 @@ before any prompt. Leave out personal details: the note is also kept in
 System logs. `set` always shows what it is about to do, including the
 page's reminders (wait about 10 seconds after closing before changing
 data; closing does not stop email), and waits for `yes` (or takes
-`--yes`). The session stands in for the page's recent Google sign-in, so
-the dashboard shows an automation notice, and System logs show
+`--yes`). It is a privileged action, so the dashboard shows an automation
+notice, and System logs show
 `automation_fresh_gate` and `admin_cmd_portal_maintenance_set` beside the
 page's own `family_maintenance_started` or `family_maintenance_ended`. The
 result is the new state, as `show` prints it. Asking for the state the
@@ -836,9 +840,8 @@ and `preview.token`.
 
 `send confirm --token TOKEN` is the preview's Confirm button. The token is
 the page's own and lasts five minutes, so a preview made on the page
-confirms here and the other way round. Like the page's button it needs a
-recent sign-in, which a full-scope session stands in for, so it always
-asks, naming the action, the reason, the counts and the page's own caution
+confirms here and the other way round. It is a privileged action and needs
+a full-scope session, so it always asks, naming the action, the reason, the counts and the page's own caution
 (for a resolution, each type's follow-up coverage too); `--yes` answers,
 and `--token -` (standard input) needs it. The page then checks everything
 again, as it does for its own button, and records the control. System logs
@@ -886,8 +889,7 @@ configured) is exit 3 (`unavailable`). Uploading files stays on the page
 for now.
 
 `files delete` and `files rename` are the page's **Delete** and **Edit**.
-Each needs a full-scope session and an Administrator, and, like the page,
-no recent sign-in. Each works only on a file that nothing uses: a file in
+Each needs a full-scope session and an Administrator. Each works only on a file that nothing uses: a file in
 use is exit 1 (`invalid`), with `error.fields` naming where it is used, in
 the page's words, and nothing changes.
 
@@ -1376,9 +1378,8 @@ repeats until nothing is pending.
 
 `integration preview` and `integration confirm` are a settings page's
 **Save** (its review, then **Apply**) and its **Remove**. They need an
-Administrator and a full-scope session. The page asks for a recent Google
-sign-in; the live session stands in for it, so `integration confirm` asks
-you to type `yes` (or takes `--yes`) and leaves a notice on the Admin home
+Administrator and a full-scope session. It is a privileged action, so
+`integration confirm` asks you to type `yes` (or takes `--yes`) and leaves a notice on the Admin home
 page.
 
 ```sh
@@ -1515,7 +1516,7 @@ with `--folder` to check it before saving it, or leave it out to check the
 saved folder. `integration dismiss` is a key change line's **Dismiss**: it
 hides a finished change's line (`updated` or `failed`) for every
 Administrator. Both need a full-scope session and an Administrator; neither
-asks for a recent sign-in or a confirmation, as on the pages.
+asks for a confirmation, as on the pages.
 
 ```sh
 pk-admin integration backup-probe --folder https://drive.google.com/drive/folders/FOLDER
@@ -1548,7 +1549,7 @@ page's Dismiss does nothing then.
 `integration key replace TARGET` is a settings page's **Save** with a new
 key pasted: an API key (`parishsoft`), the mail service-account key
 (`google_workspace`) or the bot token (`slack`). It needs a full-scope
-session and an Administrator, stands in for the page's recent sign-in, and
+session and an Administrator, and
 always asks before it does anything. The key is never an argument: the
 wrapper reads it from a file or from standard input and sends it to the
 command on its own line after the session preamble, so it never appears in
@@ -1605,7 +1606,7 @@ current key stays in use. The command prints `version`, `target`, `name`,
 `setup`, `changes`, `key_request_id` and `request` (the configuration
 request that switches to the key); follow the key change with
 `integration key status TARGET --request-id KEY_REQUEST_ID --watch 5`.
-It records the page's own events, the fresh gate's event and notice,
+It records the page's own events, the privileged command's event and notice,
 `admin_cmd_integration_key_replace` and a `policy_change` notice for every
 Administrator.
 
@@ -1624,7 +1625,7 @@ before you try again.
 The `integration backup-key` commands are the **Backup encryption key**
 page's three steps, in the same order and with the same checks as the
 page and the backup runbook's "Replacing the key". They need a full-scope
-session and an Administrator, and stand in for the page's recent sign-in.
+session and an Administrator.
 Make the new key pair on the key machine first (`pk-stewardship
 backup-keygen`) and save only its `public_key` value in a file you own
 with mode 600; never give this server the private key.
@@ -1660,8 +1661,8 @@ pk-admin integration backup-key confirm --token TOKEN   # prompts
   records nothing.
 - `confirm` prompts with both fingerprints and what the change means,
   then makes the page's configuration request; `--yes` answers the
-  prompt, and `--token -` needs it. It records the fresh gate's event and
-  notice, `admin_cmd_integration_backup_key_confirm` and a `policy_change`
+  prompt, and `--token -` needs it. It records the privileged command's
+  event and notice, `admin_cmd_integration_backup_key_confirm` and a `policy_change`
   notice. Once the configuration installer applies it, every
   Administrator is told by the page's `backup_key_replaced` security
   event, and the next backup is sealed to the new key. It prints
@@ -1735,7 +1736,7 @@ field prints one. Given on the command line, the token is confirmed after
 a prompt naming the integration and the settings it also changes. Either
 way the command records the configuration request as the page's button
 does, with `admin_cmd_integration_key_finish_switching`, the
-fresh gate's event and notice and a `policy_change` notice for every
+privileged command's event and notice and a `policy_change` notice for every
 Administrator. A token for an earlier key change is exit 1 (`invalid`),
 including a repeat of an applied token after a newer key change started;
 an expired one, or one whose key is no longer current, is `stale_version`:
@@ -1804,8 +1805,8 @@ and counts), and the commands' `admin_cmd_history_preview`,
 `task retry` is the **Retry** button of a failed task on Background work,
 for the four kinds of work that page can retry: Family mail preparation,
 daily and weekly digest work, and export file cleanup. It needs a
-full-scope session, and asks for no fresh sign-in or confirmation, as the
-page asks for none. Fix the cause first, as the page says.
+full-scope session, and asks for no confirmation, as the page asks for
+none. Fix the cause first, as the page says.
 
 ```sh
 pk-admin task list --state failed
@@ -1841,8 +1842,7 @@ its subject; it creates no automation notice.
 
 ## Confirmations
 
-Every command for an action that needs a recent Google sign-in on its page,
-and every command whose page asks you to type a value or tick an
+Every command for a privileged (fresh-gated) action, and every command whose page asks you to type a value or tick an
 acknowledgement, asks at a prompt before it acts, for example `test sample`
 while an earlier test's outcome is unknown, `delivery resend`, `delivery
 refusal-clear` and `delivery bounce-report`; the catalog's `prompts` flag
@@ -1861,11 +1861,12 @@ before it reads any input, looks anything up or prompts. A command Staff
 may run, such as `export financial` or `census resolve`, still prompts
 Staff.
 
-No command of this release does an action that needs a recent Google
-sign-in; they arrive in later releases. When a session stands in for one
-(pausing or resuming mail, a chosen-Family test, a financial export, the
-Family portal switch, confirming Production, withdrawal, key changes),
-System logs record an
+Since [#1547](https://github.com/epiphany40223/parishkit/issues/1547) no
+Admin page asks for a recent sign-in, so a session never stands in for one.
+The privileged actions that once needed one keep the catalog's
+`fresh_gated` flag. When a session runs one (pausing or resuming mail, a
+chosen-Family test, an export of codes or financial data, the Family portal
+switch, confirming Production, withdrawal, key changes), System logs record an
 `automation_fresh_gate` event beside the action, and the dashboard shows an
 automation notice; confirming Production and withdrawal are marked
 irreversible and also email and post to Slack.
@@ -1963,8 +1964,8 @@ address**: when a bounce message for a delivered Family email arrives in the
 sending mailbox, it sets that address aside for the Family, as a provider's
 refusal does, until `delivery refusal-clear` clears it. It shows the page's
 words ("I saw a bounce message for this address from this email") and asks
-for `yes`; it needs a full-scope session of an Administrator, but no recent
-sign-in, as on the page. When the address is the Family's only one left, the
+for `yes`; it needs a full-scope session of an Administrator, as on the
+page. When the address is the Family's only one left, the
 prompt also warns, as the page's notice does, that the Family will then get
 no campaign email until the address is cleared or ParishSoft is corrected;
 `--yes` skips that warning too. `--address` is the address the bounce
@@ -2211,7 +2212,7 @@ the rows stay on the page and its downloads. It records the page's
 ParishSoft (`entered`), Ignore (`ignored`) or Reopen (`reopened`). Like the
 page's buttons it needs a full-scope session; Administrators and Staff may
 record Entered and Ignore, and only an Administrator may reopen an ignored
-change (Staff get `denied`). It needs no recent sign-in, as on the page.
+change (Staff get `denied`).
 Entered in ParishSoft cannot be undone, so, as the page's dialog does,
 `--action entered` shows the change's id and version and asks for `yes`
 (see [Confirmations](#confirmations)), or takes `--yes`; Ignore and Reopen
@@ -2252,8 +2253,7 @@ logs show the page's `census_change_updated` and the command's
 `census review` is an Automatic row's **Review**: Approve (`approved`),
 Ignore (`ignored`) or Back to To review (`unreviewed`). Only an
 Administrator may review (Staff and Ministry leaders get `denied`, before
-anything is read), with a full-scope session and no recent sign-in, as on
-the page. Every review can be changed again until publication of the change
+anything is read), with a full-scope session, as on the page. Every review can be changed again until publication of the change
 starts, so, as on the page, it asks nothing. Approving does not publish
 anything: publication is a separate step.
 
@@ -2494,9 +2494,9 @@ pk-admin export fetch EXPORT_ID
   `export ministry-packet` its follow-up packet, for the
   Ministries `--ministry` names (repeat it; none means every Ministry you
   may report on) and `--history` for earlier versions.
-- `export financial` needs a recent Google sign-in on its page, so it asks
-  at the [confirmation prompt](#confirmations) (or takes `--yes`); the
-  session stands in for the sign-in, and System logs show
+- `export financial` is a privileged action, so it asks at the
+  [confirmation prompt](#confirmations) (or takes `--yes`), and System logs
+  show
   `automation_fresh_gate` beside it. A read-only session is exit 1
   (`denied`).
 - `--format` is `csv`, `xlsx` or `pdf`; `--timezone` the time zone of the
@@ -2525,10 +2525,10 @@ pk-admin export fetch EXPORT_ID
 Family codes, for
 the current campaign, and `export postal` its mail merge. Each needs a
 full-scope session and records the page's events, plus
-`admin_cmd_export_directory` or `admin_cmd_export_postal`. Both need a
-recent Google sign-in on the page, so each asks at the
-[confirmation prompt](#confirmations) (or takes `--yes`); the session
-stands in for the sign-in, and System logs show `automation_fresh_gate`
+`admin_cmd_export_directory` or `admin_cmd_export_postal`. Both are
+privileged actions, so each asks at the
+[confirmation prompt](#confirmations) (or takes `--yes`), and System logs
+show `automation_fresh_gate`
 beside it.
 
 ```sh
@@ -2599,8 +2599,8 @@ timeline page's **Export this timeline** does: every line of its timeline
 (oldest first), in the page's columns, with the Family's details, the
 page's summary and its Family code as the report information of an XLSX or
 PDF file (a CSV is the timeline table alone). Like the page's full view, it is
-for Administrators. Because the file holds the Family's code, the page asks
-for a recent Google sign-in, so the command asks at the
+for Administrators. Because the file holds the Family's code, it is a
+privileged action, so the command asks at the
 [confirmation prompt](#confirmations) (or takes `--yes`), and System logs
 show `automation_fresh_gate` beside it.
 
@@ -2656,7 +2656,7 @@ date, through its last full day. That is at once when no response arrived
 on the day it closed, and otherwise the next day. It holds each Family's
 giving, so,
 like `export financial`, it asks at the prompt (or takes `--yes`) and needs
-a full-scope session in place of the page's recent sign-in. It records
+a full-scope session. It records
 `campaign_archive_exported` (with the cutoff's campaign day) plus
 `admin_cmd_export_archive`, and the file is fetched with `export fetch`.
 
@@ -3266,8 +3266,8 @@ Each change is recorded in System logs as on the page
   library and each file's uses (any session, Administrators only, no
   event).
 - `pk-admin/1` (#463): additive. `files delete` and `files rename`, the
-  Hosted files page's Delete and Edit (full scope, Administrators only, no
-  recent sign-in; `files delete` prompts; their events).
+  Hosted files page's Delete and Edit (full scope, Administrators only, not
+  fresh-gated; `files delete` prompts; their events).
 - `pk-admin/1` (#970): a deliberate change, kept on version 1.
   `report talents` is now `report limitations`, with no alias, because the
   Family form no longer asks for talents and the report is Limitations. Its
@@ -3608,3 +3608,12 @@ Each change is recorded in System logs as on the page
   csv|xlsx|pdf] [--timezone ZONE]`, the Ministry follow-up queue's Export
   these requests (full scope, the page's `ministry_followup_exported`),
   streamed as `export roster` is.
+- `pk-admin/1` (#1547, 2026-10-17): a change of meaning, kept on version 1.
+  No Admin action checks a sign-in's age any more, so the reason
+  `fresh_authentication_required` is gone: a read-only or no-longer-live
+  automation session at a fresh-gated (privileged) command is now exit 1
+  with reason `denied` in its durable log entry, where it used to report
+  `fresh_authentication_required`. The catalog's `fresh_gated` flag, the
+  `automation_fresh_gate` event and the `fresh_gated` and `irreversible`
+  notices keep their names and now mark a privileged command an automation
+  session ran.

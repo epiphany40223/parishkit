@@ -12,6 +12,13 @@ the named backup branch. Follow the
 [consolidation record](../../guides/stewardship-phase-2-simplification.md) for
 current baseline/review/CI acceptance; old counts do not certify the current tree.
 
+Since [#1547](https://github.com/epiphany40223/parishkit/issues/1547)
+(2026-10-17) no Admin action checks how long ago the Admin signed in: the
+step-up ("Confirm with Google"), `require_fresh`, the setup sign-in hour and
+the SQL guards' sign-in age clauses (migration 0113) are gone. Evidence below
+that mentions fresh sign-ins, step-ups or `require_fresh` records the
+behavior when that work landed; open tasks no longer include them.
+
 ## ADM-01: Login, denial, and unconfigured-state routing
 
 Scope and dependencies: [ADM-01 work package](../../plans/stewardship/admin-portal.md#adm-01-login-denial-and-unconfigured-state-routing).
@@ -294,7 +301,7 @@ Scope and dependencies: [ADM-10 work package](../../plans/stewardship/admin-port
 - [ ] ADM-10.01 — Build purge eligibility and durable request UI.
 - [ ] ADM-10.02 — Build campaign quiescence and conflicting-work resolution.
 - [ ] ADM-10.03 — Build inventory, backup creation/revalidation, and recovery-evidence controls.
-- [ ] ADM-10.04 — Build fresh-authentication and typed purge confirmation.
+- [ ] ADM-10.04 — Build typed purge confirmation (no sign-in age check, #1547).
 - [ ] ADM-10.05 — Build reader-drain status, pre-delete recovery, deletion retry, and terminal UI.
 - [ ] ADM-10.06 — Test every purge state, race, and confirmation boundary.
 
@@ -318,6 +325,17 @@ Specification: [Admin automation interface](../../specs/stewardship/admin-automa
 - [ ] ADM-11.11 — PR 10: add the remaining configuration commands, including secret replacement.
 - [ ] ADM-11.12 — PR 11: add acknowledgement (`events list`, `events acknowledge`) and follow-up (`followup …`) commands. The users commands (`users list`, `users preview-upgrade`, `users preview`, `users confirm`, `users import-leaders`, including high-impact changes) move to the #952 slices; rule and assignment commands are retired by #952 and #922.
 - [ ] ADM-11.13 — PR 12: add go-live and withdrawal commands.
+
+Since #1547 an automation session no longer stands in for a recent sign-in,
+because nothing needs one; privileged commands still need a live full-scope
+session and still record `automation_fresh_gate` and the `fresh_gated` and
+`irreversible` notices (names kept). Every session-bound SQL guard still
+requires a command session's live full-scope automation session
+(`stewardship_automation_fresh_v1`), and the secret request guards refuse a
+request whose full-scope automation session ended
+(`stewardship_automation_instant_ended_v1`, migration 0113);
+`stewardship_automation_fresh_principal_v1` stays in the schema, unused,
+until [#1550](https://github.com/epiphany40223/parishkit/issues/1550).
 
 Evidence: In progress. ADM-11.01 merged in PR #511, which added the
 Admin automation interface specification and the Administrator's

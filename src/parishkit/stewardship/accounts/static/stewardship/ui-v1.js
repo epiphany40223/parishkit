@@ -39,39 +39,6 @@
     });
   });
 
-  // The LOCAL step-up (components/reauthenticate.html, #613). There is no
-  // Google in LOCAL: the Administrator mints a sign-in link on the laptop
-  // and opens it, often in a new tab, so the page that asked records its
-  // return path (never an answer or credential) for local-sign-in-v1.js to
-  // send as the sign-in's "next". The key "pk-local-step-up" and the
-  // ten-minute limit pair with STEP_UP_KEY and STEP_UP_SECONDS in
-  // local-sign-in-v1.js; change them together. A step-up an in-place answer
-  // brings in (a Family test review shown with a stale sign-in, #519) is
-  // recorded too, as it would be had the page loaded with it. A copy that
-  // CSS hides (System health draws Accept this change once's offer with and
-  // without its step-up and shows one, #1385) is not on show and records
-  // nothing. A step-up inside a closed tile or section, hidden only by a
-  // hidden attribute on the way up, still counts: opening it shows it.
-  const cssHidden = (node) => {
-    for (let at = node; at instanceof Element; at = at.parentElement) {
-      if (!at.hasAttribute("hidden") && window.getComputedStyle(at).display === "none") return true;
-    }
-    return false;
-  };
-  const recordStepUp = (root) => {
-    const nodes = [...root.querySelectorAll("[data-local-step-up]")];
-    if (root instanceof Element && root.matches("[data-local-step-up]")) nodes.unshift(root);
-    nodes.filter((node) => !cssHidden(node)).forEach((node) => {
-      try {
-        window.localStorage.setItem("pk-local-step-up", JSON.stringify({
-          next: node.dataset.localStepUp, at: Date.now(),
-        }));
-      } catch (error) { /* The sign-in then returns to the home page. */ }
-    });
-  };
-  recordStepUp(document);
-  document.addEventListener("parishkit:swap", (event) => recordStepUp(event.target));
-
   // Hosted files (#346). A Copy button copies its read-only field; without
   // script (or the clipboard API) the button stays hidden and the field can
   // be selected by hand. Choosing a file fills an empty placeholder-name
@@ -3887,16 +3854,13 @@
     const error = state.dialog.querySelector("[data-confirm-error]");
     if (Array.isArray(text)) {
       error.replaceChildren(...text);
-      // A drawn refusal can carry a control (the step-up's Confirm with
-      // Google), which must not be read as part of the announcement: only
-      // its sentences are the alert, as step-up-notice.html's role rule
-      // says, so the line itself is no live region then.
+      // A drawn refusal can carry a control (a link), which must not be
+      // read as part of the announcement: only its sentences are the
+      // alert, so the line itself is no live region then.
       error.removeAttribute("role");
-      error.querySelectorAll(":scope > p, [data-step-up-notice] > p").forEach((line) => {
+      error.querySelectorAll(":scope > p").forEach((line) => {
         line.setAttribute("role", "alert");
       });
-      // A LOCAL step-up it brings records its return path (recordStepUp).
-      recordStepUp(error);
     } else {
       // A sentence is the whole alert (a drawn refusal may have removed it).
       error.setAttribute("role", "alert");
@@ -3992,8 +3956,7 @@
   };
   // A refusal the server draws as markup, marked data-review-refusal: the
   // nodes to show, or null for any other answer. System health's actions
-  // (#1356) answer so, since a stale sign-in brings the shared step-up
-  // notice and its Confirm with Google, which a sentence cannot carry.
+  // (#1356) answer so, for a refusal a sentence cannot carry.
   const refusalMarkup = (text) => {
     const node = new DOMParser().parseFromString(text, "text/html")
       .querySelector("[data-review-refusal]");

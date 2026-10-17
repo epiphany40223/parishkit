@@ -253,11 +253,14 @@ def test_finish_long_after_setup_sign_in_still_installs_credentials(
         assert installer.run_once().state == "awaiting_ack"
 
 
-def test_non_setup_sealed_intake_still_requires_fresh_authentication(
+def test_non_setup_sealed_intake_admits_an_old_sign_in(
     setup_service, monkeypatch, tmp_path
 ):
-    """The exemption covers only the live setup's own sealed credential id."""
-    # A live frozen setup exists, but these requests are not its credential.
+    """A sealed request outside setup records an hours-old sign-in (#1547).
+
+    Only one request per target may be pending, so the web login makes one.
+    """
+    # A live frozen setup exists, but this request is not its credential.
     setup_installer(setup_service, monkeypatch, tmp_path, "slack")
     stale = timezone.now() - timedelta(hours=3)
     values = dict(
@@ -268,16 +271,13 @@ def test_non_setup_sealed_intake_still_requires_fresh_authentication(
         expires_at=timezone.now() + timedelta(minutes=5),
         required_consumers=["worker"],
     )
-    for login in (web_login, lambda: target_login("slack")):
-        identifier = uuid4()
-        with (
-            login(),
-            pytest.raises(DatabaseError, match="fresh authentication"),
-            transaction.atomic(),
-        ):
-            SecretReplacementRequest.objects.create(
-                id=identifier,
-                staging_reference=uuid4(),
-                actor_id=values["requested_by_id"],
-                **values,
-            )
+    identifier = uuid4()
+    with web_login(), transaction.atomic():
+        SecretReplacementRequest.objects.create(
+            id=identifier,
+            staging_reference=uuid4(),
+            actor_id=values["requested_by_id"],
+            **values,
+        )
+    row = SecretReplacementRequest.objects.get(pk=identifier)
+    assert row.reauthenticated_at == stale

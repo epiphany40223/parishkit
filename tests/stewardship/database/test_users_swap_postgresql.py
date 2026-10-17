@@ -831,6 +831,20 @@ CLOSURE_REPLACED_ONLY = {
             ),
         )
     },
+    # 0113 (#1547) drops the sign-in age from guards that closure files
+    # (0062, 0078, 0080, 0087, 0088, 0090, 0104, and 0111/0112 once merged)
+    # bring back older; its bodies all carry the issue number. It also
+    # creates the ended-automation check, so it cannot run whole twice.
+    **{
+        name: (("stewardship_accounts", "0027_no_sign_in_age"), "(#1547)")
+        for name in (
+            "stewardship_backup_request_guard_v1",
+            "stewardship_debug_off_switch_guard_v1",
+            "stewardship_source_drop_acceptance_guard_v1",
+            "stewardship_publication_confirmation_guard_v1",
+            "stewardship_setup_secret_guard_v1",
+        )
+    },
 }
 
 

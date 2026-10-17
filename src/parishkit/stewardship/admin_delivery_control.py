@@ -13,8 +13,7 @@ transaction, rechecks the session before reporting, and records nothing, as
 the page's GET records nothing. Everything it prints is a count, a time or a
 choice, never a recipient, a message or a provider response; the one text is
 the pausing Administrator's own reason, which the page shows too. The
-page's fresh sign-in hint is browser chrome and is left out, as are the
-fingerprints a preview binds.
+fingerprints a preview binds are left out.
 
 The page's controls follow, in their own block below: ``send pause-preview``,
 ``send resume-preview`` and ``send resolve-preview`` build the page's own
@@ -173,7 +172,7 @@ def read_controls(caller, service):
     from .campaigns.models import Campaign
 
     def read():
-        """The page's campaign and status, without its fresh sign-in hint."""
+        """The page's campaign and status."""
         runtime = editable_configuration(service)
         if runtime.current_campaign_id is None:
             raise NotAvailable("There is no current campaign.")
@@ -202,9 +201,9 @@ def read_controls(caller, service):
 # full-scope session), records no event and prints the page's counts plus
 # ``preview.token``, the page's own signed binding (five minutes), so a
 # token from either channel confirms on the other. ``send confirm`` is
-# fresh-gated on the page: a full-scope session stands in for the recent
-# sign-in (``require_fresh``'s automation branch, which records
-# ``automation_fresh_gate`` and the ``fresh_gated`` notice), and the
+# privileged: it needs a live full-scope session (``sign_in_instant``'s
+# automation branch, which records ``automation_fresh_gate`` and the
+# ``fresh_gated`` notice, historical names, #1547), and the
 # command's ``admin_cmd_send_confirm`` is recorded in the page's own
 # transaction through ``confirm``'s ``record`` hook. An exact repeat of a
 # confirmed token returns the original control and records nothing.
@@ -458,7 +457,7 @@ def confirm_control(caller, service, *, token, context):
     """``send confirm``: the page's Confirm button for a reviewed control.
 
     Admits as the page does, then runs the page's own ``confirm`` for the
-    current campaign: it passes the fresh gate in its own transaction
+    current campaign: it passes the privileged check in its own transaction
     (``automation_fresh_gate`` and the ``fresh_gated`` notice), rechecks the
     token's age (five minutes), the campaign and configuration versions,
     the live mail and the sender check, and the SQL guard checks them again

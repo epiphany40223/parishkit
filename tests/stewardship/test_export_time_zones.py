@@ -189,7 +189,6 @@ def test_the_packet_takes_the_browsers_zone_unasked(monkeypatch, zone, expected)
 def _directory(monkeypatch, *, responses, zone):
     """Post a directory export with these response columns and ``zone``."""
     calls = _queued(monkeypatch, directory_export_views, "create_directory_export")
-    monkeypatch.setattr(directory_export_views, "require_fresh", Mock())
     monkeypatch.setattr(directory_export_views, "family_runtime", Mock())
     monkeypatch.setattr(
         directory_export_views,

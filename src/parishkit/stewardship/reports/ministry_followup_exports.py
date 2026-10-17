@@ -16,8 +16,8 @@ own selection read whole (``followup_page``) and the details from
 document and writers as the retired lists' exports, so its Report
 information sheet, PDF report card and privacy line are theirs.
 
-Like those exports it needs no fresh sign-in (only the directory, postal,
-financial and timeline files do, #547), and it asks for a time zone because
+Like those exports it is not privileged (only the directory, postal,
+financial and timeline files are, #547), and it asks for a time zone because
 it holds exact times (Last contact). Each download is audited
 with its count, the sorted Ministry DUIDs in the file and whether the
 contacts were operational or publish-restricted; never names, contact

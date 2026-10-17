@@ -151,7 +151,7 @@ def test_privileged_intake_takes_a_state_changing_web_caller(auth_service, googl
             asserted, actor_id=actor, action=Action.CONFIGURATION_REQUEST
         )
         assert asserted.portal_session.principal_id == actor
-        # Destructive intake also needs freshness, now read from the caller.
+        # Destructive intake is admitted from the same caller.
         assert admit_admin_action(
             asserted, actor_id=actor, action=Action.DESTRUCTIVE_CONFIRMATION
         )

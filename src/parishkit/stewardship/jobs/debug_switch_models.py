@@ -8,8 +8,8 @@ the database stop logging in debug form (``parishkit.stewardship.debug_switch``)
 until it is cleared.
 
 The guard in ``schema/migrations/0078_debug_off_switch.sql`` admits a new
-switch only from the web login, for an enabled Administrator who signed in
-within the last five minutes, and only while none is set; it lets a switch be
+switch only from the web login, for an enabled Administrator's live session
+(of any sign-in age since 0113), and only while none is set; it lets a switch be
 cleared once and never deleted. Every time is the database's. Processes read
 it only through ``stewardship_debug_logging_off_v1()``, which answers one
 boolean. The server operator clears it with ``pk-stewardship

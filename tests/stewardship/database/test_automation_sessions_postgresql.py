@@ -35,7 +35,7 @@ from parishkit.stewardship.jobs.operational_models import (
     OperationalNotice,
 )
 
-from .auth_builders import signed_in, stale_sign_in, unguarded
+from .auth_builders import signed_in, unguarded
 from .automation_builders import (  # noqa: F401
     HOST,
     OTHER_HOST,
@@ -127,7 +127,9 @@ def test_an_approved_code_is_single_use(auth_service, google):
 def test_the_session_guard_refuses_inserts_that_break_the_pairing_rules(
     auth_service, google
 ):
-    """Old sign-in, long life, a command session as approver, a non-Administrator."""
+    """Another sign-in instant, long life, a command session as approver, a
+    non-Administrator or a future sign-in are refused; an approving sign-in
+    hours old is admitted (#1547)."""
     _, secret, row = paired(auth_service)
     approving = PortalSession.objects.get(pk=row.approving_session_id)
     caller = command(auth_service, secret)
@@ -159,9 +161,17 @@ def test_the_session_guard_refuses_inserts_that_break_the_pairing_rules(
     ):
         with pytest.raises((DatabaseError, IntegrityError)):
             insert(**changes)
-    stale_sign_in()
-    with pytest.raises(DatabaseError):
-        insert(authenticated_at=approving.authenticated_at - timedelta(minutes=6))
+    # The approving browser session signed in three hours ago and is still
+    # active: its sign-in may be of any age.
+    older = database_now() - timedelta(hours=3)
+    with unguarded():
+        PortalSession.objects.filter(pk=approving.pk).update(
+            authenticated_at=older, last_activity_at=database_now()
+        )
+    insert(authenticated_at=older)
+    # A sign-in instant in the future is outside the approval's bounds.
+    with pytest.raises(DatabaseError, match="outside its bounds"):
+        insert(authenticated_at=database_now() + timedelta(minutes=1))
     with pytest.raises(DatabaseError), transaction.atomic():
         AutomationSession.objects.filter(pk=row.pk).delete()
 
@@ -437,8 +447,11 @@ def test_a_role_change_that_keeps_administrator_ends_only_the_command_session(
     automation.close_command_session(command(auth_service, secret).portal_session)
 
 
-def test_read_only_sessions_are_refused_activity_and_fresh_gates(auth_service, google):
-    """A read-only command can read, but never record activity or pass require_fresh."""
+def test_read_only_sessions_are_refused_activity_and_privileged_commands(
+    auth_service, google
+):
+    """A read-only command can read, but never record activity or pass
+    ``sign_in_instant``, the privileged commands' check."""
     from parishkit.stewardship.accounts import sessions
 
     _, secret, _ = paired(auth_service, scope="read-only")
@@ -446,22 +459,23 @@ def test_read_only_sessions_are_refused_activity_and_fresh_gates(auth_service, g
     assert caller.read_only
     with pytest.raises(PermissionError):
         sessions.authenticated_admin(caller, store=auth_service.store, activity=True)
-    with pytest.raises(sessions.FreshAuthenticationRequired):
-        sessions.require_fresh(caller)
+    with pytest.raises(PermissionError):
+        sessions.sign_in_instant(caller)
 
 
-def test_require_fresh_admits_a_live_full_session(auth_service, google):
-    """From PR 5 a full-scope session stands in for a fresh sign-in."""
+def test_sign_in_instant_admits_a_live_full_session(auth_service, google):
+    """A full-scope session runs privileged commands with its sign-in."""
     from parishkit.stewardship.accounts import sessions
 
     _, secret, row = paired(auth_service)
     caller = command(auth_service, secret)
     with transaction.atomic():
-        assert sessions.require_fresh(caller) == row.authenticated_at
+        assert sessions.sign_in_instant(caller) == row.authenticated_at
 
 
 def test_fresh_v1_names_only_a_live_full_command_session(auth_service, google):
-    """The function PR 5's guards call: true for this command session only."""
+    """The function the session-bound guards call (still, after 0113): true
+    for this command session only."""
     _, secret, row = paired(auth_service)
     caller = command(auth_service, secret)
     approving = row.approving_session_id

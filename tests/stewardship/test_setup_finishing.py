@@ -46,7 +46,7 @@ def by_key(result):
 
 
 def test_just_confirmed_setup_is_working_and_waiting():
-    """Before any installer runs, every step waits and nothing asks for sign-in."""
+    """Before any installer runs, every step waits."""
     result = finishing(status())
     rows = by_key(result)
     assert list(rows) == [
@@ -57,7 +57,8 @@ def test_just_confirmed_setup_is_working_and_waiting():
         "completed",
     ]
     assert {row["state"] for row in rows.values()} == {"waiting"}
-    assert result["overall"] == "working" and not result["reauthenticate"]
+    assert result["overall"] == "working"
+    assert "reauthenticate" not in result
     assert result["elapsed"] == 190
 
 
@@ -168,18 +169,10 @@ def test_completion_marks_every_step_done():
     assert result["overall"] == "completed"
 
 
-def test_old_sign_in_asks_to_sign_in_again_while_a_credential_cannot_start():
-    """The installer needs a sign-in from the last five minutes to begin."""
-    old = status(authenticated_at=NOW - timedelta(minutes=6))
-    assert finishing(old)["reauthenticate"]
-    started = [
-        credential("parishsoft", "staged"),
-        credential("google_workspace", "staged"),
-    ]
-    assert not finishing(old | {"credentials": started})["reauthenticate"]
-    assert not finishing(old | {"attempt": SimpleNamespace(state="expired")})[
-        "reauthenticate"
-    ]
+def test_an_old_sign_in_changes_nothing_while_credentials_wait():
+    """An installer may start however old the original sign-in is (#1547)."""
+    old = status(authenticated_at=NOW - timedelta(hours=3))
+    assert finishing(old) == finishing(status())
 
 
 @pytest.mark.parametrize(

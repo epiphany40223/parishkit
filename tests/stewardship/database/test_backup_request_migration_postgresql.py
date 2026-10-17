@@ -4,7 +4,8 @@
 guard. Its closing DO block must pass on an installed database and refuse
 one where any part is missing or changed: the database as it was before
 (no table), a guard given definer's rights, a guard open to PUBLIC, or a
-dropped trigger. Each case runs in a rolled-back transaction.
+dropped trigger. Each case runs in a rolled-back transaction, which first
+puts back 0062's own guard body: 0113 (#1547) later replaces it.
 """
 
 import re
@@ -21,6 +22,15 @@ MIGRATIONS = Path(__file__).resolve().parents[3] / (
 TEXT = (MIGRATIONS / "0062_backup_request.sql").read_text(encoding="utf-8")
 CHECK = re.search(r"^DO \$check\$.*?^\$check\$;", TEXT, re.M | re.S)[0]
 GUARD = "public.stewardship_backup_request_guard_v1()"
+BODY = re.search(
+    r"^CREATE FUNCTION public\.stewardship_backup_request_guard_v1\(\)"
+    r".*?^END \$\$;",
+    TEXT,
+    re.M | re.S,
+)[0]
+# 0062's own guard, put back inside each rolled-back transaction: the live
+# schema has 0113's body (#1547), which this file's check rightly refuses.
+OWN = BODY.replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION")
 
 
 def refused(change, message):
@@ -30,6 +40,7 @@ def refused(change, message):
         pytest.raises(DatabaseError, match=message),
         transaction.atomic(),
     ):
+        cursor.execute(OWN)
         cursor.execute(change)
         cursor.execute(CHECK)
 
@@ -37,6 +48,7 @@ def refused(change, message):
 def test_the_check_passes_on_an_installed_database():
     """Everything the file installs is there as declared."""
     with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(OWN)
         cursor.execute(CHECK)
         transaction.set_rollback(True)
 
@@ -71,15 +83,6 @@ def test_the_check_refuses_a_missing_trigger():
 def test_the_check_refuses_a_guard_without_the_automation_gate():
     """A guard that admits only a five-minute sign-in (#706's first body,
     before automation sessions stood in for one) fails the check."""
-    body = re.search(
-        r"^CREATE FUNCTION public\.stewardship_backup_request_guard_v1\(\)"
-        r".*?^END \$\$;",
-        TEXT,
-        re.M | re.S,
-    )[0]
     gate = "OR public.stewardship_automation_fresh_v1(login.id,NEW.actor_id)"
-    assert gate in body
-    refused(
-        body.replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION").replace(gate, ""),
-        "not the one this file installs",
-    )
+    assert gate in OWN
+    refused(OWN.replace(gate, ""), "not the one this file installs")

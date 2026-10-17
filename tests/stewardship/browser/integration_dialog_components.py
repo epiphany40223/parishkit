@@ -5,14 +5,14 @@ fragment (``integration-review.html``) or the real page drawn again.
 
 Slack notifications, set up, with its optional new-key field: ``SLACK`` is
 the page at version ``"a" * 64``, posting to itself; a test answers its Save
-with ``SLACK_REVIEW`` (the compact review of a new channel ID),
+with ``SLACK_REVIEW`` (the compact review of a new channel ID) or
 ``SLACK_REFUSED`` (the page drawn again with the channel ID's error, status
-400) or ``SLACK_STEP_UP`` (a stale sign-in's refusal, 403), and its Remove
-Slack with ``SLACK_REMOVE`` (the confirmation). Its Apply is redirected by
-the fixture server (``POSTS``) to ``APPLIED``, the change's status page,
-Applied; the editor's region is then redrawn from ``SLACK_SETTLED``, the new
-channel ID at version ``"b" * 64``. ``SLACK_REMOVING`` is the same page
-whose region is redrawn from ``SLACK_REMOVED`` instead, Slack not set up.
+400), and its Remove Slack with ``SLACK_REMOVE`` (the confirmation). Its
+Apply is redirected by the fixture server (``POSTS``) to ``APPLIED``, the
+change's status page, Applied; the editor's region is then redrawn from
+``SLACK_SETTLED``, the new channel ID at version ``"b" * 64``.
+``SLACK_REMOVING`` is the same page whose region is redrawn from
+``SLACK_REMOVED`` instead, Slack not set up.
 
 ParishSoft with a schedule saved from Basic (#1122): ``SCHEDULE`` posts to
 itself; a test answers its Save with ``SCHEDULE_REVIEW`` (the full review of
@@ -38,7 +38,6 @@ REQUEST = UUID("75000000-0000-4000-8000-000000000751")
 SLACK = "/integration-dialog"
 SLACK_REVIEW = "/integration-dialog-review"
 SLACK_REFUSED = "/integration-dialog-refused"
-SLACK_STEP_UP = "/integration-dialog-step-up"
 SLACK_REMOVE = "/integration-dialog-remove"
 SLACK_SETTLED = "/integration-dialog-settled"
 SLACK_REMOVING = "/integration-dialog-removing"
@@ -159,13 +158,6 @@ def components(context, admin, now):
             path=SLACK,
             refresh=SLACK_SETTLED,
             data={"base_digest": "a" * 64, "channel_id": "not-a-channel"},
-        ),
-        SLACK_STEP_UP: (
-            "text/html",
-            render_to_string(
-                "stewardship/integration-review.html",
-                {"refused": True, "target": "slack"},
-            ),
         ),
         SLACK_REMOVE: review(kind="remove", target="slack"),
         SLACK_SETTLED: slack(NEW_CHANNEL, "b" * 64, path=SLACK, refresh=SLACK_SETTLED),

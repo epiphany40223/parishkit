@@ -147,10 +147,7 @@ DESCRIPTIONS = {
         "Use of an automation session was refused: an unknown session, one "
         "used from a different server, or a command session seen by the web."
     ),
-    "automation_fresh_gate": _(
-        "An automation session stood in for a recent Google sign-in on an "
-        "action that needs one."
-    ),
+    "automation_fresh_gate": _("An automation session ran a privileged action."),
     "automation_notices_acknowledged": _(
         "An Administrator acknowledged automation notices on their own dashboard."
     ),
