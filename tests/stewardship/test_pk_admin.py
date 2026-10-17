@@ -1923,3 +1923,138 @@ def test_a_run_with_a_key_dumps_no_core(host, tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert Path(host.environment["FAKE_DOCKER_ARGS"]).read_text() == "0\n"
+
+
+# The Backup encryption key's steps (ADM-11 PR 10): the new public key and
+# the proof code reach the command the same way, on their own tagged lines.
+PUBLIC_KEY = b"q83vEjRWeJCrze8SNFZ4kKvN7xI0VniQq83vEjRWeHg=\n"
+CHALLENGE = ("integration", "backup-key", "challenge")
+PREVIEW = ("integration", "backup-key", "preview", "--intent", "i")
+
+
+def tagged_line(tag, value):
+    """The tagged line the wrapper must send for ``value``."""
+    import base64
+
+    return tag + b" " + base64.b64encode(value) + b"\n"
+
+
+def test_a_public_key_file_is_sent_on_its_own_line(host, tmp_path):
+    """The container sees --public-key-stdin, never the path or the key."""
+    host.answer({"ok": True})
+    host.session()
+    path = key_file(tmp_path, PUBLIC_KEY)
+    result = host.run(*CHALLENGE, "--public-key-file", str(path))
+    assert result.returncode == 0, result.stderr
+    calls = host.calls()
+    assert "--public-key-stdin" in calls and "--public-key-file" not in calls
+    assert str(path) not in calls
+    assert not any(PUBLIC_KEY.strip().decode() in a for a in calls)
+    assert host.stdin() == preamble() + tagged_line(
+        b"pk-admin-public-key/1", PUBLIC_KEY
+    )
+    assert no_work_left(host)
+
+
+def test_a_piped_code_needs_no_yes(host):
+    """The preview does not prompt, so its piped code is sent as given."""
+    host.answer({"ok": True})
+    host.session()
+    result = host.run(*PREVIEW, "--code-stdin", stdin=b"ABCD-EFGH-JKMN\n")
+    assert result.returncode == 0, result.stderr
+    assert "--code-stdin" in host.calls()
+    assert host.stdin() == preamble() + tagged_line(
+        b"pk-admin-proof/1", b"ABCD-EFGH-JKMN\n"
+    )
+
+
+def test_a_code_file_is_sent_and_an_oversized_one_refused(host, tmp_path):
+    """--code-file becomes --code-stdin; over the page's field limit is
+    refused before anything runs."""
+    host.answer({"ok": True})
+    host.session()
+    path = key_file(tmp_path, b"ABCDEFGHJKMN\n")
+    result = host.run(*PREVIEW, "--code-file", str(path))
+    assert result.returncode == 0, result.stderr
+    calls = host.calls()
+    assert "--code-stdin" in calls and str(path) not in calls
+    assert host.stdin() == preamble() + tagged_line(
+        b"pk-admin-proof/1", b"ABCDEFGHJKMN\n"
+    )
+    path.write_bytes(b"A" * 201)
+    result = host.run(*PREVIEW, "--code-file", str(path))
+    assert result.returncode == 2 and b"limit" in result.stderr
+
+
+def test_the_wrappers_field_limit_is_the_pages():
+    """FIELD_LIMIT is the Backup encryption key page's field limit."""
+    from parishkit.stewardship.accounts.backup_key import MAX_FIELD
+
+    [limit] = re.findall(r"^FIELD_LIMIT=(\d+)$", WRAPPER.read_text(), re.M)
+    assert int(limit) == MAX_FIELD
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        (*CHALLENGE, "--public-key-stdin"),
+        (*CHALLENGE, "--code-stdin"),
+        (*CHALLENGE, "--secret-stdin", "--yes"),
+        (*CHALLENGE, "--public-key-file=/k"),
+        (*CHALLENGE, "--public-key-file"),
+        (*PREVIEW, "--public-key-file", "/k"),
+        (*PREVIEW, "--code-stdin", "--code-file", "/k"),
+        (*REPLACE, "--code-stdin", "--yes"),
+        (*REPLACE, "--public-key-file", "/k", "--yes"),
+        ("integration", "backup-key", "confirm", "--token", "-", "--code-stdin"),
+    ],
+)
+def test_misused_backup_key_options_are_refused(host, arguments):
+    """Each value goes only to its own command, once, from a path or (the
+    code only) standard input; the container's --public-key-stdin is not
+    the operator's to give."""
+    host.session()
+    result = host.run(*arguments, stdin=b"x\n")
+    assert result.returncode == 2, result.stderr
+    assert host.calls() is None
+
+
+def test_a_code_typed_at_a_terminal_is_not_echoed(host):
+    """Echo goes off while the code is read (to Ctrl-D) and comes back."""
+    import select
+    import termios
+
+    host.answer({"ok": True})
+    host.session()
+    controller, terminal = pty.openpty()
+    try:
+        process = subprocess.Popen(
+            [str(WRAPPER), *PREVIEW, "--code-stdin"],
+            env=host.environment,
+            stdin=terminal,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        line = process.stderr.readline()
+        assert b"paste the code" in line and b"it is not shown" in line
+        assert not termios.tcgetattr(terminal)[3] & termios.ECHO
+        os.write(controller, b"TYPED-CODE-1\n\x04")
+        _, errors = process.communicate(timeout=20)
+        assert process.returncode == 0, errors
+        assert termios.tcgetattr(terminal)[3] & termios.ECHO
+        shown = b""
+        while select.select([controller], [], [], 0.2)[0]:
+            try:
+                chunk = os.read(controller, 4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            shown += chunk
+        assert b"TYPED-CODE" not in shown
+        assert host.stdin() == preamble() + tagged_line(
+            b"pk-admin-proof/1", b"TYPED-CODE-1\n"
+        )
+    finally:
+        os.close(terminal)
+        os.close(controller)

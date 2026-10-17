@@ -1518,36 +1518,42 @@ def integration_key_finish_switching(args, preamble, runtime, context):
     )
 
 
-# The tag of the line after the preamble that carries a key: the host
-# wrapper's --secret-file or --secret-stdin sends it as base64.
+# The tags of the line after the preamble that carries a key, a backup
+# public key or a backup key proof code: the host wrapper's --secret-file
+# or --secret-stdin, --public-key-file, and --code-file or --code-stdin send
+# it as base64 (its secret_row table names the same tags).
 SECRET_TAG = "pk-admin-secret/1"
+PUBLIC_KEY_TAG = "pk-admin-public-key/1"
+PROOF_TAG = "pk-admin-proof/1"
 
 
-def read_secret(stream):
-    """Read the key line the host wrapper sends after the preamble.
+def read_secret(stream, *, tag=SECRET_TAG, size=None):
+    """Read the tagged line the host wrapper sends after the preamble.
 
-    One line, ``pk-admin-secret/1 <base64>``: the wrapper pipes the file or
-    standard input through ``head -c`` (the page's limit plus one byte) and
-    ``base64``, so the key is never an argument, a variable or a file. A
+    One line, ``<tag> <base64>``: the wrapper pipes the file or standard
+    input through ``head -c`` (the page's limit plus one byte) and
+    ``base64``, so the value is never an argument, a variable or a file. A
     missing, overlong or malformed line is a usage error (exit 2) that names
-    no part of it. Returns the decoded bytes; ``key_text`` checks their size
-    and encoding. Nothing of the line is logged or kept.
+    no part of it. ``size`` is the page's limit in bytes (by default an
+    integration key's, 128 KiB). Returns the decoded bytes; the caller
+    checks their size and encoding. Nothing of the line is logged or kept.
     """
     import base64
     import binascii
 
     from .accounts.key_files import MAX_FILE_BYTES
 
-    prefix = f"{SECRET_TAG} ".encode("ascii")
+    prefix = f"{tag} ".encode("ascii")
+    size = MAX_FILE_BYTES if size is None else size
     # Base64 of one byte over the limit, the most the wrapper ever sends.
-    limit = len(prefix) + 4 * -(-(MAX_FILE_BYTES + 1) // 3) + 1
+    limit = len(prefix) + 4 * -(-(size + 1) // 3) + 1
     raw = stream.readline(limit + 1)
     if len(raw) > limit or not raw.endswith(b"\n") or not raw.startswith(prefix):
-        raise UsageError("The key line is missing or malformed.")
+        raise UsageError("The line after the preamble is missing or malformed.")
     try:
         return base64.b64decode(raw[len(prefix) : -1], validate=True)
     except (binascii.Error, ValueError):
-        raise UsageError("The key line is malformed.") from None
+        raise UsageError("The line after the preamble is malformed.") from None
 
 
 def integration_key_replace(args, preamble, runtime, context):
@@ -1591,6 +1597,56 @@ def integration_key_replace(args, preamble, runtime, context):
         )
     finally:
         del key
+
+
+def integration_backup_key_challenge(args, preamble, runtime, context):
+    """Check a new backup public key and seal a proof code to it (PR 10).
+
+    The role first (#1339), so Staff is denied before the key line is read.
+    The host wrapper's ``--public-key-file`` sends the key after the
+    preamble; it is never an argument.
+    """
+    from .admin_backup_key import FIELD_LIMIT, challenge, line_text
+
+    _role_first(context, runtime)
+    raw = read_secret(context["stdin"], tag=PUBLIC_KEY_TAG, size=FIELD_LIMIT)
+    return challenge(context["caller"], runtime, line_text(raw, "public_key"))
+
+
+def integration_backup_key_preview(args, preamble, runtime, context):
+    """Check the code backup-prove printed and review the key change (PR 10).
+
+    The role first (#1339); the code comes from the host wrapper's
+    ``--code-file`` or ``--code-stdin`` after the preamble.
+    """
+    from .admin_backup_key import FIELD_LIMIT, line_text, preview
+
+    _role_first(context, runtime)
+    raw = read_secret(context["stdin"], tag=PROOF_TAG, size=FIELD_LIMIT)
+    return preview(
+        context["caller"],
+        runtime,
+        intent=args.intent,
+        code=line_text(raw, "code"),
+    )
+
+
+def integration_backup_key_confirm(args, preamble, runtime, context):
+    """Confirm a reviewed backup encryption key change (PR 10).
+
+    The page's Confirm needs a recent sign-in, so this always prompts,
+    naming the old and new fingerprints as the page's review shows them,
+    after checking the Administrator role and the token (signature, expiry,
+    owner and settings version), and before any transaction.
+    """
+    from .admin_backup_key import confirm as confirm_key
+    from .admin_backup_key import prompt_lines
+    from .admin_changes import TOKEN_LIMIT
+
+    _role_first(context, runtime)
+    token = _input(args.token, context, TOKEN_LIMIT)
+    confirm(context, prompt_lines(context["caller"], runtime, token))
+    return confirm_key(context["caller"], runtime, token=token, context=context)
 
 
 def parish_show(args, preamble, runtime, context):
@@ -3516,6 +3572,43 @@ def _integration_key_replace_options(parser):
         required=True,
         help="read the key from the line after the preamble, which the host "
         "wrapper's --secret-file PATH or --secret-stdin sends",
+    )
+
+
+def _integration_backup_key_challenge_options(parser):
+    """Options of ``integration backup-key challenge``: the key's line."""
+    parser.add_argument(
+        "--public-key-stdin",
+        action="store_true",
+        required=True,
+        help="read the new public key from the line after the preamble, which "
+        "the host wrapper's --public-key-file PATH sends",
+    )
+
+
+def _integration_backup_key_preview_options(parser):
+    """Options of ``integration backup-key preview``: the intent and code."""
+    parser.add_argument(
+        "--intent",
+        required=True,
+        help="the intent integration backup-key challenge printed",
+    )
+    parser.add_argument(
+        "--code-stdin",
+        action="store_true",
+        required=True,
+        help="read the code from the line after the preamble, which the host "
+        "wrapper's --code-file PATH or --code-stdin sends",
+    )
+
+
+def _integration_backup_key_confirm_options(parser):
+    """Options of ``integration backup-key confirm``: the token."""
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from integration backup-key preview, or - for "
+        "standard input (needs --yes)",
     )
 
 
@@ -5528,8 +5621,17 @@ def _integration_specs():
     confirmation fresh-gated and prompting, as ``integration confirm``.
     ``integration key replace`` is a settings page's Save with a new key
     (full scope, fresh-gated and prompting); the host wrapper sends the key
-    after the preamble, never as an argument.
+    after the preamble, never as an argument. ``integration backup-key
+    challenge``, ``preview`` and ``confirm`` are the Backup encryption key
+    page's steps (``admin_backup_key``): full scope; the first two record
+    nothing and take the public key or the proof code from the wrapper
+    after the preamble; the confirmation is fresh-gated and prompting.
     """
+    from .admin_backup_key import (
+        BackupKeyChallenge,
+        BackupKeyConfirm,
+        BackupKeyPreview,
+    )
     from .admin_integration_actions import BackupProbe, KeyDismissal
     from .admin_integration_changes import IntegrationConfirm, IntegrationPreview
     from .admin_integration_keys import (
@@ -5682,6 +5784,40 @@ def _integration_specs():
             fresh_gated=True,
             prompts=True,
             expected_version=True,
+        ),
+        CommandSpec(
+            "integration backup-key challenge",
+            "Check a new backup public key and seal a proof code to it.",
+            integration_backup_key_challenge,
+            "full",
+            False,
+            BackupKeyChallenge.field_names(),
+            10,
+            options=(_integration_backup_key_challenge_options,),
+            audit_event=None,
+        ),
+        CommandSpec(
+            "integration backup-key preview",
+            "Check the proof code and review the backup key change.",
+            integration_backup_key_preview,
+            "full",
+            False,
+            BackupKeyPreview.field_names(),
+            10,
+            options=(_integration_backup_key_preview_options,),
+            audit_event=None,
+        ),
+        CommandSpec(
+            "integration backup-key confirm",
+            "Replace the backup encryption key with the proved new key.",
+            integration_backup_key_confirm,
+            "full",
+            True,
+            BackupKeyConfirm.field_names(),
+            10,
+            options=(_integration_backup_key_confirm_options,),
+            fresh_gated=True,
+            prompts=True,
         ),
     )
 
