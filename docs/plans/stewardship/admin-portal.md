@@ -207,6 +207,40 @@ slices of #952 are tracked on that issue.
 5. Test Staff view-only behavior, Admin-only API publication, stale plans,
    subset sessions, and every outcome.
 
+The [Publish to ParishSoft](../../specs/stewardship/reports/spec.md#publish-to-parishsoft)
+page ([#528](https://github.com/epiphany40223/parishkit/issues/528)) is
+delivered in these slices, each its own pull request with publication left
+switched off:
+
+1. **Already in ParishSoft at the check** (forward migration 0111, the next
+   free number, reserved here): the derived-proposal guard's worker branch
+   for `pending|failed → resolved_upstream` backed by a Production-mode
+   plan's `already_in_parishsoft` field row, the confirmation guard
+   checking such rows at their next version, the preflight marking them,
+   and `matches_confirmed` leaving out exactly the rows this check marked
+   (the
+   [data workflow](../../specs/stewardship/data/spec.md#review-and-publication),
+   step 4). Its PostgreSQL tests include the guard's same-transaction
+   check (the plan row's `xmin` or `transaction_timestamp()`), refusing a
+   plan committed earlier, and a test against the old guard definitions.
+2. **The page, read and check**: the Census changes link (unavailable while
+   switched off), the page's off and Testing states, Check ParishSoft with
+   its in-place status, the plan table and counts, and
+   `census_publication_viewed`.
+3. **Confirm and run**: Publish in the review dialog with the fresh sign-in
+   step-up, the run's in-place status and per-Member outcomes, Run again,
+   the final full refresh, the refusal codes, the newest-plan check shared
+   with the command line, and the publication audit types moved into the
+   ParishSoft refreshes group, renamed "ParishSoft refreshes and
+   publishing" ([activity groups](../../specs/stewardship/admin-portal/spec.md#activity-groups));
+   the rename updates every test that names the old label.
+4. **Command-line parity**: `pk-admin census publish-check`,
+   `publish-plan`, `publish-confirm` and `publish-rerun`.
+
+Turning publication on is not a slice: it follows the human `--send` smoke
+evidence on #528, a reviewed change replacing the gateway's
+`read_unconfirmed`, and the Administrator's decision.
+
 ### ADM-10: Exceptional campaign purge web workflow
 
 1. Build `/admin/operations/purge/` eligibility selection and durable request
