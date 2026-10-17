@@ -514,9 +514,10 @@ never scrolls to show it (Administrator, pk-local review of
   Off-site backups' Test access posts in place as well: its status line
   is swapped in and watched while the check runs, focus stays on Test
   access, and the settled check re-reads that line in place, so a folder
-  link typed but not saved is kept. Save in the same form is marked
-  `data-in-place-native` and submits natively; the Integrations Save and
-  Remove forms stay ordinary forms until they move to the review dialog
+  link typed but not saved is kept. Save in the same form opens the
+  [review dialog](#review-dialog), and Test access is marked
+  `data-review-skip`, so it is no Review; the integration settings form's
+  region is `data-in-place-own`, so only its own Review's Apply redraws it
   ([#750](https://github.com/epiphany40223/parishkit/issues/750)). One
   request is in flight at a time: a newer choice cancels an older
   read, but a POST that saves a change is never cancelled, and other
@@ -1212,9 +1213,14 @@ the campaign wizard in #1404 PR 4).
 - **Preparing the review.** Review changes posts the form without a page
   load, sent as a native submit would send it: multipart when the form's
   enctype is `multipart/form-data` (an upload editor's file), otherwise
-  URL-encoded. Until the answer arrives the form is inert and marked busy, and
-  Review changes says it is working, so nothing can be edited while the
-  review is being prepared.
+  URL-encoded. A form's other submit button marked `data-review-skip`
+  (Off-site backups' Test access) is no Review: it takes the form's other
+  way. A form marked `data-review-native="<field>"` submits natively,
+  without the dialog, while that field holds a value: an integration's
+  pasted new key, whose slow install is followed on the page (a recorded
+  exception, below). Until the answer arrives the form is inert and marked
+  busy, and Review changes says it is working, so nothing can be edited
+  while the review is being prepared.
 - **Field errors stay on the form.** A Review refused for the values in the
   form (a required field, a value out of range) does not open the dialog: the
   form shows its error summary and marks each field, as the
@@ -1301,7 +1307,10 @@ the campaign wizard in #1404 PR 4).
 - **After Apply.** On a page that stays (a settings page, a list editor, a
   table's bulk action), every region of the page is redrawn in place from
   the page's own address at the version the change made, with no reload and
-  no jump to the top. A New or Edit page (New user, New scheduled email)
+  no jump to the top. That includes the region holding the form that opened
+  the dialog even when it is marked `data-in-place-own` (so other in-place
+  controls on the page never redraw it): the Apply is that form's own
+  answer. A New or Edit page (New user, New scheduled email)
   returns instead to the table page it was opened from (Users, Dates and
   mail schedules), as [flows end where the reader
   started](#navigation-rules) says. A Review that the
@@ -1358,7 +1367,8 @@ Recorded exceptions (Administrator decision, 2026-10-11):
   wizard](../admin-portal/spec.md#bootstrap-and-first-admin-wizard)).
 - **Integrations' slow key install** shows its status inside the
   Integrations page while the key is installed, not in a dialog or on a
-  second page ([#456](https://github.com/epiphany40223/parishkit/issues/456)).
+  second page ([#456](https://github.com/epiphany40223/parishkit/issues/456)):
+  Save with a new key pasted submits natively (`data-review-native`).
   Integrations' other changes use the dialog.
 
 Operational actions that are not editors (going live, Confirm Production,
@@ -1381,9 +1391,13 @@ user and No-reminders WorkGroup are confirmations under #1356, and so are a
 one-time New scheduled email, Import selected with nobody skipped and
 Campaign images' Remove this image. Edit user, Share options, a small
 Campaign settings change and Parish settings are compact reviews under the
-same issue, and an Integration settings edit becomes one when #750 reaches
-it.
-The in-place review panel of #532 is retired
+same issue. The
+[integration settings pages](../admin-portal/spec.md#parish-and-integration-configuration)
+use the dialog too (#750): an ordinary settings edit is a compact review, a
+refresh schedule change keeps its full review, and setting up Off-site
+backups by its folder, removing Slack and turning off off-site copies are
+confirmations; the Backup encryption key change still uses its separate
+Review page. The in-place review panel of #532 is retired
 ([#1429](https://github.com/epiphany40223/parishkit/issues/1429),
 [in-place controls](#in-place-controls)); the other editors use separate
 Review and Change status pages.
