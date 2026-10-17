@@ -302,10 +302,12 @@ class ExportRequest(ImmutableRecord):
             models.UniqueConstraint(
                 fields=("requester_id", "request_key"), name="export_request_replay"
             ),
+            # A participation or archive export uses a fact generation until
+            # it ends; its discard then clears the link (#1398, migration
+            # 0109), and the request guard requires one on every new request.
             models.CheckConstraint(
                 condition=models.Q(
                     report="participation",
-                    fact_set__isnull=False,
                     information_snapshot__isnull=True,
                     ministry_snapshot__isnull=True,
                     directory_snapshot__isnull=True,
@@ -408,7 +410,6 @@ class ExportRequest(ImmutableRecord):
                 # request's pins, with no capture (migration 0084, #1018).
                 | models.Q(
                     report="campaign_archive",
-                    fact_set__isnull=False,
                     information_snapshot__isnull=True,
                     directory_snapshot__isnull=True,
                     ministry_snapshot__isnull=True,
@@ -555,5 +556,43 @@ class ExportArtifactCleanup(ImmutableRecord):
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(fence__gt=0), name="export_cleanup_positive_fence"
+            ),
+        ]
+
+
+class ExportDiscard(ImmutableRecord):
+    """An ended export's saved data, discarded once (#1398, frozen 0109).
+
+    Exports are point-in-time (operations spec, "Point-in-time exports"):
+    when an export ends, its capture's document is cleared and its fact and
+    source pins are released. This row is the durable record that it was
+    done, naming one report export or one latest-data export, how many
+    captures were cleared and pins released, and whether the deploy-time
+    sweep did it. Only the SQL discard functions write it.
+    """
+
+    request = models.OneToOneField(
+        ExportRequest, null=True, blank=True, on_delete=models.PROTECT
+    )
+    exact_request = models.OneToOneField(
+        "stewardship_reports.ExactExportRequest",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+    )
+    documents = models.PositiveSmallIntegerField()
+    pins = models.PositiveIntegerField()
+    by_deploy = models.BooleanField()
+
+    class Meta:
+        db_table = "stewardship_export_discard"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(request__isnull=False, exact_request__isnull=True)
+                | models.Q(request__isnull=True, exact_request__isnull=False),
+                name="export_discard_one_request",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(documents__lte=1), name="export_discard_documents"
             ),
         ]

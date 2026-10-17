@@ -39,3 +39,21 @@ def retry_end(failed_at):
     """When a failed export, whose latest attempt failed at ``failed_at``,
     stops offering Retry."""
     return failed_at + window()
+
+
+def apply_to_database(cursor):
+    """Tell this connection's SQL the window (frozen migration 0109).
+
+    The database cannot read Django settings, so the SQL that decides when
+    an export has ended (file cleanup's ``stewardship_export_disposable_v1``,
+    the discard functions) reads the custom setting
+    ``stewardship.export_window_minutes``. It is set for the session, so the
+    cleanup insert trigger that runs later on the same connection sees it
+    too. Without it SQL uses the longest window, 240 minutes, so a missed
+    call only ever discards late.
+    """
+    minutes = int(window().total_seconds() // 60)
+    cursor.execute(
+        "SELECT set_config('stewardship.export_window_minutes', %s, false)",
+        [str(minutes)],
+    )

@@ -1378,12 +1378,15 @@ and are point-in-time already.
   a value below 15 or above 240, since the plaintext exception below relies
   on the window staying short.
 - **When an export ends,** the worker's export cleanup deletes its file, if
-  it has one, and its saved data: the capture of what the request read
-  (which can hold private contact or giving detail) is discarded, and its
-  fact-generation and source-snapshot pins are released. An export ends at
-  the first of:
+  it has one, and the scheduler, within a minute, its saved data: the
+  capture of what the request read
+  (which can hold private contact or giving detail) is discarded, its
+  fact-generation and source-snapshot pins are released, and the request no
+  longer names the fact generation it read, so that generation can be
+  compacted. An export ends at the first of:
   - its download window ending, for a published file;
-  - its cancellation, for a cancelled request;
+  - its cancellation, for a cancelled request (its saved data goes once its
+    work has stopped, so a render at its safe point never loses its capture);
   - its latest failed attempt's time plus the current setting, for a failed
     request that has not been retried by then. Retry is offered only until then, so a
     failed request that can still be retried keeps its saved data, and one
@@ -1431,11 +1434,6 @@ Owner-only storage under [runtime storage](#runtime-storage), authenticated
 downloads, and the short window are the selected controls. Export encryption
 or a shorter code-specific window is not required. This exception does not
 change encrypted backup or database-field encryption requirements.
-
-This rule replaces the earlier seven-day retention, recent-export lists and
-Regenerate;
-[#1398](https://github.com/epiphany40223/parishkit/issues/1398) brings the
-code to it in stages.
 
 ## Observability and health
 

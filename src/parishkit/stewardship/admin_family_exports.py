@@ -129,7 +129,7 @@ def _create(caller, service, *, principal, action, parse, create, request_key, c
             ).exists()
             job = create(actor, campaign_id, parsed)
             if not repeat:
-                _command_event(caller, actor, action)
+                _command_event(caller, actor, action, job)
                 written.append(True)
             document = _status_document(service, actor, job.pk)
         return ExportChange(

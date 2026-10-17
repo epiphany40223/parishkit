@@ -159,7 +159,14 @@ def test_download_queues_renders_and_downloads_the_partial_archive(
             event__event_type="campaign_archive_exported"
         ).values_list("context", flat=True)
     )
-    assert contexts == [{"outcome": "started", "count": 1}]
+    assert contexts == [
+        {
+            "outcome": "started",
+            "count": 1,
+            "report": "campaign_archive",
+            "format": "xlsx",
+        }
+    ]
     # Exporting again the same day (there is no Regenerate, #1398) pins the
     # same fact set and day. converted_at is the request time in whole
     # seconds: let one pass.
@@ -459,8 +466,22 @@ def test_migration_check_refuses_a_missing_part():
             "ADD CONSTRAINT export_report_known"
         )
     )
+    # 0109 (#1398) relaxes the check, since an ended export's discard
+    # clears its fact_set_id, so the block runs on 0084's own declaration.
+    archive = next(
+        line
+        for line in text.splitlines()
+        if line.startswith(
+            "ALTER TABLE public.stewardship_export_request "
+            "ADD CONSTRAINT export_report_known"
+        )
+    )
     with transaction.atomic(), connection.cursor() as cursor:
-        cursor.execute(block)  # The installed schema passes.
+        cursor.execute(
+            "ALTER TABLE stewardship_export_request DROP CONSTRAINT "
+            "export_report_known; " + archive
+        )
+        cursor.execute(block)  # 0084's schema passes.
         for change in (
             "ALTER FUNCTION public.stewardship_campaign_archive_answers_v1"
             "(uuid, timestamp with time zone) SECURITY INVOKER",
@@ -475,6 +496,11 @@ def test_migration_check_refuses_a_missing_part():
                 cursor.execute(change)
                 cursor.execute(block)
         cursor.execute(block)
+        # This module runs with transaction=True, so the outer block would
+        # commit 0084's stricter constraint and leave it for later tests on
+        # the same database: a later discard (0109) could then not clear a
+        # participation or archive export's fact_set_id. Roll it back.
+        transaction.set_rollback(True)
 
 
 def test_the_checked_file_is_read_back(scenario):

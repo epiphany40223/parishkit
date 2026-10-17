@@ -121,6 +121,23 @@ END $$;
 CREATE FUNCTION public.stewardship_export_immutable_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
+    -- The one admitted change (#1398, migration 0109): once an ended
+    -- export's saved data is discarded, its discard, run as the schema
+    -- owner, clears the request's or the latest-data resolution's link to
+    -- the fact generation it used, so fact compaction may remove it.
+    IF TG_OP='UPDATE'
+       AND TG_TABLE_NAME IN ('stewardship_export_request','stewardship_exact_export_resolution')
+       AND to_jsonb(OLD)->>'fact_set_id' IS NOT NULL
+       AND to_jsonb(NEW)->'fact_set_id'='null'::jsonb
+       AND to_jsonb(NEW)-'fact_set_id'=to_jsonb(OLD)-'fact_set_id'
+       AND pg_has_role(current_user,(SELECT relowner FROM pg_class WHERE oid=TG_RELID),'USAGE')
+       AND EXISTS(SELECT 1 FROM stewardship_export_discard d
+           WHERE (TG_TABLE_NAME='stewardship_export_request'
+                  AND d.request_id=(to_jsonb(OLD)->>'id')::uuid)
+              OR (TG_TABLE_NAME='stewardship_exact_export_resolution'
+                  AND d.exact_request_id=(to_jsonb(OLD)->>'request_id')::uuid)) THEN
+        RETURN NEW;
+    END IF;
     RAISE EXCEPTION 'Export history is immutable' USING ERRCODE = '23514';
 END $$;
 
@@ -247,6 +264,10 @@ BEGIN
            WHERE active_configuration_id=NEW.configuration_id))
        OR (current_user='pk_stewardship_worker' AND NOT handoff)
        OR (NEW.report<>'ministry' AND NEW.authorization_scope<>'{"capability":"campaign_report"}'::jsonb)
+       -- A capture an ended export's discard cleared is never used again
+       -- (#1398, migration 0109): its file could not be made.
+       OR '{}'::jsonb IN (snapshot.document,directory.document,ministry.document,
+           financial.document,names.document,timeline.document,comparison.document)
        OR NOT EXISTS(SELECT 1 FROM pg_timezone_names
            WHERE name=public.stewardship_timezone_name_v1(NEW.browser_timezone))
        OR NOT EXISTS(SELECT 1 FROM stewardship_task_run t WHERE t.id=NEW.task_id
@@ -407,7 +428,9 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
         WHERE a.id=attempt_uuid
           AND NOT EXISTS(SELECT 1 FROM stewardship_export_cleanup c WHERE c.attempt_id=a.id)
           AND NOT EXISTS(SELECT 1 FROM stewardship_export_publication p
-              WHERE p.attempt_id=a.id AND p.expires_at>clock_timestamp())
+              WHERE p.attempt_id=a.id
+                -- The window's end (#1398): never later than the recorded one.
+                AND LEAST(p.expires_at,p.created_at+stewardship_export_window_v1())>clock_timestamp())
           AND NOT EXISTS(SELECT 1 FROM stewardship_task_run t
               WHERE t.id=a.run_id AND t.fence=a.fence AND t.worker_id=a.actor_id
                 AND t.state='running' AND t.lease_expires_at>clock_timestamp()))
