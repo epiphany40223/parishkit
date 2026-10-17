@@ -384,6 +384,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0110 (#558) creates nothing: it replaces the baseline financial selection
 # in place, which 0094's rerun (``CLOSURE_REPLACED``) brings back older, so
 # ``CLOSURE_REPLACED`` runs 0110's file after it.
+# 0116 (#765) creates only the pg_trgm extension and six indexes, each only
+# when missing, and replaces nothing; the swap drops none of them, so
+# nothing is registered.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",

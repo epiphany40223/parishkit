@@ -14,13 +14,33 @@ fields, and a value the page would not show (a string longer than
 matches, so searching cannot reveal what the page hides. The search text
 travels only in POST bodies, never in a link (``log_rows.LINK_FIELDS``).
 
-There is no text index. A cheap condition over the text of every stored
-value runs first; the exact per-value condition runs only on the rows it
-passes. The read path bounds the whole read by a statement timeout
-(``log_views.READ_SECONDS``); #536 records the measurements.
+A cheap condition over the text of every stored value runs first; the
+exact per-value condition runs only on the rows it passes. Trigram indexes
+(#765, frozen migration file 0116) hold exactly the ``UPPER(...)``
+expressions Django's ``icontains`` compares for the cheap condition and the
+stored type, and pattern btrees serve the other type arms (the listed types
+and the trigger prefixes), so PostgreSQL combines every arm of the text OR
+in one bitmap scan instead of reading every entry. A term without three
+letters or digits in a row has no trigram to look up (``indexable``): it
+compares expressions no index holds and reads the entries the other filters
+leave, as before. The read path bounds the whole read by a statement timeout
+(``log_views.READ_SECONDS``); #536 and #765 record the measurements.
 """
 
-from django.db.models import BooleanField, Exists, Func, OuterRef, Q, TextField, Value
+import re
+
+from django.db.models import (
+    BooleanField,
+    Exists,
+    F,
+    Func,
+    OuterRef,
+    Q,
+    Subquery,
+    TextField,
+    Value,
+)
+from django.db.models.lookups import IContains
 
 from .log_descriptions import (
     DESCRIPTIONS,
@@ -67,6 +87,19 @@ SHOWN_VALUE_SQL = """EXISTS (
 )"""
 
 
+# pg_trgm takes trigrams only from runs of letters and digits, so a pattern
+# without three of them in a row gives it nothing to look up: a trigram
+# index then reads every one of its entries, slower than the table, and
+# PostgreSQL's estimate does not know that (#765 measured 5 s against 3 s
+# without the indexes at 2,000,000 entries).
+TRIGRAM = re.compile(r"[^\W_]{3}")
+
+
+def indexable(text):
+    """Whether a trigram index can narrow a search for ``text``."""
+    return TRIGRAM.search(text) is not None
+
+
 def like_pattern(text):
     """An ILIKE pattern finding ``text`` literally anywhere in a value."""
     escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -86,6 +119,18 @@ class ContextValues(Func):
 
     def __init__(self, column, path):
         super().__init__(column, Value(path))
+
+
+class Unindexed(Func):
+    """``expression || ''``: the same text, as an expression no index holds.
+
+    A search the trigram indexes cannot narrow (``indexable``) compares this
+    instead, so PostgreSQL keeps the plan it used before the indexes (#765)
+    while every row matches exactly as it would otherwise.
+    """
+
+    template = "(%(expressions)s || '')"
+    output_field = TextField()
 
 
 class ShownValueContains(Func):
@@ -110,6 +155,34 @@ class ShownValueContains(Func):
             DETAIL_LIMIT,
             sorted(DETAIL_FIELDS),
             like_pattern(self.text),
+        )
+
+
+class AmongSubquery(Func):
+    """Whether ``column`` is one of the values an uncorrelated subquery lists.
+
+    Compiled as ``column = ANY(ARRAY(subquery))``. PostgreSQL runs the
+    subquery once, as an InitPlan, and the comparison is then an ordinary
+    array condition that an index on ``column`` can serve, so it can join
+    the other arms of an OR in one bitmap scan (#765). ``IN (subquery)`` or
+    a correlated ``EXISTS`` inside an OR cannot: each becomes a SubPlan that
+    is checked against every row the rest of the query reads.
+    """
+
+    conditional = True
+    output_field = BooleanField()
+
+    def __init__(self, column, queryset):
+        super().__init__(F(column), Subquery(queryset))
+
+    def as_sql(self, compiler, connection, **extra_context):
+        """Compile the column and the parenthesised subquery around ANY(ARRAY)."""
+        column, subquery = self.get_source_expressions()
+        column_sql, column_params = compiler.compile(column)
+        subquery_sql, subquery_params = compiler.compile(subquery)
+        return (
+            f"{column_sql} = ANY(ARRAY{subquery_sql})",
+            (*column_params, *subquery_params),
         )
 
 
@@ -141,7 +214,10 @@ def type_condition(text, *, type_column, outcomes=False):
     """
     types, prefixes = described_types(text)
     special = OUTCOME_DESCRIPTIONS if outcomes else {}
-    matched = Q(**{f"{type_column}__icontains": text})
+    if indexable(text):
+        matched = Q(**{f"{type_column}__icontains": text})
+    else:
+        matched = Q(IContains(Unindexed(F(type_column)), text))
     plain = types - {event for event, _outcome in special}
     if plain:
         matched |= Q(**{f"{type_column}__in": sorted(plain)})
@@ -179,9 +255,14 @@ def detail_condition(text):
     return Q(every_value__icontains=text) & exact
 
 
-def with_every_value(rows):
-    """``rows`` with the text of its ``context`` column's values as an alias."""
-    return rows.alias(every_value=ContextValues("context", EVERY_VALUE))
+def with_every_value(rows, text):
+    """``rows`` with the text of its ``context`` column's values as an alias.
+
+    It is the indexed expression only when a trigram index can narrow a
+    search for ``text`` (``indexable``).
+    """
+    values = ContextValues("context", EVERY_VALUE)
+    return rows.alias(every_value=values if indexable(text) else Unindexed(values))
 
 
 def ministry_condition(duid):
@@ -203,26 +284,35 @@ def narrowed(rows, query, *, type_column, contexts=None):
     ``type_column`` names the source's type (``event`` or ``event_type``).
     An operational entry holds its own ``context`` (``contexts`` is None).
     An audit event's context is a separate row, which some SQL triggers never
-    write, so ``contexts`` is that model's queryset and the detail is matched
-    through an EXISTS correlated on its ``event``: a join would drop an event
-    without context even when its type matches. The subject filter is
+    write, so ``contexts`` is that model's queryset: a join would drop an
+    event without context even when its type matches. The subject filter is
     audit-only and applied by the caller.
+
+    The audit text's detail arm sits in an OR with the type arms. When the
+    indexes can narrow the search, it lists the matching contexts' events
+    once (``AmongSubquery``), so the whole OR is one bitmap scan (#765).
+    Otherwise it stays an EXISTS correlated on the context's ``event``,
+    which PostgreSQL hashes: a scan with ``= ANY(array)`` as a filter would
+    compare every row with every listed event (#765 measured 15 s). The
+    Ministry filter stands alone, so its EXISTS becomes a semi-join.
     """
-
-    def held(condition):
-        """``condition`` on a context, as a condition on this source's rows."""
-        if contexts is None:
-            return condition
-        source = with_every_value(contexts) if query.text else contexts
-        return Exists(source.filter(condition, event=OuterRef("pk")))
-
     if query.text:
+        detail = detail_condition(query.text)
         if contexts is None:
-            rows = with_every_value(rows)
+            rows = with_every_value(rows, query.text)
+        else:
+            matched = with_every_value(contexts, query.text).filter(detail)
+            if indexable(query.text):
+                detail = Q(AmongSubquery("pk", matched.values("event")))
+            else:
+                detail = Exists(matched.filter(event=OuterRef("pk")))
         typed = type_condition(
             query.text, type_column=type_column, outcomes=contexts is None
         )
-        rows = rows.filter(typed | held(detail_condition(query.text)))
+        rows = rows.filter(typed | detail)
     if query.ministry:
-        rows = rows.filter(held(ministry_condition(int(query.ministry))))
+        condition = ministry_condition(int(query.ministry))
+        if contexts is not None:
+            condition = Exists(contexts.filter(condition, event=OuterRef("pk")))
+        rows = rows.filter(condition)
     return rows
