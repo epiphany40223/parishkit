@@ -309,8 +309,16 @@ def _field(request, name, limit=MAX_FIELD):
     return value
 
 
-def _review(request, service, configuration, actor, text):
-    """Show the proved change for confirmation: old and new key IDs."""
+def review_change(service, configuration, actor, text):
+    """The review of a proved key: ``(before, after, token)``.
+
+    ``before`` is the fingerprint of the key in use (None when it is not
+    known yet), ``after`` the proved key's and ``token`` the signed preview
+    the confirmation takes. The resulting configuration is built first, so
+    a change the configuration refuses is refused here. The page's review
+    and ``pk-admin integration backup-key preview`` both call this, so they
+    cannot drift.
+    """
     record = configured_key(configuration)
     patch = _patch(configuration, record, text)
     base = service.store.active()
@@ -319,7 +327,19 @@ def _review(request, service, configuration, actor, text):
     from .request_patch import build_candidate
 
     build_candidate(base, patch, candidate_id=uuid4())
-    current = key_status(configuration)
+    token = sign_preview(
+        actor=actor, configuration=configuration, patch=patch, salt=SALT
+    )
+    return (
+        key_status(configuration).fingerprint,
+        parse_public_key(text).fingerprint,
+        token,
+    )
+
+
+def _review(request, service, configuration, actor, text):
+    """Show the proved change for confirmation: old and new key IDs."""
+    before, after, token = review_change(service, configuration, actor, text)
     admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
@@ -332,13 +352,11 @@ def _review(request, service, configuration, actor, text):
             "changes": [
                 {
                     "label": _("Key fingerprint"),
-                    "before": current.fingerprint or _("Not known yet"),
-                    "after": parse_public_key(text).fingerprint,
+                    "before": before or _("Not known yet"),
+                    "after": after,
                 }
             ],
-            "preview": sign_preview(
-                actor=actor, configuration=configuration, patch=patch, salt=SALT
-            ),
+            "preview": token,
         },
     )
 
