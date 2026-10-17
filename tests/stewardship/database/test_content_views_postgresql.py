@@ -852,7 +852,7 @@ def test_catalog_lists_who_sends_each_email_and_offers_delete_when_unused(
     def row(identifier):
         """The table row whose Edit opens ``identifier``'s editor."""
         at = page.index(f"/email/initial/{identifier}/")
-        return page[page.rindex("<tr>", 0, at) : page.index("</tr>", at)]
+        return page[page.rindex("<tr", 0, at) : page.index("</tr>", at)]
 
     rows = {identifier: row(identifier) for identifier in (used["id"], spare["id"])}
     assert f"({used['id'][:8]})" in page and f"({spare['id'][:8]})" in page
