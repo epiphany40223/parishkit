@@ -160,9 +160,12 @@ def url_input():
 
     Not ``type="url"``: the browser's own URL check refuses a value padded
     with a Unicode space, which the server strips and admits, so the rule's
-    pattern (``trimmed``) is the one check both sides share.
+    pattern (``trimmed``) is the one check both sides share. Autocapitalize
+    and spellcheck are off, as ``type="url"`` would imply on phones.
     """
-    return forms.TextInput(attrs={"inputmode": "url"})
+    return forms.TextInput(
+        attrs={"inputmode": "url", "autocapitalize": "none", "spellcheck": "false"}
+    )
 
 
 class ParishForm(AdminForm):
