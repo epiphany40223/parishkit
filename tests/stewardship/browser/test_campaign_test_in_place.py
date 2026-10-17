@@ -135,9 +135,11 @@ def test_first_settled_test_shows_continue_in_place(page, component_origin):
     # The step now counts as completed (one more than before).
     expect(count).not_to_have_text(before)
     # Continue joins Back in the row: the row keeps its height and Back
-    # stays where it was in it.
+    # stays where it was in it. Within a pixel: Firefox may report the same
+    # row at 44 one time and 44.00003 the next (train t17c).
     row = actions.bounding_box()
-    assert (back.bounding_box()["y"] - row["y"], row["height"]) == spot
+    now = (back.bounding_box()["y"] - row["y"], row["height"])
+    assert now == pytest.approx(spot, abs=1)
     assert posts == [component_origin + WIZARD]
     assert page.evaluate(MARKED) == "kept"
 
