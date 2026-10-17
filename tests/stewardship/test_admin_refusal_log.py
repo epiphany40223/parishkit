@@ -39,6 +39,7 @@ from parishkit.stewardship.web.refusals import (
     mark_not_input,
     mark_recorded,
     reason_of,
+    send_time_passed,
     stale_page,
     unexpected_fields,
     with_codes,
@@ -86,6 +87,15 @@ def answer(response, request=None):
         (stale_page(), "stale_page", ["stale_version"], 409, "INFO", None),
         (unexpected_fields(), "unexpected_fields", ["invalid"], 400, "INFO", None),
         (expired_preview(), "expired_preview", ["stale_version"], 409, "INFO", None),
+        # A reviewed send time that passed before Apply (#1464).
+        (
+            send_time_passed(),
+            "send_time_passed",
+            ["stale_version"],
+            409,
+            "INFO",
+            None,
+        ),
         (signing.BadSignature("x"), "bad_signature", ["invalid"], 400, "INFO", None),
         (
             FreshAuthenticationRequired("x"),
