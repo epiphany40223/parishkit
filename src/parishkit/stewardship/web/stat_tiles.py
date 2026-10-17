@@ -11,6 +11,8 @@ rendering.
 from dataclasses import dataclass
 from decimal import Decimal
 
+from django.utils.text import slugify
+
 from parishkit.stewardship.campaigns.domain import Money, Percentage
 
 from .presentation import number, percentage, usd
@@ -79,3 +81,19 @@ def tile(key, label, value, *, unknown_reason="", details=(), trend="", share=No
         trend=str(trend),
         bar=bar,
     )
+
+
+def row_name(labelledby="", label="", tiles_id=""):
+    """The accessible name and id prefix of a row of tiles, or an error.
+
+    A row is a list and must be named: ``labelledby`` is the id of the panel
+    heading that names it, else ``label`` is its text. A row with neither
+    would render an unnamed list, so it raises. The id prefix keeps each
+    tile's toggletip id unique when a page draws more than one row: it is
+    ``tiles_id`` when given, else the heading id, else the label's slug.
+    Returns ``(attribute, prefix)``.
+    """
+    if not labelledby and not label:
+        raise ValueError("A row of stat tiles needs tiles_labelledby or tiles_label.")
+    attribute = ("aria-labelledby", labelledby) if labelledby else ("aria-label", label)
+    return attribute, str(tiles_id or labelledby or slugify(str(label)))

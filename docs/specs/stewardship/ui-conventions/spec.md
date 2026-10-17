@@ -2390,9 +2390,12 @@ two ways of reading to a screen reader. **Precedent.**
   tile's value. A tile that states a share prints the count and what it
   is compared with as well as the percentage.
 - **Unknown values.** A value that is not known reads "—" with a
-  [toggletip](#accessibility-and-client-behavior) saying why, in plain
-  language. It never reads zero, and never a word such as "Unavailable" in
-  the value's place. The helper refuses an unknown value without a reason.
+  [toggletip](#page-help) saying why, in plain language. The toggletip's
+  button is described by its reason, so a screen reader announces it when
+  the button gets focus. A value never reads zero, and never a word such
+  as "Unavailable" in the value's place. The helper refuses an unknown
+  value without a reason, and the include refuses a row with no
+  accessible name.
 - **Words.** The label is short plain language naming what is counted.
   An explanation line says what the value is compared with or what it
   leaves out; it never repeats a figure another tile or the page already

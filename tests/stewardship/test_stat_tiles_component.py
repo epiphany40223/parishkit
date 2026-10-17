@@ -22,11 +22,12 @@ TEMPLATES = (
     Path(__file__).parents[2]
     / "src/parishkit/stewardship/accounts/templates/stewardship"
 )
-COMPONENT = "components/stat-tiles.html"
 # What hand-drawn stat-tile markup looks like: the tile classes, or the
 # saved daily report's comparison figures (the same figures drawn as a dl).
+# Single- or double-quoted class attributes, any of the tile's classes.
 HAND_DRAWN = re.compile(
-    r'class="[^"]*\bstat-(?:tiles?|value|label)\b|digest-comparison-figures'
+    r"""class=(["'])[^"']*\bstat-(?:tiles?|value|label|detail|bar)\b"""
+    r"|digest-comparison-figures"
 )
 # Templates that still draw stat tiles by hand, each with why. A template
 # leaves this list when it draws the include; the list may only shrink.
@@ -144,8 +145,11 @@ def test_the_include_gives_an_unknown_value_its_toggletip():
     )
     assert '<ul class="stat-tiles" aria-label="Headline figures">' in html
     assert '<span class="stat-value">— <span class="toggletip">' in html
-    assert 'aria-controls="stat-pledges-tip"' in html
-    assert '<span class="toggletip-bubble" id="stat-pledges-tip" hidden>' in html
+    assert 'aria-controls="stat-headline-figures-pledges-tip"' in html
+    assert (
+        '<span class="toggletip-bubble" id="stat-headline-figures-pledges-tip" hidden>'
+        in html
+    )
     assert "Not added up yet." in html
 
 
@@ -154,7 +158,44 @@ def test_no_new_template_draws_stat_tiles_by_hand():
     found = {
         path.relative_to(TEMPLATES).as_posix()
         for path in TEMPLATES.rglob("*.html")
-        if path.relative_to(TEMPLATES).as_posix() != COMPONENT
+        if not path.relative_to(TEMPLATES).as_posix().startswith("components/")
         and HAND_DRAWN.search(path.read_text())
     }
     assert found == STILL_HAND_DRAWN
+
+
+def test_the_include_refuses_a_row_with_no_name():
+    """An unnamed list would be silent to assistive technology."""
+    with pytest.raises(ValueError, match="tiles_labelledby or tiles_label"):
+        render([tile("a", "A", 1)])
+
+
+def test_two_rows_on_one_page_never_share_a_toggletip_id():
+    """The id prefix comes from the row, so equal keys in two rows differ."""
+    unknown = [tile("same", "Same", None, unknown_reason="Why.")]
+    first = render(unknown, tiles_labelledby="first-heading")
+    second = render(unknown, tiles_label="Second row")
+    third = render(unknown, tiles_label="Third row", tiles_id="custom")
+    ids = {
+        re.search(r'id="(stat-[^"]+)" hidden', html).group(1)
+        for html in (first, second, third)
+    }
+    assert ids == {
+        "stat-first-heading-same-tip",
+        "stat-second-row-same-tip",
+        "stat-custom-same-tip",
+    }
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        '<div class="stat-tile">',
+        "<div class='stat-tile'>",
+        '<b class="x stat-detail">',
+        "<i class='stat-bar'>",
+    ],
+)
+def test_the_guard_matches_both_quote_styles_and_every_tile_class(markup):
+    """Single quotes, and detail or bar used alone, are hand-drawn too."""
+    assert HAND_DRAWN.search(markup)
