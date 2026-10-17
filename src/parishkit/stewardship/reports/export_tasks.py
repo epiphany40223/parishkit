@@ -1,7 +1,6 @@
 """Compiled general-worker export execution with fenced immutable publication."""
 
 import os
-from datetime import timedelta
 from functools import partial
 from pathlib import Path
 
@@ -36,6 +35,7 @@ from .export_models import (
     ExportRequest,
 )
 from .export_services import TASK_TYPE, admit_campaign, authorize
+from .export_window import window
 from .models import CampaignDailyFactSet, CampaignFactPin
 from .participation import participation_csv
 
@@ -380,7 +380,9 @@ def _execute(execution, *, store, root, general=None):
                 if request.report != "participation"
                 else len(document.days)
             ),
-            expires_at=database_now() + timedelta(days=7),
+            # The point-in-time window (#1398): downloadable, as often as
+            # needed, until then; cleanup deletes the file afterwards.
+            expires_at=database_now() + window(),
             actor_id=execution.claim.worker_id,
             correlation_id=attempt.claim_event_id,
         )

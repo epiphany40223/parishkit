@@ -38,7 +38,9 @@ def test_profile_settings_name_the_admitted_profile(tmp_path):
     for profile in DeploymentProfile:
         configuration = replace(configuration_at(tmp_path), profile=profile)
         assert runtime_database.profile_settings(configuration) == {
-            "STEWARDSHIP_DEPLOYMENT_PROFILE": profile.value
+            "STEWARDSHIP_DEPLOYMENT_PROFILE": profile.value,
+            # The point-in-time export window rides along (#1398).
+            "STEWARDSHIP_EXPORT_DOWNLOAD_WINDOW_MINUTES": 60,
         }
 
 

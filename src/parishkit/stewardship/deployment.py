@@ -233,6 +233,9 @@ class DeploymentConfiguration:
     bulk_send_batch: int = 20
     local_smtp_latency_ms: int = 0
     parishsoft_publication: bool = False
+    # How long a finished export stays downloadable, and a failed one
+    # retryable (#1398; reports.export_window), in whole minutes.
+    export_download_window_minutes: int = 60
 
 
 def _mapping(value: object, keys: set[str] | frozenset[str], label: str) -> dict:
@@ -419,6 +422,7 @@ def load_deployment(
             "bulk_send_batch",
             "local_smtp_latency_ms",
             "parishsoft_publication",
+            "export_download_window_minutes",
         },
         "deployment",
     )
@@ -712,6 +716,20 @@ def load_deployment(
         publication = publication == "1"
     if type(publication) is not bool:
         raise ConfigError("parishsoft_publication must be true or false (1 or 0)")
+    from .reports.export_window import (
+        DEFAULT_MINUTES,
+        MAXIMUM_MINUTES,
+        MINIMUM_MINUTES,
+    )
+
+    window = select("EXPORT_DOWNLOAD_WINDOW_MINUTES", None)
+    if window in (None, ""):
+        window = deployment.get("export_download_window_minutes", DEFAULT_MINUTES)
+    # Short by design: the accepted plaintext storage of export files relies
+    # on it (operations spec, "Point-in-time exports").
+    window = _integer(
+        window, "export_download_window_minutes", MINIMUM_MINUTES, MAXIMUM_MINUTES
+    )
     supplied_keys = set(explicit) | {
         key for key in env if key.startswith("PARISHKIT_STEWARDSHIP_")
     }
@@ -742,4 +760,5 @@ def load_deployment(
         batch,
         latency,
         publication,
+        window,
     )
