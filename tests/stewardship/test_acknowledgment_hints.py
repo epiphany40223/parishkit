@@ -53,7 +53,7 @@ def test_cancel_go_live_waits_for_a_reason_and_its_tick():
     """The reason and the tick each carry the hint the gate shows."""
     html = render_to_string(
         "stewardship/production-withdrawal.html",
-        {"campaign": CAMPAIGN, "available": True, "fresh": True},
+        {"campaign": CAMPAIGN, "available": True},
     )
     form = tag(html, r'<form method="post" data-require-complete>')
     assert form
@@ -107,7 +107,6 @@ def confirmation_page():
             "transition": Value(pk=uuid4()),
             "state": Value(target_state="active", observed_at=NOW),
             "confirmation_token": "synthetic",
-            "fresh": True,
         },
     )
 

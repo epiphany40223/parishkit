@@ -636,7 +636,6 @@ def test_cancel_go_live_blocking_message_links_the_pages_it_names():
             "admin_chrome": None,
             "campaign": campaign,
             "available": True,
-            "fresh": True,
             "preview": {
                 "reason": "Fix a date",
                 "inventory": inventory | {"blocking": 1},
