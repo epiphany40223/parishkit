@@ -490,6 +490,44 @@ def render_daily_digest(document, *, public_origin, charts=True):
         )
 
 
+def day_table_html(headings, rows, plain):
+    """The "Day by day" table, two rows per day so it fits a phone (#1559).
+
+    Four columns (date, first submissions, participation, pledges) need about
+    380px, wider than a 320px phone leaves inside the email's card, and mail
+    programs cannot scroll a table. So each day's date heads its own row
+    across the table, a row-group heading for screen readers, and its values
+    follow in one row under the value columns' headings. ``plain`` escapes a
+    text node. The first value column has no left padding, so the table
+    starts flush with its caption.
+    """
+    values = headings[1:]
+    span = len(values)
+
+    def cells(tag, items, style, extra=""):
+        """One row of right-aligned cells; only the later ones are padded."""
+        return "".join(
+            f'<{tag}{extra} align="right"{_style(style if index else style + "-lead")}>'
+            f"{plain(item)}</{tag}>"
+            for index, item in enumerate(items)
+        )
+
+    html = (
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'border="0"{_style("table")}><caption{_style("table-caption")}>'
+        "Day by day</caption><thead><tr>"
+        + cells("th", values, "th", ' scope="col"')
+        + "</tr></thead>"
+    )
+    for day, *figures in rows:
+        html += (
+            f'<tbody><tr><th scope="rowgroup" colspan="{span}" align="left"'
+            f"{_style('day')}>{plain(day)}</th></tr>"
+            f"<tr>{cells('td', figures, 'td')}</tr></tbody>"
+        )
+    return html + "</table>"
+
+
 def _render_daily_digest(document, *, public_origin, charts=True):
     """Compile the report body; the caller has pinned the parish date format.
 
@@ -570,28 +608,7 @@ def _render_daily_digest(document, *, public_origin, charts=True):
         f'width="{EMAIL_CHART_WIDTH}"'
         f"{_style('image')}>"
     )
-    html += (
-        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'border="0"{_style("table")}><caption{_style("table-caption")}>'
-        "Day by day</caption><thead><tr>"
-    )
-    html += "".join(
-        f'<th scope="col" align="{"left" if index == 0 else "right"}"'
-        f"{_style('th')}>{plain(label)}</th>"
-        for index, label in enumerate(headings)
-    )
-    html += "</tr></thead><tbody>"
-    html += "".join(
-        "<tr>"
-        + "".join(
-            f'<td align="{"left" if index == 0 else "right"}"{_style("td")}>'
-            f"{plain(value)}</td>"
-            for index, value in enumerate(row)
-        )
-        + "</tr>"
-        for row in rows
-    )
-    html += "</tbody></table>"
+    html += day_table_html(headings, rows, plain)
     html += button(url, DASHBOARD_LABEL)
     images = ()
     if section is not None:
