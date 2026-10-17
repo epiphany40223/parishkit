@@ -355,7 +355,17 @@ def unfinished_switches(configuration):
 
 
 def save_credential(
-    request, service, configuration, actor, *, target, intent, value, record, settings
+    request,
+    service,
+    configuration,
+    actor,
+    *,
+    target,
+    intent,
+    value,
+    record,
+    settings,
+    attach=None,
 ):
     """Seal ``value`` and queue its selection together with ``settings``.
 
@@ -375,8 +385,18 @@ def save_credential(
     (``admit_candidate``, #476): LOCAL takes only the mail-catcher document
     and every other profile refuses it; a Slack token is parsed the same way
     in every profile (#1399).
+
+    ``request`` is the page's request or an ``AdminCaller`` (``pk-admin
+    integration key replace``). ``attach``, if given, is called with the
+    new selection request inside its durable transaction (``record_request``),
+    so a command's own audit event commits with it.
     """
-    require_fresh(request)
+    # Checked before the key is sealed, in its own transaction: an automation
+    # caller's stand-in needs one. It records nothing (``record=False``): the
+    # gates under the intake and request locks below record the fresh gate
+    # with the action. A web caller's check is unchanged.
+    with transaction.atomic():
+        require_fresh(request, record=False)
     if target in {"google_workspace", "slack"}:
         from parishkit.stewardship.deployment import recorded_profile
 
@@ -428,6 +448,7 @@ def save_credential(
             role.value for role, names in ALLOWED_SECRETS.items() if target in names
         ),
         provider_settings=scope,
+        service=service,
     )
     values = {"credential_fingerprint": fingerprint}
     if adding:
@@ -465,6 +486,7 @@ def save_credential(
             correlation_id=current_correlation(),
             admit=admit,
             request_schema=credential_request_schema(base.document()),
+            attach=attach,
         )
     except Exception:
         cancel_secret_request(
