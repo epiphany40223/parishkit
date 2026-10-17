@@ -349,6 +349,39 @@ class FilterPanelNode(template.Node):
 
 
 @register.simple_tag
+def whole_dollars(amount):
+    """A money cell's amount in whole dollars, its cents kept for screen readers.
+
+    Usage: ``{% whole_dollars row.annual %}`` with a ``MoneyAmount``. A
+    narrow table shows "$1,235" (ui-conventions "Table fit and row
+    height", #1544); when that rounds away cents, the rounded text is
+    hidden from screen readers and the exact "$1,234.50" is read instead,
+    so no one hears a figure the downloads do not have.
+    """
+    shown = amount.whole_display
+    if not amount.available or amount.cents % 100 == 0:
+        return shown
+    return format_html(
+        '<span aria-hidden="true">{}</span><span class="visually-hidden">{}</span>',
+        shown,
+        amount.display,
+    )
+
+
+@register.filter
+def share_lines(shares):
+    """A Financial row's share methods as the lines of its "+N" chip's tip.
+
+    Each chosen method by its label, with the Family's Other text after it
+    ("Other: Stock gift"), in the row's order (#1544).
+    """
+    return [
+        _("%(label)s: %(text)s") % share if share["text"] else share["label"]
+        for share in shares
+    ]
+
+
+@register.simple_tag
 def filter_mark(error, field, described=""):
     """A report filter field's ``aria-describedby``, and its mark if refused.
 

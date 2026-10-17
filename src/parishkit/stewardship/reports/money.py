@@ -59,6 +59,18 @@ class MoneyAmount:
         text = self.display
         return text[:-3] if self.available and self.cents % 100 == 0 else text
 
+    @property
+    def whole_display(self):
+        """Round to whole dollars, half away from zero, for a narrow table.
+
+        The Financial report's page shows its money cells this way (#1544);
+        its exports and screen-reader text keep ``display``'s cents.
+        """
+        if self.cents is None:
+            return self.display
+        dollars = (abs(self.cents) + 50) // 100
+        return f"{'-' if self.cents < 0 and dollars else ''}${dollars:,}"
+
     def document(self):
         """Expose availability separately from a safe string, never a JSON float."""
         return {"available": self.available, "amount": self.canonical}
