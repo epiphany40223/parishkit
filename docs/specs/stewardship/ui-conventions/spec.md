@@ -2186,10 +2186,24 @@ icons 3:1; where the focus ring sits on an accent surface (the checked
 Basic or Advanced segment), it is drawn in the paper colour. The
 [status indicators](#status-indicators) keep their per-state tokens in
 both. Every colour a scheme changes is a token, so the dark scheme reaches
-each rule with no per-component CSS; only shadows, print rules and the
-logo backing name a colour. An image that draws in the ink
-colour, such as the select arrow, has a dark twin. A parish logo gets a
-white backing in dark, because it was drawn for a light header.
+each rule with no per-component CSS. An image that draws in the ink
+colour, such as the select arrow, has a dark twin.
+
+An uploaded image was drawn for the light Family pages and emails, so in
+dark it gets a white backing behind its transparent parts, which keeps a
+dark logo visible and adds no size. That covers the parish logo in the
+header and every Admin preview of an uploaded image: Parish logos (the
+current logos and their review), the setup wizard's logo step, Campaign
+images (the current images and their review) and the Hosted files
+thumbnails.
+
+**No literal colours.** Outside the token declarations, the portal's
+stylesheets, scripts, templates and images name no colour: a rule reads a
+token. The only exceptions are shadows and dialog backdrops (a translucent
+dark shade that works in both schemes), print rules (print is always
+light), the white image backing above, and the select arrow and its dark
+twin (each drawn in its scheme's ink). A comment may still mention an
+issue number such as #565.
 
 **Charts.** A chart drawn on an Admin page takes the page's scheme. Its
 background, axes, gridlines, labels, titles, legend and tooltip are drawn in
@@ -2205,9 +2219,6 @@ bright bands under dark labels for large ones), so each band's label keeps
 height, so nothing on the page moves. A chart reads the scheme from
 `data-theme`, never from the device's setting, so it always agrees with the
 Appearance choice.
-
-A guard against new literal colours is a later slice of
-[#1264](https://github.com/epiphany40223/parishkit/issues/1264).
 
 **Why.** Administrators who work in a dark desktop get a portal that
 matches it, without a second stylesheet that would drift from the first.
@@ -2229,7 +2240,10 @@ first paint, reaches other tabs, and leaves Family pages and print light;
 and the switch: keyboard use, focus ring, axe in both schemes, and its
 place at phone and laptop widths. `test_chart_scheme.py` checks that every
 chart page draws its charts' text and marks in the tokens of each scheme
-and redraws them in place when the scheme changes.
+and redraws them in place when the scheme changes. `test_literal_colours.py`
+fails on a literal colour anywhere else in the portal's stylesheets, scripts'
+strings, templates' styles and static images, and on an exception that no
+longer matches anything; `test_dark_scheme.py` checks the image backings.
 **Precedent.** #732 (tokens), #1264 (the switch's place: Administrator,
 pk-local batch 24a).
 
