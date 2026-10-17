@@ -261,7 +261,7 @@ value Sent mail's send filter takes), `number`, `mode`, `cycle`,
 | `campaign_id`, `editable` | The campaign, and whether its dates may still change |
 | `version` | What a schedule change is previewed against |
 | `window` | `start_date`, `end_date`, `timezone` |
-| `schedules` | Each schedule's `id`, `kind`, `date`, `time`, `weekday`, `subject`, `template_version`, `comparison` (whether a daily digest includes Compared with past campaigns), its first resolved send times (`resolved`: `key`, `due_at`) and `more` |
+| `schedules` | Each schedule's `id`, `kind`, `date`, `time`, `weekday`, `subject`, `template_version`, `comparison` (whether a daily digest includes Compared with past campaigns), its next five send times from now (`resolved`: `key`, `due_at`; a send that has passed is never listed) and `more` |
 | `series` | Each remembered reminder series (a repeat saved with `"remember": true`): its `id`, its repeat `rule` and the `schedules` (reminder ids) it holds |
 
 `schedule show` reads the current campaign unless `--campaign UUID` names
@@ -710,7 +710,7 @@ the page and email templates (a command for those arrives later).
 | --- | --- |
 | `campaign_id`, `version` | The campaign, and the configuration version the change was made against |
 | `window` | `before` and `after` (`start_date`, `end_date`, `timezone`), and the names of the campaign values that `changed` |
-| `changes` | Each change's `id`, `operation` (`add`, `update` or `remove`), `kind`, its values and first send times `before` and `after` (as in `schedule show`; `null` when added or removed), and its `impact`: `delivered`, `cancellable`, `failed`, `blocking`, `occurrences` and `outboxes`, the page's counts |
+| `changes` | Each change's `id`, `operation` (`add`, `update` or `remove`), `kind`, its values and next five send times from now `before` and `after` (as in `schedule show`; `null` when added or removed), and its `impact`: `delivered`, `cancellable`, `failed`, `blocking`, `occurrences` and `outboxes`, the page's counts |
 | `blocking` | Sends in progress or with an uncertain result. While it is above zero, `preview` is `null`, as the page offers no **Confirm** |
 | `preview` | `token`, which `schedule confirm` takes |
 | `series` | Each reminder series the change remembers (a repeat with `"remember": true`): its new `id`, its `rule` and its reminders' ids (`schedules`); empty otherwise. A series edit lists here the new series it starts |

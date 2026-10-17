@@ -2968,10 +2968,10 @@ schedule sends only as moments in the browser's zone, never the saved campaign-l
 Each side of a schedule change (Current schedule and Proposed schedule)
 lists when it sends with the shared
 [schedule preview](../ui-conventions/spec.md#schedule-previews), in its
-compact layout, once its
+compact layout, since its
 [#1129](https://github.com/epiphany40223/parishkit/issues/1129) slice
-lands; until then each lists its first five sends from the campaign's
-start as a date key and a browser-local moment. With the component, a side
+(ADM-04 7c); before it, each listed its first five sends from the
+campaign's start as a date key and a browser-local moment. A side
 uses the count-from-now scope: its next five sends after now, each line
 naming the day in words ("Tuesday, October 20, 2026") and the
 browser-local time. A dated email lists its one send. A report email whose
@@ -2983,7 +2983,9 @@ listed under the component's paused notice, with a link to Pause and
 resume mail, which shows what resume's recovery plan sends. The
 daylight-saving sentence is shown only when a listed send is affected. The
 page takes the browser's zone with the post, as it does for typed times,
-so the server groups the sends by the browser's day. Campaign settings'
+so the server groups the sends by the browser's day; a posted zone it
+cannot use draws no list, only the component's *unavailable* line naming
+the browser's missing time zone. Campaign settings'
 end-date review, which builds the same review with no zone, lists each
 side's sends ungrouped, each as a full browser-local day and time. The
 command line's `schedule show` and `schedule preview` list the same sends
