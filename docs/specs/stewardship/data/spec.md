@@ -1160,8 +1160,9 @@ correction that are still open (`pending` or `conflict`) are re-marked
 `manual` once by a forward migration, which records one
 `census_handling_corrected` audit event with only their count. Their
 decision, edited value and execution are kept, so an ignored change stays
-ignored and every other one appears in Staff's *By hand* work as *To do*;
-every other row (queued, published, resolved, superseded or cancelled) is
+ignored and every other one appears in Staff's *By hand* work as *To do*
+(or *Conflict* if ParishSoft changed since the Family answered); every other
+row (queued, published, resolved, superseded or cancelled) is
 left as it is.
 
 A submission that marks a Member deceased and supplies a death date creates two
@@ -2048,9 +2049,16 @@ current authorization/filter snapshot.
 6. Merge approved values into the freshly fetched full payload, leaving
    unapproved fields at their current upstream values. Only `approved`
    decisions are planned. An approved proposal that reconciliation already
-   holds in `conflict` counts as a conflict until it is re-reviewed. A
-   fetched payload that lacks any field of the provider's request schema
-   blocks its entity, so a write can never clear a field that was not read.
+   holds in `conflict` counts as a conflict until it is re-reviewed. Both
+   contact PUTs are partial updates (see the
+   [handling registry](#proposed-changes)): a field left out of the body is
+   left unchanged, so a write cannot clear a field that was not read.
+   Today's planner still builds the whole record as read plus the approved
+   writes, and blocks an entity whose read lacks any request-schema field.
+   Because the API refuses `""`, a whole-record body can be refused, so
+   publication must not be switched on until the planner sends only the
+   changed fields
+   ([#1600](https://github.com/epiphany40223/parishkit/issues/1600)).
    As defence in depth for the [handling registry](#proposed-changes), a
    change the registry no longer marks API-writable, or whose value to write
    is blank, is reported *By hand* and never planned, whatever its stored

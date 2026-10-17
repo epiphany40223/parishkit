@@ -40,9 +40,12 @@ from .member_requests import REQUEST_FIELDS
 from .merge import KnownValue, MergeState, PriorChange, merge_value
 
 # The complete MemberContactUpdateRequestModel property set, pinned to the
-# recorded public schema by a test. The PUT replaces the contact record, so a
-# payload is planned only when every one of these was read: a field we did
-# not read could otherwise be cleared.
+# recorded public schema by a test. The live write test (#528) showed the
+# PUT is a partial update: a field left out is left unchanged, null is
+# ignored and "" is refused with HTTP 400. This planner still sends the whole
+# record as read plus the writes, and plans a payload only when every one of
+# these was read; a whole-record body can therefore be refused, so #1600
+# changes it to send only the changed fields before publication is enabled.
 MEMBER_CONTACT_FIELDS = (
     "cellPhone",
     "dateOfBirth",
@@ -226,7 +229,8 @@ def plan_entity(entity_kind, entity_key, rows, payload=None):
     freshly read Member contact record, keyed by request-schema field, or
     None when it could not be read. A caller mapping a read onto those keys
     must leave a field out, never fill it with None, when the read lacks it:
-    the completeness check is what keeps a PUT from clearing unread data.
+    the plan still echoes the whole record, so it blocks an incomplete read
+    (the PUT itself is a partial update; #1600 plans only changed fields).
     Only approved, API-writable Member fields are evaluated; everything else
     is reported as not approved or by hand and is left at its current
     ParishSoft value. Any approved field that conflicts or cannot be checked

@@ -1884,14 +1884,19 @@ then:
   verified ParishSoft read exists for the field (today every Family
   household field), so a Family address never shows a ParishSoft value or a
   conflict. Values appear in full: Admin and Staff need them to type into
-  ParishSoft, and every view and download is audited.
+  ParishSoft, and every view and download is audited. A blank Family's answer
+  means the Family removed the value: Staff remove it in ParishSoft, or
+  Ignore the row to keep it. A birth date the Family gave as Unknown shows
+  *Unknown*.
 - **How it reaches ParishSoft**: *Automatic* for a field the
   [handling registry](../data/spec.md#proposed-changes) marks API-writable,
   *By hand* for every other row. A Family address, a death date, and any
   answer that removes a recorded value are *By hand*, because ParishSoft's API
   cannot carry them (see the
   [handling registry](../data/spec.md#proposed-changes) and the
-  [data workflow](../data/spec.md#review-and-publication)).
+  [data workflow](../data/spec.md#review-and-publication)). A deceased
+  Member has two rows, *Deceased* and *Death date*: Staff enter them in
+  ParishSoft together and mark both entered.
 - **Status**, derived from the row's decision and execution as below.
 - **Submitted**, in browser-local time.
 - **Recorded by**, **Recorded at** and **Note**: the latest *Entered in
