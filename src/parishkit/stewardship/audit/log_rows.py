@@ -18,6 +18,7 @@ from parishkit.stewardship.observability import Event
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.dates import UnknownZone, browser_day_start
+from parishkit.stewardship.web.filter_errors import FilterError, iso_date
 from parishkit.stewardship.web.tables import PAGE_SIZES, Sorting, TablePage
 
 from .log_contract import SERIOUS
@@ -89,6 +90,26 @@ DETAIL_LIMIT = 128
 # Entries cannot predate the application, and a far-future day cannot be advanced
 # to its exclusive upper bound without overflowing.
 EARLIEST, LATEST = date(2020, 1, 1), date(2999, 12, 31)
+# What each filter says when the server refuses it at its field (#1332):
+# the words of the page's own hints (data-missing-hint), which the browser
+# shows first, so the two never disagree. Through's message covers both its
+# own date and its order after From.
+IDENTIFIER_MESSAGE = _(
+    "Paste a whole identifier from the Technical details of an entry, or clear it."
+)
+# Nothing ticked under an audit-only Activity, whose level boxes are greyed:
+# Audit record's own hint, so the server's refusal says it too (#1332).
+AUDIT_ONLY_MESSAGE = _(
+    "This activity is made of audit records only; tick Audit record."
+)
+FIELD_MESSAGES = {
+    "show": _("Tick at least one kind of entry to show."),
+    **dict.fromkeys(
+        ("actor", "correlation", "campaign", "subject"), IDENTIFIER_MESSAGE
+    ),
+    "start": _("Enter a whole From date, or clear it."),
+    "end": _("Enter a whole Through date, no earlier than From, or clear it."),
+}
 # A word and an icon, never color alone, distinguish the five levels, listed
 # least severe first; the order is the form's and the one source of LEVELS. The
 # level choices show the word beside the icon; the table's Level column shows
@@ -540,11 +561,12 @@ INSTANT = re.compile(
 )
 
 
-class NothingShown(ValueError):
+class NothingShown(FilterError):
     """A submitted filter form ticked none of the six kinds of entry (#601).
 
-    The view words this refusal on its own: no value the reader typed was
-    wrong, they only left every Show choice unticked.
+    The page shows it at the Show choices (#1332); the export, which no
+    field of its own can show it at, words it on its own: no value the
+    reader typed was wrong, they only left every Show choice unticked.
     """
 
 
@@ -566,10 +588,11 @@ def _text(value):
 
 
 def _identifier(value):
-    """Accept only a canonical lowercase UUID, or nothing."""
-    if value and str(UUID(value)) != value:
-        raise ValueError("Identifiers must be canonical.")
-    return value
+    """Whether ``value`` is nothing or one canonical lowercase UUID."""
+    try:
+        return not value or str(UUID(value)) == value
+    except ValueError:
+        return False
 
 
 @dataclass(frozen=True, repr=False)
@@ -625,7 +648,13 @@ class LogQuery:
 
     @classmethod
     def parse(cls, parameters):
-        """Accept only single bounded values from the closed vocabularies."""
+        """Accept only single bounded values from the closed vocabularies.
+
+        A rule the reader can fix at one field (a Show choice ticked, a whole
+        identifier, a whole date, the dates' order) raises ``FilterError``
+        naming that field (#1332), ``NothingShown`` for the Show choices;
+        anything else, the zone included, is a plain ``ValueError``.
+        """
         if type(parameters) is dict:
             if any(type(value) is not str for value in parameters.values()):
                 raise ValueError("Log filters require text values.")
@@ -652,32 +681,14 @@ class LogQuery:
             or (query.activity and query.activity not in ACTIVITY_TYPES)
         ):
             raise ValueError("Invalid log filters.")
-        if query.source:
-            query = query._from_source()
-        if query.applied and not (query.levels or query.audit):
-            # The page's gate keeps Apply unavailable with nothing ticked;
-            # a form that bypasses it is refused, not answered with nothing.
-            raise NothingShown("Log filters must show at least one kind of entry.")
-        for value in (query.actor, query.correlation, query.campaign, query.subject):
-            _identifier(value)
         _ministry(query.ministry)
         query = replace(query, text=_text(query.text))
         for value in (query.start, query.end):
-            if not value:
-                continue
-            day = date.fromisoformat(value)
-            if day.isoformat() != value or not EARLIEST <= day <= LATEST:
+            # A day outside the log's years has no hint at its field, so it
+            # keeps the error page; a malformed one is the field's (below).
+            whole = bool(value) and iso_date(value)
+            if whole and not EARLIEST <= date.fromisoformat(value) <= LATEST:
                 raise ValueError("Invalid log date filter.")
-        if query.start and query.end and query.start > query.end:
-            raise ValueError("Invalid log date interval.")
-        if query.zone not in timezone_names():
-            # Days cannot be placed without the browser's zone (a blank one
-            # from a tab opened before #558, or a zone outside the catalog).
-            if query.start or query.end:
-                raise UnknownZone("Log dates need the browser's time zone.")
-            # Without days the zone is unused; drop one the catalog does not
-            # know rather than refuse filters that never needed it.
-            query = replace(query, zone="")
         if query.through:
             if INSTANT.fullmatch(query.through) is None:
                 raise ValueError("Invalid log snapshot.")
@@ -690,6 +701,41 @@ class LogQuery:
             raise ValueError("Invalid log page size.")
         if query.sort:
             LOG_SORTING.parse({"sort": query.sort})
+        if query.source:
+            query = query._from_source()
+        # The rules a reader can fix at one field (#1332) come after every
+        # structural one, so a refused page's sort and size are ones the
+        # table accepts: nothing ticked, an identifier, a date, the dates'
+        # order, in the form's order.
+        if query.applied and not (query.levels or query.audit):
+            # The page's gate keeps Apply unavailable with nothing ticked;
+            # a form that bypasses it is refused, not answered with nothing.
+            # Under an audit-only Activity only Audit record can be
+            # ticked, so the refusal says what Audit record's hint says.
+            message = (
+                AUDIT_ONLY_MESSAGE
+                if query.activity_audit_only
+                else FIELD_MESSAGES["show"]
+            )
+            raise NothingShown("show", message, query)
+        for name in ("actor", "correlation", "campaign", "subject"):
+            if not _identifier(getattr(query, name)):
+                raise FilterError(name, FIELD_MESSAGES[name], query)
+        for name in ("start", "end"):
+            if not iso_date(getattr(query, name)):
+                raise FilterError(name, FIELD_MESSAGES[name], query)
+        if query.start and query.end and query.start > query.end:
+            # Refused at Through, whose hint names the order, with From
+            # marked too: fixing either end fixes it.
+            raise FilterError("end", FIELD_MESSAGES["end"], query, pair="start")
+        if query.zone not in timezone_names():
+            # Days cannot be placed without the browser's zone (a blank one
+            # from a tab opened before #558, or a zone outside the catalog).
+            if query.start or query.end:
+                raise UnknownZone("Log dates need the browser's time zone.")
+            # Without days the zone is unused; drop one the catalog does not
+            # know rather than refuse filters that never needed it.
+            query = replace(query, zone="")
         return query
 
     @property
@@ -871,7 +917,9 @@ def log_table(query, rows, *, through, action, number=1, total=None, capped=Fals
     )
 
 
-def page_context(query, table, *, depth_limited=False, linked=False, ministries=()):
+def page_context(
+    query, table, *, depth_limited=False, linked=False, ministries=(), sent=None
+):
     """The one template context, shared by the view and its browser fixtures.
 
     ``table`` is the page's ``web.tables.TablePage``; ``depth_limited`` says a
@@ -884,33 +932,45 @@ def page_context(query, table, *, depth_limited=False, linked=False, ministries=
     ``ministries`` is the Ministry filter's choices, ``(DUID, name)`` pairs
     in name order: entries record a Ministry's DUID, but staff pick it by
     name (#1123).
+
+    ``sent`` is the query as submitted when the server refused it at a
+    field (#1332): the filter form (``query``, its Show choices and its
+    Ministry) shows it, while everything else (``applied``: the rows, the
+    link, the export, the table's forms) is ``query``, the filters the
+    results use.
     """
     values = query.link_values()
     listed = {str(duid) for duid, _name in ministries}
+    shown = sent or query
     return {
         "link": table.action + (f"?{urlencode(values)}" if values else ""),
         "link_zone": values.get("zone", "") if linked else "",
         "rows": table.rows,
         "table": table,
         "depth_limited": depth_limited,
-        "query": query,
+        "query": shown,
+        "applied": query,
         "query_fields": query.form_values(),
         # The six kinds of entry, in the filter row's order: the five levels,
         # least severe first, then audit records.
         "levels": [
             *(
-                (level.lower(), label, level in query.levels)
+                (level.lower(), label, level in shown.levels)
                 for level, (_symbol, label) in LEVEL_LABELS.items()
             ),
-            ("audit", AUDIT_LABEL, query.audits),
+            ("audit", AUDIT_LABEL, shown.audits),
         ],
+        # The Show choices' hints, from the strings the server's refusals
+        # use, so the gate and the server say the same words (#1332).
+        "show_hint": FIELD_MESSAGES["show"],
+        "audit_only_hint": AUDIT_ONLY_MESSAGE,
         "events": EVENTS,
         "activities": ACTIVITY_LABELS,
         "ministries": ministries,
         # A filtered Ministry the current ParishSoft data no longer has (an
         # old link or bookmark) stays chosen under a plain label, never its
         # DUID, so applying the filters again keeps it.
-        "ministry_unlisted": bool(query.ministry) and query.ministry not in listed,
+        "ministry_unlisted": bool(shown.ministry) and shown.ministry not in listed,
         # The conditional-field rules for the Show boxes (#953): the levels
         # are enabled for all activity and the groups with operational
         # entries, and Audit record is required for the audit-only groups.
