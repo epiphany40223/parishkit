@@ -1714,6 +1714,20 @@ elapsed seconds, after the refusal's own line. That record stays in the
 process log only, one of the
 [exceptions to the durable entry](#observability-and-health) above.
 
+**Streamed pages.** A refused page drawn again as a streamed response
+under its campaign read guard (a report's filters refused at their field,
+[#1332](https://github.com/epiphany40223/parishkit/issues/1332)) still
+holds the guard's read-only transaction when it leaves the view. The hook
+builds its record then, from the same response, and writes the line and
+the entry when the response closes, after the guard has ended that
+transaction ([#1484](https://github.com/epiphany40223/parishkit/issues/1484)),
+under the request's correlation id. Each refusal is still written once:
+a response that is not streamed is written at once, as above. The web
+server closes a response whether its stream finished or the person's
+browser went away, and a stream stopped by the read guard's deadline is
+closed too, so those still leave the entry. Only a server process that
+stops before closing the response loses the record, line included.
+
 **Not duplicated.** Refusals that already leave a record keep it and get no
 second one: refused sign-ins (`admin_login_refused` and the sampled
 `admin_login_denied`), including a step-up sign-in by the wrong account,

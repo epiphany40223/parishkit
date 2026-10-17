@@ -20,7 +20,7 @@ from parishkit.stewardship.accounts.admin_editing import step_up_response
 from parishkit.stewardship.accounts.models import PortalUser
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.audit.models import OperationalLog
-from parishkit.stewardship.observability import Event
+from parishkit.stewardship.observability import Event, SafeJsonFormatter
 from parishkit.stewardship.web.refusal_log import AdminRefusalMiddleware
 
 from .auth_builders import signed_in
@@ -195,3 +195,107 @@ def test_a_strict_violation_leaves_the_connection_usable(
     assert connection.connection is not None and not connection.in_atomic_block
     assert PortalUser.objects.filter(email="admin@example.org").exists()
     assert browser.get("/admin/system/logs/").status_code == 200
+
+
+def streamed(request, *, guarded=True):
+    """A refused 400 page streamed as ``campaign_response`` streams it (#1484).
+
+    With ``guarded``, the response holds an open transaction until its
+    content closes, as the campaign read guard does, so the hook runs while
+    it is still open. The caller reads and closes the response.
+    """
+    from django.db import transaction
+    from django.http import StreamingHttpResponse
+
+    from parishkit.stewardship.web.refusals import with_status_code
+
+    guard = transaction.atomic()
+
+    class Content:
+        """Page bytes whose close ends the guard's transaction."""
+
+        def __iter__(self):
+            yield b"page"
+
+        def close(self):
+            guard.__exit__(None, None, None)
+
+    def view(_):
+        """Open the guard, then answer the streamed page as a 400 refusal."""
+        if guarded:
+            guard.__enter__()
+        response = StreamingHttpResponse(Content() if guarded else iter([b"page"]))
+        response.status_code = 400
+        return with_status_code(response)
+
+    return AdminRefusalMiddleware(view)(request)
+
+
+def refused_request(actor):
+    """A POST to an Admin page by the signed-in ``actor``."""
+    request = RequestFactory().post(SESSIONS)
+    request.resolver_match = resolve(SESSIONS)
+    request.principal = Principal(actor, roles=frozenset({"administrator"}))
+    return request
+
+
+@pytest.mark.parametrize("read", ["all", "none", "partly"])
+def test_a_streamed_refusal_is_written_once_when_it_closes(read, caplog):
+    """Inside its guard the line and entry wait for the close, then are
+    written once, under the request's correlation id; a stream closed
+    unread (the browser went away) still leaves them (#1484)."""
+    from django.db import connection
+
+    from parishkit.stewardship.observability import correlation
+
+    caplog.set_level(logging.INFO, logger="parishkit.stewardship")
+    actor = uuid4()
+    with correlation() as identifier:
+        response = streamed(refused_request(actor))
+    if read == "all":
+        assert b"".join(response.streaming_content) == b"page"
+    elif read == "partly":
+        # Like Django's test client: the stream closes the response from
+        # its own close, so the closers run again while still running.
+        inner = response.streaming_content
+
+        def closing():
+            """The chunks, then a response close, as a stream wrapper does."""
+            try:
+                yield from inner
+                yield b"more"
+            finally:
+                response.close()
+
+        response.streaming_content = closing()
+        assert next(iter(response.streaming_content)) == b"page"
+    # Nothing is written while the guard holds the transaction.
+    assert entries() == [] and refusal_lines(caplog) == []
+    # Closed outside the request's correlation scope, twice, as a careless
+    # server might.
+    response.close()
+    response.close()
+    assert response.status_code == 400 and not connection.in_atomic_block
+    (entry,) = entries()
+    assert entry.actor_id == actor and entry.correlation_id == identifier
+    assert entry.level == "INFO" and entry.context["codes"] == ["invalid"]
+    assert {key: entry.context[key] for key in ("route", "method", "status")} == {
+        "route": "admin:automation_sessions",
+        "method": "post",
+        "status": 400,
+    }
+    # The line says what the entry says, under the same correlation id.
+    (line,) = refusal_lines(caplog)
+    extra = json.loads(SafeJsonFormatter().format(line))["extra"]
+    assert extra["refusal"] == entry.context
+    assert extra["correlation_id"] == str(identifier)
+
+
+def test_a_streamed_refusal_outside_any_transaction_is_written_at_once():
+    """Only a stream still inside a transaction waits for its close."""
+    actor = uuid4()
+    response = streamed(refused_request(actor), guarded=False)
+    (entry,) = entries()
+    assert entry.actor_id == actor
+    response.close()
+    assert entries() == [entry]
