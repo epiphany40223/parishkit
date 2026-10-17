@@ -188,28 +188,78 @@ def _point_until_shown(page, plot, tooltip, *, attempts=10):
     expect(tooltip).to_be_visible()
 
 
+# The hover guide lines Vega shows (#1536): each shown rule's horizontal
+# centre and its top and bottom, relative to its panel's plot box, rounded.
+GUIDES = """() => [...document.querySelectorAll(
+  "#participation-chart svg g.mark-rule.role-mark line"
+)].filter((line) => line.getAttribute("opacity") !== "0").map((line) => {
+  const box = line.getBoundingClientRect();
+  const plot = line.closest("g.mark-group.role-scope > g")
+    .querySelector("path.background").getBoundingClientRect();
+  return [
+    Math.round(box.left + box.width / 2),
+    Math.round(box.top - plot.top),
+    Math.round(plot.bottom - box.bottom),
+  ];
+})"""
+
+# The horizontal centre of the last date's point on the participating
+# Families line (the second panel's symbols, in date order).
+LAST_POINT = """() => {
+  const points = [...document.querySelectorAll(
+    "#participation-chart svg g.mark-symbol.role-mark path"
+  )].map((point) => point.getBoundingClientRect());
+  const last = points[2];
+  return Math.round(last.left + last.width / 2);
+}"""
+
+
 def test_a_date_column_shows_that_dates_figures(page, chart):
     """Pointing anywhere in a date's column, in any panel, shows one
-    tooltip with that date's figures; leaving the chart hides it."""
+    tooltip with that date's figures and one faint guide line at that date
+    through every panel (#1536); leaving the chart hides both, and neither
+    moves anything."""
     tooltip = page.locator("#vg-tooltip-element")
     _wheel_into_view(page, chart)
+    # The wheel's pointer rests over the chart; nothing shows once it leaves.
+    page.mouse.move(0, 0)
+    eventually(page, f"() => ({GUIDES})().length", 0)
+    resting = chart.bounding_box()
     plots = chart.locator("svg g.mark-group.role-scope > g > path.background").all()
     for plot in plots:
         _point_until_shown(page, plot, tooltip)
         expect(tooltip.locator("h2")).to_have_text("November 2, 2026")
         assert tip_rows(tooltip) == list(TIP)
+        # One line per panel, at one x (the last date's middle, where its
+        # points are), from the plot's top to its bottom.
+        eventually(page, f"() => ({GUIDES})().length", 3)
+        guides = page.evaluate(GUIDES)
+        assert len({x for x, _top, _bottom in guides}) == 1
+        assert all(abs(top) <= 1 and abs(bottom) <= 1 for _x, top, bottom in guides)
+        assert abs(guides[0][0] - page.evaluate(LAST_POINT)) <= 1
+        assert chart.bounding_box() == resting
     page.mouse.move(0, 0)
     expect(tooltip).to_be_hidden()
+    eventually(page, f"() => ({GUIDES})().length", 0)
+    assert chart.bounding_box() == resting
 
 
-# Sets window.tipOpened once vega-tooltip shows its tooltip element.
+# Sets window.tipOpened once vega-tooltip shows its tooltip element, and
+# window.guideShown once a hover guide line shows (#1536).
 TIP_OPENED = """() => {
     window.tipOpened = false;
+    window.guideShown = false;
     const tip = () => document.querySelector('#vg-tooltip-element');
+    const guides = () => document.querySelectorAll(
+        '#participation-chart svg g.mark-rule.role-mark line');
     new MutationObserver(() => {
         if (tip()?.classList.contains('visible')) window.tipOpened = true;
+        if ([...guides()].some((line) => line.getAttribute('opacity') !== '0')) {
+            window.guideShown = true;
+        }
     }).observe(document.body, {
-        attributes: true, attributeFilter: ['class'], childList: true, subtree: true,
+        attributes: true, attributeFilter: ['class', 'opacity'],
+        childList: true, subtree: true,
     });
 }"""
 
@@ -242,6 +292,11 @@ def test_tapping_a_date_shows_its_figures(browser_engine, component_origin):
         expect(tooltip.locator("tr").nth(1).locator("td")).to_have_text(
             ["Families that have responded", "1 out of 1,234 (0.1%)"]
         )
+        # The tap drew the guide line too: its selection follows the same
+        # replayed pointer move (#1536). Like the tooltip, Chromium's idle
+        # cursor can clear it right after, so it is checked from the moment
+        # the tap opened the tooltip, through the rule Vega drew then.
+        eventually(page, "() => window.guideShown === true")
     finally:
         context.close()
 
