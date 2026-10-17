@@ -236,10 +236,6 @@ ALTER TABLE ONLY public.stewardship_setup_mail_delivery
 ALTER TABLE ONLY public.stewardship_setup_draft_section
     ADD CONSTRAINT setup_one_draft_per_step UNIQUE (attempt_id, step);
 
--- CONSTRAINT: stewardship_setup_sealed_credential setup_secret_attempt_target
-ALTER TABLE ONLY public.stewardship_setup_sealed_credential
-    ADD CONSTRAINT setup_secret_attempt_target UNIQUE (attempt_id, target);
-
 -- CONSTRAINT: stewardship_setup_slack_delivery setup_slack_explicit_request
 ALTER TABLE ONLY public.stewardship_setup_slack_delivery
     ADD CONSTRAINT setup_slack_explicit_request UNIQUE (attempt_id, request_key);
