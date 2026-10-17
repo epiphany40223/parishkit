@@ -28,7 +28,7 @@
 {% include 'stewardship/components/digest-funnel.html' %}
 <section class="panel" data-digest-chart>
 <h2>{% translate "Daily participation — Historical as of day" %}</h2>
-<div class="digest-figure"><img class="digest-chart" src="{{ chart_url }}" alt="{% translate 'Daily first submissions, cumulative participating Families, and annual pledges when enabled. Exact values are in the following table.' %}" width="1440" height="840"><div class="digest-tip" data-digest-tip aria-hidden="true" hidden></div></div>
+<div class="digest-figure"><img class="digest-chart" src="{{ chart_url }}" alt="{% translate 'Daily first submissions, cumulative participating Families, and annual pledges when enabled. Exact values are in the following table.' %}" width="1440" height="840"><div class="digest-guide" data-digest-guide aria-hidden="true" hidden></div><div class="digest-tip" data-digest-tip aria-hidden="true" hidden></div></div>
 {{ chart_interaction|json_script:'digest-chart-data' }}
 <div data-digest-controls hidden>
 <p>{% translate "Point to a date in the chart, tap it, or use the date slider to inspect exact values." %}</p>
