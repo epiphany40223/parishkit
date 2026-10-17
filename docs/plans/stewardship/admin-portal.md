@@ -322,7 +322,7 @@ placement table, the other specs that name those URLs, and the guides.
 | ADM-12.13 | NAV-10 | Campaign setup URLs, part B (go-live chain, test email, Campaign Ministries) | A |
 | ADM-12.14 | NAV-11 | Report URLs, including response lists | C |
 | ADM-12.15 | NAV-12 | Export and digest URLs | C |
-| ADM-12.16 | NAV-13 | Optional: trailing slash on sign-in, setup and maintenance | Last |
+| ADM-12.16 | (dropped) | Not built: sign-in, setup and maintenance keep their addresses (#522) | — |
 | ADM-12.17 | NAV-14 | Emailed reports page | C |
 | ADM-12.18 | (dropped) | Not built: the Users revamp (#952) replaces the planned Portal users split | — |
 | ADM-12.19 | NAV-16 | Ways back (#521): test-email origin, Return links, linked messages | Serial |
@@ -336,7 +336,7 @@ NAV-10 (NAV-9 needs NAV-4 and NAV-6); lane B runs NAV-5a and NAV-7;
 lane C runs NAV-5b, NAV-11, NAV-12, NAV-14 and then NAV-19 (which also needs
 NAV-1), after the in-flight report work in #553, #567, #559 and #477 PR 5
 merges; lane D runs NAV-8. NAV-16 (after NAV-10 and NAV-11) to NAV-18 come at
-the end, and NAV-13 is last and optional.
+the end. NAV-13 was optional and is dropped (#522).
 
 ### ADM-13: System health page
 
