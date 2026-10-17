@@ -30,6 +30,7 @@ from statistics import median
 from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.campaigns.intervals import resolve_local
+from parishkit.stewardship.occurrence_preview import wall_shift
 
 from .cadence import local_instant, precedence
 from .refresh_rules import daily_times
@@ -148,21 +149,6 @@ def _change(start, end, timezone):
     return "back" if after < before else None
 
 
-def _shift(day, value, due, timezone):
-    """How a clock change moves the wall time ``value`` on ``day``, or None.
-
-    "forward" when it falls in the missing hour (it runs at the first real
-    instant after), "back" when it falls in the repeated hour (it runs once,
-    at the earlier instant).
-    """
-    zone = ZoneInfo(timezone)
-    wall = datetime.combine(day, time.fromisoformat(value))
-    if due.astimezone(zone).replace(tzinfo=None) != wall:
-        return "forward"
-    folds = {wall.replace(tzinfo=zone, fold=fold).utcoffset() for fold in (0, 1)}
-    return "back" if len(folds) > 1 else None
-
-
 def _join(times, nightly):
     """Mark the times that resolve to one instant as joined, as the scheduler runs them.
 
@@ -234,7 +220,7 @@ def preview_days(refresh_rules, *, timezone, first, days=DAYS, windows=()):
                         due,
                         window=cause,
                         nightly=is_nightly,
-                        shift=_shift(day, value, due, timezone),
+                        shift=wall_shift(day, value, due, timezone),
                     )
                 )
         times = _join(times, nightly)
