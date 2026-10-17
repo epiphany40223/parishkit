@@ -37,8 +37,12 @@ SHADE_LABELS = {
 }
 
 
-def _wall(index):
-    """The wall time cell ``index`` starts at."""
+def _cell_start(index):
+    """The wall time cell ``index`` starts at, as a ``time``.
+
+    Only the grid numbers its cells; ``wall_clock.hhmm`` writes the result as
+    ``HH:MM`` text, so this is not a second ``HH:MM`` helper (#1129).
+    """
     return time(index // 4, index % 4 * 15)
 
 
@@ -49,7 +53,7 @@ def _spans(day, index, zone):
     back, none in the hour that does not exist when clocks go forward. Each
     instant starts a quarter hour of real time the cell stands for.
     """
-    wall = datetime.combine(day, _wall(index))
+    wall = datetime.combine(day, _cell_start(index))
     found = {wall.replace(tzinfo=zone, fold=fold).astimezone(UTC) for fold in (0, 1)}
     return sorted(
         instant
@@ -90,8 +94,8 @@ def _title(index, cell, repeated):
     the cell then stands for both, and the words say so.
     """
     times = {
-        "start": hhmm(_wall(index)),
-        "end": hhmm(_wall((index + 1) % CELLS)),
+        "start": hhmm(_cell_start(index)),
+        "end": hhmm(_cell_start((index + 1) % CELLS)),
     }
     if repeated:
         words = [gettext("%(start)s to %(end)s, both times (clocks go back)") % times]
