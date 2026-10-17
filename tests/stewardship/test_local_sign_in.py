@@ -368,6 +368,22 @@ def test_login_page_hides_google_sign_in_only_in_local():
     assert "Sign in with Google" in other
     assert 'action="/admin/login"' in other
     assert "local laptop environment" not in other
+    assert "stewardship-local.sh" not in other
+
+
+def test_local_login_page_offers_google_beside_the_test_sign_in():
+    """With a real OAuth client (#1399) LOCAL offers Google and the command."""
+    page = render_to_string(
+        "stewardship/login.html",
+        {"local_environment": True, "google_sign_in": True},
+    )
+    assert "Sign in with Google" in page and 'action="/admin/login"' in page
+    assert "not available in the local laptop environment" not in page
+    assert (
+        "<code>tools/stewardship-local.sh sign-in --email you@example.org</code>"
+        in page
+    )
+    assert page.index("Sign in with Google") < page.index("stewardship-local.sh")
 
 
 def test_step_up_prompt_describes_the_command_only_in_local():
@@ -388,6 +404,16 @@ def test_step_up_prompt_describes_the_command_only_in_local():
     assert "Confirm with Google" in other
     assert 'action="/admin/login"' in other and 'value="/admin/users"' in other
     assert "stewardship-local.sh" not in other
+    # With a real OAuth client (#1399) LOCAL offers Google first, then the
+    # command, whose step-up return path is still recorded.
+    both = render_to_string(
+        "stewardship/components/reauthenticate.html",
+        {"local_environment": True, "google_sign_in": True, "next": "/admin/users"},
+    )
+    assert "Confirm with Google" in both and 'value="/admin/users"' in both
+    assert 'data-local-step-up="/admin/users"' in both
+    assert "Or, to confirm with a test sign-in, run" in both
+    assert both.index("Confirm with Google") < both.index("stewardship-local.sh")
 
 
 def test_static_script_is_shipped_and_the_policy_forbids_inline_script():

@@ -43,7 +43,8 @@ runs the same checks against what is installed there
 ([#1399](https://github.com/epiphany40223/parishkit/issues/1399)):
 ParishSoft against the fake service (or the real API, when the deployment
 chose it with `deploy --parishsoft real`), the mailbox against the mail catcher,
-the sentinel OAuth client, and a test Slack token. A `--send-to` is refused
+the sentinel OAuth client (or a real localhost-only one, which needs the
+normal clock), and a test Slack token. A `--send-to` is refused
 there, because the send path takes only a Google service account, which the
 local environment still refuses. The local environment's
 [safety guarantees](../specs/stewardship/local-environment/spec.md#safety-guarantees)

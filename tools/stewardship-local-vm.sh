@@ -163,6 +163,23 @@ clock_mode() {
     esac
 }
 
+# The sentinel OAuth client's ID (runtime_web.LOCAL_OAUTH_SENTINEL; a test
+# pins this copy to it).
+OAUTH_SENTINEL_ID=local-environment-sentinel.invalid
+
+refuse_real_oauth_client() {
+    # A real Google OAuth client cannot run under the fake clock: web refuses
+    # to start with one (runtime_web.admit_google_clock, #1399). Refuse before
+    # anything starts or stops under the override, so the developer gets this
+    # message instead of a web that will not start. Only a parsable client
+    # document other than the sentinel is refused.
+    local id
+    id=$(jq -r '.client_id // empty' "$root/credentials/google_oauth/credential" 2>/dev/null || true)
+    if [ -n "$id" ] && [ "$id" != "$OAUTH_SENTINEL_ID" ]; then
+        refuse "A real Google OAuth client is installed, and this deployment runs under the fake clock, which it cannot use; reinstall the sentinel OAuth client first (guide: Signing in with Google)."
+    fi
+}
+
 initial_files() {
     # The initial topology, plus the fake-clock override when the marker says
     # fake: the install steps and the stores then run under the fake clock
@@ -173,6 +190,7 @@ initial_files() {
     if [ "$mode" = fake ]; then
         [ -f "$services/compose.faketime.json" ] ||
             refuse "Clock mode is fake but $services/compose.faketime.json is missing."
+        refuse_real_oauth_client
         printf -- '-f\n%s\n' "$services/compose.faketime.json"
     fi
 }
@@ -257,6 +275,7 @@ compose_files() {
     if [ "$mode" = fake ]; then
         [ -f "$services/compose.faketime.json" ] ||
             refuse "Clock mode is fake but $services/compose.faketime.json is missing."
+        refuse_real_oauth_client
         printf -- '-f\n%s\n' "$services/compose.faketime.json"
     fi
 }
@@ -462,9 +481,10 @@ ENV
         "$IMAGE" collect-static --destination "$root/cache/static" | tail -1
 
     step "Installing the sentinel OAuth client and the fake-ParishSoft configuration"
-    # The sentinel has the client document's shape and no real client; LOCAL
-    # admits only it once OPS-10.05 lands, and an image without that rule
-    # accepts it as an ordinary client document.
+    # The sentinel has the client document's shape and no real client, so a
+    # new deployment has no Google sign-in; only LOCAL admits it. A developer
+    # may later replace it with a real localhost-only client (#1399; the
+    # guide's "Signing in with Google").
     image_constant parishkit.stewardship.runtime_web LOCAL_OAUTH_DOCUMENT \
         '{"client_id": "local-environment-sentinel.invalid", "client_secret": "local-environment-sentinel-not-a-secret"}' |
         private_file "$root/credentials/google_oauth/credential"
@@ -1233,6 +1253,7 @@ web_oneoff_command() {
         jq -r '.services.web.tmpfs[] | "--tmpfs", .' "$services/compose.json")
     mode=$(clock_mode)
     if [ "$mode" = fake ]; then
+        refuse_real_oauth_client
         file="$services/compose.faketime.json"
         web_image=$(jq -r '.services.web.image' "$file")
         while IFS= read -r line; do options+=("$line"); done < <(
@@ -1715,6 +1736,7 @@ select_configured() {
     mode=$(clock_mode)
     dcc=(docker compose -f "$services/compose.json")
     if [ "$mode" = fake ]; then
+        refuse_real_oauth_client
         dcc+=(-f "$services/compose.faketime.json")
     fi
     dcc+=(-p "$project")
