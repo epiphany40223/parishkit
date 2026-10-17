@@ -56,9 +56,9 @@ shares`` (PR 10, in ``admin_settings``), ``parish preview`` and
 ``parish confirm`` (PR 10, in ``admin_parish``), and ``events list`` and
 ``events acknowledge`` (PR 11, in ``admin_events``). A
 command that streams a file (``logs export``, ``export census``,
-``export limitations``, ``export roster`` and ``export download
---stream``) writes the file's bytes, and nothing else, to standard output,
-and its document to standard error. Other areas join the same
+``export limitations``, ``export roster``, ``followup export`` and
+``export download --stream``) writes the file's bytes, and nothing else,
+to standard output, and its document to standard error. Other areas join the same
 subparser tree in later pull requests, each listed in the catalog with the
 pull request that added it. ``report roster`` (in ``admin_roster``) counts
 the Roster changes to enter list, whose download is ``export roster`` (in
@@ -80,7 +80,9 @@ bulk`` (PR 11a, in ``admin_followup``) read and record Ministry follow-up.
 ``followup roster-entered`` and ``followup roster-bulk`` (PR 11b, in
 ``admin_roster_tick``) set the roster tick; ``followup information-show``
 and ``followup information-update`` (PR 11b, in ``admin_information``)
-read and record Additional information follow-up.
+read and record Additional information follow-up. ``followup export``
+(PR 11c, in ``admin_followup_export``) is the queue's Export these
+requests, streamed as ``export roster`` is.
 """
 
 import argparse
@@ -7012,6 +7014,101 @@ def _followup_more_specs():
 # ------------------ end of roster tick and information follow-up block
 
 
+# ------------------------------------------ Follow-up export (PR 11c)
+#
+# ``followup export`` (#463, in ``admin_followup_export``): the follow-up
+# queue's Export these requests, the page's own file streamed to standard
+# output.
+
+# The queue's Status choices the page's export takes: ``followup list``'s
+# less ``not_in_parishsoft``, which the export refuses (#1217, a Member no
+# longer in ParishSoft never goes into the file).
+FOLLOWUP_EXPORT_STATES = tuple(
+    state for state in FOLLOWUP_STATES if state != "not_in_parishsoft"
+)
+
+
+def followup_export(args, preamble, runtime, context):
+    """The follow-up queue's Export these requests, streamed (#463 PR 11c)."""
+    from .admin_followup_export import export_followup
+
+    return export_followup(
+        context["caller"],
+        runtime,
+        filters={
+            "ministry": args.ministry,
+            "action": args.action,
+            "state": args.state,
+            "outcome": args.outcome,
+            "sort": args.sort,
+        },
+        fmt=args.format,
+        zone_name=args.timezone,
+        context=context,
+    )
+
+
+def _followup_export_options(parser):
+    """Options of ``followup export``: the queue's filters, format and zone.
+
+    The filters are ``followup list``'s without the search (text naming
+    Members would stay in shell history) and without the page and size (the
+    file is the whole filtered set). The format choices are the page's own
+    (``ministry_followup_exports.FORMATS``, which a test keeps equal),
+    listed here because the parser is built before Django is set up.
+    """
+    parser.add_argument("--ministry", metavar="DUID", help="one Ministry, by DUID")
+    parser.add_argument("--action", choices=("any", "join", "leave"))
+    parser.add_argument(
+        "--state",
+        choices=FOLLOWUP_EXPORT_STATES,
+        help="default unresolved (New or In progress)",
+    )
+    parser.add_argument("--outcome", choices=FOLLOWUP_OUTCOMES)
+    parser.add_argument(
+        "--sort", choices=("newest", "name", "ministry"), help="default newest"
+    )
+    parser.add_argument(
+        "--format",
+        choices=("csv", "xlsx", "pdf"),
+        default=DEFAULT_EXPORT_FORMAT,
+        help=f"default {DEFAULT_EXPORT_FORMAT}; PDF holds at most 1,000 requests",
+    )
+    parser.add_argument(
+        "--timezone",
+        default="UTC",
+        help="the time zone of the file's times (default UTC)",
+    )
+
+
+def _followup_export_specs():
+    """The follow-up queue's download (ADM-11 PR 11c, ``admin_followup_export``).
+
+    Full scope, as every export and as the download's post records
+    activity; neither prompting nor fresh-gated, as the page asks for no
+    recent sign-in. It records only the page's ``ministry_followup_exported``.
+    """
+    from .admin_followup_export import FollowupExport
+
+    return (
+        CommandSpec(
+            "followup export",
+            "Write the Ministry follow-up queue's export to standard output.",
+            followup_export,
+            "full",
+            False,
+            FollowupExport.field_names(),
+            11,
+            options=(_followup_export_options,),
+            audit_event="ministry_followup_exported",
+            streams=True,
+        ),
+    )
+
+
+# ------------------------------------------- end of follow-up export block
+
+
 COMMANDS = (
     COMMANDS
     + _read_specs()
@@ -7033,6 +7130,7 @@ COMMANDS = (
     + _artwork_specs()
     + _integration_specs()
     + _followup_more_specs()
+    + _followup_export_specs()
 )
 BY_NAME = {spec.name: spec for spec in COMMANDS}
 

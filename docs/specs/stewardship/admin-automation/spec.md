@@ -962,7 +962,8 @@ needs no database: it checks the preamble's form and prints the catalog.
 A command prints exactly one JSON document to standard output, unless it
 runs with `--watch`, is `login start` (whose document has `final` false) or
 streams a file (`logs export`, `export census`, `export limitations`,
-`export roster`, and `export download --stream` from PR 8b),
+`export roster`, `followup export`, and `export download --stream` from
+PR 8b),
 which writes the file's bytes alone to standard output and its one document,
 success or failure, to standard error:
 
@@ -1787,7 +1788,10 @@ signatures:
   commands call the pages' own admissions and services
   (`set_roster_entered`, `mark_many_entered`, `update_information`) and
   the information page's request-free `information_page` and
-  `information_history`.
+  `information_history`. PR 11c's `followup export` moved the queue
+  download's read and writer into a request-free
+  `ministry_followup_exports.export_body` and its file name into
+  `export_file_name`, which the page's view now calls.
 - **PR 12:** `go_live_commands` and `go_live_views.testing_families`, cleanup
   retry and cancel, the link preparation controls in `activation_views.links`,
   `confirmation_views._fresh_after_cleanup`, `confirmation_commands`, the
@@ -3323,7 +3327,7 @@ unknown email `not_available`, and a key used with another intent `invalid`.
 | `ministry_followup_update` | `followup update REQUEST_ID` (PR 11a; see below); follow-up has no assignment ([#552](https://github.com/epiphany40223/parishkit/issues/552)) |
 | `ministry_followup_bulk` | `followup bulk` (PR 11a; see below), the queue's bulk outcome ([#1131](https://github.com/epiphany40223/parishkit/issues/1131)), through the same `workflows.followup` service |
 | `information_update` | `followup information-update ITEM_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see below), the item's Save, through the same `responses.information` service |
-| `ministry_followup_export` | The queue's Export these requests ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)), the follow-up queue's filtered set with each Member's contact details: `followup export` (PR 11) |
+| `ministry_followup_export` | The queue's Export these requests ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)), the follow-up queue's filtered set with each Member's contact details: `followup export [FILTERS] [--format F] [--timezone Z]` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11c; see below), the page's download through the page's own writer (`ministry_followup_exports.export_body`) |
 | `ministry_followup_roster`, `ministry_roster_bulk` | A resolved join or leave's Entered in ParishSoft tick ([#528](https://github.com/epiphany40223/parishkit/issues/528)), one at a time or several from Roster changes to enter ([#879](https://github.com/epiphany40223/parishkit/issues/879)): `followup roster-entered REQUEST_ID --set\|--clear` and `followup roster-bulk` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see below), through the same `workflows.roster` service |
 | `ministry_roster`, `ministry_roster_export` | Roster changes to enter ([#528](https://github.com/epiphany40223/parishkit/issues/528)): `report roster`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export roster [--show S] [--ministry DUID] [--format F] [--timezone Z]` (PR 8g, [#463](https://github.com/epiphany40223/parishkit/issues/463)), the page's download through the page's own writer (`ministry_roster_views.export_body`) |
 
@@ -3463,10 +3467,47 @@ filters) and history (`followup_history`), and its services
   `--contact-notes` without `--contact-channel`. Neither change is
   fresh-gated, as the page asks for no recent sign-in.
 
-The queue's export (`followup export`) stays pending in PR 11. The names,
-options and fields are defaults pending Administrator confirmation; the
+The names, options and fields are defaults pending Administrator
+confirmation; the
 [operator guide](../../../guides/stewardship-admin-automation.md#ministry-follow-up)
 lists the fields.
+
+`followup export [--ministry DUID] [--action A] [--state S] [--outcome O]
+[--sort S] [--format csv|xlsx|pdf] [--timezone Z]`
+([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11c) is
+the queue's Export these requests
+([#1157](https://github.com/epiphany40223/parishkit/issues/1157)), streamed
+as `export roster` is, with the same document (`campaign_id`, `file_name`,
+`content_type`, `format`, `timezone`, `size`, `sha256`, `count`) on
+standard error. The page renders the file on request and never stores it,
+so, as for the other in-memory downloads, nothing is kept and there is no
+history, Regenerate or download window
+([#1398](https://github.com/epiphany40223/parishkit/issues/1398)). It
+needs a full-scope session and is neither prompting nor fresh-gated, as
+the page asks for no recent sign-in. It admits with the queue's own
+`ministry_followup_views._principal`, passively first, so a reader without
+the queue is refused before anything is read or built, then recording
+activity as the download's post does, and reads through the shared report
+read. The filters are `followup list`'s without the search (text naming
+Members would stay in shell history) and without the page and size (the
+file is the whole filtered set); `--state not_in_parishsoft` is not
+offered, as the page's export refuses it
+([#1217](https://github.com/epiphany40223/parishkit/issues/1217)).
+`--format` defaults to xlsx and `--timezone` to UTC. The choices are
+checked by the page's own `_choices` and the file is read and written by
+the page's own `export_body` (the queue's whole selection, the Members'
+contact details in the reader's scope, the page's document and writers),
+so its files are the page's. A Ministry DUID or time zone the page refuses
+is `invalid`, reported after the session recheck, with nothing recorded; a
+PDF of more requests than the page allows (1,000) is `invalid` at `format`
+with the page's words, recorded as the page records it (failed, with the
+count reached). It records the page's `ministry_followup_exported` (the
+count, the Ministry DUIDs in the file and whether the contacts were
+operational), and no `admin_cmd_*` event. Nothing of the file is logged.
+The name, its options and the document's fields are defaults pending
+Administrator confirmation; the
+[operator guide](../../../guides/stewardship-admin-automation.md#ministry-follow-up-download)
+lists them.
 
 `followup roster-entered`, `followup roster-bulk`, `followup
 information-show` and `followup information-update`

@@ -1008,6 +1008,27 @@ the clearing confirmation, a stale version, a key shared with the page, a
 leader denied, a read-only session refused and an ended session). The
 queue's export remains.
 
+ADM-11.12's PR 11c adds `followup export` (in
+`parishkit.stewardship.admin_followup_export`), the follow-up queue's
+Export these requests, streamed as `export roster` is, through the
+queue's own admission, choice check (`_choices`) and file read and writer
+(`ministry_followup_exports.export_body` and `export_file_name`, extracted
+from the page's view) under the shared report read, recording the page's
+`ministry_followup_exported` with its count and Ministries, with no schema
+change; proven by `tests/stewardship/test_admin_followup_export.py` (the
+options against the page's choices, the choice check, the file name),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_followup.py` (the ledger),
+`tests/stewardship/test_pk_admin.py` (the wrapper's streaming list),
+`tests/stewardship/test_export_default_format.py`,
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_followup_export_cli_postgresql.py`
+(the page's CSV byte for byte, XLSX, PDF, the filters, the page's event
+with its count and Ministries, a PDF above the limit `invalid` at
+`format` and recorded as failed, refused choices `invalid` with nothing
+recorded, Staff, a role the selection refuses, a read-only session
+refused, an ended session, no current campaign). This completes PR 11.
+
 Another part adds `content show`, the content editor's read
 of one page's or email's text, in `parishkit.stewardship.admin_content`,
 through the editor's own lookup (moved into

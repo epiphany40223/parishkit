@@ -1090,6 +1090,7 @@ def test_the_streaming_list_names_every_streaming_command():
         "export_census",
         "export_limitations",
         "export_roster",
+        "followup_export",
     } <= streaming
 
 
