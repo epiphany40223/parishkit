@@ -252,7 +252,7 @@ def test_the_parser_s_limits_are_the_page_s():
 
 def test_the_ledger_covers_the_tick_its_bulk_and_information_follow_up():
     """The tick, the bulk mark and an information item's page and Save are
-    covered; only the queue's export stays pending in PR 11."""
+    covered (the queue's export is PR 11c's, test_admin_followup.py)."""
     for route, commands in (
         ("ministry_followup_roster", ("followup show", "followup roster-entered")),
         ("ministry_roster_bulk", ("report roster", "followup roster-bulk")),
@@ -265,7 +265,6 @@ def test_the_ledger_covers_the_tick_its_bulk_and_information_follow_up():
         assert LEDGER[route].kind == "command", route
         assert LEDGER[route].detail == commands, route
         assert LEDGER[route].owed is None, route
-    assert LEDGER["ministry_followup_export"].kind == "pending"
 
 
 @pytest.mark.parametrize(

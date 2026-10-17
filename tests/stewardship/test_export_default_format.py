@@ -98,6 +98,7 @@ def test_pk_admin_file_commands_default_to_xlsx_and_still_take_csv():
         ("export", "census"),
         ("export", "limitations"),
         ("export", "roster"),
+        ("followup", "export"),
     ):
         assert parse(*command).format == "xlsx"
         assert parse(*command, "--format", "csv").format == "csv"
