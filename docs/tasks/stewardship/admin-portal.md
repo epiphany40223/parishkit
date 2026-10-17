@@ -1134,7 +1134,7 @@ Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#a
 - [x] ADM-12.07 — NAV-5a: give Parish data, Users and access, System and Home pages, and the remaining setup wizard steps, one name each.
 - [x] ADM-12.08 — NAV-5b: give report pages one name each.
 - [x] ADM-12.09 — NAV-6: add the URL plumbing, per-group URL modules, legacy redirects and System URLs.
-- [ ] ADM-12.10 — NAV-7: move Parish data and Users URLs and the change status URL.
+- [x] ADM-12.10 — NAV-7: move Parish data and Users URLs and the change status URL.
 - [x] ADM-12.11 — NAV-8: move Mail and Family portal URLs.
 - [x] ADM-12.12 — NAV-9: move Campaign setup URLs, part A, and add the group root.
 - [x] ADM-12.13 — NAV-10: move Campaign setup URLs, part B (go-live chain, test email, Campaign Ministries).
@@ -1143,9 +1143,9 @@ Specification: [Admin navigation](../../specs/stewardship/admin-portal/spec.md#a
 - [ ] ADM-12.16 — NAV-13 (optional): add trailing slashes to sign-in, setup and maintenance URLs.
 - [x] ADM-12.17 — NAV-14: add the Emailed reports page.
 - [ ] ~~ADM-12.18 — NAV-15~~ — Dropped, not done: the Users revamp (#952) replaces the planned Portal users split (#535).
-- [ ] ADM-12.19 — NAV-16: add the ways back (#521), including the test-email origin kept in the session.
+- [x] ADM-12.19 — NAV-16: add the ways back (#521), including the test-email origin kept in the session.
 - [x] ADM-12.20 — NAV-17: add the reachability and no-UUID crawl test.
-- [ ] ADM-12.21 — NAV-18: add Home's Next steps for each state and role and the per-role Today line.
+- [x] ADM-12.21 — NAV-18: add Home's Next steps for each state and role and the per-role Today line.
 - [x] ADM-12.22 — NAV-19: add the Find a Family header search (#561).
 
 Evidence: In progress. ADM-12.00 merged in PR #568: the
@@ -1300,8 +1300,9 @@ ADM-12.10 (NAV-7, in part) moves the Parish data pages under
 change's status page to `/admin/changes/<request>/`, each old address and
 no-slash form redirecting. The ingress admits large uploads at both upload
 addresses, and the two hard-coded redirects are reversed. The Users and
-access URLs move with the Users revamp (#952), so this task stays
-open until then. It is proven by the expected-redirect table in
+access URLs moved with the Users revamp (#952) in PR #994, under
+`/admin/users/`, which completes this task. It is proven by the
+expected-redirect table in
 `tests/stewardship/test_admin_url_scheme.py`, the Caddyfile render tests and
 golden files, and the updated Parish data and change suites.
 ADM-12.11 (NAV-8) moves the Mail and Family portal pages under `/admin/mail/`
@@ -1454,6 +1455,19 @@ addresses resolve to nothing, every slashless row) and
 `tests/stewardship/database/test_admin_url_scheme_postgresql.py` (old
 addresses are 404 through the real middleware, the presence count still
 polls).
+
+ADM-12.19 (NAV-16) adds the ways back for #521: Preview and test email
+returns to the page it was opened from, kept in the signed-in session
+(PR #1230); the breadcrumb is the way back on deep pages (PR #1250); help
+text and status messages link the pages they name (PRs #1265 and #1277);
+and hand-written "Return to" links that repeat the trail are dropped
+(PRs #1344 and #1348). It is proven by
+`tests/stewardship/database/test_admin_reachability_postgresql.py` and the
+updated page suites.
+ADM-12.21 (NAV-18) adds Home's Next steps for each campaign state and role
+and the per-role Today line (`accounts/home_steps.py`, PR #1246). It is
+proven by `tests/stewardship/database/test_home_next_steps_postgresql.py`
+and `tests/stewardship/browser/test_home_next_steps.py`.
 
 ## ADM-13: System health page
 
