@@ -77,6 +77,10 @@ in ``admin_workgroup``) read and change the No-reminders WorkGroup.
 ``admin_shares``) change a campaign's Share options.
 ``followup list``, ``followup show``, ``followup update`` and ``followup
 bulk`` (PR 11a, in ``admin_followup``) read and record Ministry follow-up.
+``followup roster-entered`` and ``followup roster-bulk`` (PR 11b, in
+``admin_roster_tick``) set the roster tick; ``followup information-show``
+and ``followup information-update`` (PR 11b, in ``admin_information``)
+read and record Additional information follow-up.
 """
 
 import argparse
@@ -6779,6 +6783,275 @@ def _share_specs():
 # ------------------------------------------------- end of Share options block
 
 
+# ------------------------ Roster tick and information follow-up (PR 11b)
+#
+# ``followup roster-entered``, ``followup roster-bulk`` (in
+# ``admin_roster_tick``), ``followup information-show`` and ``followup
+# information-update`` (in ``admin_information``), #463: a resolved Ministry
+# request's Entered in ParishSoft tick, Roster changes to enter's bulk mark,
+# and an Additional information item's page and Save.
+
+# The longest Staff notes an information item takes (5,000 characters), in
+# UTF-8 bytes at most four per character.
+INFORMATION_NOTES_LIMIT = 5000 * 4
+
+
+def _tick_version(value):
+    """A tick's current sequence: 0 (never ticked) or a positive integer."""
+    if not value.isdecimal() or not 0 <= int(value) < 2**63 - 2:
+        raise argparse.ArgumentTypeError("not a version")
+    return int(value)
+
+
+def _chosen_tick(value):
+    """``--request ID:VERSION``: a request and its tick's current sequence."""
+    identity, separator, version = value.partition(":")
+    if not separator:
+        raise argparse.ArgumentTypeError("not ID:VERSION")
+    try:
+        return _uuid(identity), _tick_version(version)
+    except argparse.ArgumentTypeError:
+        raise argparse.ArgumentTypeError("not ID:VERSION") from None
+
+
+def _yes_no(value):
+    """A follow-up checkbox: ``yes`` or ``no``."""
+    if value not in {"yes", "no"}:
+        raise argparse.ArgumentTypeError("not yes or no")
+    return value == "yes"
+
+
+def followup_roster_entered(args, preamble, runtime, context):
+    """Set or clear one request's Entered in ParishSoft tick (#463, #528).
+
+    The request page's tick asks nothing, so neither does this. Without
+    ``--request-key`` a new key is made and written to standard error
+    before anything is done.
+    """
+    from .admin_roster_tick import roster_entered
+
+    key = _request_key(args, context)
+    return roster_entered(
+        context["caller"],
+        runtime,
+        args.request_id,
+        expected_version=args.expected_version,
+        entered=args.set,
+        request_key=key,
+        context=context,
+    )
+
+
+def followup_roster_bulk(args, preamble, runtime, context):
+    """Mark several requests Entered in ParishSoft at once (#463, #879).
+
+    Roster changes to enter asks in its confirmation dialog, so this asks
+    first (or takes ``--yes``), after the list's own role check, which
+    refuses a Ministry leader before anything is read or asked.
+    """
+    from . import admin_roster_tick
+
+    admin_roster_tick.admit_roster(context["caller"], runtime)
+    key = _request_key(args, context)
+    versions = dict(args.request)
+    if len(versions) != len(args.request):
+        raise ValueError("A request was chosen twice.")
+    # Refused before the prompt: nothing is asked about a choice the list
+    # could not record.
+    admin_roster_tick.check_bulk(versions)
+    confirm(
+        context,
+        (
+            f"Mark {len(versions)} roster change(s) Entered in ParishSoft. "
+            "Each gets its own entry in the request's history.",
+            "A mark can be cleared later, one request at a time.",
+        ),
+    )
+    return admin_roster_tick.roster_bulk(
+        context["caller"], runtime, versions, request_key=key, context=context
+    )
+
+
+def followup_information_show(args, preamble, runtime, context):
+    """One Additional information item and its history, without content (#463)."""
+    from .admin_information import read_information_show
+
+    return read_information_show(
+        context["caller"], runtime, args.item_id, history_page=args.page or 1
+    )
+
+
+def followup_information_update(args, preamble, runtime, context):
+    """Record follow-up on one Additional information item, as its Save does.
+
+    The page's Save asks nothing, so neither does this; clearing a
+    completed follow-up needs ``--confirm-clear``, the page's confirmation
+    box. Without ``--request-key`` a new key is made and written to
+    standard error before anything is done.
+    """
+    from .admin_information import update_information_item
+
+    key = _request_key(args, context)
+    notes = None
+    if args.notes is not None:
+        notes = _input(args.notes, context, INFORMATION_NOTES_LIMIT)
+    return update_information_item(
+        context["caller"],
+        runtime,
+        args.item_id,
+        expected_version=args.expected_version,
+        request_key=key,
+        needed=args.needed,
+        completed=args.completed,
+        confirm_clear=args.confirm_clear,
+        notes=notes,
+        context=context,
+    )
+
+
+def _roster_entered_options(parser):
+    """Options of ``followup roster-entered``: the request page's tick."""
+    parser.add_argument("request_id", type=_uuid, metavar="REQUEST_ID")
+    choice = parser.add_mutually_exclusive_group(required=True)
+    choice.add_argument(
+        "--set",
+        action="store_true",
+        help="mark the change entered in ParishSoft",
+    )
+    choice.add_argument("--clear", action="store_true", help="clear a mistaken mark")
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_tick_version,
+        help="the tick's current sequence, as followup show prints "
+        "roster.sequence (0 before any tick)",
+    )
+    _request_key_option(parser)
+
+
+def _roster_bulk_options(parser):
+    """Options of ``followup roster-bulk``: Roster changes to enter's bulk bar."""
+    parser.add_argument(
+        "--request",
+        required=True,
+        action="append",
+        type=_chosen_tick,
+        metavar="ID:VERSION",
+        help="a chosen request and its tick's current sequence, as followup "
+        "show prints roster.sequence (repeat for each, up to 250)",
+    )
+    _request_key_option(parser)
+
+
+def _information_show_options(parser):
+    """Options of ``followup information-show``: the item and its history page."""
+    parser.add_argument("item_id", type=_uuid, metavar="ITEM_ID")
+    parser.add_argument(
+        "--page", type=_positive, help="the history's page number (default 1)"
+    )
+
+
+def _information_update_options(parser):
+    """Options of ``followup information-update``: an item page's form."""
+    parser.add_argument("item_id", type=_uuid, metavar="ITEM_ID")
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_version,
+        help="the item's version, as followup information-show prints it",
+    )
+    parser.add_argument(
+        "--needed",
+        type=_yes_no,
+        metavar="yes|no",
+        help="Follow-up needed (default: kept)",
+    )
+    parser.add_argument(
+        "--completed",
+        type=_yes_no,
+        metavar="yes|no",
+        help="Follow-up completed (default: kept)",
+    )
+    parser.add_argument(
+        "--confirm-clear",
+        action="store_true",
+        help="with --completed no on a completed follow-up: reopen it",
+    )
+    parser.add_argument(
+        "--notes",
+        help="the Staff notes, replacing them (default: kept), or - to read "
+        "them from standard input",
+    )
+    _request_key_option(parser)
+
+
+def _followup_more_specs():
+    """The roster tick and information follow-up commands (ADM-11 PR 11b).
+
+    ``followup information-show`` is a passive read any session may run; it
+    records the page's ``information_viewed``. The changes need a full-scope
+    session; only ``followup roster-bulk`` asks, as Roster changes to
+    enter's dialog does. None is fresh-gated, as the pages ask for no
+    recent sign-in.
+    """
+    from .admin_information import InformationShow, InformationUpdate
+    from .admin_roster_tick import RosterBulk, RosterEntered
+
+    return (
+        CommandSpec(
+            "followup roster-entered",
+            "Set or clear a Ministry request's Entered in ParishSoft tick.",
+            followup_roster_entered,
+            "full",
+            True,
+            RosterEntered.field_names(),
+            11,
+            options=(_roster_entered_options,),
+            request_key=True,
+            expected_version=True,
+        ),
+        CommandSpec(
+            "followup roster-bulk",
+            "Mark several Ministry requests Entered in ParishSoft.",
+            followup_roster_bulk,
+            "full",
+            True,
+            RosterBulk.field_names(),
+            11,
+            options=(_roster_bulk_options,),
+            prompts=True,
+            request_key=True,
+            expected_version=True,
+        ),
+        CommandSpec(
+            "followup information-show",
+            "Show one Additional information item and its follow-up history.",
+            followup_information_show,
+            "read_only",
+            False,
+            InformationShow.field_names(),
+            11,
+            options=(_information_show_options,),
+            audit_event="information_viewed",
+        ),
+        CommandSpec(
+            "followup information-update",
+            "Record follow-up on one Additional information item.",
+            followup_information_update,
+            "full",
+            True,
+            InformationUpdate.field_names(),
+            11,
+            options=(_information_update_options,),
+            request_key=True,
+            expected_version=True,
+        ),
+    )
+
+
+# ------------------ end of roster tick and information follow-up block
+
+
 COMMANDS = (
     COMMANDS
     + _read_specs()
@@ -6799,6 +7072,7 @@ COMMANDS = (
     + _history_specs()
     + _artwork_specs()
     + _integration_specs()
+    + _followup_more_specs()
 )
 BY_NAME = {spec.name: spec for spec in COMMANDS}
 

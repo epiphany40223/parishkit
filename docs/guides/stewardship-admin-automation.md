@@ -2889,6 +2889,94 @@ page refuses, or text past its length, is exit 1 (`invalid`), with
 `contact_notes` or `request`). A request that is not one of the current
 campaign's, or is outside your Ministries, is exit 1 (`not_available`).
 
+## Roster tick and Additional information
+
+`followup roster-entered` sets or clears a resolved Ministry request's
+**Entered in ParishSoft** tick, as the tick on the request's page does, and
+`followup roster-bulk` marks several at once, as **Roster changes to
+enter**'s bulk mark does. `followup information-show` reads one
+**Additional information** request's page with its follow-up history, and
+`followup information-update` is its **Save follow-up**. The read runs on a
+session of any scope and records the page's `information_viewed`; the
+changes need a full-scope session. Ministry leaders may not tick, and only
+Staff and Administrators follow up Additional information, as on the pages.
+The documents give IDs, versions, flags, account IDs and instants, never a
+Member's or Family's name or DUID, what the Family wrote, or the Staff
+notes; read those on the page, or download them with `export information`.
+
+```sh
+pk-admin followup show REQUEST_ID
+pk-admin followup roster-entered REQUEST_ID --set --expected-version 0
+pk-admin followup roster-entered REQUEST_ID --clear --expected-version 1
+pk-admin followup roster-bulk --request REQUEST_ID:0 --request OTHER_ID:2
+pk-admin followup information-show ITEM_ID
+pk-admin followup information-update ITEM_ID --expected-version 3 \
+  --completed yes --notes -
+```
+
+`--expected-version` for the tick is its current sequence, as `followup
+show` prints `roster.sequence` (0 before the first tick); each set or clear
+adds one. A tick changed since is exit 1 (`stale_version`). A request that
+takes no tick (only a join or leave a person resolved as joined or leave
+confirmed takes one) is exit 1 (`invalid`, `error.fields` naming
+`request`), and so is a tick that already says so (naming `set` or
+`clear`). `followup roster-bulk` takes each chosen request as `ID:VERSION`,
+up to 250, and only marks; it asks for confirmation first (or takes
+`--yes`), and saves nothing if any request is stale or already marked.
+Find the requests with `followup list --state resolved`: a row whose
+`roster.eligible` is true and `roster.entered` is false is one to enter, and
+its `id` and `roster.sequence` are the `ID` and `VERSION`. The list shows
+only each Member's newest request for a Ministry (as the queue does), but
+**Roster changes to enter** also lists an older resolved request that a
+newer request has replaced, so such a request can be missing from
+`followup list`. That is a known gap: mark it on the page, or with
+`followup roster-entered` if you already have its ID.
+
+`followup information-update` takes `--needed yes|no` (Follow-up needed),
+`--completed yes|no` (Follow-up completed) and `--notes TEXT` (at most 5,000
+characters; `-` reads standard input, which keeps the text out of shell
+history, and trims surrounding whitespace, as `followup update` does; the
+page keeps it as typed). Each one left out stays as it is, as the page's form opens filled
+in. Clearing a completed follow-up (`--completed no`) needs
+`--confirm-clear`, the page's confirmation box; without it the command is
+exit 1 (`invalid`, naming `confirm_clear`). A version that is no longer
+current is exit 1 (`stale_version`).
+
+Each change takes `--request-key`; without one it makes a key and prints it
+to standard error. A repeat with the key records nothing twice; the key
+with another change is exit 1 (`invalid`). A request or item that is not
+one of the current campaign's is exit 1 (`not_available`).
+
+| `followup roster-entered` field | What it holds |
+| --- | --- |
+| `created` | False for a repeat with the same key, which recorded nothing |
+| `request_key` | The key, for a repeat |
+| `entry` | The tick recorded: `id`, `request_id`, `sequence`, `entered`, `created_at` |
+
+| `followup roster-bulk` field | What it holds |
+| --- | --- |
+| `created`, `request_key` | As for `followup roster-entered` |
+| `changed` | How many requests this run marked (0 for a repeat) |
+| `entries` | Each chosen request's tick, as `entry` above |
+
+| `followup information-show` field | What it holds |
+| --- | --- |
+| `campaign_id` | The current campaign |
+| `item` | `id`, `version` (what `--expected-version` takes), `disposition` (`current_actionable`, or why the request no longer is), `submitted_at`, `follow_up_needed`, `completed`, `followed_up_at` and `followed_up_by` (an account ID), `replacement_id` (a later request that replaced this one), `previously_reported` and `correction_resolved` |
+| `history_page`, `more_history` | The history page shown (`--page`), and whether another follows |
+| `history` | Each Save, newest first: `id`, `expected_version`, `follow_up_needed`, `followed_up`, `confirm_clear`, `followed_up_at`, `followed_up_by`, `actor_id`, `created_at` |
+
+| `followup information-update` field | What it holds |
+| --- | --- |
+| `created`, `request_key` | As for `followup roster-entered` |
+| `revision` | What was recorded, as a `history` row |
+| `item` | The item now: `id`, `version`, `follow_up_needed`, `followed_up_at` |
+
+Each change is recorded in System logs as on the page
+(`ministry_roster_entered` for each tick, `information_updated`), with
+`admin_cmd_followup_roster_entered`, `admin_cmd_followup_roster_bulk` or
+`admin_cmd_followup_information_update` naming the session.
+
 ## Output changelog
 
 - `pk-admin/1` (ADM-11 PR 2): the first version, with the session commands.
@@ -3297,3 +3385,7 @@ campaign's, or is outside your Ministries, is exit 1 (`not_available`).
   Administrators only, neither fresh-gated nor prompting; `content
   confirm` records `admin_cmd_content_confirm`), and `content preview
   --html HTML|-`, the content editors' live plain-text preview (no event).
+- `pk-admin/1` (#463 PR 11b): additive. `followup roster-entered` and
+  `followup roster-bulk`, the Entered in ParishSoft tick and Roster changes
+  to enter's bulk mark, and `followup information-show` and `followup
+  information-update`, an Additional information request's page and Save.

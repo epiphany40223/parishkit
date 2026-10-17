@@ -980,6 +980,31 @@ unknown one, another campaign's request, a read-only session refused, an
 ended session and no current campaign). The roster tick, the queue's export and Family
 information follow-up remain.
 
+ADM-11.12's PR 11b adds `followup roster-entered` and `followup
+roster-bulk` (in `parishkit.stewardship.admin_roster_tick`), the Entered in
+ParishSoft tick and Roster changes to enter's bulk mark, and `followup
+information-show` and `followup information-update` (in
+`parishkit.stewardship.admin_information`), an Additional information
+item's page and Save, through the pages' own admissions, reads and
+services (`set_roster_entered`, `mark_many_entered`, `update_information`)
+in the page's command scope, with no schema change; proven by
+`tests/stewardship/test_admin_roster_information.py` (golden documents and
+the personal-data allowlist, catalog flags, the ledger, the service's
+refusals as field errors, limits checked before admission, usage errors),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_role_first.py`,
+`tests/stewardship/test_pk_admin.py`,
+`tests/stewardship/test_admin_route_parity.py` and
+`tests/stewardship/database/test_admin_roster_information_cli_postgresql.py`
+(a tick set, repeated, rebound, already set, stale and cleared with its
+events once per key, a page tick making the command's sequence stale, the
+bulk mark's prompt, all-or-none refusals and repeat, Staff ticking, a
+leader denied before the bulk prompt, another campaign's request, the item
+read with the page's event and no Family text, a Save with kept values,
+the clearing confirmation, a stale version, a key shared with the page, a
+leader denied, a read-only session refused and an ended session). The
+queue's export remains.
+
 Another part adds `content show`, the content editor's read
 of one page's or email's text, in `parishkit.stewardship.admin_content`,
 through the editor's own lookup (moved into

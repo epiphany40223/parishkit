@@ -332,6 +332,13 @@ class Action(StrEnum):
     # census resolve-conflict: an Automatic Conflict's Use the Family's value
     # anyway (#1434, ADM-09.03).
     ADMIN_CMD_CENSUS_RESOLVE_CONFLICT = "admin_cmd_census_resolve_conflict"
+    # followup roster-entered and followup roster-bulk: a resolved request's
+    # Entered in ParishSoft tick and Roster changes to enter's bulk mark;
+    # followup information-update: an Additional information item's Save
+    # (#463 PR 11b).
+    ADMIN_CMD_FOLLOWUP_ROSTER_ENTERED = "admin_cmd_followup_roster_entered"
+    ADMIN_CMD_FOLLOWUP_ROSTER_BULK = "admin_cmd_followup_roster_bulk"
+    ADMIN_CMD_FOLLOWUP_INFORMATION_UPDATE = "admin_cmd_followup_information_update"
 
 
 # Closed field identifiers are operational metadata, never census values.

@@ -23,6 +23,7 @@ from parishkit.stewardship import (
     admin_hosted_files,
     admin_integration_changes,
     admin_integration_keys,
+    admin_roster_tick,
     admin_tests,
     system_health,
 )
@@ -74,6 +75,8 @@ ADMITTING_READ = {
     "history confirm": (admin_history, "pending_replacement", {"token": "-"}),
     # The page's own admission, which admits a leader of any Ministry.
     "followup bulk": (admin_followup, "admit_followup", {}),
+    # Roster changes to enter's admission: Administrators and Staff only.
+    "followup roster-bulk": (admin_roster_tick, "admit_roster", {}),
 }
 
 # Everything a handler may read, look up or prompt with after its role check.
