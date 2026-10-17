@@ -21,7 +21,7 @@ it may give it now, and whether it may edit its value (``editable``) or
 resolve its conflict (``resolvable``) now. The page's three files leave
 those internal references out (UX conventions, "Downloaded files", #956,
 where this format is a recorded exception): they are not personal data,
-the page's Record outcome forms already carry them, and a script resolving
+the page's row-action dialogs already carry them, and a script resolving
 a change needs them.
 
 As ``logs export``, the bytes go to ``context["stream"]``, which the command
@@ -90,7 +90,7 @@ def actions(row, actor, *, mutable=True):
     Entered in ParishSoft and Ignore on a By-hand row still open (the census
     capability Staff hold too); Reopen on an ignored row, for an
     Administrator only. None while other campaign work holds the campaign
-    (``mutable`` false), as the page then offers no Record outcome.
+    (``mutable`` false), as the page then offers no row actions.
     """
     from .accounts.policy import Capability, allows
 
@@ -184,7 +184,7 @@ def _mutable(campaign_id):
     """Whether a row's outcome may be recorded now: the page's own check.
 
     Other campaign work (a restore review, cleanup, purge or go-live step)
-    holding the campaign makes the page offer no Record outcome.
+    holding the campaign makes the page offer no row actions.
     """
     from .reports.export_services import admit_campaign
 

@@ -18,12 +18,12 @@ its downloads (a later ``export census``). It records the page's
 ``census_changes_viewed``; as the other report reads, the event's
 ``count`` is the rows the command displayed, which is none.
 
-``census resolve`` is a row's Record outcome (Entered in ParishSoft, Ignore
+``census resolve`` is a By-hand row's outcome (Entered in ParishSoft, Ignore
 or Reopen, #528), through the page's own admission and the page's own
 service (``census_resolution.resolve_census_change``), keyed by the page's
-request key. ``census review`` is an Automatic row's Review (Approve,
+request key. ``census review`` is an Automatic row's review (Approve,
 Ignore or Back to To review, ADM-09), the same way, through the page's
-``census_review.review_census_change``. ``census edit`` is the Review's
+``census_review.review_census_change``. ``census edit`` is the review's
 Edit value and Clear edit (ADM-09.04), through ``edit_census_change``, and
 ``census resolve-conflict`` its Use the Family's value anyway (ADM-09.03),
 through ``resolve_census_conflict`` (#1434). All print ids, versions and
@@ -308,7 +308,7 @@ def resolve_census(
     request_key,
     context,
 ):
-    """``census resolve``: a Census changes row's Record outcome.
+    """``census resolve``: a Census changes row's outcome.
 
     The page's ``resolve_census_change`` through ``_census_write``: it
     checks the action's capability (Reopen is the Administrator's), the
@@ -321,7 +321,7 @@ def resolve_census(
     from .responses.models import ProposalResolution
 
     def write(actor):
-        """The page's Record outcome."""
+        """The page's row action."""
         return resolve_census_change(
             service.store,
             actor.identity,
@@ -384,7 +384,7 @@ def review_census(
     request_key,
     context,
 ):
-    """``census review``: an Automatic row's Review (ADM-09, #528).
+    """``census review``: an Automatic row's review (ADM-09, #528).
 
     The page's ``review_census_change`` through ``_census_write``, so every
     guard is the page's: an Administrator only (``PUBLISH_CENSUS``; Staff

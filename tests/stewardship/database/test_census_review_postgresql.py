@@ -36,7 +36,7 @@ FROZEN = MIGRATIONS / "migrations/0096_proposal_review.sql"
 ROUTE = "/admin/reports/census/"
 # A row's Back to To review button (the page help and the bulk bar name it
 # too, so its label alone does not tell them apart).
-BACK = b'name="resolve" value="to_review"'
+BACK = b"resolve=to_review&amp;"
 
 
 def review(harness, actor, proposal, decision, *, version=None, key=None, note=""):
@@ -309,8 +309,8 @@ def test_the_worklist_reviews_in_place_for_an_administrator_only(
     staff_browser, login = signed_in()
     assert login.status_code == 302
     _, body = search(staff_browser, ROUTE, {"status": "all"})
-    assert b'value="approve"' not in body and BACK not in body
-    assert b'value="entered"' in body
+    assert b"resolve=approve&amp;" not in body and BACK not in body
+    assert b"resolve=entered&amp;" in body
     form = {
         "status": "all",
         "resolve": "approve",
@@ -328,7 +328,7 @@ def test_the_worklist_reviews_in_place_for_an_administrator_only(
     browser, login = signed_in()
     assert login.status_code == 302
     _, body = search(browser, ROUTE, {"status": "all"})
-    assert b'value="approve"' in body and b'value="ignore_automatic"' in body
+    assert b"resolve=approve&amp;" in body and b"resolve=ignore_automatic&amp;" in body
     assert BACK not in body
     response, body = search(browser, ROUTE, form)
     assert response.status_code == 200

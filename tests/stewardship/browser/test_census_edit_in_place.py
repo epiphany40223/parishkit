@@ -1,12 +1,13 @@
 """Census changes' Edit value (#528, ADM-09.04), in place, in Chromium and WebKit.
 
-The real page is served by ``census_components``. Save value waits until the
-value differs from the one drawn and while the browser can tell it is not
-allowed; a value the server refuses is answered with its reason in place
-after the form, and the field is marked in error until it is edited; an
-accepted one answers with the page after it, where the row has its edit and
-Clear edit. A mark outside every region shows the page never reloaded, and
-the scroll position holds.
+The real page is served by ``census_components``. A row's Edit value icon
+opens its own dialog (#879). Save value waits until the value differs from
+the one drawn and while the browser can tell it is not allowed; a value the
+server refuses is answered with its reason at the field in the dialog, and
+the field is marked in error until it is edited; an accepted one answers
+with the page after it, where the row has its edit and a Clear edit icon.
+A mark outside every region shows the page never reloaded, and the scroll
+position holds.
 """
 
 import json
@@ -41,11 +42,16 @@ def centre(page, button):
     return scrolled
 
 
+ROW = "Mobile phone for Member 00"
+
+
 def test_edit_value_is_saved_in_place(page, component_origin):
     """Save value is unavailable, with its reason, until the value changes (a
-    note alone is no change); a refusal shows its reason after the form; the
+    note alone is no change); a refusal shows its reason at the field; the
     saved edit shows beside the Family's answer, and Clear edit then posts
     without needing a change."""
+    from playwright.sync_api import expect  # imported late: collection needs no browser
+
     errors = []
     page.on("pageerror", lambda error: errors.append(str(error)))
     page.goto(component_origin + AUTOMATIC)
@@ -85,73 +91,77 @@ def test_edit_value_is_saved_in_place(page, component_origin):
         )
 
     page.route("**" + AUTOMATIC, answer)
-    # A short window, scrolled so the row's Review sits mid-page: the answers
-    # must leave the scroll position where it is.
+    # A short window, scrolled so the row sits mid-page: the answers must
+    # leave the scroll position where it is.
     page.set_viewport_size({"width": 1280, "height": 500})
-    review = page.locator("details.census-record").first
-    review.locator("summary").click()
-    form = review.locator("form.census-edit")
-    value = form.get_by_label("Value to publish")
-    save = form.get_by_role("button", name="Save value")
-    hint = form.locator("[data-unchanged-hint]")
+    row = page.locator("#table tbody tr").first
+    edit = row.get_by_role("button", name=f"Edit value of {ROW}")
+    assert row.get_by_role("button", name=f"Clear edit of {ROW}").count() == 0
+    scrolled = centre(page, edit)
+    edit.click()
+    dialog = page.locator("#census-edit-dialog-0")
+    has_text(dialog.locator("h2"), f"Edit value of {ROW}")
+    value = dialog.get_by_label("Value to publish")
+    save = dialog.get_by_role("button", name="Save value")
+    hint = dialog.locator("[data-unchanged-hint]")
     assert value.input_value() == "555-0000"
     assert value.get_attribute("maxlength") == "25"
-    assert form.get_by_role("button", name="Clear edit").count() == 0
     assert save.is_disabled()
     has_text(hint, "Change the value to save it.")
-    form.get_by_label("Note (optional)").fill("Typo")
+    dialog.get_by_label("Note (optional)").fill("Typo")
     assert save.is_disabled()
     # A value the browser can tell is not allowed holds Save, saying why.
     value.fill("   ")
     assert save.is_disabled()
     has_text(
-        form.locator("[data-complete-hint]"),
+        dialog.locator("[data-complete-hint]"),
         "Enter the value to publish, within the length shown.",
     )
     value.fill("317 555 0198")
     assert save.is_enabled()
-    scrolled = centre(page, save)
     save.click()
-    refusal = form.locator("[data-in-place-refusal]")
-    has_text(refusal, f"{REFUSAL} {FIX}")
-    # The refused field is marked in error, described by the refusal, and
-    # both clear on its first edit.
+    # The refusal is shown at the field, which it marks and describes, and
+    # Save waits until the field is edited.
+    error = dialog.locator("#edit-error-0")
+    has_text(error, f"{REFUSAL} {FIX}")
     assert value.get_attribute("aria-invalid") == "true"
-    refusal_id = refusal.get_attribute("id")
-    assert refusal_id and refusal_id in value.get_attribute("aria-describedby")
-    assert page.evaluate("window.scrollY") == scrolled
-    # (fill, not the End key: End scrolls the page in Chromium.)
+    assert "edit-error-0" in value.get_attribute("aria-describedby")
+    assert save.is_disabled()
     value.fill("317 555 01989")
-    assert value.get_attribute("aria-invalid") == "false"
-    assert refusal_id not in (value.get_attribute("aria-describedby") or "")
-    assert form.locator("[data-in-place-refusal]").count() == 0
+    assert value.get_attribute("aria-invalid") != "true"
+    assert save.is_enabled()
     assert "resolve=edit" in posts[0] and "note=Typo" in posts[0]
     assert "value=317+555+0198" in posts[0] and "status=open" in posts[0]
+    assert "proposal=0" in posts[0]
     value.fill(EDITED_VALUE)
-    scrolled = centre(page, save)
     save.click()
     has_text(page.locator("#census-notice"), EDITED)
     has_text(
         page.get_by_role("status").filter(has_text="now has an edited value"), EDITED
     )
-    assert page.evaluate("window.scrollY") == scrolled
+    assert not dialog.is_visible()
+    assert abs(page.evaluate("window.scrollY") - scrolled) <= 1
     # The redrawn row shows the edit beside the Family's answer, and its
-    # Edit value starts from the edit, with Clear edit available as drawn.
+    # Edit value starts from the edit; Clear edit is now offered.
     first = page.locator("#table tbody tr").first
     has_text(first.locator("td").nth(5), "555-0000")
     has_text(first.locator("td").nth(6), EDITED_VALUE)
-    review = page.locator("details.census-record").first
-    if not review.evaluate("node => node.open"):
-        review.locator("summary").click()
-    form = review.locator("form.census-edit")
-    assert form.get_by_label("Value to publish").input_value() == EDITED_VALUE
-    assert form.get_by_role("button", name="Save value").is_disabled()
-    clear = form.get_by_role("button", name="Clear edit")
-    assert clear.is_enabled()
+    first.get_by_role("button", name=f"Edit value of {ROW}").click()
+    dialog = page.locator("#census-edit-dialog-0")
+    assert dialog.get_by_label("Value to publish").input_value() == EDITED_VALUE
+    assert dialog.get_by_role("button", name="Save value").is_disabled()
+    dialog.get_by_role("button", name="Cancel").click()
+    first.get_by_role("button", name=f"Clear edit of {ROW}").click()
+    decide = page.locator("#census-decide-dialog")
+    has_text(decide.locator("h2"), f"Clear the edit of {ROW}?")
     with page.expect_request(lambda request: request.method == "POST"):
-        clear.click()
+        decide.get_by_role("button", name="Record").click()
+    # The notice already says EDITED, so wait for the answer itself: the
+    # dialog closes once the page is redrawn from it.
+    expect(decide).to_be_hidden()
     has_text(page.locator("#census-notice"), EDITED)
     assert "resolve=clear_edit" in posts[-1] and len(posts) == 3
+    assert "value=" not in posts[-1]
     assert page.evaluate(MARKED) == "kept"
     assert errors == []
 
@@ -169,18 +179,18 @@ def test_a_redrawn_table_holds_save_value(page, component_origin):
     page.evaluate(MARK)
     answers = iter(AUTOMATIC_REDRAWS)
     fulfil_post_with(page, "**" + AUTOMATIC, component_origin, lambda _: next(answers))
-    form = page.locator("#edit-0")
+    form = page.locator("#census-edit-0")
     save = form.get_by_role("button", name="Save value", include_hidden=True)
     expect(save).to_be_disabled()
     for _path in AUTOMATIC_REDRAWS:
-        page.evaluate("document.getElementById('edit-0').dataset.drawn = 'old'")
+        page.evaluate("document.getElementById('census-edit-0').dataset.drawn = 'old'")
         page.locator("#table thead button").first.click()
         # The row's form is a new element, drawn with the new view settings.
         expect(form).not_to_have_attribute("data-drawn", "old")
         expect(save).to_be_disabled()
     assert form.locator('input[type=hidden][name="route"]').input_value() == "automatic"
     # The value itself still counts, and undoing it holds Save again.
-    page.locator("details.census-record").filter(has=form).locator("summary").click()
+    page.get_by_role("button", name=f"Edit value of {ROW}").click()
     value = form.get_by_label("Value to publish")
     drawn = value.input_value()
     value.fill("317 555 0198")
