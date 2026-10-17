@@ -136,6 +136,13 @@ patterns = [
         schedule_email_test.schedule_email_test,
         "schedule_email_test",
     ),
+    # The campaign wizard's Add these schedules and continue (#1404 PR 6),
+    # POST only, also before the UUID address.
+    _page(
+        "campaign/schedules/suggestion/",
+        schedule_entry_views.schedule_suggested,
+        "schedule_suggested",
+    ),
     # The read-only Campaign calendar (#469), also before the UUID address.
     _page(
         "campaign/schedules/calendar/",
