@@ -7805,7 +7805,9 @@ without a restart). A request left from before a restart or a clear is
 never run, so it cannot hold up normal sending; it stops being live after
 two minutes, and the page by then says nothing is halted. On the page it appears in place: "Checking the mailbox…" while it
 runs, then its result in words. A check not answered within two minutes
-says that the mail sender did not answer; a request it never claimed stays
+says that the mail sender did not answer, and that a sender answers only
+while it is running and halted (so a check never claimed because nothing
+is halted ends there, not in a spinner); a request it never claimed stays
 waiting and is no longer live. **Check again** starts a new one.
 A passed check proves only that signing in works. It cannot show that Gmail
 accepts the sending address, or rule out a fault after `DATA`; the preview
