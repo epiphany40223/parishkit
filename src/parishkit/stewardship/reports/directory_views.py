@@ -34,6 +34,11 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web.filter_errors import (
+    FilterError,
+    error_context,
+    refused,
+)
 from parishkit.stewardship.web.refusals import with_status_code
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import report_table
@@ -62,6 +67,12 @@ from .export_views import SAFE_FAILURES
 from .read_admission import admit_report_read
 from .report_paging import carried_filters, clamp_query, pop_page_size
 from .response_dashboard import rehearsal_epoch
+
+# The element id of the filter field a refusal can be shown at (#1332),
+# and the reserved line it is described by: the complete gate's hint row
+# after Apply, which shows the message over the gate's hint.
+FIELD_IDS = {"exact_code": "exact-code"}
+FIELD_LINES = {"exact_code": "directory-filters"}
 
 
 def _principal(request, store, *, read_only=False):
@@ -216,8 +227,17 @@ def _column_count(postal, dates, counts, checks, *, testing=False):
 
 @require_http_methods(["GET", "POST"])
 def directory(request, campaign_id):
-    """Recheck roles/scope through rendering and streaming; audit after guard close."""
-    finish, handed_off = None, False
+    """Recheck roles/scope through rendering and streaming; audit after guard close.
+
+    A malformed Exact Family code (``FilterError``, #1332) draws the page
+    again, answered 400, with the values sent in the filter form, the error
+    at the code field and in the summary, and the results, export and links
+    for no filters. The sort and the mailing-columns choice sent are kept:
+    neither is refused, and the choice picks the columns and the export's
+    kind. The audit then ends denied.
+    Every other refusal of the filters keeps the error page.
+    """
+    finish, handed_off, refusal = None, False, None
     try:
         service = runtime()
         principal = _principal(request, service.store)
@@ -235,7 +255,16 @@ def directory(request, campaign_id):
         postal = mailing_option(parameters)
         # The selection pages 50 rows at a time, so that is the only size.
         pop_page_size(parameters, (PAGE_SIZE,), default=PAGE_SIZE)
-        query = DirectoryQuery.parse(parameters)
+        try:
+            query = DirectoryQuery.parse(parameters)
+        except FilterError as error:
+            # Every closed choice was accepted before the code was checked,
+            # so the sort sent is one the selection knows. The mode sent is
+            # still admitted: a reader may not ask for Testing responses
+            # even on a refused page.
+            refusal = error
+            admit_mode(principal, error.query.mode)
+            query = DirectoryQuery.parse({"sort": error.query.sort})
         admit_mode(principal, query.mode)
         admit_report_read(campaign_id)
         _audit(
@@ -255,12 +284,16 @@ def directory(request, campaign_id):
             if finalized:
                 return
             finalized = True
+            outcome = Outcome.SUCCEEDED if completed else Outcome.FAILED
+            if completed and refusal is not None:
+                # The page was shown, but not for the filters asked for.
+                outcome = Outcome.DENIED
             try:
                 _audit(
                     principal,
                     campaign_id,
                     postal=postal,
-                    outcome=Outcome.SUCCEEDED if completed else Outcome.FAILED,
+                    outcome=outcome,
                     count=count,
                     total=total,
                     query=query,
@@ -386,6 +419,15 @@ def directory(request, campaign_id):
                     "export_asks_zone": export_asks_zone(query, postal),
                 }
             )
+            if refusal is not None:
+                # The filter form shows what was sent (filter_query;
+                # otherwise query), not what the results use (none). The
+                # hint row keeps the message's height once it clears on the
+                # first edit (filter_line), so nothing moves.
+                context |= error_context(refusal, FIELD_IDS, FIELD_LINES) | {
+                    "filter_query": refusal.query,
+                    "filter_sizes": {FIELD_LINES[refusal.field]: refusal.message},
+                }
             return iter(
                 (
                     render_to_string(
@@ -406,6 +448,10 @@ def directory(request, campaign_id):
             # this report its safe recovery navigation, never private contents.
             return _error(campaign_id, status=503)
         handed_off = response.status_code == 200 and response.streaming
+        if handed_off and refusal is not None:
+            # The refusal was known before the response was made, so its
+            # status is set before any byte is sent.
+            refused(response)
         return response
     except (PermissionError, ObjectDoesNotExist):
         return denial()

@@ -10,6 +10,7 @@ from django.urls import reverse
 
 from parishkit.stewardship.reports.directories import (
     CHECKS,
+    CODE_MESSAGE,
     DIRECTORY_SORTING,
     INACTIVE,
     MISSING_NAME,
@@ -22,9 +23,14 @@ from parishkit.stewardship.reports.directories import (
     response_columns,
 )
 from parishkit.stewardship.reports.directory_documents import export_headings
-from parishkit.stewardship.reports.directory_views import page_address
+from parishkit.stewardship.reports.directory_views import (
+    FIELD_IDS,
+    FIELD_LINES,
+    page_address,
+)
 from parishkit.stewardship.reports.response_dashboard import DIRECTORY_PRESETS
 from parishkit.stewardship.source.family_names import family_heads_name
+from parishkit.stewardship.web.filter_errors import FilterError, error_context
 from parishkit.stewardship.web.tables import report_table
 
 
@@ -238,6 +244,27 @@ def components(context, admin):
         | mailing
         | {"table": _table([], 0, "yes"), "total": 0},
     }
+    # A malformed Exact Family code the server refused at its field (#1332):
+    # the form shows what was sent, with the code marked and the message in
+    # the gate's hint row, and the results are those for no filters.
+    sent = DirectoryQuery(search="Example", exact_code="ABCD-EFG", phone="yes")
+    pages["/directory-refused-code"] = (
+        values
+        | code_list
+        | {
+            "query": DirectoryQuery(),
+            "query_fields": DirectoryQuery().form_values() | {"mailing": "no"},
+            "table": _table(values["table_rows"], 51, "no", DirectoryQuery()),
+            "page_address": reverse("admin:family_directory"),
+        }
+        | error_context(
+            FilterError("exact_code", CODE_MESSAGE, sent), FIELD_IDS, FIELD_LINES
+        )
+        | {
+            "filter_query": sent,
+            "filter_sizes": {"directory-filters": CODE_MESSAGE},
+        }
+    )
     pages.update(preset_pages(values | code_list, invited))
     return {
         path: (
