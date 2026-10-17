@@ -1462,8 +1462,8 @@ Specification: [System health](../../specs/stewardship/admin-portal/spec.md#syst
 
 - [x] ADM-13.00 — PR 0: specify the System health page and its actions, record the Administrator's decisions, and add this package and its checklist.
 - [x] ADM-13.01 — PR 1: add service status records and record every drop count with a refused refresh (migration).
-- [ ] ADM-13.02 — PR 2: add the read-only System health page, with its read command or its pending exemption.
-- [ ] ADM-13.03 — PR 3: add Take a backup now through a durable request and request mode (migration), with its command or its pending exemption.
+- [x] ADM-13.02 — PR 2: add the read-only System health page, with its read command or its pending exemption.
+- [x] ADM-13.03 — PR 3: add Take a backup now through a durable request and request mode (migration), with its command or its pending exemption.
 - [ ] ADM-13.04 — PR 4: add Clear the halt with halt identities, the mailbox check and the clear signal (migration), with its commands or their pending exemption.
 - [x] ADM-13.05 — PR 5: add Accept this change once, bound to every recorded count, with example Families (migration), with its commands or their pending exemption.
 - [x] ADM-13.06 — PR 6: add the debug-off switch, its in-process override, its host clear command and Allow debug logging again (Testing only, refused in Production) (migration), with its command or its pending exemption.
@@ -1495,7 +1495,7 @@ checks in full and the worker records with each refused attempt, checked by
 `tests/stewardship/database/test_system_health_records_postgresql.py`,
 `tests/stewardship/database/test_automation_maintenance_postgresql.py`, the
 migration-file and upgrade-parity tests and the regenerated schema baseline.
-ADM-13.02 is in progress in parts. Part 2a adds the read model
+ADM-13.02 landed in three parts. Part 2a (#670) adds the read model
 `parishkit.stewardship.system_health` (`SystemHealth`), the Administrator-only
 page at `/admin/system/health/` with its problems list and six panels, the
 passive 10-second status fragment, `/admin/system/` opening it, the first
@@ -1505,14 +1505,14 @@ logging and critical-problems banners' links, with no schema or grant change, ch
 `tests/stewardship/database/test_system_health_postgresql.py`,
 `tests/stewardship/browser/test_system_health.py` and the navigation and
 route-parity tests. Part 2b adds Home's System health problem lines for
-viewers who may open the page (the page's own sentences, shared through
+viewers who may open the page (#679; the page's own sentences, shared through
 one template, read in the statement Home already runs for its ParishSoft
 status, so Home's query count is unchanged) and the
 `system health` command with `--watch` (stopping once nothing needs
 attention), checked by the golden document and allowlist in
 `tests/stewardship/test_admin_reads.py`, `tests/stewardship/test_admin_cli.py`
 and `tests/stewardship/database/test_system_health_postgresql.py`. Part 2c
-shows the 24-hour count, through the definer function of frozen migration
+(#684, #1082) shows the 24-hour count, through the definer function of frozen migration
 0012, and the limit Family email stops at in the "Why sends are waiting"
 panel and as `daily_sent` and `daily_limit` in the command's document,
 with no schema or grant change, checked by
@@ -1523,8 +1523,9 @@ with no schema or grant change, checked by
 after the daily limit follows, through the definer function of frozen
 migration 0076 (web EXECUTE only), shown while the count is at the limit
 and as `daily_resume_at` in the command's document, checked by the same
-tests and `tests/stewardship/database/test_mail_daily_limit_postgresql.py`.
-ADM-13.03 is in progress in parts. Part 3a adds the frozen forward
+tests and `tests/stewardship/database/test_mail_daily_limit_postgresql.py`
+(#1171). ADM-13.02 is complete.
+ADM-13.03 landed in two parts. Part 3a (#1039) adds the frozen forward
 migration `0062_backup_request.sql` (the request record and its guard),
 the web's and backup login's request grants and the web's read of the
 newest backup's size and version, request mode (`backup --request`) with
@@ -1533,7 +1534,7 @@ the backup runbook's request-mode cron entry, restore step and drill
 warning, checked by `tests/stewardship/test_system_health.py`,
 `tests/stewardship/test_runtime_grants.py` and
 `tests/stewardship/database/test_backup_request_postgresql.py`. The Take a
-backup now button (part 3b) remains. Part 3b adds the button on System
+backup now button follows as part 3b (#1040), which adds the button on System
 health: a preview (the last backup and its size, off-site copies,
 retention, and the wait during a bulk send), confirmation answered in place
 with a repeated confirmation returning the first request, the fresh
@@ -1543,7 +1544,7 @@ by the page's poll), the steps posted to the System health page itself so
 they are answered in place, refusals and the step-up answered inside the
 section, and the commands owed by ADM-11 PR 5,
 checked by `tests/stewardship/database/test_backup_now_postgresql.py` and
-`tests/stewardship/browser/test_system_health.py`.
+`tests/stewardship/browser/test_system_health.py`. ADM-13.03 is complete.
 ADM-13.05 landed in three parts. Part 5a adds the frozen forward migration
 `0080_drop_acceptance.sql` (`stewardship_source.0008`): the acceptance
 record and its guard, the shared SQL lifetime check and the worker's read
