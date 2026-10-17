@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.web.dates import format_date, format_instant
-from parishkit.stewardship.web.design_tokens import CHART_COLORS
+from parishkit.stewardship.web.design_tokens import CHART_COLORS, COLORS
 from parishkit.stewardship.web.presentation import number, out_of, percentage
 from parishkit.stewardship.web.report_markup import TRACK
 
@@ -102,6 +102,63 @@ class ChartDocument:
 # the page's "container" width makes Vega-Lite warn on every draw that it
 # drops fit-y (#1325).
 BAR_STEP = 36
+
+
+# The hover guide line (ui-conventions, "Charts"; #1536): a faint vertical
+# line in the ink colour, which the page redraws in its colour scheme
+# (chart-v1.js), shown only while the pointer or a tap is on an x value.
+GUIDE = COLORS["ink"]
+GUIDE_OPACITY = 0.5
+HOVER = "hover"
+
+
+def hover_param(field, name=HOVER):
+    """The hover band layer's selection: the x value (``field``) under the pointer.
+
+    A tap selects too: chart-v1.js replays it as a pointer move, from which
+    Vega derives the pointerover. Leaving the band clears it.
+    """
+    return {
+        "name": name,
+        "select": {
+            "type": "point",
+            "fields": [field],
+            "on": "pointerover",
+            "clear": "pointerout",
+        },
+    }
+
+
+def hovered(value, names=(HOVER,)):
+    """An opacity of ``value`` at the x value any of ``names`` selects, else 0.
+
+    Nothing is selected until the pointer is on the chart (``empty`` is
+    false), so a print, download or email image never shows what it drives.
+    Several names serve a chart of stacked panels: each panel's band has its
+    own selection (Vega-Lite names a selection once per chart), and every
+    panel's guide line follows whichever is set.
+    """
+    tests = [{"param": name, "empty": False} for name in names]
+    if len(tests) == 1:
+        return {"condition": tests[0] | {"value": value}, "value": 0}
+    return {"condition": {"test": {"or": tests}, "value": value}, "value": 0}
+
+
+def hover_guide(x=None, names=(HOVER,), data=None):
+    """The hover guide line layer: a full-height rule at the hovered x value.
+
+    ``x`` is the line's x encoding, if the view's own is not to be inherited;
+    ``data`` gives the layer its own rows (one per x value) when the view's
+    are not that.
+    It is hidden from assistive technology, which gets the table instead.
+    Draw it under the hover bands, which must stay on top to take the pointer.
+    """
+    encoding = {"opacity": hovered(GUIDE_OPACITY, names)}
+    layer = {
+        "mark": {"type": "rule", "color": GUIDE, "aria": False},
+        "encoding": encoding if x is None else {"x": x} | encoding,
+    }
+    return layer if data is None else {"data": {"values": data}} | layer
 
 
 def stage_label(stage, labels=STAGE_LABELS):
@@ -887,7 +944,9 @@ def round_ticks(top):
     return [step * index for index in range(int(top // step) + 1)]
 
 
-def participation_panel(title, field, unit, values, mark, *, tooltip, x, axis=None):
+def participation_panel(
+    title, field, unit, values, mark, *, tooltip, x, axis=None, hover=HOVER, guide=None
+):
     """One panel of the daily chart: a hover column per date under one mark.
 
     The panel's value axis starts at zero and tops out at its own largest
@@ -896,9 +955,12 @@ def participation_panel(title, field, unit, values, mark, *, tooltip, x, axis=No
     one), and its ticks step by round 1, 2 or 5 multiples (``round_ticks``).
     An invisible full-height bar per date carries the tooltip, so a pointer
     anywhere in a date's column, not only on its small mark, shows that
-    date's figures. A line's points sit in the middle of their date's
-    column, and an unavailable day breaks the line (a gap, never a joined or
-    zero point).
+    date's figures, and selects the date for the hover guide line
+    (``hover_guide``). ``hover`` names this panel's selection and ``guide``
+    every panel's (by default just this one's), so this panel's line follows
+    a date picked in any panel. A line's
+    points sit in the middle of their date's column, and an unavailable day
+    breaks the line (a gap, never a joined or zero point).
 
     The marks are hidden from assistive technology: Vega would name each
     one from its raw fields (an ISO date, an unrounded dollar float), which
@@ -929,10 +991,13 @@ def participation_panel(title, field, unit, values, mark, *, tooltip, x, axis=No
         "encoding": {"x": x},
         "layer": [
             {"mark": mark | {"aria": False}, "encoding": {"y": y}},
+            # On the panel's date axis, in the date's middle as the points.
+            hover_guide(names=guide or (hover,)),
             # On top, so the pointer always reaches a whole date's column:
             # a line's path would otherwise catch it, and Vega gives a path
             # one tooltip, its first date's.
             {
+                "params": [hover_param("tick", hover)],
                 "mark": {"type": "bar", "opacity": 0, "aria": False},
                 "encoding": {
                     "y": {"value": 0},
@@ -1050,6 +1115,9 @@ def participation_chart(document):
             "titlePadding": 8,
         },
     }
+    # One selection per panel (a chart names each once), all of which every
+    # panel's guide line follows, so one line crosses every panel.
+    names = [f"{HOVER}{index}" for index in range(len(shown))]
     panels = [
         participation_panel(
             title,
@@ -1060,6 +1128,8 @@ def participation_chart(document):
             tooltip=tooltip,
             x=labelled if index == len(shown) - 1 else x,
             axis=axis,
+            hover=names[index],
+            guide=names,
         )
         for index, (title, field, unit, mark, axis) in enumerate(shown)
     ]

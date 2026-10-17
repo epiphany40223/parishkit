@@ -309,7 +309,10 @@ does a tap (`chart-v1.js` replays a tap on a chart as a pointer move, which is
 what Vega's tooltips follow; a tap elsewhere closes the tooltip); the
 view takes keyboard focus so a keyboard or screen-reader user hears its name
 and summary, and gets the exact values from the table, or without one from
-the marks' names, not the tooltips. Series are told apart by dash pattern as
+the marks' names, not the tooltips. A chart on a date, time or campaign-day
+axis marks the inspected x value with the
+[hover guide line](../ui-conventions/spec.md#charts) (`chart_specs.hover_guide`).
+Series are told apart by dash pattern as
 well as color. A layer with nothing to draw (no activity yet,
 or no send to mark) is hidden from assistive technology rather than announced
 as an unnamed graphic, and an activity chart with no activity still draws
@@ -525,13 +528,16 @@ will remain available indefinitely.
 The UI defaults to Historical as of day and offers a clearly labeled scope
 toggle. Changing scope updates every series together. On the Participation
 page, pointing at or tapping anywhere in a date's column, in any panel, shows
-that date's tooltip: the local date as its heading, then "First submissions",
+that date's tooltip, and a faint guide line crosses every panel at that date
+([hover guide line](../ui-conventions/spec.md#charts)). The tooltip has the
+local date as its heading, then "First submissions",
 "Families that have responded" (out of the scoped population, with
 percentage) and, when financial is enabled, "Effective annual pledges", with no
 explanatory text. A keyboard or screen-reader user gets every date's figures
 from the daily table ([chart engine](#chart-engine)). A saved daily digest's
 page shows its retained chart image instead: pointing at or tapping a date, or
-choosing it with the date slider, shows a short tooltip: the local date as a
+choosing it with the date slider, draws the guide line over the image at that
+date and shows a short tooltip: the local date as a
 small heading, then "Families" (cumulative count), "New today" (daily count)
 and, when financial is enabled, "Pledges", aligned on the colon. On a narrow
 screen that tooltip sits under the chart in reserved space, so the slider does
@@ -699,7 +705,9 @@ moving a reminder later can rename an earlier reading's markers. In Testing, a
 marker counts occurrences planned during the rehearsal epoch; after a go-live
 is cancelled mid-cleanup, a new epoch can reuse the previous epoch's Testing
 occurrences, so its emails count as invited without appearing in a marker. Interactive and emailed renderings of the series use this
-one result.
+one result. Its tooltips are each point's; it is the one date chart without the
+[hover guide line](../ui-conventions/spec.md#charts), since
+[#1537](https://github.com/epiphany40223/parishkit/issues/1537) retires it.
 
 ### Response dashboard
 
