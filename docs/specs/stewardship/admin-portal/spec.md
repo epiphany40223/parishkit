@@ -124,11 +124,11 @@ describing their own parish. The Google Workspace and Slack credential pages
 follow, each immediately after the public settings its staging depends on
 (outgoing mail and Testing recipient for Google Workspace, Slack settings for
 the Slack token), then Parish logos and Administrative access. ParishSoft
-connection and Load parish data come last before review, next to each other
+connection and Load parish data come last before the tests, next to each other
 ([#1353](https://github.com/epiphany40223/parishkit/issues/1353)): the load
 can take a few minutes, so the rest of setup is done before the wait, and a
 load that fails on a wrong key or organization is one step after the page
-that fixes it. No page before review needs the loaded data. Like
+that fixes it. No data-entry page needs the loaded data. Like
 [secret replacement](#parish-and-integration-configuration), the credential
 pages require fresh Google authentication, but while setup is unfinished a
 credential page accepts a sign-in up to **60 minutes** old, the length of the
@@ -147,8 +147,10 @@ unchanged. Finish setup asks for no fresh sign-in, before or after this
 change. An older sign-in is offered "Confirm with Google", which keeps the
 setup. The pages mention that rule only when
 the sign-in is already older
-([page help](../ui-conventions/spec.md#page-help)). Review, the email and
-Slack tests and the final confirmation follow the load. Every page shows a
+([page help](../ui-conventions/spec.md#page-help)). The email and Slack
+tests, Review and the final confirmation follow the load, in that order, so
+Review is the last step before Finish setup and shows the tests' results
+([#1476](https://github.com/epiphany40223/parishkit/issues/1476)). Every page shows a
 compact progress stepper: the current step by number and name, the count of
 completed steps and a slim [step bar](../ui-conventions/spec.md#step-bars)
 whose segments are links to the steps that can open, named by step and
@@ -162,12 +164,15 @@ conventional: completed steps and the first unfinished required step are
 links; later unfinished steps wait for every earlier required step, and
 optional steps never hold later ones back. A step counts as completed only
 after its own explicit save, credential, load, accepted test or, for the
-review page, an explicit review for the current data; defaults seeded by
+review page, an explicit review for the current data with every earlier
+step, the tests included, done; defaults seeded by
 another page never complete a step. While the source load runs, completed
 steps keep their status but are not links. The stepper is presentation only;
 each page still enforces its own prerequisites. Each page has one identical
 row of Back (secondary) and Save-and-continue (primary) controls (Save and
-continue validates, saves and opens the next applicable page, or redisplays
+continue validates, saves and opens the next applicable page not done yet,
+or the next page when every later one is done
+([wizard rule 8](../ui-conventions/spec.md#wizards)), or redisplays
 the page with its errors; on the Parish, Parish logos, Administrative access,
 Outgoing email, Slack and Testing pages it is unavailable until every shown
 required field is valid, with a short hint after the row saying what is
@@ -208,14 +213,33 @@ setup test", and a short plain-text and HTML body that names the parish and
 says its outgoing email settings work. It carries no Family data, link, code
 or campaign content, and nothing in it depends on a campaign.
 
-Review, Test email, Test Slack (only when Slack is on) and Finish setup are
-ordinary steps with the same action row, not a hub: the Review page links no
-later step from its body and its primary action is Continue to the email
-test. On each test page the primary action sends the test until a test of the
-current draft revision is accepted; then it is Continue to the next step,
-with sending another test kept as a secondary button. Finish setup's primary
-action is "Check readiness and finish setup", which still requires accepted
-tests of the exact reviewed revision.
+Test email, Test Slack (only when Slack is on), Review and Finish setup are
+ordinary steps with the same action row, not a hub. Test email opens once
+every required data-entry step is done and the load succeeded; it does not
+wait for Review. On each test page the primary action sends the test until a
+test of the current draft revision is accepted; then it is Continue to the
+next step (Test Slack, or Review), with sending another test kept as a
+secondary button. When the newest test of the current revision was not sent,
+the test page says so after its action row, in plain language, with the
+same advice about a rejected key as the provider's
+[integration settings](#parish-and-integration-configuration), and links the
+steps that fix it: Outgoing email settings and Google Workspace connection
+for the email test, Slack notifications and Slack connection for the Slack
+test. Saving a fix opens the next step not done yet (Google Workspace
+connection when its key must be entered again, otherwise Test email), never
+Review first; when that step's prerequisites are missing, the save opens the
+step that needs work instead. Review's Readiness section says, for each
+required test, whether a test of these exact settings was accepted, and
+links the test step only for a test that was not; its body links no other
+step. Review counts as done only when it is shown with every earlier step,
+the tests included, done, and its primary action is Continue to Finish
+setup. Any later save bumps the draft version, so Review and both tests are
+required again; a changed mail or Testing setting also makes the staged
+Google Workspace key stale. Back from Test email goes to Load parish data,
+from Review to the last test, and from Finish setup to Review. Finish
+setup's primary action is "Check readiness and finish setup", which still
+requires accepted tests of the exact current revision; its links to the
+tests stay for a test that went stale after Review.
 
 The setup wizard's status pages (Test email, Test Slack, Load parish data and
 Finishing setup) [update themselves](#background-indicators) like every other

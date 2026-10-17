@@ -173,6 +173,8 @@ from .settings_components import components as settings_components
 from .setup_back_path_components import components as setup_back_path_components
 from .setup_live_components import POSTS as SETUP_LIVE_POSTS
 from .setup_live_components import components as setup_live_components
+from .setup_order_components import POSTS as SETUP_ORDER_POSTS
+from .setup_order_components import components as setup_order_components
 from .signed_in_components import POSTS as SIGNED_IN_POSTS
 from .signed_in_components import components as signed_in_components
 from .source_form_components import components as source_form_components
@@ -1354,6 +1356,15 @@ def component_origin():
                 "testing_recipient": "testing@example.org",
                 "candidate_digest": "a" * 64,
                 "document": '{"sections": {"campaigns": []}}',
+                # The tests come before Review (#1476), which shows them.
+                "readiness": [
+                    {
+                        "label": "Test email",
+                        "accepted": True,
+                        "url": "/admin/setup/mail-test",
+                    }
+                ],
+                "tests_accepted": True,
                 "samples": [
                     {
                         "label": "Family welcome",
@@ -2277,6 +2288,9 @@ def component_origin():
     responses.update(setup_back_path_components(context, admin, NOW, SETUP_LOAD_STATUS))
     responses.update(in_place_commands_components(context, admin))
     responses.update(campaign_test_components(context, admin))
+    responses.update(
+        setup_order_components(context, admin, NOW, SETUP_MAIL_STATUS, setup_draft)
+    )
     responses.update(backup_test_components(context, admin))
     responses.update(family_test_components(context, admin))
     responses.update(upload_defaults_components(context, admin))
@@ -2315,6 +2329,7 @@ def component_origin():
         | SETTINGS_POSTS
         | INTEGRATION_DIALOG_POSTS
         | STEPPER_POSTS
+        | SETUP_ORDER_POSTS
         | CAMPAIGN_SETTINGS_POSTS
         | CAMPAIGN_CREATE_POSTS
         | SCHEDULE_LIST_POSTS

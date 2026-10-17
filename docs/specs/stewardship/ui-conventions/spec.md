@@ -1902,7 +1902,11 @@ match.
    lets the reader go on. A step that may be left empty for now says so on
    its Continue (**Continue without schedules for now**), and the wizard's
    final readiness check names what is still missing. A step whose purpose is
-   a check (a test email) continues only once its check has passed.
+   a check (a test email) continues only once its check has passed. A
+   wizard's tests come before its final Review, so Review is the last step
+   before finishing and shows their results, and fixing a failed test never
+   passes through Review first
+   ([#1476](https://github.com/epiphany40223/parishkit/issues/1476)).
 10. **Sub-pages stay in the wizard.** A page opened from a step (an editor, a
     new or edited item, a calendar, a history) draws the same stepper with
     its parent step current, and its action row starts with **Return to
@@ -1924,7 +1928,7 @@ match.
     unavailable until something changes, and its ordinary review dialog.
 
 Status: these rules are the target; the wizards reach them in steps, as #1404's
-plan lays out. The setup wizard meets rules 2, 4, 5, 7 and 12, and
+plan lays out. The setup wizard meets rules 2, 4, 5, 7, 8 and 12, and
 rule 1 except the "Next:" line: a saved page stays completed, while its
 Review is asked for again after any later edit of the draft and its parish
 data load goes stale when the ParishSoft credential changes. Its button
