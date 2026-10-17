@@ -93,6 +93,19 @@ HOST = (
 )
 
 
+def trimmed(core):
+    """``core`` as the browser must check a value the server strips first.
+
+    The browser tests the raw value, the server the stripped one, so the
+    pattern admits ``SPACE`` around ``core`` and forbids ``core`` itself from
+    ending in a space: otherwise a host such as ``https://example.o`` plus
+    U+2003 could be read as a name ending in that space (URLValidator admits
+    those inside a name) and pass here, then fail on the server once
+    stripped.
+    """
+    return rf"[{SPACE}]*(?:{core})(?<![{SPACE}])[{SPACE}]*"
+
+
 @dataclass(frozen=True)
 class FieldRule:
     """One format rule, its refusal and its error code, for both sides."""

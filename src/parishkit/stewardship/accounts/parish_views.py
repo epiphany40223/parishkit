@@ -22,6 +22,7 @@ from parishkit.stewardship.web.field_rules import (
     FieldRule,
     RuleField,
     apply,
+    trimmed,
 )
 from parishkit.stewardship.web.presentation import parse_us_phone, phone
 from parishkit.stewardship.web.refusals import (
@@ -124,11 +125,12 @@ class PhoneField(RuleField):
 # http:// or https://, a host name as URLValidator admits one (``HOST``, so
 # no user name or password), then any path without spaces; a lone "?" or "#"
 # (an empty query or fragment) is still admitted, as the configuration
-# admits it. The server then also checks it as a stored URL
+# admits it. Spaces around the value are admitted (``trimmed``): the field
+# strips them. The server then also checks it as a stored URL
 # (``clean_website``).
 WEBSITE = FieldRule(
     name="parish_website",
-    pattern=rf"[Hh][Tt][Tt][Pp][Ss]?:\/\/{HOST}(\/[^?#{SPACE}]*)?\??#?",
+    pattern=trimmed(rf"[Hh][Tt][Tt][Pp][Ss]?:\/\/{HOST}(\/[^?#{SPACE}]*)?\??#?"),
     message=_(
         "Use a website URL such as https://example.org, without credentials, "
         "query or fragment."
@@ -143,7 +145,7 @@ WEBSITE = FieldRule(
 # checks it as a stored link.
 GIVING = FieldRule(
     name="online_giving_url",
-    pattern=rf"[Hh][Tt][Tt][Pp][Ss]:\/\/{HOST}([\/?#][^{SPACE}]*)?",
+    pattern=trimmed(rf"[Hh][Tt][Tt][Pp][Ss]:\/\/{HOST}([\/?#][^{SPACE}]*)?"),
     message=_(
         "Use an https:// address without a user name or password, "
         "for example https://giving.example.org/parish?tab=home."
@@ -151,6 +153,16 @@ GIVING = FieldRule(
     # URLField's own check says "invalid"; one code per field.
     code="invalid",
 )
+
+
+def url_input():
+    """A text box that asks phones for a URL keyboard.
+
+    Not ``type="url"``: the browser's own URL check refuses a value padded
+    with a Unicode space, which the server strips and admits, so the rule's
+    pattern (``trimmed``) is the one check both sides share.
+    """
+    return forms.TextInput(attrs={"inputmode": "url"})
 
 
 class ParishForm(AdminForm):
@@ -161,7 +173,10 @@ class ParishForm(AdminForm):
     # left (#1330, #1577); clean_website checks the same rule.
     website = apply(
         forms.URLField(
-            label=_("Parish website"), max_length=2048, assume_scheme="https"
+            label=_("Parish website"),
+            max_length=2048,
+            assume_scheme="https",
+            widget=url_input(),
         ),
         WEBSITE,
     )
@@ -178,6 +193,7 @@ class ParishForm(AdminForm):
             max_length=2048,
             required=False,
             assume_scheme="https",
+            widget=url_input(),
             help_text=_(
                 "Optional. The page where Families can give online. Emails and "
                 "pages can link to it with the online_giving_url placeholder."
