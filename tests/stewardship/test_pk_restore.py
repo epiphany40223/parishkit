@@ -578,6 +578,38 @@ def test_an_unreadable_yaml_is_named_not_called_an_unknown_field(host):
     assert not stopped(calls)
 
 
+def _as_root_for_other_owner(host):
+    """Make the script think it runs as root so a foreign owner is allowed.
+
+    Without it the run refuses earlier ("run as root") for any owner but the
+    test user, so the group and other columns could not be reached.
+    """
+    fake_id = Path(host["env"]["PATH"].split(":")[0]) / "id"
+    fake_id.write_text('#!/bin/sh\n[ "$1" = -u ] && echo 0 || exec /usr/bin/id "$@"\n')
+    fake_id.chmod(0o755)
+
+
+def test_a_group_readable_yaml_is_accepted_for_the_runtime_group(host):
+    """Mode 0640 passes when the container user shares the file's group."""
+    host["yaml"].chmod(0o640)
+    # Another uid in the file's own group: the group column decides.
+    _as_root_for_other_owner(host)
+    host["env"]["PK_RESTORE_OWNER"] = f"{os.getuid() + 1}:{os.getgid()}"
+    result, _ = restore(host)
+    assert "not readable by the container's user" not in output(result)
+
+
+def test_an_other_only_yaml_is_refused_for_a_stranger(host):
+    """Mode 0640 refuses when the container user is neither owner nor group."""
+    host["yaml"].chmod(0o640)
+    _as_root_for_other_owner(host)
+    host["env"]["PK_RESTORE_OWNER"] = f"{os.getuid() + 1}:{os.getgid() + 1}"
+    result, calls = restore(host)
+    assert result.returncode == 1, output(result)
+    assert "not readable by the container's user" in output(result)
+    assert not stopped(calls)
+
+
 def test_a_readable_but_invalid_yaml_keeps_the_unknown_field_message(host):
     """A world-readable YAML that fails validation keeps the old advice."""
     host["yaml"].chmod(0o644)

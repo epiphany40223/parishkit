@@ -52,7 +52,7 @@ def _keygen(destination):
     }
 
 
-_SAFE_TEXT = re.compile(r"^[A-Za-z0-9._:/@+-]{1,200}$")
+_SAFE_TEXT = re.compile(r"[A-Za-z0-9._:/@+-]{1,200}")  # used with fullmatch
 
 
 def _other_release_hint(source):
@@ -65,12 +65,15 @@ def _other_release_hint(source):
     short, plainly-shaped values are echoed, never paths or file content.
     """
     try:
-        manifest = json.loads((Path(source).parent / MANIFEST).read_text("utf-8"))
+        with (Path(source).parent / MANIFEST).open("rb") as handle:
+            # A real manifest is a few hundred bytes; the cap keeps a huge
+            # or endless file from stalling the refusal.
+            manifest = json.loads(handle.read(65536).decode("utf-8"))
         version = manifest["application_version"]
         image = manifest.get("image")
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+    except Exception:  # best-effort hint: any failure (even RecursionError) means none
         return ""
-    if not isinstance(version, str) or not _SAFE_TEXT.match(version):
+    if not isinstance(version, str) or not _SAFE_TEXT.fullmatch(version):
         return ""
     if version == __version__:
         return ""
@@ -78,7 +81,7 @@ def _other_release_hint(source):
         f" This set was taken by release {version}, and a set is opened with"
         f" that set's own release image, not release {__version__}"
     )
-    if isinstance(image, str) and _SAFE_TEXT.match(image):
+    if isinstance(image, str) and _SAFE_TEXT.fullmatch(image):
         text += f"; use {image}"
     return text + "."
 

@@ -872,3 +872,12 @@ def test_open_refusal_without_a_usable_manifest_stays_generic(
     assert "taken by release" not in _failed_open(
         tmp_path, capsys, monkeypatch, hostile
     )
+    # A trailing newline must not slip past the shape check.
+    trailing = json.dumps({"application_version": "0.0.1\n", "image": "a\n"})
+    assert "taken by release" not in _failed_open(
+        tmp_path, capsys, monkeypatch, trailing
+    )
+    # Absurd nesting raises RecursionError; the real refusal still shows.
+    deep = "[" * 200000 + "]" * 200000
+    err = _failed_open(tmp_path, capsys, monkeypatch, deep)
+    assert "could not be opened" in err and "taken by release" not in err
