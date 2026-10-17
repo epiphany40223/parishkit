@@ -1646,10 +1646,23 @@ required and Save waits for it
 ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)). Non-secret integration setting changes use the YAML
 configuration-request path rather than the credential installer. The ParishSoft
 organization ID can change only until the first ParishSoft data load. After
-that the page shows it read-only and refuses a different value, with or without
-a new key, in plain language: every refresh must read the organization whose
-data is loaded, and a refresh for another organization is refused as a tenant
-mismatch.
+that the page shows it as an
+[unavailable control](../ui-conventions/spec.md#conditional-fields): disabled,
+still showing the loaded ID, with the one-line hint "Locked: ParishSoft data
+for this organization is loaded." under its label and the why in its tip
+([#1492](https://github.com/epiphany40223/parishkit/issues/1492)). The browser
+sends no disabled field, so the server uses the loaded ID, and it refuses a
+request that posts a different value, with or without a new key, in plain
+language: every refresh must read the organization whose data is loaded, and a
+refresh for another organization is refused as a tenant mismatch.
+A new ParishSoft key that authenticates but sees a different organization than
+the one configured is refused at once by its check, as a rejected key is
+(the check's `mismatch` outcome, never the temporary `unavailable` that waits
+and tries again): nothing is installed, the current key stays in use, and the
+page's failed line says the key is wrong or belongs to a different ParishSoft
+organization. System health names a refresh refused for that reason as
+"ParishSoft organization does not match", never "ParishSoft could not be
+reached".
 
 Page text describes what the Admin sees happen, never the machinery: no
 configuration files, installers, fingerprints or preview lifetimes. Signed
