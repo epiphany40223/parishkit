@@ -398,7 +398,8 @@ def test_configured_content_editor_can_reset_to_the_default(auth_service, google
 
 
 def test_removing_a_scheduled_template_explains_the_fix_inline(auth_service, google):
-    """The refusal names the schedule problem and links its page on the form."""
+    """The refusal names the schedule problem and its fix, for the review
+    dialog to show (#750), and records nothing."""
     store = auth_service.store
     campaign, catalog, schedule = setup(store)
     row = content(str(campaign.pk), kind="email", slot="initial")
@@ -432,11 +433,75 @@ def test_removing_a_scheduled_template_explains_the_fix_inline(auth_service, goo
     assert "under Dates and mail schedules first" in reason
     requests = ConfigurationChangeRequest.objects.count()
     refused = post(browser, path, values(store, subject="Invitation", clear="on"))
-    body = refused.content.decode()
     assert refused.status_code == 400
-    assert "used by a mail schedule, so it can&#x27;t be removed" in body
-    assert '<a href="/admin/campaign/schedules/">' in body
+    refusal = refused.json()["refusal"]
+    assert "used by a mail schedule, so it can't be removed" in refusal["message"]
+    assert refusal["link"]["url"] == "/admin/campaign/schedules/"
     assert ConfigurationChangeRequest.objects.count() == requests
+
+
+def test_preview_changes_answers_the_review_dialog(auth_service, google, monkeypatch):
+    """Preview changes (#750) answers the review dialog's fragment, not a
+    page: the fictional sample, the signed preview Apply posts back, and
+    the status line's start. A refusal of the values is the editor again
+    (400) with its error summary; an unchanged Preview is a refusal for the
+    dialog; a removal is accepted without the greyed, unsent subject (#563
+    item 6). Nothing is recorded until Apply. The campaign wizard, which
+    saves the editor directly (#1404 PR 4b), does not apply here."""
+    from parishkit.stewardship.accounts import campaign_wizard
+
+    monkeypatch.setattr(campaign_wizard, "shown", lambda *_, **__: False)
+    store = auth_service.store
+    campaign, catalog, _ = setup(store)
+    browser, _ = signed_in()
+    path = catalog + "page/welcome/"
+    editor = browser.get(path).content.decode()
+    assert 'data-review-open="content-review"' in editor
+    assert 'data-review-return="/admin/campaign/content/"' in editor
+    # Nothing is saved yet, so there is nothing to remove or grey.
+    assert 'data-enabled-when="clear!=on"' not in editor
+    requests = ConfigurationChangeRequest.objects.count()
+    review = post(browser, path, values(store, html="<p>Welcome</p>"))
+    assert review.status_code == 200
+    body = review.content.decode()
+    assert '<div data-review-answer data-review-done="Family welcome changed.">' in body
+    assert "Fictional sample preview" in body and "<p>Welcome</p>" in body
+    assert "<h1" not in body and "<form" not in body and "<nav" not in body
+    assert "data-review-preview" in body and token(review)
+    refused = post(browser, path, values(store, html="<p>{{ unknown_name }}</p>"))
+    assert refused.status_code == 400
+    page = refused.content.decode()
+    assert 'id="content-form"' in page and "data-error-summary" in page
+    assert ConfigurationChangeRequest.objects.count() == requests
+    apply(store, post(browser, path, {"action": "confirm", "preview": token(review)}))
+    unchanged = post(browser, path, values(store, html="<p>Welcome</p>"))
+    assert unchanged.status_code == 400
+    assert unchanged.json()["refusal"]["message"] == "No content has changed."
+    row = content(str(campaign.pk), kind="email", slot="reminder")
+    assert (
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [{"operation": "add", "section": "content", **row}],
+        ).state
+        == "applied"
+    )
+    revision = catalog + "email/reminder/" + row["id"] + "/"
+    assert 'data-enabled-when="clear!=on"' in browser.get(revision).content.decode()
+    removal = {"base_digest": store.active().digest, "action": "preview", "clear": "on"}
+    removed = post(browser, revision, removal)
+    assert removed.status_code == 200, removed.content
+    assert b"Empty \xe2\x80\x94 no content will be shown" in removed.content
+    # Applying the removal needs no subject either, and takes the text away.
+    apply(
+        store, post(browser, revision, {"action": "confirm", "preview": token(removed)})
+    )
+    assert not (
+        SystemConfiguration.objects.get()
+        .active_configuration.content_versions.filter(kind="email", slot="reminder")
+        .exists()
+    )
 
 
 def test_stale_content_form_says_to_reload(auth_service, google):

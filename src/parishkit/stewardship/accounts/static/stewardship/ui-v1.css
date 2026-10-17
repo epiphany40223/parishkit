@@ -1045,6 +1045,8 @@ details.technical-details dd { overflow-wrap: anywhere; }
 [data-visual-content][aria-busy="true"] .content-editor { opacity: .55; }
 /* An HTML source error is marked at the visual editor too, as a field's (#563). */
 .content-editor[aria-invalid="true"] { border: 2px solid var(--error-border); }
+/* Greyed in place, as a disabled textarea is, while "Remove this selected content" is ticked (#563, #750). */
+.content-editor[aria-disabled="true"] { background: var(--paper-soft); color: var(--muted); cursor: not-allowed; }
 .content-sample, pre { overflow-wrap: anywhere; white-space: pre-wrap; }
 .light-card { background: var(--paper); color: var(--ink); }
 .content-sample { padding: 1rem; border: 1px dashed var(--control-border); border-radius: var(--radius-small); background: var(--paper); }

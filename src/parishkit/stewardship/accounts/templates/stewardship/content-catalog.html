@@ -7,6 +7,7 @@
 <p>{% translate "A campaign starts with default text for every page and email. You can edit any of them, or reset one to its default text, but you do not have to." %}</p>
 <p>{% translate "Each email template has Edit in its Actions column, which opens its editor. An email no schedule sends also has Delete. Delete, or Delete selected for the ticked emails, asks first, then removes them from the list; if any chosen email is sent by a schedule, nothing is deleted." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
+{# The status line a page or email's editor returns to once its change, reviewed in the editor's review dialog, is applied (#750; components/review-outcome.html): above the lists the editor was opened from, outside the email tables' region so a Delete's redraw never wipes it. #}{% include "stewardship/components/review-outcome.html" with outcome_id="content-outcome" %}
 <section class="panel"><h2>{% translate "Family pages" %}</h2><ul>{% for page in pages %}<li><a href="{{ page.url }}">{{ page.label }}</a> — {% if page.state == 'default' %}{% translate "Default text" %}{% elif page.state == 'custom' %}{% translate "Customized" %}{% else %}{% translate "Empty" %}{% endif %}{% if page.resave %} — <strong>{% if page.resave.blocked %}{% translate "Can't be sent until fixed" %}{% else %}{% translate "Re-save recommended" %}{% endif %}</strong>{% endif %}</li>{% endfor %}</ul></section>
 {% comment %}
 Each mail type's emails are a short Admin table shown whole (#446): which

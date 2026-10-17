@@ -65,6 +65,9 @@ from .request_patch import build_candidate
 from .schedule_forms import KINDS, email_usage, excerpt, schedule_order
 from .sessions import authenticated_admin
 
+# The refusal of a Preview changes or save that changes nothing.
+UNCHANGED = _("No content has changed.")
+
 
 def _content_campaign(state, campaign_id):
     """The campaign whose pages and emails may be edited now (``_campaign``).
@@ -406,10 +409,11 @@ def _page(
     stale_markup result, shown as a "re-save recommended" notice (#832).
     ``folded`` says the confirmation email shows a retired receipt closing
     note folded in (#260), which previewing the form unchanged saves.
-    ``summary`` adds the form's error summary above the heading: a refused
-    direct save (#1404 PR 4b) is drawn into the page the reader is on,
-    which shows that summary (ui-v1.js showFieldErrors), while a refused
-    Preview changes is a page load that shows the errors in the form.
+    ``summary`` adds the form's error summary, which ui-v1.js
+    (showFieldErrors) places above the heading of the page the reader is
+    on: a refused Preview changes (the review dialog, #750) or a refused
+    direct save (#1404 PR 4b) answers with this page, but the form behind
+    it is never replaced, so the summary names each field and links to it.
     """
     try:
         visual = sanitize_html(form["html"].value() or "")
@@ -443,6 +447,8 @@ def _page(
             # Post to the clean path: a "?start=default" GET must not carry its
             # query into the POST, which accepts no query parameters.
             "post_url": request.path,
+            # Where the review dialog returns once the change is applied (#750).
+            "catalog_url": reverse("admin:content_catalog"),
             "errors": summary_errors(form) if summary else [],
         },
         status=status,
@@ -497,6 +503,16 @@ def _preview(
 ):
     """Sign sanitized canonical bytes and disclose every affected mail schedule.
 
+    Preview changes' answer is the review dialog's fragment
+    (``content-review.html``, #750): a fictional sample of the current and
+    proposed content, the schedules the new text switches, and the signed
+    preview that the dialog's Apply posts back here (``confirm``). A
+    refusal of the values is this page again (status 400, with its error
+    summary), so it stays on the form. A stale page, an unchanged request
+    (the page's change gate keeps it out of reach) and removing an email a
+    schedule still sends (the Remove box is unavailable then, so only a
+    race reaches it) are refusals the dialog shows.
+
     ``note`` is a retired receipt closing note that the confirmation email
     editor showed folded into the body (receipt_note); the same request
     removes it, so the saved email alone carries that text from then on.
@@ -505,15 +521,15 @@ def _preview(
     direct save's request key inside the campaign wizard (#1404 PR 4b,
     ``admin_editing.direct_key``): the preview is signed with it and
     returned as the signed token, which ``campaign_wizard.save_step``
-    confirms at once, instead of the Review content changes page. A refusal
-    is the page (status 400) either way, with its error summary for a
-    direct save.
+    confirms at once, instead of the review. A direct save's refusals are
+    all the page (status 400) with its error summary, as #1404 PR 4b
+    keeps them.
     """
     configuration, fingerprint = state[0], state[-1]
     direct = key is not None
     if not form.is_valid():
         return _page(
-            request, form, campaign, label, status=400, stale=stale, summary=direct
+            request, form, campaign, label, status=400, stale=stale, summary=True
         )
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
         raise stale_page()
@@ -533,7 +549,10 @@ def _preview(
                 )
         except UserFacingError as error:
             # A correctable refusal (removing a template that a schedule
-            # still sends) is shown beside the form, which keeps its input.
+            # still sends): the review dialog shows it with its fix, and the
+            # form behind keeps its input.
+            if not direct:
+                raise
             form.add_error(None, ValidationError(error.refusal.message, code="refused"))
             return _page(
                 request,
@@ -546,11 +565,14 @@ def _preview(
                 summary=direct,
             )
         if not patch:
-            form.add_error(
-                None, ValidationError("No content has changed.", code="unchanged")
-            )
+            if not direct:
+                # The change gate keeps this out of reach; it is the server's
+                # safeguard for a request that bypasses it (UX conventions,
+                # "Review dialog": no page says nothing has changed).
+                raise UserFacingError(UNCHANGED, fix=_("Nothing was changed."))
+            form.add_error(None, ValidationError(UNCHANGED, code="unchanged"))
             return _page(
-                request, form, campaign, label, status=400, stale=stale, summary=direct
+                request, form, campaign, label, status=400, stale=stale, summary=True
             )
         build_candidate(base, patch, candidate_id=uuid4())
         if direct:
@@ -602,6 +624,9 @@ def _preview(
         )
         if len(token) > 256_000:
             raise ValueError("Content preview is too large.")
+    except UserFacingError:
+        # A refusal for the review dialog (above), not a content problem.
+        raise
     except (ConfigError, ValueError):
         form.add_error(
             None,
@@ -613,16 +638,13 @@ def _preview(
             ),
         )
         return _page(
-            request, form, campaign, label, status=400, stale=stale, summary=direct
+            request, form, campaign, label, status=400, stale=stale, summary=True
         )
-    admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
-        "stewardship/content-preview.html",
+        "stewardship/content-review.html",
         {
-            "campaign": campaign,
             "label": label,
-            "breadcrumb_label": label,
             "before": before,
             "after": after,
             "affected": _affected_rows(affected, campaign),
@@ -657,8 +679,9 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
     """Browse and edit content without installing YAML or accessing a real Family.
 
     An editor's POST is Preview changes (``preview``, answered with the
-    Review content changes page) or that page's Apply (``confirm``). Inside
-    the campaign wizard the editor posts ``save`` instead (#1404 PR 4b): the
+    review dialog's fragment, #750) or the dialog's Apply (``confirm``),
+    whose change the dialog follows before returning to Pages and emails.
+    Inside the campaign wizard the editor posts ``save`` instead (#1404 PR 4b): the
     same checks and signed preview, recorded at once by
     ``campaign_wizard.save_step`` once the work transaction has ended, and
     answered with the change's status, which the page follows.

@@ -37,7 +37,7 @@ follows the change and then opens the next step not done yet. The
 sub-pages that save (Pages and emails' editor, New and Edit scheduled email;
 ``DIRECT_SUBPAGES``, #1404 PR 4b) save the same way with **Save and go
 back**, and then open their step again. Outside the wizard those pages keep
-their own Save and review dialog (or Preview changes page).
+their own Save (or Preview changes) and review dialog.
 """
 
 from dataclasses import dataclass
