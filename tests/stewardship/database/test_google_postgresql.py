@@ -1,6 +1,5 @@
 """Google cryptographic claims, durable sessions, early limits and namespace tests."""
 
-import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from threading import Barrier
@@ -34,10 +33,9 @@ def test_full_google_flow_uses_pkce_nonce_signed_claims_and_no_password_user(
     assert len(query["nonce"][0]) >= 32
     assert len(query["scope"]) == 1
     assert set(query["scope"][0].split()) == {"openid", "email"}
-    assert query["max_age"] == ["0"]
-    assert json.loads(query["claims"][0]) == {
-        "id_token": {"auth_time": {"essential": True}}
-    }
+    # Google ignores max_age and auth_time requests, so none is sent (#1547).
+    assert "max_age" not in query and "claims" not in query
+    assert query["prompt"] == ["select_account"]
     response = client.get(
         "/admin/oauth/callback", {"code": "synthetic", "state": query["state"][0]}
     )
@@ -93,7 +91,7 @@ def test_signed_but_invalid_claims_do_not_issue_session(auth_service, google, cl
     assert "/admin/login" in response.content.decode()
 
 
-def test_freshness_uses_signed_authentication_not_callback_time(auth_service, google):
+def test_sign_in_records_signed_authentication_not_callback_time(auth_service, google):
     """An older signed instant is retained; a new callback cannot reset its age."""
     from parishkit.stewardship.accounts.sessions import database_now
 
@@ -105,13 +103,14 @@ def test_freshness_uses_signed_authentication_not_callback_time(auth_service, go
 
 
 @pytest.mark.parametrize("age", [301, 86400])
-def test_existing_google_session_allows_login_without_privileged_freshness(
-    auth_service, google, age
-):
-    """Ordinary SSO remains usable without minting fresh privileged authority."""
+def test_an_old_google_sign_in_admits_privileged_actions(auth_service, google, age):
+    """An existing Google session of any age signs in and admits actions (#1547).
+
+    The action records the signed Google instant, not the callback time.
+    """
     from django.test import RequestFactory
 
-    from parishkit.stewardship.accounts.sessions import database_now, require_fresh
+    from parishkit.stewardship.accounts.sessions import database_now, sign_in_instant
 
     instant = int(database_now().timestamp()) - age
     google[0]["auth_time"] = instant
@@ -123,15 +122,14 @@ def test_existing_google_session_allows_login_without_privileged_freshness(
     assert browser.get("/admin/").status_code == 200
     request = RequestFactory().get("/admin/")
     request.portal_session = row
-    with pytest.raises(PermissionError):
-        require_fresh(request)
+    assert sign_in_instant(request) == row.authenticated_at
 
 
 def test_missing_auth_time_uses_the_nonce_bound_issue_time(auth_service, google):
-    """Google never sends auth_time; this sign-in's issued token is the fresh trip."""
+    """Google never sends auth_time; the sign-in records the token's issue time."""
     from django.test import RequestFactory
 
-    from parishkit.stewardship.accounts.sessions import require_fresh
+    from parishkit.stewardship.accounts.sessions import sign_in_instant
 
     google[0]["auth_time"] = OMIT
     _, response = signed_in()
@@ -139,7 +137,7 @@ def test_missing_auth_time_uses_the_nonce_bound_issue_time(auth_service, google)
     row = PortalSession.objects.get()
     request = RequestFactory().get("/admin/")
     request.portal_session = row
-    assert require_fresh(request) == row.authenticated_at
+    assert sign_in_instant(request) == row.authenticated_at
 
 
 def test_future_google_authentication_is_denied(auth_service, google):
@@ -505,28 +503,14 @@ def test_password_signup_recovery_and_direct_token_routes_absent(auth_service, p
 
 
 @pytest.mark.parametrize("absolute", [False, True])
-def test_admin_idle_and_absolute_boundaries_and_fresh_auth(
+def test_admin_idle_and_absolute_boundaries(
     auth_service, google, monkeypatch, absolute
 ):
-    from django.test import RequestFactory
-
+    """A session ends at its idle or absolute limit and cleanup counts it."""
     from parishkit.stewardship.accounts import sessions
 
     browser, _ = signed_in()
     row = PortalSession.objects.get()
-    request = RequestFactory().get("/admin/")
-    request.portal_session = row
-    monkeypatch.setattr(
-        sessions, "database_now", lambda: row.authenticated_at + timedelta(minutes=5)
-    )
-    assert sessions.require_fresh(request) == row.authenticated_at
-    monkeypatch.setattr(
-        sessions,
-        "database_now",
-        lambda: row.authenticated_at + timedelta(minutes=5, microseconds=1),
-    )
-    with pytest.raises(PermissionError):
-        sessions.require_fresh(request)
     if absolute:
         row.last_activity_at = row.expires_at - timedelta(minutes=5)
         # Future activity is refused by the session guard (#306); seed it.
@@ -640,57 +624,34 @@ def test_normal_admin_routing_does_not_repeat_session_authorization(
     assert PortalSession.objects.get().version == version + 1
 
 
-def test_step_up_refreshes_the_current_session_in_place(auth_service, google):
-    """The same Admin signing in again keeps its row, key and session-bound work."""
-    from django.test import RequestFactory
+def test_signing_in_again_issues_a_new_session(auth_service, google):
+    """The same Admin signing in again from the browser gets a new session.
 
-    from parishkit.stewardship.accounts.sessions import database_now, require_fresh
-
-    google[0]["auth_time"] = int(database_now().timestamp()) - 600
+    The old row is revoked as ``admin_reauthenticated``, the cookie changes,
+    each sign-in is an ``admin_login`` and the sign-in returns home (#1547).
+    """
     browser, _ = signed_in()
     original = PortalSession.objects.get()
     cookie = browser.cookies["pk_admin"].value
-    csrf = browser.cookies["pk_admin_csrf"].value
-    request = RequestFactory().get("/admin/")
-    request.portal_session = original
-    with pytest.raises(PermissionError):
-        require_fresh(request)
-    del google[0]["auth_time"]
-    _, response = signed_in(browser, next="/admin/setup/credentials/parishsoft")
+    _, response = signed_in(browser)
     assert response.status_code == 302
-    assert response["Location"] == "/admin/setup/credentials/parishsoft"
-    row = PortalSession.objects.get()
-    assert (row.pk, row.session_id) == (original.pk, original.session_id)
-    assert browser.cookies["pk_admin"].value == cookie
-    assert browser.cookies["pk_admin_csrf"].value != csrf
-    assert row.authenticated_at > original.authenticated_at
-    assert row.last_activity_at >= row.authenticated_at
-    assert row.expires_at == original.expires_at
-    assert row.revoked_at is None and row.version > original.version
-    request.portal_session = row
-    assert require_fresh(request) == row.authenticated_at
-    assert AuditEvent.objects.filter(event_type="admin_login").count() == 1
-    assert (
-        AuditEvent.objects.filter(event_type="admin_step_up", subject_id=row.pk).count()
-        == 1
-    )
+    assert response["Location"] == "/admin/"
+    original.refresh_from_db()
+    assert original.revoked_at is not None
+    assert AuditEvent.objects.filter(
+        event_type="admin_reauthenticated", subject_id=original.pk
+    ).exists()
+    row = PortalSession.objects.get(revoked_at__isnull=True)
+    assert row.pk != original.pk and row.session_id != original.session_id
+    assert row.principal_id == original.principal_id
+    assert browser.cookies["pk_admin"].value != cookie
+    assert AuditEvent.objects.filter(event_type="admin_login").count() == 2
+    assert not AuditEvent.objects.filter(event_type="admin_step_up").exists()
     assert browser.get("/admin/").status_code == 200
 
 
-def test_step_up_never_moves_freshness_backwards(auth_service, google):
-    """An older signed Google instant leaves the session's freshness unchanged."""
-    browser, _ = signed_in()
-    original = PortalSession.objects.get()
-    google[0]["auth_time"] = int(original.authenticated_at.timestamp()) - 60
-    _, response = signed_in(browser)
-    assert response.status_code == 302
-    row = PortalSession.objects.get()
-    assert row.pk == original.pk
-    assert row.authenticated_at == original.authenticated_at
-
-
 def test_different_google_account_replaces_the_session(auth_service, google):
-    """Another account from the same browser is a new login, never a step-up."""
+    """Another account from the same browser is a new login for that account."""
     browser, _ = signed_in()
     original = PortalSession.objects.get()
     cookie = browser.cookies["pk_admin"].value
@@ -707,7 +668,7 @@ def test_different_google_account_replaces_the_session(auth_service, google):
 
 
 def test_idle_session_is_replaced_rather_than_revived(auth_service, google):
-    """Step-up cannot resurrect a session that already reached its idle limit."""
+    """Signing in again cannot resurrect a session past its idle limit."""
     from parishkit.stewardship.accounts.sessions import database_now
 
     google[0]["auth_time"] = int(database_now().timestamp()) - 7200
@@ -722,27 +683,32 @@ def test_idle_session_is_replaced_rather_than_revived(auth_service, google):
     assert response.status_code == 302
     original.refresh_from_db()
     assert original.revoked_at is not None
-    assert PortalSession.objects.filter(revoked_at__isnull=True).count() == 1
-    assert AuditEvent.objects.filter(event_type="admin_timeout").count() == 1
+    live = PortalSession.objects.get(revoked_at__isnull=True)
+    assert live.pk != original.pk
     assert AuditEvent.objects.filter(event_type="admin_login").count() == 2
+    # The idle session ends as a timeout, not as replaced by the sign-in.
+    assert AuditEvent.objects.filter(
+        event_type="admin_timeout", subject_id=original.pk
+    ).exists()
+    assert not AuditEvent.objects.filter(
+        event_type="admin_reauthenticated", subject_id=original.pk
+    ).exists()
     assert not AuditEvent.objects.filter(event_type="admin_step_up").exists()
 
 
 @pytest.mark.parametrize(
-    "value,expected",
+    "value",
     [
-        (None, "/admin/"),
-        ("/admin/integrations", "/admin/integrations"),
-        ("/admin/setup/credentials/slack", "/admin/setup/credentials/slack"),
-        ("https://attacker.example/admin/", "/admin/"),
-        ("//attacker.example/admin/", "/admin/"),
+        None,
+        "/admin/integrations",
+        "/admin/setup/credentials/slack",
+        "https://attacker.example/admin/",
+        "//attacker.example/admin/",
     ],
 )
-def test_sign_in_returns_only_to_a_validated_admin_path(
-    auth_service, google, value, expected
-):
-    """The next field survives OAuth state only as a same-origin Admin path."""
+def test_sign_in_always_returns_to_the_admin_home(auth_service, google, value):
+    """A posted ``next`` field is ignored: every sign-in lands on /admin/."""
     fields = {} if value is None else {"next": value}
     _, response = signed_in(**fields)
     assert response.status_code == 302
-    assert response["Location"] == expected
+    assert response["Location"] == "/admin/"

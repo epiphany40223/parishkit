@@ -305,28 +305,15 @@ def test_before_day_1_the_download_is_unavailable_with_its_reason(scenario):
     assert not ExportRequest.objects.exists()
 
 
-def test_a_stale_sign_in_gets_the_step_up_page(scenario):
-    """Without a recent Google sign-in nothing is queued (#547).
-
-    The step-up page returns to Past campaigns; after it the same form
-    queues the export.
-    """
-    from .auth_builders import signed_in, stale_sign_in
+def test_an_old_sign_in_queues_the_export(scenario):
+    """A sign-in older than five minutes queues the export (#1547)."""
+    from .auth_builders import stale_sign_in
 
     harness, _, browser, _ = scenario
-    fields = {"request_key": str(uuid4())}
     stale_sign_in()
     with day_two(harness), task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        refused = post(browser, ROUTE, fields, HTTP_ACCEPT="text/html")
-        assert refused.status_code == 403
-        page = refused.content.decode()
-        assert "Confirm with Google" in page and "Nothing was done" in page
-        assert f'name="next" value="{reverse("admin:past_campaigns")}"' in page
-        assert "you will then return to Past campaigns." in page
-    assert not ExportRequest.objects.exists()
-    signed_in(browser)
-    with day_two(harness), task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        assert post(browser, ROUTE, fields).status_code == 302
+        response = post(browser, ROUTE, {"request_key": str(uuid4())})
+        assert response.status_code == 302
     assert ExportRequest.objects.count() == 1
 
 

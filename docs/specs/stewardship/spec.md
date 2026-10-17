@@ -191,8 +191,8 @@ while the Campaign is still exactly `archived` and is still the global current-
 campaign pointer, no other campaign is `draft`, `scheduled`, `active`, or
 `closed`, and it has no nonterminal `PurgeRequest` or conflicting campaign work.
 Once Return to Testing clears that pointer, the historical Campaign cannot be
-unarchived. The transition requires fresh Google authentication, explicit
-confirmation, and audit. It preserves the global mode and does not enable
+unarchived. The transition requires explicit
+confirmation and audit. It preserves the global mode and does not enable
 Family access or restart schedules; those effects require the distinct closed-
 campaign reopen workflow.
 
@@ -253,7 +253,7 @@ or delivery-unknown work blocks withdrawal until resolved. A race that has
 already moved the campaign to `active` is rejected. Previously deleted Testing
 responses and delivery details are not restored; a later Production transition
 must pass the complete readiness workflow again. Reopening a closed campaign
-likewise requires readiness validation, fresh Google authentication, explicit
+likewise requires readiness validation, explicit
 confirmation, and an audit event before its atomic transition to `active`.
 
 Successor-campaign preparation is intentionally sequential. The administration

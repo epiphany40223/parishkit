@@ -254,27 +254,27 @@ def test_plan_refuses_staff_and_rows_added_later(ready):
         )
 
 
-def stale_session(admin):
-    """An Administrator session that signed in ten minutes ago."""
+def older_session(admin):
+    """An Administrator session that signed in three hours ago."""
     with connection.cursor() as cursor:
         cursor.execute("SELECT statement_timestamp()")
         now = cursor.fetchone()[0]
-    return forge(admin, authenticated_at=now - timedelta(minutes=10))
+    return forge(admin, authenticated_at=now - timedelta(hours=3))
 
 
 def test_confirmation_refusals(ready):
-    """Fresh sign-in, the Administrator, exact counts, unchanged proposals,
-    Production mode and no unfinished overlap are each required."""
+    """A live session of the Administrator (of any sign-in age, #1547), exact
+    counts, unchanged proposals, Production mode and no unfinished overlap
+    are each required."""
     harness, admin, staff, _, first, session = ready
     record = plan(admin, [first], [writing(first)])
     with pytest.raises(PermissionError):
         confirm(harness, staff, record, forge(staff))
-    with pytest.raises(DatabaseError, match="fresh Administrator"):
-        confirm(harness, admin, record, stale_session(admin))
     with pytest.raises(DatabaseError, match="counts differ"):
         confirm(harness, admin, record, session, write_fields=2)
     first_plan = record
-    confirm(harness, admin, first_plan, session)
+    # A sign-in three hours old on a session active just now is admitted.
+    confirm(harness, admin, first_plan, older_session(admin))
     # A second plan of the same change waits for the first to finish.
     second = plan(admin, [first], [writing(first)])
     with pytest.raises(DatabaseError, match="still writing"):
@@ -453,8 +453,18 @@ def test_do_block_refuses_a_missing_guard(ready):
     """The file's closing check raises when an object it installs is gone."""
     text = FROZEN.read_text(encoding="utf-8")
     check = text[text.index("DO $check$") :]
+    # 0113 (#1547) replaced 0087's confirmation guard; each rolled-back
+    # transaction below first puts 0087's own body back.
+    start = text.index(
+        "CREATE FUNCTION public.stewardship_publication_confirmation_guard_v1("
+    )
+    own = text[start : text.index("END $$;", start) + len("END $$;")].replace(
+        "CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1
+    )
     with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(own)
         cursor.execute(check)  # installed as declared
+        transaction.set_rollback(True)
     for statement in (
         "DROP TRIGGER stewardship_publication_outcome_guard "
         "ON stewardship_publication_outcome",
@@ -468,5 +478,6 @@ def test_do_block_refuses_a_missing_guard(ready):
             transaction.atomic(),
             connection.cursor() as cursor,
         ):
+            cursor.execute(own)
             cursor.execute(statement)
             cursor.execute(check)

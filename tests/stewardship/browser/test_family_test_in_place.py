@@ -9,19 +9,15 @@ scripted scroll, #1088), and checks the mark, that the page was not sent to
 its top, focus, the announcement and that one POST was sent per click.
 """
 
-import json
-
 import pytest
 
 from .family_test_components import (
     CHECK,
+    DENIED,
     REFUSED,
     REVIEW,
-    REVIEW_LOCAL,
-    REVIEW_STALE,
     SEND,
     SENT,
-    STALE,
 )
 from .test_in_place import MARK, MARKED, count_requests
 from .waits import eventually, has_text, hidden, painted, visible
@@ -160,51 +156,18 @@ def test_send_follows_its_redirect_in_place(page, component_origin):
     assert page.url == component_origin + SENT + "#family-test-review"
 
 
-def test_a_stale_review_still_steps_up(page, component_origin):
-    """A review shown in place with a stale sign-in keeps its step-up: Send
-    is unavailable with why, and Confirm with Google is an ordinary
-    submission to the sign-in page, never sent in place."""
-    open_and_check(page, component_origin, REVIEW_STALE)
-    visible(page.get_by_text("sending tests to real Families needs a Google sign-in"))
-    assert page.evaluate(MARKED) == "kept"
-    assert page.get_by_role("button", name="Send these Family tests").is_disabled()
-    with page.expect_request(
-        lambda request: (
-            request.method == "POST"
-            and "/login" in request.url
-            and request.is_navigation_request()
-        )
-    ):
-        page.get_by_role("button", name="Confirm with Google").click()
-
-
-def test_a_local_step_up_in_place_records_its_return(page, component_origin):
-    """In LOCAL the step-up is a sign-in link opened by hand, so the page
-    records where to return (ui-v1.js). A review swapped in place records it
-    too, as one that loaded with the page would."""
+def test_a_refused_send_shows_the_error_page_whole(page, component_origin):
+    """A Send the server refuses (403, its error page, which has no region
+    of this page) is shown whole, as a native submission would show it, and
+    was sent once."""
     page.set_viewport_size(VIEWPORT)
-    page.goto(component_origin + CHECK)
-    page.evaluate("localStorage.removeItem('pk-local-step-up')")
-    answer_check(page, component_origin, REVIEW_LOCAL)
-    page.get_by_label("Family DUIDs, one per line (at most ten)").fill("1234")
-    page.get_by_role("button", name="Check these Families").click()
-    visible(page.locator("#family-test-review [data-local-step-up]"))
-    saved = page.evaluate("localStorage.getItem('pk-local-step-up')")
-    assert json.loads(saved)["next"] == CHECK
-
-
-def test_a_send_refused_for_a_stale_sign_in_shows_the_step_up(page, component_origin):
-    """A Send refused because the sign-in went stale (403, the step-up page,
-    which has no region of this page) is shown whole, as a native submission
-    would show it, and was sent once."""
-    page.set_viewport_size(VIEWPORT)
-    page.goto(component_origin + STALE)
-    posts = count_requests(page, "POST", STALE)
+    page.goto(component_origin + DENIED)
+    posts = count_requests(page, "POST", DENIED)
     page.get_by_label("I understand", exact=False).check()
     page.get_by_role("button", name="Send these Family tests").click()
-    visible(page.get_by_role("button", name="Confirm with Google"))
+    visible(page.get_by_role("heading", name="Not allowed", level=1))
     hidden(page.locator("#family-test-review"))
-    assert posts == [component_origin + STALE]
+    assert posts == [component_origin + DENIED]
 
 
 def test_refresh_keeps_families_typed_but_not_checked(page, component_origin):

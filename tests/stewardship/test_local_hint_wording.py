@@ -2,8 +2,8 @@
 
 LOCAL has no Google sign-in, so the setup wizard and settings pages must not
 tell a developer to confirm it's them with Google there. Each page keeps its
-Production sentence unchanged in every other profile. The step-up prompts
-themselves are covered by #619's tests; these are the hints around forms.
+Production sentence unchanged in every other profile. Since #1547 no page
+asks for a recent sign-in, so none draws a step-up hint at all.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -45,39 +45,6 @@ def pages():
     the page) are built at test time, after Django is configured.
     """
     return {
-        "setup": (
-            "stewardship/setup.html",
-            {"draft": None},
-            (
-                "For security, saving a credential needs a Google sign-in from"
-                " the last hour. That step asks you to confirm it's you"
-                " with Google if you need to then. Your setup is kept.",
-            ),
-            (
-                "For security, saving a credential needs a sign-in from the last"
-                " hour. That step asks you to confirm your sign-in if you"
-                " need to then. Your setup is kept.",
-            ),
-        ),
-        "setup-credential": (
-            "stewardship/setup-credential.html",
-            {
-                "draft": DRAFT,
-                "target": "parishsoft",
-                "label": "ParishSoft",
-                "form": SetupCredentialForm("parishsoft"),
-            },
-            (
-                "For security, saving a credential needs a Google sign-in from"
-                " the last hour. When you continue, you are asked to"
-                " confirm it's you with Google first. This setup is kept.",
-            ),
-            (
-                "For security, saving a credential needs a sign-in from the last"
-                " hour. When you continue, you are asked to confirm your"
-                " sign-in first. This setup is kept.",
-            ),
-        ),
         "setup-access": (
             "stewardship/setup-step.html",
             {
@@ -101,72 +68,6 @@ def pages():
                 " no one else is let in. You can name each user and change their"
                 " role later on the Users page; these lists take effect only when"
                 " setup finishes.",
-            ),
-        ),
-        "integration-settings": (
-            "stewardship/integration-settings.html",
-            {
-                "target": "slack",
-                "label": "Slack",
-                "configured": True,
-                "form": IntegrationForm("slack"),
-                "credential": InlineCredentialForm("slack"),
-                "status_url": "/admin/integrations/slack/status",
-            },
-            (
-                "For security, saving or removing settings here needs a"
-                " Google sign-in from the last five minutes.",
-            ),
-            (
-                "For security, saving or removing settings here needs a"
-                " sign-in from the last five minutes.",
-            ),
-        ),
-        # The export panels' hint (#547), shared by the directory and
-        # financial report pages.
-        "export-fresh-help": (
-            "stewardship/export-fresh-help.html",
-            {},
-            (
-                "For security, queuing this export needs a Google sign-in from"
-                " the last five minutes. When you continue, you are asked to"
-                " confirm it's you with Google first. If you continue now,"
-                " nothing is queued:",
-            ),
-            (
-                "For security, queuing this export needs a sign-in from the last"
-                " five minutes. When you continue, you are asked to confirm your"
-                " sign-in first. If you continue now, nothing is queued:",
-            ),
-        ),
-        "credential-selection": (
-            "stewardship/credential-selection.html",
-            {
-                "label": "Slack",
-                "receipt": Value(pk=UUID(int=6490), resulting_fingerprint="abc123"),
-                "preview": "p",
-            },
-            (
-                "For security, finishing the switch to the new key needs a Google"
-                " sign-in from the last five minutes. When you continue, you are"
-                " asked to confirm it's you with Google first.",
-            ),
-            (
-                "For security, finishing the switch to the new key needs a"
-                " sign-in from the last five minutes. When you continue, you are"
-                " asked to confirm your sign-in first.",
-            ),
-        ),
-        "family-portal-maintenance": (
-            "stewardship/family-portal-maintenance.html",
-            {"state": Value(closed=False), "message_limit": 500},
-            (
-                "For security, closing or reopening the Family portal needs a"
-                " Google sign-in from the last five minutes.",
-            ),
-            (
-                "For security, closing or reopening the Family portal needs a"
-                " sign-in from the last five minutes.",
             ),
         ),
         "users": (
@@ -285,124 +186,63 @@ def test_the_view_renders_local_wording_through_the_request(monkeypatch, setting
     response = views.family_portal(request)
     page = flatten(response.content.decode())
     assert response.status_code == 200
-    assert pages()["family-portal-maintenance"][3][0] in page
+    assert "This is the local laptop environment" in page
     assert_no_google_sign_in(page)
 
 
-# The pages whose "needs a sign-in from the last five minutes" hint shows only
-# when the step-up would be asked for now (#1159). Family portal availability
-# takes ``fresh`` from its view; the others ask the ``fresh_sign_in`` tag.
-# Setup's credential steps accept a sign-in from the last hour (#1402), so
-# their hint shows only once the sign-in is over an hour old.
-STEP_UP_HINTS = (
-    "setup",
-    "setup-credential",
-    "integration-settings",
-    "export-fresh-help",
-    "credential-selection",
-    "family-portal-maintenance",
-)
-HOUR_WINDOW = {"setup", "setup-credential"}
-
-
-def render_signed_in(name, local, age, monkeypatch):
-    """Render one page through a request whose sign-in is ``age`` old."""
-    from parishkit.stewardship.accounts import sessions
-
-    monkeypatch.setattr(sessions, "database_now", lambda: NOW)
-    template, values, _, _ = pages()[name]
-    page = CONTEXT | values | {"fresh": age <= timedelta(minutes=5)}
-    if local:
-        page["local_environment"] = True
-    request = RequestFactory().get("/admin/")
-    request.portal_session = Value(authenticated_at=NOW - age)
-    return flatten(render_to_string(template, page, request=request))
-
-
-@pytest.mark.parametrize("local", [False, True])
-@pytest.mark.parametrize("name", STEP_UP_HINTS)
-def test_step_up_hint_shows_only_when_the_sign_in_is_stale(name, local, monkeypatch):
-    """A fresh sign-in hides the hint; one older than the page's window (five
-    minutes, or an hour on setup's credential steps) shows it."""
-    _, _, production, local_sentences = pages()[name]
-    sentences = local_sentences if local else production
-    window = timedelta(hours=1) if name in HOUR_WINDOW else timedelta(minutes=5)
-    fresh = render_signed_in(name, local, timedelta(minutes=1), monkeypatch)
-    stale = render_signed_in(name, local, window + timedelta(minutes=1), monkeypatch)
-    for sentence in sentences:
-        assert sentence not in fresh
-        assert sentence in stale
-
-
-def test_fresh_pages_keep_their_other_rules(monkeypatch):
-    """Only the step-up sentence goes: the order and audit rules stay."""
-    setup = render_signed_in("setup-credential", False, timedelta(0), monkeypatch)
-    assert "the Slack token needs Slack turned on first." in setup
-    maintenance = render_signed_in(
-        "family-portal-maintenance", False, timedelta(0), monkeypatch
-    )
-    assert "Every change is recorded in the audit log." in maintenance
-    # The shared notice is the page's one step-up hint (#1297 review).
-    stale = render_signed_in(
-        "family-portal-maintenance", False, timedelta(minutes=6), monkeypatch
-    )
-    assert "Every change is recorded in the audit log." in stale
-    assert stale.count("the last five minutes") == 1
-
-
-# The integrations with a key field: ParishSoft and Slack drew a second
-# "For security" paragraph for the key under the settings one (pk-local
-# batch 12). The settings paragraph already says what you entered is not kept.
-KEY_PAGES = {
-    "parishsoft": "ParishSoft",
-    "slack": "Slack",
+# The pages that drew a "needs a sign-in from the last five minutes" (or
+# hour) hint until #1547, with what each needs to render.
+FORMER_STEP_UP_PAGES = {
+    "setup": ("stewardship/setup.html", {"draft": None}),
+    "setup-credential": (
+        "stewardship/setup-credential.html",
+        {
+            "draft": DRAFT,
+            "target": "parishsoft",
+            "label": "ParishSoft",
+            "form": SetupCredentialForm("parishsoft"),
+        },
+    ),
+    "integration-settings": (
+        "stewardship/integration-settings.html",
+        {
+            "target": "slack",
+            "label": "Slack",
+            "configured": True,
+            "form": IntegrationForm("slack"),
+            "credential": InlineCredentialForm("slack"),
+            "status_url": "/admin/integrations/slack/status",
+        },
+    ),
+    "credential-selection": (
+        "stewardship/credential-selection.html",
+        {
+            "label": "Slack",
+            "receipt": Value(pk=UUID(int=6490), resulting_fingerprint="abc123"),
+            "preview": "p",
+        },
+    ),
+    "family-portal-maintenance": (
+        "stewardship/family-portal-maintenance.html",
+        {"state": Value(closed=False), "message_limit": 500},
+    ),
 }
-
-
-def integration_page(target, label):
-    """The settings page context for an integration with a key field."""
-    return {
-        "target": target,
-        "label": label,
-        "configured": True,
-        "form": IntegrationForm(target),
-        "credential": InlineCredentialForm(target),
-        "status_url": f"/admin/integrations/{target}/status",
-    }
-
-
-def step_up_notices(page):
-    """How many step-up notices a rendered page holds.
-
-    Every step-up hint names the five-minute (or "few minutes") window, so
-    counting that phrase counts the notices, whatever their wording.
-    The top notice of a page that also disables its buttons ("You need to
-    have signed in within the last five minutes") counts too.
-    """
-    return page.count("the last five minutes") + page.count("the last few minutes")
+# Phrases of the retired step-up hint, matched without case.
+STEP_UP_PHRASES = ("for security,", "sign-in from the last", "confirm it's you")
 
 
 @pytest.mark.parametrize("local", [False, True])
-@pytest.mark.parametrize("target", sorted(KEY_PAGES))
-def test_integration_key_page_shows_the_step_up_notice_once(target, local, monkeypatch):
-    """A stale sign-in sees one step-up notice on a key page, not two."""
-    from parishkit.stewardship.accounts import sessions
-
-    monkeypatch.setattr(sessions, "database_now", lambda: NOW)
-    page = CONTEXT | integration_page(target, KEY_PAGES[target])
-    page["local_environment"] = local
-    request = RequestFactory().get(f"/admin/system/integrations/{target}/")
-    request.portal_session = Value(authenticated_at=NOW - timedelta(minutes=6))
-    html = flatten(
-        render_to_string("stewardship/integration-settings.html", page, request=request)
-    )
-    assert step_up_notices(html) == 1
-    assert "what you entered is not kept" in html
-
-
-@pytest.mark.parametrize("local", [False, True])
-@pytest.mark.parametrize("name", STEP_UP_HINTS)
-def test_step_up_hint_shows_at_most_once(name, local, monkeypatch):
-    """Every page with a step-up hint shows it at most once when stale."""
-    page = render_signed_in(name, local, timedelta(minutes=6), monkeypatch)
-    assert step_up_notices(page) <= 1
+@pytest.mark.parametrize("name", sorted(FORMER_STEP_UP_PAGES))
+def test_no_page_asks_for_a_recent_sign_in(name, local):
+    """A sign-in hours old draws no step-up hint, and the page's rules stay."""
+    template, values = FORMER_STEP_UP_PAGES[name]
+    page = CONTEXT | values | {"local_environment": local}
+    request = RequestFactory().get("/admin/")
+    request.portal_session = Value(authenticated_at=NOW - timedelta(hours=3))
+    html = flatten(render_to_string(template, page, request=request)).lower()
+    for phrase in STEP_UP_PHRASES:
+        assert phrase not in html
+    if name == "setup-credential":
+        assert "the slack token needs slack turned on first." in html
+    if name == "family-portal-maintenance":
+        assert "every change is recorded in the audit log." in html

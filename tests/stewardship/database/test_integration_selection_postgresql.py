@@ -273,13 +273,9 @@ def test_selection_parser_is_bound_to_preview_not_later_cadence(
     assert retry["Location"] == response["Location"]
 
 
-@pytest.mark.parametrize(
-    "failure", ["stale_base", "settings", "freshness", "hidden", "csrf"]
-)
-def test_selection_rechecks_proof_intent_and_fresh_auth(
-    replacement, monkeypatch, failure
-):
-    """A correct old preview never authorizes new settings or stale authentication."""
+@pytest.mark.parametrize("failure", ["stale_base", "settings", "hidden", "csrf"])
+def test_selection_rechecks_proof_and_intent(replacement, monkeypatch, failure):
+    """A correct old preview never authorizes new settings or a changed proof."""
     value = replacement
     complete(value)
     preview = hidden(value.browser.get(value.url), "preview")
@@ -302,8 +298,6 @@ def test_selection_rechecks_proof_intent_and_fresh_auth(
                 }
             ],
         )
-    elif failure == "freshness":
-        stale_sign_in()
     count = ConfigurationChangeRequest.objects.count()
     data = {"action": "confirm", "preview": preview}
     if failure == "hidden":
@@ -318,12 +312,23 @@ def test_selection_rechecks_proof_intent_and_fresh_auth(
         == {
             "stale_base": 409,
             "settings": 409,
-            "freshness": 403,
             "hidden": 400,
             "csrf": 403,
         }[failure]
     )
     assert ConfigurationChangeRequest.objects.count() == count
+
+
+def test_an_old_sign_in_confirms_the_selection(replacement):
+    """A sign-in older than five minutes confirms the reviewed key (#1547)."""
+    value = replacement
+    complete(value)
+    preview = hidden(value.browser.get(value.url), "preview")
+    count = ConfigurationChangeRequest.objects.count()
+    stale_sign_in()
+    response = post(value.browser, value.url, {"action": "confirm", "preview": preview})
+    assert response.status_code == 302, response.content
+    assert ConfigurationChangeRequest.objects.count() == count + 1
 
 
 def test_installer_refuses_fingerprint_without_matching_ack(replacement):

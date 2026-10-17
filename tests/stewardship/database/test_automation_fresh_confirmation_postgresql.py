@@ -1,15 +1,14 @@
-"""The Production confirmation accepts a full automation session (ADM-11 PR 5).
+"""The Production confirmation accepts an automation session (ADM-11 PR 5).
 
 A genuine go-live through cleanup and link preparation (the confirmation
 suites' fixtures), then a confirmation row built from a real signed preview,
 so every other clause of ``stewardship_production_confirmation_guard_v1``
-passes and only the two clauses 0013 changed decide: the five-minute sign-in
-and the sign-in after cleanup. The automation session's sign-in instant is
-moved a day back, before cleanup finished, so both clauses are exercised.
-The old guard refuses it; the new one refuses a read-only, revoked, expired
-or another Administrator's session; and ``confirmation_commands.confirm``
-through the automation caller confirms Production, the Python post-cleanup
-check included.
+passes and only the session clause decides. Since 0113 (#1547) it checks no
+sign-in age and no sign-in after cleanup: the automation session's sign-in
+instant is moved a day back, before cleanup finished, and its live command
+session is admitted, while another Administrator or a revoked command
+session is refused. ``confirmation_commands.confirm`` through the automation
+caller then confirms Production.
 """
 
 # ruff: noqa: F811 -- imported fixture dependencies are injected by pytest name.
@@ -21,22 +20,19 @@ from uuid import uuid4
 import pytest
 from django.core import signing
 from django.db import DatabaseError, transaction
+from django.utils import timezone
 
 from parishkit.stewardship.accounts import automation_sessions as automation
 from parishkit.stewardship.accounts.admin_caller import AdminCaller
 from parishkit.stewardship.accounts.confirmation_commands import SALT, confirm
+from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.policy import current_principal
 from parishkit.stewardship.campaigns.confirmation_models import ProductionConfirmation
 from parishkit.stewardship.campaigns.runtime import campaign_transaction
 
+from .auth_builders import unguarded
 from .automation_builders import HOST
-from .test_automation_fresh_guards_postgresql import (
-    age,
-    expire,
-    old_guard,
-    shift,
-    unexpire,
-)
+from .test_automation_fresh_guards_postgresql import age
 from .test_confirmation_readiness_postgresql import (  # noqa: F401
     bootstrapped,
     config_role,
@@ -53,7 +49,7 @@ GUARD = "stewardship_production_confirmation_guard_v1"
 
 
 def approved(service, login, *, scope="full"):
-    """An automation session approved from ``login``'s fresh browser session.
+    """An automation session approved from ``login``'s browser session.
 
     Returns ``(secret, row)``. The pairing request is built as ``login
     start`` builds it; approval runs through the service, as the page does.
@@ -101,25 +97,20 @@ def refused(values, campaign_id):
 
 
 def test_the_confirmation_guard_and_command_accept_a_full_session(ready_links):
-    """Both changed clauses: refused by the old guard and every narrower session."""
+    """A day-old sign-in on a live command session passes; narrower ones fail."""
     preparation, arguments = prepare(ready_links)
     login, service, campaign_id = arguments[:3]
     with web_login():
         fresh(arguments)
-    secret, row = approved(service, login)
-    reader_secret, reader = approved(service, login, scope="read_only")
-    ended_secret, ended = approved(service, login)
-    # A day back: older than five minutes, and before cleanup completed.
+    secret, _ = approved(service, login)
+    # A day back: older than any window, and before cleanup completed.
     age(timedelta(days=1))
-    shift(reader, timedelta(seconds=1))
     full = caller(service, secret)
-    narrow = caller(service, reader_secret)
-    revoked = caller(service, ended_secret)
-    automation.revoke(
-        ended.pk,
-        current_principal(service.store, ended.principal_id),
-        reason="revoked_by_owner",
-    )
+    revoked = caller(service, secret)
+    with unguarded():
+        PortalSession.objects.filter(pk=revoked.portal_session.pk).update(
+            revoked_at=timezone.now()
+        )
     with web_login():
         preview, _, token = fresh(arguments)
     state = preview.readiness
@@ -148,19 +139,12 @@ def test_the_confirmation_guard_and_command_accept_a_full_session(ready_links):
             expected_runtime_version=state.campaign.systemconfiguration_set.get().version,
         )
 
-    with old_guard(GUARD), web_login():
-        assert refused(values(full), campaign_id) == "42501"
     with web_login():
         assert refused(values(full), campaign_id) is None
-        assert refused(values(narrow), campaign_id) == "42501"
         assert refused(values(revoked), campaign_id) == "42501"
         assert refused(values(full) | {"actor_id": uuid4()}, campaign_id) == "42501"
-    expire(row)
-    with web_login():
-        assert refused(values(full), campaign_id) == "42501"
-    unexpire(row)
-    # The page's confirmation through the command line's caller: the Python
-    # post-cleanup check accepts it too, and Production is confirmed.
+    # The page's confirmation through the command line's caller: Production
+    # is confirmed with the day-old sign-in instant.
     with web_login():
         confirm(full, *arguments[1:], token=token, typed="Production")
     confirmation = ProductionConfirmation.objects.get()

@@ -15,8 +15,7 @@ from .held_emails_components import (
     PAGE,
     PREVIEW,
     SETTLED,
-    STALE,
-    STEP_UP,
+    SIGNED_OUT,
 )
 from .test_restore_review import AXE, _not_reloaded, _routed, _top, expect
 
@@ -37,7 +36,7 @@ def test_held_email_pages_are_accessible_at_phone_and_desktop_widths(
 ):
     """Each state passes axe and fits a phone without sideways scrolling."""
     page.set_viewport_size({"width": width, "height": 900})
-    for path in (PAGE, PREVIEW, SETTLED, STEP_UP, BLOCKED, NONE):
+    for path in (PAGE, PREVIEW, SETTLED, SIGNED_OUT, BLOCKED, NONE):
         page.goto(component_origin + path)
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         page.evaluate(axe_source)
@@ -96,11 +95,11 @@ def test_preview_and_settle_in_place(page, component_origin, width):
 
 
 def test_refusals_answer_inside_the_region(page, component_origin):
-    """A stale sign-in offers the step-up in place; a change is explained."""
+    """An ended session says to sign in again in place, moving nothing."""
     _route(
         page,
         component_origin,
-        {"group-preview": (403, STEP_UP), "group-confirm": (409, CHANGED)},
+        {"group-preview": (403, SIGNED_OUT), "group-confirm": (409, CHANGED)},
     )
     page.goto(component_origin + PAGE)
     kept = _not_reloaded(page)
@@ -111,10 +110,15 @@ def test_refusals_answer_inside_the_region(page, component_origin):
     ).nth(1)
     before = (_top(resend), _top(assume))
     resend.click()
-    expect(region.get_by_text("this step needs a Google sign-in")).to_be_visible()
-    expect(region.get_by_role("button", name="Confirm with Google")).to_be_visible()
+    alert = region.locator('p[role="alert"][data-restore-refused="signed_out"]')
+    expect(alert).to_contain_text("Your sign-in has ended")
+    expect(alert).to_contain_text("Nothing was changed.")
+    expect(alert.get_by_role("link", name="Sign in again")).to_be_visible()
     # The refusal is drawn after the table, so no control moved.
     assert (_top(resend), _top(assume)) == pytest.approx(before, abs=1)
+    # No sign-in gate holds the redrawn decisions (#1547).
+    expect(resend).to_be_enabled()
+    expect(assume).to_be_enabled()
     assert kept()
 
 
@@ -138,24 +142,3 @@ def test_without_holds_the_page_says_so(page, component_origin):
     page.goto(component_origin + NONE)
     expect(page.get_by_text("No held emails.")).to_be_visible()
     expect(page.locator(f"{REGION} table")).to_have_count(0)
-
-
-def test_a_sign_in_that_ages_during_a_preview_moves_nothing(page, component_origin):
-    """Cancel answered after the sign-in has aged draws the step-up notice
-    after the table, so no row's button moves (#1331)."""
-    _route(
-        page,
-        component_origin,
-        {"group-preview": (200, PREVIEW), "cancel": (200, STALE)},
-    )
-    page.goto(component_origin + PAGE)
-    kept = _not_reloaded(page)
-    region = page.locator(REGION)
-    assume = region.get_by_role("button", name="Assume these were sent", exact=True)
-    before = (_top(assume.first), _top(assume.nth(1)))
-    assume.first.click()
-    region.get_by_role("button", name="Cancel").click()
-    expect(region.locator("#restore-fresh-reason")).to_be_visible()
-    expect(assume.first).to_be_disabled()
-    assert (_top(assume.first), _top(assume.nth(1))) == pytest.approx(before, abs=1)
-    assert kept()

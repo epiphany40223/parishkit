@@ -154,17 +154,14 @@ def test_a_revoke_names_exactly_one_session(two_admins, google):  # noqa: F811
     assert mine.revoked_at is None and other.revoked_at is None
 
 
-def test_approving_from_access_first_asks_for_a_fresh_sign_in(auth_service, google):
-    """A stale sign-in sees Confirm with Google and an unavailable button."""
+def test_approving_from_access_needs_no_recent_sign_in(auth_service, google):
+    """An old sign-in sees the Approve a session link, never a step-up (#1547)."""
     browser, _ = signed_in()
     stale_sign_in()
     page = browser.get(ACCESS)
-    assert b"Confirm with Google" in page.content
-    assert (
-        b'<button type="button" disabled aria-describedby="approve-unavailable">'
-        b"Approve a session</button>" in page.content
-    )
-    assert b'href="/admin/users/automation/approval/"' not in page.content
+    assert b"Confirm with Google" not in page.content
+    assert b'href="/admin/users/automation/approval/"' in page.content
+    assert b"approve-unavailable" not in page.content
 
 
 def test_the_notices_region_is_always_there_and_acknowledges_in_place(

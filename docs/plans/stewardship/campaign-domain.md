@@ -45,7 +45,7 @@ state names independently.
    from the Campaign's IANA timezone snapshot to the authoritative half-open UTC
    interval, including gaps and folds.
 2. Implement a lifecycle transition registry describing allowed source/target
-   states, required guards, actor type, reauthentication, and audit action.
+   states, required guards, actor type, and audit action.
 3. Centralize predicates for portal access, scheduled work admission, structural
    setting locks (including campaign timezone), reopen eligibility, archive
    eligibility, return to Testing, and successor creation.

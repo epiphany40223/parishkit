@@ -16,13 +16,13 @@ import pytest
 from .test_in_place import MARK, MARKED, count_requests
 from .upload_defaults_components import (
     BY_NAME,
+    DENIED,
     ENDED,
     FULL_BY_SIZE,
     LIBRARY,
     LIMITS,
     REFUSED_SIZE,
     REFUSED_TYPE,
-    STEP_UP,
     UPLOAD,
     UPLOADED,
 )
@@ -258,14 +258,13 @@ def test_a_sort_keeps_the_chosen_file_and_typed_name(page, component_origin):
     assert files == 1
 
 
-def test_an_upload_answered_by_the_step_up_page_shows_it_whole(page, component_origin):
-    """Upload needs no fresh sign-in, but an answer that is not this page
-    (the step-up page, 403) is shown whole, as a native submission would
-    show it, and was sent once."""
-    posts = answer(page, component_origin, UPLOAD, STEP_UP, 403)
+def test_an_upload_answered_by_the_error_page_shows_it_whole(page, component_origin):
+    """An answer that is not this page (the server's error page, 403) is
+    shown whole, as a native submission would show it, and was sent once."""
+    posts = answer(page, component_origin, UPLOAD, DENIED, 403)
     open_and_choose(page, component_origin)
     page.locator(UPLOAD_BUTTON).click()
-    visible(page.get_by_role("button", name="Confirm with Google"))
+    visible(page.get_by_role("heading", name="Not allowed", level=1))
     hidden(page.locator("#hosted-file-upload"))
     assert len(posts) == 1
 

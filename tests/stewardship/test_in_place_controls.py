@@ -278,8 +278,7 @@ def test_family_test_check_and_send_are_in_place():
     PR 7c): each is a data-in-place POST landing on the review region, which
     holds the notices, the allowance, Check and the review. Send's redirect
     leaves no review, so the requested notice takes focus and is announced.
-    The step-up's Confirm with Google stays an ordinary form, and Refresh
-    status replaces only its own region, so Families typed but not
+    Refresh status replaces only its own region, so Families typed but not
     yet checked survive it."""
     text = (TEMPLATES / "campaign-mail-families.html").read_text()
     assert names_region(text, "family-test-review")
@@ -295,7 +294,6 @@ def test_family_test_check_and_send_are_in_place():
     assert 'data-in-place-message-from="family-test-sent"' in send.group(0)
     assert 'id="family-test-sent" tabindex="-1" data-in-place-focus' in region
     assert "family-test-available" in region
-    assert "components/step-up-notice.html" in region
     refresh = re.search(r'<a [^>]*>{% translate "Refresh status" %}</a>', text)
     assert "data-in-place-only" in refresh.group(0)
 
