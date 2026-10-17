@@ -2517,7 +2517,7 @@ def report_census(args, preamble, runtime, context):
 
 
 def census_resolve(args, preamble, runtime, context):
-    """Record a Census changes row's outcome, as its Record outcome does (#463).
+    """Record a Census changes row's outcome, as its row actions do (#463).
 
     Without ``--request-key`` a new key is made and written to standard error
     before anything is done, so a run that crashes can be repeated with it.
@@ -2558,7 +2558,7 @@ def census_resolve(args, preamble, runtime, context):
 
 
 def census_review(args, preamble, runtime, context):
-    """Review an Automatic census change, as its row's Review does (#528).
+    """Review an Automatic census change, as its row's actions do (#528).
 
     Approve (``approved``), Ignore (``ignored``) or Back to To review
     (``unreviewed``). Without ``--request-key`` a new key is made and
@@ -4075,7 +4075,7 @@ CENSUS_ACTIONS = ("entered", "ignored", "reopened")
 
 
 def _census_resolve_options(parser):
-    """Options of ``census resolve``: a Census changes row's Record outcome."""
+    """Options of ``census resolve``: a Census changes row's outcome."""
     parser.add_argument("proposal_id", type=_uuid, metavar="PROPOSAL_ID")
     parser.add_argument(
         "--action",
@@ -6139,7 +6139,7 @@ def _report_specs():
         # page's service, keyed by the page's request key.
         CommandSpec(
             "census resolve",
-            "Record a census change's outcome, as its row's Record outcome does.",
+            "Record a census change's outcome, as its row's actions do.",
             census_resolve,
             "full",
             True,
@@ -6151,11 +6151,11 @@ def _report_specs():
             request_key=True,
             expected_version=True,
         ),
-        # An Automatic row's Review (#528, ADM-09): the page's service,
+        # An Automatic row's review (#528, ADM-09): the page's service,
         # keyed by the page's request key; reversible, so it asks nothing.
         CommandSpec(
             "census review",
-            "Review an automatic census change, as its row's Review does.",
+            "Review an automatic census change, as its row's actions do.",
             census_review,
             "full",
             True,

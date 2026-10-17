@@ -1868,8 +1868,10 @@ then:
   sign-in address, the time in the parish's compact date format and
   browser-local time, and the note they left. Blank until someone records
   one.
-- **Actions**, last: *Record outcome* on a By-hand row someone may resolve,
-  and *Review* on an Automatic row, for an Administrator.
+- **Actions**, last: the row's action icons
+  ([manual census resolution](#manual-census-resolution),
+  [automatic census review](#automatic-census-review)), only those the row
+  allows the reader.
 
 A terminal execution decides the status first, since it is the outcome
 whatever the decision says: *published* is **Published**,
@@ -1940,25 +1942,26 @@ view-only for Staff; an Administrator reviews them as the
 [next section](#automatic-census-review) says, and publication follows the
 [data workflow](../data/spec.md#review-and-publication).
 
-The controls sit in the row's last column, in a *Record outcome* disclosure,
-so a row stays short until someone opens it
-([table fit and row height](../ui-conventions/spec.md#table-fit-and-row-height)):
-a note field, then **Entered in ParishSoft**, which says it cannot be undone
-and asks first in a confirmation dialog naming the row
-([row actions and confirmation](../ui-conventions/spec.md#row-actions-and-confirmation)),
-and **Ignore**; on an *Ignored* row, for an Administrator, a required note
-and **Reopen**. The disclosure is interim until the page's row actions move
-to the shared action-table pattern
-([#879](https://github.com/epiphany40223/parishkit/issues/879)). The form
-posts with the page's own filters and table choices, so the answer is the
-same page, refreshed in place, with a notice naming the row by what changed
-and its DUIDs; that notice is what the page announces, and its two lines are
-kept while empty, so it never moves the table
-([no layout shift](../ui-conventions/spec.md#no-layout-shift)). A row
-someone else changed first is left as it is, and the notice says so. While
-other campaign work holds the campaign (a restore review, or a cleanup,
-purge or go-live step), the page offers no Record outcome and says why; the
-list and its downloads still read.
+The controls are icon buttons in the row's last column, on the shared
+[row-action pattern](../ui-conventions/spec.md#row-actions-and-confirmation)
+([#879](https://github.com/epiphany40223/parishkit/issues/879)): **Mark … entered in ParishSoft** (a check mark) and **Ignore …**
+(an eye struck through); on an *Ignored* row, for an Administrator,
+**Reopen …** (an arrow turning back). Each is named for its row by what
+changed and whose, with a matching tooltip, and opens the page's
+confirmation dialog naming the row, which holds the note: optional, and
+required for Reopen, whose Confirm waits for it. Entered in ParishSoft says
+it cannot be undone, and its Confirm is the destructive one; Ignore and
+Reopen record with an ordinary Confirm. The dialog posts the row's fields
+with the page's own filters and table choices to the page itself, so the
+answer is the same page, redrawn in place, with a notice naming the row by
+what changed and its DUIDs; that notice is what the page announces, and its
+two lines are kept while empty, so it never moves the table
+([no layout shift](../ui-conventions/spec.md#no-layout-shift)). Focus
+returns to the row's first action, or to the notice when the row has left
+the list. A row someone else changed first is left as it is, and the notice
+says so. While other campaign work holds the campaign (a restore review, or
+a cleanup, purge or go-live step), the page offers no row actions and says
+why; the list and its downloads still read.
 
 Before #528 the web role could change a proposal only after a later Family
 response, to *superseded*, *cancelled* or *resolved_upstream*, so the tick,
@@ -1994,19 +1997,21 @@ publication of the change starts, and each one changes the proposal's
 version, so a publication plan that included it no longer matches. Staff
 see Automatic rows but never review them.
 
-The controls sit in the row's *Review* disclosure, in the same place and form
-as [Record outcome](#manual-census-resolution): a note field, then the
-buttons the row allows. A review is reversible, so none asks first. The form
-posts with the page's filters and table choices, and the answer is the same
-page, refreshed in place, with the notice naming the row; a row someone else
-changed first is left as it is, and the notice says so. While other campaign
-work holds the campaign, no Review is offered. On the command line,
+The controls are the row's icons, as for
+[manual resolution](#manual-census-resolution): **Approve …** (a check
+mark), **Ignore …** and **Send … back to To review** (an arrow turning
+back), only those the row allows. Each opens the page's decisions dialog,
+which names the row and holds an optional note; a review is reversible, so
+its Confirm is an ordinary one. The answer is the same page, redrawn in
+place, with the notice naming the row; a row someone else changed first is
+left as it is, and the notice says so. While other campaign work holds the
+campaign, no review is offered. On the command line,
 `pk-admin census review` records the same review through the same service
 ([admin automation](../admin-automation/spec.md#reports-and-exports)).
 
 A *Conflict* means ParishSoft changed after the Family answered: *ParishSoft
 now* differs from what they saw. Besides Ignore (keep ParishSoft's value),
-the row's *Review* offers **Use the Family's value anyway**
+the row offers **Use the Family's value anyway** (a check mark in a circle)
 ([#528](https://github.com/epiphany40223/parishkit/issues/528), ADM-09.03),
 worded **Use the edited value anyway** while an Edit value is set. It
 approves the change over ParishSoft's current value: the review records that
@@ -2015,12 +2020,12 @@ and the change becomes *pending* (*To do*). Publication then merges against
 the accepted base instead of the Family's baseline
 ([data workflow](../data/spec.md#review-and-publication)), so it writes the
 Family's answer (or the edited value) only while ParishSoft still has the
-value the Administrator saw. The Family's baseline is never changed. A help
-line above the button, which describes it, says this, and the button shares
-the Review form's optional note. It is offered only to an Administrator, on
+value the Administrator saw. The Family's baseline is never changed. Its
+dialog's text, which describes the dialog, says this, and the dialog holds
+the optional note. It is offered only to an Administrator, on
 an Automatic *Conflict* whose ParishSoft value is known (a change ParishSoft
-could not be read for waits for a refresh), whatever its decision. It asks
-nothing, since it can be undone: a later **Back to To review** or **Ignore**
+could not be read for waits for a refresh), whatever its decision. Its
+Confirm is an ordinary one, since it can be undone: a later **Send … back to To review** or **Ignore**
 (one by one or in bulk) puts the change back to *Conflict*, and the accepted
 base no longer counts, so no later Approve, one by one or in bulk, can
 publish over ParishSoft's value until Use the Family's value anyway is
@@ -2036,7 +2041,7 @@ per change only, never part of bulk review. On the command line it is
 `pk-admin census resolve-conflict`, through the same service
 ([admin automation](../admin-automation/spec.md#reports-and-exports)).
 
-The same *Review* disclosure has **Edit value**
+An Automatic row also has **Edit value** (a pencil)
 ([#528](https://github.com/epiphany40223/parishkit/issues/528), ADM-09.04):
 the value publication writes instead of the Family's answer. The Family's
 answer is never changed and stays in its column, with the edit in *Edited
@@ -2047,23 +2052,25 @@ and otherwise text no longer than ParishSoft's request schema takes for the
 field (First name 30 characters, Email address 150, a phone 25). **Save
 value** is unavailable until the value differs from the one shown, with its
 reason in a reserved line ([prerequisite
-gates](../ui-conventions/spec.md#prerequisite-gates)); **Clear edit**
-appears only while an edit is set. Each takes an optional note and, being
-reversible, asks nothing; the answer is the page, refreshed in place, with
-the notice naming the row. The value is read as the Family form reads its
+gates](../ui-conventions/spec.md#prerequisite-gates)); **Clear edit** (an
+eraser) is a row icon of its own, offered only while an edit is set. Edit
+value opens a dialog of its own holding the value, its help, the optional
+note and Save value; Clear edit opens the decisions' dialog with its note.
+Both record with an ordinary Confirm, being reversible, and the answer is
+the page, redrawn in place, with the notice naming the row. The value is read as the Family form reads its
 own answer (a phone must be a whole number, email addresses are checked and
 joined, a required name cannot be blank) and must fit ParishSoft's request
 schema as publication will send it; Gender is held to its census choices
 only, since its ParishSoft encoding is not settled yet. Save value is also
 unavailable, with its reason, while the browser can tell the value is not
 allowed (blank, too long, or a date after today). A value the server refuses
-answers in place after the form with the reason, and the field is marked in
-error until it is edited
+is answered with the reason at the field in the dialog, and the field is
+marked in error, and Save value waits, until it is edited
 ([field errors](../ui-conventions/spec.md#field-errors-and-live-checks));
 nothing is recorded. A blank value is refused: Ignore leaves ParishSoft as it
 is. A value equal to
 the Family's answer clears the edit, so Edited value never repeats it.
-Edit value is offered on the rows Review is (Automatic, open, an
+Edit value is offered on the rows a review is (Automatic, open, an
 Administrator's, while no other campaign work holds the campaign), a
 Conflict included. It keeps the decision, so an approved change stays
 approved, whoever edits it; its new version means a publication plan that
@@ -2076,13 +2083,13 @@ An Administrator may also give several Automatic changes one decision at
 once, with the shared selection column, bulk bar and confirmation dialog
 ([row actions and confirmation](../ui-conventions/spec.md#row-actions-and-confirmation)):
 **Approve**, **Ignore** and **Back to To review** above the table. Only a
-row whose Review is offered has a box, and the box lists the decisions that
-Review offers. A button is available only while every ticked row offers its
+row offering a review decision has a box, and the box lists the decisions
+its icons offer. A button is available only while every ticked row offers its
 decision. The dialog names the exact count ("Approve 3 changes?") and takes
 one optional note, recorded on each change. The selection covers the rows on
 the page shown, as every Admin table's does, and at most 250, the largest
 page. A page showing more rows (All) offers no boxes and says to show fewer.
-Each change is reviewed exactly as its own Review would review it (its own
+Each change is reviewed exactly as its own icon would review it (its own
 review row, version and audit event; queued and final changes refused), all
 or none, in one work transaction, each against the version its row showed.
 A change someone else updated first leaves every chosen change as it is,

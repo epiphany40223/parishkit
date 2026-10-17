@@ -2632,7 +2632,8 @@ names exactly what will be removed. **Shared code.** The `table_actions`
 template tag, `components/confirm-dialog.html` and `data-confirm-open` in
 `ui-v1.js`. **Precedent.** #879, #882 (first user), #947 (second slice),
 the Pages and emails email tables (third slice), Roster changes to enter
-(a recording action); #1065 (row links, System logs).
+(a recording action), Census changes (actions with a note); #1065 (row
+links, System logs).
 
 A table whose rows can be acted on follows one pattern
 ([#879](https://github.com/epiphany40223/parishkit/issues/879)), built once
@@ -2646,7 +2647,9 @@ sessions of
 outcomes of [Ministry follow-up](../admin-portal/spec.md#follow-up-workflows)
 ([#1131](https://github.com/epiphany40223/parishkit/issues/1131)) and the
 Entered in ParishSoft tick of
-[Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter); the
+[Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter) and
+the row actions of
+[Census changes](../reports/spec.md#manual-census-resolution); the
 other Admin tables with per-row actions move to it in later changes, as the
 inventory on #879 lists.
 
@@ -2662,8 +2665,11 @@ inventory on #879 lists.
   takes an icon of its own and acts [in place](#in-place-controls) without a
   dialog; so far only Roster changes to enter's tick, "Mark … entered in
   ParishSoft" (a check mark) and "Clear Entered in ParishSoft for …" (an
-  undo arrow). A row shows only the actions that apply to it; a row with
-  none shows nothing there.
+  undo arrow). An action that carries a note opens the confirmation dialog
+  instead, which holds the note, with an ordinary confirm button unless the
+  action cannot be undone; so far only Census changes ([#879](https://github.com/epiphany40223/parishkit/issues/879)), whose
+  decisions take an optional note and Reopen a required one. A row shows
+  only the actions that apply to it; a row with none shows nothing there.
 - **Edit** opens the item's edit page, which is the same page as New, filled
   in. Saving it goes through the [review dialog](#review-dialog), after which
   the reader returns to the table (until #750 converts the page, through its
@@ -2702,7 +2708,10 @@ inventory on #879 lists.
   then fits it when its kind is one of them. On a page whose view travels
   only in POST bodies, the dialog posts with the view's fields to the page
   itself and redraws from that answer, since its address would show the
-  default view. A dialog
+  default view. A row's control posts its own name and value and the
+  row's other fields it lists (`data-confirm-with`), so one dialog serves
+  every row; where the rows have ids, focus then returns to the row's first
+  action, or to the fallback when the row is gone. A dialog
   may hold fields, such as an
   optional note applied to each row; its confirm button then waits for them
   as a form's Save does, and they return to their defaults each time it
@@ -3085,7 +3094,7 @@ Recorded exceptions to the rule above:
   ([#463](https://github.com/epiphany40223/parishkit/issues/463)) keeps
   each change's `proposal_id` and `version`. They are not personal data;
   Administrators and Staff already receive them in the page's hidden
-  Record outcome fields; and `census resolve` needs them to name the change
+  row action fields; and `census resolve` needs them to name the change
   and its version. The format is offered only on the command line, not on
   the page, whose CSV, XLSX and PDF follow the rule above. Pending
   Administrator confirmation.
