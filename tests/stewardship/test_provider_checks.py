@@ -20,6 +20,7 @@ from parishkit.parishsoft_http_worker import LOCAL_SOURCE_BASE_URL
 from parishkit.stewardship import provider_check_worker as worker
 from parishkit.stewardship import provider_checks as parent
 from parishkit.stewardship.accounts.credential_errors import (
+    CredentialOrganizationMismatch,
     CredentialValidationUnavailable,
 )
 from parishkit.stewardship.deployment import DeploymentProfile
@@ -449,13 +450,49 @@ def test_request_local_failures_cannot_reject_a_credential(monkeypatch, stage, e
         close.assert_called_once()
 
 
+def test_request_validator_passes_an_organization_mismatch_through(monkeypatch):
+    """A mismatch is the provider's verdict, never a retryable local failure.
+
+    The installer records it as the refusal's cause (#1495), so the request
+    validator must not fold it into "unavailable" with local errors.
+    """
+    from django.db import connections
+    from django.utils import timezone
+
+    from parishkit.stewardship.accounts import credential_database, secret_requests
+    from parishkit.stewardship.accounts.provider_models import ProviderValidationContext
+
+    query = Mock()
+    query.filter.return_value.first.return_value = SimpleNamespace(
+        settings={"channel_id": "C123"},
+        request=SimpleNamespace(expires_at=timezone.now() + timedelta(minutes=5)),
+    )
+    monkeypatch.setattr(
+        ProviderValidationContext.objects, "select_related", Mock(return_value=query)
+    )
+    monkeypatch.setattr(credential_database, "admit_installer_database", Mock())
+    monkeypatch.setattr(connections, "close_all", Mock())
+    # The deadline reads the database clock; this test has no database.
+    monkeypatch.setattr(secret_requests, "_now", timezone.now)
+    monkeypatch.setattr(
+        parent,
+        "check_candidate",
+        Mock(side_effect=CredentialOrganizationMismatch()),
+    )
+    with pytest.raises(CredentialOrganizationMismatch):
+        parent.request_validator(
+            "slack", check=lambda: None, profile=DeploymentProfile.PRODUCTION
+        )(object(), b"synthetic")
+
+
 @pytest.mark.parametrize(
     ("output", "code", "expected"),
     [
         (b"valid\n", 0, True),
         (b"invalid\n", 0, False),
-        # Refused for good like an invalid key, so it is never retried (#1492).
-        (b"mismatch\n", 0, False),
+        # Refused for good like an invalid key, so it is never retried
+        # (#1492), but raised as itself so its cause is recorded (#1495).
+        (b"mismatch\n", 0, CredentialOrganizationMismatch),
         (b"unavailable\n", 0, None),
         (b"private\n", 0, None),
         (b"valid\n", 1, None),
@@ -469,6 +506,9 @@ def test_parent_private_ipc_and_closed_output(monkeypatch, output, code, expecte
     monkeypatch.setattr(parent.subprocess, "Popen", factory)
     if expected is None:
         with pytest.raises(CredentialValidationUnavailable):
+            invoke()
+    elif expected is CredentialOrganizationMismatch:
+        with pytest.raises(CredentialOrganizationMismatch):
             invoke()
     else:
         assert invoke() is expected
