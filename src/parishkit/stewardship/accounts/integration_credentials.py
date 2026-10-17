@@ -458,12 +458,21 @@ def save_credential(
         values["settings"] = settings
 
     def admit():
-        """Repeat authorization and the base under the work lock."""
+        """Repeat authorization and the base under the work lock.
+
+        An automation caller's session is checked again here too
+        (``sign_in_instant``), which locks its automation session row until
+        this transaction commits, so a revocation committed after the intake
+        is seen, and one racing it waits.
+        """
         with work_transaction():
             current = authenticated_admin(request, store=service.store, read_only=True)
-            return allows(current, Capability.CONFIGURE) and (
-                current.identity == actor.identity
-            )
+            if not allows(current, Capability.CONFIGURE) or (
+                current.identity != actor.identity
+            ):
+                return False
+            sign_in_instant(request)
+            return True
 
     base = service.store.active()
     if base is None or base.digest != intent["base"]:
