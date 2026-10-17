@@ -21,6 +21,7 @@ from parishkit.stewardship.reports.census_changes import (
     census_pdf,
     census_xlsx,
     display,
+    family_answer,
     select,
     shape,
     status,
@@ -116,6 +117,18 @@ def test_display_words_each_value_shape():
     assert display(None) == ""
     member = {"first_name": "Lee", "last_name": "Sample", "email": "lee@example.org"}
     assert display(member) == "Lee Sample; Email address: lee@example.org"
+
+
+def test_family_answer_words_an_unknown_birth_date():
+    """A birth date of Unknown reads Unknown; any other removal stays blank."""
+    assert family_answer({"field": "birth_date", "submitted_value": None}) == (
+        "Unknown"
+    )
+    assert family_answer({"field": "email", "submitted_value": ""}) == ""
+    assert family_answer({"field": "nickname", "submitted_value": None}) == ""
+    assert family_answer({"field": "birth_date", "submitted_value": "2001-02-03"}) == (
+        "2001-02-03"
+    )
 
 
 def test_shape_names_who_and_hides_unread_family_values():
