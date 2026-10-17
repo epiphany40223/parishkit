@@ -667,7 +667,7 @@ never scrolls to show it (Administrator, pk-local review of
   ([#1429](https://github.com/epiphany40223/parishkit/issues/1429)): every
   settings editor reviews in the [review dialog](#review-dialog) (#750), and
   Change status never follows back to a settings page. Two of its rules stay
-  for the in-place reviews that remain (Outgoing mail's bulk review and Past
+  for the in-place reviews that remain (Sent mail's bulk review and Past
   campaigns' import). Editing the form after a review, or while its Review is
   in flight, withdraws the review (`data-review-of`), so Apply never applies
   values other than those shown: Apply is removed, the rest stays in place
@@ -3103,7 +3103,10 @@ only a DUID has it in its `class`.
 
 The same file also reads every table's column headings: each heading that
 names a DUID is one of the two above and comes right after its name's
-heading (Family or Member; Census changes heads its Member column Who). The
+heading (Family or Member; Census changes heads its Member column Who, and
+Sent mail heads its Family column Recipient, since it also names the
+Administrators that reports and notices go to,
+[#1562](https://github.com/epiphany40223/parishkit/issues/1562)). The
 one DUID column apart from its name is the recorded exception below.
 
 The follow-up queue on Ministry requests also has no Submitted column (Administrator
@@ -3224,7 +3227,7 @@ installed function body.
 (Administrator, 2026-10-13, on #1131). Family pages use it since #1216's
 first change, and the Family-code directory, Census changes and Family
 timeline downloads have the ParishSoft status column (or detail) since its
-second. The Family timeline, Outgoing mail, Refused addresses, Testing
+second. The Family timeline, Sent mail, Refused addresses, Testing
 submissions, the chosen-Family send page and "Families on the form now"
 word a blank surname "Name not recorded in ParishSoft" since that second
 change. Since its third (frozen migration 0094), the installed selections
@@ -3301,7 +3304,7 @@ the shared chart's "Nothing to show yet." row, which sits in the collapsed
 Exact values table under a chart whose visible summary and page say what it
 covers.
 Empty states drawn by `{% if %}…{% else %}` follow the same rule and are
-reviewed by hand. **Precedent.** Outgoing mail, Background work and Hosted
+reviewed by hand. **Precedent.** Sent mail, Background work and Hosted
 files' empty rows;
 [#227](https://github.com/epiphany40223/parishkit/issues/227).
 

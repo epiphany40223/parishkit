@@ -408,7 +408,7 @@ hours before its due time, so only sending is left at the due time
 ([preparing ahead](../specs/stewardship/background-processing/spec.md#preparing-ahead-of-the-due-time),
 BG-12). What an operator sees during that lead window:
 
-- Outgoing mail lists each prepared reminder as pending. Its delivery task
+- Sent mail lists each prepared reminder as pending. Its delivery task
   waits for the due time; nothing is sent before it, and the dispatch guard
   refuses a message whose occurrence is not yet due in any case.
 - The send progress panel shows the reminder as upcoming (within an hour

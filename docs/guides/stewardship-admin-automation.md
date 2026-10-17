@@ -186,7 +186,7 @@ identifiers and UTC instants only: no Family names, email addresses, codes
 or other personal data. A read-only session can run every one of them. Each
 records the same view event in System logs as its page (`status` the home
 page's, `task list` and `task show` Background work's, `send progress` and
-`send history` Outgoing mail's, `system health` System health's);
+`send history` Sent mail's, `system health` System health's);
 `schedule show`, `go-live readiness` and `go-live progress` record none,
 like their pages. `system health` needs an Administrator's session, as its
 page does.
@@ -250,7 +250,7 @@ Each send has `kind`, `active`, `paused`, `stalled`, `held`, `total`,
 `unprepared`, `unplanned`, `waiting`, `unreachable` and `not_needed`,
 `rate_per_minute`, `started_at`, `last_settled_at`, `finished_at`,
 `finish_at` and `minutes_left`. In `send history` each also has `send` (the
-value Outgoing mail's send filter takes), `number`, `mode`, `cycle`,
+value Sent mail's send filter takes), `number`, `mode`, `cycle`,
 `scheduled_at`, `replaced`, `current`, `earlier`, `live`, `cancelled` and
 `minutes`.
 
@@ -1870,9 +1870,9 @@ System logs record an
 automation notice; confirming Production and withdrawal are marked
 irreversible and also email and post to Slack.
 
-## Outgoing mail
+## Sent mail
 
-The delivery commands read Outgoing mail and Refused addresses as their
+The delivery commands read Sent mail and Refused addresses as their
 pages do, and resolve a delivery as its page's form does. Each read records
 the pages' view event in System logs; any session may run them.
 `delivery resolve` needs a full-scope session. No document names a
@@ -1882,7 +1882,8 @@ open it on the page.
 
 ```sh
 pk-admin delivery list --state delivery_unknown
-pk-admin delivery list --search 1234
+pk-admin delivery list --recipient 1234
+pk-admin delivery list --state needs_attention --purpose operational --from 2026-10-01
 pk-admin delivery show MESSAGE_ID
 pk-admin delivery resolve MESSAGE_ID --action accept --expected-version 3 --note - < note.txt
 pk-admin delivery refusals
@@ -1894,9 +1895,15 @@ pk-admin delivery bounce-report MESSAGE_ID --address ADDRESS \
     --note - --yes < note.txt
 ```
 
-`delivery list` takes the page's `--state`, `--send` (send history's `send`
-value), `--search` (an exact Family DUID or delivery id, as input only),
-`--page`, `--size` and `--sort`. `--sort` takes the page's tokens:
+`delivery list` takes Sent mail's filters: `--recipient` (a Family DUID, an
+email address or a delivery id, as input only), `--purpose` (`initial`,
+`reminder`, `receipt`, `family_test`, `daily_digest`, `weekly_digest`,
+`operational` or `security_event`), `--state` (a state, or the groups
+`needs_attention`, `not_delivered` and `still_sending`), `--mode`
+(`production` or `testing`; both when left out), `--from` and `--to` (whole
+days, in the time zone `--zone` names, the parish's time zone by default),
+`--send` (send history's `send` value), `--page`, `--size` and `--sort`. The
+list includes operational and security notices, as the page does. `--sort` takes the page's tokens:
 `changed` (when the email last changed; the default is `-changed`, latest
 first), `name`, `duid`, `purpose`, `mode`, `state` and `attempts`, and also
 `created`. `delivery refusals` takes `--duid`, and its `--sort` takes
@@ -1906,8 +1913,8 @@ first), `name`, `duid`, `purpose`, `mode`, `state` and `attempts`, and also
 | Field | What it holds |
 | --- | --- |
 | `deliveries`, `delivery` | Each message's `id`, `campaign_id`, `purpose`, `mode`, `state`, `version`, `attempt`, `task_id`, `created_at`, `updated_at`, `finished_at` |
-| `refused` | `delivery list`, in each of `deliveries`: how many of the email's refused addresses are still unresolved, as Outgoing mail marks it (0 for none) |
-| `state`, `send`, `page`, `size`, `sort`, `has_next`, `matching`, `matching_capped` | `delivery list`: the filters and the page of rows |
+| `refused` | `delivery list`, in each of `deliveries`: how many of the email's refused addresses are still unresolved, as Sent mail marks it (0 for none) |
+| `state`, `purpose`, `mode`, `start`, `end`, `send`, `page`, `size`, `sort`, `has_next`, `matching`, `matching_capped` | `delivery list`: the filters (never the recipient) and the page of rows |
 | `task` | `delivery show`: the latest task's `id`, `state`, `version` and `retry_sequence` |
 | `actions`, `retry_unavailable` | `delivery show`: the resolutions the page offers now, and whether a retry is refused by the campaign's resend rule |
 | `events` | `delivery show`: the history's `version`, `at`, `state`, `action`, `attempt` and `result` (a stored code) |
@@ -3239,7 +3246,7 @@ Each change is recorded in System logs as on the page
   offered `resend` is `delivery resend`.
 - `pk-admin/1` (#944): additive. `config request cancel`, which prompts.
 - `pk-admin/1` (#931): a change of meaning, kept on version 1.
-  `delivery list --sort` follows the reworked Outgoing mail page: the
+  `delivery list --sort` follows the reworked Sent mail page: the
   Family DUID token is `duid` (it was `recipient`, which is now refused),
   the new `name` sorts by the Family's name from the latest ParishSoft
   data, and the default is `-changed`, the latest change first (it was
@@ -3608,3 +3615,11 @@ Each change is recorded in System logs as on the page
   csv|xlsx|pdf] [--timezone ZONE]`, the Ministry follow-up queue's Export
   these requests (full scope, the page's `ministry_followup_exported`),
   streamed as `export roster` is.
+- `pk-admin/1` (#1562, migration 0115): a change of meaning, kept on
+  version 1. `delivery list` follows Sent mail: `--search` is replaced by
+  `--recipient`, which also takes an email address; `--purpose`, `--mode`,
+  `--from`, `--to` and `--zone` are new, `--state` gains `needs_attention`,
+  `not_delivered` and `still_sending`, and the list now includes
+  operational and security notices. The document adds `purpose`, `mode`,
+  `start` and `end`; each row keeps its `mode` and `attempt`. Its only
+  readers are the Administrator and the operator, who keep no legacy forms.
