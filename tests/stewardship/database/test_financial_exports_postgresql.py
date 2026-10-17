@@ -187,7 +187,7 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
     assert years
     # Pages must not show the Family's row; the bare surname ("Example")
     # also appears in unrelated page text.
-    row = b'<th scope="row">' + name + b"</th>"
+    row = b'<th scope="row" class="nowrap">' + name + b"</th>"
     browser, login = signed_in()
     assert login.status_code == 302
     actor = user("admin@example.org").pk

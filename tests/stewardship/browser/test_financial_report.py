@@ -42,20 +42,20 @@ def test_financial_mobile_keyboard_and_accessibility(
         })).violations.map(({id,impact}) => ({id,impact}))""")
             == []
         )
-    # One row the Family submitted itself (No) and one Staff entered (Yes).
+    # One row the Family submitted itself (no chip) and one Staff entered.
     page.goto(component_origin + "/financial-unproven")
-    assert page.get_by_role("cell", name="No", exact=True).count() == 1
-    assert page.get_by_role("cell", name="Yes", exact=True).count() == 1
+    assert page.get_by_text("Entered by Staff", exact=True).count() == 1
     page.goto(component_origin + "/financial-report")
     assert page.get_by_text("Example <Family>", exact=False).count() == 1
-    assert page.get_by_text("Stock <gift>", exact=False).count() == 1
+    # Other text is in its method's tip (#1544), still escaped.
+    assert page.get_by_text("Another way: Stock <gift>", exact=True).count() == 1
     assert page.get_by_role("cell", name="$1,234.50", exact=True).count() == 1
-    # Entered by Staff (#794): a column with Yes or No for each response.
-    assert page.get_by_role("columnheader", name="Entered by Staff").count() == 1
-    # The sample Family's current pledge was entered by Staff.
-    assert page.get_by_role("cell", name="Yes", exact=True).count() == 1
-    assert page.get_by_role("cell", name="No", exact=True).count() == 0
-    assert page.get_by_text("$102.88", exact=False).count() == 1
+    # Entered by Staff (#794) is the Latest response cell's Staff chip
+    # (#1544), not a column of its own.
+    assert page.get_by_role("columnheader", name="Entered by Staff").count() == 0
+    assert page.get_by_text("Entered by Staff", exact=True).count() == 1
+    # Frequency and installment share one cell (#1544).
+    assert page.get_by_role("cell", name="Monthly · $102.88", exact=True).count() == 1
     assert page.locator("[data-summary=annual-total]").inner_text() == "$62,959.50"
     assert page.get_by_text("contributions through June 30, 2026", exact=False).count()
     # The share filter offers escaped labels and keeps the current choice.
@@ -169,36 +169,138 @@ def test_financial_filters_and_pages_post_privately(page, component_origin):
 def test_financial_columns_lead_with_family_and_name_the_parishsoft_year(
     page, component_origin
 ):
-    """The downloads' columns in their order; the ParishSoft year has a tip.
+    """The page's shorter columns in order; the ParishSoft year has a tip.
 
-    Family first, then Latest and First response, then Entered by Staff
-    last (#794), with no version or reference column (#932, decisions B1
-    and E1). The page shows ParishSoft status as a badge in the Family cell
-    (#1216), so its table has one column fewer than a download, whose
-    ParishSoft status column follows Family.
+    Family first, then Family DUID in its own column (ui-conventions), and
+    Latest response last. ParishSoft heads Pledged and Contributed in a
+    second heading row. First response and Entered by Staff are left to
+    the downloads, whose columns are unchanged (#1544); Latest response
+    shows its day alone with the Staff chip.
     """
     from parishkit.stewardship.reports.financial_documents import headings
-    from parishkit.stewardship.source.source_status import STATUS_HEADING
 
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + "/financial-report")
-    shown = page.locator("[data-table-region] table thead th").all_inner_texts()
-    download = headings("2025-07-01", "2026-06-30")
-    # A download's status column sits right after Family; the page has none.
-    assert download[:2] == ("Family", STATUS_HEADING)
-    expected = download[:1] + download[2:]
+    rows = page.locator("[data-table-region] table thead tr")
     # A sortable heading or a tip's "i" button adds text after the name.
-    assert len(shown) == len(expected)
-    assert all(
-        text.startswith(name) for text, name in zip(shown, expected, strict=True)
-    )
-    # Latest and First response precede Entered by Staff, one time each;
-    # the sample row's current pledge was entered by Staff.
+    shown = [
+        rows.nth(0).locator("th").all_inner_texts(),
+        rows.nth(1).locator("th").all_inner_texts(),
+    ]
+    expected = [
+        [
+            "Family",
+            "Family DUID",
+            "Annual pledge",
+            "Frequency and installment",
+            "Share methods",
+            "ParishSoft (2025–2026)",
+            "Latest response",
+        ],
+        ["Pledged", "Contributed"],
+    ]
+    for texts, names in zip(shown, expected, strict=True):
+        assert len(texts) == len(names), texts
+        assert all(
+            text.startswith(name) for text, name in zip(texts, names, strict=True)
+        ), texts
+    # The downloads keep First response and Entered by Staff (#1544).
+    download = headings("2025-07-01", "2026-06-30")
+    assert download[-2:] == ("First response", "Entered by Staff")
     row = page.locator("[data-table-region] table tbody tr").first
-    assert row.locator("td").last.inner_text() == "Yes"
-    assert row.locator("td").nth(-2).locator("time").count() == 1
-    assert row.locator("td").nth(-3).locator("time").count() == 1
+    latest = row.locator("td").last
+    assert latest.locator("time").count() == 1
+    # The day alone, compact, in the browser's zone: no clock time.
+    assert latest.locator("time").inner_text() == "Sep 19, 2026"
+    assert latest.get_by_text("Staff", exact=True).is_visible()
     assert "Version" not in row.inner_text()
+
+
+# Whether any cell of the results table's body wraps to a second line: the
+# client rectangles of each cell's content must all share one line (every
+# rectangle starts above every other one's bottom). Returns the offending
+# cells' text with each row's height.
+WRAPPED = """() => {
+    const rows = [...document.querySelectorAll("[data-table-region] table tbody tr")];
+    const wrapped = [];
+    for (const row of rows) {
+        for (const cell of row.children) {
+            const range = document.createRange();
+            range.selectNodeContents(cell);
+            const rects = [...range.getClientRects()].filter((r) => r.width);
+            const top = Math.max(...rects.map((r) => r.top));
+            const bottom = Math.min(...rects.map((r) => r.bottom));
+            if (rects.length && top >= bottom) wrapped.push(cell.innerText);
+        }
+    }
+    return [wrapped, rows.map((row) => row.getBoundingClientRect().height)];
+}"""
+# The results table's scroll box: its visible and full widths.
+BOX_WIDTHS = """() => {
+    const box = document.querySelector("[data-table-region] .table-scroll");
+    return [box.clientWidth, box.scrollWidth];
+}"""
+
+
+@pytest.mark.parametrize("path", ["/financial-report", "/financial-typical"])
+def test_rows_stay_one_line_and_scroll_in_their_box_on_a_phone(
+    page, component_origin, path
+):
+    """No row wraps at laptop width, and a phone scrolls the table (#1544).
+
+    At 1280 px every cell is on one line, so each row is about one line
+    tall (a chip or tip button sets that height); a table wider than the
+    space beside the Admin menu scrolls in its own box, never the page. At
+    320 px the rows stay one line and the table scrolls in its box, a
+    focusable region.
+    """
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + path)
+    wrapped, heights = page.evaluate(WRAPPED)
+    assert wrapped == [], wrapped
+    # One line: the 1.75rem tip button plus the cell padding, well under two
+    # lines of text.
+    assert heights and max(heights) < 52, heights
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    page.set_viewport_size({"width": 320, "height": 900})
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    wrapped, _ = page.evaluate(WRAPPED)
+    assert wrapped == [], wrapped
+    visible_width, full_width = page.evaluate(BOX_WIDTHS)
+    assert full_width > visible_width
+    # The box is a focusable region, so a keyboard can scroll it.
+    box = page.locator("[data-table-region] .table-scroll")
+    assert box.get_attribute("tabindex") == "0"
+    assert box.get_attribute("role") == "region"
+
+
+def test_share_method_tip_shows_the_other_text_without_moving_the_table(
+    page, component_origin
+):
+    """A share method's Other text opens in its tip beside the chip (#1544).
+
+    The chips name each method; the tip holds the label and the Family's
+    words, and opening it never moves or resizes the table's box.
+    """
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + "/financial-report")
+    cell = page.locator("[data-table-region] table tbody tr").first.locator("td").nth(3)
+    assert cell.locator(".status-badge").all_inner_texts() == [
+        "Online <giving>",
+        "Another way",
+    ]
+    # Only the method with Other text has a tip.
+    button = cell.locator(".toggletip-button")
+    assert button.count() == 1
+    bubble = cell.locator(".toggletip-bubble")
+    assert bubble.is_hidden()
+    before = page.evaluate(TABLE_BOX)
+    button.click()
+    visible(bubble)
+    assert bubble.inner_text() == "Another way: Stock <gift>"
+    assert page.evaluate(TABLE_BOX) == before
+    page.keyboard.press("Escape")
+    assert bubble.is_hidden()
 
 
 # The results table's scroll box (not a chart's exact-values table, #720),

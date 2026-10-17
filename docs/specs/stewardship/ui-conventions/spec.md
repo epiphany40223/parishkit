@@ -195,7 +195,8 @@ add seconds and the time-zone abbreviation to the compact form, with no UTC
 offset, so entries can be compared exactly
 ([Logs](../admin-portal/spec.md#logs)). In templates a table cell's
 `<time data-local-instant>` carries `data-compact` (and an in-place refresh
-re-renders it the same way); a calendar date uses the `parish_date_compact`
+re-renders it the same way), plus `data-day-only` where the cell shows the
+instant's day without its time (#1544); a calendar date uses the `parish_date_compact`
 filter; `tests/stewardship/test_date_format.py` guards both. Background output
 uses the format of the configuration it pinned, not whichever is active when
 it runs (issue #280): a PDF export uses its requesting configuration, a daily
@@ -3249,10 +3250,17 @@ sideways inside its own box, never the whole page. Rows stay short: a cell
 holds one value, long text wraps within a sensible width, and detail that
 makes rows several lines tall belongs on the item's own page or in a
 disclosure. Dates and times in cells use the compact
-[date format](#date-format). **Why.** A page that scrolls sideways hides its
-own controls; tall rows make a table unscannable. **Shared code.** The `table-scroll` class in
-`ui-v1.css`; the button-label browser test at 320 px and 1280 px.
-**Precedent.** #614, #952 (Portal users' rows wrapping to several lines).
+[date format](#date-format). Long free text never sits in a cell: a list of
+choices shows as short chips (the shared `status-badge`), and any longer
+text that goes with one sits in a [toggletip](#page-help) beside it. Money
+and date cells never wrap (`nowrap`), and money is right-aligned
+(`numeric`) in tabular figures. **Why.** A page that scrolls sideways hides
+its own controls; tall rows make a table unscannable; a sum or a date broken
+across two lines is easy to misread. **Shared code.** The `table-scroll`
+class in `ui-v1.css`, and its tables' `numeric` and `nowrap` cell classes;
+the button-label browser test at 320 px and 1280 px.
+**Precedent.** #614, #952 (Portal users' rows wrapping to several lines), and
+the Financial stewardship report's chips and one-line rows (#1544).
 
 Recorded exception: the Users page keeps every row to one line (the
 Administrator asked for one-line rows on #952). A long email or Name is cut

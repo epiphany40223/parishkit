@@ -2410,8 +2410,9 @@ group need no schema change. Every slice ships with publication off.
 **Access:** Admin and Staff only.
 
 This required report closes the operational path for report/export-only
-pledges. One row per currently effective live Family response shows, in the
-Admin table [column order](../admin-portal/spec.md#table-column-order), the
+pledges. One row per currently effective live Family response. Every export
+format (CSV, XLSX, PDF) has, in the Admin table
+[column order](../admin-portal/spec.md#table-column-order), the
 Family name first (surname, then heads, as on the
 [active parishioner family directory](#active-parishioner-family-directory);
 search matches that name and the Family sort orders by surname, then that
@@ -2421,26 +2422,42 @@ pledge, Frequency, Approximate installment, Share methods (selected
 share-option labels with any Other text), the ParishSoft comparison pledge
 and contribution aggregates, Latest response (the time the Family last
 updated its response), First response (when it first responded) and,
-as the last column, Entered by Staff (described below).
-The page and every export format (CSV, XLSX, PDF) have exactly these
-columns in this order (the Administrator's decisions B1 and E1, #932), and
-no format carries internal references (Family version or response
-reference). The page marks a Family the data no longer has, or marks
+as the last column, Entered by Staff (described below), in exactly this
+order (the Administrator's decisions B1 and E1, #932), and no format
+carries internal references (Family version or response reference).
+
+The page shows the same pledges in fewer, shorter columns, so each row is
+one line at laptop width
+([#1544](https://github.com/epiphany40223/parishkit/issues/1544), following
+the [table fit](../ui-conventions/spec.md#table-fit-and-row-height) rules):
+Family, Family DUID (still its own sortable column, as the
+[column order](../ui-conventions/spec.md#table-column-order) requires),
+Annual pledge, "Frequency and installment" ("Monthly · $102.88", the
+frequency alone when there is no installment), Share methods, the two
+ParishSoft aggregates as "Pledged" and "Contributed" under one "ParishSoft"
+heading, and Latest response. Each chosen share method is a small chip with
+its label; a method with Other text has a toggletip beside its chip that
+holds the label and that text. Latest response is the compact date alone, in
+the browser's time zone, with a "Staff" chip when Staff entered the current
+response. The page has no First response column (its date filter stays) and
+no Entered by Staff column; the exports keep both. No cell wraps: a
+wider table scrolls in its own box, and money and DUIDs are
+right-aligned. The page marks a Family the data no longer has, or marks
 inactive, with the shared
 [ParishSoft status](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
 badge in or beside its Family cell, and the exports split it into a
 ParishSoft status column right after Family, blank for a current Family
-(#1216). The page's two aggregate headings carry the
+(#1216). The page's ParishSoft heading carries the
 comparison period's years, as the Family form words them ("ParishSoft
-pledged (2026)", or "(2026–2027)" for a period spanning two years), each with
-a toggletip naming the period's dates. The comparison period is the
+(2026)", or "(2026–2027)" for a period spanning two years), and its Pledged
+and Contributed headings each have a toggletip naming the period's dates. The comparison period is the
 campaign's configured comparison financial period, usually the giving year
 before the upcoming stewardship year that Families pledge for; the pledge
 total counts ParishSoft pledges dated in it, and the contribution total gifts
-dated in it up to the latest giving data read. The page and
-every export format (CSV, XLSX, PDF) head those two aggregates "ParishSoft
+dated in it up to the latest giving data read. Every
+export format (CSV, XLSX, PDF) heads those two aggregates "ParishSoft
 pledged" and "ParishSoft contributed" with the same years ("ParishSoft
-pledged (2026)"), and say "ParishSoft" rather than "Source" in the export
+pledged (2026)"), and says "ParishSoft" rather than "Source" in the export
 metadata that describes them, so a downloaded file names its figures as the
 page does. The exports also name each Family as the page does, from the
 snapshot their capture was read from, choosing the name form once per file
@@ -2449,6 +2466,7 @@ Entered by Staff says Yes when Staff entered the Family's current response
 through [Open form](#family-timeline) (#529), and No when the Family
 submitted it, so an earlier response Staff entered and the Family later
 replaced shows No; it names no Staff member, and the page's help says so.
+On the page the same marker is the Latest response cell's Staff chip.
 A file captured before frozen migration 0066 added the marker to
 the projection leaves the column blank, never No (#794).
 

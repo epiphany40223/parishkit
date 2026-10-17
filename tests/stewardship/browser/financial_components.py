@@ -78,6 +78,27 @@ def components(context, admin):
         source_contributions=MoneyAmount(None),
         staff_entered=False,
     )
+    # Rows as a parish's typically read (#1544): a longer surname-first
+    # name, a seven-digit DUID, five-figure sums and up to three methods,
+    # one with Other text, and an inactive Family with its badge.
+    typical = [
+        row
+        | dict(
+            family_name="Hernandez-Oliveira, Maria and Jose",
+            family_duid=7654321,
+            annual=MoneyAmount(1200000),
+            installment=MoneyAmount(100000),
+            shares=[
+                dict(label="Online giving", text=""),
+                dict(label="Envelope", text=""),
+                dict(label="Other", text="Quarterly stock transfer"),
+            ],
+            source_pledge=MoneyAmount(1150000),
+            source_contributions=MoneyAmount(1098765),
+        ),
+        unproven | dict(family_name="Nguyen, Thanh", active=False),
+        row | dict(family_name="Smith, John", staff_entered=False),
+    ]
     # Share methods are stable option identities, as the closed grammar requires.
     online, other = str(UUID(int=98)), str(UUID(int=99))
     query = FinancialQuery.parse(
@@ -174,6 +195,7 @@ def components(context, admin):
             metadata=values["metadata"] | dict(giving_through=None),
         ),
         "/financial-empty": values | dict(table=table([], total=0), total=0),
+        "/financial-typical": values | dict(table=table(typical)),
         # The campaign cannot accept work: the export controls are offered gated.
         "/financial-gated": values | dict(mutable=False),
         # The report as first opened, with no filter applied: its Filters

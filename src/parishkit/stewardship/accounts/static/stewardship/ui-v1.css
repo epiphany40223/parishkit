@@ -1247,6 +1247,25 @@ label.limitation { display: block; margin-block: 1rem; font-weight: 600; }
   font: inherit;
 }
 
+/* The Financial stewardship report's Family table (#1544, ui-conventions
+   "Table fit and row height"): one line per row at laptop width. Cells
+   wrap only between words, never mid-word as main's overflow-wrap:
+   anywhere would; names, money, dates and share-method chips never wrap,
+   and money and DUIDs are right-aligned, so a table wider than the screen
+   scrolls in its .table-scroll box instead. A tip's bubble inside a
+   no-wrap cell wraps its own text again. Cells are positioned so the Staff
+   chip's absolutely placed screen-reader text stays inside its cell and
+   the scroll box, never widening the page (as in #933). ParishSoft heads
+   two columns in a second heading row; it is centred over them. The
+   body is a little smaller, so typical rows fit beside the Admin menu at
+   1440 px; narrower windows scroll the box. */
+.financial-table th, .financial-table td { position: relative; overflow-wrap: normal; padding: .45rem .5rem; vertical-align: middle; }
+.financial-table tbody { font-size: .9375rem; }
+.financial-table .nowrap { white-space: nowrap; }
+.financial-table .numeric { text-align: end; }
+.financial-table th[scope=colgroup] { text-align: center; }
+.financial-table .toggletip-bubble { white-space: normal; }
+
 /* Family codes are short fixed-length tokens; never wrap one mid-code. */
 td.family-code, td.family-code code { white-space: nowrap; }
 /* The Open form link's screen-reader text is positioned absolutely; keep it

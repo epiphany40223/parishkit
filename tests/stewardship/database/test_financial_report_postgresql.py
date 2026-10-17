@@ -32,16 +32,12 @@ from parishkit.stewardship.reports.financial import (
     financial_page,
     giving_proof,
 )
-from parishkit.stewardship.reports.financial_documents import HEADINGS
 from parishkit.stewardship.responses.models import SubmissionReceiptOccurrence
 from parishkit.stewardship.source.leases import release_source
 from parishkit.stewardship.source.models import SourceCurrent
 from parishkit.stewardship.source.snapshot_names import snapshot_family_names
 from parishkit.stewardship.source.snapshots import promote_snapshot
-from parishkit.stewardship.source.source_status import (
-    NAME_NOT_RECORDED,
-    STATUS_HEADING,
-)
+from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 
 from ..financial_factory import record
 from ..test_financial_answers import CHECK, OPTIONS, OTHER
@@ -656,7 +652,7 @@ def test_native_page_filters_privately_and_denies_leaders(
     assert years
     # The surname alone ("Example") also appears in unrelated page text, so
     # match the Family's row header rather than the bare name.
-    name = b'<th scope="row">' + name + b"</th>"
+    name = b'<th scope="row" class="nowrap">' + name + b"</th>"
     route = reverse("admin:financial_report")
     browser, login = signed_in()
     assert login.status_code == 302
@@ -665,23 +661,33 @@ def test_native_page_filters_privately_and_denies_leaders(
         assert response.status_code == 200 and response["Cache-Control"] == "no-store"
         assert name in body and b"$1,234.50" in body and b"$102.88" in body
         assert b"$1,200.00" in body and b"$100.00" in body
-        # The ParishSoft headings name the comparison period's years, and
-        # each has a toggletip with the period's dates.
-        for heading in (b"ParishSoft pledged", b"ParishSoft contributed"):
-            assert heading + b" (" + years + b")" in body
+        # The ParishSoft heading names the comparison period's years, and
+        # its Pledged and Contributed headings each have a toggletip with the
+        # period's dates (#1544).
+        assert b"ParishSoft (" + years + b")</th>" in body
         assert b'aria-controls="financial-source-pledged-tip"' in body
         assert b'aria-controls="financial-source-contributed-tip"' in body
         # Each tip's button is described by its bubble, not its whole heading.
         assert b'aria-describedby="financial-source-pledged-tip"' in body
-        # The page has the downloads' columns in their order (decisions B1
-        # and E1, #932): Family leads, First response follows Latest response.
-        # The files split ParishSoft status out of the page's Family cell,
-        # where its badge sits beside the name (#1216).
+        # The page's shorter columns in order (#1544): Family leads, then
+        # Family DUID; ParishSoft groups its two in a second heading row.
+        # First response and Entered by Staff are left to the downloads.
         head = body[body.index(b"Current live pledges by Family</caption>") :]
         head = head[: head.index(b"</thead>")]
-        shown = [heading for heading in HEADINGS if heading != STATUS_HEADING]
-        assert head.count(b'scope="col"') == len(shown)
-        places = [head.index(heading.encode()) for heading in shown]
+        shown = [
+            "Family",
+            "Family DUID",
+            "Annual pledge",
+            "Frequency and installment",
+            "Share methods",
+            "ParishSoft",
+            "Latest response",
+            "Pledged",
+            "Contributed",
+        ]
+        assert head.count(b'scope="col"') == len(shown) - 1
+        assert b"First response" not in head and b"Entered by Staff" not in head
+        places = [head.index(b">" + heading.encode()) for heading in shown]
         assert places == sorted(places)
         assert b">Version<" not in body
         assert b'datetime=""' not in body and b"?search=" not in body
