@@ -125,37 +125,33 @@ def test_runtime_cannot_bypass_manifest_with_foundation_journal(
     with work_transaction():
         status = start_request(response_service)
     status = start(status)
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT current_user")
-        original_owner = cursor.fetchone()[0]
-    with task_login(ServiceRole.WORKER, exact=True):
-        try:
-            if table_owner:
-                with connection.cursor() as cursor:
-                    cursor.execute("RESET SESSION AUTHORIZATION")
-                    cursor.execute(
-                        "ALTER TABLE stewardship_production_request "
-                        "OWNER TO pk_stewardship_worker"
-                    )
-                    cursor.execute("SET SESSION AUTHORIZATION pk_stewardship_worker")
-            with pytest.raises(DatabaseError, match="sealed manifest"):
-                if command == "checkpoint":
-                    delete_batch(status)
-                else:
-                    act(status, ProductionAction.COMPLETE)
-        finally:
-            if table_owner:
-                from psycopg import sql
-
-                # Restore fixture ownership before task_login removes its role;
-                # its DROP OWNED must never remove an application table.
-                with connection.cursor() as cursor:
-                    cursor.execute("RESET SESSION AUTHORIZATION")
-                    cursor.execute(
-                        sql.SQL(
-                            "ALTER TABLE stewardship_production_request OWNER TO {}"
-                        ).format(sql.Identifier(original_owner))
-                    )
+    # The ownership change runs in a transaction that is always rolled back.
+    # ALTER TABLE ... OWNER rewrites every ACL naming the old or new owner,
+    # including the column grants task_login gives the worker, so changing
+    # the owner and changing it back does not round-trip: the worker's column
+    # entries come back as redundant explicit grants to the original owner,
+    # a committed schema change the leak guard (#1498, #1519) rejects.
+    with (
+        task_login(ServiceRole.WORKER, exact=True),
+        transaction.atomic(),
+    ):
+        if table_owner:
+            with connection.cursor() as cursor:
+                cursor.execute("RESET SESSION AUTHORIZATION")
+                cursor.execute(
+                    "ALTER TABLE stewardship_production_request "
+                    "OWNER TO pk_stewardship_worker"
+                )
+                cursor.execute("SET SESSION AUTHORIZATION pk_stewardship_worker")
+        with pytest.raises(DatabaseError, match="sealed manifest"):
+            if command == "checkpoint":
+                delete_batch(status)
+            else:
+                act(status, ProductionAction.COMPLETE)
+        # Rolling back (also on any failure above) reverts the SET SESSION
+        # AUTHORIZATION too, so task_login's DROP OWNED never sees the worker
+        # owning an application table.
+        transaction.set_rollback(True)
 
 
 @pytest.mark.parametrize("claim", [None, object(), "not-a-claim"])
