@@ -14,11 +14,14 @@ credential-free capability fixture: the Member contact PUT and the Family
 contact PUT. Family addresses stay by hand until a verified address read
 exists, so only Member contact fields are ever planned here.
 
-The live v2 write test of 2026-10-17 (#528) showed both contact PUTs are
-partial updates: a field left out of the body is left unchanged, ``null`` is
-ignored and ``""`` is refused with HTTP 400. So a PUT body holds only the
-approved, Automatic changes to write, never a field as read (#1600), and a
-blank value is never planned: the API cannot clear a field.
+The live v2 write test of 2026-10-17 (#528) observed partial updates on
+both contact PUTs (``nickName`` on a Member, ``primaryPhone`` on a Family:
+a field left out of the body was left unchanged) and, on ``dateOfDeath``,
+``null`` ignored and ``""`` refused with HTTP 400. So a PUT body holds only
+the approved, Automatic changes to write, never a field as read (#1600), and
+a blank value is never planned: the API is taken to be unable to clear a
+field. Nor is a value the recorded PUT schema would refuse
+(``contact_schema.sendable``), so the API never sees a write it would reject.
 
 The provider value encodings below (text as is, ISO civil dates, phone
 display text, email addresses joined by ``"; "``) are provisional until the
@@ -40,6 +43,7 @@ from parishkit.parishsoft import split_email_addresses
 
 from .capabilities import Handling, capability
 from .comparison import ComparisonValueError, ValueKind
+from .contact_schema import sendable
 from .member_census import MEMBER_FIELDS, InvalidMemberSource, source_value
 from .member_requests import REQUEST_FIELDS
 from .merge import KnownValue, MergeState, PriorChange, merge_value
@@ -168,7 +172,9 @@ def encode_member_value(field, value):
     if kind is ValueKind.PHONE and isinstance(value, dict):
         return value["display"]
     if kind is ValueKind.EMAIL and value:
-        return "; ".join(part.strip() for part in value.split(","))
+        # Empty parts are dropped, so " , " encodes as blank, never "; ".
+        parts = (part.strip() for part in value.split(","))
+        return "; ".join(part for part in parts if part)
     if isinstance(value, date):
         return value.isoformat()
     return value
@@ -225,14 +231,20 @@ def _evaluate(row, provider, payload):
     return _MERGE_OUTCOMES[merge.state]
 
 
-def _blank(row):
-    """Whether the value to write is blank, which would ask to clear the field.
+def _unwritable(row, provider):
+    """Whether the API could not write this change, so it is worked by hand.
 
-    The API cannot clear a field (``null`` is ignored and ``""`` refused), so
-    such a change is worked by hand. The encoded form is checked, so a phone
-    whose display text is empty counts as blank too.
+    A blank value (None, or text that is empty or only whitespace) would ask
+    to clear the field, which the API cannot do (``null`` is ignored and
+    ``""`` refused, #528). A value the recorded PUT schema refuses (a phone
+    under ten characters, an over-long name, a gender longer than one
+    character) would be refused with HTTP 400. The encoded form is checked,
+    so a phone whose display text is empty counts as blank too.
     """
-    return encode_member_value(row.field, _proposed(row)) in (None, "")
+    value = encode_member_value(row.field, _proposed(row))
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return True
+    return not sendable(provider, value)
 
 
 def plan_entity(entity_kind, entity_key, rows, payload=None):
@@ -247,9 +259,10 @@ def plan_entity(entity_kind, entity_key, rows, payload=None):
     never fill it with None, when the read lacks it, so an approved field
     that was not read cannot be checked rather than looking blank.
 
-    Only approved, API-writable Member fields with a non-blank value are
-    evaluated; everything else is reported as not approved or by hand and
-    is left out of the PUT body, so ParishSoft keeps its value. Any approved
+    Only approved, API-writable Member fields with a non-blank value the
+    PUT schema accepts are evaluated; everything else is reported as not
+    approved or by hand and is left out of the PUT body, so ParishSoft
+    keeps its value. Any approved
     field that conflicts or cannot be checked blocks the whole entity. The
     planned body holds exactly the fields to write (#1600): the contact PUT
     is a partial update, so fields not written, or not read, are never sent.
@@ -266,13 +279,14 @@ def plan_entity(entity_kind, entity_key, rows, payload=None):
     for row in sorted(rows, key=lambda item: item.field):
         known = capability(entity_kind, row.field)
         # Defence in depth: the stored handling, the registry and the value
-        # must all allow a write (#1596); _blank is only reached for a Member
-        # API field, the only kind encode_member_value knows.
+        # must all allow a write (#1596). Keep _unwritable last: the ``or``
+        # short-circuit is what makes it run only for a Member API field, the
+        # only kind encode_member_value and its provider name apply to.
         if (
             entity_kind != "member"
             or row.handling != Handling.API.value
             or known.handling is not Handling.API
-            or _blank(row)
+            or _unwritable(row, known.provider_fields[0])
         ):
             outcome = Outcome.BY_HAND
         elif row.decision != "approved":

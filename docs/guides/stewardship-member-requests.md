@@ -109,8 +109,8 @@ The census publish worker (BG-09, #528) writes Administrator-confirmed
 contact changes to ParishSoft with the v2 Member contact PUT. It ships
 **switched off**, and it must stay off until both of these are done:
 
-1. A ParishSoft read that returns all fifteen Member contact fields the PUT
-   replaces is confirmed and implemented in
+1. A ParishSoft read that returns every Member contact field the planner
+   may write or verify is confirmed and implemented in
    `responses/publication_gateway.py`. Until then the ParishSoft gateway's
    read refuses, so the worker cannot reach its PUT even when switched on.
 2. The human-run smoke test (outside CI, reading credentials at runtime)

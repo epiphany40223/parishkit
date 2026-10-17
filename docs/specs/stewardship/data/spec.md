@@ -2044,17 +2044,21 @@ current authorization/filter snapshot.
    DEFINER) with a self-verifying DO block, under the
    [post-launch schema policy](../operations/spec.md#post-launch-schema-policy)
    ([Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft)).
-5. If any field on an entity is a three-way conflict, block all writes to that
-   entity and return it for re-review.
+5. If any field the API would write on an entity is a three-way conflict,
+   block all writes to that entity and return it for re-review. A field
+   reported *By hand* (step 6) is never evaluated, so it never blocks.
 6. Build each entity's PUT body from its approved changes only: each
-   approved, Automatic change with a non-blank value to write, under the
-   provider's field name. Fields that are unchanged, not approved, by hand
-   or not read are never sent, so ParishSoft keeps their current values.
-   Both v2 contact PUTs are partial updates (see the
-   [handling registry](#proposed-changes)), so a field left out of the body
-   is left unchanged, and the API cannot clear a value (`null` is ignored
-   and `""` is refused with HTTP 400), so a blank value is reported *By
-   hand* and never planned
+   approved, Automatic change with a non-blank value the recorded PUT schema
+   accepts, under the provider's field name. Fields that are unchanged, not
+   approved, by hand or not read are never sent, so ParishSoft keeps their
+   current values. The live write test observed partial updates on both v2
+   contact PUTs (`nickName` on a Member, `primaryPhone` on a Family: a field
+   left out of the body was left unchanged) and, on `dateOfDeath`, `null`
+   ignored and `""` refused with HTTP 400; the API is taken to be unable to
+   clear any field. So a blank value (empty, or only whitespace) is
+   reported *By hand* and never planned, and so is a value the recorded
+   schema would refuse (a phone under ten characters, an over-long name, a
+   gender longer than one character), since the API would reject the PUT
    ([#528](https://github.com/epiphany40223/parishkit/issues/528),
    [#1600](https://github.com/epiphany40223/parishkit/issues/1600)). As
    defence in depth for the [handling registry](#proposed-changes), a change
@@ -2088,10 +2092,10 @@ confirmation; a conditional-write primitive is used when ParishSoft exposes
 one. Publication then groups fields by entity and uses idempotent v2 `PUT`
 operations with bounded shared retries. Each entity is verified by an uncached
 read after write, which must equal the plan's expected record, so the fields
-the PUT left out are checked as well as the written ones. Success marks its fields published/resolved; failure records a
-sanitized error and leaves the entity retryable without replaying successful
-entities. An entity's written proposals are `queued` from just before its PUT
-until its outcome: `published` when verified, or, when the entity is
+the PUT left out are checked as well as the written ones. Success marks its
+fields published/resolved; failure records a sanitized error and leaves the
+entity retryable without replaying successful entities. An entity's written
+proposals are `queued` from just before its PUT until its outcome: `published` when verified, or, when the entity is
 invalidated, back to `failed` (an attempt failed) or `pending`. Every entity a
 run leaves without a published or invalidated outcome, and any left by a
 crashed run once its plan's execution window has passed, is closed, so a

@@ -2591,9 +2591,11 @@ the lease normally (not yet built). The worker may already create
 also marks already-matching changes `resolved_upstream` in a Production-mode
 plan (frozen migration 0112).
 
-Writes use shared v2 `PUT` contact primitives, expected-tenant guard, current
-full payload merge, idempotent retry, and read-after-write verification as
-specified in [data reconciliation](../data/spec.md#review-and-publication).
+Writes use shared v2 `PUT` contact primitives, expected-tenant guard, a PUT
+body holding only the changed fields (the
+[data workflow](../data/spec.md#review-and-publication), step 6), idempotent
+retry, and read-after-write verification as specified in
+[data reconciliation](../data/spec.md#review-and-publication).
 Progress is per entity, not merely per field. Partial success is explicit and a
 retry selects only failed/still-applicable entities.
 

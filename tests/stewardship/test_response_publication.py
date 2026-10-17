@@ -77,6 +77,7 @@ ALLOWED_IMPORTS = {
     ("capabilities", "capability"),
     ("comparison", "ComparisonValueError"),
     ("comparison", "ValueKind"),
+    ("contact_schema", "sendable"),
     ("member_census", "MEMBER_FIELDS"),
     ("member_census", "InvalidMemberSource"),
     ("member_census", "source_value"),
@@ -235,6 +236,47 @@ def test_no_blank_value_is_ever_sent():
         "last_name": Outcome.WRITE,
     }
     assert plan.payload == {"lastName": "Smith"}
+
+
+def test_a_whitespace_only_value_is_blank():
+    """Spaces, or an email list of only separators, count as blank (By hand)."""
+    rows = [
+        proposal("nickname", "   ", "Pat"),
+        proposal("email", " , ", "a@example.org"),
+        proposal("first_name", "Pat", None, admin_value_set=True, admin_value="\t"),
+        proposal("last_name", "Smith", None),
+    ]
+    plan = plan_entity("member", 1, rows, payload())
+    assert outcomes(plan) == {
+        "nickname": Outcome.BY_HAND,
+        "email": Outcome.BY_HAND,
+        "first_name": Outcome.BY_HAND,
+        "last_name": Outcome.WRITE,
+    }
+    assert plan.payload == {"lastName": "Smith"}
+
+
+def test_a_value_the_put_schema_refuses_is_by_hand():
+    """The API would refuse it with HTTP 400, so it is never planned.
+
+    A phone under ten characters, a first name over thirty and a gender
+    longer than one character (the census holds ``Female``) are reported By
+    hand; the entity's other changes are still written.
+    """
+    rows = [
+        proposal("home_phone", phone_record("555-0101"), None),
+        proposal("first_name", "P" * 31, "Pat"),
+        proposal("gender", "Female", None),
+        proposal("last_name", "L" * 50, None),
+    ]
+    plan = plan_entity("member", 1, rows, payload(firstName="Pat"))
+    assert outcomes(plan) == {
+        "home_phone": Outcome.BY_HAND,
+        "first_name": Outcome.BY_HAND,
+        "gender": Outcome.BY_HAND,
+        "last_name": Outcome.WRITE,
+    }
+    assert plan.payload == {"lastName": "L" * 50}
 
 
 def test_matching_value_is_already_in_parishsoft():

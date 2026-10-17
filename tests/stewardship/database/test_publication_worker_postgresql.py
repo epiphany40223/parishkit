@@ -18,6 +18,7 @@ from psycopg import sql
 
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.responses.contact_schema import sendable
 from parishkit.stewardship.responses.models import (
     ProposedChange,
     PublicationEntity,
@@ -92,13 +93,19 @@ class FakeGateway:
     def write_member_contact(self, member_id, payload, *, timeout):
         """Apply a partial update, as the live v2 contact PUT does (#528).
 
-        Fields left out are kept and ``null`` is ignored; ``""`` is refused
-        (HTTP 400, so ``write_rejected``) and changes nothing.
+        Fields left out are kept and ``null`` is ignored. A body naming a
+        field outside the request model, holding ``""``, or holding any value
+        the recorded PUT schema refuses (``contact_schema.sendable``) is
+        refused (HTTP 400, so ``write_rejected``) and changes nothing.
         """
         self.writes.append((member_id, dict(payload)))
         if self.write_errors:
             raise ContactGatewayError(self.write_errors.pop(0))
-        if "" in payload.values():
+        if (
+            not set(payload) <= set(MEMBER_CONTACT_FIELDS)
+            or "" in payload.values()
+            or not all(sendable(key, value) for key, value in payload.items())
+        ):
             raise ContactGatewayError("write_rejected")
         self.records[member_id].update(
             {key: value for key, value in payload.items() if value is not None}
@@ -330,6 +337,43 @@ def test_a_verify_mismatch_is_a_failure_then_the_next_read_invalidates(confirmed
         ("invalidated", ""),
     ]
     assert proposal(state.first)[0] == "failed"
+
+
+def test_a_put_accepted_but_not_applied_is_never_published(confirmed):
+    """ParishSoft accepting the PUT and keeping the old value (as it does with
+    ``null``, #528) fails verification every time. ParishSoft still holds
+    exactly what preflight read, so each attempt may send the same body
+    again (an idempotent PUT); after ATTEMPTS the entity is invalidated and
+    the change is never recorded published."""
+    state = confirmed
+    original = dict(state.gateway.records[state.first.entity_key])
+
+    def ignoring(member_id, payload, *, timeout):
+        """Accept the body and change nothing."""
+        state.gateway.writes.append((member_id, dict(payload)))
+
+    state.gateway.write_member_contact = ignoring
+    result = run(state)
+    assert (result.published, result.invalidated) == (0, 1)
+    assert result.failed_attempts == ATTEMPTS
+    assert state.gateway.writes == [(state.first.entity_key, state.planned)] * ATTEMPTS
+    assert results(state.entity) == [
+        *[("failed", "verify_mismatch")] * ATTEMPTS,
+        ("invalidated", ""),
+    ]
+    assert proposal(state.first)[0] == "failed"
+    assert state.gateway.records[state.first.entity_key] == original
+
+
+def test_the_fake_refuses_what_the_live_put_refuses(confirmed):
+    """The fake is held to the recorded schema, so tests cannot lean on it."""
+    gateway = confirmed.gateway
+    key = confirmed.first.entity_key
+    before = dict(gateway.records[key])
+    for body in ({"homePhone": "555-0101"}, {"salutation": "X"}, {"nickName": ""}):
+        with pytest.raises(ContactGatewayError, match="write_rejected"):
+            gateway.write_member_contact(key, body, timeout=1)
+    assert gateway.records[key] == before
 
 
 def test_a_crash_after_the_put_is_recovered_without_a_second_put(confirmed):

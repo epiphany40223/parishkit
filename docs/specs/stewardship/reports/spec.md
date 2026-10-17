@@ -2276,8 +2276,8 @@ changed, **ParishSoft at the check**, **Will write**, and **Outcome**:
 - **Cannot check**: ParishSoft could not be read for this Member. Nothing
   for this Member is written; check again later.
 - **Held back**: a change that would be written, on a Member that has a
-  Conflict or Cannot check, says so, since a Member is written whole or not
-  at all.
+  Conflict or Cannot check, says so, since a Member gets all of its changes
+  or none of them.
 
 The plan holds no values (only ids, versions, outcomes and payload hashes;
 see the data workflow), so the page reads the values from the changes
