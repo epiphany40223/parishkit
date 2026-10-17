@@ -14,6 +14,7 @@ import re
 import pytest
 
 from parishkit.stewardship.accounts.campaign_views import (
+    DATES_ALONE,
     LOCKED_CLOSED,
     LOCKED_LIVE,
     MINISTRIES_ALONE,
@@ -23,6 +24,7 @@ from .campaign_settings_components import (
     DRAFT,
     DRAFT_REFUSED,
     DRAFT_REVIEW,
+    DRAFT_SCHEDULED,
     ELSEWHERE,
     END_REFUSAL,
     LIVE,
@@ -354,4 +356,41 @@ def test_a_ministry_change_with_another_waits_with_the_reason(page, component_or
     enabled(review)
     hidden(hint)
     assert reviews == []
+    assert not failures
+
+
+def test_dates_with_another_change_wait_while_schedules_exist(page, component_origin):
+    """A draft with mail schedules changes its dates and time zone on their
+    own (#1330 item 1): made with another change, Save waits with the
+    server's own words as its hint, and comes back once the other change is
+    undone. A draft without schedules is not held. Nothing is posted."""
+    from playwright.sync_api import expect
+
+    reviews = answer_reviews(
+        page, component_origin, DRAFT_REFUSED, 400, address=DRAFT_SCHEDULED
+    )
+    page.goto(component_origin + DRAFT_SCHEDULED)
+    failures = watch(page)
+    review = page.get_by_role("button", name="Save", exact=True)
+    hint = page.locator("#settings-complete-hint")
+    page.get_by_label("Campaign end date").fill("2054-11-15")
+    page.get_by_label("Campaign timezone").select_option("America/Chicago")
+    enabled(review)
+    name = page.get_by_label("Campaign name")
+    name.fill("Renamed campaign")
+    expect(review).to_be_disabled()
+    visible(hint)
+    assert hint.inner_text() == str(DATES_ALONE)
+    # Shown again from history, the page works the hold out again.
+    page.evaluate(RESTORE)
+    expect(review).to_be_disabled()
+    name.fill("Sample campaign")
+    enabled(review)
+    hidden(hint)
+    assert reviews == []
+    # Without schedules, the same change is one review.
+    page.goto(component_origin + DRAFT)
+    page.get_by_label("Campaign end date").fill("2054-11-15")
+    page.get_by_label("Campaign name").fill("Renamed campaign")
+    enabled(page.get_by_role("button", name="Save", exact=True))
     assert not failures
