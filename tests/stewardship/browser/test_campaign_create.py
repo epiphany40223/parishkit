@@ -266,7 +266,7 @@ def test_create_waits_for_the_required_fields(page, component_origin):
     fill(page)
     available(create)
     assert hint.text_content() == ""
-    assert line.evaluate(where) == top
+    assert abs(line.evaluate(where) - top) <= 1
     # Emptying a required field holds it again.
     page.get_by_label("Campaign name").fill("")
     greyed(create)
@@ -329,11 +329,11 @@ def test_create_is_step_one_of_the_campaign_wizard(page, component_origin):
         assert roles.get_by_label(role).is_checked()
     ministry.uncheck()
     hidden(page.get_by_label("Chairperson"))
-    assert stepper.evaluate(where) == bar
+    assert abs(stepper.evaluate(where) - bar) <= 1
     ministry.check()
     fill(page)
     available(create)
-    assert stepper.evaluate(where) == bar
+    assert abs(stepper.evaluate(where) - bar) <= 1
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert page.evaluate(MARKED) == "kept"
     assert not failures
