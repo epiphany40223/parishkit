@@ -7,7 +7,14 @@
 <p>{% translate "A campaign starts with default text for every page and email. You can edit any of them, or reset one to its default text, but you do not have to." %}</p>
 <p>{% translate "Each email template has Edit in its Actions column, which opens its editor. An email no schedule sends also has Delete. Delete, or Delete selected for the ticked emails, asks first, then removes them from the list; if any chosen email is sent by a schedule, nothing is deleted." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
-<section class="panel"><h2>{% translate "Family pages" %}</h2><ul>{% for page in pages %}<li><a href="{{ page.url }}">{{ page.label }}</a> — {% if page.state == 'default' %}{% translate "Default text" %}{% elif page.state == 'custom' %}{% translate "Customized" %}{% else %}{% translate "Empty" %}{% endif %}{% if page.resave %} — <strong>{% if page.resave.blocked %}{% translate "Can't be sent until fixed" %}{% else %}{% translate "Re-save recommended" %}{% endif %}</strong>{% endif %}</li>{% endfor %}</ul></section>
+{% comment %}
+Each page and email says one text state (#1404 PR 6b): Default text,
+Edited, or Empty, and, while the campaign wizard applies, Kept as is in
+place of Default text for an item its editor's Keep as is and go back
+marked (the row's kept, for the exact saved revision). Each row has an id
+and tabindex=-1: the editor's Keep as is and go back, or a page's Save and
+go back, returns here with focus on it (ui-v1.js).
+{% endcomment %}{% with wizard=admin_chrome.campaign_wizard %}<section class="panel"><h2>{% translate "Family pages" %}</h2><ul>{% for page in pages %}<li id="{{ page.row_id }}" tabindex="-1"><a href="{{ page.url }}">{{ page.label }}</a> — {% if page.state == 'default' %}{% if wizard and page.kept %}{% translate "Kept as is" %}{% else %}{% translate "Default text" %}{% endif %}{% elif page.state == 'edited' %}{% translate "Edited" %}{% else %}{% translate "Empty" %}{% endif %}{% if page.resave %} — <strong>{% if page.resave.blocked %}{% translate "Can't be sent until fixed" %}{% else %}{% translate "Re-save recommended" %}{% endif %}</strong>{% endif %}</li>{% endfor %}</ul></section>
 {% comment %}
 Each mail type's emails are a short Admin table shown whole (#446): which
 saved schedules send each one (named as on Dates and mail schedules), the
@@ -35,12 +42,12 @@ or the confirmation email, anyway (content_delete_views).
     <th scope="col">{% translate "Test email" %}</th>
     <th scope="col">{% translate "Actions" %}</th>
   </tr></thead>
-  <tbody>{% for revision in email.revisions %}<tr>
+  <tbody>{% for revision in email.revisions %}<tr{% if revision.id %} id="{{ revision.row_id }}" tabindex="-1"{% endif %}>
     {% if email.deletable %}<td class="select-col">{% if revision.deletable %}<input type="checkbox" name="revision_id" value="{{ revision.id }}" data-select-row data-confirm-name="{{ revision.name }}" aria-label="{% blocktranslate with name=revision.name %}Select {{ name }}{% endblocktranslate %}">{% endif %}</td>{% endif %}
     <th scope="row">{{ revision.subject }}{% if revision.short_id %} <span class="help">({{ revision.short_id }})</span>{% endif %}</th>
     <td>{{ revision.excerpt }}</td>
     {% if email.scheduled %}<td>{% if revision.used_by %}{{ revision.used_by|join:", " }}{% else %}{% translate "No schedule" %}{% endif %}</td>{% endif %}
-    <td>{% if revision.state == 'default' %}{% translate "Default text" %}{% else %}{% translate "Customized" %}{% endif %}{% if revision.resave %} — <strong>{% if revision.resave.blocked %}{% translate "Can't be sent until fixed" %}{% else %}{% translate "Re-save recommended" %}{% endif %}</strong>{% endif %}</td>
+    <td>{% if revision.state == 'default' %}{% if wizard and revision.kept %}{% translate "Kept as is" %}{% else %}{% translate "Default text" %}{% endif %}{% else %}{% translate "Edited" %}{% endif %}{% if revision.resave %} — <strong>{% if revision.resave.blocked %}{% translate "Can't be sent until fixed" %}{% else %}{% translate "Re-save recommended" %}{% endif %}</strong>{% endif %}</td>
     <td>{% if revision.test_url %}<a href="{{ revision.test_url }}">{% translate "Preview and send test" %}<span class="visually-hidden"> {{ revision.name }}</span></a>{% endif %}</td>
     {% if revision.deletable %}{% table_actions name=revision.name edit=revision.url delete=revision.id confirm=email.dialog_id field="revision_id" %}{% else %}{% table_actions name=revision.name edit=revision.url %}{% endif %}
   </tr>{% endfor %}</tbody>
@@ -50,4 +57,4 @@ or the confirmation email, anyway (content_delete_views).
 <p><a href="{{ email.url }}">{% if email.singleton %}{% translate "Edit confirmation email" %}{% else %}{% translate "Create template" %}{% endif %}</a></p>{% endfor %}
 <p class="help">{% translate "An email a schedule sends can't be deleted; choose another email for that schedule first. Deleting one doesn't change campaigns that already used it." %}</p></section>
 <p><a href="{% url 'admin:campaign_settings' %}">{% translate "Open Campaign settings" %}</a></p>
-{% endblock %}
+{% endwith %}{% endblock %}
