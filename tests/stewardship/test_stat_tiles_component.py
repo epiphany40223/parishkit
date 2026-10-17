@@ -40,9 +40,6 @@ STILL_HAND_DRAWN = {
     # move in #1540 slice 4, with the trend line.
     "campaign-comparison.html",
     "daily-digest.html",
-    # Participation's statistics move onto the component next in this
-    # slice.
-    "participation.html",
 }
 
 

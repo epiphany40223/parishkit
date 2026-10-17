@@ -11,9 +11,6 @@ import pytest
 from django.http import QueryDict
 from openpyxl import load_workbook
 
-from parishkit.stewardship.reports.daily_digest import (
-    statistics_cards,
-)
 from parishkit.stewardship.reports.digest_presentation import (
     participation_context,
     snapshot_context,
@@ -227,22 +224,31 @@ def test_live_presentation_is_the_digest_presentation_without_population_mixing(
     missing = replace(
         value.statistics, active=None, comparison_pledge_all=MoneyAmount(None)
     )
-    assert all(amount == "Unavailable" for _, amount in statistics_cards(missing))
-    # #728: one comparison figure, the parish-wide total, ends the cards.
+    assert all(
+        tile.text == "—" and tile.unknown_reason
+        for tile in statistics_panel(missing)["tiles"]
+    )
+    # #728: one comparison figure, the parish-wide total, ends the tiles.
     whole = replace(value.statistics, comparison_pledge_all=MoneyAmount(98265700))
-    cards = statistics_cards(whole)
-    assert cards[0] == ("Active Families", "1,000")
-    assert cards[-1] == ("Last year's pledges (all Families)", "$982,657.00")
-    assert [label for label, _ in cards if "Last year" in label] == [cards[-1][0]]
+    tiles = statistics_panel(whole)["tiles"]
+    assert (tiles[0].label, tiles[0].text) == ("Active Families", "1,000")
+    assert (tiles[-1].label, tiles[-1].text) == (
+        "Last year's pledges (all Families)",
+        "$982,657.00",
+    )
+    assert [tile.label for tile in tiles if "Last year" in tile.label] == [
+        tiles[-1].label
+    ]
 
 
 def test_statistics_panel_draws_reach_and_keeps_the_other_cards_as_tiles():
     """Responded and email reach become the progress chart (#720); the
     other cards stay tiles in their order. Without an observation nothing
-    is drawn and every card is a tile reading Unavailable, never zero."""
+    is drawn and every card is a tile reading "—" with the reason, never
+    zero (#1540)."""
     statistics = document().statistics
     panel = statistics_panel(statistics)
-    assert [label for label, _value in panel["tiles"]] == [
+    assert [tile.label for tile in panel["tiles"]] == [
         "Active Families",
         "Active Members",
         "Current annual pledges",
@@ -257,9 +263,21 @@ def test_statistics_panel_draws_reach_and_keeps_the_other_cards_as_tiles():
         replace(statistics, active=None, comparison_pledge_all=MoneyAmount(None))
     )
     assert missing["progress"] is None
-    assert missing["tiles"] == statistics_cards(
-        replace(statistics, active=None, comparison_pledge_all=MoneyAmount(None))
-    )
+    assert [(tile.key, tile.text) for tile in missing["tiles"]] == [
+        (key, "—")
+        for key in (
+            "active_families",
+            "active_members",
+            "eligible_email",
+            "deliverable_email",
+            "responses",
+            "annual_pledges",
+            "comparison_pledges_all",
+        )
+    ]
+    assert {tile.unknown_reason for tile in missing["tiles"]} == {
+        "No ParishSoft data has been loaded for this campaign yet."
+    }
 
 
 def test_xlsx_is_complete_typed_formula_safe_and_keeps_original_request():
