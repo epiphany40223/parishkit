@@ -34,7 +34,13 @@ from parishkit.stewardship.web.contracts import (
     ErrorCode,
     expected_version,
 )
-from parishkit.stewardship.web.refusals import refusal_text, unexpected_fields
+from parishkit.stewardship.web.refusals import (
+    annotate,
+    refusal_text,
+    unexpected_fields,
+    with_codes,
+    with_default_code,
+)
 from parishkit.stewardship.web.tables import (
     window_table,
 )
@@ -102,7 +108,8 @@ def _error(code, status, error=None, back=None):
     user-facing refusal (``error``, such as an unexpected-fields refusal)
     shows its own reviewed full-page text instead of the closed message
     (#1401). ``back`` is the server-owned path of the page the refused form
-    came from, which the page links to so that it can be opened again.
+    came from, which the page links to so that it can be opened again. The
+    refusal log records ``code`` and the refusal's reason (#1444).
     """
     message = refusal_text(error, page=True) or MESSAGES[code]
     response = HttpResponse(
@@ -115,7 +122,8 @@ def _error(code, status, error=None, back=None):
     response["Cache-Control"] = "no-store"
     if status == 503:
         response["Retry-After"] = "5"
-    return response
+    with_codes(response, code.value)
+    return annotate(response, error) if error is not None else response
 
 
 def _principal(request, store, *, final=False, activity=False):
@@ -189,8 +197,10 @@ def _page(request, template, load, *, subject=None, status=200):
             )
         if status != 200:
             # This page itself, with the refusal in its review region, not a
-            # bare error: the in-place handler swaps it in (#562).
+            # bare error: the in-place handler swaps it in (#562). The
+            # refusal log records its status's code (#1444).
             response.stewardship_safe_error = True
+            with_default_code(response)
         response["Cache-Control"] = "no-store"
         return response
     except PermissionError:
@@ -250,6 +260,8 @@ def delivery_list(request):
     bulk, status = _bulk(request) if request.method == "POST" else ({}, 200)
     if isinstance(bulk, HttpResponse):
         return bulk
+    # The refusal behind a refused bulk action, for the refusal log only.
+    refusal = bulk.pop("_refusal", None)
 
     def load(actor):
         """Capture one filtered page without reading any private message payload."""
@@ -276,7 +288,16 @@ def delivery_list(request):
             **bulk,
         ), len(data["rows"])
 
-    return _page(request, "stewardship/deliveries.html", load, status=status)
+    response = _page(request, "stewardship/deliveries.html", load, status=status)
+    # Only the bulk region's own refusal: a page that answered with a
+    # refusal of its own (its 400 error page) keeps that one's reason.
+    if (
+        refusal is not None
+        and response.status_code == status
+        and getattr(response, "stewardship_exception_class", None) is None
+    ):
+        annotate(response, refusal)
+    return response
 
 
 # What a refused bulk action says in the page's error summary.
@@ -291,6 +312,13 @@ BULK_REFUSALS = {
         "sent, confirm that you checked the mail service's records."
     ),
 }
+# The fields each bulk action posts besides the CSRF token, as (required,
+# optional): the checks below refuse any other, and the refusal log counts
+# them (#1444).
+_BULK_FIELDS = {
+    "preview": ({"action", "kind", "purpose", "note"}, {"checked"}),
+    "confirm": ({"action", "preview", "note"}, set()),
+}
 
 
 def _bulk(request):
@@ -301,19 +329,29 @@ def _bulk(request):
     ``bulk_errors`` (a refusal, with a 4xx status). A denial or an outage
     is answered by the fixed error page instead, returned in place of the
     context. Previewing changes nothing; applying resolves each message with
-    the ordinary per-message command (``delivery_bulk.apply_preview``).
+    the ordinary per-message command (``delivery_bulk.apply_preview``). A
+    refused input's error is returned under the private key ``_refusal``,
+    which ``delivery_list`` takes out for the refusal log; the region never
+    sees it.
     """
     try:
         service = runtime()
         actor = _principal(request, service.store, activity=True)
         supplied = set(request.POST) - {"csrfmiddlewaretoken"}
-        if any(len(request.POST.getlist(key)) != 1 for key in request.POST):
-            raise unexpected_fields()
         action = request.POST.get("action")
+        if action not in _BULK_FIELDS:
+            # No sources: an unknown action value, not an unexpected field.
+            raise unexpected_fields()
+        required, optional = _BULK_FIELDS[action]
+        if (
+            any(len(request.POST.getlist(key)) != 1 for key in request.POST)
+            or not required <= supplied
+            or supplied - required - optional
+        ):
+            raise unexpected_fields(
+                request.POST, allowed=required | optional | {"csrfmiddlewaretoken"}
+            )
         if action == "preview":
-            fields = {"action", "kind", "purpose", "note"}
-            if not fields <= supplied or supplied - fields - {"checked"}:
-                raise unexpected_fields()
             with transaction.atomic():
                 _available()
                 review = delivery_bulk.preview(
@@ -324,8 +362,6 @@ def _bulk(request):
                     checked=request.POST.get("checked") == "yes",
                 )
             return dict(bulk_review=review | {"form": f"bulk-{review['kind']}"}), 200
-        if action != "confirm" or supplied != {"action", "preview", "note"}:
-            raise unexpected_fields()
         # The signed preview carries only the note's digest; the note is
         # posted again beside it and must match.
         binding = delivery_bulk.load_preview(
@@ -358,8 +394,9 @@ def _bulk(request):
         # the region's "Enter a note…" guidance (#1401).
         text = refusal_text(error)
         if text:
-            return dict(bulk_errors=[dict(message=text)]), 400
-        return _bulk_refused("invalid", 400)
+            return dict(bulk_errors=[dict(message=text)], _refusal=error), 400
+        context, status = _bulk_refused("invalid", 400)
+        return context | {"_refusal": error}, status
 
 
 def _bulk_refused(reason, status):
@@ -503,7 +540,9 @@ def clear_refusal(request, refusal_id):
             or supplied != names
             or any(len(request.POST.getlist(key)) != 1 for key in request.POST)
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(
+                request.GET, request.POST, allowed=names | {"csrfmiddlewaretoken"}
+            )
         with _command_scope(request, service, actor):
             clear_recipient_refusal(
                 service.store,
@@ -559,7 +598,9 @@ def bounce_report(request, message_id):
             or supplied != names
             or any(len(request.POST.getlist(key)) != 1 for key in request.POST)
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(
+                request.GET, request.POST, allowed=names | {"csrfmiddlewaretoken"}
+            )
         with _command_scope(request, service, actor):
             report_recipient_bounce(
                 service.store,
@@ -607,7 +648,11 @@ def resolution_command(request, message_id):
             or supplied - required - {"duplicate_acknowledged"}
             or any(len(request.POST.getlist(key)) != 1 for key in request.POST)
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(
+                request.GET,
+                request.POST,
+                allowed=required | {"duplicate_acknowledged", "csrfmiddlewaretoken"},
+            )
         with _command_scope(request, service, actor):
             resolve_delivery(
                 service.store,
@@ -657,7 +702,11 @@ def preparation_retry(request, task_id, *, daily=False, weekly=False):
             or supplied != {"command_id"}
             or any(len(request.POST.getlist(key)) != 1 for key in request.POST)
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(
+                request.GET,
+                request.POST,
+                allowed={"command_id", "csrfmiddlewaretoken"},
+            )
         command_id = UUID(request.POST["command_id"])
         with _command_scope(caller, service, actor):
             result = retry_preparation_task(

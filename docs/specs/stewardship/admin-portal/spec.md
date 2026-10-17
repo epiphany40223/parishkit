@@ -235,7 +235,15 @@ unknown-delivery acknowledgement come from the server. No page offers a
 manual check or asks for a reload, and a page restored from the browser's
 history checks again by itself: a settled test page re-reads its panel in
 place on `pageshow`, so Continue never outlives a change to an earlier
-step's settings. A status read the server refuses (signed
+step's settings. Load parish data re-reads its panel in place, and the
+Loading parish data page reads its settled status region once more, whenever
+the page is shown again (its tab shown, or `pageshow`); each also re-reads
+the step bar in place. So neither says the parish data is loaded, nor shows
+its step as completed, after the load was discarded from another tab
+([#1353](https://github.com/epiphany40223/parishkit/issues/1353)). That
+re-check of a settled status never retries and never adds a line under the
+status: a failed read (setup finished meanwhile, say) stops it quietly and
+leaves the page as it was. A status read the server refuses (signed
 out, no longer allowed, or a bad request such as Slack being off) stops the
 watching instead of being retried.
 
@@ -357,6 +365,19 @@ shows as loaded. Each discard is audited as
 staging is never used again: finalization and campaign staging bind only to
 the current load. It is disposed of with the attempt's other source staging
 when setup ends, and the time zone the load fixed can change again.
+The progress page of a load that failed for good names the most common cause
+(a wrong key or organization ID) and links to ParishSoft connection and to
+Load parish data, whose Load again starts a new load; Back goes to ParishSoft
+connection. Only a load that ended with the setup attempt itself (expired)
+still says to cancel setup and start again. A discarded load's progress page
+stays readable, passively only (it is never renewed), and says the load is no
+longer used, with a link to Load parish data and no Continue; a bound load
+that succeeded but is no longer valid is shown the same way. While a
+still-valid load exists, the ParishSoft connection page says that saving a
+different key or organization ID discards the loaded data and that keeping
+the saved key keeps it. The page says so in a static line in its saved-key
+notice, so nothing moves as the key is typed
+([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
 
 The two-hour watchdog is an intentional hard, non-extendable fail-safe. A normal
 complete ParishSoft load is expected to take several minutes (about ten for a
@@ -966,7 +987,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `reports` | Participation | Menu: Participation | Administrator, Staff | (redirects) Participation and campaign statistics; 'Campaign reports' only when no campaign exists; Campaign reports | `/admin/reports/` | (same) | Not a group root: redirects to Participation, or to Ministry requests for a viewer who may not open Participation (a Ministry leader). |
 | `participation` | Participation | Menu: Participation | Administrator, Staff | Participation and campaign statistics; Campaign reports (via redirect) | `/admin/reports/participation/` | (same) |  |
 | `campaign_comparison` | Campaign comparison | Menu: Campaign comparison | Administrator, Staff | (new, [#1018](https://github.com/epiphany40223/parishkit/issues/1018)) | `/admin/reports/comparison/` | (same) | Compares the current campaign with imported past campaigns ([campaign history](../campaign-history/spec.md#comparison-report)). |
-| `report_export` | _report page name_ export | The report it came from | Administrator, Staff, Ministry leader | Ministry export / Additional-information export / Family-directory export / Family-directory mail-merge export; Report export (breadcrumb) | `/admin/reports/exports/<request>/` | (same) | Object-named (exception). Every export shares it: a latest-data export too (decision 8). A report's export is named after its report page, for example "Active parishioner family directory export" or "Ministry requests export" (#520), and its breadcrumb says the same name as its heading. Exports that are not one report's keep their own names (Campaign archive, Campaign comparison download, Family timeline export, Chosen-Family test names export). The export error page reads nothing from the database, so it cannot name the export; its link back says "Return to the export status page". Its actions post to `cancellation/`, `retries/`, `download/` and `regeneration/`. |
+| `report_export` | _report page name_ export | The report it came from | Administrator, Staff, Ministry leader | Ministry export / Additional-information export / Family-directory export / Family-directory mail-merge export; Report export (breadcrumb) | `/admin/reports/exports/<request>/` | (same) | Object-named (exception). Every export shares it: a latest-data export too (decision 8). A report's export is named after its report page, for example "Active parishioner family directory export" or "Ministry requests export" (#520), and its breadcrumb says the same name as its heading. Exports that are not one report's keep their own names (Campaign archive, Campaign comparison download, Family timeline export, Chosen-Family test names export). The export error page reads nothing from the database, so it cannot name the export; its link back says "Return to the export status page". Its actions post to `cancellation/`, `retries/` and `download/`. It is a [point-in-time](../operations/spec.md#point-in-time-exports) preparing step, not a history entry: past the download window it answers the fixed "no longer available" page, and no page lists earlier exports. |
 | `report_exact` | Latest-data export | Participation | Administrator, Staff | Queued participation export; Exact export | `/admin/reports/exports/<request>/` (the shared export page) | (same) | Decision 8: folded into the shared export page; it keeps its own heading, and its trail names it. Its old addresses (`exact-exports/<request>/` and its actions) are gone (#864). |
 | `financial_report` | Financial stewardship | Menu: Financial stewardship | Administrator, Staff | Financial stewardship detail; Financial report | `/admin/reports/financial/` | (same) |  |
 | `limitations_report` | Limitations | Menu: Limitations | Administrator, Staff | Talents and limitations | `/admin/reports/limitations/` | (same) | Renamed when talents were retired (#970); the old address is gone. Its CSV/XLSX/PDF download (`limitations/exports/`) is a non-page action. |
@@ -1420,8 +1441,11 @@ and fail-closed mismatch recovery are defined by the
 [configuration architecture](../architecture/spec.md#configuration-and-secrets).
 Every editor in this section reviews and applies through the
 [review dialog](../ui-conventions/spec.md#review-dialog), Parish settings
-included: its Review opens the dialog with each changed setting, Apply
-follows the change there, and the form is redrawn at the applied version.
+included: its **Save** opens the dialog, "Save the Parish settings?", with
+a [compact review](../ui-conventions/spec.md#review-dialog) (#1356), one
+"Setting: old → new" line per changed setting and a new timezone's note;
+Apply follows the change there, and the form is redrawn at the applied
+version.
 Parish settings' address takes no query.
 
 Outgoing email settings (the setup mail step and the post-setup outgoing
@@ -2846,15 +2870,84 @@ confirmed and delivered exactly like reminders added one at a time (see [Family
 invitations and
 reminders](../background-processing/spec.md#family-invitations-and-reminders)).
 The server checks each date as it checks any reminder, and refuses more than 30
-at once. The rule itself is not saved; its fields are posted only so a refused
-page shows them again. The page script's expansion and the server's
+at once. The page script's expansion and the server's
 (`campaigns/recurrence.py`, used by the command line's
 [repeat entry](../admin-automation/spec.md#schedules-and-configuration)) both
 run the shared case table
 `tests/stewardship/fixtures/recurrence_cases.json`. Repeat is offered on New
-only: a saved reminder is changed one at a time. Remembering a series for later
-"this and following" edits, and editing from the
-[campaign calendar](#campaign-calendar), are later slices of #469.
+only.
+
+The same change also remembers the rule as a **reminder series** holding
+exactly the reminders it adds, as the command line's `"remember": true` does,
+so they can be changed together later. Delivery never reads a series: its
+reminders are planned and sent exactly as they would be without it. The
+server reads the rule from the posted repeat fields and remembers it only
+when it is a valid rule, every added reminder's date in the campaign's zone is
+a day the rule gives (a browser far enough from the campaign's zone can move a
+send to the next or previous campaign day) and the configuration is in the
+users form; otherwise the reminders are added as before and nothing else
+changes (the default, Administrator may change it). The review says when the
+reminders are kept as a series and names its rule in plain words.
+
+Edit of a reminder that belongs to a series offers **Apply this edit to**, a
+choice above its date: **This reminder only** (the default), **This and
+following** and **The whole series**. The choice is described by "Part of: "
+and the series' rule in plain words, such as "Every Monday and Thursday,
+October 5, 2054 – November 13, 2054", and by one help line that is always
+shown. "This reminder only" is the ordinary Edit: moving the reminder to a day
+its rule does not give takes it out of the series, and deleting it from the
+list does too. The other two grey the send date in place (a [conditional
+field](../ui-conventions/spec.md#conditional-fields), not sent), and the
+greyed box shows this reminder's own date, with help under it that the date
+is used only with "This reminder only". Every reminder they change keeps its
+own date and takes the send time and Email to send chosen here (with "Edit
+this schedule's email", the one new email they then share). Reminders that
+sent or are being prepared don't change. Choosing a scope is not a change by
+itself, so Review changes stays unavailable until the time or email changes.
+
+When the page is drawn, the server plans each series scope once with nothing
+changed. A scope it would refuse for a reason the page already knows is drawn
+unavailable, with that reason beside it
+([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)): a
+reminder from the cut date on has sent or is being prepared, or another
+reminder from the cut date on has passed its time without sending (a "missed"
+reminder). A series change would add a missed reminder again on its past
+date, so it would send right after Apply. The page refuses that, naming the
+missed reminder's date. Change that reminder on its own, or choose "This and
+following" from a later one. Only the reminder being edited may itself be
+missed, as on the ordinary Edit. The command line keeps its documented
+behaviour for missed reminders.
+
+The send time is typed in the browser's zone and converted on each date the
+change covers (the unsent reminders from the cut date on), as a repeat's dates
+are. A time that would move any of them to another day in the campaign's zone
+is refused at the choice. A time in the hour the campaign's clocks repeat is
+refused at the send time, as on the ordinary Edit. So is a new time that
+would put another reminder the change adds at or before now (a 9:00 AM
+reminder today moved to 7:00 AM at 8:00 AM), which would send at once: the
+refusal names that reminder's date and new time. Only the reminder being
+edited may move into the past, as on the ordinary Edit. A time and email left
+as shown leave each reminder's own. The server plans the change with the command
+line's [series edit](../admin-automation/spec.md#schedules-and-configuration)
+(`accounts.series_edits.plan`, "this and following" from this reminder, or
+from the series' first reminder that has not sent): the same cut date, kept
+members, removed and re-added reminders, and series records, and the same
+review, signed preview and confirmation. An in-flight or unknown send still
+blocks. A refusal of the plan is shown at the choice, in the page's own plain
+words. A scope posted for a reminder that is no longer in a series, and a
+scope with no time or email change, are refused in the review dialog, like
+an unchanged Edit. The review lists every reminder removed and added, and says
+what happens to the series:
+
+- the new send time (in this computer's time) or the new email, from the cut
+  date;
+- for a split, that the reminders before the cut date stay in the series
+  (with its rule, now ending the day before) and that the changed ones become
+  a new series (with its rule).
+
+Changing a series' rule, and deleting a series, stay on the command line for
+now. Editing from the [campaign calendar](#campaign-calendar) is a later slice
+of #469.
 
 #### Campaign calendar
 
@@ -2968,15 +3061,15 @@ Create the campaign is step 1 of the campaign wizard, which follows the
 general [wizard rules](../ui-conventions/spec.md#wizards)
 ([#1404](https://github.com/epiphany40223/parishkit/issues/1404)): before
 the campaign exists, step 1 is this page, and once it is created, step 1 is
-Campaign settings, so no question is asked twice (planned, #1404 PR 3).
+Campaign settings, so no question is asked twice.
 
 Status: the page (its admission, first page and what follows confirming) and
 its guided steps are built
 ([#142](https://github.com/epiphany40223/parishkit/issues/142)), with #1404's
-quick wins ([#1407](https://github.com/epiphany40223/parishkit/pull/1407)).
+quick wins ([#1407](https://github.com/epiphany40223/parishkit/pull/1407))
+and Create the campaign drawn as step 1 (#1404 PR 3).
 The rest of #1404 is planned, and each part below marked "(planned, #1404
-PR n)" describes the design, not yet the pages: Create the campaign drawn
-as step 1 (PR 3); direct saves on draft steps and sub-pages (PR 4); Load
+PR n)" describes the design, not yet the pages: direct saves on draft steps and sub-pages (PR 4); Load
 ParishSoft data as a step (PR 5); the Pages and emails item states and the
 suggested schedules (PR 6); and Back asking before it discards, with
 Go-live readiness's summary lines (PR 7). Setup ends without a campaign, so
@@ -3002,13 +3095,17 @@ no-campaign text instead.
 **First page.** It collects the campaign's basics in the ordinary campaign
 form: name, modules, start and end dates, Ministries (from the loaded catalog,
 initially all active ones) and, for Financial stewardship, the financial
-period and current and comparison funds. As step 1 (planned, #1404 PR 3) it
+period and current and comparison funds. As step 1 it
 is the Campaign settings form itself, so it also asks the
 [Ministry leader roles](#ministry-leader-roles), starting on the configured
-list, and every Campaign settings question is asked here once. It draws the
+list, and every Campaign settings question is asked here once; leaving the
+configured list ticked saves no list of the campaign's own, as on Campaign
+settings. It draws the
 wizard's stepper, "Step 1 of N: Campaign settings", with every later step
-unavailable for the reason "Create the campaign first.", and its action row
-has no Back and the one primary **Create the campaign and continue**. The
+unavailable, each named "Not available yet: Create the campaign first.". N counts Share
+options, because the modules are not chosen yet; once the campaign exists
+without Financial stewardship, Share options is no longer a step. Its action
+row has no Back and the one primary **Create the campaign and continue**. The
 campaign time zone may be any
 catalog zone, not only the Parish zone (Administrator, 2026-10-15,
 [#1330](https://github.com/epiphany40223/parishkit/issues/1330)): the menu
@@ -3019,7 +3116,7 @@ browser reporting UTC (or an alias such as `Etc/UTC`) counts as reporting no
 zone, since that is usually a server, VM or privacy setting. A
 form drawn again after a refusal keeps the zone that was posted. The start and
 end dates are days in the chosen zone, and its boundaries are resolved in it.
-The form's **Create the campaign**
+The form's **Create the campaign and continue**
 button is unavailable until every required field is filled in ([prerequisite
 gates](../ui-conventions/spec.md#prerequisite-gates)). Its Review is a
 [confirmation](../ui-conventions/spec.md#review-dialog), not a full review
@@ -3084,7 +3181,7 @@ look, drawn by the same template for its
 the [wizard rules](../ui-conventions/spec.md#wizards): Campaign
 settings (its basics, Ministries and funds, one form since
 [#1119](https://github.com/epiphany40223/parishkit/issues/1119); Create the
-campaign before the campaign exists, planned, #1404 PR 3), Load ParishSoft data (planned, #1404
+campaign before the campaign exists), Load ParishSoft data (planned, #1404
 PR 5), Share
 options (shown only when the campaign's modules use it), Pages and emails,
 Dates and mail schedules, Campaign images, Preview and test email (for the
@@ -5634,7 +5731,13 @@ bar's only action is Mark entered in ParishSoft, and clearing stays per row.
 The dialog posts to `roster/marks/`, which records each chosen tick exactly
 as a single tick is recorded (its own entry and audit event), all in one
 transaction or none; a change someone else ticked or cleared first refuses
-the whole request, naming that change in the dialog.
+the whole request, naming that change in the dialog. A change listed twice
+(the Family answered again and both requests were resolved) names each row,
+in its box, its tick and that refusal, with the day it was resolved in the
+browser's time zone
+([#558](https://github.com/epiphany40223/parishkit/issues/558)); the dialog
+posts the browser's zone for the refusal, which leaves the day out rather
+than guess when no known zone came.
 
 Its CSV, XLSX and PDF downloads carry the page's columns, without the tick
 ([downloaded files](../ui-conventions/spec.md#downloaded-files)), for every
@@ -5881,20 +5984,18 @@ its problems. Slice 7 delivered Home and the banner, as
 describes: Home's icons, state words and tile links, one display of a
 problem Home also reports in its own notice, the registry's banner mapping
 with the shared words and the banner's tile links, and Accept this change
-once acknowledging through that mapping. The Administrator
+once acknowledging through that mapping. The rest of slice 1 delivered the
+four former page notices as shared kinds of the
+[problem registry](#health-problem-registry), so Home lists them too: an
+unknown No-reminders WorkGroup (an error while Reminders are scheduled), a
+newest backup sealed to another key under the one-warning-per-cause rule, a
+requested backup that ended without a backup, and, in Production, off-site
+copies that are not set up, with Home's fallback line when the backup key
+cannot be checked. The Administrator
 answered the dashboard's questions on 2026-10-13; the
-[decisions](#administrator-decisions-2026-10-13) record the answers. Until
-the rest of slice 1 lands, the frame applies these defaults:
+[decisions](#administrator-decisions-2026-10-13) record the answers. The
+frame applies these defaults:
 
-- **Page notices count on the page.** Four notices are not yet in the
-  shared list: an unknown No-reminders WorkGroup, a newest backup sealed to
-  another key, a requested backup that failed, did not finish or was not
-  picked up, and, in Production, off-site copies that are not set up. They
-  raise their tile to Warning on the page, and are listed as Warning items
-  after their tile's problems, each with its sentence and link. Home does
-  not list them yet.
-  Slice 1 makes them registry kinds, so Home lists them too and an unknown
-  WorkGroup becomes an error while Reminders are scheduled.
 - **The refusal's counts end the ParishSoft refresh tile's problems**, and
   Accept this change once follows them directly, as the table asks. The
   refusal's item comes after the tile's other problems and the unknown
@@ -6018,7 +6119,7 @@ Working with a summary that says so ("No current campaign").
 | --- | --- | --- | --- | --- | --- |
 | **Mail** | a mail consumer is halted (`sender_halted`); a mail consumer is not running, or mail dispatch has not reported (the `mail-dispatch` part of `not_running` and `not_reported`); the email provider is unavailable (`mail_provider_unavailable`); an address follow-up's permanent refusal could not be set aside (`refusal_unrecorded`, #1201) | a mail consumer is paused after an outage (`sender_outage`) | the first that holds, in the order [why sends are waiting](#why-sends-are-waiting) lists | the [why sends are waiting](#why-sends-are-waiting) panel (every reason, the 24-hour count, the resume time, the Family email progress link) and the [mail sender panel](#mail-sender-panel) (each consumer's line and any open incident) | **Clear the halt** ([ADM-13 PR 4](#clear-a-halted-mail-sender), not built). The panel content keeps its links: the deployment runbook under a not-running line, the mail-provider outage runbook beside an outage pause, Pause and resume mail beside the pause line, and Outgoing mail: waiting to retry beside the retry line. |
 | **ParishSoft refresh** | a refused large change (`source_destructive_change`, whose problem block holds the refused counts table); a different organization (`source_tenant_mismatch`); while the campaign has Reminders still scheduled, an unknown No-reminders WorkGroup (`workgroup_missing`, new in the shared list, the #861 concern) | the last full refresh failed (`source_failed`); ParishSoft could not be reached (`source_failing`); the data is out of date (`source_late`); old copies are not being removed (`source_retention_failing`); an unknown No-reminders WorkGroup while no Reminder is scheduled | the first that holds, in the order the [ParishSoft refresh panel](#parishsoft-refresh-panel) lists | the [ParishSoft refresh panel](#parishsoft-refresh-panel): refresh times, and held and skipped refreshes | **Accept this change once** (its tick box, preview and the example Families of #1213), directly after the refusal's counts table, as the Administrator asked on #1210. The problem sentences keep their links (the ParishSoft outage runbook, Check the No-reminders WorkGroup setting), and Refresh from ParishSoft ends the panel content. |
-| **Backups** | a backup is overdue (`backup_rpo_breach`) | an off-site copy failed (`backup_offsite_failed`); the backup key changed (`backup_key_changed`); the newest backup, finished after the configured key was activated, was sealed to another key (`backup_key_mismatch`, new); a requested backup failed, did not finish or was not picked up (`backup_request_failed`, new, until a newer request or a newer finished backup); in Production, off-site copies are not set up (`offsite_missing`, new) | "Last backup 3 hours ago; off-site copy 3 hours ago"; "Backup requested at 10:42 AM is running" | the [backups panel](#backups-panel) | **Take a backup now**. Off-site backups (Google Drive) stays in the panel content beside the off-site line. |
+| **Backups** | a backup is overdue (`backup_rpo_breach`) | an off-site copy failed (`backup_offsite_failed`); the backup key changed (`backup_key_changed`); the newest backup, started after the configured key was activated, was sealed to another key (`backup_key_mismatch`, new); a requested backup failed, did not finish or was not picked up (`backup_request_failed`, new, until a newer request replaces it; a newer finished backup also clears one that failed or did not finish, but not one never picked up, since a good nightly backup does not prove the server checks for requests); in Production, off-site copies are not set up (`offsite_missing`, new) | "Last backup 3 hours ago; off-site copy 3 hours ago"; "Backup requested at 10:42 AM is running" | the [backups panel](#backups-panel) | **Take a backup now**. Off-site backups (Google Drive) stays in the panel content beside the off-site line. |
 | **Debug logging** | none | in Production, debug logging is in effect in any service (`debug_logging`; a warning because nothing stops working, [decision 11](#administrator-decisions-2026-10-13)) | "Off"; "Turned off from this page by … at …"; "On in 4 services, as expected in Testing" | the [debug logging panel](#debug-logging-panel) | **Turn off debug logging**, drawn only while some service has debug logging in effect; once the switch is set, its status line and, only in Testing, **Allow debug logging again** ([clearing the switch](#turn-off-debug-logging)). |
 | **Families the form cannot open** | none | at least one Family cannot open the form; the check could not run | "Every Family can open the form"; "No current campaign" | the sentence and the link of [Families the form cannot open](#system-health-page) | none; the list's link is in the sentence |
 | **Pages and emails to re-save** | an invitation or reminder cannot be sent until it is fixed (the list's `blocked` items) | other items are marked "Re-save recommended"; the check could not run | "Nothing to re-save"; "No current campaign" | the sentence and the linked list of [pages and emails to re-save](#system-health-page) | none; each item links its editor |
@@ -6058,29 +6159,54 @@ cannot disagree.
   order: one tile for most problems, and both tiles for a grouped process
   problem whose subjects the page splits. The document still lists such a
   problem once, as Home does.
-- **New kinds.** `workgroup_missing` (today a panel notice; an error while
-  Reminders are scheduled, otherwise a warning), and the warnings
+- **New kinds.** `workgroup_missing` (an error while Reminders are
+  scheduled, otherwise a warning), and the warnings
   `backup_key_mismatch`, `backup_request_failed` and `offsite_missing`
   (Production only), join the shared list, so Home and the page agree on
   them.
-  - The backup request and off-site facts are rows `HEALTH_SQL` can read
-    in the statement Home already runs.
-  - `workgroup_missing` needs the current campaign's id and configuration
-    and the current snapshot's cursor, read through the existing helpers
-    (`configured_name` and `recorded` in `source/workgroups.py`, as
-    `_workgroup_missing` does today), so Home reads it in Python after
-    that statement. Slice 1 records Home's query count in its query-budget
-    test.
-  - `backup_key_mismatch` comes from `_backup`, which raises a
-    `ConfigError` when the configured key cannot be read. The System
-    health page keeps its 503 for that, as today; only Home falls back,
-    showing "The backup key could not be checked" as a warning line
-    instead of failing.
+  - Their facts are columns of `HEALTH_SQL`, the statement Home already
+    runs: the newest backup request, the key the newest backup was sealed
+    to and when it started, when the configured key was activated (the
+    newest `backup_key_replaced` security event, which every activation that sets
+    a different key records at its own time), the current snapshot's
+    No-reminders WorkGroup evidence, and whether the current campaign has a
+    Reminder still to come. Whether off-site copies are set up, and the
+    campaign's WorkGroup name, come from the applied configuration and the
+    campaign settings Home has already loaded. Home's query count therefore
+    stays the same whichever problems are open, as its query-budget test
+    holds. This replaces the earlier plan to read the snapshot's cursor
+    through the helpers in Python after that statement, which would have
+    cost Home queries whenever a WorkGroup name is set; the evidence is
+    still checked by the rule `current_evidence` applies, so the page,
+    Home and the Reminder planner agree.
+  - **Reminders are scheduled** while the current campaign's applied
+    schedule has a Reminder whose time is still ahead on the campaign
+    clock. Then `workgroup_missing` is an error, and its sentence adds
+    that Reminders are still scheduled; otherwise it is a warning. A
+    Reminder whose time has passed but which is still being sent (held,
+    paused or spread over a large send) counts as not scheduled.
+  - `backup_key_mismatch` raises a `ConfigError` when the configured key
+    cannot be read. The System health page keeps its 503 for that, as
+    before; only Home falls back, showing "The backup key could not be
+    checked" as a warning line (`backup_key_unchecked`, Home's alone)
+    instead of failing. That line links no tile, since the page it would
+    open cannot be shown.
+  - The `system health` document gains no member for them: the unknown
+    WorkGroup's name is never part of it, and a failed request's status is
+    the document's `backup_request`.
+  - **What waiting cannot clear.** `offsite_missing` needs an
+    Administrator, and `backup_request_failed` the server operator, a
+    newer request or (when it failed or did not finish) the next nightly
+    backup, hours away, so `system health --watch` stops once only they
+    remain
+    (`WAIT_CANNOT_CLEAR` in `system_health.py`; see the
+    [automation guide](../../../guides/stewardship-admin-automation.md#watching-and-errors)).
 - **Backup key, one warning per cause.** `backup_key_mismatch` holds only
-  when the newest backup finished after the configured key was activated
+  when the newest backup started after the configured key was activated
   (the time the configuration that set it was applied) and was sealed to
-  another key, so it never fires in the day between an ordinary key change
-  and the next backup. `backup_key_changed` (the incident raised when a
+  another key. A backup reads its key as it starts, so it never fires in
+  the day between an ordinary key change and the next backup, nor for a
+  backup already running when the key changed. `backup_key_changed` (the incident raised when a
   backup used a different key than the one before it) is the expected
   result of a key change. While both hold, the tile lists only
   `backup_key_mismatch`, whose sentence covers the change, so one cause
@@ -6274,7 +6400,9 @@ The same problem never appears twice in ways that disagree.
     once. While `backup_offsite_failed` is listed and the off-site line
     reports the failure, that line is left out. The sentence keeps its
     Off-site backups (Google Drive) link, and the last copy's time is in the
-    Backups tile.
+    Backups tile. While `offsite_missing` is listed (Production), Home's
+    invitation to set off-site copies up is left out; the sentence keeps
+    its Set up off-site backups link.
 - **Banner events and problems.** Where a problem kind accounts for a
   CRITICAL operational event, the registry names it. While a mapped
   problem is current, the banner's group for its event links, for
@@ -6625,10 +6753,11 @@ might be held back:
   only the Families skipped before stay skipped until a refresh finds it
   ([#1305](https://github.com/epiphany40223/parishkit/issues/1305)). The
   notice names the setting and links its page; the refresh itself logs a
-  WARNING. Until the registry
-  slice makes it a shared kind, it is listed with the tile's problems as a
-  Warning item, after the others and before a refused change, and it
-  clears when a refresh finds the name or the setting is cleared.
+  WARNING. It is the shared `workgroup_missing` problem, an error while
+  [Reminders are scheduled](#health-problem-registry) and otherwise a
+  warning, listed after the tile's other problems and before a refused
+  change. It clears when a refresh finds the name or the setting is
+  cleared.
 
 The panel repeats none of the tile's problems: in the tile, the shared
 refresh status leaves out its late notice, which `source_late` already
@@ -6689,16 +6818,22 @@ server?" (ADM-35):
   panel line names only its state (and when it started running). Why a
   held request can still show for a few minutes after the send ends (the
   server checks again every five minutes) is in a toggletip beside it. A
-  request that ended without a backup is a finding, below.
+  request that ended without a backup is the `backup_request_failed`
+  problem, below, until a newer request replaces it. A newer finished
+  backup also clears one that failed or did not finish, but not one never
+  picked up, since a good nightly backup does not prove the server checks
+  for requests.
 
 The panel repeats none of the tile's problems. The open
 `backup_rpo_breach`, `backup_offsite_failed` and `backup_key_changed`
-incidents are the tile's problems, in their own sentences. Until the
-registry slice makes them shared kinds, the page findings are listed after
-them as Warning items, in this order, each with its sentence and link:
+incidents are the tile's problems, in their own sentences. The shared
+warnings of the [problem registry](#health-problem-registry) follow them,
+in this order, each with its sentence and link:
 
-- a newest backup sealed to another key, linking the **Backup encryption
-  key** settings;
+- a newest backup, started after the configured key was activated,
+  sealed to another key (`backup_key_mismatch`), linking the **Backup
+  encryption key** settings; while it holds, `backup_key_changed` is not
+  listed, since one cause gives one warning;
 - a requested backup that failed or did not finish (linking the backup
   runbook's "Checking" section) or was not picked up (linking the nightly
   backup);
@@ -6711,7 +6846,7 @@ off-site line with **Off-site backups (Google Drive)**. A requested backup's
 progress is not repeated there: it is the line under
 [Take a backup now](#take-a-backup-now)'s button. A failed newest copy without an open incident is a
 plain notice there. In Testing, off-site copies that are not set up are a
-panel line with the setup link, not a finding
+panel line with the setup link, not a problem
 ([decision 5](#administrator-decisions-2026-10-13)).
 
 While the Backups tile is Working, its summary names the first of these
@@ -7628,8 +7763,10 @@ Only Admins access the combined log screen. It supports:
   record" alone is the audit trail only, and leaving it unticked shows
   operational entries only. At least one must be ticked: the filter form's
   complete gate keeps Apply unavailable, saying "Tick at least one kind of
-  entry to show.", and the server refuses a form with none with its own
-  message, not the identifier guidance. A campaign filter with Audit record
+  entry to show.", and the server refuses a form with none at the Show
+  choices (see refusals at a field, below), not with the identifier
+  guidance. A download with none keeps its own error message. A campaign
+  filter with Audit record
   unticked lists nothing, and its empty table says to tick Audit record.
   There is no separate Source field. For one release the server still accepts the
   retired `source` value an older open tab may send, mapped onto the
@@ -7782,7 +7919,19 @@ day and Through into the start of the next local day (exclusive), so a
 daylight-saving day is 23 or 25 hours long, and paging, sorting and export
 carry the zone with the other filters. A date sent without a zone the server
 knows is refused with a hint to apply again; while the browser reports no zone
-the page keeps Apply unavailable whenever a date is entered. The critical-event
+the page keeps Apply unavailable whenever a date is entered.
+The page checks its filters before Apply (a Show choice ticked, a whole
+identifier, a whole date, and Through no earlier than From). A request
+that reaches the server with one broken is refused at that field
+([field errors](../ui-conventions/spec.md#field-errors-and-live-checks),
+[#1332](https://github.com/epiphany40223/parishkit/issues/1332)): nothing
+ticked at the Show choices, with each box that can be ticked marked (under
+an audit-only Activity, Audit record alone, in its hint's words); dates
+out of order at Through, with both dates marked. The message is shown in
+the filters' hint row. The view is audited
+denied. A day outside 2020 to 2999, which no hint names, keeps the error
+page, and so does a date without a known zone, and every refusal no field
+can fix. The critical-event
 banner's link sends the browser's zone with a From day one day before its
 24-hour window, so the window is covered in every zone; when the browser
 reports no zone it sends no From day. Export
@@ -7901,9 +8050,11 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   `admin_cmd_users_import_leaders`), and the operator's one-time conversion
   of sign-in rules into users, `operator_users_upgraded`), the command
   line's parish profile changes (`admin_cmd_parish_confirm`) and Campaign
-  image removals (`admin_cmd_artwork_remove`), No-reminders WorkGroup changes
+  image removals (`admin_cmd_artwork_remove`), email template deletions
+  (`admin_cmd_content_confirm`), No-reminders WorkGroup changes
   (`admin_cmd_workgroup_confirm`), Campaign settings changes
-  (`admin_cmd_campaign_confirm`), integration settings
+  (`admin_cmd_campaign_confirm`), Share options changes
+  (`admin_cmd_campaign_shares_confirm`), integration settings
   changes and removals (`admin_cmd_integration_confirm`), the command line's backup folder checks (`admin_cmd_integration_backup_probe`) and key change dismissals (`admin_cmd_integration_dismiss`), Finish switching to a new key (`admin_cmd_integration_key_finish_switching`), hosted files (`hosted_file_*`), stored key
   replacements
   (`secret_replacement_requested`, `secret_request_*`,

@@ -37,6 +37,7 @@ from parishkit.stewardship.web.refusals import (
     UserFacingStale,
     unexpected_fields,
     with_codes,
+    with_default_code,
     with_reason,
 )
 
@@ -90,6 +91,8 @@ def _answer(body, status=200):
     """A JSON answer the page script reads, kept as is by the error pages."""
     response = JsonResponse(body, status=status)
     response.stewardship_safe_error = True
+    # The refusal log's code for this page's own refusal (#1444).
+    with_default_code(response)
     return response
 
 

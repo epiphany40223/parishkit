@@ -143,15 +143,14 @@ def test_page_is_accessible_and_fits(page, component_origin, axe_source, path, w
     assert_clean(page, errors)
 
 
-def test_dark_mode_draws_the_page_dark_and_the_charts_as_light_cards(
+def test_dark_mode_draws_the_page_and_its_charts_dark(
     page, component_origin, axe_source
 ):
     """A browser set to dark mode gets the Admin dark scheme (#1264).
 
     Campaign comparison is an Admin page like any other, so its panels take
-    the dark tokens. Its charts stay light cards until charts get a dark
-    scheme (#1264 slice 2): Vega draws them on white with the light theme's
-    muted ink, so their text keeps its contrast.
+    the dark tokens, and so do its charts (slice 2; test_chart_scheme.py
+    checks every chart page): their axis labels are the dark muted ink.
     """
     page.emulate_media(color_scheme="dark")
     page.goto(component_origin + "/campaign-comparison")
@@ -163,9 +162,9 @@ def test_dark_mode_draws_the_page_dark_and_the_charts_as_light_cards(
     assert panel.evaluate("e => getComputedStyle(e).backgroundColor") == rgb(
         DARK_COLORS["paper"]
     )
-    # The axis labels use the light theme's muted ink, not Vega's light grey.
+    # The axis labels use the dark scheme's muted ink.
     label = page.locator("[data-chart-view] svg g.role-axis-label text").first
-    assert label.evaluate("e => e.getAttribute('fill')") == "#4f5e66"
+    assert label.evaluate("e => e.getAttribute('fill')") == DARK_COLORS["muted"]
     assert axe_violations(page, axe_source) == []
 
 

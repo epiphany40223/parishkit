@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 from parishkit.config import ConfigError
 
 from .deployment import DeploymentProfile
+from .web.design_tokens import COLORS, RADII, SANS, SHADOW
 
 
 def production_hostname(configuration):
@@ -33,6 +34,19 @@ def production_hostname(configuration):
 # the Caddyfile placeholder syntax would claim), no scripts and no application
 # assets, since the static tree may be mid-refresh. It reloads itself after a
 # minute, and names no parish, so every deployment serves the same text.
+# Its colours, corners, shadow and font come from the design tokens (#732),
+# so it looks like a portal panel on the portal's page colour. It stays in
+# the light scheme, as Family pages and email do. The font stack's double
+# quotes become single ones, since they sit inside a double-quoted attribute.
+_PAGE_STYLE = (
+    f"margin:0;background:{COLORS['page']};color:{COLORS['ink']};"
+    f"font:18px/1.5 {SANS.replace(chr(34), chr(39))}"
+)
+_CARD_STYLE = (
+    "max-width:34rem;margin:12vh auto;padding:2rem 1.5rem;"
+    f"background:{COLORS['paper']};border:1px solid {COLORS['border']};"
+    f"border-radius:{RADII['radius']};box-shadow:{SHADOW['shadow']}"
+)
 MAINTENANCE_PAGE = "\n".join(
     (
         "<!doctype html>",
@@ -43,15 +57,13 @@ MAINTENANCE_PAGE = "\n".join(
         '<meta http-equiv="refresh" content="60">',
         "<title>Updating the site</title>",
         "</head>",
-        '<body style="margin:0;background:#f6f4ef;color:#1b2a31;'
-        "font:18px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif\">",
-        '<main style="max-width:34rem;margin:12vh auto;padding:2rem 1.5rem;'
-        'background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.12)">',
+        f'<body style="{_PAGE_STYLE}">',
+        f'<main style="{_CARD_STYLE}">',
         '<h1 style="margin:0 0 .75rem;font-size:1.5rem">'
         "We&rsquo;re updating the site</h1>",
         '<p style="margin:0 0 .75rem">Please try again in a couple of minutes. '
         "This page will reload by itself.</p>",
-        '<p style="margin:0;color:#4f5e66">Thank you for your patience.</p>',
+        f'<p style="margin:0;color:{COLORS["muted"]}">Thank you for your patience.</p>',
         "</main>",
         "</body>",
         "</html>",

@@ -31,6 +31,12 @@ from parishkit.stewardship.web.exports import (
     download_headers,
     page_download,
 )
+from parishkit.stewardship.web.filter_errors import (
+    FilterError,
+    error_context,
+    refused,
+)
+from parishkit.stewardship.web.refusals import with_codes
 
 from .log_reads import (
     EXPORT_FORMATS,
@@ -41,7 +47,12 @@ from .log_reads import (
     export_rows,
     load_page,
 )
-from .log_rows import LINK_FIELDS, LogQuery, NothingShown, page_context
+from .log_rows import (
+    LINK_FIELDS,
+    LogQuery,
+    NothingShown,
+    page_context,
+)
 from .schemas import Action, ActorKind, Outcome
 from .services import record_action
 
@@ -53,7 +64,23 @@ ZONE_MESSAGE = _(
     "apply the filters again; if this repeats, check your computer's time zone "
     "setting."
 )
-# A submitted form ticked none of the six Show choices (#601); the page's gate
+# The element each filter a refusal can be shown at is linked to from the
+# error summary (#1332): for the Show choices, the first box, Debug.
+FIELD_IDS = {
+    "show": "log-show-debug",
+    "actor": "log-actor",
+    "correlation": "log-correlation",
+    "campaign": "log-campaign",
+    "subject": "log-subject",
+    "start": "log-start",
+    "end": "log-end",
+}
+# The message line each is described by: one for every filter, shown in
+# the gate's reserved hint row below the filter bar, so the page reserves
+# no extra line for a refusal only a hand-built request gets (UX
+# conventions, Field errors). It shows one refusal at a time.
+FIELD_LINES = dict.fromkeys(FIELD_IDS, "log-filters")
+# A download ticked none of the six Show choices (#601); the page's gate
 # normally keeps Apply unavailable, so this answers a bypassed or stale form.
 NOTHING_MESSAGE = _(
     "Choose at least one kind of entry to show. Return to the logs and tick a "
@@ -90,7 +117,8 @@ def _error(code, status, *, query_string=False, message=None):
     response["Cache-Control"] = "no-store"
     if status == 503:
         response["Retry-After"] = "5"
-    return response
+    # The refusal log's code for this page's own refusal (#1444).
+    return with_codes(response, code.value)
 
 
 def _principal(request, store, *, final=False):
@@ -110,6 +138,24 @@ def choice_labels(names):
     Ministries with one name keep one label: the DUID only orders them.
     """
     return sorted(names.items(), key=lambda choice: (choice[1].casefold(), choice[0]))
+
+
+def field_ids(query):
+    """``FIELD_IDS`` for a refused ``query``: an audit-only Activity greys
+    the level boxes, so the summary then links to Audit record instead."""
+    if query.activity_audit_only:
+        return FIELD_IDS | {"show": "log-show-audit"}
+    return FIELD_IDS
+
+
+def refusal_sizes(refusal):
+    """The hint row's reserved size on a page refused at a field (#1332).
+
+    The row keeps the height of the message shown, so its clearing on the
+    reader's first edit moves nothing; an unrefused page reserves nothing
+    beyond the hint's own line.
+    """
+    return {FIELD_LINES[refusal.field]: refusal.message}
 
 
 def ministry_choices():
@@ -141,7 +187,13 @@ def logs(request):
     page offers) may carry only ``LINK_FIELDS`` (#536); one that carries an
     identifier, the snapshot or anything else is refused for where it was
     sent, without echoing it, and a POST never comes with a query string.
+
+    Filters refused at a field (``FilterError``, #1332) draw the page again,
+    answered 400, with the values sent in the filter form, the error at
+    that field and the entries for no filters; the view is then audited
+    denied, not succeeded.
     """
+    refusal = None
     try:
         service = runtime()
         actor = _principal(request, service.store)
@@ -150,7 +202,14 @@ def logs(request):
             return _error(ErrorCode.INVALID, 400, query_string=True)
         parameters = (request.GET if linked else request.POST).copy()
         parameters.pop("csrfmiddlewaretoken", None)
-        query = LogQuery.parse(parameters)
+        try:
+            query = LogQuery.parse(parameters)
+        except FilterError as error:
+            # Every structural rule was checked before a field's, so the
+            # sort and size sent are ones the table accepts; the snapshot
+            # and page start again, as for newly applied filters.
+            refusal = error
+            query = LogQuery(sort=error.query.sort, size=error.query.size)
         with bounded_read():
             configuration = SystemConfiguration.objects.first()
             if configuration is None or configuration.restore_review_required:
@@ -158,17 +217,19 @@ def logs(request):
             through = query.snapshot or database_now()
             table, depth_limited = load_page(query, through=through, mark_related=True)
             ministries = ministry_choices()
-        response = render(
-            request,
-            "stewardship/logs.html",
-            page_context(
-                query,
-                table,
-                depth_limited=depth_limited,
-                linked=linked and bool(request.GET),
-                ministries=ministries,
-            ),
+        context = page_context(
+            query,
+            table,
+            depth_limited=depth_limited,
+            linked=linked and bool(request.GET),
+            ministries=ministries,
+            sent=refusal and refusal.query,
         )
+        if refusal is not None:
+            context |= error_context(refusal, field_ids(refusal.query), FIELD_LINES) | {
+                "filter_sizes": refusal_sizes(refusal)
+            }
+        response = render(request, "stewardship/logs.html", context)
         with transaction.atomic():
             current = _principal(request, service.store, final=True)
             if current.identity != actor.identity:
@@ -182,10 +243,14 @@ def logs(request):
                 actor_kind=ActorKind.PORTAL_USER,
                 actor_id=current.identity,
                 # A count only: never a filter, an identifier or an address.
-                context={"outcome": Outcome.SUCCEEDED, "count": len(table.rows)},
+                # A refused page was shown, but not for the filters sent.
+                context={
+                    "outcome": Outcome.SUCCEEDED if refusal is None else Outcome.DENIED,
+                    "count": len(table.rows),
+                },
             )
         response["Cache-Control"] = "no-store"
-        return response
+        return response if refusal is None else refused(response)
     except PermissionError:
         return _error(ErrorCode.DENIED, 403)
     except DatabaseError:
@@ -194,8 +259,6 @@ def logs(request):
         return _error(ErrorCode.UNAVAILABLE, 503)
     except UnknownZone:
         return _error(ErrorCode.INVALID, 400, message=ZONE_MESSAGE)
-    except NothingShown:
-        return _error(ErrorCode.INVALID, 400, message=NOTHING_MESSAGE)
     except ValueError:
         return _error(ErrorCode.INVALID, 400)
 

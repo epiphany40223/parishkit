@@ -4736,6 +4736,7 @@ DECLARE
     expected_execution text;
     expected_submitted jsonb;
     expected_handling text;
+    active_base boolean;
 BEGIN
     IF TG_OP='DELETE' THEN
         SELECT * INTO response FROM public.stewardship_submission WHERE id=OLD.submission_id;
@@ -4829,8 +4830,22 @@ BEGIN
             expected_baseline := source_field;
             IF carries_intent THEN
                 expected_baseline := jsonb_build_object('available',predecessor.baseline_available,'value',predecessor.baseline_value);
+                -- An approval resting on an Administrator's accepted
+                -- ParishSoft value (#528, ADM-09.03) is not carried, as the
+                -- accepted value itself is not: the new row is compared with
+                -- the Family's baseline again and goes back to To review.
+                active_base := EXISTS (SELECT 1 FROM public.stewardship_proposal_review base
+                    WHERE base.proposal_id=predecessor.id AND base.accepted_base
+                      AND base.accepted_source_id=predecessor.current_source_id
+                      AND NOT EXISTS (SELECT 1 FROM public.stewardship_proposal_review later
+                          WHERE later.proposal_id=base.proposal_id
+                            AND later.expected_version>base.expected_version
+                            AND later.expected_version<predecessor.version
+                            AND later.decision<>'approved'));
                 IF ROW(NEW.decision,NEW.admin_value_set,NEW.admin_value)
-                    IS DISTINCT FROM ROW(predecessor.decision,predecessor.admin_value_set,predecessor.admin_value) THEN
+                    IS DISTINCT FROM ROW(CASE WHEN active_base AND predecessor.decision='approved'
+                        THEN 'unreviewed' ELSE predecessor.decision END,
+                        predecessor.admin_value_set,predecessor.admin_value) THEN
                     RAISE EXCEPTION 'Proposal review state requires the same prior intent' USING ERRCODE='23514';
                 END IF;
             ELSIF NEW.decision <> 'unreviewed' OR NEW.admin_value_set OR NEW.admin_value IS NOT NULL THEN
@@ -4925,6 +4940,31 @@ BEGIN
                 THEN
                     RAISE EXCEPTION 'Proposal reconciliation requires fenced protected source' USING ERRCODE='23514';
                 END IF;
+                -- Reconciliation changes the source reference only when
+                -- ParishSoft's value changed, so an Administrator's accepted
+                -- value at the old reference (#528, ADM-09.03) is stale now.
+                -- An approval resting on it goes back to To review while the
+                -- change stays open. A queued change keeps its approval (the
+                -- publish worker owns it then); its plan, merged against the
+                -- Family's baseline again, can only meet a conflict. Nothing
+                -- else here changes the decision. (The CASE is in
+                -- parentheses: an IF condition ends at its first THEN outside
+                -- them.)
+                IF NEW.decision IS DISTINCT FROM (CASE WHEN OLD.decision='approved'
+                       AND OLD.execution IN ('pending','failed')
+                       AND NEW.execution IN ('pending','conflict')
+                       AND EXISTS (SELECT 1 FROM public.stewardship_proposal_review base
+                    WHERE base.proposal_id=OLD.id AND base.accepted_base
+                      AND base.accepted_source_id=OLD.current_source_id
+                      AND NOT EXISTS (SELECT 1 FROM public.stewardship_proposal_review later
+                          WHERE later.proposal_id=base.proposal_id
+                            AND later.expected_version>base.expected_version
+                            AND later.expected_version<OLD.version
+                            AND later.decision<>'approved'))
+                       THEN 'unreviewed' ELSE OLD.decision END)
+                THEN
+                    RAISE EXCEPTION 'Proposal reconciliation must return a stale accepted approval to review' USING ERRCODE='23514';
+                END IF;
             ELSIF current_user='pk_stewardship_web' THEN
                 -- A Staff or Administrator resolution (#528) is admitted only
                 -- with its paired history row, whose own guard checked the
@@ -4955,7 +4995,13 @@ BEGIN
                    -- review row, whose own guard checked the actor, the
                    -- campaign and the starting state: the decision and the
                    -- edit fields become exactly what the row records, nothing
-                   -- else changes, and the version advances by one.
+                   -- else changes, and the version advances by one. A review
+                   -- that resolves a conflict (ADM-09.03, the row accepts
+                   -- ParishSoft's current value) also moves it from conflict to
+                   -- pending; a decision review that takes a resolved change
+                   -- (an active accepted base) away from approved undoes that,
+                   -- putting it back to conflict; every other review keeps the
+                   -- execution.
                    AND NOT EXISTS (
                     SELECT 1 FROM public.stewardship_proposal_review v
                     WHERE v.proposal_id=OLD.id AND v.expected_version=OLD.version
@@ -4963,10 +5009,22 @@ BEGIN
                       AND ROW(NEW.decision,NEW.admin_value_set,NEW.admin_value)
                           IS NOT DISTINCT FROM ROW(v.decision,v.admin_value_set,v.admin_value)
                       AND ROW(NEW.current_available,NEW.current_value,NEW.current_source_id,
-                              NEW.execution,NEW.superseded_by_id)
+                              NEW.superseded_by_id)
                           IS NOT DISTINCT FROM
                           ROW(OLD.current_available,OLD.current_value,OLD.current_source_id,
-                              OLD.execution,OLD.superseded_by_id))
+                              OLD.superseded_by_id)
+                      AND CASE WHEN v.accepted_base
+                          THEN OLD.execution='conflict' AND NEW.execution='pending'
+                          WHEN v.decision<>'approved' AND EXISTS (SELECT 1 FROM public.stewardship_proposal_review base
+                    WHERE base.proposal_id=OLD.id AND base.accepted_base
+                      AND base.accepted_source_id=OLD.current_source_id
+                      AND NOT EXISTS (SELECT 1 FROM public.stewardship_proposal_review later
+                          WHERE later.proposal_id=base.proposal_id
+                            AND later.expected_version>base.expected_version
+                            AND later.expected_version<OLD.version
+                            AND later.decision<>'approved'))
+                          THEN NEW.execution='conflict'
+                          ELSE NEW.execution=OLD.execution END)
                    AND (NEW.decision<>OLD.decision
                    OR NEW.execution NOT IN ('superseded','cancelled','resolved_upstream')
                    OR NOT EXISTS (

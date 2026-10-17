@@ -23,7 +23,10 @@ or Reopen, #528), through the page's own admission and the page's own
 service (``census_resolution.resolve_census_change``), keyed by the page's
 request key. ``census review`` is an Automatic row's Review (Approve,
 Ignore or Back to To review, ADM-09), the same way, through the page's
-``census_review.review_census_change``. Both print ids, versions and
+``census_review.review_census_change``. ``census edit`` is the Review's
+Edit value and Clear edit (ADM-09.04), through ``edit_census_change``, and
+``census resolve-conflict`` its Use the Family's value anyway (ADM-09.03),
+through ``resolve_census_conflict`` (#1434). All print ids, versions and
 states, never the note, the Family, the Member or the value.
 """
 
@@ -192,15 +195,16 @@ def _census_write(
 ):
     """One row write of the Census changes page, in the page's command scope.
 
-    ``census resolve`` and ``census review`` share it, as the page's one
-    post handles both. Admits as the page's post does, then in the page's
-    command scope (the session row locked, the admission repeated around the
-    effect) checks the current campaign as the page does
-    (``admit_report_read``) and finds the Live change in it (another
-    campaign's, or an unknown one, is ``not_available``, as the page refuses
-    it). ``write(actor)`` is then the page's own service, which checks the
-    capability, the version and the row's state and records the page's
-    ``census_change_updated``; it returns the receipt. ``event``, the
+    ``census resolve``, ``census review``, ``census edit`` and ``census
+    resolve-conflict`` share it, as the page's one post handles them all.
+    Admits as the page's post does, then in the page's command scope (the
+    session row locked, the admission repeated around the effect) checks the
+    current campaign as the page does (``admit_report_read``) and finds the
+    Live change in it (another campaign's, or an unknown one, is
+    ``not_available``, as the page refuses it). ``write(actor)`` is then
+    the page's own service, which checks the capability, the version and
+    the row's state and records the page's ``census_change_updated``; it
+    returns the receipt. ``event``, the
     command's own action, joins the same transaction only when the key is
     new (no row of ``records``, the receipt's model, holds it): a repeat
     with the same intent returns the first receipt (``created`` false),
@@ -208,7 +212,8 @@ def _census_write(
     repeat after the current campaign changed is ``not_available``.
     ``build(created, receipt, proposal)`` reads the document back inside
     the transaction, with ``proposal`` the change's state as the command
-    leaves it.
+    leaves it. A ``write`` that changed nothing returns None: nothing is
+    recorded, the command's event included, and ``created`` is false.
 
     A change updated since the version is ``stale_version``, as is the
     page's racing second write (a unique violation).
@@ -258,7 +263,9 @@ def _census_write(
                 actor_id=actor.identity, request_key=request_key
             ).exists()
             receipt = write(actor)
-            if not repeat:
+            # No receipt is a write that changed nothing (an unchanged edit):
+            # nothing was recorded, so neither is the command's event.
+            if not repeat and receipt is not None:
                 record_action(
                     event,
                     actor_kind=ActorKind.PORTAL_USER,
@@ -272,7 +279,7 @@ def _census_write(
             proposal = ProposedChange.objects.values(
                 "id", "version", "decision", "execution"
             ).get(pk=proposal_id)
-            return build(not repeat, receipt, proposal)
+            return build(not repeat and receipt is not None, receipt, proposal)
 
     try:
         model = _held(step)
@@ -422,5 +429,165 @@ def review_census(
         records=ProposalReview,
         write=write,
         event=Action.ADMIN_CMD_CENSUS_REVIEW,
+        build=build,
+    )
+
+
+@dataclass(frozen=True)
+class CensusEdit(ReadModel):
+    """The edit a ``census edit`` recorded, or found for its key.
+
+    ``review`` is the immutable record (``id``, ``proposal_id``, ``edited``:
+    whether it sets an edited value, ``expected_version``, ``created_at``),
+    never its value or note; None when the edit would change nothing
+    (``unchanged``), so nothing was recorded. ``proposal`` is the change's
+    state as the command's transaction left it (``id``, ``version``,
+    ``decision``, ``execution`` and ``edited``, whether an edited value is
+    now set).
+    """
+
+    created: bool
+    unchanged: bool
+    request_key: UUID
+    review: dict | None
+    proposal: dict
+
+
+def edit_census(
+    caller,
+    service,
+    proposal_id,
+    *,
+    value,
+    expected_version,
+    note,
+    request_key,
+    context,
+):
+    """``census edit``: an Automatic row's Edit value, or Clear edit (ADM-09.04).
+
+    The page's ``edit_census_change`` through ``_census_write``, so every
+    guard is the page's: an Administrator only, an Automatic Member change
+    only, only while it is open (never ``queued`` nor final), and a value
+    read as the Family form reads its own answer that fits ParishSoft's
+    request schema. ``value`` is the raw text, or None to clear the edit. A
+    value the change cannot take is ``invalid`` with the service's static
+    reason in ``error.fields`` (field ``value``), never the value itself.
+    An edit that would change nothing (the value already set, a clear with
+    no edit set, the Family's own answer with no edit set) records nothing
+    and is reported as ``unchanged``. The command records
+    ``admin_cmd_census_edit``.
+    """
+    from .admin_changes import InvalidChange
+    from .audit.schemas import Action
+    from .responses.census_review import InvalidEdit, Unchanged, edit_census_change
+    from .responses.models import ProposalReview, ProposedChange
+
+    def write(actor):
+        """The page's Edit value or Clear edit; None when nothing changes."""
+        try:
+            return edit_census_change(
+                service.store,
+                actor.identity,
+                proposal_id,
+                expected_version=expected_version,
+                request_key=request_key,
+                value=value,
+                note=note,
+            )
+        except Unchanged:
+            return None
+        except InvalidEdit as error:
+            # The service's message is static and never holds the value.
+            raise InvalidChange(
+                [{"field": "value", "code": "invalid", "message": str(error)}]
+            ) from None
+
+    def build(created, receipt, proposal):
+        """The edit as recorded (if any), and the change's state."""
+        review = None
+        if receipt is not None:
+            review = ProposalReview.objects.values(
+                "id", "proposal_id", "expected_version", "created_at"
+            ).get(pk=receipt.pk) | {"edited": receipt.admin_value_set}
+        edited = ProposedChange.objects.values_list("admin_value_set", flat=True).get(
+            pk=proposal_id
+        )
+        return CensusEdit(
+            created=created,
+            unchanged=receipt is None,
+            request_key=request_key,
+            review=review,
+            proposal=proposal | {"edited": edited},
+        )
+
+    return _census_write(
+        caller,
+        service,
+        proposal_id,
+        request_key=request_key,
+        context=context,
+        records=ProposalReview,
+        write=write,
+        event=Action.ADMIN_CMD_CENSUS_EDIT,
+        build=build,
+    )
+
+
+def resolve_conflict(
+    caller,
+    service,
+    proposal_id,
+    *,
+    expected_version,
+    note,
+    request_key,
+    context,
+):
+    """``census resolve-conflict``: Use the Family's value anyway (ADM-09.03).
+
+    The page's ``census_review.resolve_census_conflict`` through
+    ``_census_write``, so every guard is the page's: an Administrator only,
+    an Automatic Member change in ``conflict`` whose ParishSoft value is
+    known, one change at a time. It accepts ParishSoft's current value as
+    the base, approves the change and makes it ``pending``; anything else is
+    ``invalid``. The document is ``census review``'s (``CensusReview``); the
+    command records ``admin_cmd_census_resolve_conflict``. Undoing it is
+    ``census review --decision ignored|unreviewed``, which puts the change
+    back to ``conflict``.
+    """
+    from .audit.schemas import Action
+    from .responses.census_review import resolve_census_conflict
+    from .responses.models import ProposalReview
+
+    def write(actor):
+        """The page's Use the Family's value anyway."""
+        return resolve_census_conflict(
+            service.store,
+            actor.identity,
+            proposal_id,
+            expected_version=expected_version,
+            request_key=request_key,
+            note=note,
+        )
+
+    def build(created, receipt, proposal):
+        """The resolution's review as recorded, and the change's state."""
+        review = ProposalReview.objects.values(
+            "id", "proposal_id", "decision", "expected_version", "created_at"
+        ).get(pk=receipt.pk)
+        return CensusReview(
+            created=created, request_key=request_key, review=review, proposal=proposal
+        )
+
+    return _census_write(
+        caller,
+        service,
+        proposal_id,
+        request_key=request_key,
+        context=context,
+        records=ProposalReview,
+        write=write,
+        event=Action.ADMIN_CMD_CENSUS_RESOLVE_CONFLICT,
         build=build,
     )

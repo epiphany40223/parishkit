@@ -1,0 +1,30 @@
+{% load i18n %}{% comment %}
+The one repeat rule (#1129, ui-conventions "Schedules"): How often, the days
+of the week, the monthly choices and the From and Until days, drawn the same
+way for both mail repeat panels. New scheduled email's Repeat
+(schedule-repeat-entry.html) and the date-change review's "Repeat a reminder"
+(schedule-repeat.html) include it, so they cannot drift apart, and one page
+script (data-repeat hooks, ui-v1.js) expands and checks both.
+
+- rule: a RepeatRule form (schedule_entry_views), bound or not. Its fields
+  give every choice and its label, so the two panels offer the same choices
+  in the same order; a bound form also gives the values to draw again.
+- named: true where the server reads the rule back (New's refused page
+  draws it again). The date-change review's panel only adds rows in the
+  page, so its controls have no name and nothing of the rule is posted.
+- from_value, until_value: the first From and Until days, the campaign's own
+  calendar dates (never shifted). Left out, the boxes start empty and the
+  script fills them.
+{% endcomment %}<div class="field"><label for="repeat-frequency">{% translate "How often" %}</label>
+<select id="repeat-frequency"{% if named %} name="{{ rule.frequency.html_name }}"{% endif %} data-repeat="frequency">{% for value, label in rule.fields.frequency.choices %}<option value="{{ value }}"{% if rule.frequency.value == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+<p class="help" data-repeat-when="daily" hidden>{% translate "A reminder every day goes to every Family that has not responded yet. Near the sending mailbox's daily limit, sending spreads out or waits." %}</p>
+<fieldset class="field" data-repeat-when="weekly"><legend>{% translate "On these days" %}</legend>
+<div class="repeat-days">{% for value, label in rule.fields.weekdays.choices %}<label><input type="checkbox"{% if named %} name="{{ rule.weekdays.html_name }}"{% endif %} data-repeat="weekday" value="{{ value }}"{% if value in rule.weekdays.value %} checked{% endif %}> {{ label }}</label> {% endfor %}</div></fieldset>
+<div data-repeat-when="monthly" hidden>
+<div class="field"><label for="repeat-by">{% translate "Repeat on" %}</label><select id="repeat-by"{% if named %} name="{{ rule.by.html_name }}"{% endif %} data-repeat="by">{% for value, label in rule.fields.by.choices %}<option value="{{ value }}"{% if rule.by.value == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+<div class="field" data-repeat-by="day"><label for="repeat-day">{% translate "Day of the month" %}</label><input id="repeat-day"{% if named %} name="{{ rule.day.html_name }}"{% endif %} type="number" min="1" max="31" inputmode="numeric" data-repeat="day" value="{{ rule.day.value|default_if_none:'1' }}" aria-describedby="repeat-day-help">
+<p class="help" id="repeat-day-help">{% translate "1 to 31. A month without that day, such as the 31st in September, is skipped." %}</p></div>
+<div class="field" data-repeat-by="weekday" hidden><label for="repeat-ordinal">{% translate "Which one" %}</label><select id="repeat-ordinal"{% if named %} name="{{ rule.ordinal.html_name }}"{% endif %} data-repeat="ordinal">{% for value, label in rule.fields.ordinal.choices %}<option value="{{ value }}"{% if rule.ordinal.value == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+<label for="repeat-month-weekday">{% translate "Day of the week" %}</label><select id="repeat-month-weekday"{% if named %} name="{{ rule.month_weekday.html_name }}"{% endif %} data-repeat="month-weekday">{% for value, label in rule.fields.month_weekday.choices %}<option value="{{ value }}"{% if rule.month_weekday.value == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div></div>
+<div class="field"><label for="repeat-from">{% translate "From" %}</label><input id="repeat-from"{% if named %} name="{{ rule.start.html_name }}"{% endif %} type="date" data-repeat="from"{% firstof rule.start.value from_value "" as day %}{% if day %} value="{{ day }}"{% endif %}></div>
+<div class="field"><label for="repeat-until">{% translate "Until" %}</label><input id="repeat-until"{% if named %} name="{{ rule.until.html_name }}"{% endif %} type="date" data-repeat="until"{% firstof rule.until.value until_value "" as day %}{% if day %} value="{{ day }}"{% endif %}></div>

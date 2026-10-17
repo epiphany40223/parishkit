@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
-from django.http import HttpResponse
+from django.http import HttpResponse, QueryDict
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -38,6 +38,7 @@ from parishkit.stewardship.web.contracts import (
     validation_response,
 )
 from parishkit.stewardship.web.dates import UnknownZone, browser_instant
+from parishkit.stewardship.web.filter_errors import error_context, refused
 from parishkit.stewardship.web.refusals import Refusal, with_status_code
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
@@ -384,11 +385,50 @@ def _refusal_error(refusal, submitted):
     }
 
 
-def _page_response(request, campaign_id, *, request_id=None, refusal=None):
+# The Follow-up packet's limit refusal (#1332) is described by the message
+# line in the packet's hint row (ministry-packet.html).
+PACKET_LINES = {"ministries": "ministry-packet"}
+
+
+def packet_context(error, choices):
+    """Ministry requests' context for a packet refused at its boxes (#1332).
+
+    ``error`` is the ``FilterError`` whose query is the submitted selection;
+    ``choices`` the packet's boxes. The boxes keep the ticks sent among
+    them (a value no box offers is never echoed), every box is marked, so
+    the first edit of any clears the mark, and the error summary links to
+    the first box (the packet's heading, when the reader may include no
+    Ministry). The hint row is sized to the message, so its clearing moves
+    nothing.
+    """
+    first = (
+        f"ministry-packet-{choices[0]['duid']}"
+        if choices
+        else "ministry-packet-heading"
+    )
+    return error_context(error, {"ministries": first}, PACKET_LINES) | {
+        "packet_ticked": set(error.query),
+        "packet_sizes": {PACKET_LINES["ministries"]: error.message},
+    }
+
+
+def queue_response(request, campaign_id, *, packet):
+    """Ministry requests drawn again for a refused Follow-up packet (#1332).
+
+    ``packet`` is the ``FilterError`` for the packet's boxes. The queue is
+    the default view (the packet's form carries no queue filters), and the
+    page answers 400 with the refusal's code.
+    """
+    return _page_response(request, campaign_id, packet=packet)
+
+
+def _page_response(request, campaign_id, *, request_id=None, refusal=None, packet=None):
     """Guard every data query, template render and byte; audit response completion.
 
     With a refusal, the request page is shown again in place (status 400)
     with an error summary and the submitted values, instead of an error page.
+    With a refused Follow-up packet (``packet``), the queue's default view
+    is shown again (status 400) with the error at the packet's boxes.
     """
     finish, handed_off = None, False
     try:
@@ -405,7 +445,10 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
                 )
                 response["Cache-Control"] = "no-store"
                 return response
-            if request.GET:
+            if packet is not None:
+                # The packet's POST body is not a queue view: the default.
+                query = FollowupQuery.parse(QueryDict())
+            elif request.GET:
                 # A query string carries either the token of a remembered
                 # view ("Return to Ministry follow-up", #534) or one
                 # Ministry: from Home's My Ministries panel (#533), or with
@@ -680,6 +723,8 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
                 export_timezones=sorted(timezone_names()),
                 export_pdf_limit=EXPORT_PDF_LIMIT,
             )
+            if packet is not None:
+                context |= packet_context(packet, context["packet_choices"])
             return iter(
                 (render_to_string(TEMPLATE, context, request=request).encode(),)
             )
@@ -698,6 +743,12 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None):
             # security middleware keeps it rather than a generic 400 text.
             response.status_code = 400
             response.stewardship_safe_error = True
+            # The refusal log's codes for this refusal (#1444).
+            with_status_code(response, refusal.code)
+        elif handed_off and packet is not None:
+            # Known before the response was made, so its status and code
+            # are set before any byte is sent.
+            refused(response)
         return response
     except (PermissionError, ObjectDoesNotExist):
         return denial()

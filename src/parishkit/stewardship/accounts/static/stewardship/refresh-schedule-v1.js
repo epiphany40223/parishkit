@@ -110,7 +110,8 @@
 
   // Save is unavailable while a changed schedule has problems (the check's
   // data-blocking). Real disabled, as the other Save gates use; this gate
-  // only re-enables what it disabled, and leaves the time entry's own mark.
+  // only re-enables what it disabled, and leaves the other gates' marks
+  // (the time entry's, and ui-v1.js's change gate, #1330) holding it.
   let blocking = root.dataset.blocking === "true";
   const submits = () => [...form.elements].filter((node) =>
     (node instanceof HTMLButtonElement || node instanceof HTMLInputElement) && node.type === "submit");
@@ -150,7 +151,7 @@
         node.setAttribute("data-schedule-gated", "");
       } else if (node.hasAttribute("data-schedule-gated")) {
         node.removeAttribute("data-schedule-gated");
-        node.disabled = node.hasAttribute("data-time-gated");
+        node.disabled = [...node.attributes].some(({name}) => /^data-[a-z-]+-gated$/.test(name));
       }
     });
   };

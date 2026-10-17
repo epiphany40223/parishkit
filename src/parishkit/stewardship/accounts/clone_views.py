@@ -26,6 +26,7 @@ from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import (
     expired_preview,
     stale_page,
+    with_default_code,
     with_reason,
 )
 
@@ -79,6 +80,8 @@ def _page(request, source, form, schedules, seed, *, status=200):
     )
     if status == 400:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return response
 
 

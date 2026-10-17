@@ -681,12 +681,13 @@ not duplicate calculated daily rows solely for operational history.
 
 Protect the interactive pointer's generation, including a stale generation
 displayed while its replacement builds; every generation/input set pinned by
-a retained export, digest occurrence, or other retained pinned report; building
-or recoverable failed generations and generations needed by queued/retrying
-work; and generations actively read, rendered, or verified. Export-file expiry
-alone does not release a pin whose retained parent metadata still requires
-that generation. Compaction never changes parent retention or discards a pin
-to reclaim space.
+an export that has not ended (one preparing, downloadable, or failed and
+still retryable), a digest occurrence, or other retained pinned report;
+building or recoverable failed generations and generations needed by
+queued/retrying work; and generations actively read, rendered, or verified.
+An export's pins are released when it ends, with its saved capture (see
+[point-in-time exports](../operations/spec.md#point-in-time-exports)).
+Compaction never changes parent retention or discards a pin to reclaim space.
 
 Selecting a generation and acquiring its read/use protection must be atomic
 with respect to compaction, as must adding a durable pin, publishing a pointer,
@@ -1965,7 +1966,20 @@ current authorization/filter snapshot.
    does not claim the mutation lease.
 2. Validate the upstream organization without cache and fetch uncached current
    contact payloads for every affected entity without holding a database lock.
-3. Re-evaluate each approved field against baseline/proposed/current.
+3. Re-evaluate each approved field against baseline/proposed/current. After
+   an Administrator resolved a conflict with *Use the Family's value anyway*
+   ([reports](../reports/spec.md#automatic-census-review), ADM-09.03), the
+   ParishSoft value they accepted takes the baseline's place. That accepted
+   base is recorded on the immutable review row with the source snapshot it
+   came from, and counts only while that snapshot is still the proposal's
+   comparison source and no later decision review (Back to To review or
+   Ignore, which also returns the change to `conflict`) has undone it; a
+   later edit keeps it. Reconciliation moves the comparison source whenever,
+   and only when, ParishSoft's value changes, so the base goes stale by
+   itself. An approval resting on a stale base returns to `unreviewed` while
+   the change stays open (a queued change keeps it, and its plan meets a
+   conflict), and a same-intent Family resubmission carries neither the base
+   nor such an approval.
 4. Mark already-matching fields resolved upstream.
 5. If any field on an entity is a three-way conflict, block all writes to that
    entity and return it for re-review.
@@ -2054,9 +2068,10 @@ Live submissions, protected and policy-anchor normalized snapshot history,
 lightweight source manifests, workflow history, email metadata/content, and
 audit events are retained indefinitely by default. Unprotected redundant source
 corpora follow the compaction policy in
-[Source snapshot](#source-snapshot). Operational HTTP caches, temporary export
-files, and transient task payloads have bounded cleanup policies defined by
-operations.
+[Source snapshot](#source-snapshot). Operational HTTP caches, export files
+and their saved captures, and transient task payloads have bounded cleanup
+policies defined by operations (for exports,
+[point-in-time exports](../operations/spec.md#point-in-time-exports)).
 
 The three exceptions are:
 

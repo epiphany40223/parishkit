@@ -27,6 +27,7 @@ from parishkit.stewardship.web.refusals import (
     UserFacingError,
     annotate,
     unexpected_fields,
+    with_default_code,
 )
 
 from . import admin_navigation
@@ -241,11 +242,14 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
         # and once any backup folder has been saved since the test, the saved
         # folder shows instead.
         initial["target"] = probe.folder_url
-    form = (
-        form
-        if form is not None
-        else _form(target, initial=initial, stored=record if configured else None)
-    )
+    if form is None:
+        form = _form(target, initial=initial, stored=record if configured else None)
+        if initial.get("target") != settings.get("target"):
+            # The tested folder is drawn but not saved: Save's change gate
+            # (#1330) compares with the saved link, so Save stays available.
+            form.fields["target"].widget.attrs["data-saved-value"] = settings.get(
+                "target", ""
+            )
     latest = summary(target, record) if target in ROTATING_TARGETS else None
     pending = latest is not None and latest.kind == "pending"
     unavailable = False
@@ -281,6 +285,10 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
             # refresh schedule editor gates Save itself (refresh-schedule-v1.js,
             # whose gate does not share the page script's), so it keeps that.
             "complete_gate": form.schedule is None,
+            # Save waits for a change (#1330) on the first draw; a refused
+            # Save drawn again with what was posted does not, as its fields'
+            # drawn values are the posted ones, not the saved ones.
+            "change_gate": not form.is_bound,
             "removable": configured and target in REMOVABLE,
             "configuration": configuration,
             "full_refresh": (
@@ -307,6 +315,8 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
     )
     if status == 400:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return response
 
 
@@ -388,13 +398,21 @@ def _test_access(request, configuration, actor):
     """Queue a "Test access" check of the entered (or saved) Drive folder.
 
     Only the page's own fields may be posted; ``queue_probe`` does the rest.
+    An entered link that isn't a Drive folder is refused at the field, in
+    Save's own words, with the page drawn again (400, #1330); an empty one
+    tests the saved folder.
     """
     allowed = {"action", "csrfmiddlewaretoken", "target", "base_digest"}
     if set(request.POST) - allowed or any(
         len(values) != 1 for _, values in request.POST.lists()
     ):
         raise unexpected_fields(request.POST, allowed=allowed)
-    queue_probe(configuration, actor, request.POST.get("target", ""))
+    entered = request.POST.get("target", "")
+    if entered.strip():
+        form = _form("backup", request.POST, stored=_optional(configuration, "backup"))
+        if not form.is_valid() and form.has_error("target"):
+            return _page(request, configuration, "backup", form=form, status=400)
+    queue_probe(configuration, actor, entered)
     return HttpResponseRedirect(request.path)
 
 
@@ -774,10 +792,11 @@ def _remove(request, service, configuration, actor, target):
     key file stays on the server until it is replaced; setting Slack up
     again installs a new key.
     """
-    if set(request.POST) - {"action", "csrfmiddlewaretoken"} or any(
+    allowed = {"action", "csrfmiddlewaretoken"}
+    if set(request.POST) - allowed or any(
         len(values) != 1 for _, values in request.POST.lists()
     ):
-        raise unexpected_fields()
+        raise unexpected_fields(request.POST, allowed=allowed)
     preview = review_removal(service, actor, configuration, target)
     return render(
         request,
@@ -981,15 +1000,17 @@ def refresh_schedule_check(request, target):
         principal(request, service)
         if target != "parishsoft":
             raise LookupError("Integration is unavailable.")
-        if set(request.POST) - posted_names() - {"csrfmiddlewaretoken"} or any(
+        allowed = posted_names() | {"csrfmiddlewaretoken"}
+        if set(request.POST) - allowed or any(
             len(values) != 1 for _, values in request.POST.lists()
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(request.POST, allowed=allowed)
         with read_transaction():
             configuration = editable_configuration(service)
             record = _selected(configuration, target)
             editor = ScheduleEditor(request.POST, stored=record["values"]["settings"])
             if not editor.posted:
+                # No sources: the fields were allowed; none of the editor's was sent.
                 raise unexpected_fields()
             context = _schedule_context(configuration, editor)
         response = render(request, "stewardship/refresh-schedule-check.html", context)

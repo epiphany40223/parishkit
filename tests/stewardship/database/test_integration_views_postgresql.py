@@ -123,6 +123,8 @@ def test_settings_preview_install_and_exact_retry(auth_service, google):
     # The ParishSoft page states the data age and the connection (#510).
     page = browser.get(URL).content
     assert b"ParishSoft data: not yet loaded." in page and b"Connection:" in page
+    # Save waits for a change to the saved settings (#1330).
+    assert b'data-require-change="base_digest"' in page
     assert flow_steps(page) == (STEPS, "Make changes")
     old = auth_service.store.active()
     review = post(browser, URL, edit(auth_service.store))
@@ -299,6 +301,8 @@ def test_a_row_that_cannot_be_read_is_refused_at_its_row(auth_service, google):
     page = unescape(refused.content.decode())
     assert "At: “25:00” has no hour 25" in page
     assert 'id="rules-1-messages"' in page
+    # Drawn again with what was posted, Save does not wait for a change.
+    assert "data-require-change" not in page
     assert "Fix 1 problem before saving:" in page
     assert ConfigurationChangeRequest.objects.count() == requests
 

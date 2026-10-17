@@ -27,6 +27,10 @@ TESTED = f"{PAGE}?tested=1"
 SETTLED = f"{PAGE}?settled=1"
 REFUSED = f"{PAGE}?refused=1"
 REFUSED_LINKED = f"{PAGE}?refused=linked"
+# Test access refused at the folder link field: the view draws the page
+# again with the field's error (400, #1330).
+BAD_LINK = f"{PAGE}?bad=link"
+BAD_FOLDER = "https://drive.google.com/drive/u/0/my-drive"
 FOLDER = "https://drive.google.com/drive/folders/synthetic-folder"
 
 
@@ -41,9 +45,10 @@ def components(context, admin):
     )
     passed = SimpleNamespace(kind="passed", message="Access works.", folder_url=FOLDER)
 
-    def settings(probe=None, url=PAGE):
+    def settings(probe=None, form=None, url=PAGE):
         """The settings page at ``url`` with ``probe`` as the reader's latest
-        check; its forms post to ``url`` itself, as the view's do."""
+        check, and ``form`` (a refused entry) in place of the saved settings;
+        its forms post to ``url`` itself, as the view's do."""
         return render_to_string(
             "stewardship/integration-settings.html",
             values
@@ -59,7 +64,8 @@ def components(context, admin):
                 # Save and Test access post to the page itself (#750).
                 "page_url": url,
                 "refresh_url": url,
-                "form": IntegrationForm(
+                "form": form
+                or IntegrationForm(
                     "backup", initial={"base_digest": "a" * 64, "target": FOLDER}
                 ),
             },
@@ -75,6 +81,7 @@ def components(context, admin):
         SETTLED: settings(passed),
         REFUSED: settings(url=REFUSED),
         REFUSED_LINKED: settings(url=REFUSED_LINKED),
+        BAD_LINK: settings(url=BAD_LINK),
         STATUS: status,
     }
     return {path: ("text/html", html) for path, html in responses.items()}
@@ -106,4 +113,32 @@ def posts(context, admin):
         PAGE: (303, TESTED, ""),
         REFUSED: refused(local),
         REFUSED_LINKED: refused(linked),
+        BAD_LINK: (400, None, bad_link(context, admin), "text/html"),
     }
+
+
+def bad_link(context, admin):
+    """The page the view draws when Test access's folder link is refused."""
+    form = IntegrationForm(
+        "backup", {"base_digest": "a" * 64, "target": BAD_FOLDER, "action": "test"}
+    )
+    assert not form.is_valid() and form.has_error("target")
+    return render_to_string(
+        "stewardship/integration-settings.html",
+        context
+        | {
+            "admin_chrome": admin,
+            "complete_gate": True,
+            "target": "backup",
+            "label": "Off-site backups (Google Drive)",
+            "configured": True,
+            "workspace_configured": True,
+            "status_url": STATUS,
+            # Save and Test access post to the page itself (#750).
+            "page_url": BAD_LINK,
+            "refresh_url": BAD_LINK,
+            "form": form,
+            # The error summary the view draws on a 400, linking the field.
+            "errors": integration_views._summary(form),
+        },
+    )

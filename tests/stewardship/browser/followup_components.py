@@ -37,6 +37,7 @@ from django.urls import reverse
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.reports.chart_specs import ministry_followup
 from parishkit.stewardship.reports.ministries import outcome_label
+from parishkit.stewardship.reports.ministry_export_views import PACKET_MESSAGE
 from parishkit.stewardship.reports.ministry_followup import (
     CHANNELS,
     FILTER_OUTCOMES,
@@ -53,7 +54,9 @@ from parishkit.stewardship.reports.ministry_followup_views import (
     _refusal_error,
     bulk_actions,
     count_links,
+    packet_context,
 )
+from parishkit.stewardship.web.filter_errors import FilterError
 from parishkit.stewardship.web.tables import report_table
 from parishkit.stewardship.workflows.followup import FollowupRefusal, outcomes_for
 from parishkit.stewardship.workflows.models import STAFF_STATES
@@ -114,6 +117,10 @@ LEADER, SORTED, SEARCHED, NOTHING = (
 GATED_REQUESTS = "/ministry-requests-gated"
 # A packet limit of one Ministry, so ticking both choices passes it (#1332).
 PACKET_LIMIT = "/ministry-requests-packet-limit"
+# A packet the server refused for ticking too many (#1332), under the same
+# limit of one: both choices ticked again (and a value no box offers, never
+# echoed), every box marked, the message in the hint row.
+PACKET_REFUSED = "/ministry-requests-packet-refused"
 # The fixture server's answers to a Save (status, Location, body).
 POSTS = {
     UPDATE: (303, SAVED, ""),
@@ -468,6 +475,12 @@ def components(context, admin):
         ),
         GATED_REQUESTS: requests_page | dict(mutable=False),
         PACKET_LIMIT: requests_page | dict(packet_limit=1),
+        PACKET_REFUSED: requests_page
+        | dict(packet_limit=1)
+        | packet_context(
+            FilterError("ministries", PACKET_MESSAGE, ("9", "12", "77")),
+            requests_page["packet_choices"],
+        ),
         BULK_QUEUE: bulk_page
         | dict(rows=bulk_rows, table=_table(bulk_rows, unfiltered, 3, campaign)),
         BULK_CLOSED_QUEUE: bulk_page
@@ -512,6 +525,11 @@ def components(context, admin):
         "/followup-gated": values | dict(mutable=False),
         # More requests than one PDF may hold (#1157): PDF is unavailable.
         "/followup-over": values | dict(total=1001),
+        # A request with no saved follow-up yet (#227 empty state).
+        "/followup-item-new": values | dict(item=row, form=form, history=[]),
+        # A history page past its end, as a bookmarked ?page= can ask for.
+        "/followup-item-past-end": values
+        | dict(item=row, form=form, history=[], previous_history=1),
         "/followup-item": values
         | dict(item=row, form=form, history=[revision], next_history=2),
         "/followup-item-leave": values

@@ -596,10 +596,14 @@
   // starts (before any script could have disabled it) came back from an
   // earlier visit and is enabled again, as the server drew it.
   // live-status-v1.js holds a kept preview's button for good once the
-  // status no longer shows what it reviews (data-live-stale-gated, #530).
+  // status no longer shows what it reviews (data-live-stale-gated, #530),
+  // and an export's Download once its window ends (data-download-ended-gated,
+  // #1398).
+  // refresh-schedule-v1.js holds the ParishSoft Save while its schedule has
+  // problems (data-schedule-gated), alongside the change gate (#1330).
   const GATE_MARKS = [
     "data-time-gated", "data-acknowledgment-gated", "data-complete-gated", "data-change-gated",
-    "data-live-stale-gated",
+    "data-live-stale-gated", "data-schedule-gated", "data-download-ended-gated",
   ];
   const gated = (node) => GATE_MARKS.some((mark) => node.hasAttribute(mark));
   document.querySelectorAll("button[disabled], input[disabled]").forEach((node) => {
@@ -1514,12 +1518,57 @@
   // again) or, when it is not such a refusal, removes it. Keyed by the form
   // (or the control, outside any form) so a submitter outside its form
   // (form="…") still finds its own line.
+  //
+  // A typed refusal whose errors name a field of that form (FieldError's
+  // field_id, such as Census changes' Edit value, #528) also marks the field
+  // as a server field error is marked (#592): aria-invalid="true" and
+  // described by the line. As the server's rule cannot be checked again
+  // here, the mark and the line clear on the field's first edit (input or
+  // change), and whenever the line goes.
   const refusalNotes = new WeakMap();
+  const refusedFields = new WeakMap(); // key → [{field, clear}]
+  const unmarkRefused = (key) => {
+    (refusedFields.get(key) || []).forEach(({field, clear}) => {
+      field.removeEventListener("input", clear);
+      field.removeEventListener("change", clear);
+      field.removeAttribute("data-refused");
+      field.setAttribute("aria-invalid", "false");
+      const ids = (field.getAttribute("aria-describedby") || "").split(/\s+/)
+        .filter((id) => id && id !== refusalNotes.get(key)?.id);
+      if (ids.length) field.setAttribute("aria-describedby", ids.join(" "));
+      else field.removeAttribute("aria-describedby");
+    });
+    refusedFields.delete(key);
+  };
   const clearRefusal = (key) => {
+    unmarkRefused(key);
     refusalNotes.get(key)?.remove();
     refusalNotes.delete(key);
   };
+  const markRefused = (key, note, text) => {
+    if (!(key instanceof HTMLFormElement)) return;
+    let errors = [];
+    try { errors = JSON.parse(text)?.errors || []; } catch { return; }
+    const fields = errors.map((error) => error?.field_id
+      && key.elements.namedItem(error.field_id))
+      .filter((field) => field instanceof HTMLElement && field.matches("input, select, textarea"));
+    if (!fields.length) return;
+    note.id = `${key.id || "form"}-refusal`;
+    const marked = [];
+    fields.forEach((field) => {
+      const clear = () => clearRefusal(key);
+      field.setAttribute("aria-invalid", "true");
+      field.setAttribute("data-refused", "");
+      const ids = (field.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean);
+      field.setAttribute("aria-describedby", [note.id, ...ids.filter((id) => id !== note.id)].join(" "));
+      field.addEventListener("input", clear);
+      field.addEventListener("change", clear);
+      marked.push({field, clear});
+    });
+    refusedFields.set(key, marked);
+  };
   const showRefusal = (key, control, status, text) => {
+    unmarkRefused(key);
     const note = document.createElement("p");
     note.className = "notice notice-error";
     note.setAttribute("role", "alert");
@@ -1542,6 +1591,7 @@
       (control.closest(".actions, p") || control).after(note);
     }
     refusalNotes.set(key, note);
+    markRefused(key, note, text);
   };
   // Load the page a control leads to and bring this page up to date from it.
   // Success: every region present in both pages is swapped (the one the
@@ -1818,6 +1868,37 @@
     }
     if (!anywhere) syncControls(parsed);
     if (owner?.hasAttribute("data-in-place-filters")) syncFilters(parsed);
+    // A report's filters refused at a field (#1332) are drawn again with
+    // that field marked, but the filter form keeps its element and the
+    // values typed (syncControls), so the marks and messages are copied
+    // onto it, as a refused Review's are; its message lines are reserved,
+    // so nothing moves. The summary is already in the region
+    // (placeSummary) and takes focus below, straight from the control.
+    // An answer that is not a refusal clears every server mark it does
+    // not repeat: the reader fixed the range at its other end.
+    const filterForm = document.getElementById("table-filters");
+    const freshFilters = parsed.getElementById("table-filters");
+    if (!anywhere && filterForm instanceof HTMLFormElement && freshFilters) {
+      if (refused) showFieldErrors(filterForm, parsed, {focus: false});
+      else {
+        filterForm.querySelectorAll('[data-field-error=""][id]').forEach((node) => {
+          const twin = freshFilters.querySelector(`#${CSS.escape(node.id)}`);
+          if (node.hasAttribute("data-field-error") && twin?.getAttribute("aria-invalid") !== "true") {
+            clearFieldError(node);
+          }
+        });
+      }
+    }
+    // Likewise a refused POST from an in-place form that no swap replaced
+    // (Off-site backups' Test access, whose folder link the view refuses at
+    // its field, #1330; its form is in no region, or in one only its own
+    // control redraws): the form keeps its element and the link typed, so
+    // the answer's marks and messages are copied onto it. A form a swap
+    // replaced is no longer connected, and its fresh copy has them already.
+    if (refused && !anywhere && owner instanceof HTMLFormElement && owner !== filterForm
+      && owner.isConnected && owner.id && parsed.getElementById(owner.id)) {
+      showFieldErrors(owner, parsed, {focus: false});
+    }
     // Every swap and the synced hidden version are in place: a Review that
     // was applied makes its values the saved ones (the change gate, #921).
     gateChanges();
@@ -2167,10 +2248,25 @@
   // the state the Review behind that Apply sent.
   const reviewApplied = new Map();
   // The form's state as a Map of "name#n" (the nth control of that name) to
-  // {value, disabled}: its defaults or its live values. Hidden fields carry
-  // versions and tokens, not settings; text is trimmed as the server trims it.
-  // :disabled, not the disabled property, so a control inside a disabled
-  // fieldset (which is not sent either) counts as disabled.
+  // {value, blank, disabled, hidden}: its defaults or its live values; text
+  // is trimmed as the server trims it. :disabled, not the disabled property,
+  // so a control inside a disabled fieldset (which is not sent either)
+  // counts as disabled.
+  //
+  // A hidden field counts only when it is marked data-change-setting: it
+  // carries a saved setting the page shows only as words (ParishSoft's
+  // stored quick updates, #1122) or a saved row's identity, so removing it,
+  // or a script rewriting it, is a change (#1334 review). Every other hidden
+  // field carries none and stays out: the CSRF token, the version field the
+  // gate keys by, a formset's row counts, a one-time request key or signed
+  // intent, the browser's zone, a table's filters, size and sort (a redraw
+  // at other view settings is no change, #1334 re-review), and the fields a
+  // script writes from the visible controls the reader changed (a repeat
+  // rule's dates), which count themselves. Opt-in, so a new hidden field is
+  // no change until it is marked. A hidden field's default is its live
+  // value (the browser keeps the two as one), so its saved value is what
+  // the gate read from the form element it was drawn in (savedState). A
+  // marked hidden field a script adds is no change by itself either.
   const controlValue = (node, defaults) => {
     const saved = defaults ? node.dataset.savedValue : undefined;
     if (node.type === "checkbox" || node.type === "radio") {
@@ -2192,7 +2288,9 @@
     [...form.elements].forEach((node) => {
       if (!node.name || !(node instanceof HTMLInputElement || node instanceof HTMLSelectElement
         || node instanceof HTMLTextAreaElement)) return;
-      if (["hidden", "submit", "button", "reset", "image", "file"].includes(node.type)) return;
+      if (["submit", "button", "reset", "image", "file"].includes(node.type)) return;
+      const hidden = node.type === "hidden";
+      if (hidden && !node.hasAttribute("data-change-setting")) return;
       // A presentation choice (the Basic / Advanced toggle and the Basic
       // panel that drives the Advanced fields, #1121) is not a change to
       // review: the configuration it writes is.
@@ -2203,20 +2301,26 @@
       const blank = !defaults && Boolean(node.closest("[data-change-blank]"))
         && value === controlValue(node, true);
       const disabled = node.matches(":disabled") || node.hasAttribute("data-change-ignore");
-      state.set(`${node.name}#${index}`, {value, blank, disabled});
+      state.set(`${node.name}#${index}`, {value, blank, disabled, hidden});
     });
     return state;
   };
   // Whether the form's enabled controls hold exactly the saved values, with
   // no control added or removed (a new or deleted option row; an added
-  // blank row, above, is no change). A control
+  // blank row or hidden field, above, is no change). A control
   // that is disabled (a hidden module's field) is not sent, so its value
   // does not count; the control that hid it differs instead.
-  const matchesSaved = (form, saved) => {
+  // changedNames lists the names of the controls that differ (#1330: the
+  // live Ministries must change alone, below in gateComplete).
+  const changedNames = (form, saved) => {
     const now = formState(form, false);
-    if ([...saved.keys()].some((key) => !now.has(key))) return false;
-    return [...now].every(([key, {value, blank, disabled}]) => disabled
-      || (saved.has(key) ? saved.get(key).value === value : blank));
+    const keys = [...saved.keys()].filter((key) => !now.has(key));
+    now.forEach(({value, blank, disabled, hidden}, key) => {
+      if (!disabled && !(saved.has(key) ? saved.get(key).value === value : blank || hidden)) {
+        keys.push(key);
+      }
+    });
+    return new Set(keys.map((key) => key.replace(/#\d+$/, "")));
   };
   // A Campaign setup step's Continue (#1404, campaign-step-actions.html)
   // records the step kept as is, so it waits while the page holds a change:
@@ -2240,21 +2344,38 @@
       else node.removeAttribute("aria-describedby");
     });
   };
-  const gateChange = (form) => {
-    if (!(form instanceof HTMLFormElement) || !form.id || !form.hasAttribute("data-require-change")) {
-      return;
-    }
+  const matchesSaved = (form, saved) => !changedNames(form, saved).size;
+  // The saved state of a data-require-change form at its current version.
+  // A form element drawn anew at the same version (a table redrawn at other
+  // view settings, #1334 re-review) takes its hidden settings from the new
+  // element, which are what the server drew: a hidden field's default is
+  // its live value, so the old element's could differ only by a script's
+  // edit there, which the redraw replaced. Its visible controls keep the
+  // cached saved values, so a redraw that keeps the reader's typing still
+  // shows it as a change.
+  const savedState = (form) => {
     const field = form.elements.namedItem(form.dataset.requireChange);
     const version = field instanceof HTMLInputElement ? field.value : "";
     let saved = savedStates.get(form.id);
     if (!saved || saved.version !== version) {
       const applied = saved && reviewApplied.get(form.id);
       const kept = applied?.form === form;
-      saved = {version, state: kept ? applied.state : formState(form, true)};
+      saved = {version, form, state: kept ? applied.state : formState(form, true)};
       savedStates.set(form.id, saved);
       reviewApplied.delete(form.id);
+    } else if (saved.form !== form) {
+      const state = new Map([...saved.state].filter(([, entry]) => !entry.hidden));
+      formState(form, true).forEach((entry, key) => entry.hidden && state.set(key, entry));
+      saved = {version, form, state};
+      savedStates.set(form.id, saved);
     }
-    const unchanged = matchesSaved(form, saved.state);
+    return saved.state;
+  };
+  const gateChange = (form) => {
+    if (!(form instanceof HTMLFormElement) || !form.id || !form.hasAttribute("data-require-change")) {
+      return;
+    }
+    const unchanged = matchesSaved(form, savedState(form));
     form.toggleAttribute("data-holds-change", !unchanged);
     gateStepContinue();
     const hint = form.querySelector("[data-unchanged-hint]");
@@ -2263,8 +2384,10 @@
     if (hint) hint.id = `${form.id}-unchanged-hint`;
     hint?.toggleAttribute("data-idle", !unchanged);
     // isSubmit, not submitControls (defined below, after this first runs).
+    // A button marked data-change-exempt acts on what is saved as well as
+    // on an edit (Off-site backups' Test access, #1330), so it never waits.
     [...form.elements].filter(isSubmit).forEach((node) => {
-      if (node.formNoValidate) return;
+      if (node.formNoValidate || node.hasAttribute("data-change-exempt")) return;
       if (unchanged) holdButton(node, "data-change-gated");
       else releaseButton(node, "data-change-gated");
       if (!hint?.id) return;
@@ -2303,6 +2426,21 @@
     if (event.target instanceof Element) gateChange(event.target.closest("form"));
     if (event.target instanceof HTMLInputElement && event.target.type === "file") gateStepContinue();
   }));
+  // The Pages and emails visual editor's toolbar and paste write the HTML
+  // source with no input event; their stewardship:html-changed does not
+  // bubble, so it is caught on the way down (#1330).
+  document.addEventListener("stewardship:html-changed", (event) => {
+    if (event.target instanceof HTMLFormElement) gateChange(event.target);
+  }, true);
+  // A page script that adds or removes a gated form's rows fires no input
+  // event (ParishSoft's Remove quick updates and a rule's Remove, #1334
+  // review), so the gate also runs, once per form, after the nodes inside
+  // a gated form change. The gate itself only sets attributes, which this
+  // does not watch, so it never wakes itself.
+  new MutationObserver((records) => {
+    new Set(records.map(({target}) => target instanceof Element
+      && target.closest("form[data-require-change]"))).forEach((form) => form && gateChange(form));
+  }).observe(document.body, {childList: true, subtree: true});
   window.addEventListener("pageshow", gateChanges);
   gateChanges();
   // A checkbox marked data-submit-on-change applies at once (Automation
@@ -2582,17 +2720,29 @@
   // a test settles, re-reads this address's panel in place, so the panel is
   // drawn again from the server's current state; if a test is in flight
   // again, the fresh region is watched anew. A pending region is already
-  // polled.
-  window.addEventListener("pageshow", (event) => {
-    if (!event.persisted) return;
-    const follow = document.querySelector(
-      '[data-live-status="setup-test"]:not([data-live-pending]) a[data-live-follow][data-in-place]');
-    const panel = document.getElementById("setup-test-panel");
-    if (!follow || !panel) return;
+  // polled. Load parish data does the same with its hidden
+  // a[data-reread-on-show] link (#1353), since its load may have been
+  // discarded from another tab while the page was away; it also re-reads
+  // when its tab is shown again, as its progress page's status does
+  // (live-status-v1.js). Each re-read refreshes every in-place region on
+  // the page, the step bar included.
+  const reread = (selector) => {
+    const follow = document.querySelector(selector);
+    const id = follow?.getAttribute("href").replace(/^#/, "");
+    const panel = id && document.getElementById(id);
+    if (!panel) return;
     const here = new URL(window.location.href);
     here.hash = panel.id;
     follow.href = here.href;
     follow.click();
+  };
+  window.addEventListener("pageshow", (event) => {
+    if (!event.persisted) return;
+    reread('[data-live-status="setup-test"]:not([data-live-pending]) a[data-live-follow][data-in-place], '
+      + "a[data-reread-on-show][data-in-place]");
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") reread("a[data-reread-on-show][data-in-place]");
   });
 
   // A control's value for the rules below (data-show-when and
@@ -2699,11 +2849,27 @@
       });
     });
   };
+  // A field that must change on its own (data-change-alone="<name>" on a
+  // data-require-change form, with its words in data-change-alone-hint): a
+  // live campaign's Ministries, whose review is applied by itself (#1330).
+  // While it and any other field differ from the saved values, the field
+  // carries the hint as its data-client-error, so the gate below holds
+  // Review with those words. The server still refuses such a change.
+  const changeAlone = (form) => {
+    const name = form.dataset.changeAlone;
+    const field = name && form.id && form.elements.namedItem(name);
+    if (!(field instanceof HTMLElement) || !form.hasAttribute("data-require-change")) return;
+    const names = changedNames(form, savedState(form));
+    const hint = form.dataset.changeAloneHint || "";
+    if (names.has(name) && names.size > 1) field.dataset.clientError = hint;
+    else if (field.dataset.clientError === hint) delete field.dataset.clientError;
+  };
   const gateComplete = (form) => {
     if (!form || !form.hasAttribute("data-require-complete")) return;
     requiredWhen(form);
     requireOne(form);
     maxTicked(form);
+    changeAlone(form);
     // A required text field holding only spaces is still empty: the server
     // trims it (notes for the outcome Other, a Slack token being set up).
     const blank = (node) => node.required
@@ -4126,7 +4292,10 @@
   };
   // Forms whose edits clear their pane's refusal: one listener each.
   const paneWatched = new WeakSet();
-  const showFieldErrors = (form, parsed) => {
+  // ``focus: false`` leaves focus to the caller when the answer has no
+  // summary of its own (a refused in-place filter Apply, whose summary is
+  // already in the swapped region).
+  const showFieldErrors = (form, parsed, {focus = true} = {}) => {
     const fresh = parsed.getElementById(form.id);
     const line = paneLine(form);
     // A pane line's earlier refusal, and the marks it described, give way.
@@ -4200,7 +4369,7 @@
       return;
     }
     if (!summary) {
-      form.querySelector("[aria-invalid=true]")?.focus();
+      if (focus) form.querySelector("[aria-invalid=true]")?.focus();
       return;
     }
     const placed = document.importNode(summary, true);
@@ -5270,6 +5439,29 @@
     // The browser can restore the checkbox and the rule on Back.
     window.addEventListener("pageshow", update);
     update();
+  });
+
+  // Edit of a reminder in a remembered series (#469,
+  // schedule-series-scope.html): "This and following" and "The whole series"
+  // grey the send date (data-enabled-when) and keep each reminder's own
+  // date, so the greyed box shows this reminder's date as drawn, never one
+  // typed before the choice, which would not be used. The drawn date is the
+  // field's default (filled in this browser's zone above). An input event
+  // lets the change gate look again; a greyed field does not count anyway.
+  document.querySelectorAll("[data-series-scope]").forEach((group) => {
+    const form = group.closest("form");
+    const date = form?.querySelector('[data-schedule-field="date"] input');
+    if (!date) return;
+    const restore = () => {
+      const chosen = group.querySelector('input[type="radio"]:checked');
+      if (chosen && chosen.value !== "this" && date.value !== date.defaultValue) {
+        date.value = date.defaultValue;
+        date.dispatchEvent(new Event("input", {bubbles: true}));
+      }
+    };
+    group.addEventListener("change", restore);
+    // The browser can restore a typed date and a chosen scope on Back.
+    window.addEventListener("pageshow", restore);
   });
 
   // Plain multi-select lists: say how many items are chosen, since a long list

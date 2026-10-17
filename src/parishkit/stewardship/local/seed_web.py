@@ -857,8 +857,9 @@ def campaign_fields(form, campaign_dates):
     Every module, every Ministry the form offers, and the first two funds
     (the second only for the comparison period, the first again when there
     is one fund). ``form`` is the unbound creation form, whose initial
-    values (the Parish timezone and the applied configuration's digest) are
-    kept; ``campaign_dates`` is the campaign's (start, end).
+    values (the Parish timezone, the default Ministry leader roles and the
+    applied configuration's digest) are kept; ``campaign_dates`` is the
+    campaign's (start, end).
     """
     funds = [value for value, _ in form.fields["fund_duids"].choices]
     start, end = campaign_dates
@@ -873,6 +874,7 @@ def campaign_fields(form, campaign_dates):
         "ministry": "on",
         "financial_enabled": "on",
         "ministry_duids": [value for value, _ in form.fields["ministry_duids"].choices],
+        "ministry_leader_roles": list(form.initial["ministry_leader_roles"]),
         "financial_start": f"{end.year + 1}-01-01",
         "financial_end": f"{end.year + 1}-12-31",
         "comparison_start": f"{end.year}-01-01",

@@ -1,5 +1,10 @@
 # Stewardship report workspace increment
 
+> **Superseded:** exports are now point-in-time, with no kept copies and no
+> Regenerate ([point-in-time exports](../specs/stewardship/operations/spec.md#point-in-time-exports),
+> [#1398](https://github.com/epiphany40223/parishkit/issues/1398)). This
+> record describes the increment as it was delivered.
+
 ## Scope and dependencies
 
 This Phase 5 increment starts at PR #62's verified main merge `2c3151e6`,

@@ -244,7 +244,10 @@ their own renderer):
   it was drawn; charts in a region refreshed in place are drawn again, keeping
   their space until they are; a chart in a closed disclosure is drawn when
   the disclosure opens, since its panel has no width before then
-  ([#1161](https://github.com/epiphany40223/parishkit/issues/1161)). The
+  ([#1161](https://github.com/epiphany40223/parishkit/issues/1161)). On an
+  Admin page a chart is drawn in the page's
+  [colour scheme](../ui-conventions/spec.md#colour-scheme), and drawn again
+  in place when it changes. The
   Vega, Vega-Lite
   and vega-embed bundles are vendored under the static files, each pinned by
   SHA-256 with its version and source URL, with the license notices of
@@ -947,8 +950,7 @@ the page's mode to `reports/families/<family>/exports/`, which only an
 Administrator may use, as only an Administrator sees the full timeline;
 Staff get no form, and their post is denied. The file can hold the Family's
 live code, so, like the Active parishioner family directory's exports,
-creating or regenerating
-it needs a Google sign-in within five minutes
+creating it needs a Google sign-in within five minutes
 ([#547](https://github.com/epiphany40223/parishkit/issues/547)); a stale
 sign-in gets the step-up page, which returns to the timeline, and nothing is
 made. The form is drawn inside the
@@ -981,12 +983,10 @@ active configuration and a Family of that campaign (with its DUID), with the
 document's keys and value types checked and its size bounded, and sets the
 event count itself. The Family code is never
 captured: the worker decrypts it into the file, under the key-set lock, only
-when the requester may see Family codes. The status page, download,
-retention, Retry, Cancel and Regenerate are the shared lifecycle's; a
-regeneration reuses the capture. A Testing export is bound to the rehearsal
-it was captured in, so once that rehearsal has ended (a new rehearsal, or the
-return to Production) it can no longer be regenerated; export it again
-instead. The request records `export_requested`
+when the requester may see Family codes. The status page, download, Retry,
+Cancel and the short download window are the shared
+[point-in-time](../operations/spec.md#point-in-time-exports) lifecycle's.
+The request records `export_requested`
 with its line count, and the download `export_downloaded`, never a name, code
 or line of text. The command line's
 [`export family-timeline`](../admin-automation/spec.md#reports-and-exports)
@@ -1022,8 +1022,8 @@ compaction has begun on that snapshot by the time the file is rendered,
 every row keeps the captured surname instead, so one file never mixes the
 two forms. The file's "Family names" report detail says which form it uses
 ("Surname, then heads of household", or "Surname only" with the reason). A
-late render (a retry, or regenerating an expired file) can therefore differ
-from an earlier render of the same capture only in that name form.
+late render (a retry) can therefore differ from an earlier render of the same
+capture only in that name form.
 The CSV, XLSX and PDF share one set of columns and carry no internal
 references: no row type or row version column (the Administrator, 2026-10-09,
 and decision B1 on
@@ -1047,6 +1047,15 @@ zone, and its retry asks for exactly those filters; a capture made before
 schema migration 0064 has no zone, keeps its campaign-zone days and is retried
 unchanged.
 
+The page checks both dates before Apply (a whole date, and on or before no
+earlier than on or after). A request that reaches the server with one broken
+is refused at that field
+([field errors](../ui-conventions/spec.md#field-errors-and-live-checks),
+[#1332](https://github.com/epiphany40223/parishkit/issues/1332)): dates out
+of order at Submitted on or before, with both dates marked. Its access audit
+ends denied. A date without a known zone keeps the error page above, since
+no field can fix it.
+
 The page is visual first
 ([#720](https://github.com/epiphany40223/parishkit/issues/720)). After the
 matching-request count and before the export, one
@@ -1062,8 +1071,14 @@ filtered rows, in the same statement as the total and the page (schema
 migration 0100), so the counts follow the filters in place, and paging and
 sorting leave them unchanged.
 
-Editing is audited and uses optimistic concurrency. This report is also the
-source for the weekly Admin digest.
+Editing is audited and uses optimistic concurrency. Clearing a completed
+follow-up needs its confirmation box ticked, and Save waits until it is. A
+Save that reaches the server without it is refused at that box
+([field errors](../ui-conventions/spec.md#field-errors-and-live-checks),
+[#1332](https://github.com/epiphany40223/parishkit/issues/1332)): the item
+is drawn again (400), in place, with the values and version sent and the
+message in the Save hint row and in the summary; nothing is saved. This
+report is also the source for the weekly Admin digest.
 
 ## Active parishioner family directory
 
@@ -1179,14 +1194,13 @@ part of the export's captured selection; they are read when the file is
 rendered, from the captured ParishSoft data while it is still kept.
 ParishSoft data is refreshed often (every 15 minutes under the default
 [refresh schedule](../background-processing/spec.md#refresh-schedule)) and
-superseded data is soon compacted, so a render that comes later (a retry,
-or regenerating an expired
-file) reads the same heads' emails from the current ParishSoft data instead,
+superseded data is soon compacted, so a render that comes later (a retry)
+reads the same heads' emails from the current ParishSoft data instead,
 and the file's report details add "Head emails as of" that data's refresh
 time. CSV files carry no report details, so that note appears only in XLSX
 and PDF files. A head the current data no longer has as a Member at all
-reads "(Not in ParishSoft)" rather than "(no email)". A regenerated or
-retried file therefore has the same Families, names,
+reads "(Not in ParishSoft)" rather than "(no email)". A retried file
+therefore has the same Families, names,
 codes and other columns as the capture, but its head emails may be newer. Only
 when no ParishSoft data is available at all does the render fail, with its
 own failure kind (`directory_head_emails_unavailable`) in the logs; the
@@ -1199,24 +1213,22 @@ for a time zone only for the Family-code list with response columns, whose
 dates are times of actions; the code list without them and the postal mail
 merge use the browser's zone unasked for their capture times
 ([time zone question](../ui-conventions/spec.md#downloaded-files)). The
-export's retained capture keeps only the private contact columns its file
+export's capture keeps only the private contact columns its file
 renders (#388 L6): the address for the mailing-columns file, phones for the
 list filtered to Families no campaign mail can reach, and the envelope number
-for the Family-code file only (#933). The rest are stored empty, and captures
-made before these rules are kept as they were until their exports expire (a
-code-list file from an older capture has a blank Envelope number column). Exports use the standard asynchronous, short-lived, requester-authorized export
+for the Family-code file only (#933). The rest are stored empty. Exports use
+the standard asynchronous, short-lived, requester-authorized export
 pipeline, including its explicitly accepted plaintext storage and owner-only
 permissions under the
-[export retention policy](../operations/spec.md#temporary-retention-and-housekeeping).
-Opening the page needs no fresh sign-in, but queuing an export, or
-regenerating an expired one, needs a Google sign-in within the last five
+[point-in-time export rule](../operations/spec.md#point-in-time-exports).
+Opening the page needs no fresh sign-in, but queuing an export needs a Google
+sign-in within the last five
 minutes, because the file holds every listed Family's code
 ([#547](https://github.com/epiphany40223/parishkit/issues/547)). A stale
 sign-in gets the
 [step-up](../architecture/spec.md#identity-and-session-security), which
-queues nothing and returns to the directory (or the export's status page);
-the filters, being private form state, are applied again. The export panel
-says so before the Administrator or Staff member queues one, when their
+queues nothing and returns to the directory; the filters, being private form
+state, are applied again. The export panel says so before the Administrator or Staff member queues one, when their
 sign-in is already older than that
 ([page help](../ui-conventions/spec.md#page-help)). Interactive report execution and exports are audited at
 report, campaign, actor, filter, and row-count granularity without copying
@@ -1378,8 +1390,8 @@ is queued, the export is refused (409) and nothing is made, so the file
 never holds a later rehearsal than the page showed. The
 [command line](../admin-automation/spec.md#reports-and-exports) has no page,
 so it reads the rehearsal active when it runs. A Testing export is admitted
-for Administrators only (queuing, downloading, retrying and regenerating
-alike) and its columns are the Production file's. Its XLSX and PDF report
+for Administrators only (queuing, downloading and retrying alike) and its
+columns are the Production file's. Its XLSX and PDF report
 details add **Responses shown: Testing rehearsal**; a CSV has no report
 details, so the downloaded file's name says it instead
 (`family_directory-testing.csv`, `postal_outreach-testing.csv`, and the same
@@ -1455,8 +1467,8 @@ active parishioner family directory's contact details do not already show
 Admin and Staff, and Ministry leaders are denied either way. Viewing with
 mailing columns is audited as postal outreach, and its export is a
 `postal_outreach` export request. An export captured before #951 keeps its
-own filters, including a reach other than "By postal mail only", until it
-expires.
+own filters, including a reach other than "By postal mail only", for the rest
+of its [download window](../operations/spec.md#point-in-time-exports).
 
 Detail contains Family DUID, envelope number where present, Family/head names,
 head email addresses, family/member phone numbers, complete primary address, reason, and campaign
@@ -1662,8 +1674,9 @@ render; see
 (`/admin/reports/ministries/joining/`, `/leaving/` and the export form's
 `/admin/reports/ministries/exports/`) answer 404, with no redirect
 ([legacy URLs](../ui-conventions/spec.md#addresses-and-legacy-urls)). Export
-files made from the lists before then stay downloadable until they expire,
-and the host `export ministry` command still writes one Ministry's join or
+files made from the lists before then stay downloadable for the rest of
+their [download window](../operations/spec.md#point-in-time-exports), and the
+host `export ministry` command still writes one Ministry's join or
 leave list.
 
 Neither list nor its export shows a resolved request's **Entered in
@@ -1700,10 +1713,10 @@ The per-Ministry counts have no export
 no parishioner data, and the page already shows them. The page's downloads
 are Export these requests and the
 [follow-up packet](#multi-ministry-follow-up-packet). A request for a summary
-export, including regenerating an expired one made before the removal, is
-refused as an invalid selection; an existing summary file stays downloadable
-until it expires. The page shows the ParishSoft data date but not the data
-load number, an internal counter.
+export is refused as an invalid selection; an existing summary file stays
+downloadable for the rest of its
+[download window](../operations/spec.md#point-in-time-exports). The page shows
+the ParishSoft data date but not the data load number, an internal counter.
 The packet has no date filter. Every leader view/export is audited with
 Ministry scope: a follow-up request page's view records its request's
 `ministry_duid`, and **Export these requests** records the sorted Ministry
@@ -1739,7 +1752,12 @@ more are ticked, Queue is unavailable and its reason line gives the count and
 says to untick some or all
 ([#1332](https://github.com/epiphany40223/parishkit/issues/1332)); the server
 still refuses more with a message saying to tick fewer or leave every box
-unticked, which includes them all. The list is
+unticked, which includes them all. A person's request refused that way is
+answered with Ministry requests drawn again (400), refused at the boxes
+([field errors](../ui-conventions/spec.md#field-errors-and-live-checks)):
+the ticks sent among the boxes kept, every box marked, and the message in
+the packet's hint row and in the summary; the queue is the default view.
+A script gets the same refusal as JSON. The list is
 read through the same scoped Ministry report selection as By Ministry, whose
 whole-scope read it reuses. It shows
 only each Ministry's full name (no DUID,
@@ -1843,7 +1861,7 @@ then:
 - **Recorded by**, **Recorded at** and **Note**: the latest *Entered in
   ParishSoft*, *Ignore* or *Reopen* on the row
   ([manual census resolution](#manual-census-resolution)), or *Approve*,
-  *Ignore* or *Back to To review* on an Automatic row
+  *Ignore*, *Back to To review*, *Save value* or *Clear edit* on an Automatic row
   ([automatic census review](#automatic-census-review)): the person's
   sign-in address, the time in the parish's compact date format and
   browser-local time, and the note they left. Blank until someone records
@@ -1967,8 +1985,9 @@ with an optional note
 Each is offered only while it would change the decision, and only while the
 change is open: *pending*, *conflict* or *failed*, never while it is
 *queued* for publication or once it has a final outcome. A *Conflict* row
-may be ignored or sent back, but not approved, since publication blocks an
-approved conflict until it is resolved. A review can be changed again until
+may be ignored or sent back, but not approved directly, since publication
+blocks an approved conflict until it is resolved (Use the Family's value
+anyway, below). A review can be changed again until
 publication of the change starts, and each one changes the proposal's
 version, so a publication plan that included it no longer matches. Staff
 see Automatic rows but never review them.
@@ -1979,11 +1998,76 @@ buttons the row allows. A review is reversible, so none asks first. The form
 posts with the page's filters and table choices, and the answer is the same
 page, refreshed in place, with the notice naming the row; a row someone else
 changed first is left as it is, and the notice says so. While other campaign
-work holds the campaign, no Review is offered. An Administrator's edited
-value, conflict resolution
-([ADM-09](../../../plans/stewardship/admin-portal.md#adm-09-census-review-and-parishsoft-publication-ui))
-come later. On the command line, `pk-admin census review` records the same
-review through the same service
+work holds the campaign, no Review is offered. On the command line,
+`pk-admin census review` records the same review through the same service
+([admin automation](../admin-automation/spec.md#reports-and-exports)).
+
+A *Conflict* means ParishSoft changed after the Family answered: *ParishSoft
+now* differs from what they saw. Besides Ignore (keep ParishSoft's value),
+the row's *Review* offers **Use the Family's value anyway**
+([#528](https://github.com/epiphany40223/parishkit/issues/528), ADM-09.03),
+worded **Use the edited value anyway** while an Edit value is set. It
+approves the change over ParishSoft's current value: the review records that
+value, and the ParishSoft snapshot it came from, as the *accepted base*,
+and the change becomes *pending* (*To do*). Publication then merges against
+the accepted base instead of the Family's baseline
+([data workflow](../data/spec.md#review-and-publication)), so it writes the
+Family's answer (or the edited value) only while ParishSoft still has the
+value the Administrator saw. The Family's baseline is never changed. A help
+line above the button, which describes it, says this, and the button shares
+the Review form's optional note. It is offered only to an Administrator, on
+an Automatic *Conflict* whose ParishSoft value is known (a change ParishSoft
+could not be read for waits for a refresh), whatever its decision. It asks
+nothing, since it can be undone: a later **Back to To review** or **Ignore**
+(one by one or in bulk) puts the change back to *Conflict*, and the accepted
+base no longer counts, so no later Approve, one by one or in bulk, can
+publish over ParishSoft's value until Use the Family's value anyway is
+chosen again. A later Edit value keeps the resolution. The answer is the
+page, refreshed in place, with the notice ("… approved over ParishSoft's
+current value."). If a refresh brings a new ParishSoft value first, the
+accepted base no longer counts either: an open change's approval goes back
+to *To review* and the change is compared with the Family's baseline again
+(a change already queued for publication keeps its approval, and its
+publication then meets a conflict). A Family's later same answer does not
+carry the accepted base, so its approval goes back to *To review* too. It is
+per change only, never part of bulk review. On the command line it is
+`pk-admin census resolve-conflict`, through the same service
+([admin automation](../admin-automation/spec.md#reports-and-exports)).
+
+The same *Review* disclosure has **Edit value**
+([#528](https://github.com/epiphany40223/parishkit/issues/528), ADM-09.04):
+the value publication writes instead of the Family's answer. The Family's
+answer is never changed and stays in its column, with the edit in *Edited
+value* beside it. The field starts with the value publication would write
+now (the edit, else the Family's answer): a date field no later than the
+campaign's today for a birth or death date, the census choices for Gender,
+and otherwise text no longer than ParishSoft's request schema takes for the
+field (First name 30 characters, Email address 150, a phone 25). **Save
+value** is unavailable until the value differs from the one shown, with its
+reason in a reserved line ([prerequisite
+gates](../ui-conventions/spec.md#prerequisite-gates)); **Clear edit**
+appears only while an edit is set. Each takes an optional note and, being
+reversible, asks nothing; the answer is the page, refreshed in place, with
+the notice naming the row. The value is read as the Family form reads its
+own answer (a phone must be a whole number, email addresses are checked and
+joined, a required name cannot be blank) and must fit ParishSoft's request
+schema as publication will send it; Gender is held to its census choices
+only, since its ParishSoft encoding is not settled yet. Save value is also
+unavailable, with its reason, while the browser can tell the value is not
+allowed (blank, too long, or a date after today). A value the server refuses
+answers in place after the form with the reason, and the field is marked in
+error until it is edited
+([field errors](../ui-conventions/spec.md#field-errors-and-live-checks));
+nothing is recorded. A blank value is refused: Ignore leaves ParishSoft as it
+is. A value equal to
+the Family's answer clears the edit, so Edited value never repeats it.
+Edit value is offered on the rows Review is (Automatic, open, an
+Administrator's, while no other campaign work holds the campaign), a
+Conflict included. It keeps the decision, so an approved change stays
+approved, whoever edits it; its new version means a publication plan that
+included the change must be confirmed again, with the edited value in view.
+It is per change only, never part of bulk review. On the command line it
+is `pk-admin census edit`, through the same service
 ([admin automation](../admin-automation/spec.md#reports-and-exports)).
 
 An Administrator may also give several Automatic changes one decision at
@@ -2015,7 +2099,15 @@ may change an Automatic proposal's decision only with such a row, and the
 row's own guard checks again that the actor is a current Administrator, the
 campaign admits changes, the version is current, the change is Automatic and
 open, and the decision changes. The row records the whole resulting review
-state, so the later edited value needs only a wider guard for the row.
+state. Forward migration 0107 widens that guard for Edit value: a review
+row is exactly one of a decision (the edit fields stay) and an edit (the
+decision stays). It also adds an edit guard on the proposal: the web role
+may change the edit fields only as a review row at the current version
+records them, whatever else it updates. An edit's value must have its field's shape (a
+phone record for a phone, text otherwise, at most 1,024 bytes), must not be
+blank and must differ from the Family's answer, as the census compares
+values; clearing needs an edit to be set. The value's full rules stay in the
+service.
 
 ## Financial stewardship detail
 
@@ -2065,7 +2157,13 @@ A file captured before frozen migration 0066 added the marker to
 the projection leaves the column blank, never No (#794).
 
 Filters include active/inactive, first/latest submission dates, pledge range,
-zero/nonzero/cannot contribute, frequency, and share method. The summary of
+zero/nonzero/cannot contribute, frequency, and share method. The first and
+latest response dates (From, Through) are whole days in the viewer's browser
+time zone and work as the [Additional information](#additional-information)
+submitted-date filters do: the form sends the browser's zone with the dates,
+and a date without a known zone is refused, never read in another zone
+(schema migration 0110). Filters without a zone, from a release before 0110
+or a retained export capture, keep their campaign-zone days. The summary of
 the matching pledges comes first, as visuals
 ([#720](https://github.com/epiphany40223/parishkit/issues/720)): tiles for the
 Family count, the annual total and the number of Families that cannot
@@ -2083,9 +2181,17 @@ figures, so the charts have no exact-values table
 choose more than one share method, so those shares can add up past 100%. The
 summary follows the applied filters in place, and its charts keep their space
 until they are drawn again. Exports are CSV, XLSX, and PDF; queuing
-or regenerating one needs the same fresh sign-in as a
+one needs the same fresh sign-in as a
 [active parishioner family directory](#active-parishioner-family-directory) export, returning to this report. No
 Ministry leader receives aggregate or Family financial detail.
+
+The page checks its date and pledge filters before Apply (a date, each
+range's order, an amount's form). A request that reaches the server with one
+broken is refused at that field
+([field errors](../ui-conventions/spec.md#field-errors-and-live-checks),
+[#1332](https://github.com/epiphany40223/parishkit/issues/1332)): a range out
+of order at its Through date or At most, with both ends marked. Its access
+audit ends denied.
 
 ## Limitations
 

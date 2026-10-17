@@ -1,5 +1,10 @@
 # Complete-result Ministry exports
 
+> **Superseded:** exports are now point-in-time, with no kept copies and no
+> Regenerate ([point-in-time exports](../specs/stewardship/operations/spec.md#point-in-time-exports),
+> [#1398](https://github.com/epiphany40223/parishkit/issues/1398)). This
+> record describes the increment as it was delivered.
+
 This Phase 5 increment starts on `pr/stewardship-ministry-exports` from verified
 PR #70 merge `5b0d3051`. It completes [RPT-06.03](../tasks/stewardship/reports.md#rpt-06-ministry-summary-and-detail)
 under the [implementation plan](../plans/stewardship/reports.md#rpt-06-ministry-summary-and-detail)

@@ -523,5 +523,9 @@ def test_the_migration_check_passes_installed_and_fails_otherwise():
             cursor.execute(statement)
             cursor.execute(CHECK)
     # Running the whole file again, as the users swap test does, is harmless.
+    # Rolling it back keeps the installed (later) safe context, which 0109
+    # (#1398) widens again, for the tests that follow in this transactional
+    # database.
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(FROZEN)
+        transaction.set_rollback(True)

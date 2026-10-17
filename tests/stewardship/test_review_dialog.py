@@ -441,7 +441,7 @@ def test_create_the_campaign_confirms_without_repeating_the_form():
     assert 'describedby="campaign-create-summary"' in page
     assert "redraw_answer=True" in page
     assert 'translate "Review changes"' not in page
-    assert 'translate "Create the campaign" %}{% endbutton %}' in page
+    assert 'translate "Create the campaign and continue" %}{% endbutton %}' in page
     fragment = render_to_string(
         "stewardship/campaign-create-review.html",
         {"review": {"content": 1, "preview": "signed", "next_url": "/next/"}},
@@ -656,6 +656,40 @@ def test_a_small_campaign_settings_change_is_a_compact_review():
     full = fragment(False)
     assert "data-review-title" not in full and "campaign-review-summary" not in full
     assert "<table" in full and "Nothing changes until you choose Apply." in full
+
+
+def test_parish_settings_is_a_compact_review():
+    """Parish settings (#1356 PR 5): every setting is short, so every change
+    is a compact review, one "Setting: old → new" line each, described by
+    its lines and asked as "Save the Parish settings?", keeping a new
+    timezone's note; an unset online giving address reads "Not set", never
+    an empty side."""
+    from parishkit.stewardship.accounts.parish_views import TIMEZONE_NOTE, _shown
+
+    assert str(_shown("online_giving_url", "")) == "Not set"
+    assert _shown("name", "Sample Parish") == "Sample Parish"
+    text = render_to_string(
+        "stewardship/parish-settings-review.html",
+        {
+            "review": {
+                "changes": [
+                    {"label": "Online giving", "before": "Not set", "after": "x"},
+                    {"label": "Parish timezone", "before": "A", "after": "B"},
+                ],
+                "notes": [TIMEZONE_NOTE],
+                "preview": "signed",
+            }
+        },
+    )
+    assert '<ul class="compact-review" id="parish-review-summary">' in text
+    assert text.count("<li>") == 2 and "<h3>" not in text
+    assert "Current:" not in text and "Nothing changes until" not in text
+    assert f'<p class="notice" role="note">{TIMEZONE_NOTE}</p>' in text
+    assert 'name="preview" value="signed" data-review-preview' in text
+    page = (TEMPLATES / "parish-settings.html").read_text()
+    assert '"Save the Parish settings?" as review_title' in page
+    assert 'describedby="parish-review-summary" %}' in page
+    assert "label=save_label" in page and "Review Parish settings" not in page
 
 
 def test_the_page_reads_a_pasted_key_as_the_server_does():

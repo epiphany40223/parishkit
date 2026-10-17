@@ -41,7 +41,6 @@ from parishkit.stewardship.reports.directories import DirectoryQuery
 from parishkit.stewardship.reports.directory_exports import create_directory_export
 from parishkit.stewardship.reports.export_models import (
     DirectoryExportSnapshot,
-    ExportPublication,
     ExportRequest,
 )
 from parishkit.stewardship.reports.financial import FinancialQuery
@@ -452,38 +451,3 @@ def test_sql_capture_guard_takes_the_campaign_lock_itself(scenario):  # noqa: F8
                 )
                 assert cursor.fetchone()[0] is False
         future.result(timeout=30)
-
-
-def test_regenerate_reads_its_campaign_then_takes_only_that_lock(
-    scenario,  # noqa: F811
-    monkeypatch,
-):
-    """Regeneration skips a global-lock holder but queues behind a transition."""
-    store, principal, _, _ = scenario
-    original = request_export(scenario)
-    run_export(scenario, original)
-    publication = ExportPublication.objects.get(request=original)
-    later = publication.expires_at + timedelta(minutes=1)
-    monkeypatch.setattr(export_services, "database_now", lambda: later)
-
-    def regenerate():
-        """Regenerate the expired export through the real service."""
-        return export_services.regenerate_export(
-            store, principal.pk, original.pk, request_key=uuid4()
-        )
-
-    ready = Queue()
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        with work_transaction():
-            first = pool.submit(contender, ready, regenerate)
-            ready.get(timeout=5)
-            # Completes while this session holds the global lock.
-            assert first.result(timeout=60).fact_set_id == original.fact_set_id
-        with work_transaction():
-            lock_campaign_exports(original.campaign_id)
-            second = pool.submit(contender, ready, regenerate)
-            wait_for_lock(ready.get(timeout=5), CAMPAIGN)
-            assert not second.done()
-        regenerated = second.result(timeout=60)
-    assert regenerated.pk != original.pk
-    assert ExportRequest.objects.filter(campaign_id=original.campaign_id).count() == 3

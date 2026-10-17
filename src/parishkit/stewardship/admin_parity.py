@@ -161,7 +161,10 @@ LEDGER = {
         "the browser Campaign setup stepper's own progress; the command line "
         "has no stepper"
     ),
-    "share_settings": command("campaign shares", owed="PR 10"),
+    # The page's read, Review and Apply (#463).
+    "share_settings": command(
+        "campaign shares", "campaign shares-preview", "campaign shares-confirm"
+    ),
     # The page's read, Review and Apply (#750), all on the page itself.
     "reminder_workgroup": command(
         "workgroup show", "workgroup preview", "workgroup confirm"
@@ -170,12 +173,13 @@ LEDGER = {
     # The editor as it opens; its Review and Apply are still owed.
     "content_edit": command("content show", owed="PR 10"),
     "content_revision": command("content show", owed="PR 10"),
-    "content_delete": pending("PR 10", "content preview", "content confirm"),
+    # The email tables' Delete, as a preview and a confirm (#879).
+    "content_delete": command("content preview", "content confirm"),
     "content_history": command("content history"),
     "content_history_revision": command("content history"),
-    # The editor's live preview of typed HTML: ``content preview`` will
-    # print the proposed change's cleaned HTML and generated plain text.
-    "content_plain_text": pending("PR 10", "content preview"),
+    # The editors' live preview of typed HTML: ``content preview --html``
+    # prints its cleaned HTML, generated plain text and removed markup.
+    "content_plain_text": command("content preview"),
     "parish_settings": command("parish show", "parish preview", "parish confirm"),
     # A read-only catalog since #1267, so nothing is owed.
     "ministries": command("ministries list"),
@@ -194,6 +198,9 @@ LEDGER = {
     "artwork_settings": command(
         "artwork show", "artwork remove-preview", "artwork remove"
     ),
+    # Applying logos is owed with the uploads: staged logos belong to the
+    # sign-in that uploaded them, and each pk-admin run is its own sign-in,
+    # so a command cannot apply logos staged in the browser (#463).
     "branding_settings": command("branding show", owed="PR 10"),
     "hosted_file_upload": permanent(UPLOAD),
     "artwork_upload": permanent(UPLOAD),
@@ -218,9 +225,15 @@ LEDGER = {
     "family_email_progress": command("send progress"),
     "family_email_progress_status": command("send progress"),
     "family_email_sends": command("send history"),
-    # Its read (#463); the pause, resume and resolution previews and their
-    # confirmation are still owed.
-    "delivery_control": command("send controls", owed="PR 7b"),
+    # Its read, and its pause, resume and resolution previews and their
+    # confirmation (PR 7b, #463).
+    "delivery_control": command(
+        "send controls",
+        "send pause-preview",
+        "send resume-preview",
+        "send resolve-preview",
+        "send confirm",
+    ),
     # The Family portal switch (PR 7a); the delivery controls above are PR 7b.
     "family_portal": command("portal maintenance show", "portal maintenance set"),
     # Testing sends.
@@ -256,8 +269,16 @@ LEDGER = {
     # Counts only (#463): its rows name Families and Members, so they are
     # export census's. A row's Entered in ParishSoft, Ignore and Reopen post
     # here too (#528): census resolve; so does an Automatic row's Review
-    # (ADM-09): census review.
-    "census_changes": command("report census", "census resolve", "census review"),
+    # (ADM-09): census review, its Edit value and Clear edit (ADM-09.04):
+    # census edit, and its Use the Family's value anyway (ADM-09.03): census
+    # resolve-conflict (#1434).
+    "census_changes": command(
+        "report census",
+        "census resolve",
+        "census review",
+        "census edit",
+        "census resolve-conflict",
+    ),
     "information_queue": command("report information"),
     # One Family's submission and its follow-up history: read with the
     # follow-up commands, as the Ministry follow-up items are, which print
@@ -268,8 +289,8 @@ LEDGER = {
     # By Ministry counts. ``report ministry`` prints those counts, and
     # ``export ministry`` writes one Ministry's join or leave list, the file
     # the retired Members joining and leaving pages offered (#1157); the
-    # queue itself is the follow-up commands' (PR 11).
-    "ministry_report": command("report ministry", "export ministry", owed="PR 11"),
+    # queue itself is ``followup list``'s (#463 PR 11a).
+    "ministry_report": command("report ministry", "export ministry", "followup list"),
     # A packet of the chosen Ministries' Members and contacts: an export.
     "ministry_packet": command("export ministry-packet"),
     "response_dashboard": command("report responses"),
@@ -303,7 +324,6 @@ LEDGER = {
     "report_export": command("export status", "export exact status"),
     "report_export_cancel": command("export cancel", "export exact cancel"),
     "report_export_retry": command("export retry", "export exact retry"),
-    "report_export_regenerate": command("export regenerate"),
     "report_export_download": command("export download"),
     "report_exact_create": command("export exact create"),
     # The digests (PR 8d): the retained reports an emailed digest links to,
@@ -384,10 +404,11 @@ LEDGER = {
     "security_event_acknowledge": command("events list", "events acknowledge"),
     "critical_events_acknowledge": command("events list", "events acknowledge"),
     "information_update": pending("PR 11", "followup"),
-    "ministry_followup_item": pending("PR 11", "followup"),
-    "ministry_followup_update": pending("PR 11", "followup"),
-    # Bulk outcomes on the queue (#1131).
-    "ministry_followup_bulk": pending("PR 11", "followup"),
+    # A Ministry request's page and its Save (#463 PR 11a).
+    "ministry_followup_item": command("followup show"),
+    "ministry_followup_update": command("followup show", "followup update"),
+    # Bulk outcomes on the queue (#1131): followup bulk (#463 PR 11a).
+    "ministry_followup_bulk": command("followup list", "followup bulk"),
     # Export these requests (#1157): the queue's filtered set with contacts.
     "ministry_followup_export": pending("PR 11", "followup export"),
     # The roster Entered in ParishSoft tick and its list (#528).

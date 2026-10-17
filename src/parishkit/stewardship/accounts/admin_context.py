@@ -175,9 +175,14 @@ def _campaign_wizard(request, match, campaign, configuration, *, admin, go_live)
     """The Campaign setup stepper for this page, or None (``campaign_wizard``).
 
     An error page never shows it: a view may fail its access recheck after
-    the route resolved, and the refusal must not look like a step.
+    the route resolved, and the refusal must not look like a step. Before
+    any campaign exists, Create the campaign draws step 1 (#1404 PR 3).
     """
-    if getattr(request, ERROR_PAGE_ATTRIBUTE, False) or not campaign_wizard.shown(
+    if getattr(request, ERROR_PAGE_ATTRIBUTE, False):
+        return None
+    if campaign is None:
+        return campaign_wizard.for_creation(match, configuration.mode, admin=admin)
+    if not campaign_wizard.shown(
         campaign, configuration.mode, admin=admin, go_live=go_live
     ):
         return None

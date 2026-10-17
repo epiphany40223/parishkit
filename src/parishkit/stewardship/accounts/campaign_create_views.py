@@ -1,15 +1,17 @@
 """Create the campaign: the deployment's first campaign, after system setup (#142).
 
 System setup creates no campaign. While the deployment has never had one, an
-Administrator creates it here: the campaign's basics (name, modules, dates,
-Ministries and funds) in the ordinary campaign form, then a review, then one
+Administrator creates it here, on step 1 of the campaign wizard (#1404 PR 3,
+``campaign_wizard.creation``): every Campaign settings question (name,
+modules, dates, Ministries, Ministry leader roles and funds) in the Campaign
+settings form itself, so no later step asks one again, then a review, then one
 versioned configuration request that adds the draft campaign with the
 built-in default text for every applicable page and email. This is not a
 multi-campaign control: ``single_campaign.first_campaign_admitted`` refuses
 it as soon as any campaign row exists (admin-portal spec, "Create the
 campaign").
 
-The form's Create the campaign button posts its Review without a page load
+The form's Create the campaign and continue button posts its Review without a page load
 and is answered with a confirmation in the shared review dialog (UX
 conventions, "Review dialog", #750, #1356): one sentence saying what Apply
 does, the number of pages and emails it adds with the default text (the one
@@ -46,6 +48,7 @@ from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.campaigns.leader_roles import effective_roles, role_choices
 from parishkit.stewardship.campaigns.single_campaign import (
     first_campaign_admitted,
     first_campaign_refused,
@@ -55,7 +58,10 @@ from parishkit.stewardship.campaigns.work_locks import (
     work_transaction,
 )
 from parishkit.stewardship.storage import StaleRecordError
-from parishkit.stewardship.web.refusals import stale_page
+from parishkit.stewardship.web.refusals import (
+    stale_page,
+    with_default_code,
+)
 
 from . import admin_navigation, setup_help
 from .admin_editing import (
@@ -69,7 +75,7 @@ from .admin_editing import (
     summary_errors,
 )
 from .authentication import runtime
-from .campaign_forms import CampaignForm
+from .campaign_forms import CampaignSettingsForm
 from .campaign_views import MULTIPLE_FIELDS, _catalog, _state
 from .content_forms import default_content
 from .limiting import LimiterUnavailable
@@ -182,27 +188,38 @@ def _page(request, configuration, form, *, status=200, receipt=None):
     )
     if status != 200:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return response
 
 
 def creation_form(configuration, source, data=None):
     """The creation form over the current source's Ministries and funds.
 
-    It is drawn at the applied configuration's version. The local seeder
-    (``seed_web``) fills in the same form.
+    It is Campaign settings' own form (#1404 PR 3), so step 1 asks every
+    campaign setting once, the Ministry leader roles included: they start
+    on the default list, ticked, as Campaign settings offers a new draft,
+    and leaving them so writes no roles of the campaign's own
+    (``CampaignSettingsForm.values``). It is drawn at the applied
+    configuration's version. The local seeder (``seed_web``) fills in the
+    same form.
     """
     ministries, funds = _catalog(configuration, source, {})
-    form = CampaignForm(
+    roles = effective_roles({})
+    form = CampaignSettingsForm(
         data,
         initial={
             "timezone": configuration.active_configuration.parish.timezone,
             "census": True,
             "additional_information": True,
+            "ministry_leader_roles": roles,
             "base_digest": configuration.active_configuration.digest,
         },
         previous={},
         ministries=ministries,
         funds=funds,
+        leader_choices=role_choices(roles),
+        leader_roles=roles,
     )
     # Same plain-language field help as Campaign settings.
     setup_help.apply(form, setup_help.ADMIN_CAMPAIGN, replace=True)
@@ -320,7 +337,7 @@ def campaign_create(request):
         if request.method == "POST":
             action = form_action(
                 request.POST,
-                preview_fields=set(CampaignForm.base_fields),
+                preview_fields=set(CampaignSettingsForm.base_fields),
                 multiple_fields=MULTIPLE_FIELDS,
             )
             if action == "confirm":

@@ -104,7 +104,16 @@ def warn_if_missing(evidence, *, task_id):
 def recorded(cursor):
     """The Reminder WorkGroup evidence a snapshot cursor recorded, or None."""
     load = cursor.get("load") if type(cursor) is dict else None
-    value = load.get(EVIDENCE_KEY) if type(load) is dict else None
+    return valid_evidence(load.get(EVIDENCE_KEY) if type(load) is dict else None)
+
+
+def valid_evidence(value):
+    """``value`` when it has the evidence's exact shape, else None.
+
+    System health reads the evidence alone from the cursor, in the
+    statement Home already runs (``system_health.HEALTH_SQL``), and checks
+    it here as ``recorded`` does.
+    """
     if (
         type(value) is dict
         and set(value) == {"name", "found", "family_duids"}

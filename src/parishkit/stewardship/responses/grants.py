@@ -42,9 +42,18 @@ def add_response_web_grants(tables, columns):
     ):
         tables[table] = {"SELECT", "INSERT"}
     # A census change's resolution (#528) changes its decision; the guard
-    # admits it only with its paired stewardship_proposal_resolution row.
+    # admits it only with its paired stewardship_proposal_resolution row. An
+    # Administrator's Edit value (ADM-09.04) changes the edit fields, only
+    # with its paired stewardship_proposal_review row.
     columns["stewardship_proposed_change"] = {
-        "UPDATE": {"execution", "decision", "superseded_by_id", "version"}
+        "UPDATE": {
+            "execution",
+            "decision",
+            "superseded_by_id",
+            "version",
+            "admin_value_set",
+            "admin_value",
+        }
     }
     tables["stewardship_proposal_resolution"] = {"SELECT", "INSERT"}
     # An Administrator's review of an Automatic change (#528, ADM-09) changes

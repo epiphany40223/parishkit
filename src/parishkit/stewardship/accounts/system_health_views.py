@@ -36,7 +36,6 @@ from parishkit.stewardship.system_health import (
     dashboard,
     loaded_query,
     loaded_states,
-    page_findings,
     parse_loaded,
     read_health,
     resave_tile,
@@ -110,16 +109,9 @@ def _context(health, extra, *, loaded):
     """
     return {
         "health": health,
-        "dashboard": dashboard(
-            health,
-            findings=page_findings(
-                health, workgroup_missing=extra["workgroup_missing"]
-            ),
-            loaded=loaded,
-        ),
+        "dashboard": dashboard(health, loaded=loaded),
         "campaign_id": extra["campaign_id"],
         "pause": extra["pause"],
-        "workgroup_missing": extra["workgroup_missing"],
         "debug_actor": extra["debug_actor"],
         "accept_actor": extra["accept_actor"],
         "refused_attempt": extra["refused_attempt"],
@@ -379,6 +371,7 @@ def _act(request):
         service = runtime()
         try:
             if action not in _ACTION_FIELDS:
+                # No sources: an unknown action value, not an unexpected field.
                 raise unexpected_fields()
             _closed(request, _ACTION_FIELDS[action])
             result = _step(action, request, service)

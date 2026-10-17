@@ -38,14 +38,12 @@ CREATE = "/admin/campaign/first/"
 
 
 def new_fields(store):
-    """Create the campaign's form posts: Campaign settings' without leader roles.
+    """Create the campaign's form posts: Campaign settings' own (#1404 PR 3).
 
-    A new campaign starts with the default Ministry leader roles (#922); only
-    Campaign settings offers them, so this form refuses the field.
+    Step 1 is the Campaign settings form, so it posts the Ministry leader
+    roles too, the default ones ticked (#922).
     """
-    values = fields(store)
-    values.pop("ministry_leader_roles")
-    return values
+    return fields(store)
 
 
 def test_first_campaign_is_created_with_default_content(auth_service, google):
@@ -621,3 +619,85 @@ def test_local_seeder_creates_the_campaign_through_the_page(auth_service, google
     assert slots == set(applicable_slots(values))
     with pytest.raises(seed_web.SeedWebRefused):
         seed_web.create_campaign(request, runtime(), dates)
+
+
+def test_create_the_campaign_is_step_one_of_the_campaign_wizard(auth_service, google):
+    """Create the campaign draws step 1 and asks every setting once (#1404 PR 3).
+
+    The stepper says "Step 1 of 7: Campaign settings" with every later step
+    unavailable until the campaign exists; the form is Campaign settings'
+    own, so it asks the Ministry leader roles too, the default ones ticked;
+    its one primary is Create the campaign and continue, inside the form,
+    and the shared action row (Back, Continue) is not drawn. Roles chosen
+    here are the campaign's, and the default ones save none of its own, as
+    on Campaign settings. Ministry stewardship needs at least one role.
+    """
+    publish(source())
+    browser, _ = signed_in()
+    store = auth_service.store
+    page = browser.get(CREATE).content.decode()
+    stepper = page[page.index('id="campaign-stepper"') :]
+    stepper = stepper[: stepper.index("</nav>")]
+    assert "Step 1 of 7:" in stepper and "<strong>Campaign settings</strong>" in stepper
+    assert "0 of 7 steps completed" in stepper
+    assert stepper.count("Not available yet: Create the campaign first.") >= 6
+    assert reverse("admin:share_settings") not in stepper
+    assert 'id="campaign-step-actions"' not in page
+    assert "stepper-v1.css" in page
+    for role in ("Chairperson", "Staff"):
+        assert re.search(
+            rf'<input type="checkbox" name="ministry_leader_roles" value="{role}"'
+            r"[^>]*checked",
+            page,
+        ), role
+    form = page[page.index('id="settings-form"') :]
+    form = form[: form.index("</form>")]
+    assert '<div class="campaign-step-actions">' in form
+    assert "Create the campaign and continue" in form and ">Back<" not in form
+    # Ministry stewardship with no role ticked stays on the form.
+    refused = post(
+        browser,
+        CREATE,
+        new_fields(store) | {"ministry": "on", "ministry_leader_roles": []},
+    )
+    assert refused.status_code == 400
+    assert b"Choose at least one role." in refused.content
+    # A role list of the campaign's own is saved with the new campaign.
+    chosen = new_fields(store) | {
+        "ministry": "on",
+        "ministry_leader_roles": ["Chairperson"],
+    }
+    preview = post(browser, CREATE, chosen)
+    assert preview.status_code == 200, preview.content
+    confirmed = {"action": "confirm", "preview": token(preview)}
+    apply(store, post(browser, CREATE, confirmed))
+    values = Campaign.objects.get().active_configuration.values
+    assert values["ministry_leader_roles"] == ["Chairperson"]
+    # Step 1 is Campaign settings once the campaign exists: the same roles.
+    settings = browser.get(reverse("admin:campaign_settings")).content.decode()
+    # Without Financial stewardship Share options is no longer a step.
+    assert "Step 1 of 6:" in settings
+    assert re.search(
+        r'<input type="checkbox" name="ministry_leader_roles" value="Chairperson"'
+        r"[^>]*checked",
+        settings,
+    )
+    assert not re.search(
+        r'<input type="checkbox" name="ministry_leader_roles" value="Staff"'
+        r"[^>]*checked",
+        settings,
+    )
+
+
+def test_the_default_leader_roles_save_none_of_the_campaigns_own(auth_service, google):
+    """Leaving the default roles ticked writes no ``ministry_leader_roles``."""
+    publish(source())
+    browser, _ = signed_in()
+    store = auth_service.store
+    preview = post(browser, CREATE, new_fields(store) | {"ministry": "on"})
+    assert preview.status_code == 200, preview.content
+    confirmed = {"action": "confirm", "preview": token(preview)}
+    apply(store, post(browser, CREATE, confirmed))
+    values = Campaign.objects.get().active_configuration.values
+    assert "ministry" in values["modules"]
+    assert "ministry_leader_roles" not in values

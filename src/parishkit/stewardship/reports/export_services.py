@@ -24,6 +24,7 @@ from .export_models import (
     ExportPublication,
     ExportRequest,
 )
+from .export_window import download_end, retry_end
 from .facts import FactUnavailable
 from .models import CampaignDailyFactSet
 from .retention import pin_facts
@@ -84,7 +85,7 @@ def authorize(store, user_id, *, request=None):
         )
     elif isinstance(request, ExportRequest) and request.report in FAMILY_CODE_REPORTS:
         # Codes need the directory page's own capability too, so a requester
-        # who loses it can no longer download or regenerate an earlier export.
+        # who loses it can no longer download an earlier export.
         permitted = permitted and allows(principal, Capability.FAMILY_CODES)
         # Testing rehearsal responses are for Administrators only (#933).
         if directory_mode(request) == "testing":
@@ -129,7 +130,13 @@ def audit(action, request, actor_id, *, outcome, count=None):
     the configuration pinned when the export was requested: a later settings
     change would otherwise make every download and cancel fail attribution.
     """
-    context = {"outcome": outcome}
+    # The report kind and format (#1398): who exported what needs no request
+    # row. A latest-data export is the participation report.
+    context = {
+        "outcome": outcome,
+        "report": getattr(request, "report", "participation"),
+        "format": request.format,
+    }
     if count is not None:
         context["count"] = count
     # Exact-generation requests share this helper but have no Ministry payload.
@@ -177,10 +184,13 @@ def create_export(
             requester_id=user_id, request_key=request_key
         ).first()
         if previous is not None:
+            # An ended export's discard cleared its generation (#1398); the
+            # same form replayed is still that export, whose page says it
+            # is no longer available.
             if (
                 previous.report,
                 previous.campaign_id,
-                previous.fact_set_id,
+                previous.fact_set_id or fact_set_id,
                 previous.format,
                 previous.browser_timezone,
             ) != ("participation", campaign_id, fact_set_id, format, browser_timezone):
@@ -261,160 +271,6 @@ def cancel_export(store, user_id, request_id):
         return receipt
 
 
-def regenerate_export(store, user_id, request_id, *, request_key):
-    """Create a new request for expired retained facts, never recapture current data.
-
-    Regeneration has a new request time and current parish presentation policy.
-    The retained fact set (including its source, cutoff and campaign timezone
-    configuration), format and browser timezone stay fixed. Presentation uses
-    the current configuration; the old publication and audit remain immutable.
-    Like every export admission, it takes only its campaign's export lock; a
-    request's campaign never changes, so it is read before that lock.
-    """
-    campaign_id = ExportRequest.objects.values_list("campaign_id", flat=True).get(
-        pk=request_id
-    )
-    with export_transaction(campaign_id):
-        original = (
-            ExportRequest.objects.select_related(
-                "directory_snapshot",
-                "ministry_snapshot",
-                "financial_snapshot",
-                "family_test_names_snapshot",
-                "timeline_snapshot",
-                "comparison_snapshot",
-            )
-            .defer(
-                "directory_snapshot__document",
-                "ministry_snapshot__document",
-                "financial_snapshot__document",
-                "family_test_names_snapshot__document",
-                "timeline_snapshot__document",
-                "comparison_snapshot__document",
-            )
-            .get(pk=request_id)
-        )
-        authorize(store, user_id, request=original)
-        admit_campaign(original.campaign_id, mutating=True)
-        publication = ExportPublication.objects.filter(request=original).first()
-        if publication is None or publication.expires_at > database_now():
-            raise ExportConflict("Only expired exports can be regenerated.")
-        if original.report == "ministry":
-            from .ministry_exports import create_ministry_export
-
-            return create_ministry_export(
-                store,
-                user_id,
-                campaign_id=original.campaign_id,
-                format=original.format,
-                browser_timezone=original.browser_timezone,
-                request_key=request_key,
-                snapshot=original.ministry_snapshot,
-            )
-        if original.report in {"family_directory", "postal_outreach"}:
-            from .directory_exports import create_directory_export
-
-            return create_directory_export(
-                store,
-                user_id,
-                campaign_id=original.campaign_id,
-                format=original.format,
-                browser_timezone=original.browser_timezone,
-                request_key=request_key,
-                snapshot=original.directory_snapshot,
-            )
-        if original.report == "additional_information":
-            from .information import InformationQuery
-            from .information_exports import create_information_export
-
-            return create_information_export(
-                store,
-                user_id,
-                campaign_id=original.campaign_id,
-                query=InformationQuery.retained(original.parameters["filters"]),
-                history=original.parameters["history"],
-                format=original.format,
-                browser_timezone=original.browser_timezone,
-                request_key=request_key,
-                snapshot=original.information_snapshot,
-            )
-        if original.report == "family_timeline":
-            from .timeline_exports import create_timeline_export
-
-            return create_timeline_export(
-                store,
-                user_id,
-                campaign_id=original.campaign_id,
-                family_id=original.timeline_snapshot.family_id,
-                mode=original.parameters["mode"],
-                format=original.format,
-                browser_timezone=original.browser_timezone,
-                request_key=request_key,
-                snapshot=original.timeline_snapshot,
-            )
-        if original.report == "financial":
-            from .financial_exports import create_financial_export
-
-            return create_financial_export(
-                store,
-                user_id,
-                campaign_id=original.campaign_id,
-                format=original.format,
-                browser_timezone=original.browser_timezone,
-                request_key=request_key,
-                snapshot=original.financial_snapshot,
-            )
-        if original.report == "campaign_comparison":
-            from .comparison_exports import create_comparison_export
-
-            # The same capture, so the same day: never newer figures.
-            return create_comparison_export(
-                store,
-                user_id,
-                campaign_id=original.campaign_id,
-                day=original.parameters["day"],
-                format=original.format,
-                browser_timezone=original.browser_timezone,
-                request_key=request_key,
-                snapshot=original.comparison_snapshot,
-            )
-        if original.report == "campaign_archive":
-            from .archive_exports import create_archive_export
-
-            # The same fact set, cutoff and final mark: the same records,
-            # with a new request time (converted_at).
-            return create_archive_export(
-                store,
-                user_id,
-                campaign_id=original.campaign_id,
-                request_key=request_key,
-                retained=original,
-            )
-        if original.report == "family_test_names":
-            from .family_test_names import create_family_test_names_export
-
-            return create_family_test_names_export(
-                store,
-                user_id,
-                campaign_id=original.campaign_id,
-                revision_id=UUID(original.parameters["revision"]),
-                families=None,
-                browser_timezone=original.browser_timezone,
-                request_key=request_key,
-                format=original.format,
-                snapshot=original.family_test_names_snapshot,
-            )
-        return create_export(
-            store,
-            user_id,
-            campaign_id=original.campaign_id,
-            fact_set_id=original.fact_set_id,
-            format=original.format,
-            browser_timezone=original.browser_timezone,
-            request_key=request_key,
-        )
-
-
 def retry_export(store, user_id, request_id, *, request_key):
     """Retry the latest failed run without changing the original report owner.
 
@@ -430,6 +286,12 @@ def retry_export(store, user_id, request_id, *, request_key):
         authorize(store, user_id, request=request)
         admit_campaign(request.campaign_id, mutating=True)
         previous = request.task.chain_runs.filter(retry_command_id=request_key).first()
+        # A replay of a recorded key returns its result whatever happened
+        # since; a new Retry of a failed export is refused once its Retry
+        # window is over (#1398). A cancelled or published export is
+        # refused by retry_failed, as before (a conflict).
+        if previous is None and task_ended(request.task):
+            raise ExportExpired("This export's Retry window has ended.")
         latest = request.task.chain_runs.order_by("-retry_sequence").first()
         return retry_failed(
             run_id=previous.parent_id if previous is not None else latest.pk,
@@ -438,6 +300,37 @@ def retry_export(store, user_id, request_id, *, request_key):
             correlation_id=uuid4(),
             admit=lambda action, status: admit_export(action, status, store=store),
         )
+
+
+def failed_end(task):
+    """(latest run's state, its Retry end or None) for an unpublished export."""
+    latest = task.chain_runs.order_by("-retry_sequence").first()
+    end = retry_end(latest.updated_at) if latest.state == "failed" else None
+    return latest.state, end
+
+
+def task_ended(task):
+    """Whether a failed export's task, never published, can no longer be
+    retried: its latest run failed one window ago or more (#1398)."""
+    latest = task.chain_runs.order_by("-retry_sequence").first()
+    return latest.state == "failed" and retry_end(latest.updated_at) <= database_now()
+
+
+def export_ended(request):
+    """Whether ``request`` has ended, so its pages answer "no longer available".
+
+    Exports are point-in-time (#1398; operations spec, "Point-in-time
+    exports"): an export ends when its published file's window is over, when
+    it was cancelled, or one window after its latest failed attempt if it
+    has not been retried by then (``export_window``). The caller has already
+    checked the reader's access to it (``authorize``).
+    """
+    publication = ExportPublication.objects.filter(request=request).first()
+    if publication is not None:
+        return download_end(publication) <= database_now()
+    if ExportCancellation.objects.filter(request=request).exists():
+        return True
+    return task_ended(request.task)
 
 
 def export_status(store, user_id, request_id):
@@ -457,12 +350,17 @@ def export_state(store, user_id, request_id):
         authorize(store, user_id, request=request)
         admit_campaign(request.campaign_id, mutating=False)
         publication = ExportPublication.objects.filter(request=request).first()
+        # ``expires_at`` is when the export ends (export_window): a file's
+        # download end, never a later recorded expires_at, or a failed
+        # export's Retry end; None while it is being made or cancelled.
+        end = None
         if publication is not None:
-            state = "ready" if publication.expires_at > database_now() else "expired"
+            end = download_end(publication)
+            state = "ready" if end > database_now() else "expired"
         elif ExportCancellation.objects.filter(request=request).exists():
             state = "cancelled"
         else:
-            state = request.task.chain_runs.order_by("-retry_sequence").first().state
+            state, end = failed_end(request.task)
         status = {
             "id": str(request.pk),
             "campaign_id": str(request.campaign_id),
@@ -470,7 +368,7 @@ def export_state(store, user_id, request_id):
             "format": request.format,
             "state": state,
             "created_at": request.created_at.isoformat(),
-            "expires_at": publication.expires_at.isoformat() if publication else None,
+            "expires_at": end.isoformat() if end is not None else None,
         }
         return status, publication
 
@@ -482,7 +380,7 @@ def issue_download(store, user_id, request_id):
         authorize(store, user_id, request=request)
         admit_campaign(request.campaign_id, mutating=False)
         publication = ExportPublication.objects.get(request=request)
-        if publication.expires_at <= database_now():
+        if download_end(publication) <= database_now():
             raise ExportExpired("This export has expired.")
         return ExportDownloadGrant.objects.create(
             publication_id=publication.pk,
@@ -502,7 +400,7 @@ def consume_download(store, user_id, grant_id):
         request = publication.request
         authorize(store, user_id, request=request)
         admit_campaign(request.campaign_id, mutating=False)
-        if publication.expires_at <= database_now():
+        if download_end(publication) <= database_now():
             raise ExportExpired("This export has expired.")
         if grant.expires_at <= database_now():
             raise PermissionError("This download grant is unavailable.")

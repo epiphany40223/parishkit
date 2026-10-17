@@ -49,6 +49,7 @@ from parishkit.stewardship.web.refusals import (
     UserFacingStale,
     stale_page,
     unexpected_fields,
+    with_default_code,
 )
 
 from . import admin_navigation, field_tips, setup_help
@@ -569,6 +570,9 @@ def _page(
             "end_check": None if live_at is None else end_check_words(),
             # A live campaign's open Ministry list says what a change does.
             "live_ministries": not editable and "ministry_duids" in open_fields,
+            # Review waits while the Ministries and another setting both
+            # changed, in the words the server refuses that with (#1330).
+            "ministries_alone": MINISTRIES_ALONE,
             "family_test_url": chosen_family_test_url(configuration, campaign),
             # Review posts here, and the review dialog's Apply too.
             "page_url": request.path,
@@ -581,6 +585,8 @@ def _page(
     )
     if status != 200:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return response
 
 
@@ -1113,7 +1119,9 @@ def campaign_end_date_check(request, campaign_id):
                 for name, values in request.POST.lists()
             )
         ):
-            raise unexpected_fields()
+            raise unexpected_fields(
+                request.GET, request.POST, allowed=allowed, multiple=MULTIPLE_FIELDS
+            )
         with read_transaction():
             state = _state(service)
             configuration, campaigns, _source, held = state[:4]

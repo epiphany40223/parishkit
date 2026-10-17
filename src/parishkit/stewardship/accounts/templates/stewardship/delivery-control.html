@@ -54,7 +54,7 @@
 {% else %}<p>{% translate "Overdue Family emails to send" %}: {{ preview.selection.family.selected|number }}. {% translate "Duplicate overdue sends to skip" %}: {{ preview.selection.family.coalesced|number }}. {% translate "Overdue sends that no longer apply" %}: {{ preview.selection.family.skipped|number }}.</p>
 <p>{% translate "Admin digest reports to send" %}: {{ preview.selection.digests.selected|number }}. {% translate "Overdue report dates covered" %}: {{ preview.selection.digests.slots|number }}.</p>
 <p>{% translate "Duplicate unsent overdue emails are cancelled before sending resumes. Every held receipt is sent, and future email keeps its original send time." %}</p>{% endif %}
-<p>{% translate "When you confirm, the test email check, the email counts, the campaign dates and your sign-in are checked again. If any of them changed, nothing is released and you need a new preview." %}</p>
+<p>{{ cautions.resume }}</p>
 {% if control_token %}{% if fresh %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ control_token }}">{% button type="submit" %}{% translate "Confirm resume of live delivery" %}{% endbutton %}</form>{% else %}<p>{% button type="button" disabled=True aria-describedby="delivery-fresh-reason" %}{% translate "Confirm resume of live delivery" %}{% endbutton %}</p>{% endif %}{% endif %}</section>{% endif %}
 {% endif %}
 {% if resolve_available %}<section class="panel"><h2>{% translate "Resolve held messages" %}</h2>
@@ -78,15 +78,15 @@
 <p>{% translate "Decision" %}: {{ preview.selection.decision }}. {% translate "Selected types" %}: {{ preview.selection.types|join:", " }}.</p>
 <ul>{% for kind, counts in preview.inventory.types.items %}{% if kind in preview.selection.types %}<li>{{ kind }}: {{ counts.held|number }} {% translate "held messages" %}</li>{% endif %}{% endfor %}</ul>
 {% if preview.inventory.stranded %}<p>{% translate "Held invitations and reminders to cancel because the campaign is closed" %}: {{ preview.inventory.stranded|number }}.</p>{% endif %}
-{% for kind, counts in preview.selection.coverage.items %}<p>{{ kind }}: {% translate "Follow-up items covered" %}: {{ counts.items|number }}; {% translate "Daily report ranges covered" %}: {{ counts.daily_ranges|number }}.</p>{% endfor %}
-<p>{% translate "These counts are checked again when you confirm. Other held types and emails that may not have arrived stay as they are. The pause ends only when no email is held or waiting for a decision on whether it arrived." %}</p>
+{% for kind, counts in preview.selection.coverage.items %}<p>{{ kind }}: {{ coverage_labels.items }}: {{ counts.items|number }}; {{ coverage_labels.daily_ranges }}: {{ counts.daily_ranges|number }}.</p>{% endfor %}
+<p>{{ cautions.resolve }}</p>
 {% if control_token %}{% if fresh %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ control_token }}">{% button type="submit" %}{% translate "Confirm held-message resolution" %}{% endbutton %}</form>{% else %}<p>{% button type="button" disabled=True aria-describedby="delivery-fresh-reason" %}{% translate "Confirm held-message resolution" %}{% endbutton %}</p>{% endif %}{% endif %}</section>{% endif %}</section>{% endif %}
 {% else %}
 <p class="help" id="pause-reason-help">{% translate "Families can still respond while email is paused. Email already being handed to the mail service when you pause may still go out; pausing cannot recall it." %}</p>
 <form method="post" data-require-complete>{% csrf_token %}<input type="hidden" name="action" value="preview_pause"><div data-missing-hint="{% translate 'Enter a reason for pausing to preview it.' %}"><label for="pause-reason">{% translate "Reason for pausing live delivery" %}</label><textarea id="pause-reason" name="reason" required maxlength="1024" aria-describedby="pause-reason-help">{{ preview.reason }}</textarea></div>{% button type="submit" aria-describedby="pause-complete-hint" %}{% translate "Preview pause" %}{% endbutton %}<p class="help" id="pause-complete-hint" data-complete-hint hidden></p></form>
 {% if preview %}<section class="panel"><h2>{% translate "Pause preview" %}</h2><p>{{ preview.reason }}</p>
 <p>{% translate "Unsent messages to hold" %}: {{ preview.inventory.queued|number }}. {% translate "Still sending (handing to the mail service)" %}: {{ preview.inventory.submitting|number }}. {% translate "Not sure it arrived" %}: {{ preview.inventory.unknown|number }}.</p>
-<p>{% translate "Email may keep going out while you read this. Confirming holds every unsent live email at that moment and records the counts. If the campaign settings or your permissions change first, you need a new preview." %}</p>
+<p>{{ cautions.pause }}</p>
 {% if control_token %}{% if fresh %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ control_token }}">{% button type="submit" %}{% translate "Confirm pause of live delivery" %}{% endbutton %}</form>{% else %}<p>{% button type="button" disabled=True aria-describedby="delivery-fresh-reason" %}{% translate "Confirm pause of live delivery" %}{% endbutton %}</p>{% endif %}{% endif %}</section>{% endif %}
 {% endif %}
 {% else %}<p role="alert">{% translate "Pause and resume mail is available only for the current live (Production) campaign." %}</p>{% endif %}

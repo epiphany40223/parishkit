@@ -3,6 +3,7 @@
 from uuid import UUID, uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
+from django.db import transaction
 from django.shortcuts import redirect
 from django.template.loader import render_to_string
 from django.utils.translation import gettext as _
@@ -22,6 +23,7 @@ from .exact_models import ExactExportRequest
 from .exact_services import (
     cancel_exact_export,
     create_exact_export,
+    exact_export_ended,
     exact_export_status,
     retry_exact_export,
 )
@@ -31,10 +33,19 @@ from .export_services import (
     admit_campaign,
     authorize,
 )
-from .export_ui import _error
+from .export_ui import ExportGone, _error, gone_page
 from .export_views import SAFE_FAILURES, _body, _principal
 from .read_admission import admit_report_read
 from .workspace import ReportQuery
+
+
+def _gone(request, job):
+    """The fixed "no longer available" page for an ended latest-data export,
+    linking back to Participation as the export's page does."""
+    report_url = ReportQuery(
+        scope=job.population_scope, timezone=job.browser_timezone
+    ).url()
+    return gone_page(request, "participation", report_url)
 
 
 def _redirect(identifier):
@@ -99,12 +110,12 @@ def detail(request, request_id):
             # The owner check comes first, so another Admin's request for an
             # earlier campaign is a plain denial (403), never a 410 that would
             # reveal the request exists (rule 10).
-            authorize(
-                service.store,
-                current.identity,
-                request=ExactExportRequest.objects.get(pk=request_id),
-            )
+            export = ExactExportRequest.objects.get(pk=request_id)
+            authorize(service.store, current.identity, request=export)
             admit_report_read(campaign_id)
+            # Last: an ended export answers the fixed 410 page (#1398).
+            if exact_export_ended(export):
+                raise ExportGone(export)
 
         def content():
             """Only the existing owner chooses waiting/rendering/terminal status."""
@@ -156,6 +167,8 @@ def detail(request, request_id):
         return campaign_response(
             request, [campaign_id], authorize=fresh, open_content=content
         )
+    except ExportGone as error:
+        return _gone(request, error.job)
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):
@@ -171,6 +184,13 @@ def command(request, request_id, *, action):
         service = runtime()
         principal = _principal(request, service.store)
         values = _body(request, {"request_key"} if action == "retry" else set())
+        with transaction.atomic():
+            export = ExactExportRequest.objects.get(pk=request_id)
+            authorize(service.store, principal.identity, request=export)
+            # After the owner check: an ended export's Cancel or Retry
+            # answers the fixed "no longer available" page (#1398).
+            if exact_export_ended(export):
+                raise ExportGone(export)
         if action == "cancel":
             cancel_exact_export(service.store, principal.identity, request_id)
         elif action == "retry":
@@ -183,6 +203,8 @@ def command(request, request_id, *, action):
         else:
             raise ValueError("Unknown report action.")
         return _redirect(request_id)
+    except ExportGone as error:
+        return _gone(request, error.job)
     except (ExportConflict, TaskRetryConflict):
         return _error(request, request_id=request_id)
     except (PermissionError, ObjectDoesNotExist):

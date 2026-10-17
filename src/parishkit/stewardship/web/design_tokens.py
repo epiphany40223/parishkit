@@ -9,7 +9,10 @@ stylesheet, so email components read the same values here and inline them.
 "Colour scheme"): ``ui-v1.css`` declares it for Admin pages whose scheme is
 dark (the Appearance choice, or the operating system's setting), and the same
 test checks it. Email and downloaded files
-never read it; they stay light.
+never read it; they stay light. ``CHART_COLORS`` and ``DARK_CHART_COLORS``
+are the chart palette in the same two schemes, declared by ``chart-v1.css``:
+chart specifications name the light values, and the page draws each in its
+scheme (#1264 slice 2).
 
 Only add a token when two places need the same value. Every text and
 background pair must keep WCAG AA contrast (see the note at the top of
@@ -93,6 +96,72 @@ DARK_COLORS = {
     "progress-track": "#34434a",
 }
 
+# The chart palette (#477, #720, #1018): the marks the chart engine draws
+# that no portal token above names. Their own set, declared by chart-v1.css
+# (which only chart pages load) for the same two schemes as COLORS, so the
+# email and every rendering on the server keep these light values. Axis,
+# legend and title text, and marks drawn in a portal colour (the accent
+# line, the gold, the ink) read the tokens above.
+CHART_COLORS = {
+    # The bar and first series colour; the second and third series.
+    "chart-blue": "#26658b",
+    "chart-orange": "#8a4f00",
+    "chart-navy": "#173d70",
+    # The Participation panels' bar fill, outlined in chart-blue.
+    "chart-blue-soft": "#9ecae1",
+    # The response activity chart's send markers and their names.
+    "chart-marker": "#555555",
+    # The unfilled part of a progress bar (the statistics, the follow-up).
+    "chart-track": "#e4e7ec",
+    # Campaign comparison's pledge bands, smallest pledges first. Each
+    # band's label is ink on bands 1-4 and paper on bands 5-8, so the
+    # dark scheme turns the ramp round: dark bands under light ink, bright
+    # bands under dark paper. Band 7 is the accent in both schemes.
+    "chart-band-1": "#bfe0d9",
+    "chart-band-2": "#a1d1c7",
+    "chart-band-3": "#7ebfb2",
+    "chart-band-4": "#55a898",
+    "chart-band-5": "#2b8273",
+    "chart-band-6": "#1d7667",
+    "chart-band-7": "#115e56",
+    "chart-band-8": "#0a3f3a",
+}
+
+# The portal tokens a chart may draw in besides CHART_COLORS: its
+# background, text, gridlines, axis lines and the comparison lines. Within
+# these and CHART_COLORS, two tokens that differ in light differ in dark
+# too, so a printed chart can turn each dark colour back into its light
+# one (chart-v1.js; test_design_tokens.py checks it).
+CHART_PORTAL_TOKENS = (
+    "paper",
+    "ink",
+    "muted",
+    "border",
+    "control-border",
+    "accent",
+    "gold",
+)
+
+# The chart palette in the Admin dark scheme (#1264 slice 2), same keys.
+# Lines, bars and markers keep 3:1 on --paper and the markers' names 4.5:1
+# (test_design_tokens.py checks them).
+DARK_CHART_COLORS = {
+    "chart-blue": "#5fa8d6",
+    "chart-orange": "#e5a158",
+    "chart-navy": "#a9c1f2",
+    "chart-blue-soft": "#244a62",
+    "chart-marker": "#b3c0c5",
+    "chart-track": "#3a4a51",
+    "chart-band-1": "#173c38",
+    "chart-band-2": "#1c4a45",
+    "chart-band-3": "#215a53",
+    "chart-band-4": "#276a61",
+    "chart-band-5": "#3c9d8f",
+    "chart-band-6": "#4aaea0",
+    "chart-band-7": "#5cc0b2",
+    "chart-band-8": "#86d5ca",
+}
+
 # Corner radii: panels and cards, then controls, notices and buttons.
 RADII = {"radius": ".75rem", "radius-small": ".5rem"}
 
@@ -117,8 +186,11 @@ BUTTON = {
     "button-min-height": "44px",
 }
 
+# The soft shadow under a panel; the maintenance page's card draws it too.
+SHADOW = {"shadow": "0 1px 2px rgb(16 24 40 / 5%), 0 4px 16px rgb(16 24 40 / 6%)"}
+
 # Every custom property ui-v1.css declares on :root from this module.
-CSS_PROPERTIES = {**COLORS, **RADII, **FONTS, **BUTTON}
+CSS_PROPERTIES = {**COLORS, **RADII, **FONTS, **BUTTON, **SHADOW}
 
 # The rem base for email, which has no root font size to inherit.
 REM_PX = 16

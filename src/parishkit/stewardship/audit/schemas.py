@@ -241,6 +241,8 @@ class Action(StrEnum):
     ADMIN_CMD_PARISH_CONFIRM = "admin_cmd_parish_confirm"
     # artwork remove: Campaign images' Apply of a removal (ADM-11 PR 10).
     ADMIN_CMD_ARTWORK_REMOVE = "admin_cmd_artwork_remove"
+    # content confirm: Pages and emails' Delete of unused emails (ADM-11 PR 10).
+    ADMIN_CMD_CONTENT_CONFIRM = "admin_cmd_content_confirm"
     # integration confirm: an integration settings page's Apply (ADM-11 PR 10).
     ADMIN_CMD_INTEGRATION_CONFIRM = "admin_cmd_integration_confirm"
     # integration backup-probe: the Off-site backups page's Test access.
@@ -255,6 +257,8 @@ class Action(StrEnum):
     ADMIN_CMD_WORKGROUP_CONFIRM = "admin_cmd_workgroup_confirm"
     # campaign confirm: Campaign settings' Apply (ADM-11 PR 10).
     ADMIN_CMD_CAMPAIGN_CONFIRM = "admin_cmd_campaign_confirm"
+    # campaign shares-confirm: Share options' Apply (ADM-11 PR 10).
+    ADMIN_CMD_CAMPAIGN_SHARES_CONFIRM = "admin_cmd_campaign_shares_confirm"
     ADMIN_CMD_USERS_IMPORT_LEADERS = "admin_cmd_users_import_leaders"
     # The operator's cancellation of a stuck live end-date change (#944).
     ADMIN_CMD_CONFIG_REQUEST_CANCEL = "admin_cmd_config_request_cancel"
@@ -266,6 +270,8 @@ class Action(StrEnum):
     ADMIN_CMD_EXPORT_CREATE = "admin_cmd_export_create"
     ADMIN_CMD_EXPORT_CANCEL = "admin_cmd_export_cancel"
     ADMIN_CMD_EXPORT_RETRY = "admin_cmd_export_retry"
+    # No longer recorded: ``export regenerate`` was removed when exports
+    # became point-in-time (#1398); earlier events still name it.
     ADMIN_CMD_EXPORT_REGENERATE = "admin_cmd_export_regenerate"
     ADMIN_CMD_DIGEST_WEEKLY_REQUEST = "admin_cmd_digest_weekly_request"
     ADMIN_CMD_EXPORT_FINANCIAL = "admin_cmd_export_financial"
@@ -284,6 +290,8 @@ class Action(StrEnum):
     ADMIN_CMD_DELIVERY_BOUNCE_REPORT = "admin_cmd_delivery_bounce_report"
     # portal maintenance set: the Family portal switch (ADM-11 PR 7a).
     ADMIN_CMD_PORTAL_MAINTENANCE_SET = "admin_cmd_portal_maintenance_set"
+    # send confirm: Pause and resume mail's Confirm (ADM-11 PR 7b, #463).
+    ADMIN_CMD_SEND_CONFIRM = "admin_cmd_send_confirm"
     # system backup-now: System health's Take a backup now (ADM-13 PR 3b).
     ADMIN_CMD_SYSTEM_BACKUP_NOW = "admin_cmd_system_backup_now"
     # system debug-off: System health's Turn off debug logging (ADM-13 PR 6b).
@@ -316,6 +324,16 @@ class Action(StrEnum):
     ADMIN_CMD_CENSUS_RESOLVE = "admin_cmd_census_resolve"
     # census review: an Automatic row's Review (#528, ADM-09).
     ADMIN_CMD_CENSUS_REVIEW = "admin_cmd_census_review"
+    # followup update and followup bulk: a Ministry follow-up request's Save
+    # and the queue's bulk outcome (#463 PR 11a).
+    ADMIN_CMD_FOLLOWUP_UPDATE = "admin_cmd_followup_update"
+    ADMIN_CMD_FOLLOWUP_BULK = "admin_cmd_followup_bulk"
+    # census edit: an Automatic row's Edit value or Clear edit (#1434,
+    # ADM-09.04).
+    ADMIN_CMD_CENSUS_EDIT = "admin_cmd_census_edit"
+    # census resolve-conflict: an Automatic Conflict's Use the Family's value
+    # anyway (#1434, ADM-09.03).
+    ADMIN_CMD_CENSUS_RESOLVE_CONFLICT = "admin_cmd_census_resolve_conflict"
 
 
 # Closed field identifiers are operational metadata, never census values.
@@ -514,6 +532,10 @@ FIELDS = {
         # How old the Google sign-in was when a setup credential was sealed
         # (#1402), in whole seconds: an integer, as every unlisted key.
         "sign_in_age_seconds",
+        # An export's report kind and file format (#1398), so the audit log
+        # answers who exported what without its request row: closed words.
+        "report",
+        "format",
     },
 }
 
@@ -531,6 +553,23 @@ REVIEW_DECISIONS = frozenset({"keep_role", "restore", "remove"})
 # (#1353); mirrored in stewardship_safe_context_v1.
 VOID_REASONS = frozenset({"key_changed", "organization_changed", "reload"})
 VOIDED_TASK_STATES = frozenset({"succeeded", "failed"})
+# An export's report kind and file format (#1398), as export_report_known
+# admits them; mirrored in stewardship_safe_context_v1 (frozen migration 0109).
+EXPORT_REPORTS = frozenset(
+    {
+        "participation",
+        "additional_information",
+        "family_directory",
+        "postal_outreach",
+        "ministry",
+        "financial",
+        "family_test_names",
+        "family_timeline",
+        "campaign_comparison",
+        "campaign_archive",
+    }
+)
+EXPORT_FORMATS = frozenset({"csv", "xlsx", "pdf", "png"})
 # An on-request report's system mode and filter choices (#556); mirrored in
 # stewardship_safe_context_v1. The filters are each report's own fixed
 # choices: the Limitations report's Show words (reports.limitations.SHOW_WORDS),
@@ -656,6 +695,9 @@ FAILURES = frozenset(
         "web_unresponsive",
         # Background tasks that give up visibly.
         "export_cleanup",
+        # An ended export's saved data could not be discarded this pass; the
+        # next one tries again (#1398; reports.export_cleanup.produce_discards).
+        "export_discard",
         "fact_verification",
         "source_retention",
         "family_engagement",
@@ -865,6 +907,12 @@ def sanitize(kind, values):
             safe[key] = value
         elif key == "task_state":
             valid = type(value) is str and value in VOIDED_TASK_STATES
+            safe[key] = value
+        elif key == "report":
+            valid = type(value) is str and value in EXPORT_REPORTS
+            safe[key] = value
+        elif key == "format":
+            valid = type(value) is str and value in EXPORT_FORMATS
             safe[key] = value
         elif key in {"file_slug", "previous_file_slug"}:
             valid = type(value) is str and re.fullmatch(

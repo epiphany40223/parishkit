@@ -64,6 +64,7 @@ from parishkit.stewardship.web.refusals import (
     UserFacingError,
     UserFacingMissing,
     unexpected_fields,
+    with_default_code,
 )
 from parishkit.stewardship.web.tables import paginate, table_parameters
 
@@ -161,6 +162,9 @@ class UserForm(AdminForm):
                 "required": True,
                 "aria-describedby": "id_email_error",
                 "data-user-email": True,
+                # Review's complete gate says what it waits for (#1330).
+                "data-empty-hint": MESSAGES["email_required"],
+                "data-missing-hint": MESSAGES["email_invalid"],
             }
         ),
     )
@@ -176,6 +180,7 @@ class UserForm(AdminForm):
                 "required": True,
                 "aria-describedby": "id_name_help id_name_error",
                 "data-user-name": True,
+                "data-missing-hint": MESSAGES["name_required"],
             }
         ),
     )
@@ -329,9 +334,10 @@ def users(request):
         actor = principal(request, service, capability=Capability.MANAGE_USERS)
         if request.method == "POST":
             if request.GET or request.FILES:
-                raise unexpected_fields()
+                raise unexpected_fields(request.GET, request.FILES, allowed=())
             form_action(request.POST, preview_fields=set())
             if request.POST.get("action") != "confirm":
+                # No sources: an unknown action value, not an unexpected field.
                 raise unexpected_fields()
             response = confirm(
                 request,
@@ -483,6 +489,8 @@ def _entry_page(request, context, *, status=200):
     response = render(request, "stewardship/user-entry.html", context, status=status)
     if status == 400:
         response.stewardship_safe_error = True
+        # The refusal log's code for this page's own refusal (#1444).
+        with_default_code(response)
     return response
 
 
@@ -578,7 +586,7 @@ def _entry(request, service, actor, user_id=None):
     """
     filters(request.GET, allowed=set())
     if request.FILES:
-        raise unexpected_fields()
+        raise unexpected_fields(request.FILES, allowed=())
     new = user_id is None
     posted = request.POST if request.method == "POST" else None
     if posted is not None and (
@@ -588,6 +596,7 @@ def _entry(request, service, actor, user_id=None):
         )
         != "preview"
     ):
+        # No sources: an unknown action value, not an unexpected field.
         raise unexpected_fields()
     with read_transaction():
         configuration, records = _users(service)
@@ -669,13 +678,15 @@ def user_edit(request, user_id):
 
 def _chosen(parameters):
     """The one user a Delete names: users are deleted one at a time."""
-    if set(parameters) != {"csrfmiddlewaretoken", "base_digest", "user_id"} or any(
+    allowed = {"csrfmiddlewaretoken", "base_digest", "user_id"}
+    if set(parameters) != allowed or any(
         len(values) != 1 for _name, values in parameters.lists()
     ):
-        raise unexpected_fields()
+        raise unexpected_fields(parameters, allowed=allowed)
     try:
         return str(UUID(parameters["user_id"]))
     except ValueError:
+        # No sources: the fields were allowed; a value is malformed.
         raise unexpected_fields() from None
 
 
@@ -694,7 +705,7 @@ def user_delete(request):
         actor = principal(request, service, capability=Capability.MANAGE_USERS)
         filters(request.GET, allowed=set())
         if request.FILES:
-            raise unexpected_fields()
+            raise unexpected_fields(request.FILES, allowed=())
         user_id = _chosen(request.POST)
         listing = reverse("admin:users")
         with read_transaction():
@@ -783,8 +794,9 @@ def user_name_suggestions(request):
         service = runtime()
         actor = principal(request, service, capability=Capability.MANAGE_USERS)
         filters(request.GET, allowed=set())
-        if request.FILES or set(request.POST) != {"csrfmiddlewaretoken", "email"}:
-            raise unexpected_fields()
+        allowed = {"csrfmiddlewaretoken", "email"}
+        if request.FILES or set(request.POST) != allowed:
+            raise unexpected_fields(request.POST, request.FILES, allowed=allowed)
         error, names = None, []
         try:
             email = clean_email(request.POST["email"])

@@ -412,6 +412,34 @@ def with_status_code(response, *codes):
     return with_codes(response, *([status] if status else []), *codes)
 
 
+# Where ``with_default_code`` keeps the codes the refusal log records only
+# when nothing else gives one (#1444).
+DEFAULT_CODES = "stewardship_default_codes"
+
+
+def with_default_code(response, *codes):
+    """The status's code, then ``codes``, recorded only if nothing else is.
+
+    For a page drawn again with a refusal of its own, which may or may not
+    hold a refused form. When the form has errors, or the answer has typed
+    errors or codes of its own, those are recorded and these are not.
+    Otherwise these are: the code the status stands for (``invalid`` for
+    400, ``stale_version`` for 409 and so on, none for 404 or 422), which
+    restates the status, then any further ``codes`` the page names (such as
+    ``in_use``). Returns ``response``.
+    """
+    status = STATUS_CODES.get(response.status_code)
+    setattr(response, DEFAULT_CODES, _closed((*([status] if status else []), *codes)))
+    return response
+
+
+def _closed(codes):
+    """``codes`` as a tuple, refusing any that is not a closed identifier."""
+    if not all(type(code) is str and IDENTIFIER.fullmatch(code) for code in codes):
+        raise TypeError("A refusal code must be a closed identifier.")
+    return tuple(codes)
+
+
 def with_codes(response, *codes):
     """Give a refused response with a body of its own its closed error codes.
 
@@ -419,9 +447,7 @@ def with_codes(response, *codes):
     typed errors (the report error pages, a page script's JSON answer), so
     the refusal log can say what was refused. Returns ``response``.
     """
-    if not all(type(code) is str and IDENTIFIER.fullmatch(code) for code in codes):
-        raise TypeError("A refusal code must be a closed identifier.")
-    response.stewardship_codes = tuple(codes)
+    response.stewardship_codes = _closed(codes)
     return response
 
 

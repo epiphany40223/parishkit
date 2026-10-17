@@ -460,3 +460,146 @@ def test_applied_filters_redraw_the_summary_charts_in_place(page, component_orig
         "1 (25%)"
     )
     assert_clean(page, errors)
+
+
+AT_MOST = (
+    "Enter At most in whole dollars or dollars and cents, no less than At "
+    "least, or clear it."
+)
+# Apply's top in page coordinates.
+APPLY_BOX = (
+    "document.querySelector('#table-filters [type=submit]')"
+    ".getBoundingClientRect().y + scrollY"
+)
+
+
+def assert_refused_at_at_most(page):
+    """Both ends are marked and share one message; the summary links At most."""
+    from playwright.sync_api import expect
+
+    for end in ("#pledge-min", "#pledge-max"):
+        field = page.locator(end)
+        expect(field).to_have_attribute("aria-invalid", "true")
+        assert "pledge-range_error" in field.get_attribute("aria-describedby").split()
+    expect(page.locator("#pledge-range_error")).to_have_text(AT_MOST)
+    expect(page.locator("#pledge-range_error")).to_be_visible()
+    summary = page.locator("[data-error-summary]")
+    expect(summary).to_have_count(1)
+    expect(summary.get_by_role("link", name=AT_MOST)).to_have_attribute(
+        "href", "#pledge-max"
+    )
+    # The Filters panel holding the fields is open.
+    assert page.locator("[data-filter-panel]").evaluate("node => node.open")
+
+
+def assert_cleared(page):
+    """No mark, message or summary item is left on either end."""
+    from playwright.sync_api import expect
+
+    for end in ("#pledge-min", "#pledge-max"):
+        expect(page.locator(end)).not_to_have_attribute("aria-invalid", "true")
+        assert "pledge-range_error" not in (
+            page.locator(end).get_attribute("aria-describedby") or ""
+        )
+    expect(page.locator("#pledge-range_error")).to_be_hidden()
+    expect(page.locator("[data-error-summary]")).to_have_count(0)
+
+
+@pytest.mark.parametrize("end", ["#pledge-max", "#pledge-min"])
+def test_refused_filter_is_shown_at_its_field(page, component_origin, end):
+    """Filters the server refused are drawn again with the error at At most.
+
+    The fields keep the values sent, the summary takes focus and its link
+    moves focus to the field, and an edit of either end of the range clears
+    the mark from both (#1332).
+    """
+    from playwright.sync_api import expect
+
+    errors = watch(page)
+    page.goto(component_origin + "/financial-refused")
+    assert_refused_at_at_most(page)
+    expect(page.locator("[data-error-summary]")).to_be_focused()
+    expect(page.locator("#pledge-min")).to_have_value("500")
+    expect(page.locator("#pledge-max")).to_have_value("100")
+    page.locator("[data-error-summary] a").click()
+    expect(page.locator("#pledge-max")).to_be_focused()
+    page.locator(end).fill("50" if end == "#pledge-min" else "600")
+    assert_cleared(page)
+    assert_clean(page, errors)
+
+
+def test_fixing_the_other_end_and_applying_clears_the_mark(page, component_origin):
+    """A successful in-place Apply clears the server marks it does not repeat.
+
+    The reader fixes the range at At least, its other end (whose edit
+    clears the shared mark at once), and Apply's answer marks nothing: no
+    mark, message or summary is left (#1332).
+    """
+    from playwright.sync_api import expect
+
+    errors = watch(page)
+    answer = page.request.get(component_origin + "/financial-filtered").text()
+    page.goto(component_origin + "/financial-refused")
+    page.route(
+        "**/financial/",
+        lambda route: route.fulfill(body=answer, content_type="text/html"),
+    )
+    # Marks a later answer must clear, set as an earlier answer would have
+    # left them had the edit not cleared them (a mark on a field the
+    # reader did not touch).
+    page.locator("#pledge-min").fill("50")
+    page.evaluate("""() => {
+        const field = document.getElementById("pledge-max");
+        field.setAttribute("aria-invalid", "true");
+        field.setAttribute("data-field-error", "");
+        field.setAttribute("aria-describedby", "pledge-range_error");
+        const line = document.getElementById("pledge-range_error");
+        line.hidden = false;
+        line.querySelector("li").textContent = "stale";
+    }""")
+    page.get_by_role("button", name="Apply filters").click()
+    expect(page.locator("[data-summary=families]")).to_have_text("4")
+    assert_cleared(page)
+    assert_clean(page, errors)
+
+
+def test_in_place_apply_refused_marks_the_kept_filter_form(page, component_origin):
+    """A refused in-place Apply marks the fields on the form it kept (#1332).
+
+    No reload and no shift: the form keeps what was typed, takes the marks
+    and message from the 400 answer into its reserved line, so Apply stays
+    under the pointer, and the summary in the results takes focus.
+    """
+    from playwright.sync_api import expect
+
+    errors = watch(page)
+    answer = page.request.get(component_origin + "/financial-refused").text()
+    page.goto(component_origin + "/financial-report")
+    page.evaluate("window.__financialMarker = 1")
+    page.route(
+        "**/financial/",
+        lambda route: route.fulfill(status=400, body=answer, content_type="text/html"),
+    )
+    page.locator("#pledge-max").fill("500")
+    before = page.evaluate(APPLY_BOX)
+    page.evaluate("""() => {
+        window.__focused = [];
+        document.addEventListener("focusin", (event) => {
+            window.__focused.push(event.target.id || event.target.tagName);
+        });
+    }""")
+    page.get_by_role("button", name="Apply filters").click()
+    assert_refused_at_at_most(page)
+    summary = page.locator("[data-table-region] [data-error-summary]")
+    expect(summary).to_be_focused()
+    # Straight from Apply to the summary, never through the field.
+    assert "pledge-max" not in page.evaluate("window.__focused")
+    assert abs(page.evaluate(APPLY_BOX) - before) < 1
+    assert page.evaluate("window.__financialMarker") == 1
+    # What was typed stays; the answer's own values are not written over it.
+    expect(page.locator("#pledge-max")).to_have_value("500")
+    expect(page.locator("#pledge-min")).to_have_value("100.00")
+    page.locator("#pledge-max").fill("600")
+    assert_cleared(page)
+    # The browser reports the answer's 400 itself; nothing else may appear.
+    assert_clean(page, [error for error in errors if "status of 400" not in error])

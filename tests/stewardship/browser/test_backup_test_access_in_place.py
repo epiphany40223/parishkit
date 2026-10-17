@@ -14,7 +14,15 @@ and Save still submits natively.
 
 import pytest
 
-from .backup_test_components import PAGE, REFUSED, REFUSED_LINKED, STATUS, TESTED
+from .backup_test_components import (
+    BAD_FOLDER,
+    BAD_LINK,
+    PAGE,
+    REFUSED,
+    REFUSED_LINKED,
+    STATUS,
+    TESTED,
+)
 from .test_export_resolve_in_place import announced, open_marked, stayed, wheel_to
 from .test_in_place import MARKED, count_requests
 from .waits import focused, hidden, visible
@@ -138,4 +146,38 @@ def test_save_opens_the_review_dialog_and_test_access_does_not(page, component_o
     page.get_by_role("button", name=NAME, exact=True).click()
     visible(page.locator("#integration-status", has_text="Checking access"))
     assert not dialog.is_visible() and len(reviews) == 1
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_a_refused_folder_link_is_shown_at_its_field(page, component_origin):
+    """Test access with a Drive link that names no folder: the browser's
+    pattern admits it, and the view draws the page again with the link's
+    error and the error summary (400, #1330). In place, that error is shown
+    at the field, in the line the field keeps for it (no list is inserted to
+    push the buttons down), with the link the reader typed and one summary,
+    and the page is not reloaded."""
+    from playwright.sync_api import expect  # imported late: collection needs no browser
+
+    open_marked(page, component_origin, BAD_LINK)
+    link = page.get_by_label("Google Drive folder link")
+    link.fill(BAD_FOLDER)
+    button = page.get_by_role("button", name=NAME, exact=True)
+    expect(button).to_be_enabled()
+    offset = (
+        "node => node.getBoundingClientRect().top"
+        " - node.form.getBoundingClientRect().top"
+    )
+    before = button.evaluate(offset)
+    button.click()
+    field = page.get_by_label("Google Drive folder link")
+    expect(field).to_have_attribute("aria-invalid", "true")
+    expect(page.locator("#id_target_error")).to_contain_text("Google Drive folder")
+    expect(page.locator("[data-error-summary]")).to_have_count(1)
+    assert page.locator(".errorlist[data-review-placed]").count() == 0
+    # No list is inserted; only the settings pages' shared error border,
+    # 1px thicker on each side of the field, remains. Firefox lays the 2px
+    # out on sub-pixel boundaries (2.0000002 in CI), so allow half a pixel;
+    # an inserted error line would move the buttons a whole line.
+    assert 0 <= button.evaluate(offset) - before <= 2.5
+    assert field.input_value() == BAD_FOLDER
     assert page.evaluate(MARKED) == "kept"

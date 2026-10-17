@@ -41,6 +41,9 @@ from parishkit.stewardship.web.refusals import (
     reason_of,
     stale_page,
     unexpected_fields,
+    with_codes,
+    with_default_code,
+    with_reason,
 )
 from parishkit.stewardship.web.security import csrf_failure
 
@@ -277,13 +280,58 @@ def test_other_answers_are_not_refusals(recorded, path, status):
     assert recorded == []
 
 
-def test_an_untyped_admin_refusal_is_unclassified(recorded):
-    """A plain 400 page (a form re-render, until the shared form base)."""
+def test_an_untyped_admin_refusal_is_unclassified(recorded, settings):
+    """A plain 400 page, as production records it.
+
+    The strict test settings refuse such an answer (#1444); this test turns
+    that off to show what production records for one.
+    """
+    settings.STEWARDSHIP_REFUSAL_LOG_STRICT = False
     answer(HttpResponse(status=400))
     (record,) = recorded
     assert record.context()["reason"] == "unclassified"
     assert "exception_class" not in record.context()
     assert record.level == "INFO"
+
+
+def test_the_strict_settings_note_a_refusal_that_says_nothing(recorded):
+    """A deliberately bare 400 is noted for the test hook (#1444).
+
+    Nothing is raised, so the answer and the connection stay as they were;
+    the record is still written. This test takes the note itself, so the
+    hook (``tests/stewardship/conftest.py``) does not fail it.
+    """
+    assert refusal_log.settings.STEWARDSHIP_REFUSAL_LOG_STRICT is True
+    answer(HttpResponse(status=400))
+    assert len(recorded) == 1
+    (violation,) = refusal_log.take_strict_violations()
+    assert violation.startswith("admin:automation_sessions answered 400")
+    assert refusal_log.take_strict_violations() == []
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        with_reason(HttpResponse(status=400), "stale_page"),
+        with_codes(HttpResponse(status=409), "busy"),
+        validation_response([FieldError(ErrorCode.INVALID, "name")]),
+    ],
+    ids=["reason", "codes", "typed error"],
+)
+def test_the_strict_settings_accept_a_reason_codes_or_typed_errors(recorded, response):
+    """Any one of a reason, codes or a typed error is enough."""
+    answer(response)
+    assert len(recorded) == 1
+
+
+def test_the_strict_settings_accept_an_unclassified_exception(recorded):
+    """An unclassified refusal that names its exception's class says why."""
+    request = request_for()
+    middleware = AdminRefusalMiddleware(lambda _: HttpResponse(status=403))
+    middleware.process_exception(request, PermissionError())
+    middleware(request)
+    (record,) = recorded
+    assert record.context()["exception_class"] == "permission_error"
 
 
 def test_an_anonymous_refusal_has_no_actor(recorded, monkeypatch):
@@ -326,3 +374,13 @@ def test_a_refusal_reason_must_be_closed():
     with pytest.raises(TypeError):
         UserFacingError("Check it.", reason="not_a_reason")
     assert UserFacingError("Check it.", reason="stale_page").reason == "stale_page"
+
+
+def test_a_pages_default_code_is_recorded_only_when_nothing_else_is(recorded):
+    """A page drawn again with a refusal of its own: its status's code (and
+    any of its own) say why only when no typed error or form code does."""
+    answer(with_default_code(HttpResponse(status=409), "in_use"))
+    answer(with_codes(with_default_code(HttpResponse(status=400)), "busy"))
+    first, second = (record.context()["codes"] for record in recorded)
+    assert first == ["stale_version", "in_use"]
+    assert second == ["busy"]

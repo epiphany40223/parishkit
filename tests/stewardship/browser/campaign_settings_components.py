@@ -138,6 +138,7 @@ def components(context, admin):
                     "end_saved": "2054-10-31" if live else None,
                     "end_check": end_check_words() if live else None,
                     "live_ministries": live,
+                    "ministries_alone": MINISTRIES_ALONE,
                     "page_url": path,
                     "refresh_url": refresh or path,
                     "errors": summary_errors(form) if form.is_bound else [],
