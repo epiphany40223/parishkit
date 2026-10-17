@@ -283,13 +283,9 @@ def creation_review(service, actor, state, form):
         # Worked out here, from the modules chosen: the page does not show it.
         "content": len(content),
         # Once applied, the dialog opens the next Campaign setup step
-        # (#1404): Campaign settings is completed by the creation, so it is
-        # Share options with Financial stewardship, else Pages and emails.
-        "next_url": reverse(
-            "admin:share_settings"
-            if "financial" in values.get("modules", ())
-            else "admin:content_catalog"
-        ),
+        # (#1404): Campaign settings is completed by the creation, and a new
+        # campaign has no Families yet, so it is Load ParishSoft data (PR 5).
+        "next_url": reverse("admin:source_refresh"),
         "preview": sign_preview(
             actor=actor,
             configuration=configuration,
