@@ -6,9 +6,9 @@ so every other clause of ``stewardship_production_confirmation_guard_v1``
 passes and only the session clause decides. Since 0113 (#1547) it checks no
 sign-in age and no sign-in after cleanup: the automation session's sign-in
 instant is moved a day back, before cleanup finished, and its live command
-session is admitted, while another Administrator or a revoked command
-session is refused. ``confirmation_commands.confirm`` through the automation
-caller then confirms Production.
+session is admitted, while another Administrator, a revoked command
+session or incomplete cleanup is refused. ``confirmation_commands.confirm``
+through the automation caller then confirms Production.
 """
 
 # ruff: noqa: F811 -- imported fixture dependencies are injected by pytest name.
@@ -35,6 +35,7 @@ from .automation_builders import HOST
 from .test_automation_fresh_guards_postgresql import age
 from .test_confirmation_readiness_postgresql import (  # noqa: F401
     bootstrapped,
+    completion_hidden,
     config_role,
     prepare,
     ready_cleanup,
@@ -139,6 +140,10 @@ def test_the_confirmation_guard_and_command_accept_a_full_session(ready_links):
             expected_runtime_version=state.campaign.systemconfiguration_set.get().version,
         )
 
+    # Cleanup must still be complete: with its completion hidden, the same
+    # live command session is refused.
+    with completion_hidden(preparation.transition_id), web_login():
+        assert refused(values(full), campaign_id) == "42501"
     with web_login():
         assert refused(values(full), campaign_id) is None
         assert refused(values(revoked), campaign_id) == "42501"

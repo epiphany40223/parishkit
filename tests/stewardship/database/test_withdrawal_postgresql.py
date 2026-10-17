@@ -100,7 +100,7 @@ def test_withdrawal_http_is_exact_atomic_and_preserves_cleanup(scheduled, monkey
         assert progress.context["withdrawal_available"]
         page = item.browser.get(item.path)
         assert page.status_code == 200, page.content
-        assert page.context["available"] and page.context["fresh"]
+        assert page.context["available"]
         assert page["Cache-Control"] == "no-store"
         assert item.browser.head(item.path).status_code == 200
         values = {

@@ -171,7 +171,6 @@ def test_family_portal_message_error_is_shown_at_the_field():
         {
             "state": {"closed": False},
             "message_limit": 500,
-            "fresh": True,
             "message": "Write to a@b.org",
             "message_error": "The maintenance message cannot contain an email address.",
         },

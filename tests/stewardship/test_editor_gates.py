@@ -126,7 +126,7 @@ def approval(**context):
     """The automation approval's code entry, as the view draws it."""
     return render_to_string(
         "stewardship/automation-approval.html",
-        {"state": "enter", "fresh": True, "back": "/b", "next": "/n"} | context,
+        {"state": "enter", "back": "/b", "next": "/n"} | context,
     )
 
 
