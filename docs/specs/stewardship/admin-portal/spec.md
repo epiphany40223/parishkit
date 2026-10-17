@@ -2849,15 +2849,84 @@ confirmed and delivered exactly like reminders added one at a time (see [Family
 invitations and
 reminders](../background-processing/spec.md#family-invitations-and-reminders)).
 The server checks each date as it checks any reminder, and refuses more than 30
-at once. The rule itself is not saved; its fields are posted only so a refused
-page shows them again. The page script's expansion and the server's
+at once. The page script's expansion and the server's
 (`campaigns/recurrence.py`, used by the command line's
 [repeat entry](../admin-automation/spec.md#schedules-and-configuration)) both
 run the shared case table
 `tests/stewardship/fixtures/recurrence_cases.json`. Repeat is offered on New
-only: a saved reminder is changed one at a time. Remembering a series for later
-"this and following" edits, and editing from the
-[campaign calendar](#campaign-calendar), are later slices of #469.
+only.
+
+The same change also remembers the rule as a **reminder series** holding
+exactly the reminders it adds, as the command line's `"remember": true` does,
+so they can be changed together later. Delivery never reads a series: its
+reminders are planned and sent exactly as they would be without it. The
+server reads the rule from the posted repeat fields and remembers it only
+when it is a valid rule, every added reminder's date in the campaign's zone is
+a day the rule gives (a browser far enough from the campaign's zone can move a
+send to the next or previous campaign day) and the configuration is in the
+users form; otherwise the reminders are added as before and nothing else
+changes (the default, Administrator may change it). The review says when the
+reminders are kept as a series and names its rule in plain words.
+
+Edit of a reminder that belongs to a series offers **Apply this edit to**, a
+choice above its date: **This reminder only** (the default), **This and
+following** and **The whole series**. The choice is described by "Part of: "
+and the series' rule in plain words, such as "Every Monday and Thursday,
+October 5, 2054 – November 13, 2054", and by one help line that is always
+shown. "This reminder only" is the ordinary Edit: moving the reminder to a day
+its rule does not give takes it out of the series, and deleting it from the
+list does too. The other two grey the send date in place (a [conditional
+field](../ui-conventions/spec.md#conditional-fields), not sent), and the
+greyed box shows this reminder's own date, with help under it that the date
+is used only with "This reminder only". Every reminder they change keeps its
+own date and takes the send time and Email to send chosen here (with "Edit
+this schedule's email", the one new email they then share). Reminders that
+sent or are being prepared don't change. Choosing a scope is not a change by
+itself, so Review changes stays unavailable until the time or email changes.
+
+When the page is drawn, the server plans each series scope once with nothing
+changed. A scope it would refuse for a reason the page already knows is drawn
+unavailable, with that reason beside it
+([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)): a
+reminder from the cut date on has sent or is being prepared, or another
+reminder from the cut date on has passed its time without sending (a "missed"
+reminder). A series change would add a missed reminder again on its past
+date, so it would send right after Apply. The page refuses that, naming the
+missed reminder's date. Change that reminder on its own, or choose "This and
+following" from a later one. Only the reminder being edited may itself be
+missed, as on the ordinary Edit. The command line keeps its documented
+behaviour for missed reminders.
+
+The send time is typed in the browser's zone and converted on each date the
+change covers (the unsent reminders from the cut date on), as a repeat's dates
+are. A time that would move any of them to another day in the campaign's zone
+is refused at the choice. A time in the hour the campaign's clocks repeat is
+refused at the send time, as on the ordinary Edit. So is a new time that
+would put another reminder the change adds at or before now (a 9:00 AM
+reminder today moved to 7:00 AM at 8:00 AM), which would send at once: the
+refusal names that reminder's date and new time. Only the reminder being
+edited may move into the past, as on the ordinary Edit. A time and email left
+as shown leave each reminder's own. The server plans the change with the command
+line's [series edit](../admin-automation/spec.md#schedules-and-configuration)
+(`accounts.series_edits.plan`, "this and following" from this reminder, or
+from the series' first reminder that has not sent): the same cut date, kept
+members, removed and re-added reminders, and series records, and the same
+review, signed preview and confirmation. An in-flight or unknown send still
+blocks. A refusal of the plan is shown at the choice, in the page's own plain
+words. A scope posted for a reminder that is no longer in a series, and a
+scope with no time or email change, are refused in the review dialog, like
+an unchanged Edit. The review lists every reminder removed and added, and says
+what happens to the series:
+
+- the new send time (in this computer's time) or the new email, from the cut
+  date;
+- for a split, that the reminders before the cut date stay in the series
+  (with its rule, now ending the day before) and that the changed ones become
+  a new series (with its rule).
+
+Changing a series' rule, and deleting a series, stay on the command line for
+now. Editing from the [campaign calendar](#campaign-calendar) is a later slice
+of #469.
 
 #### Campaign calendar
 

@@ -18,12 +18,16 @@ from parishkit.stewardship.accounts import schedule_local
 from parishkit.stewardship.accounts.schedule_entry_views import (
     SCHEDULE_LIMIT,
     RepeatRule,
+    SeriesScope,
     _carry_errors,
     _check_repeat,
     _chosen,
     _days,
     _entries,
     _fields,
+    _remember,
+    _rule,
+    _series_edit,
     _targets,
     entry_form,
     entry_times,
@@ -36,6 +40,7 @@ from parishkit.stewardship.accounts.schedule_forms import (
     window_text,
 )
 from parishkit.stewardship.accounts.schedule_table import SORTING, schedule_rows
+from parishkit.stewardship.accounts.series_edits import SeriesEditError
 from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.refusals import UserFacingError
 from parishkit.stewardship.web.tables import whole_table
@@ -176,6 +181,68 @@ def test_fields_allow_repeat_only_on_new():
     assert "repeat-dates" in _fields(True)
     assert not any(name.startswith("repeat-") for name in _fields(False))
     assert "schedule-id" not in _fields(True)
+    # Edit may post a series reminder's scope (#469); New never does.
+    assert "series-scope" in _fields(False) and "series-scope" not in _fields(True)
+
+
+def repeat_rule(**fields):
+    """A bound, valid Repeat form with ``fields`` (``repeat-`` prefixed)."""
+    form = RepeatRule(
+        posted(
+            **{"repeat-repeat": "on"} | {f"repeat-{k}": v for k, v in fields.items()}
+        ),
+        prefix="repeat",
+    )
+    assert form.is_valid(), form.errors
+    return form
+
+
+USERS = {"sections": {"login_rules": [{"values": {"kind": "user"}}]}}
+
+
+def test_a_repeat_is_remembered_only_as_a_valid_rule_its_dates_follow():
+    """Only a valid rule whose days hold every reminder, in the users form."""
+    weekly = repeat_rule(
+        frequency="weekly", weekdays=["0", "3"], start="2054-10-01", until="2054-10-31"
+    )
+    rule = _rule(weekly)
+    assert rule == {
+        "frequency": "weekly",
+        "start": "2054-10-01",
+        "end": "2054-10-31",
+        "weekdays": [0, 3],
+    }
+    rows = [{"date": "2054-10-05"}, {"date": "2054-10-08"}]
+    assert _remember(weekly, rows, USERS) == [{"rule": rule, "added": [0, 1]}]
+    # A reminder moved to another campaign day, or sign-in rules: none.
+    assert _remember(weekly, [{"date": "2054-10-06"}], USERS) == []
+    assert _remember(weekly, rows, {"sections": {"login_rules": []}}) == []
+    monthly = repeat_rule(
+        frequency="monthly",
+        by="weekday",
+        ordinal="-1",
+        month_weekday="4",
+        start="2054-10-01",
+        until="2054-12-31",
+    )
+    assert _rule(monthly)["monthly"] == {"ordinal": -1, "weekday": 4}
+    by_day = repeat_rule(
+        frequency="monthly", by="day", day="31", start="2054-10-01", until="2054-12-31"
+    )
+    assert _rule(by_day)["monthly"] == {"day": 31}
+    assert _rule(repeat_rule(frequency="monthly", by="weekday")) is None
+    assert _rule(repeat_rule(frequency="weekly", start="2054-10-01")) is None
+
+
+def test_series_scope_defaults_to_this_reminder_only():
+    """No posted scope is the ordinary Edit; an unknown one is refused."""
+    blank = SeriesScope(posted(), prefix="series")
+    assert blank.is_valid() and blank.cleaned_data["scope"] == "this"
+    chosen = SeriesScope(posted(**{"series-scope": "following"}), prefix="series")
+    assert chosen.is_valid() and chosen.cleaned_data["scope"] == "following"
+    assert not SeriesScope(
+        posted(**{"series-scope": "all"}), prefix="series"
+    ).is_valid()
 
 
 def valid_entry(templates, rows, schedule_row=None, **fields):
@@ -562,3 +629,64 @@ def test_table_actions_remove_has_its_own_words_and_icon():
     assert "Delete" not in remove and "Revoke" not in remove
     # A circled minus: unlike Delete's bin and Revoke's crossed circle.
     assert "<circle" in remove and 'd="M5 8h6"' in remove
+
+
+def test_a_series_time_is_checked_only_on_the_dates_it_changes():
+    """An earlier reminder the edit keeps cannot refuse it (#469, Review B3).
+
+    London leaves summer time on October 25, 2054, a week before New York.
+    4:30 AM in London is 11:30 PM the day before in New York on the 18th,
+    but 12:30 AM the same day on the 26th; "This and following" from the
+    26th changes only that one, so it is not refused for the 18th.
+    """
+    from types import SimpleNamespace
+
+    templates = emails()
+    reminder_email = next(
+        row for row in templates if row["values"]["slot"] == "reminder"
+    )
+    rows = [
+        schedule(
+            OWNER["id"],
+            kind="reminder",
+            date=day,
+            template_version=reminder_email["id"],
+        )
+        for day in ("2054-10-18", "2054-10-26")
+    ]
+    record = {
+        "id": str(uuid4()),
+        "values": {
+            "rule": {
+                "frequency": "daily",
+                "start": "2054-10-18",
+                "end": "2054-10-26",
+            },
+            "schedules": sorted(row["id"] for row in rows),
+        },
+    }
+    campaign_row = SimpleNamespace(active_configuration=SimpleNamespace(values=VALUES))
+    entry = valid_entry(
+        templates,
+        rows,
+        rows[1],
+        date="2054-10-26",
+        time="04:30",
+        template_version=reminder_email["id"],
+    )
+    edit = {
+        "zone": "Europe/London",
+        "now": NOW,
+        "email": reminder_email["id"],
+        "read_only": set(),
+    }
+    entries, _series, _changes, notes = _series_edit(
+        entry, rows[1], record, rows, campaign_row, scope="following", **edit
+    )
+    added = [row for row in entries if "delete" not in row]
+    assert [(row["date"], row["time"]) for row in added] == [("2054-10-26", "00:30:00")]
+    assert notes[0].startswith("From October 26, 2054, every reminder")
+    # The whole series covers the 18th too, which would move a day.
+    with pytest.raises(SeriesEditError) as refused:
+        _series_edit(entry, rows[1], record, rows, campaign_row, scope="series", **edit)
+    assert refused.value.reason == "day_moved"
