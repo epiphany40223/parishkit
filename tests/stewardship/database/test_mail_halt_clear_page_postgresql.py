@@ -16,13 +16,15 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
-from django.db import connection
+from django.db import connection, transaction
+from django.test.utils import CaptureQueriesContext
 
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.audit.models import AuditEvent, CriticalEventAcknowledgement
 from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.mail_halt_models import MailboxCheck, MailHaltClear
+from parishkit.stewardship.jobs.service_status_models import ServiceStatus
 
 from ..policy_factory import address
 from .auth_builders import signed_in, unguarded
@@ -36,6 +38,8 @@ from .test_mail_halt_clear_postgresql import (
     halt_row,
     now,
     sender_status,
+    session,
+    web_clear,
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -238,3 +242,117 @@ def test_only_an_administrator_may_clear(auth_service, google):
     assert post(browser, action="clear_preview").status_code == 403
     assert post(browser, action="clear_confirm", token="x").status_code == 403
     assert not MailboxCheck.objects.exists() and not MailHaltClear.objects.exists()
+
+
+def backdate(table, pk, column="created_at", age=timedelta(minutes=5)):
+    """Move a row's timestamp into the past, as the schema owner (the
+    models refuse bulk rewrites of history)."""
+    with unguarded(), connection.cursor() as cursor:
+        cursor.execute(
+            f"UPDATE {table} SET {column} = now() - %s WHERE id = %s", [age, pk]
+        )
+
+
+def reason_of(text, path=PAGE):
+    """The clear section's greyed-button reason: ``(state, text)``. The
+    polled status carries it in its mirrored copy, outside any region."""
+    found = re.search(
+        r'data-clear-state="(\w+)">(.*?)</p>',
+        region(text) if path == PAGE else text,
+        flags=re.DOTALL,
+    )
+    return found.group(1), found.group(2)
+
+
+def test_the_section_says_why_a_halted_sender_has_no_halt(auth_service, google):
+    """While a sender reports Halted with no current halt, the line tells a
+    clear just recorded ("clearing") from a halt not recorded yet, and both
+    from a lasting mismatch, which says to restart the mail sender with the
+    runbook link rather than "within about 30 seconds" forever."""
+    browser, _ = signed_in()
+    # A halt that began a moment ago and is not recorded yet.
+    sender_status("halted")
+    state, words = reason_of(get(browser))
+    assert state == "unrecorded" and "within about 30 seconds" in words
+    # A clear just recorded; the sender has not lifted yet.
+    halt = halt_row()
+    actor, session_id = session()
+    signal = web_clear(halt, actor, session_id)
+    for path in (PAGE, STATUS):
+        state, words = reason_of(get(browser, path), path)
+        assert state == "clearing"
+        assert "The halt was cleared; the mail senders start again" in words
+        assert "restart" not in words
+    # The sender still reports Halted long after: say to restart it.
+    backdate("stewardship_mail_halt_clear", signal.pk, age=timedelta(minutes=5))
+    [status] = ServiceStatus.objects.all()
+    backdate(
+        "stewardship_service_status",
+        status.pk,
+        column="sender_since",
+        age=timedelta(minutes=2, seconds=30),
+    )
+    text = get(browser)
+    state, words = reason_of(text)
+    assert state == "stuck" and "within about 30 seconds" not in words
+    assert "restart the mail sender" in words
+    assert "stewardship-launch-runbooks.md#mail-provider-outage" in words
+
+
+def test_a_halted_report_that_lasts_with_no_halt_says_to_restart(auth_service, google):
+    """No halt was ever recorded and the sender has reported Halted for
+    minutes: the same restart line."""
+    browser, _ = signed_in()
+    sender_status("halted", age=timedelta(minutes=2, seconds=30))
+    state, words = reason_of(get(browser))
+    assert state == "stuck" and "restart the mail sender" in words
+
+
+def test_the_acknowledgement_covers_only_the_halts_entries(auth_service, google):
+    """An entry from more than ten minutes before the halt began, and one of
+    another banner event, stay unacknowledged; the halt's own go."""
+    from parishkit.stewardship.audit.services import operational
+    from parishkit.stewardship.observability import Event
+
+    from ..log_samples import sample as log_sample
+
+    browser, _ = signed_in()
+    inside = unrelated()
+    old = unrelated()
+    backdate("stewardship_operational_log", old.pk, age=timedelta(minutes=30))
+    with transaction.atomic():
+        other = operational(
+            Event.SOURCE_PROVIDER_FAILED,
+            level="CRITICAL",
+            **log_sample(Event.SOURCE_PROVIDER_FAILED),
+        )
+    halted()
+    preview = post(browser, action="clear_preview")
+    [check] = MailboxCheck.objects.all()
+    dispatch_settle(check, "passed")
+    token = token_of(preview.content.decode())
+    assert post(browser, action="clear_confirm", token=token).status_code == 200
+    assert set(
+        CriticalEventAcknowledgement.objects.values_list("log_id", flat=True)
+    ) == {inside.pk}
+    assert {old.pk, other.pk}.isdisjoint(
+        CriticalEventAcknowledgement.objects.values_list("log_id", flat=True)
+    )
+
+
+def test_a_page_with_nothing_halted_reads_no_halt_records(auth_service, google):
+    """While no sender reports Halted the page and its poll make no query
+    about halts, clears or mailbox checks."""
+    browser, _ = signed_in()
+    sender_status("running")
+    for path in (PAGE, STATUS):
+        with CaptureQueriesContext(connection) as queries:
+            get(browser, path)
+        assert not [
+            row["sql"]
+            for row in queries
+            if row["sql"].startswith("SELECT")
+            and re.search(
+                r"stewardship_mail_halt|stewardship_mailbox_check", row["sql"]
+            )
+        ]

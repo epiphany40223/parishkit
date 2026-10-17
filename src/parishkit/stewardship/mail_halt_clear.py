@@ -51,6 +51,12 @@ UNSETTLED_LISTED = 50
 # that resolves a problem clears its banner entries").
 HALT_ENTRIES_BEFORE = timedelta(minutes=10)
 HALT_ENTRIES_LIMIT = 500
+# How long after a clear (or after a mail sender began reporting Halted) the
+# senders may still take to lift, or the halt to be recorded: the consumers
+# poll about every 30 seconds and a status record is up to 10 more behind.
+# Past this a Halted sender is not explained by timing, and the page says to
+# restart the mail sender (runbook "Mail-provider outage").
+LIFT_WINDOW = timedelta(minutes=2)
 
 # Why Clear the halt cannot be used now, in the order they are checked, and
 # their words for the page and the command line.
@@ -260,12 +266,18 @@ class ClearState:
     """Whether Clear the halt can be used now, for System health's page and
     its polled status: the current halt (None while none is recorded), the
     newest mailbox check, how many emails are unsettled and the reason the
-    halt cannot be cleared (None when it can)."""
+    halt cannot be cleared (None when it can). While no halt is recorded,
+    ``phase`` says why: ``clearing`` (a clear was just recorded and the
+    senders have not lifted yet), ``unrecorded`` (the halt began a moment
+    ago and is not recorded yet) or ``stuck`` (neither, for longer than
+    ``LIFT_WINDOW``: the senders need a restart); it is ``recorded`` when
+    ``halt`` is set."""
 
     halt: Halt | None
     check: MailboxCheckStatus | None
     unsettled: int
     reason: str | None
+    phase: str = "recorded"
 
 
 def clear_state(now):
@@ -273,7 +285,13 @@ def clear_state(now):
     while a mail consumer reports Halted, so other reads add no query."""
     halt = current_halt(now)
     if halt is None:
-        return ClearState(halt=None, check=None, unsettled=0, reason="not_halted")
+        return ClearState(
+            halt=None,
+            check=None,
+            unsettled=0,
+            reason="not_halted",
+            phase=_unrecorded_phase(now),
+        )
     check = _newest_check(now)
     unsettled = _unsettled()[0]
     return ClearState(
@@ -282,6 +300,31 @@ def clear_state(now):
         unsettled=unsettled,
         reason=reason(halt, check, unsettled, now),
     )
+
+
+def _unrecorded_phase(now):
+    """Why a Halted sender has no current halt: see ``ClearState.phase``.
+
+    Two extra reads, made only while a sender reports Halted with no halt
+    current: the newest clear signal's time, then the newest Halted report's
+    ``sender_since`` (when the sender began reporting Halted).
+    """
+    from django.db.models import Max
+
+    from .jobs.mail_halt_models import MailHaltClear
+    from .jobs.service_status_models import ServiceStatus
+
+    cleared = MailHaltClear.objects.aggregate(at=Max("created_at"))["at"]
+    if cleared is not None and cleared > now - LIFT_WINDOW:
+        return "clearing"
+    since = ServiceStatus.objects.filter(
+        service="mail-dispatch",
+        sender_state="halted",
+        reported_at__gt=now - REPORTED,
+    ).aggregate(at=Max("sender_since"))["at"]
+    if since is not None and since > now - LIFT_WINDOW:
+        return "unrecorded"
+    return "stuck"
 
 
 def _halt_entries(halt, now):
@@ -348,6 +391,8 @@ def _sign(actor, key, halt_id, entries=()):
     the banner ``entries`` the preview saw."""
     from django.core import signing
 
+    # Compressed: up to 500 entry ids ride in each hidden input and in the
+    # command line's --token.
     return signing.dumps(
         {
             "key": str(key),
@@ -356,6 +401,7 @@ def _sign(actor, key, halt_id, entries=()):
             "entries": [str(entry) for entry in entries],
         },
         salt=CLEAR_SALT,
+        compress=True,
     )
 
 

@@ -72,7 +72,8 @@
 // is marked data-live-stale for good: its [data-live-stale-note] line, whose
 // space is already reserved, says so in the attribute's words, and each
 // [data-live-stale-holds] button is disabled, marked data-live-stale-gated
-// so ui-v1.js's other gates never enable it again.
+// so ui-v1.js's other gates never enable it again. Mirror targets inside it
+// stop taking copies, so a later poll cannot draw fresh buttons in them.
 //
 // A part outside the region can be about one thing the status names too
 // (System health's Accept this change once, which sits in its tile's details
@@ -509,6 +510,9 @@
           if (target.getAttribute("data-live-mirror-target") !== mirrorName) return;
           if (region.contains(target) && !target.closest("[data-live-keep]")) return;
           if (target.contains(document.activeElement)) return;
+          // A part marked changed (data-live-stale) keeps what it showed: a
+          // later copy must not give its held buttons back (#530).
+          if (target.closest("[data-live-stale]")) return;
           if (target.hasAttribute("data-live-mirror-hold")
               && target.closest("[data-live-hover-hold]")?.matches(":hover")) return;
           if (mirrored.get(target) === html) return;
