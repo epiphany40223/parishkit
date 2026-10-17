@@ -903,7 +903,7 @@ The Family participation panel is a row of tiles
 ([#720](https://github.com/epiphany40223/parishkit/issues/720)): the active
 Families; the responses from Families who can use the Family form now, as
 the count, "out of 400 (10%)" and a
-[share bar](../ui-conventions/spec.md#charts); and all Families with a
+[share bar](../ui-conventions/spec.md#stat-tiles); and all Families with a
 response, not counting Testing. That last count can include Families no
 longer active, so it is not drawn as a share. While in Testing mode, a line
 under the tiles says Testing responses are not counted there.
