@@ -1,0 +1,15 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n %}
+{% block title %}{% translate "Export no longer available" %}{% endblock %}
+{% block content %}
+{% comment %}
+  An export that has ended (its download window is over, or it was
+  cancelled) answers this one fixed page, 410 Gone, never its old status
+  page: exports are point-in-time and the portal keeps no history of them
+  (#1398; UX conventions, "Point-in-time downloads"). The views draw it only
+  after the export's owner and capability check, so its report is never
+  named to anyone else. An open status page that polls (live-status-v1.js)
+  takes the data-live-gone sentence in place of its status panel.
+{% endcomment %}
+<h1>{% translate "Export no longer available" %}</h1>
+<p data-live-gone>{% blocktranslate trimmed %}This export is no longer available. Export it again from <a href="{{ report_url }}">{{ report_name }}</a>.{% endblocktranslate %}</p>
+{% endblock %}

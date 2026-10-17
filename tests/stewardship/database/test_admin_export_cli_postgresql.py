@@ -3,7 +3,7 @@
 Process admission is replaced by the test's own Django assembly (the runner
 of test_admin_task_retry_cli_postgresql.py); everything after it is the
 real command line on the restricted web login, requesting, following,
-cancelling, retrying, regenerating and downloading real exports through the
+cancelling, retrying and downloading real exports through the
 pages' own functions, with the real worker rendering the files. An export
 made on a page is followed and downloaded from the command line and the
 other way round; both record the same events with the same contexts, and
@@ -296,75 +296,15 @@ def test_retry_reruns_a_failed_export(cli, http_scenario):  # noqa: F811
     assert len(commands("retry")) == 1
 
 
-def test_regenerate_requests_an_expired_export_again(cli, http_scenario):  # noqa: F811
-    """A new export from the retained inputs; only an expired one may be."""
+def test_an_expired_export_is_no_longer_available(cli, http_scenario):  # noqa: F811
+    """Exports are point-in-time (#1398): past its window the file is gone."""
     run, secret = cli
     setup, _ = http_scenario
     request = create(http_scenario)
     run_export(setup, request)
-    code, document = run("export", "regenerate", str(request.pk), secret=secret)
-    assert code == 1 and document["error"]["code"] == "stale_version"
     expire_publication(request)
     code, body, document = download(request.pk, secret)
     assert code == 1 and document["error"]["code"] == "not_available" and body == b""
-    key = uuid4()
-    argv = ("export", "regenerate", str(request.pk), "--request-key", str(key))
-    code, document = run(*argv, secret=secret)
-    assert code == 0, document
-    result = document["result"]
-    assert result["created"] and result["export"]["id"] != str(request.pk)
-    regenerated = ExportRequest.objects.get(pk=result["export"]["id"])
-    assert (regenerated.fact_set_id, regenerated.format) == (
-        request.fact_set_id,
-        request.format,
-    )
-    code, again = run(*argv, secret=secret)
-    assert code == 0 and again["result"]["export"]["id"] == result["export"]["id"]
-    assert not again["result"]["created"] and len(commands("regenerate")) == 1
-    # A participation file carries no codes or financial detail: it asked
-    # nothing (no --yes) and no session stood in for a fresh sign-in.
-    assert not AuditEvent.objects.filter(event_type="automation_fresh_gate").exists()
-
-
-def test_a_fresh_gated_regeneration_stands_in_for_the_sign_in(
-    cli,  # noqa: F811
-    http_scenario,  # noqa: F811
-    monkeypatch,
-):
-    """A code or financial file (here the scenario's export, made one of
-    ``FRESH_REPORTS``) asks first, refuses a read-only session, and records
-    one ``automation_fresh_gate`` with the new export; a repeat records none."""
-    from parishkit.stewardship.reports import export_ui
-
-    run, secret = cli
-    setup, _ = http_scenario
-    request = create(http_scenario)
-    run_export(setup, request)
-    expire_publication(request)
-    monkeypatch.setattr(
-        export_ui, "FRESH_REPORTS", export_ui.FRESH_REPORTS | {request.report}
-    )
-    gates = AuditEvent.objects.filter(event_type="automation_fresh_gate")
-    key = uuid4()
-    argv = ("export", "regenerate", str(request.pk), "--request-key", str(key))
-    # Unanswered: nothing is made, no gate is recorded.
-    code, document = run(*argv, secret=secret)
-    assert code == 4 and document["error"]["code"] == "confirmation_required"
-    assert not commands("regenerate") and not gates.exists()
-    # A read-only session cannot stand in for the sign-in.
-    reader = read_only_session(run.service)
-    code, document = run(*argv, "--yes", secret=reader)
-    assert code == 1 and document["error"]["code"] == "denied"
-    assert not commands("regenerate") and not gates.exists()
-    code, document = run(*argv, "--yes", secret=secret)
-    assert code == 0 and document["result"]["created"], document
-    [gate] = gates
-    [event] = commands("regenerate")
-    assert gate.subject_id == event.subject_id
-    # The same key again makes nothing, so it records no new gate.
-    code, again = run(*argv, "--yes", secret=secret)
-    assert code == 0 and not again["result"]["created"]
-    assert gates.count() == 1 and len(commands("regenerate")) == 1
 
 
 def test_watching_a_ready_export_stops_at_once(cli, http_scenario):  # noqa: F811
@@ -394,7 +334,6 @@ def test_refusals_change_nothing(cli, http_scenario):  # noqa: F811
     for argv in (
         ("export", "cancel", str(request.pk)),
         ("export", "retry", str(request.pk)),
-        ("export", "regenerate", str(request.pk)),
     ):
         code, document = run(*argv, secret=reader)
         assert code == 1 and document["error"]["code"] == "denied", argv
@@ -406,7 +345,6 @@ def test_refusals_change_nothing(cli, http_scenario):  # noqa: F811
         ("export", "status", unknown),
         ("export", "cancel", unknown),
         ("export", "retry", unknown),
-        ("export", "regenerate", unknown),
         (
             "export",
             "create",

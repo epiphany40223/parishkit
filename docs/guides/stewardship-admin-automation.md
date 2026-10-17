@@ -2273,20 +2273,16 @@ pk-admin exports clean
 - `export status` shows the export as its status page does. With
   `--watch SECONDS` it repeats until the export stops changing (anything
   but queued, running, retry_wait or abandoned).
-- `export cancel`, `export retry` and `export regenerate` are the status
-  page's buttons: cancel an export that is not ready yet, run a failed one
-  again once its cause is fixed, or request an expired one again from the
-  figures it was made from (a new export, with a new `EXPORT_ID`).
-  Regenerating an Active parishioner family directory, mail-merge or
-  financial export needs a
-  recent Google sign-in on the page, so for those `export regenerate` asks
-  at the [confirmation prompt](#confirmations) (or takes `--yes`); the
-  session stands in for the sign-in, and System logs show
-  `automation_fresh_gate` beside it.
+- `export cancel` and `export retry` are the status page's buttons: cancel
+  an export that is not ready yet, or run a failed one again once its
+  cause is fixed. Exports are point-in-time: a ready file can be fetched
+  for a short window, then it is deleted, and an expired export cannot be
+  made again; create a new one from current data instead (see
+  [point-in-time exports](../specs/stewardship/operations/spec.md#point-in-time-exports)).
 - `export fetch` saves a ready export's file on the host (see below).
 - `exports clean` deletes every fetched file.
 
-`export create`, `export retry` and `export regenerate` take
+`export create` and `export retry` take
 `--request-key`, as [task retries](#task-retries) do: pass your own UUID,
 or the command makes one and writes it to standard error before it acts.
 Repeating a command with the same key, or cancelling an export already
@@ -2297,7 +2293,7 @@ read the export with `export status`, or repeat the command with the key.
 While other work holds the export's campaign (a source refresh being
 promoted, for example), the status page turns its buttons off, and
 `export status` shows `changes_available` false. Then `export create`,
-`export cancel`, `export retry` and `export regenerate` are exit 1
+`export cancel` and `export retry` are exit 1
 (`denied`). That refusal is temporary, not a permissions problem: try again
 later.
 
@@ -2310,17 +2306,16 @@ later.
 | `expires_at` | When a ready file is deleted |
 | `file_name`, `content_type`, `size`, `sha256`, `count` | The file: its name, type, size in bytes, SHA-256 and number of rows (null until it is published; an expired export keeps them) |
 
-`export create`, `export cancel`, `export retry` and `export regenerate`
-print `created`, `request_key` (none for a cancel) and `export`, the
-export's `export status` fields afterwards (for `export regenerate`, the
-new export's). An unknown export or `--fact-set`, figures that are not
+`export create`, `export cancel` and `export retry` print `created`,
+`request_key` (none for a cancel) and `export`, the export's
+`export status` fields afterwards. An unknown export or `--fact-set`, figures that are not
 ready, or a file that has expired is exit 1 (`not_available`). Cancelling a
-ready export, retrying one that has not failed, or regenerating one that has
-not expired is exit 1 (`stale_version`): read it again. A key already used
+ready export or retrying one that has not failed is exit 1
+(`stale_version`): read it again. A key already used
 for a different export is exit 1 (`invalid`). System logs show the page's
 events (`export_requested`, `export_cancelled`, `export_downloaded`) and,
-for each change, `admin_cmd_export_create`, `admin_cmd_export_cancel`,
-`admin_cmd_export_retry` or `admin_cmd_export_regenerate`, attributed to
+for each change, `admin_cmd_export_create`, `admin_cmd_export_cancel` or
+`admin_cmd_export_retry`, attributed to
 the approving Administrator with the automation session as its subject.
 
 ### Family-level exports
@@ -2461,7 +2456,7 @@ PDF file (a CSV is the timeline table alone). Like the page's full view, it is
 for Administrators. Because the file holds the Family's code, the page asks
 for a recent Google sign-in, so the command asks at the
 [confirmation prompt](#confirmations) (or takes `--yes`), and System logs
-show `automation_fresh_gate` beside it; regenerating one asks the same.
+show `automation_fresh_gate` beside it.
 
 ```sh
 pk-admin export family-timeline FAMILY_RECORD_ID --format pdf \
@@ -2472,8 +2467,7 @@ pk-admin export family-timeline FAMILY_RECORD_ID --mode testing \
 
 `FAMILY_RECORD_ID` is the id in the Family's timeline page address,
 `/admin/reports/families/FAMILY_RECORD_ID/`. `--mode testing` is
-the page's Testing rehearsal view; such an export cannot be regenerated once
-that rehearsal has ended, so export it again instead. It takes `--request-key` like the other
+the page's Testing rehearsal view. It takes `--request-key` like the other
 exports. A Family that is not in the current campaign is exit 1
 (`not_available`).
 
@@ -2661,7 +2655,7 @@ any partial one) and prints how many it removed.
 
 `export fetch` refuses an export that is not ready (exit 1) and says what
 to do: follow a running one with `export status --watch`, retry a failed
-one, regenerate an expired one, or create a new one for a cancelled one.
+one, or create a new one for an expired or cancelled one.
 Underneath, `export download EXPORT_ID
 --stream` writes the file's bytes to standard output and its document
 (`id`, `file_name`, `content_type`, `size`, `sha256`, `count`) to standard
@@ -3297,3 +3291,8 @@ campaign's, or is outside your Ministries, is exit 1 (`not_available`).
   Administrators only, neither fresh-gated nor prompting; `content
   confirm` records `admin_cmd_content_confirm`), and `content preview
   --html HTML|-`, the content editors' live plain-text preview (no event).
+- `pk-admin/1` (#1398): a removal, kept on version 1. Exports are
+  point-in-time, so `export regenerate` is gone (an unknown command, exit
+  2 `usage`), and `admin_cmd_export_regenerate` is no longer recorded;
+  earlier events keep it. Make a new export with `export create` or the
+  report's own export command instead.

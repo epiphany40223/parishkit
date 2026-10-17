@@ -17,7 +17,6 @@ from parishkit.stewardship.reports.exact_models import (
     ExactExportResolution,
 )
 from parishkit.stewardship.reports.exact_tasks import exact_handler
-from parishkit.stewardship.reports.export_models import ExportPublication, ExportRequest
 from parishkit.stewardship.reports.export_tasks import export_handler
 
 from ..export_urls import export_action
@@ -31,7 +30,7 @@ from .test_taskrun_postgresql import act
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def test_native_exact_retry_handoff_and_expired_regeneration(
+def test_native_exact_retry_handoff_and_expiry(
     http_scenario,
     monkeypatch,
     settings,
@@ -129,51 +128,17 @@ def test_native_exact_retry_handoff_and_expired_regeneration(
         )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert b"ready" in read(browser, status_path)[1]
-        assert (
-            post(
-                browser,
-                export_action(rendered_path, "regenerate"),
-                {"request_key": str(uuid4())},
-            ).status_code
-            == 409
-        )
         assert post(browser, export_action(status_path, "cancel")).status_code == 409
+    # Exports are point-in-time (#1398): an expired one offers no Regenerate.
     expire_publication(resolution.export)
-    publication = ExportPublication.objects.get(request=resolution.export)
-    regeneration_key = uuid4()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        _, expired = read(browser, rendered_path)
-        assert b"Regenerate expired file" in expired
-        regenerated = post(
-            browser,
-            export_action(rendered_path, "regenerate"),
-            {"request_key": str(regeneration_key)},
-        )
-        assert regenerated.status_code == 302
-        assert (
-            post(
-                browser,
-                export_action(rendered_path, "regenerate"),
-                {"request_key": str(regeneration_key)},
-            )["Location"]
-            == regenerated["Location"]
-        )
-    replacement = ExportRequest.objects.get(request_key=regeneration_key)
-    assert replacement.pk != resolution.export_id
-    assert replacement.fact_set_id == resolution.fact_set_id
-    assert replacement.format == job.format
-    assert replacement.browser_timezone == job.browser_timezone
-    assert replacement.created_at > resolution.export.created_at
-    publication.refresh_from_db()
-    assert publication.request_id == resolution.export_id
-    with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
-        assert execute_hint(
-            replacement.task_id,
-            queue=WorkQueue.GENERAL,
-            worker_id=uuid4(),
-            handlers={"report_export": export_handler(store=store, root=root)},
-        )
-    assert ExportPublication.objects.filter(request=replacement).exists()
+        response, expired = read(browser, rendered_path)
+    # It has ended: the fixed "no longer available" page, 410.
+    assert (
+        response.status_code == 410
+        and b"This export is no longer available." in expired
+    )
+    assert b"Regenerate" not in expired
     # A later request can reuse ready facts but still owns a distinct renderer.
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         waiting = post(browser, path, values | {"request_key": str(uuid4())})[
@@ -189,7 +154,14 @@ def test_native_exact_retry_handoff_and_expired_regeneration(
         )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert post(browser, export_action(waiting, "cancel")).status_code == 302
-        assert b"cancelled" in read(browser, waiting)[1]
+        # A cancelled export has ended (#1398).
+        response, body = read(browser, waiting)
+        assert (
+            response.status_code == 410
+            and b"This export is no longer available." in body
+        )
+        # One still queued, whose page and commands the gate below holds.
+        held = post(browser, path, values | {"request_key": str(uuid4())})["Location"]
 
     from django.db import connection, transaction
 
@@ -210,12 +182,11 @@ def test_native_exact_retry_handoff_and_expired_regeneration(
         cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
         cursor.execute("ALTER TABLE stewardship_campaign_work_gate ENABLE TRIGGER USER")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        assert b"Other campaign work" in read(browser, status_path)[1]
+        assert b"Other campaign work" in read(browser, held)[1]
         for endpoint, payload in (
             (path, values | {"request_key": str(uuid4())}),
-            (export_action(status_path, "cancel"), {}),
-            (export_action(status_path, "retry"), {"request_key": str(uuid4())}),
-            (export_action(rendered_path, "regenerate"), {"request_key": str(uuid4())}),
+            (export_action(held, "cancel"), {}),
+            (export_action(held, "retry"), {"request_key": str(uuid4())}),
         ):
             assert post(browser, endpoint, payload).status_code == 403
 
@@ -260,14 +231,25 @@ def test_native_exact_cancel_and_other_requester_denial(
             == 403
         )
         assert post(browser, export_action(owned, "cancel")).status_code == 302
-        assert b"cancelled" in read(browser, owned)[1]
+        response, body = read(browser, owned)
+        assert (
+            response.status_code == 410
+            and b"This export is no longer available." in body
+        )
+        # Its Retry answers the same page; an Administrator, who may see
+        # every export, gets it too.
         assert (
             post(
                 browser, export_action(owned, "retry"), {"request_key": str(uuid4())}
             ).status_code
-            == 409
+            == 410
         )
-        assert read(admin, owned)[0].status_code == 200
+        assert read(admin, owned)[0].status_code == 410
+        # Another requester's ended export stays a plain denial: the owner
+        # check runs first, so it reveals nothing.
+        assert post(admin, export_action(other, "cancel")).status_code == 302
+        assert read(browser, other)[0].status_code == 403
+        assert post(browser, export_action(other, "cancel")).status_code == 403
     change(
         store,
         store.active(),

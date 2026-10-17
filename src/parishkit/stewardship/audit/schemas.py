@@ -270,6 +270,8 @@ class Action(StrEnum):
     ADMIN_CMD_EXPORT_CREATE = "admin_cmd_export_create"
     ADMIN_CMD_EXPORT_CANCEL = "admin_cmd_export_cancel"
     ADMIN_CMD_EXPORT_RETRY = "admin_cmd_export_retry"
+    # No longer recorded: ``export regenerate`` was removed when exports
+    # became point-in-time (#1398); earlier events still name it.
     ADMIN_CMD_EXPORT_REGENERATE = "admin_cmd_export_regenerate"
     ADMIN_CMD_DIGEST_WEEKLY_REQUEST = "admin_cmd_digest_weekly_request"
     ADMIN_CMD_EXPORT_FINANCIAL = "admin_cmd_export_financial"

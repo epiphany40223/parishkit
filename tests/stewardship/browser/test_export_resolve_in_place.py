@@ -1,5 +1,6 @@
 """Export Retry and Cancel, and a Mail message's resolutions, act in place
-(#519 PR 7c-4).
+(#519 PR 7c-4); Cancel ends its export, whose answer is then the fixed "no
+longer available" page (#1398).
 
 The pages are served at their real addresses (in_place_commands_components),
 and the fixture server answers each command with its view's real 303 back to
@@ -134,25 +135,11 @@ def announced(page, text):
             "Your file is ready.",
         ),
         (
-            EXPORT_QUEUED,
-            EXPORT_CANCEL,
-            "Cancel export",
-            "Export cancel requested.",
-            "This export was cancelled.",
-        ),
-        (
             EXACT_FAILED,
             EXACT_RETRY,
             "Retry export",
             "Export retry started.",
             "The export's figures are ready.",
-        ),
-        (
-            EXACT_QUEUED,
-            EXACT_CANCEL,
-            "Cancel export",
-            "Export cancel requested.",
-            "This export was cancelled. It stays in your list",
         ),
     ],
 )
@@ -178,6 +165,29 @@ def test_export_commands_are_in_place(
     assert posts == [component_origin + post]
     assert page.url.startswith(component_origin + address + "?")
     assert page.url.endswith("#export-status")
+
+
+@pytest.mark.parametrize(
+    "address, post", [(EXPORT_QUEUED, EXPORT_CANCEL), (EXACT_QUEUED, EXACT_CANCEL)]
+)
+def test_cancel_answers_the_no_longer_available_page(
+    page, component_origin, address, post
+):
+    """A cancelled export has ended (#1398): Cancel's 303 lands on the status
+    page, which now answers the fixed "no longer available" page (410). It
+    is shown whole, as a native submission shows it, with its link back to
+    the report, and the POST is sent once."""
+    open_marked(page, component_origin, address)
+    hold_polls(page, component_origin, address)
+    posts = count_requests(page, "POST", post)
+    button = page.get_by_role("button", name="Cancel export", exact=True)
+    wheel_to(page, button)
+    button.click()
+    visible(page.get_by_role("heading", name="Export no longer available"))
+    visible(page.get_by_text("This export is no longer available."))
+    visible(page.get_by_role("link", name="Participation", exact=True).last)
+    painted(page)
+    assert posts == [component_origin + post]
 
 
 def test_refused_export_retry_is_shown_once(page, component_origin):

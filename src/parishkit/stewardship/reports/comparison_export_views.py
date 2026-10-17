@@ -6,7 +6,7 @@ reads the page's comparison under the campaign's read guard and reduces it
 at once to the protected capture (``comparison_exports.read_capture``),
 then stores it and queues the file (``create_comparison_export``) and
 answers with the export's status page, where the shared lifecycle
-publishes, downloads, cancels, retries and regenerates it.
+publishes, downloads, cancels and retries it.
 
 The form posts exactly ``day`` (the page's comparison day, blank before day
 1 has ended), ``format`` and ``request_key``, each once, and no query, plus

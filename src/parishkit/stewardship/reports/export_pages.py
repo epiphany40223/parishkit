@@ -45,8 +45,8 @@ def detail(request, request_id):
 def command(request, request_id, *, action):
     """Cancel or retry the export, through the view that owns the record.
 
-    Only a report export has a file, so downloading and regenerating one
-    route straight to its view.
+    Only a report export has a file, so downloading one routes straight to
+    its view.
     """
     view, refused = _owner(request, request_id, exact_ui.command, export_ui.command)
     return refused or view(request, request_id, action=action)
