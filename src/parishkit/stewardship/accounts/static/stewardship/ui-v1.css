@@ -912,14 +912,21 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
   position: absolute; left: .55rem; top: .5rem; width: 1rem; text-align: center;
   font-weight: 700; content: "\2022"; color: var(--muted);
 }
+/* State colours (Administrator, 2026-10-17): Not started keeps the page's
+   own background, In progress is the attention yellow, Done the light
+   accent green and Failed the error tone, each from the design tokens, so
+   Dark mode takes their dark values (DARK_COLORS) with readable ink. Only
+   colours change, never the font weight, padding or border width, so a
+   box keeps its size as its state changes (no layout shift). */
 .stage-boxes > .stage-done::before { content: "\2713"; color: var(--accent); }
-.stage-boxes > .stage-active::before { content: "\25B8"; color: var(--ink); }
-.stage-boxes > .stage-active { background: var(--accent-soft); font-weight: 600; }
+.stage-boxes > .stage-done { background: var(--accent-soft); border-color: var(--accent-line); }
+.stage-boxes > .stage-active::before { content: "\25B8"; color: var(--warning-ink); }
+.stage-boxes > .stage-active { background: var(--warning-bg); border-color: var(--warning-border); }
 .stage-boxes > .stage-waiting .stage-label { color: var(--muted); }
 .stage-boxes > .stage-operator::before { content: "\23F8"; color: var(--ink); }
 .stage-boxes > .stage-operator { background: var(--warning-bg); border-color: var(--warning-border); }
 .stage-boxes > .stage-failed::before { content: "\2715"; color: var(--error-ink); }
-.stage-boxes > .stage-failed { border-color: var(--error-border); background: var(--error-bg); font-weight: 600; }
+.stage-boxes > .stage-failed { border-color: var(--error-border); background: var(--error-bg); }
 .stage-status { font-size: .925rem; font-variant-numeric: tabular-nums; }
 .stage-boxes li p { margin: .25rem 0 0; font-size: .925rem; }
 /* Load ParishSoft data (campaign-load-status.html, #1404 PR 5): the line

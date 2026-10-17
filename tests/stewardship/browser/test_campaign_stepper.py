@@ -265,6 +265,9 @@ def test_load_step_loads_then_continues_in_place(
     assert first.evaluate("node => node.textContent") == (
         "Download from ParishSoft: Not started"
     )
+    stage_boxes = region.locator("[data-load-stage]")
+    sizes = boxes_sizes(stage_boxes)
+    waiting = background(first)
     row = page.locator("[data-campaign-step-actions]")
     back = row.locator("[data-campaign-step-back]")
     assert back.get_attribute("href") == reverse("admin:campaign_settings")
@@ -296,6 +299,11 @@ def test_load_step_loads_then_continues_in_place(
         region.locator('[data-load-stage="staging"]'), "data-stage-state", "active"
     )
     assert stage_states(page)[:2] == [("fetching", "done"), ("staging", "active")]
+    # Each state has its own colour, Not started the page's own, In progress
+    # yellow, Done light green, in light and dark, and no box changes size
+    # as its state changes (UX conventions, "Stage boxes").
+    assert_state_colours(page, stage_boxes, waiting)
+    assert boxes_sizes(stage_boxes) == sizes
     has_text(
         region.locator("[data-campaign-load-count]"), "1,000 of 4,000 records checked"
     )
@@ -317,6 +325,7 @@ def test_load_step_loads_then_continues_in_place(
     assert_same_box(above, summary.bounding_box())
     assert_same_box(first_box, region.locator("[data-load-stage]").first.bounding_box())
     assert_same_box(below, back.bounding_box())
+    assert boxes_sizes(stage_boxes) == sizes
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert page.evaluate(MARKED) == "kept"
     assert len(polls) >= 2
@@ -348,6 +357,38 @@ def answer_polls(page, origin):
 
     page.route(lambda url: url.split("?")[0] == origin + LOAD_STATUS, answer)
     return polls
+
+
+def background(locator):
+    """A box's computed background colour."""
+    return locator.evaluate("node => getComputedStyle(node).backgroundColor")
+
+
+def boxes_sizes(boxes):
+    """Each stage box's width and height, rounded to the pixel."""
+    return [
+        (round(box["width"]), round(box["height"]))
+        for box in (boxes.nth(i).bounding_box() for i in range(boxes.count()))
+    ]
+
+
+def assert_state_colours(page, boxes, waiting):
+    """Assert Done, In progress and Not started boxes differ in colour.
+
+    ``boxes`` show Download done, Save in progress and the rest not started;
+    ``waiting`` is a Not started box's colour in light mode. Dark mode's
+    colours differ from each other too, and from light mode's.
+    """
+    done, active, rest = boxes.nth(0), boxes.nth(1), boxes.nth(2)
+    light = (background(done), background(active), background(rest))
+    assert light[2] == waiting
+    assert len(set(light)) == 3, light
+    page.emulate_media(color_scheme="dark")
+    try:
+        dark = (background(done), background(active), background(rest))
+        assert len(set(dark)) == 3 and dark[:2] != light[:2], (light, dark)
+    finally:
+        page.emulate_media(color_scheme="light")
 
 
 # Every live region's text, keyed by the node, kept on the page for a

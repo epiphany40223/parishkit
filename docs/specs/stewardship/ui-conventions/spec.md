@@ -2351,7 +2351,12 @@ Each box names its stage and its state in words, Not started, In progress,
 Done or Failed (Finishing setup also has Waiting for the server operator),
 so its text, and its name as a list item, carry the state; a mark (a
 bullet, a pointer, a check, a cross or a pause) and a colour from the
-[design tokens](#shared-visual-style) only reinforce it, in light and dark.
+[design tokens](#shared-visual-style) only reinforce it, in light and dark:
+Not started keeps the page's own background, In progress is the attention
+yellow (`warning-bg`, `warning-border`), Done the light accent green
+(`accent-soft`, `accent-line`) and Failed the error tone (`error-bg`,
+`error-border`); Dark mode takes each token's dark value. A change of state
+changes only these colours, the mark and the words, never the box's size.
 The boxes show only stages the server reports, never invented ones. While
 the work runs, the page updates the boxes in place from a passive status
 read, and announces a change of state politely through the page's
@@ -2361,7 +2366,9 @@ boxes and keeps the lines around them reserved, so an update moves nothing
 2026-10-17, on the campaign wizard's Load ParishSoft data: "one box for
 each major step in the loading process, proceeding from left to right",
 and the same boxes, from the same code, as setup's Loading parish data and
-Finishing setup, so a reader learns the pattern once. **Shared code.** The
+Finishing setup, so a reader learns the pattern once; and on their colours
+(Administrator, 2026-10-17): "'normal' background before starting, yellow
+while running, and light green when done". **Shared code.** The
 `components/stage-boxes.html` include, `accounts/stages.py` (`rows`, which
 marks the stages before the current one done, and the state words) and
 `.stage-boxes` in `ui-v1.css`. **Precedent.** Setup's Loading parish data
