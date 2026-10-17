@@ -441,7 +441,7 @@ def refusal_show_model(data):
 
 
 def _delivery_read(caller, service, read, project, *, subject=None, audit=True):
-    """Read as an Sent mail page does (``delivery_views._page``).
+    """Read as a Sent mail page does (``delivery_views._page``).
 
     Admits passively with ``BACKGROUND_WORK``, reads in one transaction
     unless a restore is under review, rechecks the session and the restore

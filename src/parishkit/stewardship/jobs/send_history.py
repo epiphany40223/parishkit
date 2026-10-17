@@ -351,7 +351,7 @@ def mark_live(rows, panel):
 def describe(key):
     """The ``ListedSend`` for ``key``, or None when it names no Family send.
 
-    The send may belong to any campaign: an Sent mail link stays valid
+    The send may belong to any campaign: a Sent mail link stays valid
     after the next campaign becomes current. Reads only the named schedule's
     occurrences and the campaign's reminder schedules.
     """
