@@ -171,7 +171,7 @@ def create_exact(caller, service, *, scope, fmt, zone, request_key, context):
                 request_key=request_key,
             )
             if not repeat:
-                _command_event(caller, actor, Action.ADMIN_CMD_EXPORT_EXACT_CREATE)
+                _command_event(caller, actor, Action.ADMIN_CMD_EXPORT_EXACT_CREATE, job)
                 written.append(True)
             document = _exact_document(service, actor, job.pk)
         return ExactChange(created=not repeat, request_key=request_key, exact=document)
@@ -204,6 +204,7 @@ def cancel_exact(caller, service, request_id, *, context):
     handed-off export that is published is ``stale_version``, as the page.
     """
     from .audit.schemas import Action
+    from .reports.exact_models import ExactExportRequest
     from .reports.exact_services import cancel_exact_export
 
     actor = _admit(caller, service, activity=True, ministry_jobs=False)
@@ -214,7 +215,12 @@ def cancel_exact(caller, service, request_id, *, context):
             repeat = _cancelled(request_id)
             cancel_exact_export(service.store, actor.identity, request_id)
             if not repeat:
-                _command_event(caller, actor, Action.ADMIN_CMD_EXPORT_EXACT_CANCEL)
+                _command_event(
+                    caller,
+                    actor,
+                    Action.ADMIN_CMD_EXPORT_EXACT_CANCEL,
+                    ExactExportRequest.objects.only("format").get(pk=request_id),
+                )
                 written.append(True)
             document = _exact_document(service, actor, request_id)
         return ExactChange(created=not repeat, request_key=None, exact=document)
@@ -257,6 +263,7 @@ def retry_exact(caller, service, request_id, *, request_key, context):
     ``stale_version``.
     """
     from .audit.schemas import Action
+    from .reports.exact_models import ExactExportRequest
     from .reports.exact_services import retry_exact_export
 
     actor = _admit(caller, service, activity=True, ministry_jobs=False)
@@ -270,7 +277,12 @@ def retry_exact(caller, service, request_id, *, request_key, context):
                 service.store, actor.identity, request_id, request_key=request_key
             )
             if not repeat:
-                _command_event(caller, actor, Action.ADMIN_CMD_EXPORT_EXACT_RETRY)
+                _command_event(
+                    caller,
+                    actor,
+                    Action.ADMIN_CMD_EXPORT_EXACT_RETRY,
+                    ExactExportRequest.objects.only("format").get(pk=request_id),
+                )
                 written.append(True)
             document = _exact_document(service, actor, request_id)
         return ExactChange(created=not repeat, request_key=request_key, exact=document)

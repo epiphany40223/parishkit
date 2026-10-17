@@ -418,6 +418,11 @@ DEBUG_OFF_CLEAR_FUNCTION = "stewardship_debug_off_clear_v2()"
 PUBLICATION_AUDITED_FUNCTION = (
     "stewardship_publication_audited_v1(text, uuid, uuid, jsonb)"
 )
+# Point-in-time exports (#1398, migration 0109): the scheduler discards the
+# saved data of every ended export, a small batch at a time, through the
+# owner-run discard functions (reports.export_cleanup.produce_discards); a
+# batch of 0 only asks whether any is due.
+EXPORT_DISCARD_FUNCTION = "stewardship_export_discard_due_v1(integer)"
 # Publication plans and outcomes (#528, DAT-09.01, migration 0087): the
 # worker writes a preflight's plan and each write attempt's outcome; web
 # reads them all and writes only an Administrator's confirmation.
@@ -493,6 +498,11 @@ CLOSURE_FUNCTIONS = {
         "stewardship_jobs",
         "0032_debug_off_clear_subject",
     ),
+    # The discard of ended exports' saved data (0109, #1398).
+    EXPORT_DISCARD_FUNCTION: (
+        "stewardship_reports",
+        "0029_point_in_time_exports",
+    ),
 }
 
 
@@ -519,6 +529,12 @@ CLOSURE_TABLES = {
         "0002_roster_entries",
     ),
     "stewardship_backup_request": ("stewardship_jobs", "0023_backup_request"),
+    # Point-in-time exports' discard record (0109, #1398), which fact
+    # compaction reads (reports.fact_grants).
+    "stewardship_export_discard": (
+        "stewardship_reports",
+        "0029_point_in_time_exports",
+    ),
     "stewardship_timeline_export_snapshot": (
         "stewardship_reports",
         "0015_timeline_exports",
@@ -677,6 +693,8 @@ def runtime_functions(role, *, target=None):
     Administrator's report that a delivered email bounced (#806 slice 4).
     The general worker asks whether a publication plan's or outcome's audit
     event is recorded (#528), since it cannot read audit rows itself.
+    The scheduler discards ended exports' saved data (#1398), through the
+    owner-run batch that rechecks each export has ended.
     Every login a running service or an operator command uses reads whether
     the debug-off switch is set (#530); the offline admin-recovery login
     also clears it (``pk-stewardship debug-off-clear``). The backup login
@@ -720,7 +738,7 @@ def runtime_functions(role, *, target=None):
                 ADDRESS_RETRY_TOKEN_FUNCTION,
                 DEBUG_OFF_FUNCTION,
             },
-            ServiceRole.SCHEDULER: {DEBUG_OFF_FUNCTION},
+            ServiceRole.SCHEDULER: {DEBUG_OFF_FUNCTION, EXPORT_DISCARD_FUNCTION},
             ServiceRole.WORKER: {
                 SESSION_PURGE_FUNCTION,
                 READ_GUARD_KILLS_FUNCTION,

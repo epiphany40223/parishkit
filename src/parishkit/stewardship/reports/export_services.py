@@ -130,7 +130,13 @@ def audit(action, request, actor_id, *, outcome, count=None):
     the configuration pinned when the export was requested: a later settings
     change would otherwise make every download and cancel fail attribution.
     """
-    context = {"outcome": outcome}
+    # The report kind and format (#1398): who exported what needs no request
+    # row. A latest-data export is the participation report.
+    context = {
+        "outcome": outcome,
+        "report": getattr(request, "report", "participation"),
+        "format": request.format,
+    }
     if count is not None:
         context["count"] = count
     # Exact-generation requests share this helper but have no Ministry payload.
@@ -178,10 +184,13 @@ def create_export(
             requester_id=user_id, request_key=request_key
         ).first()
         if previous is not None:
+            # An ended export's discard cleared its generation (#1398); the
+            # same form replayed is still that export, whose page says it
+            # is no longer available.
             if (
                 previous.report,
                 previous.campaign_id,
-                previous.fact_set_id,
+                previous.fact_set_id or fact_set_id,
                 previous.format,
                 previous.browser_timezone,
             ) != ("participation", campaign_id, fact_set_id, format, browser_timezone):

@@ -692,6 +692,7 @@ def test_configuration_service_restores_on_an_idle_pass(tmp_path, monkeypatch):
         "cleanup",
         "setup_cleanup",
         "export_cleanup",
+        "export_discards",
         "facts",
         "verification",
         "operational",
@@ -800,6 +801,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
     weekly_finalization = Mock(return_value=("weekly-finalization-receipt",))
     guard, cleanup = Mock(), Mock(return_value=("cleanup-receipt",))
     export_cleanup = Mock(return_value=("export-cleanup-receipt",))
+    # The discard of ended exports' saved data (#1398) enqueues nothing.
+    export_discards = Mock(return_value=())
     facts = Mock(return_value=("facts-receipt",))
     verification = Mock(return_value=("verification-receipt",))
     operational = Mock(return_value=("operational-receipt",))
@@ -887,6 +890,10 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         "parishkit.stewardship.reports.export_cleanup.produce_cleanup", export_cleanup
     )
     monkeypatch.setattr(
+        "parishkit.stewardship.reports.export_cleanup.produce_discards",
+        export_discards,
+    )
+    monkeypatch.setattr(
         "parishkit.stewardship.reports.fact_production.produce_facts", facts
     )
     monkeypatch.setattr(
@@ -948,6 +955,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
             "cleanup": cleanup,
             "setup_cleanup": setup_cleanup,
             "export_cleanup": export_cleanup,
+            "export_discards": export_discards,
             "facts": facts,
             "verification": verification,
             "operational": operational,
@@ -1014,6 +1022,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                 go_live,
                 cleanup,
                 export_cleanup,
+                export_discards,
                 facts,
                 verification,
                 mail_recovery,
@@ -1048,6 +1057,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         go_live.assert_called_once_with(guard)
         cleanup.assert_called_once_with(guard)
         export_cleanup.assert_called_once_with(guard)
+        export_discards.assert_called_once_with(guard)
         facts.assert_called_once_with(guard, settings=settings)
         verification.assert_called_once_with(guard)
         expiry.assert_called_once_with(guard)
@@ -1056,8 +1066,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         family_recovery.assert_called_once_with()
         slack_recovery.assert_called_once_with()
         maintenance.assert_called_once_with(guard)
-        # Twenty-six independent producers, each bracketed by two checks.
-        assert guard.check.call_count == 52
+        # Twenty-seven independent producers, each bracketed by two checks.
+        assert guard.check.call_count == 54
     else:
         operational.assert_not_called()
         operational_fanout.assert_not_called()
@@ -1070,6 +1080,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         mail_recovery.assert_not_called()
         cleanup.assert_not_called()
         export_cleanup.assert_not_called()
+        export_discards.assert_not_called()
         facts.assert_not_called()
         verification.assert_not_called()
         expiry.assert_not_called()

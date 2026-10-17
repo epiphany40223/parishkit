@@ -14,6 +14,13 @@ def add_fact_grants(tables, columns, *, worker):
         "fact_build_receipt",
         "fact_pointer",
         "fact_pin",
+        # Whether a latest-data export has ended and released its inputs
+        # (#1398, migration 0109): ids and counts only.
+        "export_discard",
+        # Whether an export still links the generation (#1398): an ended
+        # one's discard clears the link so compaction may remove it.
+        "export_request",
+        "exact_export_resolution",
     ):
         tables.setdefault("stewardship_" + name, set()).add("SELECT")
     for name in ("request", "result"):

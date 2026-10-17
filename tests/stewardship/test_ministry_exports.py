@@ -60,6 +60,7 @@ def test_shared_audit_preserves_each_request_model(monkeypatch, kind):
     request = (ExactExportRequest if kind == "exact" else ExportRequest)(
         configuration=configuration,
         campaign_id=uuid4(),
+        format="xlsx",
     )
     if kind != "exact":
         request.report = kind
@@ -87,8 +88,11 @@ def test_shared_audit_preserves_each_request_model(monkeypatch, kind):
     assert evidence["current_parish"] is True
     assert "parish_id" not in evidence
     assert evidence["actor_id"] == actor
+    # Each names its report kind (a latest-data export is participation)
+    # and format (#1398).
+    report = "participation" if kind == "exact" else kind
     assert evidence["context"] == (
-        {"outcome": Outcome.STARTED, "count": 1}
+        {"outcome": Outcome.STARTED, "report": report, "format": "xlsx", "count": 1}
         | (
             {"ministry_duids": [4], "ministry_operational": False}
             if kind == "ministry"
