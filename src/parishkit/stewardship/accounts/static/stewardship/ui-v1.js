@@ -146,13 +146,17 @@
       const scope = input.form || root;
       const known = Boolean(zone) && zone !== "Etc/Unknown";
       const hint = known ? "" : input.dataset.zoneMissingHint || "";
-      const note = scope.querySelector("[data-browser-zone-note]");
+      // A note can be a toggletip (Sent mail's From, #1562): it shows its "i"
+      // the same way, and the fields are described by its bubble, never by
+      // the button's "More information".
+      const noteNode = scope.querySelector("[data-browser-zone-note]");
+      const note = noteNode?.querySelector(".toggletip-bubble") || noteNode;
       const gateHint = scope.querySelector("[data-complete-hint]");
       input.value = known ? zone : "";
       scope.querySelectorAll("[data-browser-zone-name]").forEach((node) => {
         node.textContent = input.value;
       });
-      if (note) note.hidden = !known;
+      if (noteNode) noteNode.hidden = !known;
       scope.querySelectorAll("[data-zone-dependent]").forEach((field) => {
         field.disabled = !known;
       });

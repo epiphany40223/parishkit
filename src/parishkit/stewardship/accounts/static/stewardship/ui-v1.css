@@ -498,9 +498,6 @@ input[data-time-entry=list] { max-width: 24rem; }
 /* Inside a filter bar (the Family directory) the hint takes a line of its
    own under the fields, not a place in their row (#563). */
 .filter-bar > [data-complete-hint] { flex-basis: 100%; margin: 0; }
-/* So does a filter bar's browser zone note (Sent mail's From and Through,
-   #1562): a line of its own under the fields. */
-.filter-bar > [data-browser-zone-note] { flex-basis: 100%; margin: 0; }
 /* System logs shows the server's refusal of a filter (#1332) in its gate's
    reserved hint row, not in a line of its own, so the page is no taller
    for it: the message and the hint share one grid cell, at the hint's
@@ -1049,6 +1046,16 @@ details.filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div
 .filter-bar.mail-filters { align-items: start; }
 .filter-bar.mail-filters > button { align-self: end; }
 .filter-bar.mail-filters > div > :is(label, .label-row) { display: flex; align-items: center; min-height: 1.75rem; margin: 0 0 .25rem; }
+/* Sent mail's Production / Testing choice sits at the end of the heading's
+   line on a wider screen, out of the flow, so it takes no line of its own
+   and the first rows start on a laptop screen (#227, #1562); the heading
+   and its About summary are short enough to leave it the room. On a phone
+   it keeps its own line under the heading. */
+@media (min-width: 40rem) {
+  .mail-title { position: relative; }
+  .mail-title > #delivery-mode { position: absolute; inset-block-start: 0; inset-inline-end: 0; }
+  .mail-title > #delivery-mode .choice-links { margin: 0; }
+}
 /* Its Production / Testing choices are link-styled buttons in small POST
    forms, since they carry the private Recipient filter (#1562). They keep
    the choice-links pill look and one weight, so choosing one never moves

@@ -2764,7 +2764,10 @@ learned once. **Shared code.**
   schedule's next occurrence, as
   [New and Edit scheduled email](../admin-portal/spec.md#new-and-edit-scheduled-email)
   does. The shared zone note beside the fields names the zone the times
-  are typed in. The
+  are typed in. A compact filter bar may carry that note as a toggletip on
+  its first date's label instead of a line of its own (Sent mail's From,
+  [#1562](https://github.com/epiphany40223/parishkit/issues/1562)); like
+  the note, its "i" shows only once the browser reports a known zone. The
   [ParishSoft refresh schedule](../admin-portal/spec.md#parishsoft-refresh-schedule-settings)
   is the recorded exception: its times are typed and shown in its schedule
   zone (decision 18).

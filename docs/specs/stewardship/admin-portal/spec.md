@@ -4737,7 +4737,10 @@ is one email, not one Family.
 ([#932](https://github.com/epiphany40223/parishkit/issues/932)): **When**,
 **Recipient**, **Family DUID**, **Purpose** and **Delivery**. The table fits a 1280-pixel-wide
 screen beside the Admin menu without scrolling, and on a phone it scrolls
-inside its own region.
+inside its own region. Its caption ("Sent mail") is visually hidden and kept
+for screen readers: the page heading already names it, and without that
+line the first rows start on a laptop screen with the help closed
+([#227](https://github.com/epiphany40223/parishkit/issues/227)).
 
 - **When** heads each row and shows a single time, that of the email's
   current state (when it last changed, such as when it was delivered), in
@@ -4813,7 +4816,13 @@ a phone, without sideways scrolling) holds:
   browser zone the form carries, so a daylight-saving day is 23 or 25 hours.
   They filter on When. A date without a known browser zone, or a Through
   before From, is refused, and the form's gate keeps the button unavailable
-  while either is so, saying why.
+  while either is so, saying why in its reserved line under the bar, which
+  keeps its height so the hint never moves a control
+  ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). The zone
+  is named by an "i" toggletip on From's label, the shared zone note
+  ("From and Through are days in this computer's time zone: …") as a tip
+  rather than a line of its own, so the bar stays compact (#227); like the
+  note, it shows only once the browser reports a known zone.
 - **Delivery**: All; three grouped choices; then each single state as
   before. The groups overlap on purpose: they are filters, not a partition.
   - **Needs attention**: what an Administrator can still act on: Not sure
@@ -4831,8 +4840,14 @@ a phone, without sideways scrolling) holds:
   - **Still sending**: queued, waiting to retry or being handed to the mail
     service (`pending`, `retry_wait`, `submitting`).
 
-Beside the filter bar, a two-choice **Production / Testing** control picks
-the mode of the emails listed. It defaults to the system's current
+At the end of the page heading's line, a two-choice **Production /
+Testing** control picks the mode of the emails listed; on a phone it takes
+its own line under the heading. It does not share the filter bar's row,
+where beside the five filters and Apply it would not fit one row at 1280
+pixels, and on the heading's line it takes no line of its own, so the first
+rows start on a laptop screen
+([#227](https://github.com/epiphany40223/parishkit/issues/227)). In the
+page's reading order it follows the heading and its About panel. It defaults to the system's current
 operating mode: Testing on a system in Testing mode (before Production is
 activated), Production on a Production system, so every link into the page
 from the status bar, Home, Family email progress, System health or the

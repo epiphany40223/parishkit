@@ -13,6 +13,7 @@ from urllib.parse import parse_qs
 
 import pytest
 
+from .keyboard import tab_to_next
 from .waits import eventually, has_text, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -29,6 +30,29 @@ PLACES = """() => [...document.querySelectorAll(
     .map(node => { const box = node.getBoundingClientRect();
         return [node.id || node.textContent.trim(), Math.round(box.x),
                 Math.round(box.y + scrollY)]; })"""
+
+
+# Both mode choices share one line, and it ends above the filter bar.
+CHOICES_ABOVE_THE_BAR = """() => {
+    const pills = [...document.querySelectorAll('#delivery-mode button')]
+        .map(node => node.getBoundingClientRect());
+    const bar = document.querySelector('#table-filters').getBoundingClientRect();
+    return pills.length === 2 && Math.abs(pills[0].top - pills[1].top) <= 1
+        && pills.every(box => box.bottom <= bar.top);
+}"""
+
+# The mode choices share the heading's line, after its About summary.
+CHOICES_BESIDE_THE_HEADING = """() => {
+    const heading = document.querySelector('h1').getBoundingClientRect();
+    const about = document.querySelector('details[data-about-page] > summary')
+        .getBoundingClientRect();
+    return [...document.querySelectorAll('#delivery-mode button')].every(node => {
+        const box = node.getBoundingClientRect();
+        const middle = (box.top + box.bottom) / 2;
+        return middle > heading.top && middle < heading.bottom
+            && box.left >= about.right;
+    });
+}"""
 
 
 def answer_with(page, component_origin, fixture):
@@ -52,9 +76,9 @@ def answer_with(page, component_origin, fixture):
     return sent
 
 
-def open_list(page, component_origin, width=1280):
-    """Load the list at ``width``, scrolled so the filters are mid-screen."""
-    page.set_viewport_size({"width": width, "height": 700})
+def open_list(page, component_origin, width=1280, height=700):
+    """Load the list at ``width`` by ``height``."""
+    page.set_viewport_size({"width": width, "height": height})
     page.goto(component_origin + PAGE)
     page.evaluate(MARK)
     # The browser zone is in the form before anything is applied (#558).
@@ -107,17 +131,58 @@ def test_the_bar_fits_one_row_and_wraps_on_a_phone(page, component_origin):
             })"""
     )
     assert all(inner >= text + 28 for inner, text in room), room
+    # Production / Testing sits at the end of the heading's line, above the
+    # bar: beside the five filters and Apply it would not fit this row, and
+    # a line of its own would push the first rows off a laptop screen.
+    assert page.evaluate(CHOICES_ABOVE_THE_BAR)
+    assert page.evaluate(CHOICES_BESIDE_THE_HEADING)
     page.set_viewport_size({"width": 390, "height": 800})
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     assert page.evaluate(
-        """() => [...document.querySelectorAll('#table-filters > *')]
+        """() => [...document.querySelectorAll(
+            '#table-filters > *, #delivery-mode button')]
             .every(node => node.getBoundingClientRect().right <= innerWidth)"""
     )
-    # The zone the days are in is named under the fields.
+    # On a phone it takes its own line under the heading.
+    assert page.evaluate(CHOICES_ABOVE_THE_BAR)
+    assert not page.evaluate(CHOICES_BESIDE_THE_HEADING)
+    assert page.evaluate(
+        """() => document.querySelector('#delivery-mode button')
+            .getBoundingClientRect().top
+            >= document.querySelector('h1').getBoundingClientRect().bottom"""
+    )
+
+
+def test_the_zone_is_named_in_a_toggletip_on_from(page, component_origin):
+    """From's label carries the zone note as a toggletip, not a line of its
+    own (#227): the keyboard reaches its "i" after Purpose, it opens the
+    note naming the browser's zone, and both date fields are described by
+    it."""
+    from playwright.sync_api import expect
+
+    open_list(page, component_origin)
+    bubble = page.locator("#delivery-zone-help")
+    button = page.locator("#delivery-start-label + .toggletip .toggletip-button")
+    visible(button)
+    expect(bubble).to_be_hidden()
+    assert (
+        page.locator("#table-filters [data-browser-zone-note]:not(.toggletip)").count()
+        == 0
+    )
+    page.locator("#delivery-purpose").focus()
+    tab_to_next(page)
+    expect(button).to_be_focused()
+    page.keyboard.press("Enter")
+    visible(bubble)
     has_text(
-        page.locator("#delivery-zone-help"),
+        bubble,
         "From and Through are days in this computer's time zone: America/Los_Angeles.",
     )
+    page.keyboard.press("Escape")
+    expect(bubble).to_be_hidden()
+    for field in ("#delivery-start", "#delivery-end"):
+        described = page.locator(field).get_attribute("aria-describedby") or ""
+        assert described.split()[0] == "delivery-zone-help", (field, described)
 
 
 def test_filters_apply_in_place(page, component_origin):
@@ -125,7 +190,9 @@ def test_filters_apply_in_place(page, component_origin):
     scroll jump, records the view's linkable filters in the address bar
     (never the Recipient) and moves no control above the table."""
     sent = answer_with(page, component_origin, "/deliveries-applied")
-    open_list(page, component_origin)
+    # Short enough that the one-row answer still leaves room to stay
+    # scrolled to 120 px, so a jump would show.
+    open_list(page, component_origin, height=560)
     page.locator("#delivery-recipient").fill("12345")
     page.locator("#delivery-state").select_option("needs_attention")
     page.evaluate("window.scrollTo(0, 120)")
