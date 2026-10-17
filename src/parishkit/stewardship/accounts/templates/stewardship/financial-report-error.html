@@ -4,6 +4,7 @@
 <h1>{% translate "Financial stewardship unavailable" %}</h1>
 {% if status == 503 %}<p role="alert">{% translate "This information is temporarily unavailable. Please retry later." %}</p>
 {% elif status == 409 %}{% include 'stewardship/export-request-bound.html' %}
+{% elif zone %}<p role="alert">{% translate "The dates came without your computer's time zone. Go back, reload the page and apply the filters again; if this repeats, check your computer's time zone setting." %}</p>
 {% else %}<p role="alert">{% translate "Check the filters. Enter pledge amounts in whole dollars, or dollars and two-digit cents, without commas or a currency sign, such as 1234 or 1234.50. The lowest amount cannot exceed the highest, and each From date cannot follow its Through date." %}</p>{% endif %}
 <p><a href="{% url 'admin:financial_report' %}">{% translate "Return to Financial stewardship" %}</a></p>
 {% endblock %}

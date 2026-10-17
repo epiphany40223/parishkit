@@ -27,6 +27,11 @@ SET search_path TO pg_catalog,public,pg_temp
 SET jit TO off AS $$
 DECLARE f jsonb:=parameters->'filters'; proof jsonb:=parameters->'proof';
     answer jsonb; bad boolean;
+    -- Whether the dates are days in the viewer's browser zone (#558), and
+    -- each date's bound there: From is the instant its day begins, Through
+    -- the instant the next day begins (exclusive).
+    zoned boolean:=false; first_from timestamptz; first_before timestamptz;
+    latest_from timestamptz; latest_before timestamptz;
     money_text constant text:='^(0|[1-9][0-9]{0,8})(\.[0-9]{2})?$';
     -- Canonical lowercase text, so identities compare without a fallible cast.
     uuid_text constant text:='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
@@ -60,7 +65,7 @@ BEGIN
                 'frequency','share','sort']
             OR f-ARRAY['search','active','first_start','first_end','latest_start',
                 'latest_end','pledge_min','pledge_max','amount','frequency','share',
-                'sort']<>'{}'::jsonb
+                'sort','zone']<>'{}'::jsonb
             OR EXISTS(SELECT 1 FROM jsonb_each(f) WHERE jsonb_typeof(value)<>'string')
             OR length(f->>'search')>200
             OR (f->>'share' NOT IN ('any','none') AND NOT f->>'share' ~ uuid_text)
@@ -87,8 +92,32 @@ BEGIN
             OR coalesce(nullif(f->>'pledge_min','')::numeric
                 >nullif(f->>'pledge_max','')::numeric,false);
     END IF;
+    IF NOT bad AND f ? 'zone' THEN
+        -- Days are the viewer's browser zone (#558): one is required with a
+        -- date and is always one the server's time zone catalog knows.
+        -- Filters without the key, from a release before migration 0110,
+        -- keep the campaign-zone days.
+        bad:=coalesce((f->>'first_start'<>'' OR f->>'first_end'<>''
+                OR f->>'latest_start'<>'' OR f->>'latest_end'<>'')
+                AND f->>'zone'='',true)
+            OR coalesce(f->>'zone'<>'' AND NOT EXISTS(SELECT 1 FROM pg_timezone_names
+                WHERE name=stewardship_timezone_name_v1(f->>'zone')),true);
+        zoned:=true;
+    END IF;
     IF bad THEN
         RAISE EXCEPTION 'Invalid financial report parameters' USING ERRCODE='23514';
+    END IF;
+    IF zoned THEN
+        -- Each bound once per call, never per row; a daylight-saving day is
+        -- 23 or 25 hours long.
+        first_from:=CASE WHEN f->>'first_start'<>'' THEN
+            stewardship_browser_day_start_v1((f->>'first_start')::date,f->>'zone') END;
+        first_before:=CASE WHEN f->>'first_end'<>'' THEN
+            stewardship_browser_day_start_v1((f->>'first_end')::date+1,f->>'zone') END;
+        latest_from:=CASE WHEN f->>'latest_start'<>'' THEN
+            stewardship_browser_day_start_v1((f->>'latest_start')::date,f->>'zone') END;
+        latest_before:=CASE WHEN f->>'latest_end'<>'' THEN
+            stewardship_browser_day_start_v1((f->>'latest_end')::date+1,f->>'zone') END;
     END IF;
 
 WITH selected AS MATERIALIZED (
@@ -180,14 +209,21 @@ WITH selected AS MATERIALIZED (
         AND (f->>'active'='any' OR (f->>'active'='active' AND r.active IS TRUE)
             OR (f->>'active'='inactive' AND r.active IS FALSE)
             OR (f->>'active'='unavailable' AND r.active IS NULL))
-        AND (f->>'first_start'='' OR (r.first_submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date
-            >=nullif(f->>'first_start','')::date)
-        AND (f->>'first_end'='' OR (r.first_submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date
-            <=nullif(f->>'first_end','')::date)
-        AND (f->>'latest_start'='' OR (r.submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date
-            >=nullif(f->>'latest_start','')::date)
-        AND (f->>'latest_end'='' OR (r.submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date
-            <=nullif(f->>'latest_end','')::date)
+        -- Zoned (#558): from local midnight of the From day to local midnight
+        -- after the Through day, in the viewer's zone. Otherwise the
+        -- campaign-zone days, unchanged.
+        AND (f->>'first_start'='' OR CASE WHEN zoned THEN r.first_submitted_at>=first_from
+            ELSE (r.first_submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date
+            >=nullif(f->>'first_start','')::date END)
+        AND (f->>'first_end'='' OR CASE WHEN zoned THEN r.first_submitted_at<first_before
+            ELSE (r.first_submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date
+            <=nullif(f->>'first_end','')::date END)
+        AND (f->>'latest_start'='' OR CASE WHEN zoned THEN r.submitted_at>=latest_from
+            ELSE (r.submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date
+            >=nullif(f->>'latest_start','')::date END)
+        AND (f->>'latest_end'='' OR CASE WHEN zoned THEN r.submitted_at<latest_before
+            ELSE (r.submitted_at AT TIME ZONE stewardship_timezone_name_v1(x.timezone))::date
+            <=nullif(f->>'latest_end','')::date END)
         AND (f->>'pledge_min'='' OR r.annual_pledge>=nullif(f->>'pledge_min','')::numeric)
         AND (f->>'pledge_max'='' OR r.annual_pledge<=nullif(f->>'pledge_max','')::numeric)
         -- "Zero" and "No frequency" mean a Family that pledged nothing, not one
