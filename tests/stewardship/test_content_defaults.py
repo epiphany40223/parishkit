@@ -129,9 +129,12 @@ def test_default_renders_every_placeholder_with_sample_values(kind, slot):
 
 def test_emails_are_html_with_link_preserving_plain_text():
     """Plain text writes each link target out, so the Family link survives."""
-    for slot in EMAILS:
+    for slot in EMAILS.keys() - {"daily_digest"}:
         value = saved("email", slot)
         assert value["html"].startswith("<p>") and value["text"]
+    # The daily report's compiled opening line replaced its intro (#1532).
+    daily = saved("email", "daily_digest")
+    assert (daily["html"], daily["text"]) == ("", "")
     initial = saved("email", "initial")
     assert "Begin your household’s renewal: {{ family_url }}" in initial["text"]
     assert "{{ family_code }}" in initial["text"]
@@ -322,6 +325,33 @@ def test_invitation_reads_correctly_with_or_without_a_financial_period(
     rendered = sample_render(saved("email", "initial"), parish=PARISH, campaign=values)
     year = campaign_year(values)
     assert f"The commitment you make is for {year}." in rendered["text"]
+
+
+def test_the_earlier_daily_report_intro_is_a_retired_default():
+    """Untouched content from "Here is yesterday’s report." still shows as default.
+
+    The compiled report now opens with that sentence (#1532), so the
+    delivered email leaves the untouched intro out (``default_daily_intro``)
+    while an edited one is kept.
+    """
+    from parishkit.stewardship.accounts.content_defaults import retired_data
+    from parishkit.stewardship.accounts.content_forms import (
+        _DefaultForm,
+        matches_default,
+    )
+    from parishkit.stewardship.jobs.digest_content import default_daily_intro
+
+    owner = str(uuid4())
+    data = retired_data("email", "daily_digest")[0]
+    assert data["html"] == "<p>Here is yesterday’s report.</p>"
+    form = _DefaultForm(data, kind="email", slot="daily_digest")
+    assert form.is_valid()
+    old = form.values(campaign_id=owner, slot="daily_digest")
+    assert matches_default(old)
+    assert default_daily_intro(old["html"], old["text"])
+    assert default_daily_intro("", "")
+    assert not default_daily_intro("<p>Here is yesterday’s report!</p>", old["text"])
+    assert not default_daily_intro(old["html"], "Edited plain text.")
 
 
 def test_content_saved_from_a_retired_default_still_matches_the_default():

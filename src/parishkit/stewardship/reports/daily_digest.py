@@ -22,7 +22,7 @@ from parishkit.stewardship.web.report_markup import BLUE, STYLES, TRACK, button
 
 from .charts import render_participation
 from .digest_comparison import render_images, section_html, section_text, withheld
-from .digest_funnel import TESTING_NOTE, figure_rows, funnel_text, stage_rows
+from .digest_funnel import TESTING_NOTE, funnel_text, stage_rows
 from .links import report_url
 from .participation import ParticipationDocument
 from .response_metrics import ResponseMetrics
@@ -140,14 +140,23 @@ class DailyDigestDocument:
         )
 
     @property
-    def report_path(self):
-        """Select a protected snapshot; this identity is not a bearer credential."""
-        # Its Emailed reports address (NAV-12); the old digest address
-        # is gone, with no redirect (#864). Imported here so the document
-        # module itself stays free of Django.
-        from django.urls import reverse
+    def opening(self):
+        """The email's one opening line: what the report is and its as-of moment.
 
-        return reverse("admin:daily_digest_snapshot", args=[self.snapshot_id])
+        For example "Here is yesterday’s report; all data is as of the end of
+        October 16, 2026 (EDT)." (#1532). A recovery digest names the dates
+        it covers instead of "yesterday". The saved report page keeps the
+        plain ``as_of`` sentence, since it is not "yesterday" when read later.
+        """
+        first, last = self.covered_dates[0], self.covered_dates[-1]
+        report = (
+            "Here is yesterday’s report"
+            if first == last
+            else f"Here is the report for {format_date(first)} through "
+            f"{format_date(last)}"
+        )
+        # "All data is as of …." continues the sentence in lower case.
+        return f"{report}; a{self.as_of[1:]}"
 
 
 @dataclass(frozen=True, repr=False)
@@ -220,9 +229,21 @@ def source_age_line(age, timezone, *, zone=True):
     return f"{data} {line}"
 
 
-def _report_url(document, public_origin):
-    """Append only our protected route to the runtime's validated public origin."""
-    return report_url(public_origin, document.report_path)
+# The label of the email's links to the Response dashboard (#1532).
+DASHBOARD_LABEL = "Open the Response dashboard"
+
+
+def response_dashboard_url(public_origin, mode):
+    """The Response dashboard's address on the public origin (#1532).
+
+    The one place the daily email names the dashboard's route, so a later
+    move of the page changes only this function. A Testing digest links the
+    dashboard's Testing view, where its funnel is (``TESTING_NOTE``).
+    """
+    from django.urls import reverse
+
+    url = report_url(public_origin, reverse("admin:response_dashboard"))
+    return url + "?mode=testing" if mode == "testing" else url
 
 
 def comparison_url(section, public_origin):
@@ -314,14 +335,15 @@ def participation_row(day, *, financial_enabled):
     return tuple(cells)
 
 
-# The day-by-day table shows at least this many of the latest campaign days.
-TABLE_DAYS = 7
+# The day-by-day table shows at least this many of the latest campaign days
+# (five since #1532).
+TABLE_DAYS = 5
 
 
 def digest_rows(document):
-    """Show the last week and every day in a missed range, never a bounded page.
+    """Show the last five days and every day in a missed range, never a page.
 
-    A recovery digest's covered range can be longer than a week; all of it is
+    A recovery digest's covered range can be longer than that; all of it is
     shown. The chart above the table always has the whole campaign.
     """
     chart = document.participation
@@ -402,11 +424,9 @@ def funnel_html(document, plain):
     """The response funnel section of the email, or "" when there is none.
 
     One row per stage like the campaign totals (no charts since #1370):
-    the stage (with its note),
-    a bar of its share of email invites sent, and its count and share; then
-    the figures reported beside it (``figure_rows``), drawn the same way
-    against their own whole, which their share names. A Testing digest says
-    where the funnel is.
+    the stage (with its note), a bar of its share of email invites sent, and
+    its count and share. The figures the dashboard reports beside the funnel
+    are left out (#1532). A Testing digest says where the funnel is.
     """
     if document.funnel is None:
         if document.mode == "testing":
@@ -418,25 +438,20 @@ def funnel_html(document, plain):
         (f"{label} ({note.lower()})" if note else label, count, invited, portion)
         for label, count, portion, note in stage_rows(metrics)
     ]
-    figures = figure_rows(metrics)
     html = f"<h2{_style('heading')}>Response funnel</h2>"
-    # The stages, then the side figures as their own table so they read as
-    # a group; every row has the same three cells.
-    for group in (rows, figures):
-        html += (
-            '<table role="presentation" width="100%" cellpadding="0" '
-            f'cellspacing="0" border="0"{_style("rows")}><tbody>'
-        )
-        html += "".join(
-            f'<tr><td width="34%"{_style("label")}>{plain(label)}</td>'
-            f'<td width="40%"{_style("bar")}>{bar(count, whole)}</td>'
-            f'<td width="26%" align="right"{_style("value")}>'
-            f"<strong>{plain(f'{count:,}')}</strong>{plain(f' ({portion})')}"
-            "</td></tr>"
-            for label, count, whole, portion in group
-        )
-        html += "</tbody></table>"
-    return html
+    html += (
+        '<table role="presentation" width="100%" cellpadding="0" '
+        f'cellspacing="0" border="0"{_style("rows")}><tbody>'
+    )
+    html += "".join(
+        f'<tr><td width="34%"{_style("label")}>{plain(label)}</td>'
+        f'<td width="40%"{_style("bar")}>{bar(count, whole)}</td>'
+        f'<td width="26%" align="right"{_style("value")}>'
+        f"<strong>{plain(f'{count:,}')}</strong>{plain(f' ({portion})')}"
+        "</td></tr>"
+        for label, count, whole, portion in rows
+    )
+    return html + "</tbody></table>"
 
 
 def chart_alt(document):
@@ -478,32 +493,32 @@ def render_daily_digest(document, *, public_origin, charts=True):
 def _render_daily_digest(document, *, public_origin, charts=True):
     """Compile the report body; the caller has pinned the parish date format.
 
-    Visuals come first (#720): the as-of line, then one line per campaign
-    total with its bar, the chart, the day-by-day table and the report link.
+    Visuals come first (#720): the opening line with a Response dashboard
+    link beside it (#1532), then one line per campaign total with its bar,
+    the chart, the day-by-day table and a Response dashboard button.
     The subject names the parish, campaign and report day (see
     render_digest_envelope), so the body has no header or small print. Every
     value is escaped; every attribute comes from this compiler and the
     validator's closed set.
     """
     chart = document.participation
-    url = _report_url(document, public_origin)
+    url = response_dashboard_url(public_origin, document.mode)
     headings = ["Campaign date", "First submissions", "Cumulative participation"]
     if chart.financial_enabled:
         headings.append(PLEDGE_HEADING)
     totals = report_day_bars(document)
     rows = digest_rows(document)
-    # Say each fact once (#720): the as-of line is the report-day definition
-    # (#721) and the only place that names the time zone. A recovery digest
-    # also says which days it covers. The ParishSoft connection line is on
-    # the saved report page, not in the email.
-    first, last = document.covered_dates[0], document.covered_dates[-1]
-    as_of = document.as_of
-    if first != last:
-        as_of = f"Covers {format_date(first)} through {format_date(last)}. {as_of}"
+    # Say each fact once (#720): the opening line carries the report-day
+    # definition (#721) and is the only place that names the time zone. A
+    # recovery digest says which days it covers there. The ParishSoft
+    # connection line is on the saved report page, not in the email.
     # Match weekly display normalization; retained observations remain exact.
     # The strict HTML compiler boundary rejects NBSP parser rewrites.
-    as_of, alt = (" ".join(label.split()) for label in (as_of, chart_alt(document)))
-    text = as_of
+    opening, alt = (
+        " ".join(label.split()) for label in (document.opening, chart_alt(document))
+    )
+    link_line = f"{DASHBOARD_LABEL} (staff login required): {url}"
+    text = f"{opening}\n{link_line}"
     text += "\n\n" + "\n".join(f"{label}: {value}" for label, value, _b, _n in totals)
     if document.funnel is not None:
         text += "\n\n" + funnel_text(document.funnel)
@@ -511,7 +526,7 @@ def _render_daily_digest(document, *, public_origin, charts=True):
         text += "\n\n" + TESTING_NOTE
     text += "\n\n" + " | ".join(headings)
     text += "\n" + "\n".join(" | ".join(row) for row in rows)
-    text += "\n\nOpen this exact report (staff login required): " + url
+    text += "\n\n" + link_line
     section = document.comparison
     if section is not None:
         link = comparison_url(section, public_origin)
@@ -522,7 +537,19 @@ def _render_daily_digest(document, *, public_origin, charts=True):
         return escape(value, quote=False)
 
     # Prominent (#1016): body size and colour, not the muted caption style.
-    html = f"<p{_style('as-of')}>{plain(as_of)}</p>"
+    # The dashboard link sits right-aligned on the same line (#1532), in a
+    # two-cell presentation table: floats and flexbox are unreliable in
+    # Outlook and Gmail. The link cell is 30% wide, top-aligned and wraps into
+    # short lines, so the sentence keeps most of a phone's width.
+    html = (
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'border="0"{_style("track")}><tbody><tr>'
+        f"<td{_style('opening')}>{plain(opening)}</td>"
+        f'<td width="30%" align="right"{_style("opening-link")}>'
+        f'<a href="{escape(url, quote=True)}"{_style("link")} '
+        f'rel="noopener noreferrer">{plain(DASHBOARD_LABEL)}</a></td>'
+        "</tr></tbody></table>"
+    )
     html += f"<h2{_style('heading')}>Campaign totals</h2>"
     html += (
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
@@ -565,7 +592,7 @@ def _render_daily_digest(document, *, public_origin, charts=True):
         for row in rows
     )
     html += "</tbody></table>"
-    html += button(url, "Open this exact report")
+    html += button(url, DASHBOARD_LABEL)
     images = ()
     if section is not None:
         # The section follows the report it compares (#1018 slice 7), with

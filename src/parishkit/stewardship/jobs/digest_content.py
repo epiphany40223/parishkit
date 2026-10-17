@@ -3,6 +3,7 @@
 import re
 from dataclasses import dataclass
 
+from parishkit.stewardship.accounts.content_defaults import EMAILS, RETIRED_EMAILS
 from parishkit.stewardship.accounts.policy_schema import normalized_email
 from parishkit.stewardship.reports.daily_digest import DailyDigestContent
 from parishkit.stewardship.reports.weekly_digest import WeeklyDigestContent
@@ -102,6 +103,23 @@ def identified_subject(authored, report, *, campaign, parish):
     return subject if len(subject) <= MAX_SUBJECT else subject[: MAX_SUBJECT - 1] + "…"
 
 
+def default_daily_intro(html, text):
+    """Whether a daily digest intro is exactly a built-in default, current or retired.
+
+    The compiled report opens with "Here is yesterday’s report; all data is
+    as of …" (#1532), so an intro still holding an earlier default ("Here
+    is yesterday’s report.") is left out rather than saying it twice. Saved
+    content keeps its text when a default changes, so this is matched at
+    render time, as ``content_forms.matches_default`` matches it for the
+    editor. Any edit, however small, keeps the Administrator's intro.
+    """
+    defaults = (EMAILS["daily_digest"], *RETIRED_EMAILS["daily_digest"])
+    return any(
+        (html, text) == (prepared.html, prepared.text)
+        for prepared in (prepare_content(email.html) for email in defaults)
+    )
+
+
 def render_digest_envelope(
     *,
     identity,
@@ -150,8 +168,13 @@ def render_digest_envelope(
         campaign=" ".join(values.get("campaign_name", "").split()),
         parish=" ".join(values.get("parish_name", "").split()),
     )
-    html = render_template(template.html, values, html=True)
-    text = render_template(template.text, values)
+    intro_html, intro_text = template.html, template.text
+    if identity.purpose == "daily_digest" and default_daily_intro(
+        intro_html, intro_text
+    ):
+        intro_html = intro_text = ""
+    html = render_template(intro_html, values, html=True)
+    text = render_template(intro_text, values)
     # Validate authored substitutions together before appending compiler-owned
     # markup, whose report values are not interpreted as template expressions.
     validate_admin_digest_content(subject, html, text)
