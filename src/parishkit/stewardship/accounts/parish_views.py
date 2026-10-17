@@ -16,7 +16,13 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.field_rules import FieldRule, RuleField, apply
+from parishkit.stewardship.web.field_rules import (
+    HOST,
+    SPACE,
+    FieldRule,
+    RuleField,
+    apply,
+)
 from parishkit.stewardship.web.presentation import parse_us_phone, phone
 from parishkit.stewardship.web.refusals import (
     UserFacingError,
@@ -66,12 +72,16 @@ DEFAULTS = {"date_format": dates.DEFAULT}
 # constraint), the area code optionally in parentheses, and spaces, dots or
 # hyphens between the groups. The browser checks the same rule (#1577);
 # ``parse_us_phone`` then stores it as E.164, and reads every value it
-# admits (the shared case table pins both).
+# admits (the shared case table pins both). Any whitespace may surround it
+# (the field strips it), but between the groups only the separators
+# phonenumbers reads: a space, a no-break space (pasted from a page), a dot
+# or a hyphen.
+_BETWEEN = r" \u00a0.\-"
 PHONE = FieldRule(
     name="parish_phone",
     pattern=(
-        r"\s*(\+?1[\s.\-]*)?(\([2-9][0-9]{2}\)|[2-9][0-9]{2})[\s.\-]*"
-        r"[2-9][0-9]{2}[\s.\-]*[0-9]{4}\s*"
+        rf"[{SPACE}]*(\+?1[{_BETWEEN}]*)?(\([2-9][0-9]{{2}}\)|[2-9][0-9]{{2}})"
+        rf"[{_BETWEEN}]*[2-9][0-9]{{2}}[{_BETWEEN}]*[0-9]{{4}}[{SPACE}]*"
     ),
     message=_("Enter a ten-digit US telephone number, such as (212) 555-1234."),
     code="invalid_phone",
@@ -111,31 +121,35 @@ class PhoneField(RuleField):
 
 
 # The Parish website's rule, checked by the browser and the server alike:
-# http:// or https://, a dotted host part without "@", then any path; a
-# lone "?" or "#" (an empty query or fragment) is still admitted, as the
-# configuration admits it. The server then also checks it as a stored URL
-# (``clean_website``), which decides finer points of the host.
+# http:// or https://, a host name as URLValidator admits one (``HOST``, so
+# no user name or password), then any path without spaces; a lone "?" or "#"
+# (an empty query or fragment) is still admitted, as the configuration
+# admits it. The server then also checks it as a stored URL
+# (``clean_website``).
 WEBSITE = FieldRule(
     name="parish_website",
-    pattern=r"[Hh][Tt][Tt][Pp][Ss]?:\/\/[^\/?#@\s]+\.[^\/?#@\s]+(\/[^?#]*)?\??#?",
+    pattern=rf"[Hh][Tt][Tt][Pp][Ss]?:\/\/{HOST}(\/[^?#{SPACE}]*)?\??#?",
     message=_(
         "Use a website URL such as https://example.org, without credentials, "
         "query or fragment."
     ),
-    code="invalid_url",
+    # URLField's own check says "invalid"; one code per field.
+    code="invalid",
     empty=_("Enter the parish website, such as https://example.org."),
 )
-# An online giving link: https://, a dotted host part without a user name
-# or password ("@"), then any path, query or fragment (giving providers use
-# "?tab=home"). The server then also checks it as a stored link.
+# An online giving link: https://, a host name as URLValidator admits one
+# (``HOST``, so no user name or password), then any path, query or fragment
+# without spaces (giving providers use "?tab=home"). The server then also
+# checks it as a stored link.
 GIVING = FieldRule(
     name="online_giving_url",
-    pattern=r"[Hh][Tt][Tt][Pp][Ss]:\/\/[^\/?#@\s]+\.[^\/?#@\s]+([\/?#].*)?",
+    pattern=rf"[Hh][Tt][Tt][Pp][Ss]:\/\/{HOST}([\/?#][^{SPACE}]*)?",
     message=_(
         "Use an https:// address without a user name or password, "
         "for example https://giving.example.org/parish?tab=home."
     ),
-    code="invalid_url",
+    # URLField's own check says "invalid"; one code per field.
+    code="invalid",
 )
 
 

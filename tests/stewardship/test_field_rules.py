@@ -26,7 +26,7 @@ from parishkit.stewardship.accounts.parish_views import (
     ParishForm,
 )
 from parishkit.stewardship.accounts.setup_forms import SetupParishForm, SetupSlackForm
-from parishkit.stewardship.web.field_rules import ERROR_LINE_TEMPLATE, RULES
+from parishkit.stewardship.web.field_rules import ERROR_LINE_TEMPLATE, RULES, SPACE
 from parishkit.stewardship.web.presentation import parse_us_phone
 
 CASES = json.loads(
@@ -68,8 +68,8 @@ def test_every_rule_has_examples_and_a_guarded_field():
 @pytest.mark.parametrize(("name", "value", "accepted"), EXAMPLES)
 def test_the_server_refuses_exactly_what_the_rule_refuses(name, value, accepted):
     """The rule's verdict is the form's, and a refusal is in the rule's words
-    and carries its code (or, refused first by the field's own format check,
-    such as a URL field's, Django's "invalid")."""
+    and carries its one code, even when the field's own format check (a URL
+    field's) refuses the value first."""
     rule = RULES[name]
     assert rule.matches(value) is accepted
     form_class, field, data = GUARDS[name]
@@ -79,7 +79,16 @@ def test_the_server_refuses_exactly_what_the_rule_refuses(name, value, accepted)
     else:
         assert form.errors[field] == [str(rule.message)]
         (error,) = form.errors.as_data()[field]
-        assert error.code in {rule.code, "invalid"}
+        assert error.code == rule.code
+
+
+def test_space_is_exactly_pythons_whitespace():
+    """SPACE is the set str.strip removes and Python's \\s matches, written
+    out so the browser reads the same set (its own \\s differs)."""
+    every = [chr(point) for point in range(0x10000)]
+    spaces = [char for char in every if re.fullmatch(f"[{SPACE}]", char)]
+    assert spaces == [char for char in every if char.isspace()]
+    assert spaces == [char for char in every if re.fullmatch(r"\s", char)]
 
 
 @pytest.mark.parametrize("value", CASES[PHONE.name]["accept"])

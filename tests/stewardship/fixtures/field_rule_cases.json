@@ -12,7 +12,10 @@
       "1-212-555-1234",
       "1 (212) 555-1234",
       "(212)555-1234",
-      " (212) 555-1234 "
+      " (212) 555-1234 ",
+      "\u00a0212 555 1234\u00a0",
+      "212\u00a0555\u00a01234",
+      "\u3000(212) 555-1234\u001c"
     ],
     "refuse": [
       "123",
@@ -24,7 +27,10 @@
       "212-555-1234 x5",
       "(212 555-1234",
       "212-CALL-NOW",
-      "phone"
+      "phone",
+      "212\ufeff555-1234",
+      "212\u001c555-1234",
+      "212\t555\t1234"
     ]
   },
   "parish_website": {
@@ -34,7 +40,10 @@
       "https://example.org/parish/@home",
       "http://example.org:8080/a/b",
       "https://example.org/?",
-      "https://example.org/#"
+      "https://example.org/#",
+      "https://example.org:8080",
+      "https://www.xn--bcher-kva.example/",
+      "https://pfarrei-m\u00fcnchen.de/"
     ],
     "refuse": [
       "https://user@example.org/",
@@ -42,7 +51,16 @@
       "https://example.org/?a=1",
       "https://example.org/#top",
       "ftp://example.org/",
-      "https://parish/"
+      "https://parish/",
+      "https://example.org/a b",
+      "https://exa mple.org/",
+      "https://example.c",
+      "https://-x-.org",
+      "https://a..b.org",
+      "https://example-.org",
+      "https://example.org./",
+      "https://192.0.2.1/",
+      "https://example.org/a\u00a0b"
     ]
   },
   "online_giving_url": {
@@ -57,19 +75,27 @@
       "https://user:secret@giving.example.org/",
       "https://user@giving.example.org/",
       "https://",
-      "https://giving/"
+      "https://giving/",
+      "https://giving.example.org/p?x=a b",
+      "https://giving.example.org/p#a\u2003b",
+      "https://giving.example.c",
+      "https://-giving.example.org",
+      "https://giving..example.org"
     ]
   },
   "slack_channel_id": {
     "accept": [
       "C0123456789",
-      "G0123ABC"
+      "G0123ABC",
+      " C0123456789 "
     ],
     "refuse": [
       "c0123456789",
       "#general",
       "C",
-      "https://hooks.slack.com/services/T0/B0/x"
+      "https://hooks.slack.com/services/T0/B0/x",
+      "C0123 456",
+      "C0123\ufeff"
     ]
   }
 }

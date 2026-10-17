@@ -124,3 +124,29 @@ def test_parish_settings_save_waits_for_a_valid_telephone(page, component_origin
     hidden(hint)
     hidden(page.locator("#id_phone_error"))
     assert not failures
+
+
+def test_unchanged_words_leave_the_live_region_alone(page, component_origin):
+    """While a left field stays invalid, more typing keeps the same words, so
+    the polite live region is not rewritten (a screen reader would read them
+    again); a valid value then clears it."""
+    failures = watch(page)
+    page.goto(component_origin + "/setup-parish")
+    phone = page.get_by_label("Parish telephone")
+    line = page.locator("#id_phone_error")
+    phone.fill("212")
+    phone.press("Tab")
+    has_text(line, PHONE_RULE)
+    line.evaluate(
+        "line => { window.ruleWrites = 0; new MutationObserver((records) =>"
+        " { window.ruleWrites += records.length; }).observe(line,"
+        " {childList: true, subtree: true, characterData: true,"
+        " attributes: true}); }"
+    )
+    phone.press_sequentially("-55")
+    has_text(line, PHONE_RULE)
+    assert page.evaluate("window.ruleWrites") == 0
+    phone.fill("(212) 555-1234")
+    hidden(line)
+    assert page.evaluate("window.ruleWrites") > 0
+    assert not failures

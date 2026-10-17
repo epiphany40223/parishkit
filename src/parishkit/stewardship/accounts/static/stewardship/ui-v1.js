@@ -320,6 +320,9 @@
     const message = !invalid ? ""
       : (field.validity.valueMissing && field.dataset.emptyHint)
         || field.dataset.missingHint || field.validationMessage;
+    // Unchanged words stay untouched: rewriting the live region on every
+    // keystroke would make a screen reader read them again.
+    if (line.hidden === !message && line.textContent === message) return;
     line.hidden = !message;
     line.replaceChildren(Object.assign(document.createElement("li"), {textContent: message}));
     const ids = (field.getAttribute("aria-describedby") || "").split(/\s+/)

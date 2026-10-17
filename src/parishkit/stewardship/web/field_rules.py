@@ -16,9 +16,12 @@ translated between the two sides, so they cannot drift apart.
 
 A pattern must mean the same in Python's ``re`` (with ``re.fullmatch``) and
 in the browser, which compiles ``pattern`` with the "v" flag and anchors it
-at both ends. Keep to the common subset: ASCII classes such as ``[0-9]``,
-``\\s``, groups, ``?``, ``*``, ``+`` and ``{n}``; inside a ``[...]`` class
-escape ``-``, ``(``, ``)``, ``/`` and ``|``. Every rule has accepted and
+at both ends. Keep to the common subset: explicit classes such as ``[0-9]``,
+groups, ``?``, ``*``, ``+`` and ``{n,m}``; inside a ``[...]`` class escape
+``-``, ``(``, ``)``, ``/`` and ``|``, and outside one escape only syntax
+characters (``\\-`` is an error there under "v"). Never write ``\\s``: the two
+engines' sets differ (JavaScript's has U+FEFF, Python's U+001C to U+001F and
+U+0085), so use ``SPACE``, an explicit class. Every rule has accepted and
 refused examples in ``tests/stewardship/fixtures/field_rule_cases.json``,
 which a unit test runs through Python and a browser test through every
 engine.
@@ -35,6 +38,32 @@ ERROR_LINE_TEMPLATE = "stewardship/file-size-field.html"
 
 # Every rule by name, for the shared case table's completeness test.
 RULES = {}
+
+# Python's whitespace (``str.isspace``, which ``str.strip`` and Python's
+# ``\s`` use), written out as a class body so both engines read one set. A
+# rule may admit it around a value only where the server strips the value
+# (a CharField does) before it checks the rule.
+SPACE = r"\t\n\v\f\r\x1c-\x1f \x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000"
+
+# A host name and optional port as Django's URLValidator (which URLField and
+# the configuration's typed() run) admits one, so a URL rule built on it never
+# admits a host the server refuses: labels of letters, digits and inner
+# hyphens, at most 63 characters, separated by single dots, ending in a label
+# of at least two letters (or an "xn--" name) and an optional ":port".
+# Non-ASCII letters are admitted as there, less the whitespace among them. An
+# IP address, "localhost" and a trailing dot, which URLValidator also admits,
+# are refused: a parish's public pages have a host name.
+_NON_ASCII = (
+    r"\u00a1-\u167f\u1681-\u1fff\u200b-\u2027\u202a-\u202e\u2030-\u205e"
+    r"\u2060-\u2fff\u3001-\uffff"
+)
+_LETTER = "A-Za-z" + _NON_ASCII
+_LABEL = rf"[0-9{_LETTER}]([0-9{_LETTER}\-]{{0,61}}[0-9{_LETTER}])?"
+HOST = (
+    rf"{_LABEL}(\.{_LABEL})*\."
+    rf"([{_LETTER}][{_LETTER}\-]{{0,61}}[{_LETTER}]|[Xx][Nn]--[A-Za-z0-9]{{1,59}})"
+    r"(:[0-9]{1,5})?"
+)
 
 
 @dataclass(frozen=True)
@@ -87,7 +116,8 @@ def apply(field, rule):
     field.template_name = ERROR_LINE_TEMPLATE
     # A field's own format check (a URL field's validator, code "invalid")
     # may refuse a value before the rule is reached; it says the rule's
-    # words, so the server never words a refusal the browser would not.
+    # words, so the server never words a refusal the browser would not. Such
+    # a field's rule uses code "invalid" too, so the field has one code.
     field.error_messages["invalid"] = rule.message
     # Marks the field for accounts.field_tips, which may still move long
     # help into a tip: the reserved-line group draws one.

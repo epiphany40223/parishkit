@@ -4,7 +4,7 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.web.admin_forms import AdminForm
-from parishkit.stewardship.web.field_rules import FieldRule, RuleField
+from parishkit.stewardship.web.field_rules import SPACE, FieldRule, RuleField
 from parishkit.stewardship.web.sender_name_field import SenderNameField
 
 from . import field_tips, setup_help
@@ -34,10 +34,11 @@ MISSING_HINTS = {
     "target": _("Paste the Google Drive folder link."),
 }
 
-# A Slack channel ID, checked by the browser and the server alike (#1577).
+# A Slack channel ID, checked by the browser and the server alike (#1577);
+# spaces around it are admitted, as the server strips them.
 SLACK_CHANNEL = FieldRule(
     name="slack_channel_id",
-    pattern=r"[CG][A-Z0-9]{1,63}",
+    pattern=rf"[{SPACE}]*[CG][A-Z0-9]{{1,63}}[{SPACE}]*",
     message=MISSING_HINTS["channel_id"],
     code="invalid",
 )
