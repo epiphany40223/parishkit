@@ -1384,15 +1384,21 @@ it can also include an active Family with no campaign record, which the old
 [ParishSoft data to check](#response-filters) above); this is intended.
 A Testing dashboard's links are the same presets followed by `&mode=testing`.
 
-**Testing switch.** Administrators get a **Responses shown** select in the
-filter bar: Production (the default) or Testing rehearsal, with its
-explanation in its toggletip. It is drawn only for an Administrator and only
-while the campaign has an active rehearsal (or the page already shows one);
-Staff and an Administrator with no rehearsal never see it, as on the
-[response dashboard](#response-dashboard). Like the other filters it applies
-with Apply filters, in place, and `mode` is one of the closed link presets,
-so the address bar after an in-place answer includes `mode=testing` while
-Testing is shown. Testing rehearsal reads the campaign's active rehearsal
+**Testing switch.** Administrators get **Responses shown** above the
+Filters panel: Production (the default) | Testing rehearsal, a
+[binary choice](../ui-conventions/spec.md#binary-choices) with its
+explanation in its toggletip
+([#1535](https://github.com/epiphany40223/parishkit/issues/1535)). It is
+drawn only for an Administrator and only while the campaign has an active
+rehearsal (or the page already shows one); Staff and an Administrator with
+no rehearsal never see it, as on the
+[response dashboard](#response-dashboard). Choosing a segment applies it at
+once, in place, with the filters applied (posted privately, as the table's
+own controls post them, back to the first page), and the filter form
+carries the mode as a hidden field, so Apply filters keeps it. The mode is
+not counted among the Filters panel's applied filters. `mode` is one of the
+closed link presets, so the address bar after an in-place answer includes
+`mode=testing` while Testing is shown. Testing rehearsal reads the campaign's active rehearsal
 epoch for the Response choice, the response columns, their sort orders and
 Counted at; everything else (the population, Family codes, contact details,
 email availability, reach and data checks) is the same in both modes. A
