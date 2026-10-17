@@ -7862,8 +7862,14 @@ of the halt's `mail_provider_failed` entries.
 after its problems, and only while a mail consumer that is running reports
 **Halted** (the conditional-fields rule); the page reads the halt records
 only then, so other reads gain no query. Until the halt is recorded (up to
-about 30 seconds) the button is greyed with that reason. **Clear the halt**
-opens the preview in place: when the halt began and its kind, the waiting
+about 30 seconds) the button is greyed with that reason; right after a
+clear, while a sender still reports **Halted**, it says the halt was cleared
+and the senders start again within about 30 seconds; and when a sender has
+reported Halted for more than two minutes with no halt recorded, it says
+to restart the mail sender and links the
+[mail-provider outage runbook](../../../guides/stewardship-launch-runbooks.md#mail-provider-outage),
+rather than promising 30 seconds for ever (two more reads, only in that
+case). **Clear the halt** opens the preview in place: when the halt began and its kind, the waiting
 and unsettled emails (with a link to settle them on Outgoing mail),
 whether mail is also paused, and the mailbox check, which opening it asks
 for. The check's line and the two buttons, **Check again** and **Confirm:
@@ -7872,7 +7878,8 @@ line says "Checking the mailbox…", then its result, and Confirm stays
 greyed with its reason (reserved lines, so nothing moves) until every
 condition holds. The preview names the halt it reviews; once the status
 shows another halt or none, it is marked "This changed since you looked"
-and both buttons are held. Confirm's answer, and every refusal in the
+and both buttons are held for good: a later status read never draws usable
+buttons under the note, and the reader reopens the preview. Confirm's answer, and every refusal in the
 service's own words, are drawn in the same region. No step needs a recent
 sign-in (#1547), so there is no step-up.
 
