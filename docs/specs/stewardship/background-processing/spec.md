@@ -1692,7 +1692,7 @@ set aside, and an address refused for now stays. In the transaction that
 records the outcome, an address refused permanently also becomes a
 recipient refusal of the accepted attempt, exactly as that attempt's own
 permanent refusal would: later email to the Family leaves it out until it
-is cleared or ParishSoft's address changes, and Outgoing mail and Refused
+is cleared or ParishSoft's address changes, and Sent mail and Refused
 addresses show it against that email. A refusal that cannot be recorded
 never loses the outcome: the recording runs in a savepoint, and its failure
 is logged at ERROR and leaves one durable CRITICAL

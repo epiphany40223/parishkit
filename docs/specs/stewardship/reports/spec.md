@@ -846,7 +846,7 @@ both roles see:
   not cancelled (a cancelled email was never sent), with its time and outcome
   in plain words: Delivered (the mail service accepted it, which does not
   prove it reached the inbox), Failed, Not sure it arrived, or Still sending.
-  No email content is shown. Outgoing mail, its state filter and the Mail
+  No email content is shown. Sent mail, its state filter and the Mail
   message page name each email's state in the same words, from one shared
   table, adding where a Still sending email is (queued, waiting to retry, or
   being handed to the mail service) and Not sent (cancelled). The Admin

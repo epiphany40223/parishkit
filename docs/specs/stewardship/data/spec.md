@@ -1652,6 +1652,22 @@ login. The page's `delivery_viewed` audit record names the actor and the
 email, so the read needs no audit of its own. The table grant is unchanged:
 the web login still cannot `SELECT` any rendering column.
 
+[Sent mail](../admin-portal/spec.md#sent-mail) adds two reads of the same
+kind, with the same caller and actor checks, fixed search path and grants
+(frozen migration 0115,
+[#1562](https://github.com/epiphany40223/parishkit/issues/1562)).
+`stewardship_delivery_ids_for_address_v1(address, actor)` returns only the
+ids of the emails any of whose renderings has `address` among its intended
+recipients, compared in lower case; the expression GIN index
+`outbox_render_intended_lower` (over
+`lower(intended_recipients::text)::jsonb`, default `jsonb_ops`) answers it
+without reading every rendering. `stewardship_delivery_page_recipients_v1(messages, actor)` returns
+`(message, address)` for the intended addresses of the current rendering of
+each given email that has no Family (an Administrator report or notice), at
+most 500 ids per call, so the list can name each such email's
+Administrator; a Family email's addresses never leave it. Neither returns any
+other column of the rendering.
+
 The same page says what the latest attempt recorded for each address
 ([#806](https://github.com/epiphany40223/parishkit/issues/806)). An attempt's
 evidence (`stewardship_outbox_event.evidence_note`, outside the web login's
