@@ -351,6 +351,20 @@ chart keeps its accessible name and description
 A stat tile that states a share may also draw it as a
 [share bar](#stat-tiles).
 
+**Hover guide line.** A chart whose x axis is dates, times or campaign days
+and that shows tooltips draws a faint vertical guide line at the x value the
+pointer, a tap or (where the chart has one) its slider is on, through every
+panel of the chart, and that x value's tooltip lists its figures. Pointing
+anywhere over the plot picks the nearest x value (each x value has an
+invisible full-height hover band), so no one has to find a thin line or a
+small point. The line is one shared colour (the ink colour at half opacity,
+following the colour scheme), appears only while an x value is inspected, is
+drawn over the chart without moving anything, is hidden from assistive
+technology, is cleared when the page starts to print (so a pointer resting on
+a chart does not leave it in the printout) and never appears in a download or
+email image. Category and bar charts, whose rows or bars react as a whole, have no guide
+line ([#1536](https://github.com/epiphany40223/parishkit/issues/1536)).
+
 ## Admin portal interaction
 
 ### JavaScript requirement
