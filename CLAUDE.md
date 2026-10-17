@@ -55,7 +55,8 @@ ParishKit contains reusable Python automation for Catholic parishes.
   migration. Never infer permission to delete existing databases from this
   policy.
 - Stewardship v1 launched on October 3, 2026. Choose post-launch work from the
-  tiers in the [roadmap issue](https://github.com/epiphany40223/parishkit/issues/146);
+  [Stewardship roadmap project board](https://github.com/orgs/epiphany40223/projects/1)
+  (Status and Timeframe fields);
   the [v1 launch scope](docs/plans/stewardship/v1-launch.md) records what
   launched and what was deferred. Production deploys happen only when the
   Administrator approves them.
@@ -65,11 +66,13 @@ ParishKit contains reusable Python automation for Catholic parishes.
   human's standing merge/continue authority. Preserve full integrated gate
   reviews and explicit production-readiness, deployment and release boundaries.
 - Stewardship follow-up work is tracked in GitHub issues labeled
-  `stewardship` plus one `timing: …` label, indexed by the
-  [backlog and roadmap issue](https://github.com/epiphany40223/parishkit/issues/146).
+  `stewardship` plus one `timing: …` label, which appear on the
+  [project board](https://github.com/orgs/epiphany40223/projects/1); labels and
+  filing conventions are in
+  [Tracking post-launch work](docs/plans/stewardship/v1-launch.md#tracking-post-launch-work).
   Link PRs to their issue (`Closes #N`). Record each new deferred idea as an
   issue with full context, analysis and rejected approaches, and add it to the
-  roadmap. Keep host addresses, deployment identifiers and credentials out of
+  board. Keep host addresses, deployment identifiers and credentials out of
   issues; this repository is public.
 - Prefer shorter, simpler code when it remains clear, especially when that
   makes behavior easier to unit test. This code does not require ultra-high

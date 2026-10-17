@@ -31,6 +31,8 @@ SLACK_LABELS = LABELS | {
 }
 # The Recent tests list before any test (setup-test-status.html).
 EMPTY = _("No test has been requested yet. Select Send Slack test below to send one.")
+# A Slack test that was not sent links the Slack steps (#1476).
+FIX = ("slack", ("slack", "slack_credential"))
 
 
 class SetupNotificationForm(AdminForm):
@@ -86,6 +88,7 @@ def setup_notification(request):
                 data,
                 EMPTY,
                 reverse("admin:setup_notification_status") + "?format=status",
+                FIX,
             )
             | {"channel_id": preview.draft.sections["slack"]["channel_id"]},
             status=status,

@@ -48,6 +48,7 @@ from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
+from parishkit.stewardship.web.stat_tiles import tile
 
 from .chart_specs import STAGE_LABELS, activity_chart, funnel_chart, share
 from .export_views import SAFE_FAILURES
@@ -195,16 +196,29 @@ def at_grain(metrics, grain):
 
 
 def tiles(metrics):
-    """One tile per funnel stage: label, count, share of Invited and its note."""
+    """One stat tile per funnel stage (ui-conventions "Stat tiles", #1540).
+
+    Each tile has its stage's count and its note, if any. Once an
+    invitation has been delivered, every stage but Invited also states its
+    share compared with Invited, and every tile draws that share as a bar
+    (#720): Invited's own bar is full, the reference the others are read
+    against. Before then no tile has a share or a bar.
+    """
     invited = metrics.stage("invited")
     return [
-        {
-            "key": stage.key,
-            "label": STAGE_LABELS[stage.key],
-            "count": stage.count,
-            "share": share(stage.count, invited),
-            "note": stage.note,
-        }
+        tile(
+            stage.key,
+            STAGE_LABELS[stage.key],
+            stage.count,
+            details=(
+                _("%(share)s compared with invited")
+                % {"share": share(stage.count, invited)}
+                if invited and stage.key != "invited"
+                else "",
+                stage.note or "",
+            ),
+            share=(stage.count, invited),
+        )
         for stage in metrics.stages
     ]
 

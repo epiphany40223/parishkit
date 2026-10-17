@@ -170,6 +170,15 @@ def assert_refused_at_the_dates(page):
     expect(summary).to_have_count(1)
     expect(summary.get_by_role("link", name=ORDER)).to_have_attribute("href", "#end")
     assert page.locator("[data-filter-panel]").evaluate("node => node.open")
+    # The gate's hint says the same words; it is held hidden while the
+    # message shows, so the form says it once (#1469).
+    assert (
+        page.locator("#information-filter-hint").evaluate(
+            "node => getComputedStyle(node).visibility"
+        )
+        == "hidden"
+    )
+    assert page.locator("#table-filters").inner_text().count(ORDER) == 1
 
 
 def assert_dates_cleared(page):
@@ -210,6 +219,50 @@ def test_refused_dates_are_shown_at_their_fields(page, component_origin, end):
         assert page.locator(date).get_attribute("aria-describedby") == (
             "information-zone-help"
         )
+    assert_clean(page, errors)
+
+
+# The offsets of Apply, the dates' message line, the zone note and the hint
+# row from the filter form's top, and the hint row's height (#1469). The
+# error summary above the form comes and goes with the mark, so places are
+# measured within the form.
+FILTER_PLACES = """() => {
+  const form = document.getElementById("table-filters");
+  const top = (node) =>
+    node.getBoundingClientRect().top - form.getBoundingClientRect().top;
+  const hint = document.getElementById("information-filter-hint");
+  return [
+    top(form.querySelector("[type=submit]")),
+    top(document.getElementById("submitted-dates_error").parentElement),
+    top(document.getElementById("information-zone-help")),
+    top(hint),
+    hint.getBoundingClientRect().height,
+  ];
+}"""
+
+
+def test_refused_dates_say_it_once_and_hand_back_the_hint(page, component_origin):
+    """The refused order is said once, at the dates' line (#1469).
+
+    While the server's message shows, the gate's hint in the same words is
+    held hidden; an edit that leaves the dates out of order clears the
+    server's mark, and the gate's own hint shows the reason again, still
+    once. Neither moves Apply, the line, the zone note or the hint row.
+    """
+    from playwright.sync_api import expect
+
+    errors = watch(page)
+    page.goto(component_origin + "/information-refused-dates")
+    assert_refused_at_the_dates(page)
+    before = page.evaluate(FILTER_PLACES)
+    page.locator("#end").fill("2026-11-02")
+    assert_dates_cleared(page)
+    hint = page.locator("#information-filter-hint")
+    expect(hint).to_have_text(ORDER)
+    expect(hint).to_be_visible()
+    assert page.locator("#table-filters").inner_text().count(ORDER) == 1
+    assert page.get_by_role("button", name="Apply filters").is_disabled()
+    assert page.evaluate(FILTER_PLACES) == pytest.approx(before, abs=0.5)
     assert_clean(page, errors)
 
 

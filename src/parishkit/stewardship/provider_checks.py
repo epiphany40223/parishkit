@@ -9,10 +9,14 @@ import time
 from contextlib import suppress
 from threading import Event, Thread
 
-from .accounts.credential_errors import CredentialValidationUnavailable
+from .accounts.credential_errors import (
+    CredentialOrganizationMismatch,
+    CredentialValidationUnavailable,
+)
 from .accounts.key_files import MAX_FILE_BYTES
 from .accounts.provider_context import validated_context
 from .deployment import DeploymentProfile
+from .local import source_base_url
 
 
 class ProviderCheckDrainFailure(BaseException):
@@ -161,13 +165,17 @@ def _exchange(
                 )
 
 
-def check_candidate(target, settings, value, *, seconds, check, profile):
+def check_candidate(target, settings, value, *, seconds, check, profile, base_url=None):
     """Run only the compiled helper; no secret arguments, environment or temp files.
 
     This internal function has no authorization of its own. The request validator
     below admits the actual target login, closes SQL and reserves a deadline first.
-    ``profile`` travels in the request so the environment-free helper admits
-    the local fake's endpoint only for a LOCAL deployment.
+    ``profile`` and ``base_url`` (the deployment's ParishSoft choice) travel in
+    the request, so the environment-free helper reaches that one base URL and
+    admits the local fake only for a LOCAL deployment. Returns whether the
+    provider accepted the key; a ParishSoft key for another organization
+    raises ``CredentialOrganizationMismatch`` instead of returning False, so
+    the installer can record which refusal it was (#1495).
     """
     settings = validated_context(target, settings)
     if (
@@ -186,6 +194,7 @@ def check_candidate(target, settings, value, *, seconds, check, profile):
             "settings": settings,
             "candidate": base64.b64encode(value).decode("ascii"),
             "profile": profile.value,
+            "base_url": source_base_url(profile, base_url),
         }
     ).encode()
     process = None
@@ -218,8 +227,18 @@ def check_candidate(target, settings, value, *, seconds, check, profile):
             )
         except OSError:
             raise CredentialValidationUnavailable() from None
-        if process.returncode != 0 or output not in {b"valid\n", b"invalid\n"}:
+        # A key for another ParishSoft organization ("mismatch", #1492) is
+        # refused for good, as an invalid key is: retrying cannot change
+        # which organization it sees. Only "unavailable" (or no answer) waits
+        # and tries again.
+        if process.returncode != 0 or output not in {
+            b"valid\n",
+            b"invalid\n",
+            b"mismatch\n",
+        }:
             raise CredentialValidationUnavailable()
+        if output == b"mismatch\n":
+            raise CredentialOrganizationMismatch()
         return output == b"valid\n"
     except ProviderCheckDrainFailure:
         # Drainage already failed fatally. Closing a buffered pipe still owned
@@ -234,8 +253,12 @@ def check_candidate(target, settings, value, *, seconds, check, profile):
                     stream.close()
 
 
-def request_validator(target, *, check, profile):
-    """Bind an isolated runtime to immutable intake scope, not current YAML guesses."""
+def request_validator(target, *, check, profile, base_url=None):
+    """Bind an isolated runtime to immutable intake scope, not current YAML guesses.
+
+    ``base_url`` is the deployment's ``parishsoft_base_url`` (None is the
+    profile's default).
+    """
     if (
         target not in {"parishsoft", "google_workspace", "slack"}
         or not callable(check)
@@ -274,9 +297,17 @@ def request_validator(target, *, check, profile):
             finally:
                 connections.close_all()
             return check_candidate(
-                target, settings, value, seconds=seconds, check=check, profile=profile
+                target,
+                settings,
+                value,
+                seconds=seconds,
+                check=check,
+                profile=profile,
+                base_url=base_url,
             )
-        except CredentialValidationUnavailable:
+        except (CredentialValidationUnavailable, CredentialOrganizationMismatch):
+            # A mismatch is the provider's verdict on the key, not a local
+            # failure: it must reach the installer as itself (#1495).
             raise
         except Exception:
             # Local admission, invocation and connection failures are not a

@@ -19,7 +19,7 @@ from .secret_requests import stage_secret_request
 from .sessions import authenticated_admin, require_fresh
 
 
-def admit_admin_action(caller, *, actor_id, action):
+def admit_admin_action(caller, *, actor_id, action, service=None):
     """Freeze configuration/user/session admission until the intent commits.
 
     ``caller`` is an ``AdminCaller`` (until the final ADM-11 PR, a Django
@@ -28,7 +28,9 @@ def admit_admin_action(caller, *, actor_id, action):
     middleware/decorators produce; a read-only automation caller is refused.
     Setup and restore workflow owners require their own specialized
     admission; this normal-operation helper deliberately cannot bypass those
-    gates.
+    gates. ``service`` is the caller's authority runtime: the web's
+    (``runtime()``) when left out, and the command line's own for an
+    automation caller, which has no web runtime.
     """
     if not connection.in_atomic_block:
         raise StorageInvariantError(
@@ -48,7 +50,7 @@ def admit_admin_action(caller, *, actor_id, action):
         # No workflow lets automation confirm a destructive action yet; one
         # that should decides so in its own specification (ADM-11).
         raise PermissionError("Access is unavailable.")
-    service = runtime()
+    service = service or runtime()
     # Configuration activation/offline recovery takes the conflicting root lock.
     # Pin it before user/session locks; an allow decision cannot survive a
     # concurrent policy application while the durable request is being inserted.
@@ -122,12 +124,16 @@ def configuration_request(request, *, base_digest, patch, request_key, correlati
     )
 
 
-def sealed_secret_request(request, *, configuration_digest=None, **intent):
+def sealed_secret_request(
+    request, *, configuration_digest=None, service=None, **intent
+):
     """Stage an already target-sealed candidate, deriving freshness server-side.
 
     ARC-06's public handoff seals the value immediately in the receiving view.
     No plaintext parameter is accepted here. Explicit storage parameters reject
     unknown form fields, and the SQL trigger commits secret audit atomically.
+    ``service`` is passed on to ``admit_admin_action`` (the web's runtime
+    when left out).
     """
     if {"actor_id", "reauthenticated_at", "admit"} & intent.keys():
         raise ValueError("Authentication evidence cannot be supplied by the caller.")
@@ -146,7 +152,9 @@ def sealed_secret_request(request, *, configuration_digest=None, **intent):
 
     def admit():
         """Keep previewed public settings bound while locked intake commits."""
-        admit_admin_action(request, actor_id=actor, action=Action.SECRET_REPLACEMENT)
+        admit_admin_action(
+            request, actor_id=actor, action=Action.SECRET_REPLACEMENT, service=service
+        )
         if (
             configuration_digest is not None
             and not SystemConfiguration.objects.filter(

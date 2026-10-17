@@ -345,9 +345,10 @@ one Administrator until it expires or ends. It is a delegation from a
 Google-authenticated Admin session, not a new way to sign in; the Google-only
 rule in
 [identity and session security](../architecture/spec.md#identity-and-session-security)
-stands. In LOCAL, where Google sign-in is replaced by the
-[local test sign-in](../local-environment/spec.md#local-test-sign-in), the
-approval page accepts that sign-in's step-up exactly as other Admin pages do.
+stands. In LOCAL, where the
+[local test sign-in](../local-environment/spec.md#local-test-sign-in) stands
+in for Google sign-in or sits beside it, the approval page accepts that
+sign-in's step-up exactly as other Admin pages do.
 
 ### Session records
 
@@ -863,11 +864,12 @@ Every event also appears in the [system logs](../admin-portal/spec.md#logs).
 Nothing carries the secret, digests or Family data.
 
 A row applies once a command can take its action. On `main` no command yet
-confirms Production, withdraws, runs Testing cleanup (PR 12) or replaces a
-key (PR 10), so nothing records an `irreversible` notice or observes
-`automation_irreversible` yet. `users confirm`'s high-impact changes and
-`integration confirm`'s Slack changes and removals record the
-`policy_change` notice and observe `automation_policy_change`; the
+confirms Production, withdraws or runs Testing cleanup (PR 12), so nothing
+records an `irreversible` notice or observes `automation_irreversible` yet.
+`users confirm`'s high-impact changes, `integration confirm`'s Slack changes
+and removals, `integration key finish-switching`, `integration key
+replace` and `integration backup-key confirm` record the `policy_change`
+notice and observe `automation_policy_change`. The
 [delivery plan](#delivery-plan) says which commands have landed.
 
 ### High-impact changes
@@ -962,7 +964,8 @@ needs no database: it checks the preamble's form and prints the catalog.
 A command prints exactly one JSON document to standard output, unless it
 runs with `--watch`, is `login start` (whose document has `final` false) or
 streams a file (`logs export`, `export census`, `export limitations`,
-`export roster`, and `export download --stream` from PR 8b),
+`export roster`, `followup export`, and `export download --stream` from
+PR 8b),
 which writes the file's bytes alone to standard output and its one document,
 success or failure, to standard error:
 
@@ -1030,7 +1033,7 @@ inside the command session's 60-minute idle limit. A watch stops when:
 - the process receives SIGINT (exit 7, `watch_interrupted`, with the last
   state and no traceback). `docker exec` forwards no signal, so the host
   wrapper starts a watch with a random token in its environment
-  (`PK_ADMIN_RUN`), and on INT, TERM or HUP sends SIGINT, through a second
+  (`PK_ADMIN_RUN`), and on INT, QUIT, TERM or HUP sends SIGINT, through a second
   `docker compose exec`, to the container process whose environment holds
   that token. It starts that stop before anything else, reports its
   failure (waiting at most 10 seconds), and, after INT only, waits at most
@@ -1039,7 +1042,7 @@ inside the command session's 60-minute idle limit. A watch stops when:
   client and the stop command run in their own sessions (`setsid -w`, where
   it works), so the terminal's SIGINT, on which `docker compose` exits at
   once, cannot cut that document or a second Ctrl-C the stop off. It then
-  stops its own processes and exits 130, 143 or 129
+  stops its own processes and exits 130, 131, 143 or 129
   ([#598](https://github.com/epiphany40223/parishkit/issues/598)). Only a
   watch, a passive read, is signalled; any other interrupted command runs
   to its end in the container, so a write never becomes an unknown outcome;
@@ -1275,8 +1278,11 @@ call in `confirmation_views` (in `_fresh_after_cleanup`), and the #547 sites:
 `directory_export_views.create`,
 `financial_export_views.create`, `integration_views.integration_settings`
 (previews, removals and confirmations of settings) and
-`go_live_commands.start_cleanup`. Each command reuses the service below its
-view, so it adapts the view's check rather than skipping it.
+`go_live_commands.start_cleanup`; and, for key replacement,
+`integration_credentials.save_credential` and `admit_admin_action` for
+`SECRET_REPLACEMENT` (see [secret replacement](#secret-replacement)). Each
+command reuses the service below its view, so it adapts the view's check
+rather than skipping it.
 
 The Production confirmation also requires, in Python, a sign-in after cleanup
 finished: `confirmation_commands` refuses when the fresh instant precedes the
@@ -1339,47 +1345,98 @@ Integration key replacement and the backup encryption key change run from the
 command line (decision 15) through the same service functions, validation,
 sealing, confirmation and audit as the portal, and the same
 [credential installer protocol](../../../guides/stewardship-credential-installers.md),
-unchanged. The database and `require_fresh` side below is built (PR 5a);
-the commands and the wrapper's secret input come with PR 10 and are not
-built yet.
+unchanged. The database and `require_fresh` side below is built (PR 5a),
+and so are `integration key replace`, the backup key commands and the
+wrapper's secret input
+([#463](https://github.com/epiphany40223/parishkit/issues/463)).
 
-- **Reading a secret file.** `--secret-file <path>` first refuses a path that
-  is not a regular file (`test -f` and not `test -p`), so opening a FIFO
-  cannot block, then opens the file once (`exec 3<"$path"`), checks the open
-  descriptor, not the path (`stat -L /dev/fd/3`: a regular file owned by the
-  wrapper's account with no group or other permissions, 0600 or stricter),
-  and reads only descriptor 3, so the file cannot be swapped between the
-  check and the read. Any failed check exits 2. The value is never an
-  argument. The wrapper's `stat`, `base64` and `/dev/fd` usage is GNU and
-  Linux only, like the deployment host.
+- **Which commands.** The wrapper's `secret_row` table names, for each
+  command that takes a value it reads itself, the file option, the
+  standard input option, the line's tag and the page's limit:
+  `integration key replace` (`--secret-file`, `--secret-stdin`,
+  `pk-admin-secret/1`, 128 KiB), `integration backup-key challenge`
+  (`--public-key-file` only, `pk-admin-public-key/1`, 200 bytes) and
+  `integration backup-key preview` (`--code-file`, `--code-stdin`,
+  `pk-admin-proof/1`, 200 bytes; the page's field limit,
+  `backup_key.MAX_FIELD`). It accepts each option only for its command,
+  only once, and never with a `-` input: standard input then carries the
+  value. In the command line the container sees, `--X-file PATH` becomes
+  `--X-stdin`, so the path never reaches it either; `--public-key-stdin` is
+  the container's alone and refused from the operator. The rest of this
+  section says "key" for any of the three values; a piped value needs
+  `--yes` only for a command that prompts.
+- **Reading a secret file.** `--secret-file PATH` first refuses a path that
+  is a symbolic link or not a regular file (`test -L`, `test -f` and not
+  `test -p`), so opening a FIFO cannot block, then opens the file once
+  (`command exec 3<"$path"`, so a failed open is a refusal), checks the open
+  descriptor, not the path (`test -f /dev/fd/3` and `stat -L` of
+  `/dev/fd/3`: a regular file owned by the wrapper's account with no group
+  or other permissions, 0600 or stricter, and no larger than the page's
+  limit), and reads only descriptor 3, so the file read is the file
+  checked. Any failed check exits 2. The value is never an argument. POSIX
+  `sh` has no `O_NOFOLLOW`, so a symbolic link swapped in between the path
+  checks and the open is followed (what is read must still pass the
+  descriptor's checks), and a FIFO swapped in blocks the open; both need
+  write access to the key's directory, which the operator guide says to
+  keep private. The wrapper reads GNU `stat` on
+  the host and BSD `stat` on developers' machines, as it does for the
+  session directory.
 - **Reading standard input.** `--secret-stdin` from a terminal turns echo off
-  (restored by a `trap` on every exit path) and reads until Ctrl-D, so a
-  multi-line Google Workspace service-account JSON can be pasted. Piped
-  `--secret-stdin` requires `--yes`, checked before anything is read, because
-  the same input cannot also answer the prompt. The operator guide warns
-  against `echo <key> |` and other forms that leave the value in shell
-  history or the process list.
+  (refusing with exit 2 if it cannot; restored by the `EXIT` trap on every
+  exit path, an interruption's included) and reads until Ctrl-D, so a
+  multi-line Google Workspace service-account JSON can be pasted; echo comes
+  back on for the prompt's one answer line. At a terminal the wrapper never
+  returns before the key is read to its end: if the command ends first (a
+  refusal such as Staff's `denied`, an ended session, the web container or
+  docker missing), the operator may still be pasting, and a returned shell
+  would run the key as a command and keep it in its history. So the
+  wrapper stops the writer's key reader (`head`, by its recorded PID, so
+  without pgrep too), keeps echo off, says that the command ended and that
+  what is pasted is discarded, reads the terminal to Ctrl-D and discards
+  it, and only then exits. A paste longer than the limit is treated the
+  same way: the key reader stops one byte past it (`dd` counts what it
+  passed), so the rest of the paste is read to Ctrl-D with echo off and
+  discarded, and the command refuses the key. Reading the key before the command runs instead
+  would need somewhere to hold it while the command starts, and the value
+  never goes into a variable or a file, while the pipes cannot hold a
+  key of the page's limit. Canonical-mode terminals bound one input line
+  (1024 bytes on macOS, 4096 on Linux), so a Google Workspace JSON key,
+  whose `private_key` line is longer, is given with `--secret-file` on
+  macOS. Piped `--secret-stdin` requires
+  `--yes`, checked before anything is read, because the same input cannot
+  also answer the prompt. The operator guide warns against `echo <key> |`
+  and other forms that leave the value in shell history or the process list.
 - **Passing it in.** The wrapper sends the value as one line after the
-  preamble, `pk-admin-secret/1 <base64>`, by piping the source straight into
-  `base64 -w0` (never `$(cat …)` or a shell variable), with the size limit
-  enforced by `head -c` on the way in; the value passes only through pipes
-  and shell builtins, never through an argument or the environment. It runs
-  without `xtrace` and with `ulimit -c 0`; the command sets `RLIMIT_CORE` to 0
-  before reading. Both the wrapper (on the raw bytes) and the command (after
-  decoding) refuse a value over the page's size limit, and the command also
-  refuses a value containing NUL or empty after normalization. The operator
-  guide explains that Ctrl-D ends input at the start of a line (or twice
-  mid-line).
-- **Normalizing.** The command decodes the value and normalizes it exactly as
-  the page's `InlineCredentialForm` does: UTF-8 decoding, and surrounding
-  whitespace stripped for every target except `google_workspace`, whose JSON
-  is kept as given. It then validates and seals it in process as the
-  receiving view does and drops the plain value; it never writes it to
-  output, logs, exceptions or the audit trail.
-- **Commands.** `integration key replace --target parishsoft|google_workspace|slack`
-  (`google_workspace` holds the mail key; Slack's token and channel go
-  together, as on the page) runs the page's validation, prints the safe
-  fingerprint and what will change, prompts, and submits the sealed request.
+  preamble, `pk-admin-secret/1 <base64>`, by piping descriptor 3 through
+  `head -c` (the page's limit plus one byte) into `base64` and `tr -d '\n'`
+  (never `$(cat …)` or a shell variable), into the input FIFO the wrapper
+  already writes the preamble to; the value passes only through pipes, never
+  through an argument, the environment or a file (a FIFO holds no data on
+  disk), so the work directory never holds it. The wrapper runs without
+  `xtrace` and with its core size limit at 0 (`ulimit -c 0`, for `head` and
+  `base64` too), and the command sets `RLIMIT_CORE` to 0 before reading, as for
+  every command. The wrapper refuses a file over the limit; piped or typed
+  input is bounded by `head -c`, and the command refuses a decoded value over
+  the limit. A line that is not the wrapper's (missing, mistagged, not
+  base64, too long) is a usage error (exit 2) that names no part of it. The
+  operator guide explains that Ctrl-D ends input at the start of a line (or
+  twice mid-line).
+- **Normalizing.** The command decodes the value and normalizes it with the
+  page's own `InlineCredentialForm`: UTF-8 decoding (other bytes are
+  `invalid` at `key`), a NUL refused, and surrounding whitespace stripped
+  for every target except `google_workspace`, whose JSON is kept as given.
+  An empty key is `required` at `key` (on the page, blank keeps the current
+  key). A Google Workspace or Slack key then gets the page's format check
+  under the deployment profile (`admit_candidate`). It is sealed in process
+  as the receiving view does and the plain value dropped; it is never
+  written to output, logs, exceptions or the audit trail.
+- **Commands.** `integration key replace TARGET --expected-version V
+  (--secret-file PATH | --secret-stdin) [--changes JSON] [--yes]`
+  (`parishsoft`, `google_workspace` or `slack`; `google_workspace` holds the
+  mail key; Slack's token and channel go together, as on the page) runs the
+  page's validation, prints what will change (never the key or its
+  fingerprint), prompts, and submits the sealed request; see
+  [Integrations and credentials](#integrations-and-credentials).
   `integration key status --watch` follows staged, testing, installing and
   acknowledged progress, and `integration key finish-switching-preview`
   and `integration key finish-switching` are the page's **Finish switching
@@ -1397,9 +1454,13 @@ built yet.
   The paths are host paths the container cannot read: the wrapper reads the
   public key file and the proof code (file or terminal) exactly as it reads a
   secret, and sends each after the preamble on its own tagged base64 line,
-  `pk-admin-public-key/1 <base64>` and `pk-admin-proof/1 <base64>`.
+  `pk-admin-public-key/1 <base64>` and `pk-admin-proof/1 <base64>`. A
+  value over the page's 200-byte field limit, or not UTF-8, is `invalid` at
+  `public_key` or `code`, never quoting it.
   Its configuration request has no SQL freshness check (only Python's
-  `require_fresh`), so it needs no SQL change.
+  `require_fresh`), so it needs no SQL change. See
+  [Integrations and credentials](#integrations-and-credentials) for each
+  step.
 - **Setup wizard credentials** stay with the one-time first-Admin wizard,
   which is a permanent exemption (see [setup wizard](#setup-wizard)); its
   offline counterpart is `pk-stewardship bootstrap`. As defense in depth,
@@ -1510,7 +1571,8 @@ Administrator who is now Staff) is `denied` with no prompt, never
 `invalid`, `stale_version` or `not_available`, and learns nothing of the
 state the prompt would describe. The capability is the action's own, so a
 command Staff may run (`export financial`, `export directory`, `export
-postal`, `export family-timeline`, `census resolve`, `followup bulk`) still prompts Staff;
+postal`, `export family-timeline`, `census resolve`, `followup bulk`,
+`followup roster-bulk`) still prompts Staff;
 the action then admits again as its page's post does.
 
 ### Audit attribution
@@ -1762,7 +1824,14 @@ signatures:
   its transaction. `integration key status` and the Finish switching
   commands needed none: they call the pages' own `secret_request_status`,
   `_selectable`, `_selection` and `_changes` (which now also names each
-  setting's stored field).
+  setting's stored field). `integration key replace` moved the Save with a
+  key's request-free tail into `integration_views.sign_key_intent` (the key
+  field's signed intent), `key_intent` and `stage_key`, which the page now
+  calls; `save_credential` takes an `attach` callback for the selection
+  request's transaction and checks the recent sign-in first in its own
+  transaction without recording it; `admit_admin_action` and
+  `sealed_secret_request` take the caller's authority runtime (the web's
+  when left out).
   `workgroup preview` moved the No-reminders WorkGroup page's review into
   `reminder_workgroup_views.review_change`, which the page's Review now
   calls (`workgroup show` needed none: the page's campaign check and
@@ -1782,7 +1851,14 @@ signatures:
   Chairperson actions). The event acknowledgements moved each view's
   transaction into a request-free `acknowledge_now` in
   `security_event_views` and `critical_event_views`, which the views now
-  call.
+  call. PR 11b's roster tick and information follow-up needed none: the
+  commands call the pages' own admissions and services
+  (`set_roster_entered`, `mark_many_entered`, `update_information`) and
+  the information page's request-free `information_page` and
+  `information_history`. PR 11c's `followup export` moved the queue
+  download's read and writer into a request-free
+  `ministry_followup_exports.export_body` and its file name into
+  `export_file_name`, which the page's view now calls.
 - **PR 12:** `go_live_commands` and `go_live_views.testing_families`, cleanup
   retry and cancel, the link preparation controls in `activation_views.links`,
   `confirmation_views._fresh_after_cleanup`, `confirmation_commands`, the
@@ -1916,6 +1992,17 @@ that background work holds while mail is sent, is `stale_version`. Its
 `version` is the applied configuration's digest, the base a schedule change
 (PR 4) is previewed against. Its `series` lists the campaign's remembered
 reminder series, each with its rule and the reminders it holds.
+
+Each schedule's `resolved` (at most five UTC send times, with `more` when
+there are others) lists its first sends from the campaign's start, as does
+each side of `schedule preview`. Once the mail review adopts the shared
+[schedule preview](../ui-conventions/spec.md#schedule-previews)
+([#1129](https://github.com/epiphany40223/parishkit/issues/1129), ADM-04
+slice 7c), both commands list the next sends after the database's now
+instead, through the one from-now helper beside `preview_slots` that the
+page uses, so the page, `schedule show` and `schedule preview` agree. The
+keys and their shape stay; a passed send is no longer listed. The command
+line has no browser zone, so its sends are not grouped by day.
 
 ### Source refresh
 
@@ -2691,7 +2778,7 @@ deleted when the export ends, so nothing regenerates it.
 | `campaign_comparison_export` | `export comparison [--day N] --format F [--timezone Z]` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) slice 6, [downloads](../campaign-history/spec.md#downloads-and-sharing)): the page's download form, through the same capture (`comparison_exports.read_capture`) and service (`create_comparison_export`), with the page's `campaign_comparison_exported` and `admin_cmd_export_comparison`; without `--timezone` the file's request time uses the parish's time zone ([#1161](https://github.com/epiphany40223/parishkit/issues/1161)) |
 | `daily_digest_chart`, `daily_digest_download` | Permanent: PNG images; the data is in the matching report or digest read |
 | `financial_report`, `limitations_report`, `information_queue` | `report financial`, `report limitations`, `report information`: summaries and counts (PR 8c; `report limitations` was `report talents` until #970); Family-level rows only as exports (PR 8e, PR 8h for limitations) |
-| `information_item` | One Family's submission and its follow-up history: `followup …` (PR 11), with the Ministry follow-up items; it prints only the item's state and history, and the submission's content comes through `export information` (PR 8e) |
+| `information_item` | One Family's submission and its follow-up history: `followup information-show ITEM_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see [users and follow-up](#users-and-follow-up)); it prints only the item's state and history, and the submission's content comes through `export information` (PR 8e) |
 | `ministry_report` | `report ministry`, and `report ministry --ministry DUID --requests join\|leave` for one Ministry's join or leave count (PR 8c); rows only as exports (PR 8e). The Members joining and leaving pages (`ministry_joiners`, `ministry_leavers`) were retired ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)); the commands stay, and `export ministry`, which writes one Ministry's join or leave list, now covers this summary, whose counts it lists. Since [#1133](https://github.com/epiphany40223/parishkit/issues/1133) the page is one Ministry requests page with the follow-up queue: its By Ministry counts are `report ministry`'s summary, and its queue is `followup list` (PR 11a) |
 | `ministry_packet` | A packet of Members' contacts, so export only: `export ministry-packet` (PR 8e) |
 | `past_campaign_archive` | `export archive` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) part (a), [archive export](../campaign-history/spec.md#download-campaign-archive)): Past campaigns' Download campaign archive, through the same service (`create_archive_export`), with the page's `campaign_archive_exported` and `admin_cmd_export_archive`; [fresh-gated](#fresh-gated-actions-from-the-command-line) |
@@ -2703,6 +2790,7 @@ deleted when the export ends, so nothing regenerates it.
 | `family_open_form` (new, #529) | Permanent: Open form signs this browser in to the Family form for a Family on the phone, a browser hand-off by nature; Families' responses are read through `report responses` and the directory exports with its Response filters |
 | `limitations_export` | `export limitations [--show S] [--format F] [--timezone Z]` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)): the page's download through the page's own writer (`limitation_views.export_body`), with #752's audit fields |
 | `census_changes`, `census_changes_export` | `report census`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export census` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command is `census resolve PROPOSAL_ID --action entered\|ignored\|reopened` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), through the same `census_resolution` service. An Automatic row's Review (Approve, Ignore, Back to To review; ADM-09) posts there too; its command is `census review PROPOSAL_ID --decision approved\|ignored\|unreviewed` ([#528](https://github.com/epiphany40223/parishkit/issues/528)), through the same `census_review` service. The Review's Edit value and Clear edit (ADM-09.04) are `census edit PROPOSAL_ID --value TEXT\|- \| --clear`, and its Use the Family's value anyway (ADM-09.03) is `census resolve-conflict PROPOSAL_ID` ([#1434](https://github.com/epiphany40223/parishkit/issues/1434)), through the same service |
+| `census_publication`, `census_publication_confirmation`, `census_publication_retries` (new, [#528](https://github.com/epiphany40223/parishkit/issues/528); not built yet) | `census publish-check`, `census publish-plan`, `census publish-confirm` and `census publish-rerun`: the [Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft) page's Check ParishSoft, plan, Apply and Run again, through the same `publication_tasks` and `publication_plans` services; see [the commands](#publish-to-parishsoft-commands) |
 | `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_download` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export download --stream` (PR 8b; `report_export_regenerate` and `export regenerate` were removed by [#1398](https://github.com/epiphany40223/parishkit/issues/1398)); an exact request's status, cancel and retry, which these pages also serve, are `export exact status --watch`, `export exact cancel` and `export exact retry` (PR 8h) |
 | `report_exact_create` | `export exact create` (PR 8h); the handed-off file through `export fetch` |
 | `daily_digest_snapshot` | `digest daily SNAPSHOT_ID` (PR 8d) |
@@ -3055,6 +3143,65 @@ above and `--fact-set` naming the generation). The
 [operator guide](../../../guides/stewardship-admin-automation.md#report-exports)
 lists the fields and refusals.
 
+#### Publish to ParishSoft commands
+
+The [Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft) page's
+four steps are commands
+([#528](https://github.com/epiphany40223/parishkit/issues/528); specified,
+not built). Each checks the Administrator's `PUBLISH_CENSUS` first, so Staff
+are `denied` before anything is read, then runs the page's own service in
+the page's command scope. While the `parishsoft_publication` setting is off
+(the command line reads the web service's setting) every one of them is
+`not_available` with the page's `publication_off`, and nothing is queued.
+The page's reason codes travel in the document; a plan that changed,
+expired or was superseded is `stale_version`, the switch off, Testing mode,
+a held campaign or a running publication `not_available`, and the rest
+`invalid`. They print ids, versions, counts, outcomes and times, never a
+value, name or note; the values stay in `export census`.
+
+- `census publish-check [--request-key KEY] [--watch]` is Check ParishSoft:
+  `request_preflight`, keyed, so a repeat returns the same check. It is not
+  fresh-gated and does not prompt, as the page asks nothing. Like the
+  page's button it is unavailable while a publication run of the campaign
+  is queued or running (`not_available`, `publication_running`); the
+  command checks this itself, because the preflight service does not. It
+  prints the preflight task; `--watch` follows it as
+  [watching progress](#watching-progress) says and then prints the plan's
+  id and counts.
+- `census publish-plan [PLAN_ID]` reads the current campaign's newest plan,
+  or the one named: who checked and when, whether it was made in Testing
+  mode, its counts, its age against the hour it may be confirmed in,
+  whether it is confirmed and its run's state, and one line per field row
+  (proposal id and version, field, Member DUID, outcome, and once run, the
+  Member's result). It records the page's `census_publication_viewed`.
+- `census publish-confirm PLAN_ID [--request-key KEY] [--watch]` is Apply.
+  Before prompting it refuses a plan that is not the campaign's newest
+  (`stale_version`, `publication_plan_superseded`), through the same Python
+  helper as the page, since no service or SQL guard checks it. It prompts
+  ([command-line confirmation](#command-line-confirmation)) with the plan's
+  counts and the page's sentence, answered `yes`, then calls
+  `confirm_and_publish` with those counts. It is
+  [fresh-gated](#fresh-gated-actions-from-the-command-line): a full-scope,
+  live automation session stands in for the page's five-minute sign-in,
+  which the confirmation's SQL guard (migration 0087) already accepts, so
+  it needs no guard change. The service records
+  `census_publication_confirmed`, and the command
+  `admin_cmd_census_publish_confirm` in the same transaction, once per
+  key. `--watch` follows the run.
+- `census publish-rerun PLAN_ID [--request-key KEY] [--watch]` is Run
+  again: `rerun_publication`, keyed by the request key as its command id.
+  As on the page it applies only when the plan's run task ended without
+  completing and a Member has no final outcome; a Failed Member is finished
+  and needs a new `publish-check`. It prompts with the number of Members
+  the run did not finish, as the page's dialog asks, and records
+  `admin_cmd_census_publish_rerun` with the service's
+  `census_publication_rerun_requested`. `--watch` follows the run.
+
+`publish-confirm` and `publish-rerun` are prompting commands and join the
+host wrapper's `PROMPTING` list. The two new `admin_cmd_*` types join the
+other publication types in their
+[activity group](../admin-portal/spec.md#activity-groups).
+
 ### Operations
 
 | URL names | Command or exemption |
@@ -3246,9 +3393,9 @@ unknown email `not_available`, and a key used with another intent `invalid`.
 | `ministry_followup_item` | `followup show REQUEST_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11a; see below) |
 | `ministry_followup_update` | `followup update REQUEST_ID` (PR 11a; see below); follow-up has no assignment ([#552](https://github.com/epiphany40223/parishkit/issues/552)) |
 | `ministry_followup_bulk` | `followup bulk` (PR 11a; see below), the queue's bulk outcome ([#1131](https://github.com/epiphany40223/parishkit/issues/1131)), through the same `workflows.followup` service |
-| `information_update` | `followup …` (PR 11), with the Family information follow-up |
-| `ministry_followup_export` | The queue's Export these requests ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)), the follow-up queue's filtered set with each Member's contact details: `followup export` (PR 11) |
-| `ministry_followup_roster`, `ministry_roster_bulk` | A resolved join or leave's Entered in ParishSoft tick ([#528](https://github.com/epiphany40223/parishkit/issues/528)), one at a time or several from Roster changes to enter ([#879](https://github.com/epiphany40223/parishkit/issues/879)): `followup roster-entered REQUEST_ID --set\|--clear` (PR 11), through the same `workflows.roster` service |
+| `information_update` | `followup information-update ITEM_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see below), the item's Save, through the same `responses.information` service |
+| `ministry_followup_export` | The queue's Export these requests ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)), the follow-up queue's filtered set with each Member's contact details: `followup export [FILTERS] [--format F] [--timezone Z]` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11c; see below), the page's download through the page's own writer (`ministry_followup_exports.export_body`) |
+| `ministry_followup_roster`, `ministry_roster_bulk` | A resolved join or leave's Entered in ParishSoft tick ([#528](https://github.com/epiphany40223/parishkit/issues/528)), one at a time or several from Roster changes to enter ([#879](https://github.com/epiphany40223/parishkit/issues/879)): `followup roster-entered REQUEST_ID --set\|--clear` and `followup roster-bulk` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see below), through the same `workflows.roster` service |
 | `ministry_roster`, `ministry_roster_export` | Roster changes to enter ([#528](https://github.com/epiphany40223/parishkit/issues/528)): `report roster`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export roster [--show S] [--ministry DUID] [--format F] [--timezone Z]` (PR 8g, [#463](https://github.com/epiphany40223/parishkit/issues/463)), the page's download through the page's own writer (`ministry_roster_views.export_body`) |
 
 The users commands (#952) call the same service functions as the
@@ -3387,10 +3534,113 @@ filters) and history (`followup_history`), and its services
   `--contact-notes` without `--contact-channel`. Neither change is
   fresh-gated, as the page asks for no recent sign-in.
 
-The roster tick (`followup roster-entered`), the queue's export and Family
-information follow-up stay pending in PR 11. The names, options and fields
-are defaults pending Administrator confirmation; the
+The names, options and fields are defaults pending Administrator
+confirmation; the
 [operator guide](../../../guides/stewardship-admin-automation.md#ministry-follow-up)
+lists the fields.
+
+`followup export [--ministry DUID] [--action A] [--state S] [--outcome O]
+[--sort S] [--format csv|xlsx|pdf] [--timezone Z]`
+([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11c) is
+the queue's Export these requests
+([#1157](https://github.com/epiphany40223/parishkit/issues/1157)), streamed
+as `export roster` is, with the same document (`campaign_id`, `file_name`,
+`content_type`, `format`, `timezone`, `size`, `sha256`, `count`) on
+standard error. The page renders the file on request and never stores it,
+so, as for the other in-memory downloads, nothing is kept and there is no
+history, Regenerate or download window
+([#1398](https://github.com/epiphany40223/parishkit/issues/1398)). It
+needs a full-scope session and is neither prompting nor fresh-gated, as
+the page asks for no recent sign-in. It admits with the queue's own
+`ministry_followup_views._principal`, passively first, so a reader without
+the queue is refused before anything is read or built, then recording
+activity as the download's post does, and reads through the shared report
+read. The filters are `followup list`'s without the search (text naming
+Members would stay in shell history) and without the page and size (the
+file is the whole filtered set); `--state not_in_parishsoft` is not
+offered, as the page's export refuses it
+([#1217](https://github.com/epiphany40223/parishkit/issues/1217)).
+`--format` defaults to xlsx and `--timezone` to UTC. The choices are
+checked by the page's own `_choices` and the file is read and written by
+the page's own `export_body` (the queue's whole selection, the Members'
+contact details in the reader's scope, the page's document and writers),
+so its files are the page's. A Ministry DUID or time zone the page refuses
+is `invalid`, reported after the session recheck, with nothing recorded; a
+PDF of more requests than the page allows (1,000) is `invalid` at `format`
+with the page's words, recorded as the page records it (failed, with the
+count reached). It records the page's `ministry_followup_exported` (the
+count, the Ministry DUIDs in the file and whether the contacts were
+operational), and no `admin_cmd_*` event. Nothing of the file is logged.
+The name, its options and the document's fields are defaults pending
+Administrator confirmation; the
+[operator guide](../../../guides/stewardship-admin-automation.md#ministry-follow-up-download)
+lists them.
+
+`followup roster-entered`, `followup roster-bulk`, `followup
+information-show` and `followup information-update`
+([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b) are
+a resolved request's Entered in ParishSoft tick, Roster changes to enter's
+bulk mark, and an Additional information item's page and Save, through the
+pages' own pieces.
+
+- **Roster tick.** `followup roster-entered REQUEST_ID --set|--clear
+  --expected-version N` admits as the request page's tick does
+  (`ministry_followup_views._principal`) and then refuses a Ministry
+  leader at once (`denied`, as `workflows.roster.can_tick` does in the
+  service), so a leader learns nothing of a request. `N` is the tick's
+  current sequence, as `followup show` prints `roster.sequence` (0 before
+  any tick); the command passes the page's next sequence to
+  `set_roster_entered`, so a tick someone changed since is
+  `stale_version`. A request that takes no tick (only a join or leave a
+  person resolved as joined or leave confirmed does) is `invalid` at
+  `request`; a tick that already says so `invalid` at `set` or `clear`.
+  It asks nothing, as the page's tick does not.
+- **Bulk mark.** `followup roster-bulk --request ID:VERSION ... [--yes]`
+  admits with the list's own `ministry_roster_views._principal`
+  (Administrators and Staff) before any input or prompt, refuses more than
+  250 requests or a request chosen twice before the prompt, and asks (or
+  takes `--yes`), as the list's confirmation dialog does. It calls
+  `mark_many_entered`, all or none; `VERSION` is each tick's current
+  sequence.
+  The operator finds the requests with `followup list --state resolved`
+  (`roster.eligible`, `roster.entered`, `roster.sequence`). That list shows
+  each Member and Ministry's newest request only, while Roster changes to
+  enter reads every request, so an older resolved request that a newer one
+  replaced can be missing from `followup list`: a known gap, handled on the
+  page or by `followup roster-entered` with the ID.
+- **Information item.** `followup information-show ITEM_ID [--page N]`
+  admits passively with the page's `information_views._principal`
+  (`ADDITIONAL_FOLLOWUP`, Staff and Administrators), reads through the
+  shared report read and the page's `information_page` and
+  `information_history`, and records the page's `information_viewed`
+  (started, then succeeded or failed). It prints the item's id, version,
+  disposition, instants, flags, replacement and completing account id,
+  and each history revision's flags, account ids and instants: never the
+  Family's name or DUID, the submitted text or the Staff notes.
+  `followup information-update ITEM_ID --expected-version N [--needed
+  yes|no] [--completed yes|no] [--confirm-clear] [--notes TEXT|-]` is the
+  item's Save through `responses.information.update_information`: a
+  left-out option keeps its current value, as the page's form opens
+  filled in (a repeat of a recorded key keeps its first revision's
+  values), notes are at most 5,000 characters with line breaks as the
+  browser counts them, and clearing a completed follow-up without
+  `--confirm-clear`, the page's confirmation box, is `invalid` at
+  `confirm_clear`.
+- **Keys, scope and audit.** The three changes need a full-scope session,
+  run in the page's command scope, and are not fresh-gated, as the pages
+  ask for no recent sign-in. An item or request that is not a Live one of
+  the current campaign is `not_available`. The key binds each entry or
+  revision as on the page (the bulk mark's per-request keys derive from
+  it), so a repeat returns what was recorded and records nothing, and the
+  key with another change is `invalid`. They record the services' own
+  events (`ministry_roster_entered` per entry, `information_updated`) and
+  `admin_cmd_followup_roster_entered`, `admin_cmd_followup_roster_bulk` or
+  `admin_cmd_followup_information_update` in the same transaction, once
+  for each run that recorded something.
+
+The names, options and fields are defaults pending Administrator
+confirmation; the
+[operator guide](../../../guides/stewardship-admin-automation.md#roster-tick-and-additional-information)
 lists the fields.
 
 `report roster [--show todo|all] [--ministry DUID]` is Roster changes to
@@ -3426,8 +3676,8 @@ read and `roster_rows` with `report roster`'s Show and Ministry choices.
 its files are the page's. A Ministry DUID, format or time zone the page
 refuses is `invalid`, reported after the session recheck. It records the
 page's `roster_changes_exported` with the rows in the file, and no
-`admin_cmd_*` event; the row's Entered in ParishSoft tick stays owed to
-`followup roster-entered` (PR 11). The name, its options and the
+`admin_cmd_*` event; the row's Entered in ParishSoft tick is `followup
+roster-entered`'s and `followup roster-bulk`'s (PR 11b). The name, its options and the
 document's fields are defaults pending Administrator confirmation; the
 [operator guide](../../../guides/stewardship-admin-automation.md#roster-changes-download)
 lists them.
@@ -3440,9 +3690,9 @@ lists them.
 | `refresh_schedule_check` | `integration schedule-preview [--refresh-schedule DOCUMENT\|-]` ([#632](https://github.com/epiphany40223/parishkit/issues/632)): the ParishSoft page's no-save live check of the refresh schedule editor's rows, with the same validation, preview and cost summary (any session; no event, as the check records none; see below) |
 | `dismiss_credential_result` | `integration dismiss TARGET --request-id ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
 | `credential_status` | `integration key status TARGET [--request-id ID] [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
-| Key replacement through `integration_settings` | `integration key replace --target …` (PR 10; see [secret replacement](#secret-replacement)) |
+| Key replacement through `integration_settings` | `integration key replace TARGET` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see [secret replacement](#secret-replacement) and below) |
 | `select_credential` | `integration key finish-switching-preview TARGET` and `integration key finish-switching TARGET` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
-| Backup encryption key change, through `integration_settings` with proof of possession | `integration backup-key challenge`, `integration backup-key preview`, `integration backup-key confirm` (PR 10) |
+| Backup encryption key change, through `integration_settings` with proof of possession | `integration backup-key challenge`, `integration backup-key preview` and `integration backup-key confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see [secret replacement](#secret-replacement) and below) |
 
 The refresh schedule is given to `integration preview parishsoft` as
 `--refresh-schedule DOCUMENT` (`-` reads standard input), with or without
@@ -3628,6 +3878,95 @@ event and `fresh_gated` notice and, as it selects a new integration key, a
 [notifications](#notifications)). A repeat returns the original request and
 records nothing new.
 
+`integration key replace TARGET --expected-version V (--secret-file PATH |
+--secret-stdin) [--changes JSON] [--yes]` (`parishsoft`, `google_workspace`
+or `slack`) is a settings page's **Save** with a new key pasted, through the
+page's own pieces: the key arrives from the host wrapper on the line after
+the preamble (see [secret replacement](#secret-replacement)). It is full
+scope, fresh-gated and prompting. The Administrator check comes first, so
+Staff is `denied` before the key is read. Then, admitting as the page's
+post does and passing its recent sign-in with the live session (unrecorded:
+nothing is done yet), it binds `--changes` (the `integration preview`
+document, `{"settings": {...}}`, as literal JSON: standard input carries
+the key; omitted settings keep their applied value; no refresh schedule,
+which the page refuses with a key) to the page's `IntegrationForm`, and the
+key to its `InlineCredentialForm`, in one read snapshot. Another version is
+`stale_version`; a key change for `TARGET` still being checked or installed
+is `not_available` (the page hides its key field then); installer
+discovery not yet published is `unavailable`; each refused setting is
+`invalid` at `settings.<name>` and a refused key at `key`, in the page's
+words, never quoting it. Slack not yet set up is set up by its key, with
+`channel_id` in `--changes`. The prompt names the integration, says
+whether this sets it up or replaces its key, names the settings saved with
+it (never their values) and says the current key stays in use if the
+installer's check fails; `--yes` answers it. It then binds the forms again,
+verifies the signed intent as the page does (`integration_views.key_intent`)
+and stages through the page's `stage_key` and `save_credential`: sealed for
+the target installer's published handoff, staged under the SQL intake
+guard (`admit_admin_action` for `SECRET_REPLACEMENT`, which records the
+fresh gate's event and `fresh_gated` notice), then the selection request,
+whose durable transaction also records
+`admin_cmd_integration_key_replace` (subject: the automation session) and,
+as it selects a new integration key, a `policy_change` notice observing
+`automation_policy_change`. If the selection cannot be recorded, the staged
+key is cancelled, as on the page. Nothing is written directly: the
+target's installer checks the key with the provider and installs it, the
+consumer acknowledges it and the configuration installer switches to it,
+as for the page. It prints `version`, `target`, `name`, `setup`,
+`changes` (`field`, `before`, `after`: public settings only),
+`key_request_id` (which `integration key status --request-id ID --watch S`
+follows) and `request` (the selection, as `config request show`); never
+the key or its fingerprint. Each run is a new key change, with no
+`--request-key`: a repeat while the first is pending is `not_available`,
+and a later error is `outcome_unknown` naming the selection request.
+
+The Backup encryption key page's three steps run through the page's own
+pieces in `accounts.backup_key` (full scope, as the page's posts record
+activity; Administrators only, the role checked before the value's line is
+read, so Staff is `denied` before anything else; a read-only session is
+refused, and a live full-scope session stands in for the page's recent
+sign-in, so the page's step-up resume has no counterpart):
+
+- `integration backup-key challenge --public-key-file PATH` runs the page's
+  `check_new_key` and `start_proof` in one read snapshot: a private key
+  (the top bit set, or the private half of the key in use), a text that is
+  not one public key or the key already in use is `invalid` at
+  `public_key` in the page's words, never quoting the paste. It prints
+  `version`, `current` (the page's "Key in use": `source`, `fingerprint`,
+  `backup_at`), `fingerprint` (the new key's), `challenge` (the sealed code
+  line `pk-stewardship backup-prove` opens on the key machine) and
+  `intent`, the page's own signed intent, in which the pasted key is
+  encrypted under a server key exactly as in the page's hidden field
+  (valid fifteen minutes). It records nothing.
+- `integration backup-key preview --intent TOKEN (--code-file PATH |
+  --code-stdin)` runs the page's `finish_proof`: a code that does not
+  match is `invalid` at `code` in the page's words (the same intent may be
+  tried again); an expired intent, or one made before the settings
+  changed, is `stale_version`; an altered one is `invalid` at `intent`;
+  another Administrator's is `denied`. A match is reviewed by the page's
+  `review_change` (which the page's review also calls): it prints
+  `version`, `changes` (one row, `field` `fingerprint`, `before` (null
+  where the page says "Not known yet") and `after`) and `preview.token`.
+  It records nothing.
+- `integration backup-key confirm --token TOKEN|-` (fresh-gated and
+  prompting) refuses a token the page did not sign before the prompt. The
+  prompt names the old and new fingerprints, as the review shows them,
+  says every Administrator is told and that backups already made stay
+  sealed to the old key; `--yes` answers it (`--token -` needs it). It
+  then confirms through `admin_editing.confirm_intent` with the page's
+  salt, with the fresh gate under the work lock (its event and
+  `fresh_gated` notice), and in the request's durable transaction records
+  `admin_cmd_integration_backup_key_confirm` (subject: the automation
+  session) and a `policy_change` notice observing
+  `automation_policy_change`. The configuration installer applies it and
+  its activation records the `backup_key_replaced` security event, as for
+  the page. It prints `created` and `request`; a repeat returns the
+  original request and records nothing new, and a later error is
+  `outcome_unknown` naming the request.
+
+No private key, typed code or pasted text appears in any output, log or
+audit row; the fingerprints are printed only where the page shows them.
+
 Secret values never pass through command output. The backup destination is an
 `integration` target; backups themselves already run as `pk-stewardship
 backup`, and backup status is part of `status`.
@@ -3653,7 +3992,9 @@ uploads, with `pk-stewardship bootstrap` as its offline counterpart. See
   [rules for new Admin actions](#rules-for-new-admin-actions); whether their
   final confirmations may run from the command line is decided in each
   workflow's own specification.
-- **ParishSoft publication** (ADM-09) is not built; the same rule applies.
+- **ParishSoft publication** (ADM-09) is not built; its final confirmation
+  may run from the command line, as
+  [Publish to ParishSoft commands](#publish-to-parishsoft-commands) says.
 
 ## Existing operator commands
 
@@ -3916,7 +4257,10 @@ MUST prove:
   descriptor, so a file swapped after opening is not read), piped
   `--secret-stdin` without `--yes`, and an oversize value, and the command
   refuses an oversize decoded value; terminal input restores echo on every
-  exit path and accepts multi-line JSON ending with Ctrl-D; the base64 line
+  exit path (QUIT included, exit 131) and accepts multi-line JSON ending
+  with Ctrl-D; a key pasted at a terminal only after the command ended is
+  neither shown, run nor kept in an interactive shell's history, with or
+  without pgrep; a run with a key has a core size limit of 0; the base64 line
   leaves the prompt input intact; normalization matches
   `InlineCredentialForm` per target; a FIFO or other non-regular path is
   refused before it is opened; a value with NUL or empty after normalization
@@ -4060,7 +4404,8 @@ exactly the commands that exist.
   branding confirmation, integration settings
   (`integration list`, `integration show` and `integration status`, then
   `integration preview` and `integration confirm`) with the
-  backup folder probe, and secret replacement: integration key replacement,
+  backup folder probe, and secret replacement: integration key replacement
+  (`integration key replace`),
   finish switching and the backup key change, with the wrapper's secret
   input.
 - **PR 11, users and follow-up:** users (including the

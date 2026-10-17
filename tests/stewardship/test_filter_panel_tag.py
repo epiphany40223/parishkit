@@ -9,6 +9,7 @@ import pytest
 from django.template import Context, Template, TemplateSyntaxError
 
 from parishkit.stewardship.accounts.templatetags.stewardship import applied_filters
+from parishkit.stewardship.reports.census_changes import CensusQuery
 from parishkit.stewardship.reports.directories import DirectoryQuery
 from parishkit.stewardship.reports.information import InformationQuery
 
@@ -50,6 +51,21 @@ def test_count_reads_each_report_query_s_own_defaults():
     # "Current actionable requests" is Additional information's normal list.
     assert applied_filters(InformationQuery()) == 0
     assert applied_filters(InformationQuery(disposition="all")) == 1
+
+
+def test_applied_filters_is_also_the_template_filter():
+    """Census changes' empty table and its panel count the same filters (#227).
+
+    "Work to do" is the page's normal list, and the browser zone is not a
+    filter, so neither counts.
+    """
+    assert applied_filters(CensusQuery(zone="America/Detroit")) == 0
+    assert applied_filters(CensusQuery(status="all")) == 1
+    assert applied_filters(CensusQuery(status="all", history="yes")) == 2
+    assert (
+        render("{{ query|applied_filters }}", query=CensusQuery(route="automatic"))
+        == "1"
+    )
 
 
 def test_panel_starts_closed_with_nothing_applied():
@@ -165,7 +181,9 @@ def panel_cells(name):
     return parser
 
 
-@pytest.mark.parametrize("name", ["information.html", "financial-report.html"])
+@pytest.mark.parametrize(
+    "name", ["census-changes.html", "information.html", "financial-report.html"]
+)
 def test_each_panel_filter_is_one_grid_cell(name):
     """Every label and its control share one div, a cell of the panel's grid.
 

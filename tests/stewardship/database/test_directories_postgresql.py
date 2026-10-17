@@ -563,16 +563,51 @@ def test_archived_directory_keeps_its_retained_source(response_service, google):
 def test_directory_unavailability_and_invalid_filters_are_private(
     live_response_service, google, monkeypatch
 ):
-    """The new route uses shared read admission and never reflects private errors."""
+    """The new route uses shared read admission and never reflects private errors.
+
+    A malformed Exact Family code is refused at its field (#1332): the page
+    is drawn again (400, ``invalid``) with the filters sent in the form only,
+    the code field marked, the message in the gate's hint row and the
+    summary, and the Families for no filters; the code sent is never in a
+    link, the export or the page address. A structural refusal keeps the
+    error page, which echoes nothing.
+    """
     from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
     from parishkit.stewardship.reports import directory_views
+    from parishkit.stewardship.reports.directories import CODE_MESSAGE
 
     harness = live_response_service
     browser, _ = signed_in()
     route = reverse("admin:family_directory")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response, body = search(browser, route, {"exact_code": "private!invalid"})
-        assert response.status_code == 400 and b"private!invalid" not in body
+        sent = {"exact_code": "private!<b>", "search": "Nobody", "sort": "duid_desc"}
+        response, body = search(browser, route, sent)
+        assert response.status_code == 400
+        assert response.stewardship_codes == ("invalid",)
+        assert response["Cache-Control"] == "no-store"
+        body = body.decode()
+        form = body[body.index('<form id="table-filters"') :]
+        form = form[: form.index("</form>")]
+        code = re.search(r'<input id="exact-code" [^>]*>', form).group(0)
+        assert 'value="private!&lt;b&gt;" aria-invalid="true"' in code
+        assert 'aria-describedby="directory-filters_error"' in code
+        assert 'value="Nobody"' in form
+        message = str(CODE_MESSAGE)
+        assert (
+            f'<ul class="errorlist" id="directory-filters_error"><li>{message}</li>'
+        ) in form
+        assert f'<a href="#exact-code">{message}</a>' in body
+        # Outside the form: the Families for no filters, in the sort sent,
+        # with nothing sent carried by the export, the pages or the address.
+        rest = body.replace(form, "")
+        assert "private!" not in rest and "Nobody" not in rest
+        assert "Example, Member" in rest
+        assert 'name="sort" value="duid_desc"' in rest
+        assert directory_outcomes()[-2:] == ["started", "denied"]
+        # A structural refusal beside it keeps the error page.
+        response, body = search(browser, route, sent | {"phone": "maybe"})
+        assert response.status_code == 400 and b"private!" not in body
+        assert b'id="table-filters"' not in body
         assert response["Cache-Control"] == "no-store"
 
         def unavailable(*args, **kwargs):
@@ -755,6 +790,36 @@ def test_testing_notice_links_the_test_page_only_for_administrators(
         assert b"Try the Family form" not in body
         assert test_url.encode() not in body
         assert b"ask an Administrator for a test invitation" in body
+
+
+def test_staff_testing_mode_with_a_bad_code_is_refused_without_echo(
+    response_service, google
+):
+    """Staff sending Testing mode with a bad Exact Family code get a bare 403.
+
+    The mode is admitted before the code refusal is drawn (#1332), so the
+    refused-code page (400) never reaches a principal who may not see
+    Testing, and nothing they sent is echoed.
+    """
+    harness = response_service
+    store = harness.service.store
+    staff = address("staff@example.org", roles=("staff",))
+    change(
+        store,
+        store.active(),
+        uuid4(),
+        [{"operation": "add", "section": "login_rules", **staff}],
+    )
+    google[0].update(email="staff@example.org", sub="synthetic-staff")
+    browser, login = signed_in()
+    assert login.status_code == 302
+    route = reverse("admin:family_directory")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = search(
+            browser, route, {"exact_code": "private!<b>", "mode": "testing"}
+        )
+        assert response.status_code == 403
+        assert b"private!" not in body and b"exact-code" not in body
 
 
 def test_family_name_is_the_surname_not_a_first_name_mailing_name(

@@ -177,11 +177,11 @@ def open_page(page, url):
 
 # report-v1.js's condition for replacing the page with a timezone in its URL.
 REPLACES_ITSELF = """() => {
-  const field = document.querySelector("[data-report-options] input[data-report-zone]");
-  if (!field || new URL(location.href).searchParams.has("timezone")) return false;
+  const options = document.querySelector("[data-report-options][data-report-zone]");
+  if (!options || new URL(location.href).searchParams.has("timezone")) return false;
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const shown = document.querySelector("input[name=browser_timezone]")?.value
-    ?? field.getAttribute("value");
+    ?? options.getAttribute("data-report-zone");
   return Boolean(zone) && zone !== "Etc/Unknown" && zone !== shown;
 }"""
 

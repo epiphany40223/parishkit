@@ -17,10 +17,9 @@
 <div id="census-summary" data-table-sync><h2>{% translate "Summary" %}</h2>
 <p class="help">{% if query.history %}{% translate "Every census change by status, including history." %}{% else %}{% translate "Every census change by status, not counting history." %}{% endif %}</p>
 <dl>{% for label,count in summary %}<dt>{{ label }}</dt><dd>{{ count|number }}</dd>{% empty %}<dt>{% translate "Census changes" %}</dt><dd>0</dd>{% endfor %}</dl></div>
-<form id="table-filters" data-table-sync method="post" action="{% url 'admin:census_changes' %}" data-require-complete data-missing-hint="{% translate 'Correct the filters to apply them.' %}">{% csrf_token %}
+{% comment %}The filters sit in the Filters panel, closed unless one other than the page's default is applied (#227); its fields are the form's own children, so the open panel lays them out as its compact grid (#1411).{% endcomment %}{% filterpanel query %}<form id="table-filters" data-table-sync method="post" action="{% url 'admin:census_changes' %}" data-require-complete data-missing-hint="{% translate 'Correct the filters to apply them.' %}">{% csrf_token %}
 {% comment %}The browser's time zone, filled by ui-v1.js (#558): the server places From and Through in it, as on System logs.{% endcomment %}<input type="hidden" name="zone" value="{{ query.zone }}" data-browser-zone data-zone-missing-hint="{% translate "Your browser didn't report a time zone, so these dates can't be used. Clear From and Through, or check your computer's time zone setting." %}">
 {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
-<div class="filter-bar">
 <div><label for="census-search">{% translate "Search name or Family DUID" %}</label><input id="census-search" name="search" maxlength="200" value="{{ query.search }}"></div>
 <div><label for="census-status">{% translate "Status" %}</label><select id="census-status" name="status">{% for key,label in status_choices %}<option value="{{ key }}"{% if query.status == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
 <div><label><input type="checkbox" name="history" value="yes"{% if query.history %} checked{% endif %}> {% translate "Include history" %}</label></div>
@@ -29,17 +28,15 @@
 <div class="short" data-missing-hint="{% translate 'Enter a whole From date, or clear it.' %}"><label for="census-start">{% translate "Submitted from" %}</label><input id="census-start" type="date" name="start" value="{{ query.start }}" aria-describedby="census-zone-help" data-browser-zone-field></div>
 <div class="short" data-missing-hint="{% translate 'Enter a whole Through date, or clear it.' %}"><label for="census-end">{% translate "Through" %}</label><input id="census-end" type="date" name="end" value="{{ query.end }}" aria-describedby="census-zone-help" data-browser-zone-field></div>
 {% button type="submit" %}{% translate "Apply filters" %}{% endbutton %}
-</div>
 <p class="help" id="census-zone-help" data-browser-zone-note hidden>{% translate "From and Through are days in this computer's time zone:" %} <span data-browser-zone-name></span>.</p>
 <p class="help" data-complete-hint hidden></p>
-</form>
-<section aria-labelledby="census-export-heading">
-<h2 id="census-export-heading">{% translate "Download" %}</h2>
+</form>{% endfilterpanel %}
+<details class="export-panel"><summary id="census-export-heading">{% translate "Download (CSV, XLSX or PDF)" %}</summary>
 <form id="table-export" data-table-sync method="post" action="{% url 'admin:census_changes_export' %}">{% csrf_token %}
 {% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
 <label for="census-format">{% translate "Format" %}</label><select id="census-format" name="format">{% export_format_options "csv" "xlsx" "pdf" %}</select>
 <label for="census-timezone">{% translate "Timezone" %}</label><select id="census-timezone" name="timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
-{% button type="submit" %}{% translate "Download with these filters" %}{% endbutton %}</form></section>
+{% button type="submit" %}{% translate "Download with these filters" %}{% endbutton %}</form></details>
 <script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
 <div id="{{ table.anchor }}" data-table-region>
 {% translate "Census change pages" as pages_label %}{% include "stewardship/table-navigator.html" with table=table label=pages_label %}
@@ -83,7 +80,7 @@
 <p class="help" id="final-{{ row.id }}">{% translate "Entered in ParishSoft cannot be undone." %}</p>
 {% comment %}Irreversible, so it asks first in the page's confirmation dialog, which then submits this form as usual (row actions and confirmation).{% endcomment %}{% button type="submit" name="resolve" value="entered" aria-describedby=row.final_describedby data-confirm-submit="census-enter-confirm" data-confirm-name=row.confirm_name %}{% translate "Entered in ParishSoft" %}{% endbutton %} {% button type="submit" variant="secondary" name="resolve" value="ignored" aria-describedby=row.describedby %}{% translate "Ignore" %}{% endbutton %}{% else %}<label for="note-{{ row.id }}">{% translate "Why reopen? (required)" %}</label><input id="note-{{ row.id }}" name="note" maxlength="2000" required aria-describedby="{{ row.describedby }}">
 {% button type="submit" variant="secondary" name="resolve" value="reopened" aria-describedby=row.describedby %}{% translate "Reopen" %}{% endbutton %}{% endif %}</form></details>{% endif %}</td></tr>
-{% empty %}<tr><td colspan="{% if bulk %}16{% else %}15{% endif %}">{% translate "No matching census changes." %}</td></tr>{% endfor %}</tbody></table></div>
+{% empty %}<tr><td colspan="{% if bulk %}16{% else %}15{% endif %}">{% comment %}Why the table is empty (#227): nothing in Work to do with no filter applied (Work to do leaves out Being published, and To review unless the viewer is an Administrator, which the Summary still counts); nothing at all with only Every status, or Every status and Include history; otherwise the filters. The count is the Filters panel's own, so the two agree.{% endcomment %}{% with applied=query|applied_filters %}{% if not applied %}{% translate "No census changes need your work right now. Changes that do are listed here as Families' live responses report them; to see every change the Summary counts, set Status to “Every status”." %}{% elif applied == 1 and query.status == 'all' %}{% translate "No census changes yet. A change is listed here when a Family's live response reports one; to see superseded or cancelled ones, tick Include history." %}{% elif applied == 2 and query.status == 'all' and query.history %}{% translate "No census changes yet. A change is listed here when a Family's live response reports one." %}{% else %}{% translate "No census changes match these filters. Clear the Search name or Family DUID box and the dates, or set Status to “Every status” and the other lists to their first choice." %}{% endif %}{% endwith %}</td></tr>{% endfor %}</tbody></table></div>
 {% if bulk %}</div>{% endif %}
 {% include "stewardship/table-navigator.html" with table=table label=pages_label %}
 </div>

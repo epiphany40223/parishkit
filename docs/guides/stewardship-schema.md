@@ -97,9 +97,10 @@ regenerate expectations during tests. Existing current-state SQL, authorization,
 concurrency and deletion-protection tests remain in the database suite. Tests
 whose sole purpose was an obsolete intermediate upgrade/downgrade were retired.
 
-The inventory includes relation/function owners and full ACLs, live column order,
-and sequence parameters. Separate current-model checks compile complete empty
-tables from Django declarations in a scratch schema that is always rolled back.
+The inventory includes relation/function owners and full ACLs, column-level ACLs,
+live column order and sequence parameters. Separate current-model checks compile
+complete empty tables from Django declarations in a scratch schema that is always
+rolled back.
 They compare column types, nullability, collations, defaults, generated
 expressions, and complete constraint/index multisets in both directions. Index
 signatures include operator classes, collations and ordering flags. Negative

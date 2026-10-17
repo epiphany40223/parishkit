@@ -100,14 +100,19 @@ def components(context, admin, now):
     """The settings page for each sample stored schedule.
 
     ``/refresh-schedule-gated`` is Production's schedule with Save waiting
-    for a change too, as the view draws it (#1330).
+    for a change too, as the view draws it (#1330); ``-loaded`` is
+    Production's schedule once its organization's data is loaded, with the
+    organization ID locked (#1492).
     """
     responses = {}
-    for path, stored in (STORED | {"/refresh-schedule-gated": PRODUCTION}).items():
+    extra = dict.fromkeys(("/refresh-schedule-gated", "/refresh-schedule-loaded"))
+    for path, stored in (STORED | extra).items():
+        stored = stored or PRODUCTION
         form = IntegrationForm(
             "parishsoft",
             initial=stored | {"base_digest": "a" * 64},
             stored=stored,
+            loaded_organization=12345 if path.endswith("-loaded") else None,
         )
         responses[path] = (
             "text/html",

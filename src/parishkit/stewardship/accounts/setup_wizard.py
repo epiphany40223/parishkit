@@ -38,12 +38,14 @@ class Page:
 # token). A credential step accepts a sign-in up to an hour old (#1402); an
 # older one is offered "Confirm with Google", which keeps this setup.
 # Logos and access come next. ParishSoft connection and Load parish data are
-# last before Review and next to each other (#1353): the load can take a few
-# minutes, so everything else is done before the wait, and a load that fails
-# on a wrong key or organization is one step after the page that fixes it.
-# Nothing before Review needs the loaded data. Setup collects nothing about a
-# campaign (#142): an Administrator creates it afterwards from Home, with
-# Create the campaign.
+# the last data-entry pages and next to each other (#1353): the load can take
+# a few minutes, so everything else is done before the wait, and a load that
+# fails on a wrong key or organization is one step after the page that fixes
+# it. No data-entry page needs the loaded data. The tests follow the load
+# (they need it), then Review, so Review is the last step before Finish setup
+# and shows the tests' results, and a failed test's fix never passes through
+# Review first (#1476). Setup collects nothing about a campaign (#142): an
+# Administrator creates it afterwards from Home, with Create the campaign.
 PAGES = (
     Page("parish", _("Parish profile"), "admin:setup_step", ("parish",)),
     Page("mail", _("Outgoing email settings"), "admin:setup_step", ("mail",)),
@@ -67,14 +69,15 @@ PAGES = (
         ("parishsoft",),
     ),
     Page("source", _("Load parish data"), "admin:setup_source"),
-    Page("preview", _("Review"), "admin:setup_preview"),
     Page("mail_test", _("Test email"), "admin:setup_mail"),
     Page("slack_test", _("Test Slack"), "admin:setup_notification"),
+    Page("preview", _("Review"), "admin:setup_preview"),
     Page("finish", _("Finish setup"), "admin:setup_confirmation"),
 )
 BY_KEY = {page.key: page for page in PAGES}
-# Review and the pages after it need every required data-entry page first.
-FINAL = frozenset({"preview", "mail_test", "slack_test", "finish"})
+# The tests, Review and Finish setup need every required data-entry page
+# first.
+FINAL = frozenset({"mail_test", "slack_test", "preview", "finish"})
 # Only an editable (or loading) attempt shows the stepper; frozen and ended
 # attempts have their own progress and status pages.
 ACTIVE = frozenset({SetupState.COLLECTING, SetupState.LOADING})
@@ -116,6 +119,22 @@ class Wizard:
         return next((step for step in self.steps if step.current), None)
 
     @property
+    def onward(self):
+        """The step a completed current step opens (wizard rule 8).
+
+        That is the next later step not done yet, or the next step when every
+        later one is done; so a fix saved on an earlier step goes straight to
+        the stale credential or test it invalidated (#1476). When that step is
+        blocked (its view refuses it, e.g. Test email behind a stale key), it
+        is the step needing work instead, so the save never lands on the
+        "complete the earlier steps first" page. A merely "locked" step is
+        ordering only and its page opens, so it is kept.
+        """
+        later = self.steps[self.current.number :] if self.current else ()
+        chosen = next((step for step in later if step.state != "done"), self.next)
+        return self.resume if chosen and chosen.state == "blocked" else chosen
+
+    @property
     def resume(self):
         """The first open page still needing work, else the review page."""
         for step in self.steps:
@@ -153,16 +172,15 @@ def _done(key, draft, credentials, tests):
         return key in tests
     if key == "preview":
         # Review is done once the admin has opened it for the current draft
-        # version with every required page complete, not merely when it could
-        # be opened; any later edit bumps the version and asks for it again.
+        # version with every earlier required page complete, the tests
+        # included (#1476), not merely when it could be opened; any later edit
+        # bumps the version and asks for it again.
         return getattr(draft, "reviewed", {}).get(
             "preview"
         ) == draft.status.version and all(
             _done(page.key, draft, credentials, tests)
-            for page in PAGES
-            if page.required
-            and page.key not in FINAL
-            and applicable(page.key, sections)
+            for page in PAGES[: PAGES.index(BY_KEY["preview"])]
+            if page.required and applicable(page.key, sections)
         )
     if key == "finish":
         return False
@@ -323,14 +341,17 @@ def wizard_for(draft, current=None):
 
 
 def continue_after(request, service, current):
-    """Redirect a successful save to the next applicable wizard page.
+    """Redirect a successful save to the next applicable page not done yet.
 
     The draft is re-read after the save so a choice just made (enabling Slack,
-    choosing financial stewardship) decides which page comes next.
+    choosing financial stewardship) decides which page comes next, and a step
+    the save invalidated (a stale key, the tests) is the one opened
+    (``Wizard.onward``, wizard rule 8).
     """
     from .setup_drafts import view_draft
 
     wizard = wizard_for(view_draft(request, service), current)
-    if wizard is None or wizard.next is None:
+    onward = wizard and wizard.onward
+    if onward is None:
         return HttpResponseRedirect(reverse("admin:setup"))
-    return HttpResponseRedirect(wizard.next.href)
+    return HttpResponseRedirect(onward.href)

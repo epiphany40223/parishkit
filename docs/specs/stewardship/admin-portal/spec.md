@@ -124,11 +124,11 @@ describing their own parish. The Google Workspace and Slack credential pages
 follow, each immediately after the public settings its staging depends on
 (outgoing mail and Testing recipient for Google Workspace, Slack settings for
 the Slack token), then Parish logos and Administrative access. ParishSoft
-connection and Load parish data come last before review, next to each other
+connection and Load parish data come last before the tests, next to each other
 ([#1353](https://github.com/epiphany40223/parishkit/issues/1353)): the load
 can take a few minutes, so the rest of setup is done before the wait, and a
 load that fails on a wrong key or organization is one step after the page
-that fixes it. No page before review needs the loaded data. Like
+that fixes it. No data-entry page needs the loaded data. Like
 [secret replacement](#parish-and-integration-configuration), the credential
 pages require fresh Google authentication, but while setup is unfinished a
 credential page accepts a sign-in up to **60 minutes** old, the length of the
@@ -147,8 +147,10 @@ unchanged. Finish setup asks for no fresh sign-in, before or after this
 change. An older sign-in is offered "Confirm with Google", which keeps the
 setup. The pages mention that rule only when
 the sign-in is already older
-([page help](../ui-conventions/spec.md#page-help)). Review, the email and
-Slack tests and the final confirmation follow the load. Every page shows a
+([page help](../ui-conventions/spec.md#page-help)). The email and Slack
+tests, Review and the final confirmation follow the load, in that order, so
+Review is the last step before Finish setup and shows the tests' results
+([#1476](https://github.com/epiphany40223/parishkit/issues/1476)). Every page shows a
 compact progress stepper: the current step by number and name, the count of
 completed steps and a slim [step bar](../ui-conventions/spec.md#step-bars)
 whose segments are links to the steps that can open, named by step and
@@ -162,12 +164,15 @@ conventional: completed steps and the first unfinished required step are
 links; later unfinished steps wait for every earlier required step, and
 optional steps never hold later ones back. A step counts as completed only
 after its own explicit save, credential, load, accepted test or, for the
-review page, an explicit review for the current data; defaults seeded by
+review page, an explicit review for the current data with every earlier
+step, the tests included, done; defaults seeded by
 another page never complete a step. While the source load runs, completed
 steps keep their status but are not links. The stepper is presentation only;
 each page still enforces its own prerequisites. Each page has one identical
 row of Back (secondary) and Save-and-continue (primary) controls (Save and
-continue validates, saves and opens the next applicable page, or redisplays
+continue validates, saves and opens the next applicable page not done yet,
+or the next page when every later one is done
+([wizard rule 8](../ui-conventions/spec.md#wizards)), or redisplays
 the page with its errors; on the Parish, Parish logos, Administrative access,
 Outgoing email, Slack and Testing pages it is unavailable until every shown
 required field is valid, with a short hint after the row saying what is
@@ -208,14 +213,33 @@ setup test", and a short plain-text and HTML body that names the parish and
 says its outgoing email settings work. It carries no Family data, link, code
 or campaign content, and nothing in it depends on a campaign.
 
-Review, Test email, Test Slack (only when Slack is on) and Finish setup are
-ordinary steps with the same action row, not a hub: the Review page links no
-later step from its body and its primary action is Continue to the email
-test. On each test page the primary action sends the test until a test of the
-current draft revision is accepted; then it is Continue to the next step,
-with sending another test kept as a secondary button. Finish setup's primary
-action is "Check readiness and finish setup", which still requires accepted
-tests of the exact reviewed revision.
+Test email, Test Slack (only when Slack is on), Review and Finish setup are
+ordinary steps with the same action row, not a hub. Test email opens once
+every required data-entry step is done and the load succeeded; it does not
+wait for Review. On each test page the primary action sends the test until a
+test of the current draft revision is accepted; then it is Continue to the
+next step (Test Slack, or Review), with sending another test kept as a
+secondary button. When the newest test of the current revision was not sent,
+the test page says so after its action row, in plain language, with the
+same advice about a rejected key as the provider's
+[integration settings](#parish-and-integration-configuration), and links the
+steps that fix it: Outgoing email settings and Google Workspace connection
+for the email test, Slack notifications and Slack connection for the Slack
+test. Saving a fix opens the next step not done yet (Google Workspace
+connection when its key must be entered again, otherwise Test email), never
+Review first; when that step's prerequisites are missing, the save opens the
+step that needs work instead. Review's Readiness section says, for each
+required test, whether a test of these exact settings was accepted, and
+links the test step only for a test that was not; its body links no other
+step. Review counts as done only when it is shown with every earlier step,
+the tests included, done, and its primary action is Continue to Finish
+setup. Any later save bumps the draft version, so Review and both tests are
+required again; a changed mail or Testing setting also makes the staged
+Google Workspace key stale. Back from Test email goes to Load parish data,
+from Review to the last test, and from Finish setup to Review. Finish
+setup's primary action is "Check readiness and finish setup", which still
+requires accepted tests of the exact current revision; its links to the
+tests stay for a test that went stale after Review.
 
 The setup wizard's status pages (Test email, Test Slack, Load parish data and
 Finishing setup) [update themselves](#background-indicators) like every other
@@ -558,15 +582,12 @@ by email follow (NAV-12): every export shares
 `/admin/reports/exports/<request>/`, a latest-data export included, and the
 daily and weekly reports sit under `/admin/reports/emailed/`. No old address
 is kept ([#864](https://github.com/epiphany40223/parishkit/issues/864)), so
-a link in a report email sent before the move no longer opens. Until
-the rest of the URL work lands, other pages keep their
-"Current URL", and so does every other section of this spec and the other
-stewardship specs that name an Admin URL; those follow-up issues update them
-with the code. Until Emailed reports exists (NAV-14), the menu keeps a
-**Send a weekly report now** entry in Responses and reports, after the
-directory, so that action stays reachable. Of the remaining ADM-12 pull
-requests, only Find a Family (NAV-19) has landed; NAV-12 to NAV-18 are
-listed in the
+a link in a report email sent before the move no longer opens. The Users
+and access pages moved with the Users revamp
+([#952](https://github.com/epiphany40223/parishkit/issues/952)). The
+sign-in, setup wizard and maintenance pages keep their addresses
+(decision 27). Every ADM-12 pull request has landed or been dropped; see
+the
 [ADM-12 checklist](../../../tasks/stewardship/admin-portal.md#adm-12-admin-navigation-overhaul).
 
 The Admin portal serves one current campaign; controls for more than one
@@ -882,7 +903,7 @@ The Family participation panel is a row of tiles
 ([#720](https://github.com/epiphany40223/parishkit/issues/720)): the active
 Families; the responses from Families who can use the Family form now, as
 the count, "out of 400 (10%)" and a
-[share bar](../ui-conventions/spec.md#charts); and all Families with a
+[share bar](../ui-conventions/spec.md#stat-tiles); and all Families with a
 response, not counting Testing. That last count can include Families no
 longer active, so it is not drawn as a share. While in Testing mode, a line
 under the tiles says Testing responses are not counted there.
@@ -993,6 +1014,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `financial_report` | Financial stewardship | Menu: Financial stewardship | Administrator, Staff | Financial stewardship detail; Financial report | `/admin/reports/financial/` | (same) |  |
 | `limitations_report` | Limitations | Menu: Limitations | Administrator, Staff | Talents and limitations | `/admin/reports/limitations/` | (same) | Renamed when talents were retired (#970); the old address is gone. Its CSV/XLSX/PDF download (`limitations/exports/`) is a non-page action. |
 | `census_changes` | Census changes | Menu: Census changes | Administrator, Staff | (new, #528) Pending census changes | `/admin/reports/census/` | (same) | Its CSV/XLSX/PDF download (`census/exports/`) is a non-page action; a row's Entered in ParishSoft, Ignore and Reopen post to the page itself. |
+| `census_publication` | Publish to ParishSoft | Census changes | Administrator | (new, [#528](https://github.com/epiphany40223/parishkit/issues/528)) | `/admin/reports/census/publication/` | (same) | Not built yet; see [Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft). Census changes links to it for Administrators, shown unavailable with its reason while publication is switched off. Check ParishSoft posts to the page itself; Apply posts to `publication/<plan>/confirmation/` and Run again to `publication/<plan>/retries/`. |
 | `information_queue` | Additional information | Menu: Additional information | Administrator, Staff | Additional information and follow-up | `/admin/reports/information/` | (same) |  |
 | `information_item` | Information request | Additional information | Administrator, Staff | Additional information and follow-up (one request); Information item | `/admin/reports/information/<item>/` | (same) | Return to the queue keeps its filters and page. |
 | `ministry_reports` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry reports | `/admin/ministry-reports/` | (retired; 404) | Replaced by Ministry requests, which shows the "no campaign" page when there is nothing for the viewer to report. |
@@ -1045,28 +1067,28 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `report_campaigns` | (retired) | (retired) | Administrator, Staff | Choose a retained campaign; Choose a campaign | `/admin/reports/campaigns/` | (retired; 404) | Decisions 10 and 19: no campaign chooser; reports show the current campaign. Its greyed link on Participation was removed (#1125). |
 | `ministry_report_campaigns` | (retired) | (retired) | Administrator, Staff, Ministry leader | Choose a retained campaign; Choose a campaign | `/admin/ministry-reports/campaigns/` | (retired; 404) | Decisions 10 and 19: no campaign chooser. Its greyed link on Ministry requests was removed (#1125). |
 | `chrome` | (shared header and banners) | Every page | Administrator, Staff, Ministry leader | Every Admin page (header and banners) | `/admin/*` | (same) | Acknowledge stays on the current page (#519). |
-| `login` | Administration sign-in | (outside the menu) | Anyone | (same) | `/admin/login` | `/admin/login/` |  |
-| `local_sign_in` | Local test sign-in | (outside the menu) | Anyone | (same) | `/admin/local/sign-in` | `/admin/local/sign-in/` | LOCAL only. |
-| `maintenance` | Restore review | (outside the menu) | Administrator | The site is being restored (Staff, Ministry leader) | `/admin/maintenance` | `/admin/maintenance/` | Decision 12: the [restore review page](#restore-release) (#537). Staff and Ministry leaders see a plain notice. |
+| `login` | Administration sign-in | (outside the menu) | Anyone | (same) | `/admin/login` | (same) |  |
+| `local_sign_in` | Local test sign-in | (outside the menu) | Anyone | (same) | `/admin/local/sign-in` | (same) | LOCAL only. |
+| `maintenance` | Restore review | (outside the menu) | Administrator | The site is being restored (Staff, Ministry leader) | `/admin/maintenance` | (same) | Decision 12: the [restore review page](#restore-release) (#537). Staff and Ministry leaders see a plain notice. |
 | `availability_setup` | The system is not configured yet | (outside the menu) | Administrator, Staff, Ministry leader | (same) | (any Admin URL before setup completes, non-Administrator) | (any Admin URL before setup completes) |  |
 | `error_page` | _error title_ | (outside the menu) | Administrator, Staff, Ministry leader | _error title_ (e.g. Check your entries, This information changed, Access unavailable, Page unavailable, Page not found, Confirm it's you) | (any Admin URL that fails) | (same) | Object-named (exception); offers a way back to the page or Home. |
-| `setup` | Initial setup | Setup stepper | Administrator | (same) | `/admin/setup` | `/admin/setup/` |  |
-| `setup_step_parish` | Parish profile | Setup stepper | Administrator | (same) | `/admin/setup/parish` | `/admin/setup/parish/` |  |
-| `setup_step_mail` | Outgoing email settings | Setup stepper | Administrator | (same) | `/admin/setup/mail` | `/admin/setup/mail/` |  |
-| `setup_step_testing` | Testing recipient | Setup stepper | Administrator | (same) | `/admin/setup/testing` | `/admin/setup/testing/` |  |
-| `setup_credential_google_workspace` | Google Workspace connection | Setup stepper | Administrator | Setup credential: Google Workspace mail (stepper: Google Workspace connection) | `/admin/setup/credentials/google_workspace` | `/admin/setup/credentials/google_workspace/` |  |
-| `setup_step_slack` | Slack notifications (optional) | Setup stepper | Administrator | (same) | `/admin/setup/slack` | `/admin/setup/slack/` |  |
-| `setup_credential_slack` | Slack connection | Setup stepper | Administrator | Setup credential: Slack (stepper: Slack connection) | `/admin/setup/credentials/slack` | `/admin/setup/credentials/slack/` |  |
-| `setup_branding` | Parish logos | Setup stepper | Administrator | Parish logo | `/admin/setup/branding` | `/admin/setup/branding/` |  |
-| `setup_step_access` | Administrative access | Setup stepper | Administrator | (same) | `/admin/setup/access` | `/admin/setup/access/` |  |
-| `setup_credential_parishsoft` | ParishSoft connection | Setup stepper | Administrator | Setup credential: ParishSoft (stepper: ParishSoft connection) | `/admin/setup/credentials/parishsoft` | `/admin/setup/credentials/parishsoft/` |  |
-| `setup_source` | Load parish data | Setup stepper | Administrator | (same) | `/admin/setup/source` | `/admin/setup/source/` |  |
-| `setup_source_progress` | Loading parish data | Setup stepper | Administrator | (same) | `/admin/setup/source/<task>` | `/admin/setup/source/<task>/` |  |
-| `setup_preview` | Review | Setup stepper | Administrator | Setup preview (stepper: Review) | `/admin/setup/preview` | `/admin/setup/preview/` |  |
-| `setup_mail` | Test email | Setup stepper | Administrator | Setup email test (stepper: Test email) | `/admin/setup/mail-test` | `/admin/setup/mail-test/` |  |
-| `setup_notification` | Test Slack | Setup stepper | Administrator | Setup Slack test (stepper: Test Slack) | `/admin/setup/slack-test` | `/admin/setup/slack-test/` |  |
-| `setup_confirmation` | Finish setup | Setup stepper | Administrator | Finish initial setup (stepper: Finish setup) | `/admin/setup/confirm` | `/admin/setup/confirmation/` |  |
-| `setup_cancel` | Finishing setup | Setup stepper | Administrator | (same) | `/admin/setup/cancel` | `/admin/setup/finishing/` | Route name to drop 'cancel' (#521). |
+| `setup` | Initial setup | Setup stepper | Administrator | (same) | `/admin/setup` | (same) |  |
+| `setup_step_parish` | Parish profile | Setup stepper | Administrator | (same) | `/admin/setup/parish` | (same) |  |
+| `setup_step_mail` | Outgoing email settings | Setup stepper | Administrator | (same) | `/admin/setup/mail` | (same) |  |
+| `setup_step_testing` | Testing recipient | Setup stepper | Administrator | (same) | `/admin/setup/testing` | (same) |  |
+| `setup_credential_google_workspace` | Google Workspace connection | Setup stepper | Administrator | Setup credential: Google Workspace mail (stepper: Google Workspace connection) | `/admin/setup/credentials/google_workspace` | (same) |  |
+| `setup_step_slack` | Slack notifications (optional) | Setup stepper | Administrator | (same) | `/admin/setup/slack` | (same) |  |
+| `setup_credential_slack` | Slack connection | Setup stepper | Administrator | Setup credential: Slack (stepper: Slack connection) | `/admin/setup/credentials/slack` | (same) |  |
+| `setup_branding` | Parish logos | Setup stepper | Administrator | Parish logo | `/admin/setup/branding` | (same) |  |
+| `setup_step_access` | Administrative access | Setup stepper | Administrator | (same) | `/admin/setup/access` | (same) |  |
+| `setup_credential_parishsoft` | ParishSoft connection | Setup stepper | Administrator | Setup credential: ParishSoft (stepper: ParishSoft connection) | `/admin/setup/credentials/parishsoft` | (same) |  |
+| `setup_source` | Load parish data | Setup stepper | Administrator | (same) | `/admin/setup/source` | (same) |  |
+| `setup_source_progress` | Loading parish data | Setup stepper | Administrator | (same) | `/admin/setup/source/<task>` | (same) |  |
+| `setup_preview` | Review | Setup stepper | Administrator | Setup preview (stepper: Review) | `/admin/setup/preview` | (same) |  |
+| `setup_mail` | Test email | Setup stepper | Administrator | Setup email test (stepper: Test email) | `/admin/setup/mail-test` | (same) |  |
+| `setup_notification` | Test Slack | Setup stepper | Administrator | Setup Slack test (stepper: Test Slack) | `/admin/setup/slack-test` | (same) |  |
+| `setup_confirmation` | Finish setup | Setup stepper | Administrator | Finish initial setup (stepper: Finish setup) | `/admin/setup/confirm` | (same) |  |
+| `setup_cancel` | Finishing setup | Setup stepper | Administrator | (same) | `/admin/setup/cancel` | (same) |  |
 | `setup_unavailable` | Setup step not available | Setup stepper | Administrator | (same) | (any setup step whose prerequisites are missing) | (same) |  |
 
 #### URL scheme
@@ -1090,10 +1112,8 @@ Admin URLs follow the menu, so the address says where the reader is
 - **One trailing-slash rule:** every Admin page URL ends in `/`, and the other
   form redirects permanently to it (301 for GET and HEAD, 308 otherwise),
   keeping the query string, where report filters live. The sign-in, setup
-  wizard and maintenance pages move to it last, in an optional pull request
-  (NAV-13 in
-  [ADM-12](../../../plans/stewardship/admin-portal.md#adm-12-admin-navigation-overhaul));
-  until then they keep their current addresses.
+  wizard and maintenance pages are outside the rule and keep their current
+  addresses (decision 27).
 - **Non-page routes move with their page:** a page's form actions and
   downloads move under its new URL and follow the same rules. The session and
   status JSON endpoints that scripts poll (`session/*`, the background and
@@ -1218,6 +1238,7 @@ follows them.
 17. **Which trailing-slash rule?** Every Admin page URL ends in a slash; the
     other form redirects; old URLs redirect permanently (301 pages, 308 form
     actions) (as proposed). (Old URLs superseded by #864: each is 404.)
+    Sign-in, setup and maintenance keep their addresses (decision 27).
 18. **What happens to Copy campaign until the single-campaign change?** Keep it
     until #145, greyed out (disabled, not a link or action) with a hover and
     keyboard-focus tip saying it is disabled and will be removed with the
@@ -1253,7 +1274,9 @@ follows them.
 26. **Do non-page routes move?** (Coordinator.) Form actions and downloads
     move with their page; the session and status JSON endpoints stay.
 27. **Trailing slashes on sign-in, setup and maintenance?** (Administrator.)
-    An optional last pull request.
+    An optional last pull request. (Dropped, #522: it changes exact paths in
+    the access gate's allowlists for no visible gain, and under #864 their
+    current addresses would stop working. These pages keep their addresses.)
 28. **Old campaign identifiers?** (Administrator.) Refused with 410 for now;
     access to earlier campaigns returns with #145. (Superseded by #864: an
     old address naming a campaign is 404.)
@@ -1648,10 +1671,32 @@ required and Save waits for it
 ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)). Non-secret integration setting changes use the YAML
 configuration-request path rather than the credential installer. The ParishSoft
 organization ID can change only until the first ParishSoft data load. After
-that the page shows it read-only and refuses a different value, with or without
-a new key, in plain language: every refresh must read the organization whose
-data is loaded, and a refresh for another organization is refused as a tenant
-mismatch.
+that the page shows it as an
+[unavailable control](../ui-conventions/spec.md#conditional-fields): disabled,
+still showing the loaded ID, with the one-line hint "Locked: ParishSoft data
+for this organization is loaded." under its label and the why in its tip
+([#1492](https://github.com/epiphany40223/parishkit/issues/1492)). The browser
+sends no disabled field, so the server uses the loaded ID, and it refuses a
+request that posts a different value, with or without a new key, in plain
+language: every refresh must read the organization whose data is loaded, and a
+refresh for another organization is refused as a tenant mismatch.
+A new ParishSoft key that authenticates but sees a different organization than
+the one configured is refused at once by its check, as a rejected key is
+(the check's `mismatch` outcome, never the temporary `unavailable` that waits
+and tries again): nothing is installed and the current key stays in use. The
+installer records that cause with the request's failure, as one value-free
+audit event about the request (the request itself stays `failed`), so the
+page's failed line names exactly one cause
+([#1495](https://github.com/epiphany40223/parishkit/issues/1495)). For a key
+for another organization it says "This key belongs to a different ParishSoft
+organization than the data already loaded. Paste the key for the loaded
+organization." (before the first load, when the organization ID may still be
+the wrong one: "This key belongs to a different ParishSoft organization than
+the configured organization ID. Check the key and the organization ID, then
+try again."); for a key ParishSoft rejects it keeps the general line that
+ParishSoft did not accept the key. System health names a refresh refused
+because the key sees another organization as "ParishSoft organization does
+not match", never "ParishSoft could not be reached".
 
 An integration's settings are saved through the
 [review dialog](../ui-conventions/spec.md#review-dialog) (#750). An ordinary edit
@@ -2107,6 +2152,20 @@ says so. The campaign calendar's optional refresh times
 ([#469](https://github.com/epiphany40223/parishkit/issues/469)) come from the
 same preview functions, so the two pages never disagree.
 
+The list is the shared
+[schedule preview](../ui-conventions/spec.md#schedule-previews), in its
+grouped layout and its window-of-whole-days scope (seven days from
+today, today's earlier times included), since its
+[#1129](https://github.com/epiphany40223/parishkit/issues/1129) slice
+(ADM-04 7b). Its days, counts, struck
+times and daylight-saving words stay as described here; what changes is
+that the days a reader opened stay open when a check redraws the list
+(matched by date, so a list that moves on past midnight keeps them), the
+browser's time beside each wall time comes from the shared page script,
+and the "cannot preview yet" line is the component's *unavailable* state.
+The grid stays a refresh-only extra view and draws its cells from the
+component's days. Nothing in the list is removed.
+
 #### Cost and freshness summary
 
 - **Cost**: the estimated daily ParishSoft time and its share of the day,
@@ -2544,8 +2603,11 @@ every campaign state. There is no second, read-only copy of the settings.
 - **What one Review covers.** On a draft, one Review covers every changed
   setting, applied as one change, except that a change of the dates alone,
   while the campaign has schedules, leads to Dates and mail schedules'
-  combined review instead (and dates changed with other settings are
-  refused, to be reconciled there first). On a live campaign, one Review
+  combined review instead. Dates or the time zone changed with other
+  settings, while the campaign has schedules, are refused at the first
+  changed date or time zone field, and Save waits with the same words while
+  both differ from the saved values (#1330), so the dates are reconciled
+  there first. On a live campaign, one Review
   covers a changed end date and changed Ministry leader roles together: one
   configuration request with one campaign update holding both values,
   applied together or not at all (decision 2 on #1119). Its review lists the
@@ -2668,6 +2730,34 @@ rules are the shared conversion, so New and Edit scheduled email follow them
 too. The review dialog, like every schedule review, shows when each
 schedule sends only as moments in the browser's zone (a digest also says it
 recurs), never the saved campaign-local date and time.
+
+Each side of a schedule change (Current schedule and Proposed schedule)
+lists when it sends with the shared
+[schedule preview](../ui-conventions/spec.md#schedule-previews), in its
+compact layout, once its
+[#1129](https://github.com/epiphany40223/parishkit/issues/1129) slice
+lands; until then each lists its first five sends from the campaign's
+start as a date key and a browser-local moment. With the component, a side
+uses the count-from-now scope: its next five sends after now, each line
+naming the day in words ("Tuesday, October 20, 2026") and the
+browser-local time. A dated email lists its one send. A daily digest line
+names the campaign day it reports on, the day before it sends ("Daily
+Admin digest for Monday, October 19"); a weekly digest reports what is new
+since its last send, so its line names only the day it sends ("Weekly
+Admin digest, Wednesday, October 21"). Together they replace the general
+sentence about digest dates. A side with nothing ahead says so ("No more
+sends: this email's time has passed."), where it showed nothing before.
+While [live delivery is paused](#live-delivery-pause) the sends are
+listed under the component's paused notice, with a link to Pause and
+resume mail, which shows what resume's recovery plan sends. The
+daylight-saving sentence is shown only when a listed send is affected. The
+page takes the browser's zone with the post, as it does for typed times,
+so the server groups the sends by the browser's day. Campaign settings'
+end-date review, which builds the same review with no zone, lists each
+side's sends ungrouped, each as a full browser-local day and time. The
+command line's `schedule show` and `schedule preview` list the same sends
+from now
+([automation](../admin-automation/spec.md#schedules-and-configuration)).
 
 The date-change review reviews and applies in the
 [review dialog](../ui-conventions/spec.md#review-dialog). **Review changes**
@@ -2966,8 +3056,8 @@ what happens to the series:
   a new series (with its rule).
 
 Changing a series' rule, and deleting a series, stay on the command line for
-now. Editing from the [campaign calendar](#campaign-calendar) is a later slice
-of #469.
+now. Editing from the calendar is planned in
+[Editing from the calendar](#editing-from-the-calendar).
 
 #### Campaign calendar
 
@@ -3002,8 +3092,56 @@ prepared, is listed muted and not linked, as on the list, and so is a digest's
 send whose time has passed (editing the digest changes only its later sends).
 A muted send is told apart by its status, in words in the table and read to
 screen readers in the grid. A week view,
-Production activation and go-live milestones, ParishSoft refresh times, the
-backup window and editing from the calendar are later slices of #469.
+Production activation and go-live milestones, ParishSoft refresh times and the
+backup window are later slices of
+[#1521](https://github.com/epiphany40223/parishkit/issues/1521).
+
+##### Editing from the calendar
+
+Planned ([#1521](https://github.com/epiphany40223/parishkit/issues/1521),
+split from #469; the defaults below stand until the Administrator changes
+them). Until it ships, the calendar stays read-only as above.
+
+The calendar starts the existing edits; it has no write path of its own.
+Every change it starts is the same server-drawn review, signed preview, Apply
+under the work lock (with its recheck of a reviewed send time that has passed)
+and audited configuration request as
+[New and Edit scheduled email](#new-and-edit-scheduled-email), so the server
+checks it exactly as that page does.
+
+- **Add on a day.** Each day of the campaign's dates has a small "Add an
+  email on (date)" button, reachable by keyboard and named with its date. It
+  opens New scheduled email with that day as the send date, in the browser's
+  zone. The time and email still have to be chosen, so Review changes stays
+  unavailable until they are ([prerequisite
+  gates](../ui-conventions/spec.md#prerequisite-gates)). Apply returns to the
+  calendar. Days outside the campaign's dates have no Add button.
+- **Move…** Each send the calendar links (a dated schedule that has not run:
+  the Initial invitation and each reminder) has a **Move…** action beside its
+  link. It opens the [review dialog](../ui-conventions/spec.md#review-dialog)
+  over the calendar with one date field, filled in with the send's date, and
+  the send's time and email shown but not editable. Its Review answers
+  exactly the review Edit scheduled email draws for that schedule with the
+  new date, the same browser-local time and the same email. Apply redraws the
+  calendar in place ([in-place
+  controls](../ui-conventions/spec.md#in-place-controls)).
+- **Drag to move.** Dragging a movable send onto another day opens the same
+  Move dialog with that day filled in. The drop changes nothing: the send
+  stays where it was until Apply, and Cancel leaves it there. Drag follows
+  the [dragging rule](../ui-conventions/spec.md#accessibility-and-client-behavior).
+- **The moved send** keeps its browser-local wall-clock time, converted on
+  the new day as a typed date is, so 9:00 AM stays 9:00 AM across a
+  daylight-saving change. Edit's rules refuse what Edit refuses: a day
+  outside the campaign's dates, a reminder not after the Initial invitation,
+  two Family mailings at one moment, and the hour the clocks repeat. Only the
+  moved send may move into the past.
+- **A series reminder** moves as "This reminder only". On a day its rule does
+  not give, it leaves the series, and the review says so. The series scopes
+  stay on Edit, where every reminder keeps its own date.
+- **Not movable:** a send that has run, is being prepared or was missed, and
+  every send of a Daily or Weekly Admin digest (a digest is one repeating
+  schedule with no single-day exceptions). These keep their look on the
+  calendar and offer neither Move… nor a drag.
 
 ### Ministry leader roles
 
@@ -5711,7 +5849,9 @@ Staff, with notes, on the
 API-writable changes are view-only for Staff. An Administrator approves or
 ignores them on the same worklist
 ([automatic census review](../reports/spec.md#automatic-census-review)), and
-publication follows the [data workflow](../data/spec.md#review-and-publication).
+publishes them from
+[Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft), which
+follows the [data workflow](../data/spec.md#review-and-publication).
 
 The ParishSoft API cannot change Ministry rosters, so a join or leave is
 always entered in ParishSoft by hand
@@ -8103,10 +8243,10 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   (`admin_cmd_workgroup_confirm`), Campaign settings changes
   (`admin_cmd_campaign_confirm`), Share options changes
   (`admin_cmd_campaign_shares_confirm`), integration settings
-  changes and removals (`admin_cmd_integration_confirm`), the command line's backup folder checks (`admin_cmd_integration_backup_probe`) and key change dismissals (`admin_cmd_integration_dismiss`), Finish switching to a new key (`admin_cmd_integration_key_finish_switching`), hosted files (`hosted_file_*`), stored key
+  changes and removals (`admin_cmd_integration_confirm`), the command line's backup folder checks (`admin_cmd_integration_backup_probe`) and key change dismissals (`admin_cmd_integration_dismiss`), Finish switching to a new key (`admin_cmd_integration_key_finish_switching`), the command line's key replacements (`admin_cmd_integration_key_replace`) and backup encryption key changes (`admin_cmd_integration_backup_key_confirm`), hosted files (`hosted_file_*`), stored key
   replacements
   (`secret_replacement_requested`, `secret_request_*`,
-  `credential_consumer_acknowledged`) and initial setup, which is
+  `credential_key_organization_mismatch`, `credential_consumer_acknowledged`) and initial setup, which is
   configuration too (`setup_started`, `setup_credential_staged`,
   `setup_credential_scrubbed`, the test email's `setup_mail_*` and Slack
   message's `setup_slack_*` steps, `setup_frozen`, `setup_expired`).
@@ -8136,7 +8276,22 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   the operational failures and holds (`source_refresh_invalid`,
   `source_provider_failed`, `source_credential_failed`,
   `source_tenant_mismatch`, `source_destructive_change`,
-  `source_refresh_held`).
+  `source_refresh_held`). With the
+  [Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft) page
+  ([#528](https://github.com/epiphany40223/parishkit/issues/528), ADM-09;
+  not built yet) the publication types join it, leaving `UNGROUPED`'s
+  "no page shows it yet" reason: checks, plans, confirmations, attempts,
+  reruns and refusals (`census_publication_preflight_requested`,
+  `census_publication_planned`, `census_publication_confirmed`,
+  `census_publication_recorded`, `census_publication_rerun_requested`,
+  `census_publication_switched_off`, `census_publication_read_unconfirmed`,
+  `census_publication_refused`) and the command line's
+  `admin_cmd_census_publish_confirm` and `admin_cmd_census_publish_rerun`,
+  which stay out of Staff follow-up with the other `admin_cmd_census_*`
+  types. The group's label then becomes **ParishSoft refreshes and
+  publishing**, its key staying `parishsoft`, because a publication is not
+  a refresh. The page's `census_publication_viewed` stays ungrouped with
+  the other page views.
 - **Reports and downloads** (`downloads`, audit records only): reports and
   exports requested, made, cancelled or downloaded (`export_requested`,
   `export_cancelled`, `export_downloaded`, every `*_exported`,

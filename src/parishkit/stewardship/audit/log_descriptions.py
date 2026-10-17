@@ -191,6 +191,14 @@ DESCRIPTIONS = {
         "An automation session finished switching an integration to its new "
         "key, which became a configuration request."
     ),
+    "admin_cmd_integration_key_replace": _(
+        "An automation session submitted a new key for an integration, which "
+        "its installer checks before a configuration request switches to it."
+    ),
+    "admin_cmd_integration_backup_key_confirm": _(
+        "An automation session confirmed a proved new backup encryption key, "
+        "which became a configuration request."
+    ),
     "admin_cmd_workgroup_confirm": _(
         "An automation session confirmed a reviewed change to the campaign's "
         "No-reminders WorkGroup, which became a configuration request."
@@ -255,6 +263,18 @@ DESCRIPTIONS = {
         "An automation session approved an automatic census change over "
         "ParishSoft's current value, as the Census changes page's Use the "
         "Family's value anyway does."
+    ),
+    "admin_cmd_followup_roster_entered": _(
+        "An automation session set or cleared a Ministry request's Entered "
+        "in ParishSoft tick, as the request's tick on Ministry requests does."
+    ),
+    "admin_cmd_followup_roster_bulk": _(
+        "An automation session marked several Ministry requests Entered in "
+        "ParishSoft, as Roster changes to enter's bulk mark does."
+    ),
+    "admin_cmd_followup_information_update": _(
+        "An automation session recorded follow-up on an Additional "
+        "information request, as the request's Save does."
     ),
     "admin_cmd_refresh_start": _(
         "An automation session asked for a full ParishSoft refresh, as the "
@@ -715,6 +735,10 @@ DESCRIPTIONS = {
     ),
     "credential_result_dismissed": _(
         "An Administrator dismissed the result of a key change."
+    ),
+    "credential_key_organization_mismatch": _(
+        "A new ParishSoft key was refused: it belongs to a different "
+        "ParishSoft organization."
     ),
     "family_maintenance_started": _(
         "An Administrator closed the Family portal for maintenance."

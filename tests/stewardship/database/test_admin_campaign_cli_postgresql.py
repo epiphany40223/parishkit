@@ -355,7 +355,10 @@ def test_a_drafts_dates_with_schedules_go_to_schedule_preview(admin):
     )
     assert code == 1
     refused(document, "invalid")
-    assert "Reconcile dates and mail schedules" in json.dumps(document["error"])
+    # The refusal is the end date's own error (#1330 item 1).
+    [problem] = document["error"]["fields"]
+    assert problem["field"] == "campaign.end_date"
+    assert "on their own" in problem["message"]
     assert ConfigurationChangeRequest.objects.count() == requests and events() == 0
 
 

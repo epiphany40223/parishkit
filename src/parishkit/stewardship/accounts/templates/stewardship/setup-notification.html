@@ -22,5 +22,6 @@
 {% include 'stewardship/setup-test-status.html' with status_url=status_url %}
 </section>
 {% include 'stewardship/setup-test-actions.html' with send=_("Send Slack test") %}
+{% include 'stewardship/setup-test-failed.html' %}
 </div>
 {% endblock %}

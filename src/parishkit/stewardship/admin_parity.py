@@ -280,11 +280,11 @@ LEDGER = {
         "census resolve-conflict",
     ),
     "information_queue": command("report information"),
-    # One Family's submission and its follow-up history: read with the
-    # follow-up commands, as the Ministry follow-up items are, which print
-    # only the item's state and history; its content is Family-level and
-    # comes through ``export information``.
-    "information_item": pending("PR 11", "followup"),
+    # One Family's submission and its follow-up history: ``followup
+    # information-show`` (#463 PR 11b), which prints only the item's state
+    # and history, as the Ministry follow-up items are read; its content is
+    # Family-level and comes through ``export information``.
+    "information_item": command("followup information-show"),
     # Ministry requests (#1133) is the follow-up queue with the summary's
     # By Ministry counts. ``report ministry`` prints those counts, and
     # ``export ministry`` writes one Ministry's join or leave list, the file
@@ -403,32 +403,41 @@ LEDGER = {
     # Home's Acknowledge buttons; events list reads what they acknowledge.
     "security_event_acknowledge": command("events list", "events acknowledge"),
     "critical_events_acknowledge": command("events list", "events acknowledge"),
-    "information_update": pending("PR 11", "followup"),
+    # An item's Save (#463 PR 11b).
+    "information_update": command(
+        "followup information-show", "followup information-update"
+    ),
     # A Ministry request's page and its Save (#463 PR 11a).
     "ministry_followup_item": command("followup show"),
     "ministry_followup_update": command("followup show", "followup update"),
     # Bulk outcomes on the queue (#1131): followup bulk (#463 PR 11a).
     "ministry_followup_bulk": command("followup list", "followup bulk"),
-    # Export these requests (#1157): the queue's filtered set with contacts.
-    "ministry_followup_export": pending("PR 11", "followup export"),
-    # The roster Entered in ParishSoft tick and its list (#528).
-    "ministry_followup_roster": pending("PR 11", "followup roster-entered"),
+    # Export these requests (#1157): the queue's filtered set with contacts,
+    # through the page's own writer (#463 PR 11c).
+    "ministry_followup_export": command("followup export"),
+    # The roster Entered in ParishSoft tick and its list (#528), one at a
+    # time or in bulk (#463 PR 11b).
+    "ministry_followup_roster": command("followup show", "followup roster-entered"),
     # Counts only (#463): its rows name Members, so they are export roster's.
     "ministry_roster": command("report roster"),
     # The page's download, through the page's own writer.
     "ministry_roster_export": command("export roster"),
     # The list's bulk Mark entered in ParishSoft (#879).
-    "ministry_roster_bulk": pending("PR 11", "followup roster-entered"),
+    "ministry_roster_bulk": command("report roster", "followup roster-bulk"),
     # Integrations and credentials.
     "integrations": command("integration list"),
-    # The settings page as it opens, its Save, its Remove and the backup
-    # folder check (#463); the key replacement is still owed.
+    # The settings page as it opens, its Save, its Remove, the backup
+    # folder check, its Save with a new key and the Backup encryption key's
+    # three steps (#463).
     "integration_settings": command(
         "integration show",
         "integration preview",
         "integration confirm",
         "integration backup-probe",
-        owed="PR 10",
+        "integration key replace",
+        "integration backup-key challenge",
+        "integration backup-key preview",
+        "integration backup-key confirm",
     ),
     "integration_status": command("integration status"),
     # The ParishSoft page's live refresh schedule check (#632).
