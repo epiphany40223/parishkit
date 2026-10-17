@@ -8,6 +8,8 @@ it, and saving a fix leads back to the test, never to Review first.
 
 import pytest
 
+from parishkit.stewardship.accounts.setup_wizard import BY_KEY
+
 from .setup_order_components import (
     FAILED,
     FIX,
@@ -170,3 +172,44 @@ def test_the_slack_connection_step_offers_turning_slack_off(
     off.get_by_role("button", name="Turn off Slack notifications").click()
     page.wait_for_url(component_origin + RETEST)
     assert "Slack connection" not in track_labels(page)
+
+
+def test_back_to_test_slack_after_turning_slack_off_opens_test_email(
+    page, component_origin
+):
+    """Going back to Test Slack after Turn off Slack notifications opens the
+    next step needing work, Test email, not an error page (#1505).
+
+    The Test Slack page is served at its real address the first time and,
+    from then on, the address answers as the real view does while Slack is
+    off (a redirect). The turn-off form posts to the Slack notifications
+    step's own address, a different one, so every engine keeps Test Slack
+    as a real history entry, and Back fetches it again: it is marked
+    no-store, as the real page is.
+    """
+    test_slack = component_origin + BY_KEY["slack_test"].url
+    served = []
+
+    def first_page_then_server(route):
+        """Serve the Test Slack page once, then let the server answer."""
+        served.append(route.request.url)
+        if len(served) > 1:
+            route.continue_()
+            return
+        answer = route.fetch(url=component_origin + SLACK_FAILED)
+        headers = answer.headers | {"cache-control": "no-store"}
+        route.fulfill(response=answer, headers=headers)
+
+    page.route(test_slack, first_page_then_server)
+    page.goto(test_slack)
+    has_text(page.locator("h1"), "Test Slack")
+    off = page.locator("[data-setup-slack-off]").first
+    off.get_by_role("button", name="Turn off Slack notifications").click()
+    page.wait_for_url(component_origin + RETEST)
+    with page.expect_response(test_slack) as back:
+        page.go_back()
+    assert back.value.status == 302
+    page.wait_for_url(component_origin + RETEST)
+    has_text(page.locator("h1"), "Test email")
+    assert len(served) == 2
+    assert not {"Slack connection", "Test Slack"} & set(track_labels(page))

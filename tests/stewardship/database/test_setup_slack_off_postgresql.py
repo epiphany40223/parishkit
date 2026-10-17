@@ -250,7 +250,8 @@ def test_the_button_saves_slack_off_and_opens_the_next_step_not_done(
     setup_http, monkeypatch, tmp_path
 ):
     """CSRF and the exact draft version are required; the save opens Test
-    email (the version bump re-requires it), and Test Slack is gone."""
+    email (the version bump re-requires it), and Test Slack is gone: its
+    address opens Test email too, and a Slack test post is refused."""
     browser, request, ready_state = browser_for(
         setup_http, monkeypatch, tmp_path, enqueue=True
     )
@@ -268,7 +269,13 @@ def test_the_button_saves_slack_off_and_opens_the_next_step_not_done(
         response = post(browser, "/admin/setup/slack", fields)
         assert response.status_code == 302
         assert response["Location"] == "/admin/setup/mail-test"
-        assert browser.get("/admin/setup/slack-test").status_code == 400
+        # Back or an old tab on Test Slack opens the same next step, and a
+        # Slack test can no longer be sent (#1505).
+        back = browser.get("/admin/setup/slack-test")
+        assert back.status_code == 302
+        assert back["Location"] == "/admin/setup/mail-test"
+        assert browser.head("/admin/setup/slack-test").status_code == 302
+        assert post(browser, "/admin/setup/slack-test", {}).status_code == 400
         page = browser.get("/admin/setup/mail-test")
     assert page.status_code == 200
     assert "Test Slack" not in page.content.decode()

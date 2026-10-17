@@ -20,6 +20,7 @@ from .setup_notification_models import SetupSlackDelivery
 from .setup_notifications import request_notification
 from .setup_preview import PREVIEW_SALT, prepare_preview
 from .setup_views import ERRORS, _checked, _closed, _context, error_response, page_error
+from .setup_wizard import wizard_for
 
 # A Slack test message is not email: keep the shared result words, but name
 # Slack where the email words would say "the mail service". "Awaiting Slack
@@ -47,6 +48,25 @@ class SetupNotificationForm(AdminForm):
     )
 
 
+def _skipped(request, service):
+    """Redirect a visit to Test Slack while Slack is off, else return None.
+
+    Once Slack is turned off (#1499) the Test Slack step leaves the wizard,
+    but the browser's Back button or an old tab can still open its address.
+    That visit is not the Administrator's mistake, so it opens the next step
+    needing work, as Home's Continue setup does, instead of an error page
+    (#1505). Only a GET or HEAD is redirected: a POST still reaches the
+    view's refusal, so no Slack test is ever queued while Slack is off.
+    """
+    draft = view_draft(request, service)
+    if draft is None or draft.sections.get("slack", {}).get("enabled"):
+        return None
+    wizard = wizard_for(draft)
+    if wizard is None or wizard.resume is None:
+        return None
+    return _checked(request, service, HttpResponseRedirect(wizard.resume.href))
+
+
 def _data(draft):
     """No credential bytes, channel names or message bodies enter polling JSON."""
     return _status_data(draft, model=SetupSlackDelivery, labels=SLACK_LABELS)
@@ -58,6 +78,9 @@ def setup_notification(request):
     try:
         _closed(request, set(SetupNotificationForm.base_fields))
         service = runtime()
+        skipped = request.method != "POST" and _skipped(request, service)
+        if skipped:
+            return skipped
         preview = prepare_preview(request, service)
         if not preview.draft.sections["slack"]["enabled"]:
             raise ValueError("Slack is disabled for this setup.")
