@@ -2759,8 +2759,9 @@ scheduled email** (`/admin/campaign/schedules/<schedule>/`, opened by a row's
 Edit) are one page: the mail type, send date, send time, day of the week and
 Email to send of one schedule, with the rules above. Its review and Apply follow the
 [review dialog](../ui-conventions/spec.md#review-dialog); once the change is applied the reader returns to
-Dates and mail schedules, whose status line says what was applied. Edit
-opens it filled in
+Dates and mail schedules, whose status line says what was applied (a New
+opened by the calendar's [Add on a day](#editing-from-the-calendar) returns to
+the calendar instead). Edit opens it filled in
 from the saved schedule, whose mail type is fixed; a schedule that is unknown or
 read-only is refused there too, even from an old link (a GET or a POST).
 The editor follows the shared
@@ -3039,10 +3040,11 @@ now. Editing from the calendar is planned in
 **Campaign calendar** (`/admin/campaign/schedules/calendar/`,
 [#469](https://github.com/epiphany40223/parishkit/issues/469)), opened by the
 link beside New scheduled email, shows every email the saved schedules send,
-by date. It is read-only: it changes nothing and offers no New or Delete. It
-reads the current schedules: the Initial invitation, each reminder, and every
-day or week of the Daily and Weekly Admin digests, expanded the way the
-scheduler evaluates them (a Daily Admin digest's last send is the day after
+by date. It changes nothing itself and offers no Delete; its only way to
+start a change is Add on a day ([Editing from the
+calendar](#editing-from-the-calendar)). It reads the current schedules: the
+Initial invitation, each reminder, and every day or week of the Daily and
+Weekly Admin digests, expanded the way the scheduler evaluates them (a Daily Admin digest's last send is the day after
 the campaign closes).
 
 - **By month** draws one month grid per month, Sunday first, from the
@@ -3073,9 +3075,10 @@ backup window are later slices of
 
 ##### Editing from the calendar
 
-Planned ([#1521](https://github.com/epiphany40223/parishkit/issues/1521),
-split from #469; the defaults below stand until the Administrator changes
-them). Until it ships, the calendar stays read-only as above.
+From [#1521](https://github.com/epiphany40223/parishkit/issues/1521) (split
+from #469); the defaults below stand until the Administrator changes them.
+Add on a day is built; Move… and drag to move are planned, and until they
+ship the calendar moves nothing.
 
 The calendar starts the existing edits; it has no write path of its own.
 Every change it starts is the same server-drawn review, signed preview, Apply
@@ -3084,13 +3087,21 @@ and audited configuration request as
 [New and Edit scheduled email](#new-and-edit-scheduled-email), so the server
 checks it exactly as that page does.
 
-- **Add on a day.** Each day of the campaign's dates has a small "Add an
-  email on (date)" button, reachable by keyboard and named with its date. It
-  opens New scheduled email with that day as the send date, in the browser's
-  zone. The time and email still have to be chosen, so Review changes stays
-  unavailable until they are ([prerequisite
-  gates](../ui-conventions/spec.md#prerequisite-gates)). Apply returns to the
-  calendar. Days outside the campaign's dates have no Add button.
+- **Add on a day.** Each day of the campaign's dates that is today or later
+  (in the browser's zone) has a small **Add**
+  link beside its number, reachable by keyboard and named with its date ("Add
+  an email on October 12, 2054"). It opens New scheduled email
+  (`?date=` that day) as a Reminder with that day as the send date, in the
+  browser's zone; choosing the Initial invitation instead keeps the day, and
+  a day that is not a real date is refused as an unknown address. The type
+  and day are the form as drawn, so they alone are nothing to add: **Add the
+  scheduled email** stays unavailable until something else is filled in, as
+  on New ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)),
+  and the time and email still have to be chosen. Cancel, and Apply
+  once the change is applied, return to the calendar, whose status line says
+  what was applied. Days outside the campaign's dates, or already past, have no Add. Until a
+  schedule exists the calendar draws no grid, and its link to Dates and mail
+  schedules is the way to add one.
 - **Move…** Each send the calendar links (a dated schedule that has not run:
   the Initial invitation and each reminder) has a **Move…** action beside its
   link. It opens the [review dialog](../ui-conventions/spec.md#review-dialog)
