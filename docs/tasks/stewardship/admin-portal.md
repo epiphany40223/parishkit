@@ -329,11 +329,13 @@ Specification: [Admin automation interface](../../specs/stewardship/admin-automa
 Since #1547 an automation session no longer stands in for a recent sign-in,
 because nothing needs one; privileged commands still need a live full-scope
 session and still record `automation_fresh_gate` and the `fresh_gated` and
-`irreversible` notices (names kept). The session-bound SQL guards still
-require a command session's live full-scope automation session
-(`stewardship_automation_fresh_v1`); `stewardship_automation_fresh_principal_v1`
-stays in the schema, unused, until
-[#1550](https://github.com/epiphany40223/parishkit/issues/1550).
+`irreversible` notices (names kept). Every session-bound SQL guard still
+requires a command session's live full-scope automation session
+(`stewardship_automation_fresh_v1`), and the secret request guards refuse a
+request whose full-scope automation session ended
+(`stewardship_automation_instant_ended_v1`, migration 0113);
+`stewardship_automation_fresh_principal_v1` stays in the schema, unused,
+until [#1550](https://github.com/epiphany40223/parishkit/issues/1550).
 
 Evidence: In progress. ADM-11.01 merged in PR #511, which added the
 Admin automation interface specification and the Administrator's

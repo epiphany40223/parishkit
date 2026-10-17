@@ -42,6 +42,7 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     from parishkit.stewardship.runtime_grants import (
         ADDRESS_RETRY_OPEN_FUNCTION,
         ADDRESS_RETRY_TOKEN_FUNCTION,
+        AUTOMATION_ENDED_FUNCTION,
         AUTOMATION_FRESH_FUNCTION,
         DEBUG_OFF_FUNCTION,
         EXPORT_DISCARD_FUNCTION,
@@ -62,7 +63,8 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     }
     # Web also reads the 24-hour Family mail count and when it falls below the
     # Family limit for System health (ADM-13, #530),
-    # checks a secret request's automation sign-in (ADM-11 PR 5) and reads a
+    # checks a secret request's automation sign-in (ADM-11 PR 5; whether its
+    # automation session ended, #1547) and reads a
     # user's role-derived Ministry scope (#922), the users upgrade
     # preview's identities and Member names, New user's Name lookup and the
     # Users page's ParishSoft leaders without a user (#952) and, for an
@@ -75,6 +77,7 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         "stewardship_family_daily_sends_v1()",
         "stewardship_family_daily_resume_v1()",
         AUTOMATION_FRESH_FUNCTION,
+        AUTOMATION_ENDED_FUNCTION,
         LEADER_SCOPE_FUNCTION,
         "stewardship_portal_identities_v1()",
         "stewardship_member_names_v1()",

@@ -5997,10 +5997,27 @@ CREATE FUNCTION public.stewardship_sealed_intake_admission_v1() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
+DECLARE ended boolean := false;
 BEGIN
-    -- A secret request records its session's sign-in instant at any age
-    -- (#1547); only a staging row is checked here.
-    IF TG_TABLE_NAME<>'stewardship_secret_request' THEN
+    IF TG_TABLE_NAME='stewardship_secret_request' THEN
+        -- The recorded sign-in instant may be of any age (#1547). One that
+        -- is a full-scope automation session's needs one such session
+        -- live (ADM-11), so an ended session's request is refused. A
+        -- separate statement, reached only by the web (which holds
+        -- EXECUTE) or the schema owner: EXECUTE is checked whenever an
+        -- expression is initialized. A setup install's installer
+        -- records the setup browser session's instant.
+        IF NEW.required_consumers<>'[]'::jsonb
+           AND (current_user='pk_stewardship_web' OR pg_has_role(current_user,
+                (SELECT nspowner FROM pg_namespace WHERE nspname='public'),'USAGE')) THEN
+            ended := coalesce(public.stewardship_automation_instant_ended_v1(
+                NEW.requested_by_id,NEW.reauthenticated_at),false);
+        END IF;
+        IF ended THEN
+            RAISE EXCEPTION 'Sealed intake requires fresh authentication'
+                USING ERRCODE='23514';
+        END IF;
+    ELSE
         IF NOT EXISTS(SELECT 1 FROM stewardship_secret_request
             WHERE id=NEW.request_id AND required_consumers<>'[]'::jsonb) THEN
             RAISE EXCEPTION 'Sealed intake requires installer consumers'
@@ -6162,6 +6179,7 @@ CREATE FUNCTION public.stewardship_secret_state_v2() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
+DECLARE ended boolean := false;
 BEGIN
     IF TG_OP='DELETE' THEN
         RAISE EXCEPTION 'Secret request history cannot be deleted' USING ERRCODE='23514';
@@ -6206,8 +6224,19 @@ BEGIN
         RAISE EXCEPTION 'Credential acknowledgement requires consumer evidence' USING ERRCODE='23514';
     END IF;
     IF OLD.state='staged' AND NEW.state='testing' THEN
-        -- The request's sign-in instant may be of any age (#1547).
+        -- The request's sign-in instant may be of any age (#1547). One
+        -- that is a full-scope automation session's needs one such session
+        -- still live (ADM-11): ending the session stops its staged
+        -- credential here. Only these targets' installers hold EXECUTE on
+        -- the check, so it is its own statement, reached only for them; a
+        -- live initial setup install relies on its frozen setup instead.
+        IF NEW.target IN ('parishsoft','google_workspace','slack')
+           AND NOT public.stewardship_setup_install_live_v1(NEW.id) THEN
+            ended := coalesce(public.stewardship_automation_instant_ended_v1(
+                NEW.requested_by_id,NEW.reauthenticated_at),false);
+        END IF;
         IF NEW.actor_id IS NOT NULL OR NEW.expires_at<=statement_timestamp()
+           OR ended
            OR NEW.required_consumers='[]'::jsonb
            OR NOT EXISTS(SELECT 1 FROM stewardship_sealed_credential_staging WHERE request_id=NEW.id AND ciphertext IS NOT NULL) THEN
             RAISE EXCEPTION 'Credential testing requires a live sealed request' USING ERRCODE='23514';
@@ -8528,8 +8557,12 @@ BEGIN
             AND login.principal_id=attempt.owner_id AND login.revoked_at IS NULL
             AND login.expires_at>stamp
             AND login.last_activity_at>stamp-interval '60 minutes'
-            -- Any sign-in age (#1547): the session is live.
+            -- Any sign-in age (#1547); a command session still needs
+            -- its live full-scope automation session (ADM-11).
             AND login.authenticated_at<=stamp
+            AND (NOT EXISTS (SELECT 1 FROM public.stewardship_automation_login command
+                     WHERE command.portal_session_id=login.id)
+                 OR public.stewardship_automation_fresh_v1(login.id,attempt.owner_id))
         JOIN public.stewardship_portal_user owner ON owner.id=attempt.owner_id
             AND NOT owner.disabled
         JOIN public.stewardship_address_rule rule ON rule.email=owner.email

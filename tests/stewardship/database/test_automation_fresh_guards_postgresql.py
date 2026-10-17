@@ -11,7 +11,9 @@ session-bound definer guards are exercised by an insert whose session check
 comes first, so the error says which clause refused; the
 Family test guard through the real chosen-Family test form; the secret
 request guards through the real sealed intake and the installer's
-staged-to-testing step, on disposable roles. 0013's own DO block is run
+staged-to-testing step, on disposable roles; there an instant that a
+full-scope automation session holds still needs one such session live
+(``stewardship_automation_instant_ended_v1``, new in 0113). 0013's own DO block is run
 against 0013's bodies, put back in a rolled-back transaction, and refuses
 each pre-0013 guard. ``sign_in_instant`` and the still-installed, now unused
 ``stewardship_automation_fresh_principal_v1`` are covered directly.
@@ -363,8 +365,10 @@ def test_secret_request_guards_accept_a_sign_in_of_any_age(
 ):
     """Intake and staged-to-testing take an hours-old recorded instant.
 
-    0113 left the request's sign-in instant unchecked; the web records its
-    live session's instant.
+    0113 checks no age, but an instant that a full-scope automation session
+    holds still needs one such session live (ADM-11): once it ends, a
+    credential it staged cannot move to testing and it stages no other. An
+    instant no automation session holds (a browser's) still passes.
     """
     _, _, row = paired(auth_service)
     age(STALE)
@@ -373,6 +377,76 @@ def test_secret_request_guards_accept_a_sign_in_of_any_age(
     staged = stage_as(row.principal_id, instant)
     with identity("pk_stewardship_credential_slack"):
         assert advance(staged, "testing") == 1
+    pending = stage_as(row.principal_id, instant, target="parishsoft")
+    revoke(row)
+    with (
+        identity("pk_stewardship_credential_parishsoft"),
+        pytest.raises(DatabaseError, match="requires a live sealed request"),
+        transaction.atomic(),
+    ):
+        advance(pending, "testing")
+
+
+def revoke(row):
+    """End one automation session, as its owner's revocation would."""
+    with unguarded():
+        AutomationSession.objects.filter(pk=row.pk).update(
+            revoked_at=timezone.now(), end_reason="revoked_by_owner"
+        )
+
+
+def test_an_ended_automation_session_stages_no_secret(
+    isolated_roles,  # noqa: F811
+    auth_service,
+    google,
+):
+    """Its instant is refused at intake; a browser instant still passes."""
+    _, _, row = paired(auth_service)
+    age(STALE)
+    instant = AutomationSession.objects.get(pk=row.pk).authenticated_at
+    revoke(row)
+    with pytest.raises(DatabaseError, match="Sealed intake requires fresh"):
+        stage_as(row.principal_id, instant)
+    browser = stage_as(row.principal_id, instant - timedelta(seconds=1))
+    with identity("pk_stewardship_credential_slack"):
+        assert advance(browser, "testing") == 1
+
+
+def instant_ended(principal, instant):
+    """``stewardship_automation_instant_ended_v1``'s answer."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT public.stewardship_automation_instant_ended_v1(%s,%s)",
+            [principal, instant],
+        )
+        return cursor.fetchone()[0]
+
+
+def test_instant_ended_is_true_only_once_every_full_session_ended(auth_service, google):
+    """Never NULL; true only for a full-scope session's instant, once ended.
+
+    A read-only session's instant, another principal's and an instant no
+    automation session holds are never ended; a second live full-scope
+    session with the same instant (approved from the same browser) keeps it
+    live.
+    """
+    _, _, row = paired(auth_service)
+    _, _, second = paired(auth_service)
+    _, _, reader = paired(auth_service, scope="read-only")
+    shift(reader, timedelta(seconds=7))
+    reader.refresh_from_db()
+    assert second.authenticated_at == row.authenticated_at
+    principal, instant = row.principal_id, row.authenticated_at
+    assert instant_ended(principal, instant) is False
+    assert instant_ended(principal, None) is False
+    revoke(row)
+    assert instant_ended(principal, instant) is False
+    expire(second)
+    assert instant_ended(principal, instant) is True
+    assert instant_ended(uuid4(), instant) is False
+    assert instant_ended(principal, instant + timedelta(seconds=1)) is False
+    revoke(reader)
+    assert instant_ended(reader.principal_id, reader.authenticated_at) is False
 
 
 def fresh_principal(principal, instant):

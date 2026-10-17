@@ -111,13 +111,13 @@ BEGIN
            -- A live session of the Admin has the recorded sign-in instant,
            -- whatever its age (#1547); a command session only with its
            -- live full-scope automation session (ADM-11).
-           OR NOT EXISTS (SELECT 1 FROM public.stewardship_portal_session
+           OR NOT EXISTS (SELECT 1 FROM public.stewardship_portal_session own
                 WHERE principal_id=NEW.requested_by_id AND revoked_at IS NULL
                     AND authenticated_at=NEW.reauthenticated_at AND expires_at>stamp
                     AND authenticated_at<=stamp
                     AND (NOT EXISTS (SELECT 1 FROM public.stewardship_automation_login command
-                             WHERE command.portal_session_id=id)
-                         OR public.stewardship_automation_fresh_v1(id,NEW.requested_by_id))
+                             WHERE command.portal_session_id=own.id)
+                         OR public.stewardship_automation_fresh_v1(own.id,NEW.requested_by_id))
                     AND last_activity_at>stamp-interval '60 minutes')
            OR NOT EXISTS (SELECT 1 FROM public.stewardship_task_run task
                 WHERE task.id=NEW.task_id AND task.root_id=task.id
