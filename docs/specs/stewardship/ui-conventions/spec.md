@@ -1055,16 +1055,21 @@ choice no form offers, a sort or page size the table does not accept) keeps
 the report's error page. A range out of order is refused at its end with
 both ends marked, and its message is shown once, after them, in a line
 the form reserves so that a refusal shown in place moves nothing. A
-form whose complete gate already reserves a hint row (System logs) shows
-the message in that row instead, over the gate's hint, so the page is no
-taller for a refusal only a request built by hand gets. An
+form whose complete gate already has a hint row (System logs, the
+Follow-up packet, an Additional information item's Save) shows the message
+in that row instead, over the gate's hint, which it hides while shown, so
+the page is no taller for a refusal only a request built by hand gets and
+says it once. The same holds for a report's own forms that a field can
+fix (the Follow-up packet's limit, an Additional information item's
+confirmation): the page is drawn again, 400, with the values sent. An
 in-place Apply keeps the filter form and what was typed, and takes the
 marks and message from the answer. The server's mark clears, with its
 message and summary item, on the first edit of a field it marks (either
 end of a range), or when an in-place Apply is answered without it.
 **Shared code.** `web/filter_errors.py` (`FilterError`), the `filter_mark`
 and `filter_line` template tags; used by Financial stewardship, the
-Additional information queue and System logs.
+Additional information queue and item, System logs and the Follow-up
+packet.
 
 A file field marked `data-max-bytes` (with `data-max-bytes-message`, the
 server's own words) is refused at the field as soon as a file over that

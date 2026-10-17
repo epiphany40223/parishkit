@@ -16,6 +16,16 @@ from parishkit.stewardship.web.contracts import check_version
 from .models import AdditionalInformationItem, AdditionalInformationRevision
 
 
+class ClearUnconfirmed(ValueError):
+    """Clearing a completed follow-up without ticking its confirmation.
+
+    The item page shows this refusal at the confirmation box (#1332); it
+    is a ``ValueError``, so any other caller still refuses it as before.
+    It is raised only after the version check, under the item's lock, so
+    the submitted version was current when it was refused.
+    """
+
+
 def authorize_information(store, actor_id):
     """Reload coherent policy; old sessions and a known item UUID are not grants."""
     principal = current_principal(store, actor_id)
@@ -82,7 +92,7 @@ def update_information(
             return previous
         check_version(item, expected_version)
         if item.followed_up_at is not None and not followed_up and not confirm_clear:
-            raise ValueError("Confirm clearing the completed follow-up.")
+            raise ClearUnconfirmed("Confirm clearing the completed follow-up.")
         revision = AdditionalInformationRevision.objects.create(
             actor_id=actor_id, request_key=request_key, **intent
         )
