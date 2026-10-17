@@ -323,3 +323,120 @@ def test_only_the_newest_test_of_this_revision_not_sent_needs_a_fix():
     assert failure([{"current": False, "state": "not_sent"}], *FIX) is None
     assert failure([{"current": True, "state": "delivery_unknown"}], *FIX) is None
     assert failure([], *FIX) is None
+
+
+def turn_off_forms(html):
+    """Each Turn off Slack notifications form on the page (#1499)."""
+    return re.findall(r"<form [^>]*data-setup-slack-off>.*?</form>", html, re.S)
+
+
+def test_test_slack_and_its_failed_notice_offer_turning_slack_off():
+    """Test Slack says Slack is optional and offers Turn off Slack
+    notifications above its test form; a test that was not sent first says
+    to use a real bot token or turn Slack off, with the button beside it.
+    Each posts the Slack step's own form with Slack off (#1499)."""
+    from parishkit.stewardship.accounts.setup_mail_views import failure
+    from parishkit.stewardship.accounts.setup_notification_views import FIX
+
+    form = SetupNotificationForm(
+        initial={"preview_token": "token", "request_key": uuid4()}
+    )
+    common = {
+        "wizard": wizard("slack_test", slack=True),
+        "form": form,
+        "items": [],
+        "tested": False,
+        "pending": False,
+        "channel_id": "C0123456789",
+    }
+    html = page("setup-notification.html", "slack_test", **common)
+    (top,) = turn_off_forms(html)
+    assert html.index(top) < html.index('id="setup-test"')
+    assert "Slack is optional." in top
+    failed = page(
+        "setup-notification.html",
+        "slack_test",
+        **common | {"failure": failure([{"current": True, "state": "not_sent"}], *FIX)},
+    )
+    first, notice = turn_off_forms(failed)
+    assert first == top
+    advice = failed.split("data-setup-test-failed>", 1)[1]
+    assert advice.index("Use a real Slack bot token") < advice.index(notice)
+    assert advice.index(notice) < advice.index("A common cause:")
+    for each in (top, notice):
+        assert 'action="/admin/setup/slack"' in each
+        assert '<input type="hidden" name="version" value="3">' in each
+        assert '<input type="hidden" name="channel_id" value="">' in each
+        assert 'name="enabled"' not in each
+        assert "Turn off Slack notifications" in each
+
+
+def test_the_email_test_has_no_slack_turn_off():
+    """Only the Slack pages offer turning Slack off."""
+    from parishkit.stewardship.accounts.setup_mail_views import FIX, failure
+
+    form = SetupMailForm(initial={"preview_token": "token", "request_key": uuid4()})
+    html = page(
+        "setup-mail.html",
+        "mail_test",
+        form=form,
+        items=[],
+        tested=False,
+        pending=False,
+        failure=failure([{"current": True, "state": "not_sent"}], *FIX),
+        testing_recipient="t@example.org",
+    )
+    assert "data-setup-test-failed" in html and not turn_off_forms(html)
+
+
+def test_test_email_says_why_an_earlier_accepted_test_is_sent_again():
+    """After a save such as turning Slack off, Test email says why its test
+    is sent once more, drawn with the page outside the in-place panel, and
+    only while the only accepted test is of an earlier revision (#1499)."""
+    from parishkit.stewardship.accounts.setup_mail_views import retest
+
+    earlier = {"current": False, "state": "accepted"}
+    assert retest([earlier])
+    assert retest([{"current": True, "state": "queued"}, earlier])
+    assert not retest([{"current": True, "state": "accepted"}, earlier])
+    assert not retest([{"current": False, "state": "not_sent"}])
+    assert not retest([])
+    form = SetupMailForm(initial={"preview_token": "token", "request_key": uuid4()})
+    common = {
+        "form": form,
+        "items": [],
+        "tested": False,
+        "pending": False,
+        "testing_recipient": "t@example.org",
+    }
+    html = page("setup-mail.html", "mail_test", **common | {"retest": True})
+    line = html.split("data-setup-retest>", 1)[1].split("</p>", 1)[0]
+    assert "such as Slack turned off" in line
+    assert html.index("data-setup-retest") < html.index('id="setup-test-panel"')
+    assert "data-setup-retest" not in page("setup-mail.html", "mail_test", **common)
+
+
+def test_turning_slack_off_says_what_it_discards_and_retests():
+    """The button's text and the Slack step's help both say that turning
+    Slack off discards the token entered for this setup (#1499)."""
+    from parishkit.stewardship.accounts.setup_forms import SetupSlackForm
+
+    form = SetupNotificationForm(
+        initial={"preview_token": "token", "request_key": uuid4()}
+    )
+    html = page(
+        "setup-notification.html",
+        "slack_test",
+        wizard=wizard("slack_test", slack=True),
+        form=form,
+        items=[],
+        tested=False,
+        pending=False,
+        channel_id="C0123456789",
+    )
+    (top,) = turn_off_forms(html)
+    assert "discards the Slack token entered for this setup" in top
+    assert "an email test already sent must be sent again" in top
+    assert "entered here" not in top
+    help_text = str(SetupSlackForm().fields["enabled"].help_text)
+    assert "Turning Slack off discards any Slack token entered" in help_text

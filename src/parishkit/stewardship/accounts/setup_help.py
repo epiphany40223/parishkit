@@ -93,7 +93,8 @@ SLACK = {
     "enabled": _(
         "Turn on to post alerts about problems that need an administrator, such "
         "as failed background work, to a Slack channel. Leave off if your parish "
-        "does not use Slack."
+        "does not use Slack. Turning Slack off discards any Slack token entered "
+        "for this setup, so turning it on again needs the token again."
     ),
     "channel_id": _(
         "The ID (not the name) of the Slack channel for these alerts, for example "

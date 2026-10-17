@@ -56,6 +56,7 @@ sections:
   admin-portal/spec.md:
     "Login and denial behavior": [ADM-01]
     "Bootstrap and first-Admin wizard": [ADM-02]
+    "Turning Slack off during setup": [ADM-02]
     "Navigation and home": [ADM-03]
     "JavaScript requirement": [ADM-12]
     "Admin navigation": [ADM-03, ADM-12]
