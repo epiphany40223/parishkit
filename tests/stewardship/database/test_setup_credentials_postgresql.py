@@ -60,12 +60,13 @@ def publish(target, *, material=b"s" * 32):
                 f'TO "{role}"'
             )
             # As database-grants does (runtime_functions: ADM-11 PR 5's
-            # automation sign-in check and #530's debug-off switch read).
+            # automation sign-in checks, #1547's ended one, and #530's
+            # debug-off switch read).
             cursor.execute(
                 "GRANT EXECUTE ON FUNCTION public."
-                "stewardship_automation_fresh_principal_v1"
-                f"(uuid, timestamptz), public.stewardship_debug_logging_off_v1() "
-                f'TO "{role}"'
+                "stewardship_automation_fresh_principal_v1(uuid, timestamptz), "
+                "public.stewardship_automation_instant_ended_v1(uuid, timestamptz), "
+                f'public.stewardship_debug_logging_off_v1() TO "{role}"'
             )
             cursor.execute(f'SET SESSION AUTHORIZATION "{role}"')
         publish_handoff(private)

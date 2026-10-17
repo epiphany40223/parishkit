@@ -19,27 +19,30 @@
 --     exactly the row's sign-in instant (delivery controls, chosen-Family
 --     tests, the Production confirmation and withdrawal, backup requests,
 --     the debug-off switch and its clear, large ParishSoft change
---     acceptance, publication confirmation); restore decisions, which no
---     automation session makes, just drop the age;
+--     acceptance, publication confirmation, restore decisions);
 --   - the Production confirmation no longer needs a sign-in after cleanup
 --     completed, only completed cleanup;
 --   - a secret request's recorded sign-in instant may be of any age (the
---     intake and staged-to-testing checks);
+--     intake and staged-to-testing checks), but one that is a full-scope
+--     automation session's still needs one such session live, through the
+--     new definer check stewardship_automation_instant_ended_v1 in place of
+--     stewardship_automation_fresh_principal_v1 (which stays installed,
+--     unused): ending an automation session still stops its staged
+--     credential from moving to testing;
 --   - a staged setup credential's setup session may have signed in at any
---     time (0104's hour);
+--     time (0104's hour), and a command session only with its live
+--     full-scope automation session;
 --   - an automation session may be approved from a browser session signed in
 --     at any time.
--- Error messages keep their wording, which callers match. A secret
--- request's instant cannot tell a browser from an automation session (an
--- automation session records its approving sign-in), so the web's
--- automation check guards those alone. stewardship_automation_fresh_
--- principal_v1 stays installed, unused, as do the recorded sign-in columns.
+-- Error messages keep their wording, which callers match. The recorded
+-- sign-in columns stay.
 --
 -- CREATE OR REPLACE keeps each function's owner and grants; every header
 -- repeats its language, rights and search_path. The DO block at the end
--- refuses to commit unless every body is installed as declared with its
--- rights, configuration and grants unchanged. Reversing needs its own
--- forward migration.
+-- refuses to commit unless every body is installed exactly as declared
+-- (its md5, and the key clauses spelled out for a reader) with its rights,
+-- configuration and grants unchanged, and the new check has definer rights
+-- and no PUBLIC EXECUTE. Reversing needs its own forward migration.
 SET LOCAL check_function_bodies = false;
 SET LOCAL search_path = public;
 
@@ -64,6 +67,31 @@ SELECT set_config('stewardship.migration_0113_attributes', (
             'stewardship_setup_secret_guard_v1',
             'stewardship_source_drop_acceptance_guard_v1'
     )), true);
+
+-- True only when `instant` is the sign-in instant of a full-scope automation
+-- session of `principal` and none of those sessions is live; false (never
+-- NULL) otherwise (#1547, ADM-11). A secret request records its session's
+-- sign-in instant, which an automation session's command session shares
+-- with the automation session, so the intake and staged-to-testing guards
+-- refuse a request whose automation session ended. The approving browser
+-- session shares that instant too: once every full-scope automation session
+-- it approved has ended, its own requests are refused as well, until the
+-- Admin signs in again (a new instant). A browser instant no automation
+-- session holds passes. Definer rights, because the credential installers
+-- read no automation table; EXECUTE comes from the database-grants step
+-- (runtime_functions: web and the three credential installers), never from
+-- PUBLIC. A plain CREATE: migration-owned, like the principal helper.
+CREATE FUNCTION public.stewardship_automation_instant_ended_v1(principal uuid, instant timestamptz) RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp AS $$
+    SELECT EXISTS (SELECT 1 FROM public.stewardship_automation_session a
+            WHERE a.principal_id=principal AND a.scope='full'
+              AND a.authenticated_at=instant)
+       AND NOT EXISTS (SELECT 1 FROM public.stewardship_automation_session a
+            WHERE a.principal_id=principal AND a.scope='full'
+              AND a.authenticated_at=instant
+              AND public.stewardship_automation_live_v1(a.id))
+$$;
+REVOKE ALL ON FUNCTION public.stewardship_automation_instant_ended_v1(uuid, timestamptz) FROM PUBLIC;
 
 -- stewardship_automation_session_guard_v1: 0004_automation_sessions.sql's body without the sign-in age.
 CREATE OR REPLACE FUNCTION public.stewardship_automation_session_guard_v1() RETURNS trigger
@@ -499,13 +527,13 @@ BEGIN
            -- A live session of the Admin has the recorded sign-in instant,
            -- whatever its age (#1547); a command session only with its
            -- live full-scope automation session (ADM-11).
-           OR NOT EXISTS (SELECT 1 FROM public.stewardship_portal_session
+           OR NOT EXISTS (SELECT 1 FROM public.stewardship_portal_session own
                 WHERE principal_id=NEW.requested_by_id AND revoked_at IS NULL
                     AND authenticated_at=NEW.reauthenticated_at AND expires_at>stamp
                     AND authenticated_at<=stamp
                     AND (NOT EXISTS (SELECT 1 FROM public.stewardship_automation_login command
-                             WHERE command.portal_session_id=id)
-                         OR public.stewardship_automation_fresh_v1(id,NEW.requested_by_id))
+                             WHERE command.portal_session_id=own.id)
+                         OR public.stewardship_automation_fresh_v1(own.id,NEW.requested_by_id))
                     AND last_activity_at>stamp-interval '60 minutes')
            OR NOT EXISTS (SELECT 1 FROM public.stewardship_task_run task
                 WHERE task.id=NEW.task_id AND task.root_id=task.id
@@ -826,8 +854,12 @@ LANGUAGE sql VOLATILE SET search_path TO pg_catalog,public,pg_temp AS $$
                   AND login.revoked_at IS NULL AND login.expires_at>clock_timestamp()
                   AND login.last_activity_at>clock_timestamp()-interval '60 minutes'
                   AND login.authenticated_at=signed_in
-                  -- Any sign-in age (#1547): the session is live and bound.
-                  AND login.authenticated_at<=clock_timestamp()))
+                  -- Any sign-in age (#1547); a command session still needs
+                  -- its live full-scope automation session (ADM-11).
+                  AND login.authenticated_at<=clock_timestamp()
+                  AND (NOT EXISTS (SELECT 1 FROM public.stewardship_automation_login command
+                           WHERE command.portal_session_id=login.id)
+                       OR public.stewardship_automation_fresh_v1(login.id,actor))))
 $$;
 
 -- stewardship_sealed_intake_admission_v1: 0013_automation_fresh_guards.sql's body without the sign-in age.
@@ -835,10 +867,27 @@ CREATE OR REPLACE FUNCTION public.stewardship_sealed_intake_admission_v1() RETUR
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
+DECLARE ended boolean := false;
 BEGIN
-    -- A secret request records its session's sign-in instant at any age
-    -- (#1547); only a staging row is checked here.
-    IF TG_TABLE_NAME<>'stewardship_secret_request' THEN
+    IF TG_TABLE_NAME='stewardship_secret_request' THEN
+        -- The recorded sign-in instant may be of any age (#1547). One that
+        -- is a full-scope automation session's needs one such session
+        -- live (ADM-11), so an ended session's request is refused. A
+        -- separate statement, reached only by the web (which holds
+        -- EXECUTE) or the schema owner: EXECUTE is checked whenever an
+        -- expression is initialized. A setup install's installer
+        -- records the setup browser session's instant.
+        IF NEW.required_consumers<>'[]'::jsonb
+           AND (current_user='pk_stewardship_web' OR pg_has_role(current_user,
+                (SELECT nspowner FROM pg_namespace WHERE nspname='public'),'USAGE')) THEN
+            ended := coalesce(public.stewardship_automation_instant_ended_v1(
+                NEW.requested_by_id,NEW.reauthenticated_at),false);
+        END IF;
+        IF ended THEN
+            RAISE EXCEPTION 'Sealed intake requires fresh authentication'
+                USING ERRCODE='23514';
+        END IF;
+    ELSE
         IF NOT EXISTS(SELECT 1 FROM stewardship_secret_request
             WHERE id=NEW.request_id AND required_consumers<>'[]'::jsonb) THEN
             RAISE EXCEPTION 'Sealed intake requires installer consumers'
@@ -853,6 +902,7 @@ CREATE OR REPLACE FUNCTION public.stewardship_secret_state_v2() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
+DECLARE ended boolean := false;
 BEGIN
     IF TG_OP='DELETE' THEN
         RAISE EXCEPTION 'Secret request history cannot be deleted' USING ERRCODE='23514';
@@ -897,8 +947,19 @@ BEGIN
         RAISE EXCEPTION 'Credential acknowledgement requires consumer evidence' USING ERRCODE='23514';
     END IF;
     IF OLD.state='staged' AND NEW.state='testing' THEN
-        -- The request's sign-in instant may be of any age (#1547).
+        -- The request's sign-in instant may be of any age (#1547). One
+        -- that is a full-scope automation session's needs one such session
+        -- still live (ADM-11): ending the session stops its staged
+        -- credential here. Only these targets' installers hold EXECUTE on
+        -- the check, so it is its own statement, reached only for them; a
+        -- live initial setup install relies on its frozen setup instead.
+        IF NEW.target IN ('parishsoft','google_workspace','slack')
+           AND NOT public.stewardship_setup_install_live_v1(NEW.id) THEN
+            ended := coalesce(public.stewardship_automation_instant_ended_v1(
+                NEW.requested_by_id,NEW.reauthenticated_at),false);
+        END IF;
         IF NEW.actor_id IS NOT NULL OR NEW.expires_at<=statement_timestamp()
+           OR ended
            OR NEW.required_consumers='[]'::jsonb
            OR NOT EXISTS(SELECT 1 FROM stewardship_sealed_credential_staging WHERE request_id=NEW.id AND ciphertext IS NOT NULL) THEN
             RAISE EXCEPTION 'Credential testing requires a live sealed request' USING ERRCODE='23514';
@@ -1007,8 +1068,12 @@ BEGIN
             AND login.principal_id=attempt.owner_id AND login.revoked_at IS NULL
             AND login.expires_at>stamp
             AND login.last_activity_at>stamp-interval '60 minutes'
-            -- Any sign-in age (#1547): the session is live.
+            -- Any sign-in age (#1547); a command session still needs
+            -- its live full-scope automation session (ADM-11).
             AND login.authenticated_at<=stamp
+            AND (NOT EXISTS (SELECT 1 FROM public.stewardship_automation_login command
+                     WHERE command.portal_session_id=login.id)
+                 OR public.stewardship_automation_fresh_v1(login.id,attempt.owner_id))
         JOIN public.stewardship_portal_user owner ON owner.id=attempt.owner_id
             AND NOT owner.disabled
         JOIN public.stewardship_address_rule rule ON rule.email=owner.email
@@ -1140,11 +1205,26 @@ END $$;
 
 DO $check$
 BEGIN
-    -- Each replaced function is its one overload, with the new body.
+    -- The ended-automation check: definer rights, its search_path, its
+    -- exact body and no PUBLIC EXECUTE.
+    IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='public' AND p.proname='stewardship_automation_instant_ended_v1'
+          AND p.prosecdef AND NOT p.proisstrict AND p.provolatile='s'
+          AND p.proconfig=ARRAY['search_path=pg_catalog, public, pg_temp']
+          AND pg_get_function_identity_arguments(p.oid)='principal uuid, instant timestamp with time zone'
+          AND md5(p.prosrc)='072f3027ffc72d9bb307036e4e4f036c'
+          AND NOT has_function_privilege('public', p.oid, 'EXECUTE')) THEN
+        RAISE EXCEPTION 'Migration 0113: stewardship_automation_instant_ended_v1 is not installed as declared';
+    END IF;
+    -- Each replaced function is its one overload, with exactly the new body.
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_automation_session_guard_v1'
+          AND md5(p.prosrc)='be3dd4ab8781c27cb36a0dd95ef651c0'
           AND p.prosrc LIKE '%#1547%'
+          AND p.prosrc LIKE '%s.revoked_at IS NULL%'
+          AND p.prosrc LIKE '%s.last_activity_at>statement_timestamp()-interval ''60 minutes''%'
           AND p.prosrc LIKE '%s.authenticated_at=NEW.authenticated_at%'
+          AND p.prosrc LIKE '%OR NEW.authenticated_at>statement_timestamp() THEN%'
           AND p.prosrc LIKE '%interval ''30 days''%'
           AND p.prosrc NOT LIKE '%stewardship_automation_fresh_principal%'
           AND p.prosrc NOT LIKE '%authenticated_at BETWEEN%'
@@ -1155,11 +1235,16 @@ BEGIN
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_backup_request_guard_v1'
+          AND md5(p.prosrc)='31a11bbb529b892914d30f14997b23f0'
           AND p.prosrc LIKE '%#1547%'
-          AND p.prosrc LIKE '%public.stewardship_automation_fresh_v1(%'
-          AND p.prosrc LIKE '%stewardship_automation_login command%'
+          AND p.prosrc LIKE '%login.revoked_at IS NULL%'
+          AND p.prosrc LIKE '%login.expires_at>clock_timestamp()%'
+          AND p.prosrc LIKE '%login.last_activity_at>clock_timestamp()-interval ''60 minutes''%'
           AND p.prosrc LIKE '%login.authenticated_at=NEW.authenticated_at%'
-          AND p.prosrc LIKE '%interval ''60 minutes''%'
+          AND p.prosrc LIKE '%login.authenticated_at<=clock_timestamp()%'
+          AND p.prosrc LIKE '%stewardship_automation_login command%'
+          AND p.prosrc LIKE '%WHERE command.portal_session_id=login.id%'
+          AND p.prosrc LIKE '%public.stewardship_automation_fresh_v1(login.id,NEW.actor_id)%'
           AND p.prosrc NOT LIKE '%stewardship_automation_fresh_principal%'
           AND p.prosrc NOT LIKE '%authenticated_at BETWEEN%'
           AND p.prosrc NOT LIKE '%authenticated_at<statement_timestamp()-interval%'
@@ -1169,11 +1254,17 @@ BEGIN
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_debug_off_switch_guard_v1'
+          AND md5(p.prosrc)='7653363a15531a59080b246dde3febb9'
           AND p.prosrc LIKE '%#1547%'
-          AND p.prosrc LIKE '%public.stewardship_automation_fresh_v1(%'
-          AND p.prosrc LIKE '%stewardship_automation_login command%'
+          AND p.prosrc LIKE '%login.revoked_at IS NULL%'
+          AND p.prosrc LIKE '%login.expires_at>clock_timestamp()%'
+          AND p.prosrc LIKE '%login.last_activity_at>clock_timestamp()-interval ''60 minutes''%'
           AND p.prosrc LIKE '%login.authenticated_at=NEW.authenticated_at%'
-          AND p.prosrc LIKE '%interval ''60 minutes''%'
+          AND p.prosrc LIKE '%login.authenticated_at<=clock_timestamp()%'
+          AND p.prosrc LIKE '%stewardship_automation_login command%'
+          AND p.prosrc LIKE '%WHERE command.portal_session_id=login.id%'
+          AND p.prosrc LIKE '%public.stewardship_automation_fresh_v1(login.id,NEW.actor_id)%'
+          AND p.prosrc LIKE '%public.stewardship_automation_fresh_v1(login.id,NEW.cleared_actor_id)%'
           AND p.prosrc NOT LIKE '%stewardship_automation_fresh_principal%'
           AND p.prosrc NOT LIKE '%authenticated_at BETWEEN%'
           AND p.prosrc NOT LIKE '%authenticated_at<statement_timestamp()-interval%'
@@ -1183,11 +1274,17 @@ BEGIN
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_delivery_control_guard_v1'
+          AND md5(p.prosrc)='e17e8e5ad04358d137cb1152d84d81af'
           AND p.prosrc LIKE '%#1547%'
-          AND p.prosrc LIKE '%public.stewardship_automation_fresh_v1(%'
-          AND p.prosrc LIKE '%stewardship_automation_login command%'
+          AND p.prosrc LIKE '%login.revoked_at IS NULL%'
+          AND p.prosrc LIKE '%login.expires_at>clock_timestamp()%'
+          AND p.prosrc LIKE '%login.last_activity_at>clock_timestamp()-interval ''60 minutes''%'
           AND p.prosrc LIKE '%login.authenticated_at=NEW.authenticated_at%'
-          AND p.prosrc LIKE '%interval ''60 minutes''%'
+          AND p.prosrc LIKE '%login.authenticated_at<=clock_timestamp()%'
+          AND p.prosrc LIKE '%stewardship_automation_login command%'
+          AND p.prosrc LIKE '%WHERE command.portal_session_id=login.id%'
+          AND p.prosrc LIKE '%login.principal_id=NEW.actor_id%'
+          AND p.prosrc LIKE '%public.stewardship_automation_fresh_v1(login.id,NEW.actor_id)%'
           AND p.prosrc NOT LIKE '%stewardship_automation_fresh_principal%'
           AND p.prosrc NOT LIKE '%authenticated_at BETWEEN%'
           AND p.prosrc NOT LIKE '%authenticated_at<statement_timestamp()-interval%'
@@ -1197,11 +1294,14 @@ BEGIN
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_family_mail_test_guard_v1'
+          AND md5(p.prosrc)='c9920613ee6f5f30c8a5cfebe69f73c8'
           AND p.prosrc LIKE '%#1547%'
-          AND p.prosrc LIKE '%public.stewardship_automation_fresh_v1(%'
-          AND p.prosrc LIKE '%stewardship_automation_login command%'
-          AND p.prosrc LIKE '%authenticated_at=NEW.reauthenticated_at%'
+          AND p.prosrc LIKE '%principal_id=NEW.requested_by_id AND revoked_at IS NULL%'
+          AND p.prosrc LIKE '%authenticated_at=NEW.reauthenticated_at AND expires_at>stamp%'
           AND p.prosrc LIKE '%last_activity_at>stamp-interval ''60 minutes''%'
+          AND p.prosrc LIKE '%authenticated_at<=stamp%'
+          AND p.prosrc LIKE '%WHERE command.portal_session_id=own.id%'
+          AND p.prosrc LIKE '%public.stewardship_automation_fresh_v1(own.id,NEW.requested_by_id)%'
           AND p.prosrc NOT LIKE '%stewardship_automation_fresh_principal%'
           AND p.prosrc NOT LIKE '%authenticated_at BETWEEN%'
           AND p.prosrc NOT LIKE '%authenticated_at<statement_timestamp()-interval%'
@@ -1211,12 +1311,18 @@ BEGIN
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_production_confirmation_guard_v1'
+          AND md5(p.prosrc)='d1410bcc354b221370211e91bd497c12'
           AND p.prosrc LIKE '%#1547%'
-          AND p.prosrc LIKE '%public.stewardship_automation_fresh_v1(%'
-          AND p.prosrc LIKE '%stewardship_automation_login command%'
+          AND p.prosrc LIKE '%login.revoked_at IS NULL%'
+          AND p.prosrc LIKE '%login.expires_at>clock_timestamp()%'
+          AND p.prosrc LIKE '%login.last_activity_at>clock_timestamp()-interval ''60 minutes''%'
           AND p.prosrc LIKE '%login.authenticated_at=NEW.authenticated_at%'
+          AND p.prosrc LIKE '%login.authenticated_at<=clock_timestamp()%'
+          AND p.prosrc LIKE '%stewardship_automation_login command%'
+          AND p.prosrc LIKE '%WHERE command.portal_session_id=login.id%'
+          AND p.prosrc LIKE '%login.principal_id=NEW.actor_id%'
+          AND p.prosrc LIKE '%public.stewardship_automation_fresh_v1(login.id,NEW.actor_id)%'
           AND p.prosrc LIKE '%event.action=''complete''%'
-          AND p.prosrc LIKE '%interval ''60 minutes''%'
           AND p.prosrc NOT LIKE '%stewardship_automation_fresh_principal%'
           AND p.prosrc NOT LIKE '%authenticated_at BETWEEN%'
           AND p.prosrc NOT LIKE '%authenticated_at<statement_timestamp()-interval%'
@@ -1226,11 +1332,17 @@ BEGIN
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_production_withdrawal_guard_v1'
+          AND md5(p.prosrc)='0d2f78a7b0cc70b92d5e45dbdf757bde'
           AND p.prosrc LIKE '%#1547%'
-          AND p.prosrc LIKE '%public.stewardship_automation_fresh_v1(%'
-          AND p.prosrc LIKE '%stewardship_automation_login command%'
+          AND p.prosrc LIKE '%login.revoked_at IS NULL%'
+          AND p.prosrc LIKE '%login.expires_at>clock_timestamp()%'
+          AND p.prosrc LIKE '%login.last_activity_at>clock_timestamp()-interval ''60 minutes''%'
           AND p.prosrc LIKE '%login.authenticated_at=NEW.authenticated_at%'
-          AND p.prosrc LIKE '%interval ''60 minutes''%'
+          AND p.prosrc LIKE '%login.authenticated_at<=clock_timestamp()%'
+          AND p.prosrc LIKE '%stewardship_automation_login command%'
+          AND p.prosrc LIKE '%WHERE command.portal_session_id=login.id%'
+          AND p.prosrc LIKE '%login.principal_id=NEW.actor_id%'
+          AND p.prosrc LIKE '%public.stewardship_automation_fresh_v1(login.id,NEW.actor_id)%'
           AND p.prosrc NOT LIKE '%stewardship_automation_fresh_principal%'
           AND p.prosrc NOT LIKE '%authenticated_at BETWEEN%'
           AND p.prosrc NOT LIKE '%authenticated_at<statement_timestamp()-interval%'
@@ -1240,11 +1352,16 @@ BEGIN
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_publication_confirmation_guard_v1'
+          AND md5(p.prosrc)='362ae3908c799adb20db5a85f61c5630'
           AND p.prosrc LIKE '%#1547%'
-          AND p.prosrc LIKE '%public.stewardship_automation_fresh_v1(%'
-          AND p.prosrc LIKE '%stewardship_automation_login command%'
+          AND p.prosrc LIKE '%login.revoked_at IS NULL%'
+          AND p.prosrc LIKE '%login.expires_at>clock_timestamp()%'
+          AND p.prosrc LIKE '%login.last_activity_at>clock_timestamp()-interval ''60 minutes''%'
           AND p.prosrc LIKE '%login.authenticated_at=NEW.authenticated_at%'
-          AND p.prosrc LIKE '%interval ''60 minutes''%'
+          AND p.prosrc LIKE '%login.authenticated_at<=clock_timestamp()%'
+          AND p.prosrc LIKE '%stewardship_automation_login command%'
+          AND p.prosrc LIKE '%WHERE command.portal_session_id=login.id%'
+          AND p.prosrc LIKE '%public.stewardship_automation_fresh_v1(login.id,NEW.actor_id)%'
           AND p.prosrc NOT LIKE '%stewardship_automation_fresh_principal%'
           AND p.prosrc NOT LIKE '%authenticated_at BETWEEN%'
           AND p.prosrc NOT LIKE '%authenticated_at<statement_timestamp()-interval%'
@@ -1254,9 +1371,15 @@ BEGIN
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_restore_decision_admitted_v1'
+          AND md5(p.prosrc)='584bb3007a55db1e45f2e063e8eb550a'
           AND p.prosrc LIKE '%#1547%'
+          AND p.prosrc LIKE '%login.principal_id=actor%'
+          AND p.prosrc LIKE '%login.revoked_at IS NULL AND login.expires_at>clock_timestamp()%'
+          AND p.prosrc LIKE '%login.last_activity_at>clock_timestamp()-interval ''60 minutes''%'
           AND p.prosrc LIKE '%login.authenticated_at=signed_in%'
-          AND p.prosrc LIKE '%interval ''60 minutes''%'
+          AND p.prosrc LIKE '%login.authenticated_at<=clock_timestamp()%'
+          AND p.prosrc LIKE '%WHERE command.portal_session_id=login.id%'
+          AND p.prosrc LIKE '%public.stewardship_automation_fresh_v1(login.id,actor)%'
           AND p.prosrc NOT LIKE '%stewardship_automation_fresh_principal%'
           AND p.prosrc NOT LIKE '%authenticated_at BETWEEN%'
           AND p.prosrc NOT LIKE '%authenticated_at<statement_timestamp()-interval%'
@@ -1266,7 +1389,10 @@ BEGIN
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_sealed_intake_admission_v1'
+          AND md5(p.prosrc)='164caa295c176af0602e8305043b6632'
           AND p.prosrc LIKE '%#1547%'
+          AND p.prosrc LIKE '%IF ended THEN%'
+          AND p.prosrc LIKE '%Sealed intake requires fresh authentication%'
           AND p.prosrc LIKE '%Sealed intake requires installer consumers%'
           AND p.prosrc NOT LIKE '%stewardship_automation_fresh_principal%'
           AND p.prosrc NOT LIKE '%authenticated_at BETWEEN%'
@@ -1277,7 +1403,9 @@ BEGIN
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_secret_state_v2'
+          AND md5(p.prosrc)='eb1a61f9d22c3b36162efb6ca9416e08'
           AND p.prosrc LIKE '%#1547%'
+          AND p.prosrc LIKE '%OR ended%'
           AND p.prosrc LIKE '%Credential testing requires a live sealed request%'
           AND p.prosrc NOT LIKE '%stewardship_automation_fresh_principal%'
           AND p.prosrc NOT LIKE '%authenticated_at BETWEEN%'
@@ -1288,8 +1416,14 @@ BEGIN
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_setup_secret_guard_v1'
+          AND md5(p.prosrc)='2a99d17f9e47ff351562c7333c9eabcc'
           AND p.prosrc LIKE '%#1547%'
+          AND p.prosrc LIKE '%login.principal_id=attempt.owner_id AND login.revoked_at IS NULL%'
+          AND p.prosrc LIKE '%login.expires_at>stamp%'
           AND p.prosrc LIKE '%login.last_activity_at>stamp-interval ''60 minutes''%'
+          AND p.prosrc LIKE '%login.authenticated_at<=stamp%'
+          AND p.prosrc LIKE '%WHERE command.portal_session_id=login.id%'
+          AND p.prosrc LIKE '%public.stewardship_automation_fresh_v1(login.id,attempt.owner_id)%'
           AND p.prosrc LIKE '%NEW.actor_id IS DISTINCT FROM attempt.owner_id%'
           AND p.prosrc NOT LIKE '%stewardship_automation_fresh_principal%'
           AND p.prosrc NOT LIKE '%authenticated_at BETWEEN%'
@@ -1300,11 +1434,16 @@ BEGIN
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_source_drop_acceptance_guard_v1'
+          AND md5(p.prosrc)='e130dabe74d3c7a0e38b8d92d76e5d7b'
           AND p.prosrc LIKE '%#1547%'
-          AND p.prosrc LIKE '%public.stewardship_automation_fresh_v1(%'
-          AND p.prosrc LIKE '%stewardship_automation_login command%'
+          AND p.prosrc LIKE '%login.revoked_at IS NULL%'
+          AND p.prosrc LIKE '%login.expires_at>clock_timestamp()%'
+          AND p.prosrc LIKE '%login.last_activity_at>clock_timestamp()-interval ''60 minutes''%'
           AND p.prosrc LIKE '%login.authenticated_at=NEW.authenticated_at%'
-          AND p.prosrc LIKE '%interval ''60 minutes''%'
+          AND p.prosrc LIKE '%login.authenticated_at<=clock_timestamp()%'
+          AND p.prosrc LIKE '%stewardship_automation_login command%'
+          AND p.prosrc LIKE '%WHERE command.portal_session_id=login.id%'
+          AND p.prosrc LIKE '%public.stewardship_automation_fresh_v1(login.id,NEW.actor_id)%'
           AND p.prosrc NOT LIKE '%stewardship_automation_fresh_principal%'
           AND p.prosrc NOT LIKE '%authenticated_at BETWEEN%'
           AND p.prosrc NOT LIKE '%authenticated_at<statement_timestamp()-interval%'

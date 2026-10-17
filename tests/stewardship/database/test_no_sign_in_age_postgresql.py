@@ -4,8 +4,12 @@
 from every guard that checked it. Following the in-place SQL rule, its check
 runs here against each function's previous body (the latest earlier frozen
 file, or the baseline) and against weakened installs, inside a rolled-back
-transaction, and must refuse each. What each guard now admits is covered by
-that guard's own tests.
+transaction, and must refuse each: each body is pinned exactly (its md5),
+so dropping any one of a guard's key clauses (the live, bound session and a
+command session's automation session) is refused too. The new definer check
+``stewardship_automation_instant_ended_v1`` must keep definer rights, its
+body and no PUBLIC EXECUTE. What each guard now admits is covered by that
+guard's own tests.
 """
 
 import re
@@ -35,13 +39,85 @@ def statement(text, name):
     return re.sub(r"^CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", found)
 
 
+# The definer check 0113 adds (CREATE OR REPLACE only so the file can run
+# again); it replaces nothing.
+ENDED = "stewardship_automation_instant_ended_v1"
+ENDED_REFUSED = f"{ENDED} is not installed"
+# Key clauses of the replaced guards, each a whole predicate. Each one found
+# in a body (not as part of a longer name) is made always true in turn, a
+# weakened install the check must refuse.
+KEY_CLAUSES = (
+    "login.revoked_at IS NULL",
+    "s.revoked_at IS NULL",
+    "revoked_at IS NULL",
+    "login.expires_at>clock_timestamp()",
+    "login.expires_at>stamp",
+    "expires_at>stamp",
+    "login.last_activity_at>clock_timestamp()-interval '60 minutes'",
+    "s.last_activity_at>statement_timestamp()-interval '60 minutes'",
+    "login.last_activity_at>stamp-interval '60 minutes'",
+    "last_activity_at>stamp-interval '60 minutes'",
+    "login.principal_id=NEW.actor_id",
+    "login.principal_id=actor",
+    "login.principal_id=attempt.owner_id",
+    "principal_id=NEW.requested_by_id",
+    "login.authenticated_at=NEW.authenticated_at",
+    "login.authenticated_at=signed_in",
+    "authenticated_at=NEW.reauthenticated_at",
+    "s.authenticated_at=NEW.authenticated_at",
+    "command.portal_session_id=login.id",
+    "command.portal_session_id=own.id",
+    "public.stewardship_automation_fresh_v1(login.id,NEW.actor_id)",
+    "public.stewardship_automation_fresh_v1(login.id,NEW.cleared_actor_id)",
+    "public.stewardship_automation_fresh_v1(login.id,actor)",
+    "public.stewardship_automation_fresh_v1(login.id,attempt.owner_id)",
+    "public.stewardship_automation_fresh_v1(own.id,NEW.requested_by_id)",
+    "event.action='complete'",
+)
+
+
 def replaced_names():
     """The functions 0113 replaces, in file order."""
-    return re.findall(
-        r"^CREATE OR REPLACE FUNCTION public\.(\w+)\(",
-        FROZEN.read_text(encoding="utf-8"),
-        re.M,
+    return [
+        name
+        for name in re.findall(
+            r"^CREATE OR REPLACE FUNCTION public\.(\w+)\(",
+            FROZEN.read_text(encoding="utf-8"),
+            re.M,
+        )
+        if name != ENDED
+    ]
+
+
+def weakened(text):
+    """Each replaced body with one key clause made always true."""
+    for name in replaced_names():
+        body = statement(text, name)
+        for clause in KEY_CLAUSES:
+            whole = re.compile(rf"(?<![\w.]){re.escape(clause)}")
+            if whole.search(body):
+                weaker = whole.sub(lambda m: f"({m[0]} OR true)", body, count=1)
+                yield weaker, f"{name} is not installed"
+    # The command-session rule of every session-bound guard, at once: a
+    # command session admitted without its automation session.
+    yield (
+        statement(text, "stewardship_delivery_control_guard_v1").replace(
+            "AND (NOT EXISTS (SELECT 1 FROM public.stewardship_automation_login",
+            "AND (EXISTS (SELECT 1 FROM public.stewardship_automation_login",
+        ),
+        "stewardship_delivery_control_guard_v1 is not installed",
     )
+    # The secret request guards with the ended-automation check undone.
+    for name in (
+        "stewardship_sealed_intake_admission_v1",
+        "stewardship_secret_state_v2",
+    ):
+        body = statement(text, name)
+        assert body.count(f"public.{ENDED}(") == 1, name
+        yield (
+            re.sub(rf"coalesce\(public\.{ENDED}\([^)]*\),false\)", "false", body),
+            f"{name} is not installed",
+        )
 
 
 def previous_body(name):
@@ -100,6 +176,23 @@ def test_migration_check_refuses_each_earlier_or_weakened_body():
     check = text[text.index("DO $check$") : text.index("$check$;") + len("$check$;")]
     changes = [
         (previous_body(name), f"{name} is not installed") for name in replaced_names()
+    ]
+    changes += list(weakened(text))
+    signature = f"public.{ENDED}(uuid,timestamptz)"
+    changes += [
+        # The ended check as its caller's rights, open to PUBLIC, or always
+        # false.
+        (f"ALTER FUNCTION {signature} SECURITY INVOKER", ENDED_REFUSED),
+        (
+            f"GRANT EXECUTE ON FUNCTION {signature} TO PUBLIC",
+            ENDED_REFUSED,
+        ),
+        (
+            statement(text, ENDED).replace(
+                "    SELECT EXISTS", "    SELECT false AND EXISTS", 1
+            ),
+            ENDED_REFUSED,
+        ),
     ]
     changes += [
         # A definer that runs as its caller, and an invoker made a definer.

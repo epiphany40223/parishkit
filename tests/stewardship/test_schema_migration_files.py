@@ -373,7 +373,7 @@ FROZEN = {
         "a6c031014875eea7c98aa66a488e9f38e417ad8c3dbf38992622590e852cda1c"
     ),
     "0113_no_sign_in_age.sql": (
-        "1514eb9a9428e07787c167d8bfab39d0fa40156b91bfcd6ecf27a35a4352340c"
+        "7ddba19de0cb70c92304b5b4d3bc59f88256b84437ba084f2ac9ac164d394f73"
     ),
 }
 

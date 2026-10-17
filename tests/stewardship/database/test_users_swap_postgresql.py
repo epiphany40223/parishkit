@@ -772,22 +772,6 @@ CLOSURE_REPLACED_LAST = {
 }
 
 
-# Run after ``CLOSURE_REPLACED_LAST`` the same way, keyed apart from it
-# because a function may be in both: 0113 (#1547) drops the sign-in age from
-# guards that closure files (0062, 0078, 0080, 0087, 0088, 0090, 0104, and
-# 0111/0112 once merged) bring back older, so its file, whose bodies all
-# carry the issue number, runs after every rerun above.
-CLOSURE_REPLACED_FINAL = {
-    f"public.{name}()": (("stewardship_accounts", "0027_no_sign_in_age"), "(#1547)")
-    for name in (
-        "stewardship_backup_request_guard_v1",
-        "stewardship_debug_off_switch_guard_v1",
-        "stewardship_source_drop_acceptance_guard_v1",
-        "stewardship_publication_confirmation_guard_v1",
-        "stewardship_setup_secret_guard_v1",
-    )
-}
-
 # Closure migrations whose frozen files replace, in place, functions that a
 # reinstalled earlier file (``CLOSURE_CREATED``, ``CLOSURE_ALTERED`` or
 # runtime_grants.CLOSURE_FUNCTIONS) brings back with an older body, with
@@ -873,6 +857,20 @@ CLOSURE_REPLACED_ONLY = {
                 "stewardship_export_request_guard_v1",
                 "snapshot.document,directory.document",
             ),
+        )
+    },
+    # 0113 (#1547) drops the sign-in age from guards that closure files
+    # (0062, 0078, 0080, 0087, 0088, 0090, 0104, and 0111/0112 once merged)
+    # bring back older; its bodies all carry the issue number. It also
+    # creates the ended-automation check, so it cannot run whole twice.
+    **{
+        name: (("stewardship_accounts", "0027_no_sign_in_age"), "(#1547)")
+        for name in (
+            "stewardship_backup_request_guard_v1",
+            "stewardship_debug_off_switch_guard_v1",
+            "stewardship_source_drop_acceptance_guard_v1",
+            "stewardship_publication_confirmation_guard_v1",
+            "stewardship_setup_secret_guard_v1",
         )
     },
 }
@@ -1128,7 +1126,6 @@ def swap_pending():
     assert {key for key, _ in CLOSURE_REPLACED.values()} <= set(closure)
     assert {key for key, _ in CLOSURE_REPLACED_AGAIN.values()} <= set(closure)
     assert {key for key, _ in CLOSURE_REPLACED_LAST.values()} <= set(closure)
-    assert {key for key, _ in CLOSURE_REPLACED_FINAL.values()} <= set(closure)
     assert set(CLOSURE_RERUN) | set(CLOSURE_RERUN.values()) <= set(closure)
     assert set(CLOSURE_OLD_BODIES) <= set(closure)
     assert {key for key, _ in CLOSURE_REPLACED_ONLY.values()} <= set(closure)
@@ -1197,7 +1194,6 @@ def swap_pending():
                 *CLOSURE_REPLACED.items(),
                 *CLOSURE_REPLACED_AGAIN.items(),
                 *CLOSURE_REPLACED_LAST.items(),
-                *CLOSURE_REPLACED_FINAL.items(),
             ):
                 cursor.execute(
                     "SELECT prosrc LIKE %s FROM pg_proc WHERE oid=to_regprocedure(%s)",

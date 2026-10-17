@@ -1284,6 +1284,9 @@ automation session; frozen migration 0113
 (`stewardship_accounts.0027_no_sign_in_age`) re-created the thirteen guards
 without the age clause, under the
 [post-launch schema policy](../operations/spec.md#post-launch-schema-policy).
+The command-session rule holds in every one of them, restore decisions and
+staged setup credentials included. The secret request guards keep their
+own tie to the automation session (see [secret replacement](#secret-replacement)).
 `stewardship_automation_fresh_principal_v1(principal, instant)` stays
 installed but unused, as do the recorded sign-in columns; dropping them is
 [#1550](https://github.com/epiphany40223/parishkit/issues/1550).
@@ -1434,12 +1437,21 @@ Before #1547 they refused an instant older than five minutes unless
 `stewardship_automation_fresh_principal_v1(requested_by, instant)` (a
 `SECURITY DEFINER` function the web and installer logins may execute) admitted
 a live full-scope automation session with that instant; migration 0113 removed
-the age check, so the recorded instant may be of any age and the helper is no
-longer called. A request's instant cannot tell a browser from an automation
-session (an automation session records its approving browser sign-in), so
-for secret requests only Python's check requires a live full-scope automation
-session; if it is revoked or expires between submission and the installer's
-test, the change still proceeds as a browser one would.
+the age check, so the recorded instant may be of any age. Instead both guards
+call `stewardship_automation_instant_ended_v1(requested_by, instant)` (new in
+0113, `SECURITY DEFINER`, granted to the same logins): an instant that a
+full-scope automation session of the requester holds needs one such session
+still live. So a request made through an automation session that was revoked
+or expired before the installer's test does not move to testing (it expires
+and is cleaned up), and that session can stage no other. A request's instant
+cannot tell a browser from an automation session, because an automation
+session records its approving browser sign-in: once every full-scope
+automation session a browser session approved has ended, that browser
+session's own requests are refused too, and the Administrator signs in again
+(a new instant) to replace a key. An instant that no full-scope automation
+session holds, an ordinary browser sign-in, always passes. Python's check
+(`sign_in_instant`) still requires the live full-scope session at submission,
+under the intake lock and again under the work lock.
 
 The setup guards (`stewardship_setup_install_binding_v1`,
 `stewardship_setup_secret_guard_v1`) do not change.
@@ -1744,7 +1756,7 @@ signatures:
   key's request-free tail into `integration_views.sign_key_intent` (the key
   field's signed intent), `key_intent` and `stage_key`, which the page now
   calls; `save_credential` takes an `attach` callback for the selection
-  request's transaction and checks the recent sign-in first in its own
+  request's transaction and checks the caller's session first in its own
   transaction without recording it; `admit_admin_action` and
   `sealed_secret_request` take the caller's authority runtime (the web's
   when left out).
@@ -3795,7 +3807,7 @@ page's own pieces: the key arrives from the host wrapper on the line after
 the preamble (see [secret replacement](#secret-replacement)). It is full
 scope, fresh-gated and prompting. The Administrator check comes first, so
 Staff is `denied` before the key is read. Then, admitting as the page's
-post does and passing its recent sign-in with the live session (unrecorded:
+post does and passing its sign-in instant with the live session (unrecorded:
 nothing is done yet), it binds `--changes` (the `integration preview`
 document, `{"settings": {...}}`, as literal JSON: standard input carries
 the key; omitted settings keep their applied value; no refresh schedule,
@@ -3834,8 +3846,7 @@ The Backup encryption key page's three steps run through the page's own
 pieces in `accounts.backup_key` (full scope, as the page's posts record
 activity; Administrators only, the role checked before the value's line is
 read, so Staff is `denied` before anything else; a read-only session is
-refused, and a live full-scope session stands in for the page's recent
-sign-in, so the page's step-up resume has no counterpart):
+refused; the page has no step-up any more, #1547):
 
 - `integration backup-key challenge --public-key-file PATH` runs the page's
   `check_new_key` and `start_proof` in one read snapshot: a private key
@@ -4067,7 +4078,9 @@ time:
    automation session only replaces the sign-in after it (migration 0113
    later dropped the sign-in-after-cleanup and five-minute clauses; the
    session-bound guards still call `stewardship_automation_fresh_v1` for a
-   command session, and no guard calls the principal helper). Admission
+   command session, and the secret request guards call 0113's
+   `stewardship_automation_instant_ended_v1` instead of the principal
+   helper). Admission
    (`admit_admin_action`) refuses an automation caller for
    `DESTRUCTIVE_CONFIRMATION`, which no workflow uses yet. As the
    [secret replacement](#secret-replacement) rules accept, the two secret

@@ -305,6 +305,13 @@ DAILY_RESUME_FUNCTION = "stewardship_family_daily_resume_v1()"
 AUTOMATION_FRESH_FUNCTION = (
     "stewardship_automation_fresh_principal_v1(uuid, timestamp with time zone)"
 )
+# Whether that instant is a full-scope automation session's and every such
+# session has ended (0113, #1547): the same guards call it now that a
+# request's sign-in may be of any age, so ending an automation session still
+# stops its secret requests. Granted to the same logins.
+AUTOMATION_ENDED_FUNCTION = (
+    "stewardship_automation_instant_ended_v1(uuid, timestamp with time zone)"
+)
 # The credential installers whose secret requests an automation session may
 # make (key replacement); the other targets have no such request.
 AUTOMATION_SECRET_TARGETS = frozenset({"parishsoft", "google_workspace", "slack"})
@@ -506,6 +513,8 @@ CLOSURE_FUNCTIONS = {
         "stewardship_reports",
         "0029_point_in_time_exports",
     ),
+    # The ended-automation check of secret requests (0113, #1547).
+    AUTOMATION_ENDED_FUNCTION: ("stewardship_accounts", "0027_no_sign_in_age"),
 }
 
 
@@ -708,7 +717,7 @@ def runtime_functions(role, *, target=None):
     if role is ServiceRole.CREDENTIAL_INSTALLER:
         functions = {DEBUG_OFF_FUNCTION}
         if target in AUTOMATION_SECRET_TARGETS:
-            functions.add(AUTOMATION_FRESH_FUNCTION)
+            functions |= {AUTOMATION_FRESH_FUNCTION, AUTOMATION_ENDED_FUNCTION}
         return frozenset(functions)
     return frozenset(
         {
@@ -717,6 +726,7 @@ def runtime_functions(role, *, target=None):
                 DAILY_SENDS_FUNCTION,
                 DAILY_RESUME_FUNCTION,
                 AUTOMATION_FRESH_FUNCTION,
+                AUTOMATION_ENDED_FUNCTION,
                 LEADER_SCOPE_FUNCTION,
                 PORTAL_IDENTITIES_FUNCTION,
                 MEMBER_NAMES_FUNCTION,
