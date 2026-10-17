@@ -28,6 +28,13 @@ sub-pages a step opens (an email's editor, a new or edited mail schedule,
 the Campaign calendar, and Campaign settings' content history) draw the
 same stepper with their step current and a Return to <step> link instead
 (``SUBPAGES``).
+
+On Campaign settings and Share options (``DIRECT_STEPS``) the same primary
+becomes **Save and continue** once the page's form holds a change (#1404
+PR 4): the form posts its ``save`` action, which ``save_step`` records
+directly, with no review dialog, while the stepper still applies; the page
+follows the change and then opens the next step not done yet. Outside the
+wizard those pages keep their own Save and review dialog.
 """
 
 from dataclasses import dataclass
@@ -74,6 +81,10 @@ _CONTENT_SCHEDULE_VALUES = frozenset({"template_version", "subject"})
 # Dates and mail schedules' campaign window: a change of only these values is
 # that page's (Campaign settings can make the same change, and it counts too).
 _WINDOW_VALUES = frozenset({"timezone", "start_date", "end_date"})
+# The step pages whose own form the action row's primary saves directly
+# (#1404 PR 4), and that form's id on each of them.
+DIRECT_STEPS = frozenset({"settings", "share_options"})
+DIRECT_FORM = "settings-form"
 
 
 @dataclass(frozen=True)
@@ -89,7 +100,9 @@ class CampaignWizard(Wizard):
     button's request key) or "loading" once a refresh is under way.
     ``creating`` marks step 1 before the campaign exists (``creation``):
     Create the campaign draws its own action row inside its form, so the
-    shared row draws nothing.
+    shared row draws nothing. ``direct`` marks a step page whose form the
+    primary saves directly (``DIRECT_STEPS``), with ``save_key``, the
+    request key that form posts.
     """
 
     upcoming: Step | None = None
@@ -98,6 +111,13 @@ class CampaignWizard(Wizard):
     load: str | None = None
     refresh_key: object = None
     creating: bool = False
+    direct: bool = False
+    save_key: object = None
+
+    @property
+    def direct_form(self):
+        """The id of the form a direct save posts (``DIRECT_FORM``), or None."""
+        return DIRECT_FORM if self.direct else None
 
     @property
     def reviewable(self):
@@ -178,6 +198,7 @@ def build(
     sub=False,
     no_schedules=False,
     load=None,
+    direct=False,
 ):
     """Derive the stepper for the page ``current`` (a step key) as a ``Wizard``.
 
@@ -188,8 +209,9 @@ def build(
     invitation's current revision, or None when there is none to test. Every
     other step is always a link: Back and Continue never save or discard
     anything on the page, and each page keeps its own prerequisites.
-    ``sub``, ``no_schedules`` and ``load`` are carried through
-    (``CampaignWizard``).
+    ``sub``, ``no_schedules``, ``load`` and ``direct`` are carried
+    through (``CampaignWizard``); a ``direct`` stepper draws a fresh
+    ``save_key``.
     """
     pages = [page for page in PAGES if page.key != "share_options" or financial]
     steps = []
@@ -240,6 +262,8 @@ def build(
         no_schedules=no_schedules,
         load=load,
         refresh_key=uuid4() if load == "offer" else None,
+        direct=direct,
+        save_key=uuid4() if direct else None,
     )
 
 
@@ -484,6 +508,7 @@ def for_request(match, campaign, configuration):
         sub=sub,
         no_schedules=no_schedules,
         load=_load_state(campaign),
+        direct=not sub and current in DIRECT_STEPS,
     )
 
 
@@ -592,6 +617,98 @@ def record_review(store, actor_id, step):
             done=completed(campaign, revision),
             mail_test_url=_test_url(revision),
         ).upcoming
+
+
+def setup_ended():
+    """The refusal of a direct save once the campaign wizard no longer applies.
+
+    The page was drawn while the campaign was a Testing draft with no
+    go-live started; since then it was scheduled, went live, or a go-live
+    started, so the change needs the page's ordinary Save and review.
+    """
+    from parishkit.stewardship.web.refusals import UserFacingStale
+
+    return UserFacingStale(
+        _("Campaign setup has ended, so nothing was saved."),
+        fix=_("Reload the page, then make your change again and review it."),
+        reason="stale_page",
+    )
+
+
+def _status_redirect(request, request_id):
+    """The redirect to one change's Change status, which the page follows."""
+    from django.http import HttpResponseRedirect
+
+    from . import admin_navigation
+
+    admin_navigation.remember_origin(request, request_id)
+    return HttpResponseRedirect(
+        reverse("admin:configuration_request", args=[request_id])
+    )
+
+
+def repeated_save(request, actor, key):
+    """The redirect a repeated direct save answers with, or None (#1404 PR 4).
+
+    A save already recorded with this save's request ``key`` (a double
+    click, or a retry after its answer was lost, even once it is applied
+    and the page's version is no longer the current one) is answered with
+    that change's status before the form is checked again, as a repeated
+    Apply is, so it is never refused as stale nor recorded twice. The key
+    (``admin_editing.direct_key``) comes from the page's key and the posted
+    values, so a different change from the same page never matches here and
+    is checked, and recorded or refused, as a save of its own. One indexed
+    query on the actor and key.
+    """
+    from .request_models import ConfigurationChangeRequest
+
+    existing = (
+        ConfigurationChangeRequest.objects.filter(
+            actor_id=actor.identity, request_key=key
+        )
+        .values_list("pk", flat=True)
+        .first()
+    )
+    return None if existing is None else _status_redirect(request, existing)
+
+
+def save_step(request, service, actor, *, token, salt, current_scope, campaign_id):
+    """Record a campaign wizard step's direct save (#1404 PR 4); its status.
+
+    ``token`` is the step's own Review, signed by this same request with the
+    page's request key (``admin_editing.direct_key``) and never shown: a
+    direct save is a confirmed Review without the dialog (ui-conventions,
+    "Wizards", rule 5). ``confirm_intent`` keeps every check a confirmation
+    makes (the Administrator and capability, the version and snapshot under
+    the work lock, the request key's one receipt, no added campaign) and
+    records the same audited configuration request. Under the same lock,
+    ``current_scope`` is wrapped so the save is refused (``setup_ended``)
+    unless the stepper still applies to the page's campaign
+    (``campaign_id``). Returns the redirect to the change's Change status,
+    which the page follows in place (ui-v1.js, form[data-direct-save]).
+    """
+    from .admin_editing import confirm_intent
+
+    def scope(service):
+        """``current_scope``, refused once the wizard no longer applies."""
+        configuration = _system()
+        if current_wizard(configuration) is None or str(
+            configuration.current_campaign_id
+        ) != str(campaign_id):
+            raise setup_ended()
+        return current_scope(service)
+
+    receipt = confirm_intent(
+        request,
+        service,
+        actor,
+        token=token,
+        salt=salt,
+        link=request.path,
+        current_scope=scope,
+        direct=True,
+    )
+    return _status_redirect(request, receipt.request_id)
 
 
 @dataclass(frozen=True)

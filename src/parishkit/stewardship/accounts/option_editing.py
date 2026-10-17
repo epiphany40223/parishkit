@@ -20,6 +20,11 @@ out-of-date preview, a draft that can no longer change, the unchanged
 safeguard) is a plain refusal shown in the dialog, while the form keeps the
 reader's rows at the version they came from, so the next Review is refused
 until the page is reloaded and never quietly undoes a change made elsewhere.
+
+Inside the campaign wizard (#1404 PR 4) the form's Save and continue posts
+``save`` with the page's request key instead: the same Review, recorded at
+once by ``campaign_wizard.save_step`` and answered with the change's
+status, which the page follows before it opens the next step.
 """
 
 from collections.abc import Callable
@@ -44,9 +49,10 @@ from parishkit.stewardship.web.refusals import (
     with_default_code,
 )
 
-from . import admin_context, admin_navigation
+from . import admin_context, admin_navigation, campaign_wizard
 from .admin_editing import (
     confirm,
+    direct_key,
     error_response,
     principal,
     sign_preview,
@@ -192,8 +198,12 @@ def option_changes(before, after):
     return lines
 
 
-def _preview(request, editor, service, actor, state, campaign, formset, salt):
-    """The review dialog's fragment, the page refused (400), or a refusal raised."""
+def _preview(request, editor, service, actor, state, campaign, formset, salt, key=None):
+    """The signed review, the page refused (400, a response), or a refusal raised.
+
+    ``key`` is a direct save's page-drawn request key (#1404 PR 4); a
+    Review shown in the dialog takes a fresh one.
+    """
     configuration = state[0]
     if request.POST.get("base_digest") != configuration.active_configuration.digest:
         raise stale_page()
@@ -202,11 +212,12 @@ def _preview(request, editor, service, actor, state, campaign, formset, salt):
     # so the rows sent are never paired with a newer version.
     if not formset.is_valid():
         return _page(request, editor, configuration, campaign, formset, status=400)
-    review = review_options(editor, service, actor, state, campaign, formset, salt)
-    return render(request, editor.review_template, {"review": review})
+    return review_options(
+        editor, service, actor, state, campaign, formset, salt, key=key
+    )
 
 
-def review_options(editor, service, actor, state, campaign, formset, salt):
+def review_options(editor, service, actor, state, campaign, formset, salt, key=None):
     """The page's review of a valid formset, without the request (#463).
 
     Shared by the page's Review and ``pk-admin campaign shares-preview``, so
@@ -217,6 +228,7 @@ def review_options(editor, service, actor, state, campaign, formset, salt):
     candidate the configuration refuses raises from ``build_candidate``.
     Returns ``changes`` (the compact review's lines), ``options`` (the list
     the change saves) and ``preview``, the signed binding Apply posts.
+    ``key`` is a direct save's request key (#1404 PR 4, ``direct_key``).
     """
     configuration, fingerprint = state[0], state[-1]
     options = formset.values()
@@ -246,6 +258,7 @@ def review_options(editor, service, actor, state, campaign, formset, salt):
             patch=patch,
             salt=salt,
             snapshot=fingerprint,
+            key=key,
         ),
     }
 
@@ -272,8 +285,9 @@ def option_settings(request, campaign_id, editor):
 
     GET draws the editor (it takes no query: its address is all there is);
     a Review POST answers the review dialog's fragment; Apply answers with
-    the change's status. Refusals are raised for the dialog (see the module
-    docstring).
+    the change's status, and so does a direct save inside the campaign
+    wizard (``save``, see the module docstring). Refusals are raised for the
+    dialog, or the page's status line (see the module docstring).
     """
     try:
         service = runtime()
@@ -281,6 +295,7 @@ def option_settings(request, campaign_id, editor):
         filters(request.GET, allowed=set())
         salt = f"{editor.salt}:{campaign_id}"
         action = None
+        saved = None
         if request.method == "POST":
             action = share_action(request.POST)
             if action == "confirm":
@@ -289,6 +304,12 @@ def option_settings(request, campaign_id, editor):
                 )
                 response["Cache-Control"] = "no-store"
                 return response
+        key = direct_key(request.POST) if action == "save" else None
+        if key is not None and (
+            repeat := campaign_wizard.repeated_save(request, actor, key)
+        ):
+            repeat["Cache-Control"] = "no-store"
+            return repeat
         with (
             read_transaction()
             if request.method in {"GET", "HEAD"}
@@ -303,16 +324,34 @@ def option_settings(request, campaign_id, editor):
             ):
                 raise _unavailable(editor, configuration, campaign)
             formset = ShareOptions(
-                request.POST if action == "preview" else None,
+                request.POST if action in {"preview", "save"} else None,
                 prefix="options",
                 previous=editor.current(campaign),
             )
-            if action == "preview":
-                response = _preview(
-                    request, editor, service, actor, state, campaign, formset, salt
-                )
-            else:
+            if action is None:
                 response = _page(request, editor, configuration, campaign, formset)
+            else:
+                review = _preview(
+                    request, editor, service, actor, state, campaign, formset, salt, key
+                )
+                if not isinstance(review, dict):
+                    response = review
+                elif action == "save":
+                    saved = review["preview"]
+                else:
+                    response = render(
+                        request, editor.review_template, {"review": review}
+                    )
+        if saved is not None:
+            response = campaign_wizard.save_step(
+                request,
+                service,
+                actor,
+                token=saved,
+                salt=salt,
+                current_scope=_scope,
+                campaign_id=campaign_id,
+            )
         # Recheck access after the observation ends, so a GET's read-only
         # snapshot cannot hide a revocation committed while it rendered.
         if not allows(
