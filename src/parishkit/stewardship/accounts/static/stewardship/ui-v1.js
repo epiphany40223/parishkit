@@ -5413,6 +5413,29 @@
     update();
   });
 
+  // Edit of a reminder in a remembered series (#469,
+  // schedule-series-scope.html): "This and following" and "The whole series"
+  // grey the send date (data-enabled-when) and keep each reminder's own
+  // date, so the greyed box shows this reminder's date as drawn, never one
+  // typed before the choice, which would not be used. The drawn date is the
+  // field's default (filled in this browser's zone above). An input event
+  // lets the change gate look again; a greyed field does not count anyway.
+  document.querySelectorAll("[data-series-scope]").forEach((group) => {
+    const form = group.closest("form");
+    const date = form?.querySelector('[data-schedule-field="date"] input');
+    if (!date) return;
+    const restore = () => {
+      const chosen = group.querySelector('input[type="radio"]:checked');
+      if (chosen && chosen.value !== "this" && date.value !== date.defaultValue) {
+        date.value = date.defaultValue;
+        date.dispatchEvent(new Event("input", {bubbles: true}));
+      }
+    };
+    group.addEventListener("change", restore);
+    // The browser can restore a typed date and a chosen scope on Back.
+    window.addEventListener("pageshow", restore);
+  });
+
   // Plain multi-select lists: say how many items are chosen, since a long list
   // (a parish may have hundreds of Ministries) hides most of its selection.
   document.querySelectorAll("select[multiple]").forEach((select) => {

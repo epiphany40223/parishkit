@@ -1953,7 +1953,7 @@ none.
 
 | URL names | Command or exemption |
 | --- | --- |
-| `schedule_settings`, `schedule_new`, `schedule_edit`, `schedule_delete` | `schedule show` (PR 3a); `schedule preview`, `schedule confirm` (PR 4): a change document adds, changes or deletes the same schedules. Its `series` entries (#469) edit or delete a remembered reminder series, ahead of the New/Change page's series scopes (slice 2b-3) |
+| `schedule_settings`, `schedule_new`, `schedule_edit`, `schedule_delete` | `schedule show` (PR 3a); `schedule preview`, `schedule confirm` (PR 4): a change document adds, changes or deletes the same schedules. Its `series` entries (#469) edit or delete a remembered reminder series; Edit scheduled email offers the same "this and following" and "the whole series" for a time or email change, while a new rule or deleting a series is the command line's alone for now |
 | `schedule_calendar` | `schedule show` (PR 3a): the read-only Campaign calendar (#469) draws the saved schedules and campaign dates that `schedule show` lists |
 | `campaign_end_date_check` | `schedule preview` (PR 4): Campaign settings' no-save live check of a live campaign's end date answers what a preview of that end date would refuse |
 | `configuration_request` | `config request show --watch` (PR 4); `config request cancel` ([#944](https://github.com/epiphany40223/parishkit/pull/944)), an operator recovery with no page button |
@@ -2030,7 +2030,7 @@ right after confirm, exactly as editing that reminder alone on the page
 does. An edit that gives a `repeat` rule yielding the same reminders still
 saves the new rule; one with no `repeat` and the same reminders changes
 nothing. The planning is the pure `accounts.series_edits.plan`, which
-the New/Change page will share, and its reminders and series records go
+Edit scheduled email shares, and its reminders and series records go
 through the same `schedule_changes.build_preview`, forms, signed preview
 and confirmation, so an in-flight or unknown send still blocks. An unknown
 series, a `from` outside it, a reminder from the cut date that has sent or
