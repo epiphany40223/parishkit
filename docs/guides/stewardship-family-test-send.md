@@ -54,7 +54,7 @@ how staff use it.
   unfinished to block Production readiness. Resend and retry are refused. A
   test held behind another Testing email to the same Family that is marked
   "Not sure it arrived" says so on the page; it counts toward the ten and
-  waits for Testing cleanup until that email is resolved on Outgoing mail.
+  waits for Testing cleanup until that email is resolved on Sent mail.
 
 It does not open the portal outside the campaign dates, does not satisfy the
 readiness check (the fictional sample still does), and is deleted by Testing

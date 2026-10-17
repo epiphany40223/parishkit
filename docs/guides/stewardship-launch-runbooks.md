@@ -246,7 +246,7 @@ started with **Refresh now**.
 **Afterwards.** **Mail and Family portal › Family email history**
 ([Family email history](../specs/stewardship/admin-portal/spec.md#family-email-sends))
 keeps the send's final counts, its first and last times and its duration,
-and each count opens those emails on Outgoing mail. Once the progress page
+and each count opens those emails on Sent mail. Once the progress page
 is settled, run the report again with `until` after the last outcome, and
 record in the operators' notes:
 
@@ -269,7 +269,7 @@ Then take the backup that step 8 of the activation asks for.
 **You see:** the `mail_provider_unavailable` incident opens, reaching you by
 Slack if configured (its email may not arrive, for the reason above) and as
 the critical-events banner; Family or staff mail stops arriving; the
-**Outgoing mail** page (`/admin/mail/outgoing/`) shows messages in
+**Sent mail** page (`/admin/mail/sent/`) shows messages in
 `retry_wait`.
 
 **The system does:** it opens the incident on a systemic failure or on three
@@ -323,14 +323,14 @@ to `DATA`, for example), becomes
    all work while paused), then resume once the page's other resume
    conditions hold (see
    [Pausing and resuming delivery](#pausing-and-resuming-delivery)). On
-   the **Outgoing mail** page (`/admin/mail/outgoing/`), choose the **Failed** state
+   the **Sent mail** page (`/admin/mail/sent/`), choose the **Failed** state
    and look at the messages last changed during the outage.
    Open each one that should still go and choose **Retry failed delivery** on
    its page (the button is offered only when delivery is not paused), or,
    when all of one type should go, use **Fix many emails at once** →
    **Retry all failed emails** on the same page, which retries each the
    same way after one preview
-   ([Outgoing mail bulk actions](../specs/stewardship/admin-portal/spec.md#fix-many-emails-at-once)).
+   ([Sent mail bulk actions](../specs/stewardship/admin-portal/spec.md#fix-many-emails-at-once)).
    Then
    check the **Still sending (queued)** and **Still sending (waiting to
    retry)** states for messages last changed during the outage whose page offers **Retry delivery not accepted
@@ -353,7 +353,7 @@ mailbox is probably throttling it (every address refused with a temporary
 code such as `450 4.2.1`). Such a message retries after 15 minutes, 1 hour,
 4 hours and 12 hours, about 17 hours in all, and then fails visibly like any
 exhausted retry ([Family mail dispatch](stewardship-family-mail-dispatch.md)).
-Nothing needs doing; Outgoing mail does not yet show the reason (#382).
+Nothing needs doing; Sent mail does not yet show the reason (#382).
 
 ## Backup encryption key changed
 
@@ -712,12 +712,12 @@ owns the policy for each kind:
 and [Admin reports](../specs/stewardship/background-processing/spec.md#administrator-digests).
 The guides linked in step 4 own each kind's resolution workflow.
 
-For each message, from its detail page (`/admin/mail/outgoing/<message id>/`)
+For each message, from its detail page (`/admin/mail/sent/<message id>/`)
 (when the provider's records show that many of them were not sent, step 5
 can be done for all of them at once with **Fix many emails at once** →
-**Record all "Not sure it arrived" emails as not sent** on Outgoing mail,
+**Record all "Not sure it arrived" emails as not sent** on Sent mail,
 after one preview and with one note; see
-[Outgoing mail bulk actions](../specs/stewardship/admin-portal/spec.md#fix-many-emails-at-once)):
+[Sent mail bulk actions](../specs/stewardship/admin-portal/spec.md#fix-many-emails-at-once)):
 
 1. Look for it in the provider's own record: the delegated mailbox's sent
    mail or the Workspace admin log, by time and recipient.

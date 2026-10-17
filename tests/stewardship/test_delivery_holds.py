@@ -1,4 +1,4 @@
-"""Outgoing mail's sending limit note, without a database (#382 M3a)."""
+"""Sent mail's sending limit note, without a database (#382 M3a)."""
 
 from datetime import UTC, datetime, timedelta
 

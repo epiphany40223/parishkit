@@ -397,7 +397,7 @@ def test_a_blocked_schedule_review_offers_no_apply():
     assert "Sends blocking the change: 2" in text
     assert "data-review-preview" not in text
     # The page the message names is linked (navigation rule 6, #521).
-    assert f'<a href="{reverse("admin:deliveries")}">Outgoing mail</a>' in text
+    assert f'<a href="{reverse("admin:deliveries")}">Sent mail</a>' in text
 
 
 def test_new_and_edit_scheduled_email_review_in_the_dialog():

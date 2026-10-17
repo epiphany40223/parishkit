@@ -1,6 +1,8 @@
 """Admin-only mail metadata and evidence forms; private payloads never serialize."""
 
 from contextlib import contextmanager
+from dataclasses import replace
+from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
 from django.conf import settings
@@ -47,7 +49,7 @@ from parishkit.stewardship.web.tables import (
 
 from . import delivery_bulk
 from .delivery_admin import clear_recipient_refusal, report_recipient_bounce
-from .delivery_metadata import DELIVERY_SORTING, STATES
+from .delivery_metadata import DELIVERY_SORTING, MODES, PURPOSE_CHOICES, STATES
 from .delivery_reads import (
     ACTION_LABELS,
     REFUSAL_SORTING,
@@ -62,6 +64,7 @@ from .delivery_reads import (
     read_sending_holds,
     unresolved_refusals,
     with_family_names,
+    with_recipients,
     with_refusal_counts,
 )
 from .delivery_resolution import resolve_delivery
@@ -248,38 +251,168 @@ def _previous(request, window):
     return values.urlencode()
 
 
-@require_http_methods(["GET", "HEAD", "POST"])
-@sensitive_post_parameters("note")
-def delivery_list(request):
-    """Search exact operational identifiers without fetching message content.
+# Sent mail's Recipient is private filter state (#1562): an email address
+# or a Family DUID names a person, and ui-conventions keeps such a value out
+# of every URL. It travels only in POST bodies: the filter form, the table's
+# navigator and headings, the Production / Testing choice, the row Recipient
+# links and the bulk actions. Its other filters may be linked.
+PRIVATE_FILTERS = {"recipient"}
+TABLE_FIELDS = {"page", "size", "sort"}
+RECIPIENT_IN_LINK = _(
+    "Recipient is never put in a link. Enter it in the Recipient filter instead."
+)
 
-    A POST is one of the page's bulk actions (#382 M4, ``_bulk``): it is
-    answered with this page, whose bulk review region shows the preview,
-    the result or the refusal in place.
+
+def _listing_parameters(request):
+    """Where Sent mail's filters come from for this request (#1562).
+
+    A GET (a bookmark, or a link from another page) carries only the
+    filters a link may carry; one naming a Recipient is refused, without
+    echoing it. A bulk action posts to the page's address, so its filters
+    are that address's, plus the Recipient its form carries. Any other POST
+    is the page's own filter form or table control: every filter is in its
+    body, and it never comes with a query string. Raises ``ValueError``.
     """
-    bulk, status = _bulk(request) if request.method == "POST" else ({}, 200)
+    if request.method != "POST":
+        if PRIVATE_FILTERS & set(request.GET):
+            raise ValueError(RECIPIENT_IN_LINK)
+        return request.GET
+    if "action" in request.POST:
+        parameters = request.GET.copy()
+        if PRIVATE_FILTERS & set(parameters):
+            raise ValueError(RECIPIENT_IN_LINK)
+        if request.POST.get("recipient"):
+            parameters["recipient"] = request.POST["recipient"]
+        return parameters
+    if request.GET:
+        raise ValueError("Invalid delivery filter.")
+    parameters = request.POST.copy()
+    parameters.pop("csrfmiddlewaretoken", None)
+    return parameters
+
+
+def _carried(parameters):
+    """The applied filters every table control and mode choice posts again."""
+    return [
+        (name, value)
+        for name, value in parameters.items()
+        if name not in TABLE_FIELDS and value
+    ]
+
+
+def _page_address(request, parameters, table):
+    """This view's address with only the filters a link may carry (#536).
+
+    Never the Recipient and never the page number: ui-v1.js puts it in the
+    address bar after each in-place answer (data-page-address), so a reload
+    or bookmark keeps the linkable filters, the sort and the size.
+    """
+    fields = [
+        (name, value)
+        for name, value in _carried(parameters)
+        if name not in PRIVATE_FILTERS
+    ] + table.view_fields
+    return f"{request.path}?{urlencode(fields)}"
+
+
+def _mode_choices(parameters, table, shown):
+    """Sent mail's Production / Testing choices: this view in each mode (#1562).
+
+    Each is the hidden fields of a small POST form, keeping the applied
+    filters (the Recipient too), size and sort, and starting again at page
+    1, as a new filter does. Returns ``[(mode, fields, current)]``, where
+    ``current`` says whether ``shown`` is that mode.
+    """
+    kept = [
+        (name, value) for name, value in _carried(parameters) if name != "mode"
+    ] + table.view_fields
+    return [(mode, [*kept, ("mode", mode)], mode == shown) for mode in MODES]
+
+
+def _recipient_fields(row, mode):
+    """The fields that list everything a row's recipient was sent (#1562).
+
+    A Family email's recipient is its Family (by DUID), any other email's its
+    Administrator address; the form keeps the mode shown and posts them, so
+    neither reaches a URL. None when the address is unknown. The recipient
+    history pages of a later #1562 slice replace this control.
+    """
+    duid = row["family__family_duid"]
+    recipient = str(duid) if duid else row.get("recipient_address")
+    if not recipient:
+        return None
+    return [("recipient", recipient), ("mode", mode)]
+
+
+@require_http_methods(["GET", "HEAD", "POST"])
+@sensitive_post_parameters("note", "recipient")
+def delivery_list(request):
+    """Sent mail: every email, filtered by exact or closed choices (#1562).
+
+    Never fetches message content: an Administrator email's address comes
+    from a definer read that returns only addresses. A POST naming an
+    ``action`` is one of the page's bulk actions (#382 M4, ``_bulk``): it is
+    answered with this page, whose bulk review region shows the preview,
+    the result or the refusal in place. Any other POST reads the page with
+    the filters in its body (``_listing_parameters``).
+    """
+    bulk, status = ({}, 200)
+    if request.method == "POST" and "action" in request.POST:
+        bulk, status = _bulk(request)
     if isinstance(bulk, HttpResponse):
         return bulk
     # The refusal behind a refused bulk action, for the refusal log only.
     refusal = bulk.pop("_refusal", None)
 
     def load(actor):
-        """Capture one filtered page without reading any private message payload."""
-        data = read_listing(request.GET)
+        """Capture one filtered page without reading any private message payload.
+
+        The page shows the system's current operating mode's email (Testing
+        before Production is activated) unless its filters name a mode (or
+        a send, whose mode it shows).
+        """
+        parameters = _listing_parameters(request)
+        data = read_listing(
+            parameters,
+            actor=actor.identity,
+            default_mode=SystemConfiguration.objects.values_list(
+                "mode", flat=True
+            ).first(),
+        )
         values = data["values"]
-        return dict(
-            table=_table(
-                request,
+        rows = with_recipients(
+            with_refusal_counts(with_family_names(data["rows"], data["snapshot"])),
+            actor.identity,
+        )
+        table = replace(
+            window_table(
                 data["window"],
-                with_refusal_counts(with_family_names(data["rows"], data["snapshot"])),
+                [
+                    row | {"recipient_fields": _recipient_fields(row, values["mode"])}
+                    for row in rows
+                ],
                 data["has_next"],
+                carry=_carried(parameters),
                 total=data["total"],
                 sorting=DELIVERY_SORTING,
                 sort=values["sort"],
             ),
+            method="post",
+            action=request.path,
+        )
+        return dict(
+            table=table,
+            page_address=_page_address(request, parameters, table),
             states=STATES,
             selected_state=values["state"],
-            query=values["q"],
+            purposes=PURPOSE_CHOICES,
+            selected_purpose=values["purpose"],
+            recipient=values["recipient"],
+            start=values.get("start", ""),
+            end=values.get("end", ""),
+            zone=values.get("zone", ""),
+            mode=values["mode"],
+            mode_choices=_mode_choices(parameters, table, values["mode"]),
             send=data["send"],
             holds=read_sending_holds(database_now()),
             # The link line's count (#935), drawn once per page load.
@@ -314,10 +447,12 @@ BULK_REFUSALS = {
 }
 # The fields each bulk action posts besides the CSRF token, as (required,
 # optional): the checks below refuse any other, and the refusal log counts
-# them (#1444).
+# them (#1444). Each may carry the applied Recipient, which is private
+# filter state and never in the address the forms post to, so the answer's
+# list keeps it (#1562).
 _BULK_FIELDS = {
-    "preview": ({"action", "kind", "purpose", "note"}, {"checked"}),
-    "confirm": ({"action", "preview", "note"}, set()),
+    "preview": ({"action", "kind", "purpose", "note"}, {"checked", "recipient"}),
+    "confirm": ({"action", "preview", "note"}, {"recipient"}),
 }
 
 
@@ -428,7 +563,7 @@ def delivery_detail(request, message_id):
         """Pin history's upper version to the selected message observation.
 
         The page names the email by its purpose and its Family's name (from
-        the latest ParishSoft data, as Outgoing mail reads it), its
+        the latest ParishSoft data, as Sent mail reads it), its
         recipient addresses (read for ``actor`` through the definer function,
         #1024) and the refused addresses its delivery recorded (#1015).
         ``commands`` are the offered resolutions; ``decisions`` says whether

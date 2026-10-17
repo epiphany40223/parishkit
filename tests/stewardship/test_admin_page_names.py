@@ -403,7 +403,7 @@ def test_former_names_are_read_from_the_spec():
     assert not any('"' in name or "'" in name for name in former)
 
 
-# Templates that may link pages above their heading: Outgoing mail's links
+# Templates that may link pages above their heading: Sent mail's links
 # lead to its sibling pages, not back up its trail.
 ABOVE_HEADING = {"deliveries.html"}
 
@@ -620,7 +620,7 @@ def test_cancel_go_live_sits_under_production_activation():
 
 
 def test_cancel_go_live_blocking_message_links_the_pages_it_names():
-    """Work in flight names Pause and resume mail and Outgoing mail as links."""
+    """Work in flight names Pause and resume mail and Sent mail as links."""
     campaign = SimpleNamespace(
         pk=uuid4(),
         active_configuration=SimpleNamespace(
@@ -646,7 +646,7 @@ def test_cancel_go_live_blocking_message_links_the_pages_it_names():
     controls = reverse("admin:delivery_control")
     outgoing = reverse("admin:deliveries")
     assert f'<a href="{controls}">Pause and resume mail</a>' in html
-    assert f'<a href="{outgoing}">Outgoing mail</a>' in html
+    assert f'<a href="{outgoing}">Sent mail</a>' in html
     assert "<h1>Cancel go-live</h1>" in html
     # Confirm is shown unavailable, named by the blocking message (#563),
     # with no form that could post it.

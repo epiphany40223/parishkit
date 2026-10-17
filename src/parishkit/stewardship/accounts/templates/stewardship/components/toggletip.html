@@ -9,4 +9,9 @@
   heading, the button's own "i" and the help again). Wherever it sits, the
   bubble floats over the page beside its button (ui-v1.css, ui-v1.js), so
   opening it never moves a control or resizes or scrolls a table's box.
-{% endcomment %}<span class="toggletip"><button type="button" class="toggletip-button" aria-expanded="false" aria-controls="{{ tip_id }}" aria-label="{% translate 'More information' %}"{% if tip_label_id %} aria-describedby="{{ tip_label_id }}"{% endif %}>i</button><span class="toggletip-bubble" id="{{ tip_id }}" hidden>{{ tip_text }}</span></span>
+  With tip_zone_note=True it is the browser zone note (zone-note.html) as a
+  tip, for a compact filter bar (Sent mail, #1562): tip_text is the
+  sentence before the zone name, ending in a colon, and ui-v1.js
+  (wireBrowserTimezone) fills the name and shows the "i" only once the
+  browser reports a known zone; until then it stays hidden, as the note does.
+{% endcomment %}<span class="toggletip"{% if tip_zone_note %} data-browser-zone-note hidden{% endif %}><button type="button" class="toggletip-button" aria-expanded="false" aria-controls="{{ tip_id }}" aria-label="{% translate 'More information' %}"{% if tip_label_id %} aria-describedby="{{ tip_label_id }}"{% endif %}>i</button><span class="toggletip-bubble" id="{{ tip_id }}" hidden>{{ tip_text }}{% if tip_zone_note %} <span data-browser-zone-name></span>.{% endif %}</span></span>

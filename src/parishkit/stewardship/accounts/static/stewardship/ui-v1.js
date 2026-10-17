@@ -144,13 +144,17 @@
       const scope = input.form || root;
       const known = Boolean(zone) && zone !== "Etc/Unknown";
       const hint = known ? "" : input.dataset.zoneMissingHint || "";
-      const note = scope.querySelector("[data-browser-zone-note]");
+      // A note can be a toggletip (Sent mail's From, #1562): it shows its "i"
+      // the same way, and the fields are described by its bubble, never by
+      // the button's "More information".
+      const noteNode = scope.querySelector("[data-browser-zone-note]");
+      const note = noteNode?.querySelector(".toggletip-bubble") || noteNode;
       const gateHint = scope.querySelector("[data-complete-hint]");
       input.value = known ? zone : "";
       scope.querySelectorAll("[data-browser-zone-name]").forEach((node) => {
         node.textContent = input.value;
       });
-      if (note) note.hidden = !known;
+      if (noteNode) noteNode.hidden = !known;
       scope.querySelectorAll("[data-zone-dependent]").forEach((field) => {
         field.disabled = !known;
       });
@@ -2114,7 +2118,7 @@
     refreshTable(region, control, action.href, init, load, {owner, form: save ? form : null})
       .finally(settle);
   }, true);
-  // An in-place review (Outgoing mail's bulk review, #382; Past campaigns'
+  // An in-place review (Sent mail's bulk review, #382; Past campaigns'
   // import, #1018) shows what its form's last Review would change, in an
   // element marked data-review-of="<form id>", with Apply. Editing that form again makes
   // the review out of date, and Apply would still apply the reviewed values,

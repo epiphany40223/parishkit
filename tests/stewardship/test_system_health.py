@@ -1026,7 +1026,7 @@ def test_an_unrecorded_follow_up_refusal_is_a_problem_linking_its_email():
     )
     assert "An address the mail service refused permanently could not" in one
     assert "use Report a bounced address to set it aside" in one
-    assert f'href="/admin/mail/outgoing/{message}/">See the email</a>' in one
+    assert f'href="/admin/mail/sent/{message}/">See the email</a>' in one
     several = Problem("refusal_unrecorded", at=NOW, count=3, message_id=message)
     body = render_to_string(
         "stewardship/system-health-problem.html", {"problem": several}

@@ -68,7 +68,7 @@ def test_slashless_forms_redirect_and_old_addresses_are_gone(auth_service, googl
     for old, new in (
         ("/admin/system/logs?source=audit", "/admin/system/logs/?source=audit"),
         ("/admin/users/automation", "/admin/users/automation/"),
-        ("/admin/mail/outgoing", "/admin/mail/outgoing/"),
+        ("/admin/mail/sent", "/admin/mail/sent/"),
     ):
         response = browser.get(old)
         assert response.status_code == 301, old
@@ -81,6 +81,10 @@ def test_slashless_forms_redirect_and_old_addresses_are_gone(auth_service, googl
         "/admin/background",
         "/admin/configuration/integrations/parishsoft",
         "/admin/deliveries",
+        # Outgoing mail, renamed Sent mail with no redirect (#1562).
+        "/admin/mail/outgoing/",
+        "/admin/mail/outgoing",
+        f"/admin/mail/outgoing/{uuid4()}/",
         "/admin/family-portal",
         "/admin/presence?size=25",
         f"/admin/campaign/{current}/delivery",

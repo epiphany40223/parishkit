@@ -99,7 +99,7 @@ def test_the_follow_up_sets_a_permanently_refused_address_aside(
     monkeypatch,
 ):
     """The follow-up's permanent refusal is a recipient refusal of the
-    accepted attempt, by the follow-up's worker and run; Outgoing mail marks
+    accepted attempt, by the follow-up's worker and run; Sent mail marks
     that email, and nothing about the email or credentials changes."""
     message, retry, before = refused_permanently(dispatch_worker, monkeypatch)
     assert retry.state == "finished" and retry.refused == [1] and retry.remaining == []

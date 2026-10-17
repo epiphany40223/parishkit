@@ -65,7 +65,7 @@ def test_confirmation_and_progress_are_accessible(
     visible(page.get_by_role("heading", name="Campaign active", exact=True))
     visible(page.get_by_role("heading", name="Preparing initial campaign mail"))
     # The outcomes note links the page it names (navigation rule 6, #521).
-    visible(page.locator("main").get_by_role("link", name="Outgoing mail", exact=True))
+    visible(page.locator("main").get_by_role("link", name="Sent mail", exact=True))
     assert "5,678" in page.locator("main").inner_text()
     assert "4,800" in page.locator("main").inner_text()
     assert "-200" in page.locator("main").inner_text()

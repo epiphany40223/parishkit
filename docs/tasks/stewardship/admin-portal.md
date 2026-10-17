@@ -1407,7 +1407,7 @@ expected-redirect table in
 golden files, and the updated Parish data and change suites.
 ADM-12.11 (NAV-8) moves the Mail and Family portal pages under `/admin/mail/`
 (Pause and resume mail at `controls/`, Family email progress and its status
-fragment, Family email history, Outgoing mail and one message with its
+fragment, Family email history, Sent mail and one message with its
 `resolution/` action, Refused addresses and one address with its
 `clearance/` action, Family portal availability and Families on the form
 now), each old address and no-slash form redirecting. Pause and resume

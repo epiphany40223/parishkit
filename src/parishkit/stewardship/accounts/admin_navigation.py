@@ -192,7 +192,7 @@ PAGES = {
     "family_email_progress": Page("mail", _("Family email progress")),
     # The permanent record of every send (#432), listed beside the live panel.
     "family_email_sends": Page("mail", _("Family email history")),
-    "deliveries": Page("mail", _("Outgoing mail")),
+    "deliveries": Page("mail", _("Sent mail")),
     "delivery": Page("mail", _("Mail message"), "deliveries"),
     "delivery_refusals": Page("mail", _("Refused addresses"), "deliveries"),
     "delivery_refusal": Page("mail", _("Refused address"), "delivery_refusals"),

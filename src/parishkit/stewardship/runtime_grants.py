@@ -369,6 +369,12 @@ RECIPIENT_OUTCOMES_FUNCTION = "stewardship_delivery_recipient_outcomes_v1(uuid, 
 # What a delivered email's follow-up to its addresses refused for now did
 # (#806 slice 2), for the same page and caller: positions and words only.
 ADDRESS_RETRIES_FUNCTION = "stewardship_delivery_address_retries_v1(uuid, uuid)"
+# Sent mail's Recipient filter and column (#1562), for an Administrator
+# only: the ids of the emails meant for one address, and the addresses of
+# a page's Administrator reports and notices, without any grant on the
+# renderings that hold them.
+ADDRESS_DELIVERIES_FUNCTION = "stewardship_delivery_ids_for_address_v1(text, uuid)"
+PAGE_RECIPIENTS_FUNCTION = "stewardship_delivery_page_recipients_v1(uuid[], uuid)"
 # An Administrator's report that a delivered email bounced at one address
 # (#806 slice 4): the report's only writer, so web keeps SELECT only on the
 # refusal table; the definer and the refusal guard admit it only from web.
@@ -505,6 +511,11 @@ CLOSURE_FUNCTIONS = {
     EXPORT_DISCARD_FUNCTION: (
         "stewardship_reports",
         "0029_point_in_time_exports",
+    ),
+    # Sent mail's recipient reads (0115, #1562).
+    **dict.fromkeys(
+        (ADDRESS_DELIVERIES_FUNCTION, PAGE_RECIPIENTS_FUNCTION),
+        ("stewardship_jobs", "0033_sent_mail_recipients"),
     ),
 }
 
@@ -693,7 +704,9 @@ def runtime_functions(role, *, target=None):
     live delivery claim on (#389 L1). Web reads what a delivered email's
     follow-up to its addresses refused for now did (#806); mail dispatch
     opens that follow-up and reads its link token. Web records an
-    Administrator's report that a delivered email bounced (#806 slice 4).
+    Administrator's report that a delivered email bounced (#806 slice 4),
+    and, for an Administrator, reads the emails meant for one address and
+    the addresses of a Sent mail page's reports and notices (#1562).
     The general worker asks whether a publication plan's or outcome's audit
     event is recorded (#528), since it cannot read audit rows itself.
     The scheduler discards ended exports' saved data (#1398), through the
@@ -728,6 +741,8 @@ def runtime_functions(role, *, target=None):
                 RECIPIENT_OUTCOMES_FUNCTION,
                 ADDRESS_RETRIES_FUNCTION,
                 BOUNCE_REPORT_FUNCTION,
+                ADDRESS_DELIVERIES_FUNCTION,
+                PAGE_RECIPIENTS_FUNCTION,
                 DEBUG_OFF_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {

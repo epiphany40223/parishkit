@@ -55,10 +55,8 @@ def test_next_steps_link_their_pages_and_never_shift(
         "Ministry requests — This campaign does not include Ministry stewardship"
     )
     assert greyed.get_by_role("link").count() == 0
-    mail = panel.get_by_role("link", name="Outgoing mail", exact=True)
-    expect(mail).to_have_attribute(
-        "href", "/admin/mail/outgoing/?state=delivery_unknown"
-    )
+    mail = panel.get_by_role("link", name="Sent mail", exact=True)
+    expect(mail).to_have_attribute("href", "/admin/mail/sent/?state=delivery_unknown")
     before = page.evaluate(BOXES)
     for step in panel.get_by_role("link").all():
         step.hover()
