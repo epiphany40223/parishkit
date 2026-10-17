@@ -54,6 +54,15 @@ TASK_STATUS = reverse("admin:background_task_status", args=[TASK_RUN])
 EXPORT = reverse("admin:report_export", args=[UUID(int=720)])
 EXACT = reverse("admin:report_export", args=[UUID(int=721)])
 CHANGE = reverse("admin:configuration_request", args=[UUID(int=722)])
+# A ready file whose download window ends EXPORT_WINDOW_LEFT after the page's
+# server time (#1398), so a fake clock can pass its end.
+EXPORT_EXPIRING = "/live-export-expiring"
+EXPORT_WINDOW_LEFT = timedelta(minutes=5)
+# A ready file's page drawn just after its window's end by the server's clock.
+EXPORT_ENDED = "/live-export-ended"
+# The same export still being prepared, so its page watches itself until a
+# poll brings the ready (EXPORT_EXPIRING) region in.
+EXPORT_PENDING = "/live-export-pending"
 # Refresh from ParishSoft, which shows the run it requested (#521). The real
 # view redirects Refresh now back to the page itself and remembers the run in
 # the session; the static fixture server cannot remember, so its redirect
@@ -186,9 +195,10 @@ def components(context, admin):
             f"stewardship/{template}.html", refresh_values(state, steps, sort=sort)
         )
 
-    def export(state, mutable=True):
+    def export(state, mutable=True, expires_at=None):
         """A participation export's page in ``state``; while ``mutable`` is
-        false, other campaign work holds its commands."""
+        false, other campaign work holds its commands. ``expires_at`` is a
+        ready file's window end."""
         job = SimpleNamespace(
             pk=UUID(int=720),
             format="xlsx",
@@ -203,7 +213,10 @@ def components(context, admin):
             page
             | {
                 "job": job,
-                "status": {"state": state},
+                "status": {
+                    "state": state,
+                    "expires_at": expires_at.isoformat() if expires_at else None,
+                },
                 "mutable": mutable,
                 "retry_key": UUID(int=723),
                 "report_url": "/participation",
@@ -378,6 +391,9 @@ def components(context, admin):
         KEEP_EMPTY_STATUS: keep_page("two", "<p data-filled>Filled</p>", key=""),
         EXPORT: export("failed", mutable=False),
         "/live-export-ready": export("ready"),
+        EXPORT_EXPIRING: export("ready", expires_at=now + EXPORT_WINDOW_LEFT),
+        EXPORT_ENDED: export("ready", expires_at=now - timedelta(seconds=1)),
+        EXPORT_PENDING: export("queued"),
         EXACT: exact("failed"),
         "/live-exact-ready": exact("succeeded", export_id=UUID(int=725)),
         CHANGE: change("staged"),

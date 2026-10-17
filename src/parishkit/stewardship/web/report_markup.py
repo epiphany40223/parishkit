@@ -10,7 +10,7 @@ a tag list. Parish-authored content never gains these attributes.
 import re
 
 from .buttons import EMAIL_TABLE_STYLE, email_button, email_button_styles
-from .design_tokens import COLORS, hex6
+from .design_tokens import CHART_COLORS, COLORS, hex6
 
 # The Admin portal's colours from the shared design tokens (#732), so the
 # report emails look like the portal. Email cannot read the portal's CSS
@@ -23,7 +23,8 @@ LINK = hex6(COLORS["link"])
 # The report chart palette (reports spec, "Chart palette and style").
 BLUE = "#1f6fae"
 ORANGE = "#b8620a"
-TRACK = "#e4e7ec"
+# A progress bar's track, shared with the chart engine's progress bars.
+TRACK = CHART_COLORS["chart-track"]
 BAR_COLOURS = {BLUE, ORANGE, TRACK}
 # Cell background colours: the bars, and the primary button's cell.
 CELL_COLOURS = BAR_COLOURS | {ACCENT}

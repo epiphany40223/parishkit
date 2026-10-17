@@ -1,15 +1,16 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}{% comment %}
+  The Backup encryption key change's review page (backup_key._review), its
+  last page after the proof of possession. The integration settings pages
+  review and apply in the review dialog instead (integration-review.html,
+  #750); this page moves there in a later #750 slice.
+{% endcomment %}
 {% block title %}{% translate "Review integration changes" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Review integration changes" %}: {{ label }}</h1>
-{% if changes or not schedule_changes %}<div class="table-scroll"><table><caption>{% if target == 'backup_key' %}{% translate "The public key new backups are encrypted with" %}{% elif removing %}{% translate "Removing this integration" %}{% else %}{% translate "Settings only; the saved key is unchanged" %}{% endif %}</caption>
+<div class="table-scroll"><table><caption>{% translate "The public key new backups are encrypted with" %}</caption>
 <thead><tr><th scope="col">{% translate "Setting" %}</th><th scope="col">{% translate "Current" %}</th><th scope="col">{% translate "Proposed" %}</th></tr></thead>
-<tbody>{% for change in changes %}<tr><th scope="row">{{ change.label }}</th><td>{{ change.before }}</td><td>{{ change.after }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
-{% if schedule_changes %}{# The refresh schedule's differences in words (#632), not its stored settings. #}<section class="panel" aria-labelledby="schedule-changes-heading"><h2 id="schedule-changes-heading">{% translate "Refresh schedule changes" %}</h2>
-<ul>{% for item in schedule_changes %}<li>{{ item }}</li>{% endfor %}</ul>
-<p class="help">{% translate "The new schedule takes effect when the change is applied. Until then, refreshes run as they do now." %}</p></section>{% endif %}
-{% if removing and target == 'slack' %}<p>{% translate "After you confirm, Slack alerts stop. To set Slack up again later, open this page and save the channel ID with the app's bot token." %}</p>{% endif %}
-{% if target == 'backup_key' %}<p>{% translate "You proved you hold the new private key. After you confirm, the next backup is encrypted with the new key. Backups already made still need the old private key: keep it until they have all been deleted by retention." %}</p>{% else %}<p>{% translate "Confirm to save these settings. Saving does not test the connection." %}</p>{% endif %}
+<tbody>{% for change in changes %}<tr><th scope="row">{{ change.label }}</th><td>{{ change.before }}</td><td>{{ change.after }}</td></tr>{% endfor %}</tbody></table></div>
+<p>{% translate "You proved you hold the new private key. After you confirm, the next backup is encrypted with the new key. Backups already made still need the old private key: keep it until they have all been deleted by retention." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}">
 {% button type="submit" %}{% translate "Confirm changes" %}{% endbutton %}</form>
 <p><a href="{% url 'admin:integration_settings' target %}">{% blocktranslate %}Return to {{ label }}{% endblocktranslate %}</a></p>

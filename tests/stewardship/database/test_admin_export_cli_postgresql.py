@@ -3,7 +3,7 @@
 Process admission is replaced by the test's own Django assembly (the runner
 of test_admin_task_retry_cli_postgresql.py); everything after it is the
 real command line on the restricted web login, requesting, following,
-cancelling, retrying, regenerating and downloading real exports through the
+cancelling, retrying and downloading real exports through the
 pages' own functions, with the real worker rendering the files. An export
 made on a page is followed and downloaded from the command line and the
 other way round; both record the same events with the same contexts, and
@@ -158,6 +158,12 @@ def commands(verb):
     return list(AuditEvent.objects.filter(event_type=f"admin_cmd_export_{verb}"))
 
 
+def names_export(event, report="participation", format="csv"):
+    """Whether a command's event names its export's report kind and format."""
+    context = AuditContext.objects.get(event=event).context
+    return (context.get("report"), context.get("format")) == (report, format)
+
+
 @pytest.mark.parametrize("format", ["csv", "png", "pdf"])
 def test_the_command_downloads_the_pages_bytes_with_the_pages_events(
     cli,
@@ -227,11 +233,15 @@ def test_create_follows_the_pages_form_and_repeats_safely(cli, http_scenario):  
     assert result["export"]["state"] == "queued" and result["export"]["can_cancel"]
     # The page's request and the command's: same event, same context.
     requested = contexts("export_requested")
-    assert [entry[3] for entry in requested] == [{"outcome": "started"}] * 2
+    # Each names its report kind and format (#1398).
+    named = {"report": "participation", "format": "csv"}
+    assert [entry[3] for entry in requested] == [{"outcome": "started"} | named] * 2
     assert requested[0][0] == requested[1][0]  # the same Administrator
     assert requested[1][1] == export.pk
     [event] = commands("create")
     assert event.subject_id == UUID(document["session"]["id"])
+    # The command's own event names the export too (#1398).
+    assert names_export(event)
     code, again = run(*argv, secret=secret)
     assert code == 0 and not again["result"]["created"]
     assert again["result"]["export"]["id"] == str(export.pk)
@@ -261,9 +271,10 @@ def test_cancel_is_the_pages_and_a_published_export_is_stale(cli, http_scenario)
     code, document = run("export", "cancel", str(request.pk), secret=secret)
     assert code == 0 and not document["result"]["created"]
     assert [entry[3] for entry in contexts("export_cancelled")] == [
-        {"outcome": "cancelled"}
+        {"outcome": "cancelled", "report": "participation", "format": "csv"}
     ]
-    assert len(commands("cancel")) == 1
+    [event] = commands("cancel")
+    assert names_export(event)
     published = create(http_scenario)
     run_export(setup, published)
     code, document = run("export", "cancel", str(published.pk), secret=secret)
@@ -289,82 +300,63 @@ def test_retry_reruns_a_failed_export(cli, http_scenario):  # noqa: F811
     assert request.task.chain_runs.filter(retry_command_id=key).count() == 1
     code, again = run(*argv, secret=secret)
     assert code == 0 and not again["result"]["created"]
-    assert len(commands("retry")) == 1
+    [event] = commands("retry")
+    assert names_export(event)
     # The queued retry is not a failed run: the page's conflict.
     code, document = run("export", "retry", str(request.pk), secret=secret)
     assert code == 1 and document["error"]["code"] == "stale_version"
     assert len(commands("retry")) == 1
 
 
-def test_regenerate_requests_an_expired_export_again(cli, http_scenario):  # noqa: F811
-    """A new export from the retained inputs; only an expired one may be."""
-    run, secret = cli
-    setup, _ = http_scenario
-    request = create(http_scenario)
-    run_export(setup, request)
-    code, document = run("export", "regenerate", str(request.pk), secret=secret)
-    assert code == 1 and document["error"]["code"] == "stale_version"
-    expire_publication(request)
-    code, body, document = download(request.pk, secret)
-    assert code == 1 and document["error"]["code"] == "not_available" and body == b""
-    key = uuid4()
-    argv = ("export", "regenerate", str(request.pk), "--request-key", str(key))
-    code, document = run(*argv, secret=secret)
-    assert code == 0, document
-    result = document["result"]
-    assert result["created"] and result["export"]["id"] != str(request.pk)
-    regenerated = ExportRequest.objects.get(pk=result["export"]["id"])
-    assert (regenerated.fact_set_id, regenerated.format) == (
-        request.fact_set_id,
-        request.format,
-    )
-    code, again = run(*argv, secret=secret)
-    assert code == 0 and again["result"]["export"]["id"] == result["export"]["id"]
-    assert not again["result"]["created"] and len(commands("regenerate")) == 1
-    # A participation file carries no codes or financial detail: it asked
-    # nothing (no --yes) and no session stood in for a fresh sign-in.
-    assert not AuditEvent.objects.filter(event_type="automation_fresh_gate").exists()
-
-
-def test_a_fresh_gated_regeneration_stands_in_for_the_sign_in(
-    cli,  # noqa: F811
+def test_retry_ends_one_window_after_the_failure(
+    cli,
     http_scenario,  # noqa: F811
     monkeypatch,
 ):
-    """A code or financial file (here the scenario's export, made one of
-    ``FRESH_REPORTS``) asks first, refuses a read-only session, and records
-    one ``automation_fresh_gate`` with the new export; a repeat records none."""
-    from parishkit.stewardship.reports import export_ui
+    """``export status`` names when Retry ends; past it a new retry is
+    ``not_available``, and a recorded key still replays its result (#1398)."""
+    from datetime import timedelta
 
+    from parishkit.stewardship.reports import export_services
+
+    run, secret = cli
+    request = create(http_scenario)
+    with work_transaction():
+        act(act(_status(request.task), "claim"), "permanent_failure")
+    failed = request.task.chain_runs.order_by("-retry_sequence").first()
+    code, document = run("export", "status", str(request.pk), secret=secret)
+    assert code == 0 and document["result"]["state"] == "failed"
+    end = failed.updated_at + timedelta(minutes=60)
+    assert document["result"]["expires_at"] == end.isoformat()
+    key = uuid4()
+    argv = ("export", "retry", str(request.pk), "--request-key", str(key))
+    code, document = run(*argv, secret=secret)
+    assert code == 0 and document["result"]["created"], document
+    # The retry fails too; one window later a new Retry is refused.
+    retried = request.task.chain_runs.get(retry_command_id=key)
+    with work_transaction():
+        act(act(_status(retried), "claim"), "permanent_failure")
+    retried.refresh_from_db()
+    later = retried.updated_at + timedelta(minutes=61)
+    monkeypatch.setattr(export_services, "database_now", lambda: later)
+    code, document = run(
+        "export", "retry", str(request.pk), "--request-key", str(uuid4()), secret=secret
+    )
+    assert code == 1 and document["error"]["code"] == "not_available", document
+    code, again = run(*argv, secret=secret)
+    assert code == 0 and not again["result"]["created"], again
+    assert len(commands("retry")) == 1
+
+
+def test_an_expired_export_is_no_longer_available(cli, http_scenario):  # noqa: F811
+    """Exports are point-in-time (#1398): past its window the file is gone."""
     run, secret = cli
     setup, _ = http_scenario
     request = create(http_scenario)
     run_export(setup, request)
     expire_publication(request)
-    monkeypatch.setattr(
-        export_ui, "FRESH_REPORTS", export_ui.FRESH_REPORTS | {request.report}
-    )
-    gates = AuditEvent.objects.filter(event_type="automation_fresh_gate")
-    key = uuid4()
-    argv = ("export", "regenerate", str(request.pk), "--request-key", str(key))
-    # Unanswered: nothing is made, no gate is recorded.
-    code, document = run(*argv, secret=secret)
-    assert code == 4 and document["error"]["code"] == "confirmation_required"
-    assert not commands("regenerate") and not gates.exists()
-    # A read-only session cannot stand in for the sign-in.
-    reader = read_only_session(run.service)
-    code, document = run(*argv, "--yes", secret=reader)
-    assert code == 1 and document["error"]["code"] == "denied"
-    assert not commands("regenerate") and not gates.exists()
-    code, document = run(*argv, "--yes", secret=secret)
-    assert code == 0 and document["result"]["created"], document
-    [gate] = gates
-    [event] = commands("regenerate")
-    assert gate.subject_id == event.subject_id
-    # The same key again makes nothing, so it records no new gate.
-    code, again = run(*argv, "--yes", secret=secret)
-    assert code == 0 and not again["result"]["created"]
-    assert gates.count() == 1 and len(commands("regenerate")) == 1
+    code, body, document = download(request.pk, secret)
+    assert code == 1 and document["error"]["code"] == "not_available" and body == b""
 
 
 def test_watching_a_ready_export_stops_at_once(cli, http_scenario):  # noqa: F811
@@ -394,7 +386,6 @@ def test_refusals_change_nothing(cli, http_scenario):  # noqa: F811
     for argv in (
         ("export", "cancel", str(request.pk)),
         ("export", "retry", str(request.pk)),
-        ("export", "regenerate", str(request.pk)),
     ):
         code, document = run(*argv, secret=reader)
         assert code == 1 and document["error"]["code"] == "denied", argv
@@ -406,7 +397,6 @@ def test_refusals_change_nothing(cli, http_scenario):  # noqa: F811
         ("export", "status", unknown),
         ("export", "cancel", unknown),
         ("export", "retry", unknown),
-        ("export", "regenerate", unknown),
         (
             "export",
             "create",

@@ -854,7 +854,7 @@ them unnotified; the Administrator accepted that (decision 13).
 | --- | --- | --- |
 | Session approved | Yes | `automation_approved` |
 | Production confirmation, withdrawal or Testing cleanup through a session | Yes | `automation_irreversible` |
-| Other fresh-gated action through a session (pause, resume, resolution, chosen-Family test, Family portal maintenance, Testing cleanup's sign-in, a Family-code, mail-merge or financial export and its regeneration) | Yes | No |
+| Other fresh-gated action through a session (pause, resume, resolution, chosen-Family test, Family portal maintenance, Testing cleanup's sign-in, a Family-code, mail-merge or financial export) | Yes | No |
 | A session changes user rules, replaces an integration key or the backup key, or changes Slack or other notification settings | Yes | `automation_policy_change`, observed when the session submits the change, before the configuration installer applies it; dispatch re-checks Administrator status, so an Administrator the change removes is not reached |
 | Refused use (an unknown secret, first per host digest per hour; host mismatch; web misuse) | Yes | `automation_refused` |
 | Session ended by revocation, role loss, recovery or restore | Yes | No |
@@ -1241,9 +1241,9 @@ sign-in, with no browser step:
   [shared rules for health actions](../admin-portal/spec.md#shared-rules-for-health-actions));
 - the code and financial reads and files
   ([#547](https://github.com/epiphany40223/parishkit/issues/547)): creating
-  or regenerating a Family-directory, mail-merge, Family timeline or
-  financial export, which PR 8's `export directory`, `export postal`,
-  `export family-timeline`, `export financial` and `export regenerate` run,
+  a Family-directory, mail-merge, Family timeline or financial export,
+  which PR 8's `export directory`, `export postal`, `export family-timeline`
+  and `export financial` run,
   and the campaign archive workbook, which `export archive` runs
   ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) part (a));
 - integration setting changes (PR 10's `integration confirm`, including
@@ -1273,8 +1273,7 @@ both in `delivery_control_commands`, both in `withdrawal_commands`, the Family
 portal maintenance switch, `confirmation_commands`, the `require_fresh`
 call in `confirmation_views` (in `_fresh_after_cleanup`), and the #547 sites:
 `directory_export_views.create`,
-`financial_export_views.create`, `export_ui.command` (regenerate of a
-directory or financial export), `integration_views.integration_settings`
+`financial_export_views.create`, `integration_views.integration_settings`
 (previews, removals and confirmations of settings) and
 `go_live_commands.start_cleanup`. Each command reuses the service below its
 view, so it adapts the view's check rather than skipping it.
@@ -1959,7 +1958,7 @@ none.
 
 | URL names | Command or exemption |
 | --- | --- |
-| `schedule_settings`, `schedule_new`, `schedule_edit`, `schedule_delete` | `schedule show` (PR 3a); `schedule preview`, `schedule confirm` (PR 4): a change document adds, changes or deletes the same schedules. Its `series` entries (#469) edit or delete a remembered reminder series, ahead of the New/Change page's series scopes (slice 2b-3) |
+| `schedule_settings`, `schedule_new`, `schedule_edit`, `schedule_delete` | `schedule show` (PR 3a); `schedule preview`, `schedule confirm` (PR 4): a change document adds, changes or deletes the same schedules. Its `series` entries (#469) edit or delete a remembered reminder series; Edit scheduled email offers the same "this and following" and "the whole series" for a time or email change, while a new rule or deleting a series is the command line's alone for now |
 | `schedule_calendar` | `schedule show` (PR 3a): the read-only Campaign calendar (#469) draws the saved schedules and campaign dates that `schedule show` lists |
 | `campaign_end_date_check` | `schedule preview` (PR 4): Campaign settings' no-save live check of a live campaign's end date answers what a preview of that end date would refuse |
 | `configuration_request` | `config request show --watch` (PR 4); `config request cancel` ([#944](https://github.com/epiphany40223/parishkit/pull/944)), an operator recovery with no page button |
@@ -2036,7 +2035,7 @@ right after confirm, exactly as editing that reminder alone on the page
 does. An edit that gives a `repeat` rule yielding the same reminders still
 saves the new rule; one with no `repeat` and the same reminders changes
 nothing. The planning is the pure `accounts.series_edits.plan`, which
-the New/Change page will share, and its reminders and series records go
+Edit scheduled email shares, and its reminders and series records go
 through the same `schedule_changes.build_preview`, forms, signed preview
 and confirmation, so an in-flight or unknown send still blocks. An unknown
 series, a `from` outside it, a reminder from the cut date that has sent or
@@ -2065,7 +2064,13 @@ Administrator confirmation; the
 shows the format. `schedule confirm` records `admin_cmd_schedule_confirm`
 in the request's own durable transaction, only when it creates the request;
 a repeated confirmation returns the original request and records nothing.
-Its configuration checks before intake are `unavailable` during a restore
+It checks the previewed send times again as the page's Apply does
+([New and Edit scheduled email](../admin-portal/spec.md#new-and-edit-scheduled-email),
+[#1464](https://github.com/epiphany40223/parishkit/issues/1464)): one that
+was ahead at preview and has since passed is `stale_version`, and nothing
+changes; preview again with a later time. A missed reminder a series edit
+adds again on its past date was already past at preview, so it is not
+refused. Its configuration checks before intake are `unavailable` during a restore
 review or an activating change, as for `schedule preview`. A database error
 once the request row is written is `outcome_unknown`, never `unavailable`,
 because it may have struck the commit; one before that rolled back and is
@@ -2677,8 +2682,9 @@ guarded in SQL: only an Administrator, for the current Testing draft, with
 one `{"duid", "name"}` row per reviewed DUID in the review's order; the
 export needs the configure capability to read, as the page does. Migration
 0037 admitted only CSV for this kind; `0049_family_test_names_formats.sql`
-widens that arm of `export_report_known` to CSV, XLSX and PDF. An expired
-file is regenerated from the retained capture, in its original format.
+widens that arm of `export_report_known` to CSV, XLSX and PDF. The file is
+[point-in-time](../operations/spec.md#point-in-time-exports): its capture is
+deleted when the export ends, so nothing regenerates it.
 
 ### Reports and exports
 
@@ -2702,7 +2708,7 @@ file is regenerated from the retained capture, in its original format.
 | `family_open_form` (new, #529) | Permanent: Open form signs this browser in to the Family form for a Family on the phone, a browser hand-off by nature; Families' responses are read through `report responses` and the directory exports with its Response filters |
 | `limitations_export` | `export limitations [--show S] [--format F] [--timezone Z]` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)): the page's download through the page's own writer (`limitation_views.export_body`), with #752's audit fields |
 | `census_changes`, `census_changes_export` | `report census`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export census` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command is `census resolve PROPOSAL_ID --action entered\|ignored\|reopened` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), through the same `census_resolution` service. An Automatic row's Review (Approve, Ignore, Back to To review; ADM-09) posts there too; its command is `census review PROPOSAL_ID --decision approved\|ignored\|unreviewed` ([#528](https://github.com/epiphany40223/parishkit/issues/528)), through the same `census_review` service. The Review's Edit value and Clear edit (ADM-09.04) are `census edit PROPOSAL_ID --value TEXT\|- \| --clear`, and its Use the Family's value anyway (ADM-09.03) is `census resolve-conflict PROPOSAL_ID` ([#1434](https://github.com/epiphany40223/parishkit/issues/1434)), through the same service |
-| `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_regenerate`, `report_export_download` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export regenerate`, `export download --stream` (PR 8b); an exact request's status, cancel and retry, which these pages also serve, are `export exact status --watch`, `export exact cancel` and `export exact retry` (PR 8h) |
+| `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_download` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export download --stream` (PR 8b; `report_export_regenerate` and `export regenerate` were removed by [#1398](https://github.com/epiphany40223/parishkit/issues/1398)); an exact request's status, cancel and retry, which these pages also serve, are `export exact status --watch`, `export exact cancel` and `export exact retry` (PR 8h) |
 | `report_exact_create` | `export exact create` (PR 8h); the handed-off file through `export fetch` |
 | `daily_digest_snapshot` | `digest daily SNAPSHOT_ID` (PR 8d) |
 | `weekly_digest_snapshot`, `weekly_digest_item` | `digest weekly SNAPSHOT_ID`: each item's identifier and states; an item's text stays on the page (PR 8d) |
@@ -3031,20 +3037,19 @@ The export lifecycle commands work on any report export the Administrator
 may see, through the functions the export pages use
 (`reports.export_services`, and `export_views.prepare_download` for the
 download), so an export requested on a page is followed and fetched from
-the command line and the other way round. `export status` admits passively
+the command line and the other way round. Their files follow the
+[point-in-time](../operations/spec.md#point-in-time-exports) rule's download
+window, so there is no `export regenerate`; it was removed with the page's
+Regenerate ([#1398](https://github.com/epiphany40223/parishkit/issues/1398)).
+`export status` admits passively
 like the status page (any session) and records nothing, as the page
 records nothing. `export create` (the Participation page's form, for the
 generation its `--fact-set` names), `export comparison` (the Campaign
 comparison page's download form, for the current campaign on `--day`),
-`export cancel`, `export retry` and
-`export regenerate` admit as the pages' form posts do, so they need a
-full-scope session; each records the page's own events and, only when it
-made the change, its `admin_cmd_export_*` event, keyed as the page's form
-is. Regenerating a directory, mail-merge or financial export is
-[fresh-gated](#fresh-gated-actions-from-the-command-line): as the status
-page (`export_ui.FRESH_REPORTS`, after its owner and capability check),
-`export regenerate` asks at the prompt for those kinds only, then calls
-`require_fresh` in the export lock. `export download --stream` admits as the download does, consumes the
+`export cancel` and `export retry` admit as the pages' form posts do, so
+they need a full-scope session; each records the page's own events and,
+only when it made the change, its `admin_cmd_export_*` event, keyed as the
+page's form is. `export download --stream` admits as the download does, consumes the
 page's one-use grant and streams the stored file under the page's campaign
 read guard and fresh check, recording the page's `export_downloaded`
 events (opening, then succeeded or failed) and no `admin_cmd_*` event, as

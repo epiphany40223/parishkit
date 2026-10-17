@@ -336,10 +336,13 @@ case "$*" in
         else json "${FAKE_OFFSITE:-uploaded}"; fi ;;
     *" retarget-image --config "*)
         [ -z "$FAKE_RETARGET_FAIL" ] || { echo "retarget refused" >&2; exit 1; }
-        bulk=false batch=20 latency=""
+        bulk=false batch=20 latency="" window="" minutes=""
         for arg in "$@"; do
             case "$arg" in
                 PARISHKIT_STEWARDSHIP_BULK_FAMILY_SEND=1) bulk=true ;;
+                PARISHKIT_STEWARDSHIP_EXPORT_DOWNLOAD_WINDOW_MINUTES=*)
+                    minutes=${arg#*=}
+                    window=', "export_download_window_minutes": '"$minutes" ;;
                 PARISHKIT_STEWARDSHIP_BULK_SEND_BATCH=*) batch=${arg#*=} ;;
                 PARISHKIT_STEWARDSHIP_LOCAL_SMTP_LATENCY_MS=*)
                     latency=', "local_smtp_latency_ms": '"${arg#*=}" ;;
@@ -354,9 +357,18 @@ case "$*" in
         fi
         for role in worker mail-dispatch scheduler; do
             doc='{"deployment": {"bulk_family_send": '"$bulk"','
-            echo "$doc"' "bulk_send_batch": '"$batch$latency"'}}' \
+            echo "$doc"' "bulk_send_batch": '"$batch$latency$window"'}}' \
                 >"$(dirname "$FAKE_COMPOSE")/$role.yaml"
         done
+        # web.yaml keeps its other inputs; only the window is re-rendered.
+        web="$(dirname "$FAKE_COMPOSE")/web.yaml"
+        key=.deployment.export_download_window_minutes
+        if [ -n "$minutes" ]; then
+            jq "$key = $minutes" "$web" >"$web.new"
+        else
+            jq "del($key)" "$web" >"$web.new"
+        fi
+        mv "$web.new" "$web"
         touch "$FAKE_STATE/retargeted" ;;
     *" --rm -T migration migrate --config "*" --users-upgrade-base")
         if [ -n "$FAKE_BASE_FAIL" ]; then
@@ -895,6 +907,62 @@ def test_a_changed_batch_size_is_a_named_problem(tmp_path):
         in calls[first(calls, " retarget-image ")]
     )
     assert "bulk send batch is" not in output
+
+
+def _window(minutes):
+    """A ``prepare`` that renders the worker document with ``minutes``."""
+
+    def prepare(root):
+        """Add the export download window to the current worker document."""
+        path = root / "config" / "services" / "worker.yaml"
+        document = json.loads(path.read_text())
+        document["deployment"]["export_download_window_minutes"] = minutes
+        path.write_text(json.dumps(document))
+
+    return prepare
+
+
+def test_the_export_download_window_is_carried_over_and_can_change(tmp_path):
+    """The default renders nothing; a set window is carried into the retarget,
+    and the operator's variable changes it (#1398)."""
+    name = "PARISHKIT_STEWARDSHIP_EXPORT_DOWNLOAD_WINDOW_MINUTES"
+    calls, output, _ = run_host(tmp_path / "default", "upgrade")
+    assert name not in calls[first(calls, " retarget-image ")]
+    assert "export download window" not in output
+    calls, output, _ = run_host(tmp_path / "kept", "upgrade", prepare=_window(30))
+    assert f"{name}=30" in calls[first(calls, " retarget-image ")]
+    assert "export download window is 30 minutes; keeping it" in output
+    calls, output, _ = run_host(
+        tmp_path / "changed", "upgrade", prepare=_window(30), env={name: "15"}
+    )
+    assert f"{name}=15" in calls[first(calls, " retarget-image ")]
+    # Base ten: 060 is the default, which is passed as nothing and rendered
+    # as nothing, so the post-check names no problem.
+    calls, output, _ = run_host(tmp_path / "zero", "upgrade", env={name: "060"})
+    assert name not in calls[first(calls, " retarget-image ")]
+    assert "export download window is" not in output
+
+
+@pytest.mark.parametrize("value", ["1h", "0", "14", "241", "1000", "-5", "15.5"])
+def test_an_out_of_range_window_is_refused_before_anything_stops(tmp_path, value):
+    """The window is bounded before web stops, as the SMTP latency is: the
+    loader's own refusal would come only at the retarget, with web down."""
+    name = "PARISHKIT_STEWARDSHIP_EXPORT_DOWNLOAD_WINDOW_MINUTES"
+    calls, output, _ = run_host(tmp_path, "upgrade", status=1, env={name: value})
+    assert "export download window must be 15-240 minutes" in output
+    assert not any(" retarget-image " in call for call in calls)
+    assert not any(" stop " in call for call in calls)
+
+
+def test_a_rollback_does_not_carry_the_window(tmp_path):
+    """A rollback renders the 60-minute default and says so: the previous
+    release may not know the variable, and its loader would refuse it after
+    web had stopped (#1398)."""
+    name = "PARISHKIT_STEWARDSHIP_EXPORT_DOWNLOAD_WINDOW_MINUTES"
+    calls, output, _ = run_host(tmp_path, "rollback", prepare=_window(30))
+    assert name not in calls[first(calls, " retarget-image ")]
+    assert "is not carried into a rollback" in output
+    assert "export download window is 30 minutes; keeping it" not in output
 
 
 def test_a_partial_static_refresh_says_how_to_restore(tmp_path):

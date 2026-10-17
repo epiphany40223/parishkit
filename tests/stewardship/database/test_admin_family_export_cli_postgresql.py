@@ -31,7 +31,6 @@ from .test_admin_export_cli_postgresql import download, read_only_session
 from .test_admin_report_cli_postgresql import cli  # noqa: F401
 from .test_background_grants_postgresql import task_login
 from .test_directory_responses_postgresql import quality_funnel  # noqa: F401
-from .test_export_cleanup_postgresql import expire_publication
 from .test_export_views_postgresql import post, restricted_download_pool
 from .test_financial_report_postgresql import pledge
 from .test_financial_source_postgresql import financial_source
@@ -138,6 +137,9 @@ def test_a_financial_export_is_the_pages(
     assert count("admin_cmd_export_financial") == 1
     event = AuditEvent.objects.get(event_type="admin_cmd_export_financial")
     assert event.subject_id is not None
+    # It names the export's report kind and format (#1398).
+    context = AuditContext.objects.get(event=event).context
+    assert (context["report"], context["format"]) == ("financial", made.format)
     # The full-scope session stood in for the page's recent sign-in, in the
     # export's own transaction (#547, the caller-aware require_fresh).
     [gate] = AuditEvent.objects.filter(event_type="automation_fresh_gate")
@@ -162,6 +164,24 @@ def test_a_financial_export_is_the_pages(
     assert code == 0, document
     zero = ExportRequest.objects.get(pk=document["result"]["export"]["id"])
     assert zero.parameters["filters"]["amount"] == "zero"
+    # Response dates are days in a time zone (#558, migration 0110): without
+    # zone= the page's parser refuses them, and nothing is requested; with
+    # it they narrow the capture as on the page.
+    exports = ExportRequest.objects.count()
+    code, document = run(*argv[:-2], "--filter", "first_start=2054-10-01")
+    assert code == 1 and document["error"]["code"] == "invalid"
+    assert ExportRequest.objects.count() == exports
+    code, document = run(
+        *argv[:-2],
+        "--filter",
+        "first_start=2054-10-01",
+        "--filter",
+        "zone=America/New_York",
+    )
+    assert code == 0, document
+    dated = ExportRequest.objects.get(pk=document["result"]["export"]["id"])
+    assert dated.parameters["filters"]["first_start"] == "2054-10-01"
+    assert dated.parameters["filters"]["zone"] == "America/New_York"
 
     # The file: rendered by the real worker, streamed byte for byte as the
     # page's download of the same export.
@@ -173,19 +193,6 @@ def test_a_financial_export_is_the_pages(
         job_route = reverse("admin:report_export_download", args=[made.pk])
         response, page_body = search(browser, job_route, {})
     assert response.status_code == 200 and page_body == body
-
-    # Regenerating an expired financial file is fresh-gated too, as on the
-    # status page: it asks first, then the session stands in for the
-    # recent sign-in in the new export's transaction.
-    expire_publication(made)
-    regenerate = ("export", "regenerate", str(made.pk), "--request-key", str(uuid4()))
-    gates = count("automation_fresh_gate")
-    code, document = run(*regenerate)
-    assert code == 4 and document["error"]["code"] == "confirmation_required"
-    assert count("automation_fresh_gate") == gates
-    code, document = run(*regenerate, "--yes")
-    assert code == 0 and document["result"]["created"], document
-    assert count("automation_fresh_gate") == gates + 1
 
     # A read-only session cannot request one, nor stand in for a sign-in.
     gates = count("automation_fresh_gate")
@@ -358,6 +365,10 @@ def test_the_directory_and_mail_merge_exports(
     assert made.report == "family_directory"
     assert harness.code not in str(document) and "Example" not in str(document)
     assert count("admin_cmd_export_directory") == 1 and len(requested()) == 1
+    context = AuditContext.objects.get(
+        event__event_type="admin_cmd_export_directory"
+    ).context
+    assert (context["report"], context["format"]) == ("family_directory", made.format)
     # The session stood in for the page's recent sign-in (#547).
     assert count("automation_fresh_gate") == 1
     # A repeat returns the same export without loading any key.

@@ -41,7 +41,7 @@ from dataclasses import dataclass
 from decimal import Decimal, localcontext
 
 from parishkit.stewardship.web.dates import format_date
-from parishkit.stewardship.web.design_tokens import COLORS
+from parishkit.stewardship.web.design_tokens import CHART_COLORS, COLORS, hex6
 from parishkit.stewardship.web.presentation import number
 
 from .chart_assets import VEGA_LITE_SCHEMA
@@ -79,15 +79,13 @@ RULE = COLORS["muted"]
 # has the ink its segment's label is drawn in, the one of ink and white with
 # at least 4.5:1 contrast on it (WCAG AA for the 11-pixel labels); the
 # fifth band is a shade darker than an even step so white reaches 4.5:1.
-BAND_COLORS = (
-    ("#bfe0d9", COLORS["ink"]),
-    ("#a1d1c7", COLORS["ink"]),
-    ("#7ebfb2", COLORS["ink"]),
-    ("#55a898", COLORS["ink"]),
-    ("#2b8273", "#ffffff"),
-    ("#1d7667", "#ffffff"),
-    ("#115e56", "#ffffff"),
-    ("#0a3f3a", "#ffffff"),
+# White is the paper token, so in the Admin dark scheme each band's label
+# takes the dark paper on a bright band (the ramp turns round there; see
+# CHART_COLORS).
+WHITE = hex6(COLORS["paper"])
+BAND_COLORS = tuple(
+    (CHART_COLORS[f"chart-band-{band}"], COLORS["ink"] if band <= 4 else WHITE)
+    for band in range(1, 9)
 )
 # Theme tokens for the chart's own text, so axes and legends read with the
 # page's contrast rather than Vega's light grey defaults.
@@ -834,7 +832,7 @@ def final_chart(key, title, axis, kind, comparison):
                 # dark bar is white, anywhere else the ink color.
                 "opacity": 0.35 if year.current else 1,
                 "inside": inside,
-                "ink": "#ffffff" if inside and not year.current else COLORS["ink"],
+                "ink": WHITE if inside and not year.current else COLORS["ink"],
             }
         )
     names = [row["name"] for row in rows]
@@ -1113,7 +1111,7 @@ def distribution_chart(year, edges):
         },
         "layer": [
             {
-                "mark": {"type": "bar", "stroke": "#ffffff", "strokeWidth": 1},
+                "mark": {"type": "bar", "stroke": WHITE, "strokeWidth": 1},
                 "encoding": {
                     "x": {
                         "field": "x0",

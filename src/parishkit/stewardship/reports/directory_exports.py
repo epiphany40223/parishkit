@@ -52,10 +52,9 @@ def create_directory_export(
     query=None,
     postal=None,
     mac=None,
-    snapshot=None,
     rehearsal=None,
 ):
-    """Capture all matches once; regeneration reuses the trusted retained snapshot.
+    """Capture all matches once, as the page's export form does.
 
     The SQL insert trigger owns capture and source/row-count selection in one
     statement. The campaign's export lock serializes request allocation with
@@ -71,27 +70,14 @@ def create_directory_export(
         raise ValueError("Unsupported directory export format.")
     if type(browser_timezone) is not str or browser_timezone not in timezone_names():
         raise ValueError("Export timezone must be an IANA name.")
-    if snapshot is not None:
-        if (
-            not isinstance(snapshot, DirectoryExportSnapshot)
-            or snapshot.campaign_id != campaign_id
-        ):
-            raise ValueError("Retained directory scope differs from the request.")
-        if query is not None or postal is not None or mac is not None:
-            raise ValueError("Regeneration cannot change retained selection.")
-    elif (
+    if (
         not isinstance(query, DirectoryQuery)
         or type(postal) is not bool
         or not isinstance(mac, CodeMacKeyring)
     ):
         raise ValueError("Directory export requires typed filters and kind.")
 
-    # A regeneration keeps its capture's mode (absent before #933: Production).
-    mode = (
-        query.mode
-        if snapshot is None
-        else snapshot.parameters.get("mode", "production")
-    )
+    mode = query.mode
 
     def admit(*args):
         """Owning work and enqueue both check current requester and campaign gates."""
@@ -99,13 +85,10 @@ def create_directory_export(
 
     with export_transaction(campaign_id):
         admit()
-        if snapshot is None:
-            with key_set_lock(mac):
-                parameters = selection_parameters(
-                    campaign_id, query, postal=postal, mac=mac, rehearsal=rehearsal
-                )
-        else:
-            parameters = snapshot.parameters
+        with key_set_lock(mac):
+            parameters = selection_parameters(
+                campaign_id, query, postal=postal, mac=mac, rehearsal=rehearsal
+            )
         report = "postal_outreach" if parameters["postal"] else "family_directory"
         previous = ExportRequest.objects.filter(
             requester_id=user_id, request_key=request_key
@@ -117,23 +100,20 @@ def create_directory_export(
                 previous.parameters,
                 previous.format,
                 previous.browser_timezone,
-            ) != (report, campaign_id, parameters, format, browser_timezone) or (
-                snapshot is not None and previous.directory_snapshot_id != snapshot.pk
-            ):
+            ) != (report, campaign_id, parameters, format, browser_timezone):
                 raise ExportRequestBound("Export request identity is already bound.")
             return previous
         configuration_id = SystemConfiguration.objects.get().active_configuration_id
         correlation_id = uuid4()
-        if snapshot is None:
-            snapshot = DirectoryExportSnapshot.objects.create(
-                campaign_id=campaign_id,
-                configuration_id=configuration_id,
-                actor_id=user_id,
-                correlation_id=correlation_id,
-                parameters=parameters,
-            )
-            # Do not load the complete private document into the request thread.
-            snapshot.refresh_from_db(fields=["source", "row_count"])
+        snapshot = DirectoryExportSnapshot.objects.create(
+            campaign_id=campaign_id,
+            configuration_id=configuration_id,
+            actor_id=user_id,
+            correlation_id=correlation_id,
+            parameters=parameters,
+        )
+        # Do not load the complete private document into the request thread.
+        snapshot.refresh_from_db(fields=["source", "row_count"])
         identifier = uuid4()
         task = enqueue(
             task_type=TASK_TYPE,

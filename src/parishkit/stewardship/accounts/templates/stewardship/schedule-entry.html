@@ -35,6 +35,10 @@ confirmation that repeats none of the form's values and names its own
 question and sentence (data-review-title, data-review-describedby); any
 other New (recurring, a digest, a Repeat, an edited email) keeps the full
 review under this dialog's own title.
+A Repeat is also remembered as a reminder series, and Edit of a series'
+reminder shows "Part of" its rule with the Change scope
+(schedule-series-scope.html, drawn by schedule-row.html, #469); the review
+then lists the series it keeps or changes.
 {% endcomment %}
 <h1>{% if new %}{% translate "New scheduled email" %}{% else %}{% translate "Edit scheduled email" %}{% endif %}</h1>
 {% aboutpage "schedule-entry" %}{% include 'stewardship/schedule-guide.html' with window_text=window_text %}{% endaboutpage %}

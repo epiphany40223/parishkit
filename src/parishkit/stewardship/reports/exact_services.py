@@ -17,13 +17,17 @@ from .exact_models import (
     ExactExportResolution,
 )
 from .export_services import (
+    ExportExpired,
     ExportRequestBound,
     admit_campaign,
     audit,
     authorize,
     cancel_export,
+    export_ended,
     export_status,
+    failed_end,
     retry_export,
+    task_ended,
 )
 from .facts import FactUnavailable
 from .models import POPULATION_SCOPES
@@ -152,6 +156,10 @@ def retry_exact_export(store, user_id, request_id, *, request_key):
         if ExactExportCancellation.objects.filter(request=request).exists():
             raise TaskRetryConflict("Cancelled exact exports cannot be retried.")
         previous = request.task.chain_runs.filter(retry_command_id=request_key).first()
+        # As for a report export: a replay returns its result; a new Retry
+        # is refused once the Retry window is over (#1398).
+        if previous is None and task_ended(request.task):
+            raise ExportExpired("This export's Retry window has ended.")
         latest = request.task.chain_runs.order_by("-retry_sequence").first()
         return retry_failed(
             run_id=previous.parent_id if previous is not None else latest.pk,
@@ -160,6 +168,24 @@ def retry_exact_export(store, user_id, request_id, *, request_key):
             correlation_id=uuid4(),
             admit=lambda action, status: admit_exact(action, status, store=store),
         )
+
+
+def exact_export_ended(request):
+    """Whether this latest-data export has ended (#1398): it was cancelled
+    before its file was made, its failed calculation was not retried within
+    one window, or the file it handed off to has ended. The caller has
+    already checked the reader's access (``authorize``)."""
+    resolution = (
+        ExactExportResolution.objects.select_related("export")
+        .filter(request=request)
+        .first()
+    )
+    if resolution is not None:
+        return export_ended(resolution.export)
+    if ExactExportCancellation.objects.filter(request=request).exists():
+        return True
+    # A failed calculation can be retried for one window (export_window).
+    return task_ended(request.task)
 
 
 def exact_export_status(store, user_id, request_id):
@@ -189,7 +215,8 @@ def exact_export_status(store, user_id, request_id):
         elif ExactExportCancellation.objects.filter(request=request).exists():
             result["state"] = "cancelled"
         else:
-            result["state"] = (
-                request.task.chain_runs.order_by("-retry_sequence").first().state
-            )
+            # A failed calculation's Retry end, as for a report export.
+            state, end = failed_end(request.task)
+            result["state"] = state
+            result["expires_at"] = end.isoformat() if end is not None else None
         return result

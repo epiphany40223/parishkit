@@ -12,9 +12,8 @@ the command line and the other way round:
 - ``export status`` is the export status page's read (``export_state``),
   admitted passively like the page, with no view event (the page records
   none); ``--watch`` follows it until the export stops changing;
-- ``export cancel``, ``export retry`` and ``export regenerate`` are the
-  status page's buttons (``cancel_export``, ``retry_export``,
-  ``regenerate_export``);
+- ``export cancel`` and ``export retry`` are the status page's buttons
+  (``cancel_export``, ``retry_export``);
 - ``export download --stream`` is the page's download: it issues and
   consumes the same one-use grant, streams the stored file under the same
   campaign read guard and fresh check, and records the same
@@ -60,7 +59,7 @@ class ExportStatus(ReadModel):
     ``sha256`` and ``count`` (rows in the file) are None until the file is
     published (an expired export keeps them); ``export fetch`` checks what
     it wrote against them. ``changes_available`` is the page's own test of
-    whether its Cancel, Retry and Regenerate buttons may act now: it is
+    whether its Cancel and Retry buttons may act now: it is
     false while other campaign work holds the campaign, which is temporary.
     ``can_cancel`` is whether the page offers Cancel now. A watch stops once
     the worker can no longer change the export.
@@ -89,12 +88,12 @@ class ExportStatus(ReadModel):
 
 @dataclass(frozen=True)
 class ExportChange(ReadModel):
-    """What ``export create``, ``cancel``, ``retry`` or ``regenerate`` did.
+    """What ``export create``, ``cancel`` or ``retry`` did.
 
     ``created`` is false for a repeat (a request key used before, or an
     export already cancelled), which changed nothing. ``request_key`` is
     the key used (None for ``cancel``). ``export`` is the ``export status``
-    document of the export afterwards: for ``regenerate``, the new export.
+    document of the export afterwards.
     """
 
     created: bool
@@ -194,13 +193,11 @@ def _refusal(caller, service, actor, error):
 
     The session is rechecked first, so a session that ended meanwhile is
     exit 5 whatever the page refused. Then a missing export, fact set or
-    file (an unknown identifier, a generation that is not ready, an expired
-    file, or a Testing timeline export whose rehearsal ended) is
-    ``not_available``; the page's conflicts (cancelling a
-    published export, regenerating one that has not expired, retrying a
-    run that is not the latest failed one) are ``stale_version``; a read
-    the campaign's guard could not finish is ``unavailable``. Any other
-    refusal is raised as the page's own.
+    file (an unknown identifier, a generation that is not ready or an
+    expired file) is ``not_available``; the page's conflicts (cancelling a
+    published export, retrying a run that is not the latest failed one) are
+    ``stale_version``; a read the campaign's guard could not finish is
+    ``unavailable``. Any other refusal is raised as the page's own.
     """
     from django.core.exceptions import ObjectDoesNotExist
 
@@ -208,18 +205,11 @@ def _refusal(caller, service, actor, error):
     from .jobs.storage import TaskRetryConflict
     from .reports.export_services import ExportConflict, ExportExpired
     from .reports.facts import FactUnavailable
-    from .reports.timeline_exports import RehearsalEnded
     from .storage import StaleRecordError
 
     _recheck(caller, service.store, actor)
     if isinstance(error, (ObjectDoesNotExist, FactUnavailable, ExportExpired)):
         raise NotAvailable("That export is not available.") from None
-    if isinstance(error, RehearsalEnded):
-        # A Testing timeline export whose rehearsal ended is made again, not
-        # regenerated, as its status page says.
-        raise NotAvailable(
-            "Its Testing rehearsal has ended; export the timeline again."
-        ) from None
     if isinstance(error, (ExportConflict, TaskRetryConflict)):
         raise StaleRecordError("The export changed; read it again.") from None
     if isinstance(error, ReadUnavailable):
@@ -253,7 +243,7 @@ def _refusals():
 def _command_scope(caller, service, actor, *, campaign_id=None):
     """The page's transaction, with the command session locked and rechecked.
 
-    An export request and regeneration take only their campaign's export
+    An export request takes only its campaign's export
     lock (``export_transaction``), as the page does; a cancel or retry takes
     the work order (``work_transaction``), as the services do. Either comes
     first, then the lock on the command session's row, so a revocation that
@@ -324,17 +314,26 @@ def _change(caller, service, actor, step, *, context, conflicts=True):
     return model
 
 
-def _command_event(caller, actor, action):
-    """Record the command's ``admin_cmd_export_<verb>`` event (``outcome`` only)."""
+def _command_event(caller, actor, action, export=None):
+    """Record the command's ``admin_cmd_export_<verb>`` event.
+
+    Its context is the outcome and, for the ``export`` request it acted on,
+    that export's report kind and format (#1398), as the page's own events
+    carry them; a latest-data export is the participation report.
+    """
     from .audit.schemas import ActorKind, Outcome
     from .audit.services import record_action
 
+    context = {"outcome": Outcome.SUCCEEDED}
+    if export is not None:
+        context["report"] = getattr(export, "report", "participation")
+        context["format"] = export.format
     record_action(
         action,
         actor_kind=ActorKind.PORTAL_USER,
         actor_id=actor.identity,
         subject_id=caller.automation_session_id,
-        context={"outcome": Outcome.SUCCEEDED},
+        context=context,
     )
 
 
@@ -418,7 +417,7 @@ def create_export_command(
                 request_key=request_key,
             )
             if not repeat:
-                _command_event(caller, actor, Action.ADMIN_CMD_EXPORT_CREATE)
+                _command_event(caller, actor, Action.ADMIN_CMD_EXPORT_CREATE, job)
                 written.append(True)
             document = _status_document(service, actor, job.pk)
         return ExportChange(
@@ -490,7 +489,7 @@ def create_comparison_command(caller, service, *, day, fmt, zone, request_key, c
                 document=document,
             )
             if not repeat:
-                _command_event(caller, actor, Action.ADMIN_CMD_EXPORT_COMPARISON)
+                _command_event(caller, actor, Action.ADMIN_CMD_EXPORT_COMPARISON, job)
                 written.append(True)
             document_out = _status_document(service, actor, job.pk)
         return ExportChange(
@@ -507,7 +506,7 @@ def cancel_export_command(caller, service, export_id, *, context):
     a published one is ``stale_version``, as the page's 409.
     """
     from .audit.schemas import Action
-    from .reports.export_models import ExportCancellation
+    from .reports.export_models import ExportCancellation, ExportRequest
     from .reports.export_services import cancel_export
 
     actor = _admit(caller, service, activity=True)
@@ -518,7 +517,12 @@ def cancel_export_command(caller, service, export_id, *, context):
             repeat = ExportCancellation.objects.filter(request_id=export_id).exists()
             cancel_export(service.store, actor.identity, export_id)
             if not repeat:
-                _command_event(caller, actor, Action.ADMIN_CMD_EXPORT_CANCEL)
+                _command_event(
+                    caller,
+                    actor,
+                    Action.ADMIN_CMD_EXPORT_CANCEL,
+                    ExportRequest.objects.only("report", "format").get(pk=export_id),
+                )
                 written.append(True)
             document = _status_document(service, actor, export_id)
         return ExportChange(created=not repeat, request_key=None, export=document)
@@ -549,105 +553,9 @@ def retry_export_command(caller, service, export_id, *, request_key, context):
                 service.store, actor.identity, export_id, request_key=request_key
             )
             if not repeat:
-                _command_event(caller, actor, Action.ADMIN_CMD_EXPORT_RETRY)
+                _command_event(caller, actor, Action.ADMIN_CMD_EXPORT_RETRY, job)
                 written.append(True)
             document = _status_document(service, actor, export_id)
-        return ExportChange(
-            created=not repeat, request_key=request_key, export=document
-        )
-
-    return _change(caller, service, actor, step, context=context)
-
-
-def _fresh_regeneration(service, actor, export_id):
-    """Whether regenerating this export needs a recent sign-in (#547).
-
-    A new Family-directory, mail-merge or financial file is a new copy of
-    the codes or financial detail, so the status page asks for the same
-    fresh sign-in as creating one (``export_ui.FRESH_REPORTS``). As the
-    page does, the export's owner and capability are checked first
-    (``authorize``), so its kind is never revealed to anyone else. An
-    export that does not exist is False: ``regenerate_export`` refuses it.
-    """
-    from .reports.export_models import ExportRequest
-    from .reports.export_services import authorize
-    from .reports.export_ui import FRESH_REPORTS
-
-    export = (
-        ExportRequest.objects.only("report", "requester_id", "authorization_scope")
-        .filter(pk=export_id)
-        .first()
-    )
-    if export is None:
-        return False
-    authorize(service.store, actor.identity, request=export)
-    return export.report in FRESH_REPORTS
-
-
-def regeneration_prompts(caller, service, export_id):
-    """Whether ``export regenerate`` asks at the prompt for this export.
-
-    Only a fresh-gated regeneration does (``_fresh_regeneration``). Read
-    before the command's transaction opens, as the prompt must be; the
-    command scope decides again under its lock. Admits as the page's form
-    post does, so a refusal here is the command's refusal.
-    """
-    from django.db import transaction
-
-    actor = _admit(caller, service, activity=True)
-    with transaction.atomic():
-        return _fresh_regeneration(service, actor, export_id)
-
-
-def regenerate_export_command(caller, service, export_id, *, request_key, context):
-    """``export regenerate``: the status page's Regenerate for an expired file.
-
-    It requests a new export from the original's retained inputs; the
-    document is the new export's. Repeating the key returns it (``created``
-    false). An export that has not expired is ``stale_version``. For a
-    directory, mail-merge or financial export the page asks for a fresh
-    sign-in first (#547): the command calls the caller-aware
-    ``require_fresh`` in the export lock, where a live full-scope session
-    passes and ``automation_fresh_gate`` is recorded with the new export.
-    """
-    from .accounts.sessions import require_fresh
-    from .audit.schemas import Action
-    from .reports.export_models import ExportRequest
-    from .reports.export_services import regenerate_export
-
-    actor = _admit(caller, service, activity=True)
-    context["request_id"] = str(request_key)
-    # The service reads the campaign before its lock the same way; an
-    # export's campaign never changes.
-    campaign_id = (
-        ExportRequest.objects.filter(pk=export_id)
-        .values_list("campaign_id", flat=True)
-        .first()
-    )
-    if campaign_id is None:
-        _recheck(caller, service.store, actor)
-        raise NotAvailable("No such export.")
-
-    def step(written):
-        """Regenerate inside the campaign's export lock, as the service does."""
-        with _command_scope(caller, service, actor, campaign_id=campaign_id):
-            repeat = ExportRequest.objects.filter(
-                requester_id=actor.identity, request_key=request_key
-            ).exists()
-            if _fresh_regeneration(service, actor, export_id):
-                # The fresh-gate notice names the campaign. A repeated key
-                # makes nothing, so it records no fresh-gate event or notice;
-                # the session must still stand in for the sign-in, as the
-                # page steps up on a repeat too.
-                caller.campaign_id = campaign_id
-                require_fresh(caller, record=not repeat)
-            job = regenerate_export(
-                service.store, actor.identity, export_id, request_key=request_key
-            )
-            if not repeat:
-                _command_event(caller, actor, Action.ADMIN_CMD_EXPORT_REGENERATE)
-                written.append(True)
-            document = _status_document(service, actor, job.pk)
         return ExportChange(
             created=not repeat, request_key=request_key, export=document
         )

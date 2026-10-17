@@ -128,7 +128,9 @@ def test_settings_preview_install_and_exact_retry(auth_service, google):
     assert flow_steps(page) == (STEPS, "Make changes")
     old = auth_service.store.active()
     review = post(browser, URL, edit(auth_service.store))
-    assert flow_steps(review.content) == (STEPS, "Review")
+    # The review is the review dialog's answer (#750), not a page of its own.
+    assert b"data-review-answer" in review.content
+    assert b"<html" not in review.content
     preview = hidden(review, "preview")
     response = post(browser, URL, {"action": "confirm", "preview": preview})
     assert response.status_code == 302
@@ -897,3 +899,142 @@ def test_settings_changes_need_a_fresh_sign_in(auth_service, google):
     again = post(browser, URL, {"action": "confirm", "preview": preview})
     assert again["Location"] == confirmed["Location"]
     assert ConfigurationChangeRequest.objects.count() == 1
+
+
+def fetch(browser, url, values):
+    """Post ``values`` as the review dialog's script does (#750)."""
+    return browser.post(
+        url,
+        values | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value},
+        HTTP_X_REQUESTED_WITH="fetch",
+    )
+
+
+def test_the_review_dialog_shows_public_settings_only(auth_service, google, handoff):
+    """Save without a key answers the review dialog with a compact review
+    (#750): the dialog's question, one line per changed setting, and the
+    signed preview as its only field. Neither the key field, its signed
+    request nor the key in use is ever in it, even with spaces posted as the
+    key; Apply's answer is the change's status, which the dialog follows."""
+    browser, _ = signed_in()
+    page = browser.get(URL)
+    intent = hidden(page, "intent")
+    review = fetch(
+        browser, URL, edit(auth_service.store) | {"intent": intent, "candidate": "  "}
+    )
+    assert review.status_code == 200, review.content
+    text = unescape(review.content.decode())
+    assert 'data-review-title="Save the ParishSoft settings?"' in text
+    assert 'data-review-done="ParishSoft settings changed."' in text
+    assert 'data-review-describedby="integration-review-summary"' in text
+    assert re.findall(r'<input type="hidden" name="(\w+)"', text) == ["preview"]
+    line = re.search(r'<ul class="compact-review"[^>]*>.*?</ul>', text, re.S).group(0)
+    assert "Expected ParishSoft organization ID:" in line
+    assert "12345" in line and "54321" in line
+    for secret in (intent, "a" * 64, 'name="candidate"', 'name="intent"'):
+        assert secret not in text
+    confirmed = fetch(
+        browser, URL, {"action": "confirm", "preview": hidden(review, "preview")}
+    )
+    assert confirmed.status_code == 302
+    assert not SecretReplacementRequest.objects.exists()
+
+
+def test_a_stale_sign_in_is_refused_in_the_review_dialog(auth_service, google):
+    """The review dialog's Save, Apply and Remove with a stale sign-in are
+    refused with the step-up drawn for the dialog (403, data-review-refusal),
+    whose Confirm with Google returns to the settings page (#547, #750).
+    Nothing is reviewed or queued, and the refusal log records why."""
+    from .test_admin_refusal_log_postgresql import entries
+
+    browser, _ = signed_in()
+    preview = hidden(post(browser, URL, edit(auth_service.store)), "preview")
+    stale_sign_in()
+    for url, values in (
+        (URL, edit(auth_service.store)),
+        (URL, {"action": "confirm", "preview": preview}),
+        (INDEX + "slack/", {"action": "remove"}),
+    ):
+        refused = fetch(browser, url, values)
+        assert refused.status_code == 403
+        text = refused.content.decode()
+        assert "<div data-review-refusal>" in text and "Confirm with Google" in text
+        assert f'name="next" value="{url}"' in text
+        assert "data-review-preview" not in text
+    assert not ConfigurationChangeRequest.objects.exists()
+    rows = entries()[-3:]
+    assert [row.context["reason"] for row in rows] == [
+        "fresh_authentication_required"
+    ] * 3
+    # Each with its closed code, as error_response's refusal would have.
+    assert [row.context["codes"] for row in rows] == [["denied"]] * 3
+
+
+def test_an_unchanged_save_is_refused_to_the_dialog(auth_service, google):
+    """A Save with nothing changed, which the page's change gate keeps out
+    of reach, is refused to the review dialog's script as the server's own
+    words (400, with its fix) and queues nothing (#750)."""
+    browser, _ = signed_in()
+    refused = fetch(browser, URL, edit(auth_service.store, organization_id="12345"))
+    assert refused.status_code == 400
+    assert refused.json()["refusal"]["message"] == "No settings have changed."
+    assert refused.json()["refusal"]["fix"] == "Nothing was changed."
+    assert not ConfigurationChangeRequest.objects.exists()
+
+
+@pytest.mark.parametrize("pasted", [SECRET, "\ufeff"])
+def test_a_key_from_a_script_still_takes_the_key_save_path(
+    auth_service, google, handoff, pasted
+):
+    """A key posted by a script (as the dialog's would be) is still the
+    key-save path, never a review: the sealed intake and its redirect back
+    to the page, with the key never echoed. A value str.strip() keeps, such
+    as U+FEFF, is a key there, as the page script reads it (#750)."""
+    browser, _ = signed_in()
+    page = browser.get(URL)
+    response = fetch(
+        browser,
+        URL,
+        edit(auth_service.store, organization_id="12345")
+        | {"intent": hidden(page, "intent"), "candidate": pasted},
+    )
+    assert (response.status_code, response["Location"]) == (302, URL)
+    assert SecretReplacementRequest.objects.count() == 1
+    assert b"data-review-answer" not in response.content
+
+
+def test_spaces_the_server_strips_are_no_key(auth_service, google, handoff):
+    """A key field holding only what str.strip() removes (U+0085 included)
+    is no key: Save is reviewed in the dialog and nothing is sealed (#750)."""
+    browser, _ = signed_in()
+    page = browser.get(URL)
+    review = fetch(
+        browser,
+        URL,
+        edit(auth_service.store)
+        | {"intent": hidden(page, "intent"), "candidate": "\x85 \u3000"},
+    )
+    assert review.status_code == 200 and b"data-review-answer" in review.content
+    assert not SecretReplacementRequest.objects.exists()
+
+
+def test_a_sign_in_gone_stale_under_the_work_lock_is_refused_in_the_dialog(
+    auth_service, google, monkeypatch
+):
+    """Apply's fresh sign-in is checked again under the work lock (#547): a
+    sign-in that passes the page's first check but not that one is refused
+    to the dialog with the step-up notice (403) and nothing is queued."""
+    from parishkit.stewardship.accounts import integration_views
+
+    browser, _ = signed_in()
+    preview = hidden(post(browser, URL, edit(auth_service.store)), "preview")
+    stale_sign_in()
+    # Only the view's own first check passes; confirm_intent's recheck,
+    # under the work lock, still sees the stale sign-in.
+    monkeypatch.setattr(integration_views, "require_fresh", lambda *a, **k: None)
+    refused = fetch(browser, URL, {"action": "confirm", "preview": preview})
+    assert refused.status_code == 403
+    text = refused.content.decode()
+    assert "<div data-review-refusal>" in text and "Confirm with Google" in text
+    assert f'name="next" value="{URL}"' in text
+    assert not ConfigurationChangeRequest.objects.exists()

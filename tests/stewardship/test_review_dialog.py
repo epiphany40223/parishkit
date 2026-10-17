@@ -441,7 +441,7 @@ def test_create_the_campaign_confirms_without_repeating_the_form():
     assert 'describedby="campaign-create-summary"' in page
     assert "redraw_answer=True" in page
     assert 'translate "Review changes"' not in page
-    assert 'translate "Create the campaign" %}{% endbutton %}' in page
+    assert 'translate "Create the campaign and continue" %}{% endbutton %}' in page
     fragment = render_to_string(
         "stewardship/campaign-create-review.html",
         {"review": {"content": 1, "preview": "signed", "next_url": "/next/"}},
@@ -690,3 +690,19 @@ def test_parish_settings_is_a_compact_review():
     assert '"Save the Parish settings?" as review_title' in page
     assert 'describedby="parish-review-summary" %}' in page
     assert "label=save_label" in page and "Review Parish settings" not in page
+
+
+def test_the_page_reads_a_pasted_key_as_the_server_does():
+    """ui-v1.js's SERVER_SPACE, which decides whether an integration's key
+    field holds a key (data-review-native, #750), is exactly the set of
+    characters Python's str.strip() removes (str.isspace): the server and
+    the key field's cleaning use str.strip(), so the page submits natively
+    exactly when the server takes the key-save path. JavaScript's own trim()
+    differs (U+FEFF, U+0085, U+001C-U+001F)."""
+    script = (TEMPLATES.parents[1] / "static/stewardship/ui-v1.js").read_text()
+    (body,) = re.findall(r"const SERVER_SPACE = /\^\[(.+?)\]\*\$/;", script)
+    space = re.compile(f"[{body}]")
+    for code in range(0x110000):
+        character = chr(code)
+        assert bool(space.fullmatch(character)) == character.isspace(), hex(code)
+    assert "\N{ZERO WIDTH NO-BREAK SPACE}".strip() and not "\x85".strip()

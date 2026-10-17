@@ -50,6 +50,7 @@ when it lands.
   [disclosures](#disclosures),
   [prerequisite gates](#prerequisite-gates),
   [field errors and live checks](#field-errors-and-live-checks),
+  [secret fields](#secret-fields),
   [Review, Apply and Change status](#review-apply-and-change-status),
   [review dialog](#review-dialog),
   [conditional fields](#conditional-fields),
@@ -154,7 +155,9 @@ portal](../admin-portal/spec.md#new-and-edit-scheduled-email)), and the
 submitted-date filters of the Additional information and Ministry reports the
 fourth ([Reports](../reports/spec.md#additional-information)), then the
 date-change review ([Admin
-portal](../admin-portal/spec.md#dates-and-mail-schedules)). A schedule review
+portal](../admin-portal/spec.md#dates-and-mail-schedules)) and the Financial
+stewardship response-date filters
+([Reports](../reports/spec.md#financial-stewardship-detail)). A schedule review
 shows each send only as a moment in the browser's zone, never as the saved
 campaign-local date and time with the campaign's zone.
 Until a page's PR lands, it keeps its current zone, including the campaign
@@ -503,7 +506,6 @@ never scrolls to show it (Administrator, pk-local review of
   whose heading takes focus, and lists the state and recipient lines,
   history, forms and bounce panel to replace too. An export's Retry and
   Cancel swap its status panel and hand focus to Refresh status below.
-  Regenerate, whose answer is a new export's page, stays a navigation.
   Preview and test email's Send this test email posts in place too: its
   notices and form are one region and Recent test results another, whose
   heading takes focus. The list updates by itself while a test is on its
@@ -513,9 +515,10 @@ never scrolls to show it (Administrator, pk-local review of
   Off-site backups' Test access posts in place as well: its status line
   is swapped in and watched while the check runs, focus stays on Test
   access, and the settled check re-reads that line in place, so a folder
-  link typed but not saved is kept. Save in the same form is marked
-  `data-in-place-native` and submits natively; the Integrations Save and
-  Remove forms stay ordinary forms until they move to the review dialog
+  link typed but not saved is kept. Save in the same form opens the
+  [review dialog](#review-dialog), and Test access is marked
+  `data-review-skip`, so it is no Review; the integration settings form's
+  region is `data-in-place-own`, so only its own Review's Apply redraws it
   ([#750](https://github.com/epiphany40223/parishkit/issues/750)). One
   request is in flight at a time: a newer choice cancels an older
   read, but a POST that saves a change is never cancelled, and other
@@ -1054,8 +1057,12 @@ refused day. A refusal no field can show (an unknown or repeated field, a
 choice no form offers, a sort or page size the table does not accept) keeps
 the report's error page. A range out of order is refused at its end with
 both ends marked, and its message is shown once, after them, in a line
-the form reserves so that a refusal shown in place moves nothing. A
-form whose complete gate already has a hint row (System logs, the
+the form reserves so that a refusal shown in place moves nothing. Where
+that line is apart from the complete gate's hint row (the Additional
+information queue's Submitted dates, Financial stewardship's dates and
+amounts), the gate's hint, in the same words,
+is held hidden in its row while the message shows, so the form says it
+once. A form whose complete gate already has a hint row (System logs, the
 Follow-up packet, an Additional information item's Save) shows the message
 in that row instead, over the gate's hint, which it hides while shown, so
 the page is no taller for a refusal only a request built by hand gets and
@@ -1116,6 +1123,43 @@ shared refusal types and builders, give a new kind of refusal its own
 reason code, and build forms on the shared Admin form base. A refusal never
 logs the value it refused.
 
+### Secret fields
+
+**Rule.** Every single-line secret an Admin types (an API key or a bot
+token) is masked by default and has the one shared Show/Hide control beside
+it. **Why.** Keys are pasted, and an Admin needs to check what was pasted
+without giving up the default protection against someone looking at the
+screen or a shared call. **Shared code.** The `SecretInput` widget
+(`accounts/secret_input.py`, template `stewardship/widgets/secret-input.html`)
+and the `data-secret-reveal` handler in `ui-v1.js`;
+`tests/stewardship/test_secret_input.py` fails on any other masked input in
+the Admin portal. **Precedent.**
+[#1475](https://github.com/epiphany40223/parishkit/issues/1475).
+
+The control is a real button, drawn by the server next to the field so it is
+in place on first paint. Tab reaches it, and Enter, Space or a click switch
+the field between masked and plain text; focus stays on the button. Its
+visible text reads Show or Hide, and its width is reserved for the longer
+word, so pressing it moves nothing ([no layout shift](#no-layout-shift)).
+Its accessible name is the visible word followed by the field's name, held
+in the button as visually hidden text ("Show the ParishSoft API key", "Hide
+the ParishSoft API key"), so the name always starts with the word on screen
+(WCAG 2.5.3, Label in Name) and the field's label names only the field. It
+has no `aria-label` and no `aria-pressed`, because the name already says the
+state. A polite status line beside it announces each change ("Your
+ParishSoft API key is shown."). It is always available, also while the field
+is empty.
+
+The control changes only what is shown, never what is submitted: the field's
+name and value post exactly as when masked. It masks the field again by
+itself when the form is submitted and when the reader leaves or returns to
+the page (including a page restored from the back-forward cache). A saved
+secret is never sent back to the browser, so the field starts empty, a
+refused value is not drawn again, and the control shows only what was typed
+in this page view. The page script never logs, stores or sends the value.
+A multi-line secret (the Google service-account JSON key) stays a visible
+text area.
+
 ### Review, Apply and Change status
 
 **Rule.** A change to configuration or data is made by editing, then
@@ -1155,7 +1199,7 @@ opens, applies, refuses and follows its change.
 
 **Rule.** Every Admin editor reviews and applies its change in one shared
 modal dialog over the page: **Review changes** (or the action's own label,
-such as **Create the campaign**) opens the dialog with the
+such as **Create the campaign and continue**) opens the dialog with the
 change and its impact (or, when that would only repeat the page, a
 one-sentence confirmation), the dialog offers **Apply** and **Cancel**, and Apply's
 progress and outcome show inside it. Once the change is applied the dialog
@@ -1211,9 +1255,14 @@ the campaign wizard in #1404 PR 4).
 - **Preparing the review.** Review changes posts the form without a page
   load, sent as a native submit would send it: multipart when the form's
   enctype is `multipart/form-data` (an upload editor's file), otherwise
-  URL-encoded. Until the answer arrives the form is inert and marked busy, and
-  Review changes says it is working, so nothing can be edited while the
-  review is being prepared.
+  URL-encoded. A form's other submit button marked `data-review-skip`
+  (Off-site backups' Test access) is no Review: it takes the form's other
+  way. A form marked `data-review-native="<field>"` submits natively,
+  without the dialog, while that field holds a value: an integration's
+  pasted new key, whose slow install is followed on the page (a recorded
+  exception, below). Until the answer arrives the form is inert and marked
+  busy, and Review changes says it is working, so nothing can be edited
+  while the review is being prepared.
 - **Field errors stay on the form.** A Review refused for the values in the
   form (a required field, a value out of range) does not open the dialog: the
   form shows its error summary and marks each field, as the
@@ -1245,7 +1294,7 @@ the campaign wizard in #1404 PR 4).
   count; a refusal), and offers **Apply** and **Cancel**; the sentence
   describes the dialog (`aria-describedby`), and its title asks the
   question ("Create the campaign?"). The form's button then carries the
-  action's own label ("Create the campaign", "Save") rather than **Review
+  action's own label ("Create the campaign and continue", "Save") rather than **Review
   changes**, since it opens a dialog that does not review, and the dialog's
   button stays **Apply**. Review still posts the form, so field errors stay
   on the form and the server still validates and signs the preview, which
@@ -1300,7 +1349,10 @@ the campaign wizard in #1404 PR 4).
 - **After Apply.** On a page that stays (a settings page, a list editor, a
   table's bulk action), every region of the page is redrawn in place from
   the page's own address at the version the change made, with no reload and
-  no jump to the top. A New or Edit page (New user, New scheduled email)
+  no jump to the top. That includes the region holding the form that opened
+  the dialog even when it is marked `data-in-place-own` (so other in-place
+  controls on the page never redraw it): the Apply is that form's own
+  answer. A New or Edit page (New user, New scheduled email)
   returns instead to the table page it was opened from (Users, Dates and
   mail schedules), as [flows end where the reader
   started](#navigation-rules) says. A Review that the
@@ -1357,7 +1409,8 @@ Recorded exceptions (Administrator decision, 2026-10-11):
   wizard](../admin-portal/spec.md#bootstrap-and-first-admin-wizard)).
 - **Integrations' slow key install** shows its status inside the
   Integrations page while the key is installed, not in a dialog or on a
-  second page ([#456](https://github.com/epiphany40223/parishkit/issues/456)).
+  second page ([#456](https://github.com/epiphany40223/parishkit/issues/456)):
+  Save with a new key pasted submits natively (`data-review-native`).
   Integrations' other changes use the dialog.
 
 Operational actions that are not editors (going live, Confirm Production,
@@ -1380,9 +1433,13 @@ user and No-reminders WorkGroup are confirmations under #1356, and so are a
 one-time New scheduled email, Import selected with nobody skipped and
 Campaign images' Remove this image. Edit user, Share options, a small
 Campaign settings change and Parish settings are compact reviews under the
-same issue, and an Integration settings edit becomes one when #750 reaches
-it.
-The in-place review panel of #532 is retired
+same issue. The
+[integration settings pages](../admin-portal/spec.md#parish-and-integration-configuration)
+use the dialog too (#750): an ordinary settings edit is a compact review, a
+refresh schedule change keeps its full review, and setting up Off-site
+backups by its folder, removing Slack and turning off off-site copies are
+confirmations; the Backup encryption key change still uses its separate
+Review page. The in-place review panel of #532 is retired
 ([#1429](https://github.com/epiphany40223/parishkit/issues/1429),
 [in-place controls](#in-place-controls)); the other editors use separate
 Review and Change status pages.
@@ -1849,7 +1906,11 @@ match.
    lets the reader go on. A step that may be left empty for now says so on
    its Continue (**Continue without schedules for now**), and the wizard's
    final readiness check names what is still missing. A step whose purpose is
-   a check (a test email) continues only once its check has passed.
+   a check (a test email) continues only once its check has passed. A
+   wizard's tests come before its final Review, so Review is the last step
+   before finishing and shows their results, and fixing a failed test never
+   passes through Review first
+   ([#1476](https://github.com/epiphany40223/parishkit/issues/1476)).
 10. **Sub-pages stay in the wizard.** A page opened from a step (an editor, a
     new or edited item, a calendar, a history) draws the same stepper with
     its parent step current, and its action row starts with **Return to
@@ -1871,7 +1932,7 @@ match.
     unavailable until something changes, and its ordinary review dialog.
 
 Status: these rules are the target; the wizards reach them in steps, as #1404's
-plan lays out. The setup wizard meets rules 2, 4, 5, 7 and 12, and
+plan lays out. The setup wizard meets rules 2, 4, 5, 7, 8 and 12, and
 rule 1 except the "Next:" line: a saved page stays completed, while its
 Review is asked for again after any later edit of the draft and its parish
 data load goes stale when the ParishSoft credential changes. Its button
@@ -1879,6 +1940,7 @@ keeps the single label Save and continue on an unchanged page (rule 3), and
 it has no Leave setup in its summary (rule 11) and no sub-pages. The
 campaign wizard meets rules 1, 7, 9, 11 and 12 and the Return to *step*
 link of rule 10 ([#1407](https://github.com/epiphany40223/parishkit/pull/1407)):
+Create the campaign is its step 1 before the campaign exists (#1404 PR 3);
 an applied change or a Continue stays completed, while Preview and test
 email counts only for a test of the invitation's current revision. It meets
 rule 8 for Continue, which opens the next step not done yet; after a save,
@@ -1886,7 +1948,6 @@ the page redraws in place and stays on the step it completed until the
 direct save (planned, #1404 PR 4). Until the later #1404 pull requests
 land, its Continue is unavailable while the form holds a change, so the
 page's own Save, with its review dialog, is the way on (rules 3 to 5);
-Create the campaign is a separate page before step 1;
 loading the campaign's ParishSoft data is a notice on every step rather than
 a step of its own; and Back asking before it discards (rule 6) and the
 sub-pages' Keep as is and go back and Save and go back (rule 10) are not
@@ -2175,8 +2236,6 @@ Everything else stays light:
   [email button](#shared-visual-style) to survive a mail program's inverted
   dark mode;
 - [downloaded files](#downloaded-files);
-- for now, each drawn chart, which keeps its white background and its own
-  dark labels as a light card;
 - each email sample preview (the content sample, the setup text editor's
   saved sample and the new campaign's copy preview), a light card that
   shows the email as it is sent.
@@ -2187,13 +2246,39 @@ icons 3:1; where the focus ring sits on an accent surface (the checked
 Basic or Advanced segment), it is drawn in the paper colour. The
 [status indicators](#status-indicators) keep their per-state tokens in
 both. Every colour a scheme changes is a token, so the dark scheme reaches
-each rule with no per-component CSS; only shadows, print rules and the
-logo backing name a colour. An image that draws in the ink
-colour, such as the select arrow, has a dark twin. A parish logo gets a
-white backing in dark, because it was drawn for a light header.
+each rule with no per-component CSS. An image that draws in the ink
+colour, such as the select arrow, has a dark twin.
 
-Dark charts and a guard against new literal colours are later slices of
-[#1264](https://github.com/epiphany40223/parishkit/issues/1264).
+An uploaded image was drawn for the light Family pages and emails, so in
+dark it gets a white backing behind its transparent parts, which keeps a
+dark logo visible and adds no size. That covers the parish logo in the
+header and every Admin preview of an uploaded image: Parish logos (the
+current logos and their review), the setup wizard's logo step, Campaign
+images (the current images and their review) and the Hosted files
+thumbnails.
+
+**No literal colours.** Outside the token declarations, the portal's
+stylesheets, scripts, templates and images name no colour: a rule reads a
+token. The only exceptions are shadows and dialog backdrops (a translucent
+dark shade that works in both schemes), print rules (print is always
+light), the white image backing above, and the select arrow and its dark
+twin (each drawn in its scheme's ink). A comment may still mention an
+issue number such as #565.
+
+**Charts.** A chart drawn on an Admin page takes the page's scheme. Its
+background, axes, gridlines, labels, titles, legend and tooltip are drawn in
+the portal tokens (paper, ink, muted text, border and control border), and
+its marks in the chart palette, a token set with a light and a dark value
+for each colour. A chart's specification names its colours by their light
+values, which an emailed or downloaded chart keeps; the page draws each in
+the matching token's value for its scheme. In dark, the chart's lines, bars
+and markers keep 3:1 against the paper and its text 4.5:1, and the pledge
+bands' ramp turns round (dark bands under light labels for small pledges,
+bright bands under dark labels for large ones), so each band's label keeps
+4.5:1. A change of scheme redraws every drawn chart in place, holding its
+height, so nothing on the page moves. A chart reads the scheme from
+`data-theme`, never from the device's setting, so it always agrees with the
+Appearance choice.
 
 **Why.** Administrators who work in a dark desktop get a portal that
 matches it, without a second stylesheet that would drift from the first.
@@ -2206,12 +2291,19 @@ the saved choice or the operating system, keeps the choice as
 `data-theme-choice` (from which `ui-v1.css` draws the selected icon), and
 runs the switch in `admin-appearance.html`, which `admin-base.html` puts at
 the end of the header. `test_design_tokens.py` checks both token sets and
-their contrast. The browser test `test_dark_scheme.py` checks that key Admin
+their contrast, and `CHART_COLORS` and `DARK_CHART_COLORS` (declared by
+`chart-v1.css`) with theirs; `chart-v1.js` draws each chart in its scheme.
+The browser test `test_dark_scheme.py` checks that key Admin
 pages leave no light surface or light ink in dark. It also checks the
 choice: it overrides the device in place, holds across a reload from the
 first paint, reaches other tabs, and leaves Family pages and print light;
 and the switch: keyboard use, focus ring, axe in both schemes, and its
-place at phone and laptop widths.
+place at phone and laptop widths. `test_chart_scheme.py` checks that every
+chart page draws its charts' text and marks in the tokens of each scheme
+and redraws them in place when the scheme changes. `test_literal_colours.py`
+fails on a literal colour anywhere else in the portal's stylesheets, scripts'
+strings, templates' styles and static images, and on an exception that no
+longer matches anything; `test_dark_scheme.py` checks the image backings.
 **Precedent.** #732 (tokens), #1264 (the switch's place: Administrator,
 pk-local batch 24a).
 
@@ -3152,6 +3244,55 @@ must be one of the exceptions above (or the participation chart). The
 Limitations report (formerly Talents and limitations,
 [#970](https://github.com/epiphany40223/parishkit/issues/970)) offers all
 three formats; the guard checks its Members and Families tables in each.
+
+### Point-in-time downloads
+
+**Rule.** A download is a point-in-time copy of what the report shows when
+it is asked for; the portal keeps no copies and no history of earlier
+downloads, and no page lists them. A download made in the background (an
+export) has a status page only for its short life: it says the file is
+being prepared, starts the download once when the file is ready, offers
+Cancel while preparing and Retry after a failed run (until the export
+ends), and says until when the file can be downloaded again, in
+[browser-local time](#dates-and-times): the window's computed end, never a
+later recorded `expires_at`. There is no Regenerate. Once the
+export has ended (its window is over, it was cancelled, or a failed run
+can no longer be retried; see
+[point-in-time exports](../operations/spec.md#point-in-time-exports)), its
+status page and its download answer one fixed page, "This export is no
+longer available. Export it again from _report_.", whose link returns to
+the report the export came from. The page answers 410 Gone, not 404, since
+an open tab or the Back button still lands there. Its checks run in this
+order:
+
+1. the existing owner and capability check, so another user's export or an
+   unknown request id gets the existing denial or 404 and learns nothing of
+   the export or its report;
+2. the [not-current-campaign](#addresses-and-legacy-urls) 410;
+3. this page.
+
+When a ready file's window ends while its status page is open, Download
+becomes unavailable in place, with no reload, and the "until" line, which
+sits directly below Download with nothing between them, says instead "This
+download expired at _time_. Export it again from _report_.", in
+browser-local time, with the report linked
+([prerequisite gates](#prerequisite-gates)). The line keeps the height of
+the longer of its two sentences from the start, so nothing moves
+([no layout shift](#no-layout-shift)). The page counts to the end by the
+server's clock, and checks again when it is shown again (such as by Back)
+and whenever its status is redrawn, so a copy shown at or after the end
+shows Download unavailable at once. The server stays authoritative: after
+the end, the page's next load, Refresh status, Download or Retry answers
+the fixed page, as the in-place controls show any other refusal, so the
+server never draws the status page in that state. A failed export's Retry
+is not held this way; its "Retry is available until" time says when it
+ends. The window's length and setting,
+and what is deleted when an export ends, are the
+[point-in-time exports](../operations/spec.md#point-in-time-exports) rule.
+**Why.** The downloads are a point-in-time function: keeping their own
+copies is up to the people who downloaded them (the Administrator,
+2026-10-15). **Precedent.**
+[#1398](https://github.com/epiphany40223/parishkit/issues/1398).
 
 ## Family portal
 

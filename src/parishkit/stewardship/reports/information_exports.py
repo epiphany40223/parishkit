@@ -32,14 +32,12 @@ def create_information_export(
     format,
     browser_timezone,
     request_key,
-    snapshot=None,
 ):
-    """Capture all matches once; trusted regeneration supplies the retained snapshot.
+    """Capture all matches once, as the page's export form does.
 
     The campaign-work transaction serializes allocation/capture with mutation and
     purge producers. Database capture is one coherent statement, not a paginated
     series which could mix concurrent edits. File rendering stays asynchronous.
-    Snapshot is an internal service argument, never accepted by the web form.
     """
     if any(
         not isinstance(value, UUID) for value in (user_id, campaign_id, request_key)
@@ -49,9 +47,9 @@ def create_information_export(
         raise ValueError(
             "Information export requires typed filters and history choice."
         )
-    # retained() is parse() for current filters; it also keeps the zone-less
-    # filters of a capture from before migration 0064, whose retry must ask
-    # for exactly what it retained.
+    # Re-parsed, so only the closed grammar's own values are captured;
+    # retained() also keeps filters that carry no zone (as an older release
+    # wrote them), which SQL reads as campaign days.
     parameters = {
         "filters": InformationQuery.retained(query.form_values()).form_values(),
         "history": history,
@@ -60,8 +58,6 @@ def create_information_export(
         raise ValueError("Unsupported information export format.")
     if type(browser_timezone) is not str or browser_timezone not in timezone_names():
         raise ValueError("Export timezone must be an IANA name.")
-    if snapshot is not None and not isinstance(snapshot, InformationExportSnapshot):
-        raise TypeError("Regeneration requires a retained information snapshot.")
 
     def admit(*args):
         """Both enqueue and its owning transaction recheck current authorization."""
@@ -81,25 +77,20 @@ def create_information_export(
                 previous.parameters,
                 previous.format,
                 previous.browser_timezone,
-            ) != (REPORT, campaign_id, parameters, format, browser_timezone) or (
-                snapshot is not None and previous.information_snapshot_id != snapshot.pk
-            ):
+            ) != (REPORT, campaign_id, parameters, format, browser_timezone):
                 raise ExportRequestBound("Export request identity is already bound.")
             return previous
         configuration_id = SystemConfiguration.objects.get().active_configuration_id
         correlation_id = uuid4()
-        if snapshot is None:
-            snapshot = InformationExportSnapshot.objects.create(
-                campaign_id=campaign_id,
-                configuration_id=configuration_id,
-                actor_id=user_id,
-                correlation_id=correlation_id,
-                parameters=parameters,
-            )
-            # The insert trigger, never client-supplied values, owns captured data.
-            snapshot.refresh_from_db()
-        elif snapshot.campaign_id != campaign_id or snapshot.parameters != parameters:
-            raise ValueError("Retained information scope differs from the request.")
+        snapshot = InformationExportSnapshot.objects.create(
+            campaign_id=campaign_id,
+            configuration_id=configuration_id,
+            actor_id=user_id,
+            correlation_id=correlation_id,
+            parameters=parameters,
+        )
+        # The insert trigger, never client-supplied values, owns captured data.
+        snapshot.refresh_from_db()
         identifier = uuid4()
         task = enqueue(
             task_type=TASK_TYPE,

@@ -270,6 +270,8 @@ class Action(StrEnum):
     ADMIN_CMD_EXPORT_CREATE = "admin_cmd_export_create"
     ADMIN_CMD_EXPORT_CANCEL = "admin_cmd_export_cancel"
     ADMIN_CMD_EXPORT_RETRY = "admin_cmd_export_retry"
+    # No longer recorded: ``export regenerate`` was removed when exports
+    # became point-in-time (#1398); earlier events still name it.
     ADMIN_CMD_EXPORT_REGENERATE = "admin_cmd_export_regenerate"
     ADMIN_CMD_DIGEST_WEEKLY_REQUEST = "admin_cmd_digest_weekly_request"
     ADMIN_CMD_EXPORT_FINANCIAL = "admin_cmd_export_financial"
@@ -537,6 +539,10 @@ FIELDS = {
         # How old the Google sign-in was when a setup credential was sealed
         # (#1402), in whole seconds: an integer, as every unlisted key.
         "sign_in_age_seconds",
+        # An export's report kind and file format (#1398), so the audit log
+        # answers who exported what without its request row: closed words.
+        "report",
+        "format",
     },
 }
 
@@ -554,6 +560,23 @@ REVIEW_DECISIONS = frozenset({"keep_role", "restore", "remove"})
 # (#1353); mirrored in stewardship_safe_context_v1.
 VOID_REASONS = frozenset({"key_changed", "organization_changed", "reload"})
 VOIDED_TASK_STATES = frozenset({"succeeded", "failed"})
+# An export's report kind and file format (#1398), as export_report_known
+# admits them; mirrored in stewardship_safe_context_v1 (frozen migration 0109).
+EXPORT_REPORTS = frozenset(
+    {
+        "participation",
+        "additional_information",
+        "family_directory",
+        "postal_outreach",
+        "ministry",
+        "financial",
+        "family_test_names",
+        "family_timeline",
+        "campaign_comparison",
+        "campaign_archive",
+    }
+)
+EXPORT_FORMATS = frozenset({"csv", "xlsx", "pdf", "png"})
 # An on-request report's system mode and filter choices (#556); mirrored in
 # stewardship_safe_context_v1. The filters are each report's own fixed
 # choices: the Limitations report's Show words (reports.limitations.SHOW_WORDS),
@@ -679,6 +702,9 @@ FAILURES = frozenset(
         "web_unresponsive",
         # Background tasks that give up visibly.
         "export_cleanup",
+        # An ended export's saved data could not be discarded this pass; the
+        # next one tries again (#1398; reports.export_cleanup.produce_discards).
+        "export_discard",
         "fact_verification",
         "source_retention",
         "family_engagement",
@@ -888,6 +914,12 @@ def sanitize(kind, values):
             safe[key] = value
         elif key == "task_state":
             valid = type(value) is str and value in VOIDED_TASK_STATES
+            safe[key] = value
+        elif key == "report":
+            valid = type(value) is str and value in EXPORT_REPORTS
+            safe[key] = value
+        elif key == "format":
+            valid = type(value) is str and value in EXPORT_FORMATS
             safe[key] = value
         elif key in {"file_slug", "previous_file_slug"}:
             valid = type(value) is str and re.fullmatch(

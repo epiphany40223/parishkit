@@ -530,7 +530,9 @@ def preview_families_with_names(
                 format=format,
             )
             if not repeat:
-                _command_event(caller, actor, Action.ADMIN_CMD_EXPORT_FAMILY_TEST_NAMES)
+                _command_event(
+                    caller, actor, Action.ADMIN_CMD_EXPORT_FAMILY_TEST_NAMES, job
+                )
                 written.append(True)
             document = _status_document(service, actor, job.pk)
         token = signing.dumps(preview.binding(), salt=SALT)

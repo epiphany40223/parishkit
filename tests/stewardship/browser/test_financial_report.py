@@ -563,6 +563,80 @@ def test_fixing_the_other_end_and_applying_clears_the_mark(page, component_origi
     assert_clean(page, errors)
 
 
+# Each refused range's page, its reserved line, the end the reader edits
+# with a value still out of order, and the message the server and the
+# gate's hint both say (#1469).
+REFUSED_RANGES = {
+    "/financial-refused": ("pledge-range", "#pledge-max", "200", AT_MOST),
+    "/financial-refused-first": (
+        "first-response-dates",
+        "#first-end",
+        "2026-10-31",
+        "Enter a first response Through date no earlier than its From date, "
+        "or clear it.",
+    ),
+    "/financial-refused-latest": (
+        "latest-response-dates",
+        "#latest-end",
+        "2026-10-31",
+        "Enter a latest response Through date no earlier than its From date, "
+        "or clear it.",
+    ),
+}
+# The offsets of Apply, every range's message line, the zone note and the
+# hint row from the filter form's top, and the hint row's height (#1469).
+# The error summary above the form comes and goes with the mark, so places
+# are measured within the form.
+FILTER_PLACES = """() => {
+  const form = document.getElementById("table-filters");
+  const top = (node) =>
+    node.getBoundingClientRect().top - form.getBoundingClientRect().top;
+  const hint = document.getElementById("financial-filter-hint");
+  return [
+    top(form.querySelector("[type=submit]")),
+    ...[...form.querySelectorAll(".field-error-line")].map(top),
+    top(document.getElementById("financial-zone-help")),
+    top(hint),
+    hint.getBoundingClientRect().height,
+  ];
+}"""
+
+
+@pytest.mark.parametrize("path", list(REFUSED_RANGES))
+def test_refused_range_says_it_once_and_hands_back_the_hint(
+    page, component_origin, path
+):
+    """A refused range's message is said once, at its line (#1469).
+
+    While the server's message shows, the gate's hint in the same words is
+    held hidden (visibility only); an edit that leaves the range out of
+    order clears the server's mark, and the gate's own hint shows the
+    reason again, still once. Neither moves Apply, the lines, the zone note
+    or the hint row.
+    """
+    from playwright.sync_api import expect
+
+    line, end, value, message = REFUSED_RANGES[path]
+    errors = watch(page)
+    page.goto(component_origin + path)
+    expect(page.locator(f"#{line}_error")).to_have_text(message)
+    expect(page.locator(f"#{line}_error")).to_be_visible()
+    hint = page.locator("#financial-filter-hint")
+    assert hint.evaluate("node => getComputedStyle(node).visibility") == "hidden"
+    assert page.locator("#table-filters").inner_text().count(message) == 1
+    before = page.evaluate(FILTER_PLACES)
+    page.locator(end).fill(value)
+    page.locator(end).blur()
+    expect(page.locator(f"#{line}_error")).to_be_hidden()
+    expect(page.locator("[data-error-summary]")).to_have_count(0)
+    expect(hint).to_have_text(message)
+    expect(hint).to_be_visible()
+    assert page.locator("#table-filters").inner_text().count(message) == 1
+    assert page.get_by_role("button", name="Apply filters").is_disabled()
+    assert page.evaluate(FILTER_PLACES) == pytest.approx(before, abs=0.5)
+    assert_clean(page, errors)
+
+
 def test_in_place_apply_refused_marks_the_kept_filter_form(page, component_origin):
     """A refused in-place Apply marks the fields on the form it kept (#1332).
 

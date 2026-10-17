@@ -4,6 +4,7 @@ from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
+from django.db import transaction
 from django.db.models import F
 from django.http import HttpResponse
 from django.shortcuts import redirect
@@ -13,13 +14,8 @@ from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET, require_POST
 
 from parishkit.stewardship.accounts import admin_navigation
-from parishkit.stewardship.accounts.admin_editing import step_up_response
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
-from parishkit.stewardship.accounts.sessions import (
-    FreshAuthenticationRequired,
-    require_fresh,
-)
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.queue_wait import queue_wait
 from parishkit.stewardship.jobs.storage import TaskRetryConflict
@@ -39,55 +35,14 @@ from .export_services import (
     authorize,
     cancel_export,
     create_export,
+    export_ended,
     export_status,
     issue_download,
-    regenerate_export,
     retry_export,
 )
 from .export_views import SAFE_FAILURES, _body, _principal, download_with_grant
 from .models import CampaignDailyFactSet
-from .timeline_exports import RehearsalEnded, rehearsal_ended
 from .workspace import ReportQuery
-
-# Exports whose new file needs a fresh Google sign-in (#547): the directory
-# files and a Family's timeline carry live Family codes and the financial
-# file financial detail.
-FRESH_REPORTS = frozenset(
-    {
-        "family_directory",
-        "postal_outreach",
-        "financial",
-        "family_timeline",
-        # The campaign archive holds each Family's giving (#1018).
-        "campaign_archive",
-    }
-)
-
-
-def _regenerate_step_up(request, store, principal, request_id):
-    """The step-up page when regenerating this export needs a fresh sign-in.
-
-    A regenerated directory or financial file is a new copy of the same codes
-    or financial detail, so it needs the same fresh sign-in as creating one
-    (#547); the step-up returns to this export's status page. The export's
-    owner and capability are checked first (``authorize``), so its kind is
-    never revealed to anyone else. Returns None when it may be regenerated
-    now; ``regenerate_export`` still rechecks everything under its lock.
-    """
-    export = ExportRequest.objects.only(
-        "report", "requester_id", "authorization_scope"
-    ).get(pk=request_id)
-    authorize(store, principal.identity, request=export)
-    if export.report not in FRESH_REPORTS:
-        return None
-    try:
-        require_fresh(request)
-    except FreshAuthenticationRequired:
-        return step_up_response(
-            reverse("admin:report_export", args=(request_id,)),
-            admin_navigation.PAGES["report_export"].label,
-        )
-    return None
 
 
 def _redirect(identifier):
@@ -105,15 +60,11 @@ def _error(
     status=409,
     busy=False,
     bound=False,
-    expired=False,
-    rehearsal_ended=False,
 ):
     """Fixed-text recovery never reflects a submitted value or internal failure.
 
-    ``bound`` explains a reused one-time form (``ExportRequestBound``),
-    ``expired`` an authorized download of an expired file (``ExportExpired``)
-    and ``rehearsal_ended`` a Testing timeline export whose rehearsal ended
-    (``RehearsalEnded``), which is made again rather than regenerated.
+    ``bound`` explains a reused one-time form (``ExportRequestBound``).
+    An ended export answers ``gone_page`` instead.
     """
     debug_swallowed("report request refused")
     # No request context processors: a database outage must not trigger another
@@ -126,8 +77,6 @@ def _error(
                 "request_id": request_id,
                 "busy": busy,
                 "bound": bound,
-                "expired": expired,
-                "rehearsal_ended": rehearsal_ended,
                 "temporary": status == 503,
             },
         ),
@@ -142,8 +91,6 @@ def _error(
         response,
         *(["busy"] if busy else []),
         *(["form_reused"] if bound else []),
-        *(["expired"] if expired else []),
-        *(["rehearsal_ended"] if rehearsal_ended else []),
     )
 
 
@@ -184,9 +131,160 @@ def create(request, campaign_id):
         return _error(request, campaign_id=campaign_id, status=400)
 
 
+def _origin(job):
+    """Where ``job`` came from: (title, source page, crumb arguments and
+    queries, report URL).
+
+    The status page uses it for its trail and "Return to", and the "no
+    longer available" page for its link back to the report. It reads only
+    the request row, never its capture.
+    """
+    # The report page the export came from, for the trail (#196),
+    # and any route arguments and query that page's crumb needs. A
+    # report's export is named after that report's page (#520), so
+    # ``title`` stays None for those and is built from the page's
+    # name below; other files have names of their own.
+    title = None
+    arguments = {}
+    queries = {}
+    if job.report == "ministry":
+        source = "ministry_report"
+        report_url = reverse("admin:ministry_report")
+    elif job.report == "additional_information":
+        source = "information_queue"
+        report_url = reverse("admin:information_queue")
+    elif job.report == "financial":
+        source = "financial_report"
+        report_url = reverse("admin:financial_report")
+    elif job.report == "campaign_archive":
+        # Download campaign archive on Past campaigns (#1018).
+        title = _("Campaign archive")
+        source = "past_campaigns"
+        report_url = reverse("admin:past_campaigns")
+    elif job.report == "campaign_comparison":
+        title = _("Campaign comparison download")
+        source = "campaign_comparison"
+        report_url = reverse("admin:campaign_comparison")
+    elif job.report == "family_test_names":
+        # Requested from the command line's chosen-Family review
+        # (#817). The trail runs through that page for the same email:
+        # it and Preview and test email need the revision to link, so
+        # the crumb is the way back and no "Return to" repeats it.
+        title = _("Chosen-Family test names export")
+        source = "campaign_mail_families"
+        arguments = {"revision_id": job.parameters["revision"]}
+        report_url = reverse(
+            "admin:campaign_mail_families", args=[job.parameters["revision"]]
+        )
+    elif job.report == "family_timeline":
+        # The export sits under the Family's own timeline page, so the
+        # trail runs Directory > Family timeline > export and keeps
+        # which Family it was (#521).
+        from .family_timeline_views import timeline_url
+
+        title = _("Family timeline export")
+        source = "family_timeline"
+        # From the request's parameters, not its capture, which is deleted
+        # when the export ends (#1398).
+        family_id = UUID(job.parameters["family_id"])
+        arguments = {"family_id": family_id}
+        report_url = timeline_url(family_id, job.parameters["mode"])
+        # The crumb opens the timeline in the mode exported, so the
+        # page draws no "Return to" link beside it (#1345).
+        if "?" in report_url:
+            queries = {source: report_url.split("?", 1)[1]}
+    elif job.report in {"family_directory", "postal_outreach"}:
+        source = "family_directory"
+        if job.parameters["postal"]:
+            title = _("%(page)s mail-merge export") % {
+                "page": admin_navigation.PAGES[source].label
+            }
+        report_url = reverse("admin:family_directory")
+        # Return with the closed link presets the export used: its reach
+        # filter or, for a mail merge, the mailing columns alone. A mail
+        # merge's reach is always "By postal mail only" (#951), which
+        # the mailing columns apply themselves, so the page's own reach
+        # stays Any for when the reader turns them off.
+        reach = job.parameters["filters"].get("reach", "any")
+        if job.parameters["postal"]:
+            presets = {"mailing": "yes"}
+        else:
+            presets = {"reach": reach} if reach in REACH else {}
+        if presets:
+            report_url += "?" + urlencode(presets)
+    else:
+        source = "participation"
+        report_url = ReportQuery(
+            scope=job.parameters["population_scope"],
+            timezone=job.browser_timezone,
+        ).url()
+    if title is None:
+        title = _("%(page)s export") % {"page": admin_navigation.PAGES[source].label}
+    return title, source, arguments, queries, report_url
+
+
+class ExportGone(Exception):
+    """This authorized export has ended; answer the fixed 410 page.
+
+    ``job`` is the request row the raiser already loaded, so the handler
+    draws the page without a second read.
+    """
+
+    def __init__(self, job):
+        super().__init__("This export has ended.")
+        self.job = job
+
+
+def gone_page(request, source, report_url, *, arguments=None, queries=None):
+    """The fixed "no longer available" page (410 Gone) for an ended export.
+
+    Exports are point-in-time (#1398): once an export's window is over, or
+    it was cancelled, its old status page is not shown; this page links
+    back to the report (``source``, at ``report_url``) to export it again.
+    Callers check the export's owner and capability first, so the report it
+    names is never revealed to anyone else. The refusal log records it as
+    ``gone``, the code its status stands for.
+    """
+    admin_navigation.place(
+        request, parent=source, arguments=arguments or {}, queries=queries or {}
+    )
+    response = HttpResponse(
+        render_to_string(
+            "stewardship/report-export-gone.html",
+            {
+                "report_url": report_url,
+                "report_name": admin_navigation.PAGES[source].label,
+            },
+            request=request,
+        ),
+        status=410,
+    )
+    response["Cache-Control"] = "no-store"
+    return with_status_code(response)
+
+
+def _gone(request, job):
+    """``gone_page`` for a report export, from its request row alone."""
+    _, source, arguments, queries, report_url = _origin(job)
+    return gone_page(request, source, report_url, arguments=arguments, queries=queries)
+
+
+def _refuse_ended(store, principal, request_id):
+    """Raise ``ExportGone`` when this export has ended, after the owner check.
+
+    Its Cancel, Retry and Download answer the fixed "no longer available"
+    page once it has ended (#1398), whichever was clicked on an open page.
+    """
+    with transaction.atomic():
+        export = ExportRequest.objects.get(pk=request_id)
+        authorize(store, principal.identity, request=export)
+        if export_ended(export):
+            raise ExportGone(export)
+
+
 def _export_step(state):
     """The export flow step a request's state shows: preparing or download."""
-    return "download" if state in {"ready", "expired"} else "prepare"
+    return "download" if state == "ready" else "prepare"
 
 
 @require_GET
@@ -212,11 +310,11 @@ def detail(request, request_id):
             if current.identity != principal.identity:
                 raise PermissionError("Report access changed.")
             admit_campaign(campaign_id, mutating=False)
-            authorize(
-                service.store,
-                current.identity,
-                request=ExportRequest.objects.get(pk=request_id),
-            )
+            export = ExportRequest.objects.get(pk=request_id)
+            authorize(service.store, current.identity, request=export)
+            # Only after the owner and capability check (#1398).
+            if export_ended(export):
+                raise ExportGone(export)
 
         def content():
             """Safe job state and inputs come from the existing requester owner."""
@@ -263,87 +361,7 @@ def detail(request, request_id):
                 admit_campaign(campaign_id, mutating=True)
             except PermissionError:
                 mutable = False
-            # The report page the export came from, for the trail (#196),
-            # and any route arguments and query that page's crumb needs. A
-            # report's export is named after that report's page (#520), so
-            # ``title`` stays None for those and is built from the page's
-            # name below; other files have names of their own.
-            title = None
-            arguments = {}
-            queries = {}
-            if job.report == "ministry":
-                source = "ministry_report"
-                report_url = reverse("admin:ministry_report")
-            elif job.report == "additional_information":
-                source = "information_queue"
-                report_url = reverse("admin:information_queue")
-            elif job.report == "financial":
-                source = "financial_report"
-                report_url = reverse("admin:financial_report")
-            elif job.report == "campaign_archive":
-                # Download campaign archive on Past campaigns (#1018).
-                title = _("Campaign archive")
-                source = "past_campaigns"
-                report_url = reverse("admin:past_campaigns")
-            elif job.report == "campaign_comparison":
-                title = _("Campaign comparison download")
-                source = "campaign_comparison"
-                report_url = reverse("admin:campaign_comparison")
-            elif job.report == "family_test_names":
-                # Requested from the command line's chosen-Family review
-                # (#817). The trail runs through that page for the same email:
-                # it and Preview and test email need the revision to link, so
-                # the crumb is the way back and no "Return to" repeats it.
-                title = _("Chosen-Family test names export")
-                source = "campaign_mail_families"
-                arguments = {"revision_id": job.parameters["revision"]}
-                report_url = reverse(
-                    "admin:campaign_mail_families", args=[job.parameters["revision"]]
-                )
-            elif job.report == "family_timeline":
-                # The export sits under the Family's own timeline page, so the
-                # trail runs Directory > Family timeline > export and keeps
-                # which Family it was (#521).
-                from .family_timeline_views import timeline_url
-
-                title = _("Family timeline export")
-                source = "family_timeline"
-                family_id = job.timeline_snapshot.family_id
-                arguments = {"family_id": family_id}
-                report_url = timeline_url(family_id, job.parameters["mode"])
-                # The crumb opens the timeline in the mode exported, so the
-                # page draws no "Return to" link beside it (#1345).
-                if "?" in report_url:
-                    queries = {source: report_url.split("?", 1)[1]}
-            elif job.report in {"family_directory", "postal_outreach"}:
-                source = "family_directory"
-                if job.parameters["postal"]:
-                    title = _("%(page)s mail-merge export") % {
-                        "page": admin_navigation.PAGES[source].label
-                    }
-                report_url = reverse("admin:family_directory")
-                # Return with the closed link presets the export used: its reach
-                # filter or, for a mail merge, the mailing columns alone. A mail
-                # merge's reach is always "By postal mail only" (#951), which
-                # the mailing columns apply themselves, so the page's own reach
-                # stays Any for when the reader turns them off.
-                reach = job.parameters["filters"].get("reach", "any")
-                if job.parameters["postal"]:
-                    presets = {"mailing": "yes"}
-                else:
-                    presets = {"reach": reach} if reach in REACH else {}
-                if presets:
-                    report_url += "?" + urlencode(presets)
-            else:
-                source = "participation"
-                report_url = ReportQuery(
-                    scope=job.parameters["population_scope"],
-                    timezone=job.browser_timezone,
-                ).url()
-            if title is None:
-                title = _("%(page)s export") % {
-                    "page": admin_navigation.PAGES[source].label
-                }
+            title, source, arguments, queries, report_url = _origin(job)
             admin_navigation.place(
                 request,
                 parent=source,
@@ -373,14 +391,6 @@ def detail(request, request_id):
                 # (#1345).
                 "report_name": admin_navigation.PAGES[source].label,
                 "can_cancel": state["state"] in {"queued", "running", "retry_wait"},
-                # A Testing timeline export is bound to its rehearsal: once
-                # that ended, Regenerate is unavailable, with the reason.
-                "rehearsal_ended": rehearsal_ended(job),
-                # The Ministry summary export was removed (#1126); an old
-                # one stays downloadable until it expires, but is not made
-                # again, so Regenerate is unavailable, with the reason.
-                "summary_removed": job.report == "ministry"
-                and job.parameters.get("action") == "summary",
                 # Why a still-queued export has not started (#340). Ministry
                 # leaders may open their own exports but not background work,
                 # so only a reader who may see that work learns what runs ahead.
@@ -402,6 +412,8 @@ def detail(request, request_id):
         return campaign_response(
             request, [campaign_id], authorize=fresh, open_content=content
         )
+    except ExportGone as error:
+        return _gone(request, error.job)
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):
@@ -416,9 +428,8 @@ def command(request, request_id, *, action):
     try:
         service = runtime()
         principal = _principal(request, service.store, ministry_jobs=True)
-        values = _body(
-            request, {"request_key"} if action in {"retry", "regenerate"} else set()
-        )
+        values = _body(request, {"request_key"} if action == "retry" else set())
+        _refuse_ended(service.store, principal, request_id)
         if action == "cancel":
             cancel_export(service.store, principal.identity, request_id)
         elif action == "retry":
@@ -435,31 +446,23 @@ def command(request, request_id, *, action):
                 response.close()
                 return _error(request, request_id=request_id, status=503, busy=True)
             return response
-        elif action == "regenerate":
-            # A malformed key is refused before the export is even looked up.
-            key = UUID(values["request_key"])
-            refused = _regenerate_step_up(request, service.store, principal, request_id)
-            if refused is not None:
-                return refused
-            result = regenerate_export(
-                service.store, principal.identity, request_id, request_key=key
-            )
-            return _redirect(result.pk)
         else:
             raise ValueError("Unknown report action.")
         return _redirect(request_id)
-    except RehearsalEnded:
-        return _error(request, request_id=request_id, rehearsal_ended=True)
     except (ExportConflict, TaskRetryConflict):
         return _error(request, request_id=request_id)
-    except ExportRequestBound:
-        # A stale Regenerate form on the status page; the shared notice's
-        # "reload the page" means that page here, not the report.
-        return _error(request, request_id=request_id, status=409, bound=True)
+    except ExportGone as error:
+        # Only the authorized requester reaches this (the owner check runs
+        # first); tell them the export is gone rather than showing a
+        # sign-in denial they cannot act on.
+        return _gone(request, error.job)
     except ExportExpired:
-        # Only the authorized requester reaches this; tell them to regenerate
-        # rather than showing a sign-in denial they cannot act on.
-        return _error(request, request_id=request_id, status=410, expired=True)
+        # The window ended between the check above and the download, so
+        # the row is read once more, under the same outage handling.
+        try:
+            return _gone(request, ExportRequest.objects.get(pk=request_id))
+        except (*SAFE_FAILURES, StorageInvariantError):
+            return _error(request, request_id=request_id, status=503)
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):

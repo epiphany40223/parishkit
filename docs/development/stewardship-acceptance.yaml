@@ -271,6 +271,7 @@ sections:
     "Backup": [OPS-05, ADM-13]
     "Restore": [OPS-06]
     "Temporary retention and housekeeping": [OPS-07, ADM-13]
+    "Point-in-time exports": [OPS-07, BG-08]
     "Observability and health": [OPS-08, ADM-13]
     "Admin input refusals": [OPS-08, ADM-08]
     "ParishSoft data age and connection": [OPS-08, BG-05, ADM-13]
@@ -419,6 +420,7 @@ sections:
     "Disclosures": [ADM-03]
     "Prerequisite gates": [ADM-02, ADM-03]
     "Field errors and live checks": [ADM-02, ADM-03]
+    "Secret fields": [ADM-02, ADM-03]
     "Review, Apply and Change status": [ADM-03, ADM-04]
     "Review dialog": [ADM-03, ADM-04]
     "Conditional fields": [ADM-03]
@@ -446,6 +448,7 @@ sections:
     "Table fit and row height": [ADM-03]
     "Empty tables and lists": [ADM-03]
     "Downloaded files": [RPT-01]
+    "Point-in-time downloads": [RPT-01, BG-08]
     "Family portal": [FAM-08]
   campaign-history/spec.md:
     "Purpose and audience": [RPT-03]

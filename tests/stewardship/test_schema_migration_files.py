@@ -357,6 +357,12 @@ FROZEN = {
     "0108_conflict_resolution.sql": (
         "13074c17577c9158b464f03462c7b69c482f62fb56d35cde2591afdd93a13d59"
     ),
+    "0109_point_in_time_exports.sql": (
+        "dfdb910d2ccd4aeea4787222a85e3080ef6b272c37ccddf3eb6329163c96cdee"
+    ),
+    "0110_financial_local_days.sql": (
+        "f89490777c7145a1b0213dc2976d4c1c2bc14289fe08926c502667f0ca9cb5d8"
+    ),
 }
 
 
