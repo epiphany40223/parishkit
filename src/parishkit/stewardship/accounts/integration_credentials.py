@@ -60,10 +60,15 @@ STOPPED = {
     "slack": _("Slack alerts are not sent"),
 }
 
+# Why a new key was refused. ParishSoft's covers both of its permanent
+# refusals (#1492): a key it rejects, and a key for another organization,
+# which the check refuses at once rather than retrying for an hour. The
+# request keeps no reason of its own to tell the two apart.
 FAILED = {
     "parishsoft": _(
-        "ParishSoft did not accept the new API key for this organization ID. "
-        "Check the key and the organization ID, then try again."
+        "ParishSoft did not accept the new API key for this organization ID: "
+        "the key is wrong, or it belongs to a different ParishSoft "
+        "organization. Check the key and the organization ID, then try again."
     ),
     "google_workspace": _(
         "Google did not accept the new service-account key for the delegated "
