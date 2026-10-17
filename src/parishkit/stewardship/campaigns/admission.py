@@ -12,6 +12,22 @@ class CampaignAdmissionUnavailable(RuntimeError):
     """Deployment state temporarily blocks configuration; this is not invalid intent."""
 
 
+def _locked_part(values, editable):
+    """The part of a campaign's values a structural lock keeps fixed.
+
+    Every key outside ``editable``, with the share options compared without
+    their short labels (#1569), which stay editable on a live campaign, as
+    SQL's stewardship_campaign_pointer_v1 compares them (migration 0167).
+    """
+    from .configuration import without_short_labels
+
+    return {
+        key: without_short_labels(value) if key == "share_options" else value
+        for key, value in values.items()
+        if key not in editable
+    }
+
+
 def close_work_running(campaign_id):
     """Reject claimed or undrained close work, including pre-binding task claims."""
     from django.db.models import CharField, Q
@@ -137,13 +153,9 @@ def validate_installation(document, *, request_id=None):
 
             check_live_selection(row, before, values["ministry_duids"], document)
             editable.add("ministry_duids")
-        if row.structural_locked and {
-            key: value for key, value in values.items() if key not in editable
-        } != {
-            key: value
-            for key, value in row.active_configuration.values.items()
-            if key not in editable
-        }:
+        if row.structural_locked and _locked_part(values, editable) != _locked_part(
+            row.active_configuration.values, editable
+        ):
             raise ConfigError("Campaign structural settings are locked.")
     target = (
         candidates.get(str(current))

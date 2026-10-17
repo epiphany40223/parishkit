@@ -47,6 +47,8 @@ SHARE_REVIEW = "/share-in-place-review"
 SHARE_REFUSED = "/share-in-place-refused"
 SHARE_APPLIED = "/share-in-place-applied"
 SHARE_SETTLED = "/share-in-place-settled"
+# A locked campaign's Share options: only the short labels open (#1569).
+SHARE_LIVE = "/share-in-place-live"
 # The live check's answers (#944), by the end date the browser test types.
 STRANDING = "Some scheduled emails would no longer fit the campaign."
 PASSED = "Choose an end date that has not already passed."
@@ -123,15 +125,18 @@ def components(context, admin):
 
     options = default_share_options()
 
-    def share(data=None, previous=None, digest="a" * 64):
+    def share(data=None, previous=None, digest="a" * 64, short_only=False):
         """Share options, its formset bound to ``data`` if given.
 
         ``previous`` (default the stock options) is the saved list, at
         version ``digest``. A bound formset is a refused Review's page, with
         its errors' summary. Review and Apply post to ``SHARE``; the form's
-        region is redrawn from ``SHARE_SETTLED``.
+        region is redrawn from ``SHARE_SETTLED``. ``short_only`` draws a
+        locked campaign's form (#1569).
         """
-        formset = ShareOptions(data, prefix="options", previous=previous or options)
+        formset = ShareOptions(
+            data, prefix="options", previous=previous or options, short_only=short_only
+        )
         return (
             "text/html",
             render_to_string(
@@ -144,6 +149,7 @@ def components(context, admin):
                         "active_configuration": {"name": "Sample campaign"},
                     },
                     "formset": formset,
+                    "short_only": short_only,
                     "base_digest": digest,
                     "page_url": SHARE,
                     "refresh_url": SHARE_SETTLED,
@@ -219,6 +225,7 @@ def components(context, admin):
             ),
         ),
         SHARE: share(),
+        SHARE_LIVE: share(short_only=True),
         SHARE_REVIEW: (
             "text/html",
             render_to_string(

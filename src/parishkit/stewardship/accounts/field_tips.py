@@ -16,6 +16,7 @@ error line, draws a tip itself, so the field keeps both.
 
 from django import forms
 from django.forms.boundfield import BoundField
+from django.utils.text import format_lazy
 
 TIP_TEMPLATE = "stewardship/field-tip.html"
 # Longer help than this (about one line of the form column) becomes a tip.
@@ -82,3 +83,25 @@ def shorten(form, hints=None):
         if text and len(str(text)) > LONG_HELP and eligible(field):
             add(field, text, hints.get(name, ""))
     return form
+
+
+def lock(field, reason):
+    """Draw ``field`` disabled where it stands, with ``reason`` in its tip.
+
+    A disabled control is not sent, and Django's disabled field takes its
+    saved value whatever is posted, so a locked setting can never change
+    through its form. A field whose long help already moved into a tip gets
+    the reason first in that tip; any other gets a tip of its own, keeping
+    its short help visible. A field drawn by its own template (such as
+    Campaign settings' overlap confirmation, shown only while the dates
+    overlap) is only disabled. Campaign settings (#1119) and Share options
+    on a locked campaign (#1569) lock their fields this way (ui-conventions:
+    a setting that can't change stays in place, disabled, with the reason in
+    its tip).
+    """
+    field.disabled = True
+    # A ruled field's group template draws a tip too (see ``add``).
+    if field.template_name not in (None, TIP_TEMPLATE) and not ruled(field):
+        return
+    tip = getattr(field, "tip", None)
+    add(field, format_lazy("{} {}", reason, tip) if tip else reason, field.help_text)

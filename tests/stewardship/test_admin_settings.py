@@ -61,6 +61,7 @@ ALLOWED = {
         "version",
         "campaign_id",
         "editable",
+        "short_names_editable",
         "financial",
         "options",
         "id",
@@ -171,6 +172,7 @@ def test_campaign_shares_is_its_golden_projection():
         "version": VERSION,
         "campaign_id": str(CAMPAIGN),
         "editable": True,
+        "short_names_editable": True,
         "financial": True,
         "options": [
             {"id": OPTION, "name": "Prayer", "short_name": "", "free_text": False},
@@ -186,6 +188,12 @@ def test_campaign_shares_is_its_golden_projection():
     # The page edits Share options only with the financial module.
     other = admin_settings.shares_model(configuration(), campaign([]), True)
     assert not other.editable and not other.financial
+    assert not other.short_names_editable
+    # A live campaign: only the short labels can change (#1569).
+    live = admin_settings.shares_model(
+        configuration(), campaign(["financial"]), False, short_only=True
+    )
+    assert not live.editable and live.short_names_editable
 
 
 def test_branding_show_is_its_golden_projection():

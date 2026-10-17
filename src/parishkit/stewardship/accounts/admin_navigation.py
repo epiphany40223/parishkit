@@ -32,8 +32,6 @@ from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.admin_urls.slashless import TARGETS as SLASHLESS_TARGETS
 from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAME
-from parishkit.stewardship.campaigns.domain import CampaignState
-from parishkit.stewardship.campaigns.lifecycle import structural_edit_admitted
 from parishkit.stewardship.web.error_pages import ERROR_PAGE_ATTRIBUTE
 from parishkit.stewardship.web.refusals import UserFacingUnavailable
 
@@ -364,9 +362,6 @@ ARCHIVED = _("The campaign is archived")
 FINANCIAL_MISSING = _("This campaign does not include Financial stewardship")
 MINISTRY_MISSING = _("This campaign does not include Ministry stewardship")
 CENSUS_MISSING = _("This campaign does not include the census")
-STRUCTURE_FIXED = _(
-    "Can be changed only in Testing mode, before the campaign goes live"
-)
 ALREADY_LIVE = _("Only a draft campaign can go live; this one already has")
 NOT_CONFIRMED = _(
     "Production has not been confirmed for this campaign; start at Go live"
@@ -435,24 +430,15 @@ CENSUS = _module("census", CENSUS_MISSING)
 def _structural(module_reason):
     """A reason check for Share options.
 
-    It edits the campaign's structure, which is open only on an unlocked
-    Testing draft that has never been live; the page refuses anything else,
-    so the entry is greyed out rather than linking a page that fails.
+    An unlocked Testing draft edits the whole list; once the structure is
+    fixed (the campaign is live, or has been), the page still opens and
+    edits only the short labels (#1569). So the entry is greyed only
+    without the module or once the campaign is archived.
     """
 
     def reason(state):
-        """Unavailable without the module, or once the structure is fixed."""
-        missing = module_reason(state)
-        if missing:
-            return missing
-        campaign = state.campaign
-        if state.mode == "testing" and structural_edit_admitted(
-            CampaignState(campaign.state),
-            ever_active=campaign.ever_active,
-            locked=campaign.structural_locked,
-        ):
-            return None
-        return STRUCTURE_FIXED
+        """Unavailable without the module, or once the campaign is archived."""
+        return module_reason(state) or _unarchived(state)
 
     return reason
 

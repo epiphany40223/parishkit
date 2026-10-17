@@ -290,3 +290,39 @@ def test_the_short_label_is_offered_and_greys_with_delete(page, component_origin
         places,
     )
     assert not failures
+
+
+def test_a_locked_campaign_edits_only_the_short_labels(page, component_origin):
+    """On a locked campaign (#1569) every field but each short label is
+    disabled with the reason in its tip, there is no blank row, the page
+    says why and leaves out the placeholders paragraph, and changing a
+    short label makes Save available."""
+    from playwright.sync_api import expect
+
+    from .settings_components import SHARE_LIVE
+
+    page.goto(component_origin + SHARE_LIVE)
+    failures = watch(page)
+    total = int(page.locator("[name=options-TOTAL_FORMS]").input_value())
+    initial = int(page.locator("[name=options-INITIAL_FORMS]").input_value())
+    assert total == initial == 7
+    for index in range(total):
+        for name in ("label", "free_text", "ORDER", "DELETE"):
+            expect(page.locator(f"#id_options-{index}-{name}")).to_be_disabled()
+        expect(page.locator(f"#id_options-{index}-short_label")).to_be_enabled()
+    reason = "This campaign is locked, so only the short labels can change."
+    assert page.locator("p", has_text=reason).count() == 1
+    assert page.get_by_text("placeholders inside double braces").count() == 0
+    # A locked field's "i" tip says why, as on Campaign settings.
+    label = page.locator("#id_options-0-label")
+    expect(label).to_have_accessible_description(re.compile(re.escape(reason)))
+    tip = page.locator("#id_options-0-label_tip")
+    page.locator("[aria-controls=id_options-0-label_tip]").click()
+    expect(tip).to_be_visible()
+    assert tip.inner_text() == reason
+    page.keyboard.press("Escape")
+    hint = "Change a short label to save it."
+    expect_review(page, enabled=False, hint=hint, name="Save")
+    page.locator("#id_options-0-short_label").fill("Check")
+    expect_review(page, enabled=True, hint=hint, name="Save")
+    assert not failures

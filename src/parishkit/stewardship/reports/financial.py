@@ -377,6 +377,15 @@ def shape_result(result, *, campaign_id, parish_name, configuration):
         configuration, campaign_id=campaign_id, parish_name=parish_name
     )
     current = {key: label for key, (label, _short) in wording.items()}
+    # Short labels are the Admin's current names for the methods, not part of
+    # what a Family saw: one set on a locked campaign (#1569) names the method
+    # in every row, also for answers given before it was set, and clearing
+    # one shows the full label in every row. Every current option is here,
+    # None when it has no short label.
+    named = {
+        option["id"]: option.get("short_label")
+        for option in configuration.get("share_options") or ()
+    }
     # Labels are versioned with the configuration each Family actually saw, so a
     # later edit of the year label or an option never rewords a retained answer.
     seen = {
@@ -402,15 +411,17 @@ def shape_result(result, *, campaign_id, parish_name, configuration):
         )
         labels = seen.get(row.pop("configuration_id"), {})
         # ``label`` is the full wording (exports, tips); ``short`` the
-        # compact name the page's cell shows (#1569).
+        # compact name the page's cell shows (#1569): a current option's
+        # short label, else its full label as seen; only an option no longer
+        # offered keeps the short label it had then.
         unavailable = (UNAVAILABLE_SHARE, UNAVAILABLE_SHARE)
-        row["shares"] = [
-            dict(
-                zip(("label", "short"), labels.get(key, unavailable), strict=True),
-                text=text,
-            )
-            for key, text in in_offered_order(row["shares"], labels)
-        ]
+        shares = []
+        for key, text in in_offered_order(row["shares"], labels):
+            label, short = labels.get(key, unavailable)
+            if key in named:
+                short = named[key] or label
+            shares.append({"label": label, "short": short, "text": text})
+        row["shares"] = shares
         row["source_pledge"] = parse_money(row.pop("pledge_total"))
         row["source_contributions"] = parse_money(row.pop("contribution_total"))
         for field in ("submitted_at", "first_submitted_at"):

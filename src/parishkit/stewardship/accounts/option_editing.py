@@ -1,10 +1,12 @@
 """The ordered-option editor (Share options), reviewed in the review dialog.
 
 It edits one ordered list of labelled options on the current draft campaign
-with the share formset (``share_forms.ShareOptions``): an unlocked Testing
-draft only, with the module the list belongs to. ``OptionEditor`` names the
-values key, the module, the page and its words; the Member talents editor
-that once shared it was removed with talents (#970).
+with the share formset (``share_forms.ShareOptions``): the whole list on an
+unlocked Testing draft, and only the short labels once the structure is
+fixed (#1569, ``short_labels_only``), with the module the list belongs to.
+``OptionEditor`` names the values key, the module, the page and its words;
+the Member talents editor that once shared it was removed with talents
+(#970).
 
 Review posts the form without a page load and is answered with the shared
 review dialog's fragment (UX conventions, "Review dialog", #750): a compact
@@ -37,6 +39,7 @@ from django.shortcuts import render
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.campaigns.configuration import without_short_labels
 from parishkit.stewardship.campaigns.work_locks import (
     read_transaction,
     work_transaction,
@@ -45,6 +48,7 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import (
     UserFacingError,
+    UserFacingStale,
     stale_page,
     with_default_code,
 )
@@ -64,7 +68,7 @@ from .limiting import LimiterUnavailable
 from .policy import Capability, allows
 from .request_patch import build_candidate
 from .sessions import authenticated_admin
-from .share_forms import ShareOptions, share_action
+from .share_forms import SHORT_LABELS_ONLY, ShareOptions, share_action
 
 
 @dataclass(frozen=True)
@@ -82,6 +86,49 @@ class OptionEditor:
     current: Callable  # campaign -> the list it shows today
 
 
+def live_short_only():
+    """The refusal of a locked campaign's Share options change beyond the
+    short labels (#1569): a form drawn before the campaign was locked, or a
+    request built by hand. Shown in the review dialog, as a stale page is."""
+    return UserFacingStale(
+        SHORT_LABELS_ONLY,
+        fix=_("Reload the page to edit the short labels."),
+        reason="stale_page",
+    )
+
+
+def short_labels_only(configuration, campaign, held, editable):
+    """Whether Share options may change only its short labels now (#1569).
+
+    True for the current, unarchived campaign whose settings cannot be
+    edited (it is live or has been, or it is outside Testing mode) while no
+    background work holds the settings: the
+    short label is Admin-only wording, outside the Family form and its
+    digest, so the structure lock (``admission._locked_part`` and SQL's
+    stewardship_campaign_pointer_v1, migration 0167) leaves it open.
+    """
+    return (
+        not editable
+        and not held
+        and campaign.pk == configuration.current_campaign_id
+        and campaign.state != "archived"
+    )
+
+
+def structure_posted(post, count):
+    """Whether a post names a field a live campaign's form leaves disabled.
+
+    The browser never sends a disabled field, so such a value comes from a
+    form drawn before the campaign went live, or from a request built by
+    hand; either is refused rather than silently ignored.
+    """
+    return any(
+        f"options-{index}-{name}" in post
+        for index in range(count)
+        for name in ("label", "free_text", "ORDER", "DELETE")
+    )
+
+
 def _page(request, editor, configuration, campaign, formset, *, status=200):
     """Render the editor; a Review refused for its values (400) has its errors.
 
@@ -96,6 +143,7 @@ def _page(request, editor, configuration, campaign, formset, *, status=200):
             "configuration": configuration,
             "campaign": campaign,
             "formset": formset,
+            "short_only": formset.short_only,
             "base_digest": configuration.active_configuration.digest,
             # Review and the review dialog's Apply post here.
             "page_url": request.path,
@@ -256,6 +304,12 @@ def review_options(editor, service, actor, state, campaign, formset, salt, key=N
     configuration, fingerprint = state[0], state[-1]
     options = formset.values()
     before = editor.current(campaign)
+    if formset.short_only and without_short_labels(options) != without_short_labels(
+        before
+    ):
+        # The disabled fields keep their saved values, so only a bug gets
+        # here; the structure lock would refuse the change anyway.
+        raise live_short_only()
     if options == before:
         # Review is unavailable without a change (data-require-change), so
         # only a request that bypasses the page script meets this safeguard.
@@ -304,7 +358,8 @@ def _unavailable(editor, configuration, campaign):
 
 
 def option_settings(request, campaign_id, editor):
-    """Current Admins may review and request changes only for an unlocked draft.
+    """Current Admins review and request changes: a whole list on an unlocked
+    draft, a live campaign's short labels only (#1569).
 
     GET draws the editor (it takes no query: its address is all there is);
     a Review POST answers the review dialog's fragment; Apply answers with
@@ -341,15 +396,24 @@ def option_settings(request, campaign_id, editor):
             state = _state(service)
             configuration, campaigns, held = state[0], state[1], state[3]
             campaign, editable = _target(configuration, campaigns, held, campaign_id)
+            short_only = short_labels_only(configuration, campaign, held, editable)
             if (
-                not editable
+                not (editable or short_only)
                 or editor.module not in campaign.active_configuration.values["modules"]
             ):
                 raise _unavailable(editor, configuration, campaign)
+            previous = editor.current(campaign)
+            if (
+                action == "preview"
+                and short_only
+                and structure_posted(request.POST, len(previous) + 1)
+            ):
+                raise live_short_only()
             formset = ShareOptions(
                 request.POST if action in {"preview", "save"} else None,
                 prefix="options",
-                previous=editor.current(campaign),
+                previous=previous,
+                short_only=short_only,
             )
             if action is None:
                 response = _page(request, editor, configuration, campaign, formset)

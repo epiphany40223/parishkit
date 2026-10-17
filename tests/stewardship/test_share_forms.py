@@ -6,6 +6,7 @@ import pytest
 from django.http import QueryDict
 
 from parishkit.stewardship.accounts.share_forms import (
+    STRUCTURE_FIELDS,
     ShareOptions,
     default_share_options,
     share_action,
@@ -231,3 +232,38 @@ def test_the_short_label_greys_with_its_rows_delete_box():
     assert field.widget.attrs["data-enabled-when"] == "options-0-DELETE!=on"
     deleted = form_for(previous, data_for(previous) | {"options-0-DELETE": "on"})
     assert deleted.forms[0].fields["short_label"].disabled
+
+
+def test_a_locked_campaigns_form_changes_only_short_labels():
+    """``short_only`` (#1569) disables every field but the short label and
+    draws no blank row: posted labels, order or Delete are ignored, so only
+    short labels change, and an added row is refused."""
+    previous = default_share_options()[:2]
+    form = ShareOptions(prefix="options", previous=previous, short_only=True)
+    assert len(form.forms) == 2
+    fields = form.forms[0].fields
+    assert all(fields[name].disabled for name in ("label", "free_text", "ORDER"))
+    assert fields["DELETE"].disabled and not fields["short_label"].disabled
+    assert "data-enabled-when" not in fields["short_label"].widget.attrs
+    # Each locked field gives the reason in its tip, as Campaign settings
+    # does (ui-conventions); the open short label keeps its own help.
+    reason = "This campaign is locked, so only the short labels can change."
+    for name in STRUCTURE_FIELDS:
+        assert str(fields[name].tip) == reason
+    assert not hasattr(fields["short_label"], "tip")
+    html = str(form.forms[0])
+    assert html.count(reason) == len(STRUCTURE_FIELDS)
+    data = data_for(previous) | {
+        "options-0-short_label": "Check",
+        "options-1-label": "Forged",
+        "options-1-ORDER": "1",
+        "options-0-DELETE": "on",
+    }
+    bound = ShareOptions(data, prefix="options", previous=previous, short_only=True)
+    assert bound.is_valid(), bound.errors
+    assert bound.values() == [previous[0] | {"short_label": "Check"}, previous[1]]
+    extra = data_for(previous, extra={"label": "New", "short_label": "New"})
+    added = ShareOptions(extra, prefix="options", previous=previous, short_only=True)
+    assert not added.is_valid()
+    with pytest.raises(ValueError):
+        added.values()

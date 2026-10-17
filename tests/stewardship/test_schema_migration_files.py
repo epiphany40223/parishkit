@@ -522,6 +522,9 @@ FROZEN = {
     "0162_report_recovery_coverage.sql": (
         "4d10bc449e224f7434df25cb695981a534bb2c469c1f319e5b5f67137f8e0d5f"
     ),
+    "0167_share_short_labels.sql": (
+        "872c038f4c6cb96bef43a5cc3bdcaa95d395d1e5ecdb302816ef87aff121bff3"
+    ),
 }
 
 

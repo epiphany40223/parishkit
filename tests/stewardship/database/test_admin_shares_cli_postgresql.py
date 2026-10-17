@@ -307,21 +307,48 @@ def test_a_campaign_the_page_does_not_edit_is_refused(admin):
     refused(document, "not_available")
 
 
-def test_a_live_campaign_is_refused_and_its_token_goes_stale(admin, draft):
-    """Once the campaign goes live, its preview is refused as the page's is
-    and an earlier token is stale; nothing is requested."""
+def test_a_live_campaign_changes_only_short_names(admin, draft):
+    """Once the campaign goes live, an earlier token is stale, any change
+    but a short name is ``invalid`` at its place (#1569), and a short-name
+    change is reviewed, confirmed and installed as the page's is."""
     row, previous = draft
     _, secret, _ = paired(admin.service)
     signed = signed_token(admin, secret, previous)
     requests = ConfigurationChangeRequest.objects.count()
     command(row, uuid4(), Action.ACTIVATE)
-    code, document, _ = preview(admin, secret, {"options": kept(previous)})
-    assert code == 1
-    refused(document, "stale_version")
     code, document, _ = confirm(admin, secret, signed)
     assert code == 1
     refused(document, "stale_version")
+    options = kept(previous)
+    for change_document, field in (
+        (
+            {"options": [options[0] | {"name": "Changed"}, *options[1:]]},
+            "options.0.name",
+        ),
+        (
+            {"options": [options[0] | {"free_text": True}, *options[1:]]},
+            "options.0.free_text",
+        ),
+        ({"options": options[::-1]}, "options"),
+        ({"options": options[1:], "delete": [options[0]["id"]]}, "delete"),
+    ):
+        code, document, _ = preview(admin, secret, change_document)
+        assert code == 1, document
+        refused(document, "invalid")
+        assert field in fields(document), document
     assert ConfigurationChangeRequest.objects.count() == requests and events() == 0
+    shortened = [options[0] | {"short_name": "Check"}, *options[1:]]
+    code, previewed, _ = preview(admin, secret, {"options": shortened})
+    assert code == 0, previewed
+    (line,) = previewed["result"]["changes"]
+    assert line["label"].startswith("Short label for")
+    code, confirmed, _ = confirm(admin, secret, previewed["result"]["preview"]["token"])
+    assert code == 0, confirmed
+    install(admin, confirmed)
+    assert saved(row)[0]["short_label"] == "Check"
+    assert [option["label"] for option in saved(row)] == [
+        option["label"] for option in previous
+    ]
 
 
 def test_confirm_refuses_foreign_and_stale_tokens(admin, draft):
@@ -370,9 +397,10 @@ def test_confirm_refuses_foreign_and_stale_tokens(admin, draft):
 
 
 def test_a_locked_or_held_draft_is_refused_as_the_page_does(admin, draft):
-    """A structurally locked draft, and one that background work holds, are
-    the page's refusal (stale_version, its 409); a token reviewed before the
-    work began is stale too; nothing is requested."""
+    """A structurally locked draft changes only short names, as the page's
+    live form (#1569): a relabel is ``invalid`` at its name. One that
+    background work holds is the page's refusal (stale_version, its 409); a
+    token reviewed before the work began is stale too; nothing is requested."""
     row, previous = draft
     _, secret, _ = paired(admin.service)
     signed = signed_token(admin, secret, previous)
@@ -381,9 +409,12 @@ def test_a_locked_or_held_draft_is_refused_as_the_page_does(admin, draft):
     # needs a lifecycle command or the exclusive maintenance window.
     with unguarded():
         Campaign.objects.filter(pk=row.pk).update(structural_locked=True)
-    code, document, _ = preview(admin, secret, {"options": kept(previous)})
+    options = kept(previous)
+    options[0]["name"] = "Relabelled"
+    code, document, _ = preview(admin, secret, {"options": options})
     assert code == 1
-    refused(document, "stale_version")
+    refused(document, "invalid")
+    assert fields(document) == ["options.0.name"]
     with unguarded():
         Campaign.objects.filter(pk=row.pk).update(structural_locked=False)
         CampaignWorkGate.objects.create(

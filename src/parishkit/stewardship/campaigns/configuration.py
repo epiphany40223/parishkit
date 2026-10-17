@@ -73,6 +73,25 @@ def short_label_key(value):
     return value.strip().casefold()
 
 
+def without_short_labels(options):
+    """Share options with every short label left out (#1569).
+
+    The short label is Admin-only wording: the Family form's digest, and the
+    lock on a live campaign's structure, compare options in this form, so
+    a short label alone never makes a Family form stale and stays editable
+    on a live campaign. Anything that is not a list of objects is returned
+    as it is, for the caller's own validation to refuse.
+    """
+    if type(options) is not list:
+        return options
+    return [
+        {key: value for key, value in option.items() if key != SHORT_LABEL}
+        if type(option) is dict
+        else option
+        for option in options
+    ]
+
+
 def _options(options, *, short_labels=False):
     """Validate an ordered option list (share methods or talents) by identity.
 

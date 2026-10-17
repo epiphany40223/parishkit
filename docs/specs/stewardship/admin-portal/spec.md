@@ -2766,7 +2766,7 @@ The campaign editor includes:
   the dialog with "This campaign is locked, so only the short labels can
   change." The installer's
   structure lock (`campaigns/admission.py`) and SQL's
-  `stewardship_campaign_pointer_v1` (frozen migration 0117) compare a
+  `stewardship_campaign_pointer_v1` (frozen migration 0167) compare a
   locked campaign's share options without their short labels, so nothing
   else about them can change; since the Family form and its digest leave
   the short label out, the change rewords nothing a Family sees and makes

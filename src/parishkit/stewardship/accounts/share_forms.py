@@ -21,8 +21,18 @@ from parishkit.stewardship.web.field_rules import (
     placeholder_text_pattern,
 )
 
+from . import field_tips
+
 # A row's editable fields, which grey with its Delete box.
 ROW_FIELDS = ("label", "short_label", "free_text", "ORDER")
+# The fields a live campaign's structure lock keeps fixed: all but the short
+# label (#1569).
+STRUCTURE_FIELDS = ("label", "free_text", "ORDER", "DELETE")
+# Why, on a locked campaign, the page, each locked field's tip and a refused
+# change all say the same (#1569). "Locked" rather than "live": the mode is
+# on for any current campaign whose settings cannot be edited, including a
+# draft outside Testing mode.
+SHORT_LABELS_ONLY = _("This campaign is locked, so only the short labels can change.")
 
 # The default options' (label, short label) pairs: the short label is what
 # Admin tables and charts show (#1569); Families see the label.
@@ -136,9 +146,19 @@ class ShareOptionForm(AdminForm):
 class ShareOptionsBase(AdminFormSet):
     """The management form bounds work, but never controls authoritative identities."""
 
-    def __init__(self, *args, previous=(), **kwargs):
-        """Saved IDs are known server-side; requests cannot import foreign options."""
+    def __init__(self, *args, previous=(), short_only=False, **kwargs):
+        """Saved IDs are known server-side; requests cannot import foreign options.
+
+        ``short_only`` is a locked campaign's form (#1569): every saved row
+        keeps its label, free-text choice, order and Delete box, which are
+        disabled with the reason in their tips (Django then uses the saved
+        values, whatever is posted), and there is no blank row, so only the
+        short labels can change.
+        """
         self.previous = list(previous)
+        self.short_only = short_only
+        if short_only:
+            self.extra = 0
         super().__init__(*args, initial=self.previous, **kwargs)
 
     def add_fields(self, form, index):
@@ -153,6 +173,10 @@ class ShareOptionsBase(AdminFormSet):
         them back.
         """
         super().add_fields(form, index)
+        if self.short_only:
+            for name in STRUCTURE_FIELDS:
+                field_tips.lock(form.fields[name], SHORT_LABELS_ONLY)
+            return
         delete = form.add_prefix("DELETE")
         for name in ROW_FIELDS:
             form.fields[name].widget.attrs["data-enabled-when"] = f"{delete}!=on"
@@ -166,7 +190,11 @@ class ShareOptionsBase(AdminFormSet):
         """Reject replayed IDs, foreign IDs and forged initial-management counts."""
         if any(self.errors):
             return
-        if self.management_form.cleaned_data.get("INITIAL_FORMS") != len(self.previous):
+        management = self.management_form.cleaned_data
+        if management.get("INITIAL_FORMS") != len(self.previous) or (
+            # A live campaign's form has no blank row to add an option in.
+            self.short_only and management.get("TOTAL_FORMS") != len(self.previous)
+        ):
             raise forms.ValidationError(
                 _("Reload the share options before saving."), code="reload"
             )

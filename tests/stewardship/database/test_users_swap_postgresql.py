@@ -504,6 +504,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # ``CLOSURE_REPLACED_ONLY`` puts each 0160 body back last, after 0159's.
 # 0163 (#1909) creates nothing: it replaces 0160's derived guard in place,
 # so ``CLOSURE_REPLACED_ONLY`` puts its body back last, after 0160's.
+# 0167 (#1569) creates nothing: it replaces 0103's campaign pointer function
+# in place, as 0103 did 0091's. No closure file installs that function
+# again, so its body survives the swap and nothing is registered.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",

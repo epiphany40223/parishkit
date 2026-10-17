@@ -170,6 +170,7 @@ def test_campaign_shares_of_a_draft_then_a_live_campaign(admin):
         "version": store.active().digest,
         "campaign_id": str(row.pk),
         "editable": True,
+        "short_names_editable": True,
         "financial": True,
         "options": [
             {
@@ -187,6 +188,8 @@ def test_campaign_shares_of_a_draft_then_a_live_campaign(admin):
     result = read(admin, reader, "campaign", "shares", "--campaign", str(row.pk))
     assert result["campaign_id"] == str(row.pk)
     assert not result["editable"] and result["financial"]
+    # A live campaign's short labels can still change (#1569).
+    assert result["short_names_editable"]
     assert [item["id"] for item in result["options"]] == [
         item["id"] for item in options
     ]
@@ -199,6 +202,7 @@ def test_campaign_shares_without_the_financial_module(admin):
     _, secret, _ = paired(admin.service)
     result = read(admin, secret, "campaign", "shares")
     assert not result["editable"] and not result["financial"]
+    assert not result["short_names_editable"]
 
 
 @pytest.mark.parametrize("current", [False, True])

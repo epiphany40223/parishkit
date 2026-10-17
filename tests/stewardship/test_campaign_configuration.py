@@ -494,3 +494,16 @@ def test_offered_role_labels_can_all_be_saved():
     assert not saveable("L" * (ROLE_NAME_LIMIT + 1)) and not saveable("")
     # Every offered label can be saved as the campaign's list.
     campaign_values(campaign(ministry_leader_roles=offered)["values"])
+
+
+def test_a_live_lock_compares_share_options_without_short_labels():
+    """The installer's structure lock leaves short labels open (#1569) and
+    keeps everything else about the share options fixed."""
+    from parishkit.stewardship.campaigns.admission import _locked_part
+
+    option = {"id": str(uuid4()), "label": "Give", "free_text": False}
+    before = {"name": "A", "share_options": [option]}
+    shortened = {"name": "B", "share_options": [option | {"short_label": "Gift"}]}
+    assert _locked_part(before, {"name"}) == _locked_part(shortened, {"name"})
+    relabelled = {"name": "A", "share_options": [option | {"label": "Other"}]}
+    assert _locked_part(before, {"name"}) != _locked_part(relabelled, {"name"})
