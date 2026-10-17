@@ -2,7 +2,47 @@
    styled here because the CSP forbids the stylesheet vega-tooltip would
    inject. The #vg-tooltip-element rules are vega-tooltip's defaults
    (BSD-3-Clause, Interactive Data Lab and contributors; see
-   vendor/LICENSES.txt), kept as published so the tooltip looks as documented. */
+   vendor/LICENSES.txt), kept as published except that its colours read the
+   theme tokens, so it follows the Admin colour scheme (#1264). */
+/* The chart palette: CHART_COLORS in web/design_tokens.py, and for the
+   Admin dark scheme DARK_CHART_COLORS (test_design_tokens.py checks both
+   blocks against the module). chart-v1.js draws each chart's marks in the
+   token whose light value the chart's specification names, in the scheme
+   its figure is in (ui-conventions "Colour scheme"). */
+:root, .light-card {
+  --chart-blue: #26658b;
+  --chart-orange: #8a4f00;
+  --chart-navy: #173d70;
+  --chart-blue-soft: #9ecae1;
+  --chart-marker: #555555;
+  --chart-track: #e4e7ec;
+  --chart-band-1: #bfe0d9;
+  --chart-band-2: #a1d1c7;
+  --chart-band-3: #7ebfb2;
+  --chart-band-4: #55a898;
+  --chart-band-5: #2b8273;
+  --chart-band-6: #1d7667;
+  --chart-band-7: #115e56;
+  --chart-band-8: #0a3f3a;
+}
+@media screen {
+  html.admin-document[data-theme="dark"] {
+    --chart-blue: #5fa8d6;
+    --chart-orange: #e5a158;
+    --chart-navy: #a9c1f2;
+    --chart-blue-soft: #244a62;
+    --chart-marker: #b3c0c5;
+    --chart-track: #3a4a51;
+    --chart-band-1: #173c38;
+    --chart-band-2: #1c4a45;
+    --chart-band-3: #215a53;
+    --chart-band-4: #276a61;
+    --chart-band-5: #3c9d8f;
+    --chart-band-6: #4aaea0;
+    --chart-band-7: #5cc0b2;
+    --chart-band-8: #86d5ca;
+  }
+}
 .chart { margin: 0; }
 [data-chart-view] { display: block; width: 100%; }
 [data-chart-view] svg { display: block; max-width: 100%; height: auto; }
@@ -26,9 +66,9 @@
   font-size: 11px;
   border-radius: 3px;
   box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
-  background-color: rgba(255, 255, 255, 0.95);
-  border: 1px solid #d9d9d9;
-  color: black;
+  background-color: var(--paper);
+  border: 1px solid var(--border);
+  color: var(--ink);
 }
 #vg-tooltip-element.visible { visibility: visible; }
 #vg-tooltip-element h2 { margin-top: 0; margin-bottom: 10px; font-size: 13px; }
@@ -41,7 +81,7 @@
   padding-bottom: 2px;
 }
 #vg-tooltip-element table tr td.key {
-  color: #808080;
+  color: var(--muted);
   max-width: 150px;
   text-align: right;
   padding-right: 4px;

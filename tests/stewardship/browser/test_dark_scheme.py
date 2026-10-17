@@ -29,8 +29,8 @@ pytestmark = pytest.mark.parametrize(
 
 # Home, a page full of form controls, sign-in, a setup wizard step, the
 # System health dashboard, System logs (a shared table) and the Response
-# charts, whose drawn charts stay light cards for now; then the two email
-# sample previews and the new campaign's copy preview.
+# charts (test_chart_scheme.py checks every chart page's drawing); then the
+# two email sample previews and the new campaign's copy preview.
 ADMIN_PAGES = (
     "/home",
     "/campaign-settings",
@@ -46,12 +46,11 @@ CONTRAST = """async () => (await axe.run(document, {
     runOnly: {type: 'rule', values: ['color-contrast']}
 })).violations.map(({id, nodes}) => ({id, targets: nodes.map(n => n.target)}))"""
 # Every visible element's own background and text colour, except the
-# parish logo (an image whose white backing is deliberate), the inside of a
-# drawn chart, which stays light until charts get a dark scheme, and an email
+# parish logo (an image whose white backing is deliberate) and an email
 # sample preview's light card.
 COLOURS = """() => [...document.querySelectorAll('body, body *')]
     .filter((el) => el.checkVisibility()
-        && !el.closest('.brand img, [data-chart-view], .light-card'))
+        && !el.closest('.brand img, .light-card'))
     .map((el) => {
         const style = getComputedStyle(el);
         return [el.tagName + (el.className && typeof el.className === 'string'

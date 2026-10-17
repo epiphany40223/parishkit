@@ -2176,8 +2176,6 @@ Everything else stays light:
   [email button](#shared-visual-style) to survive a mail program's inverted
   dark mode;
 - [downloaded files](#downloaded-files);
-- for now, each drawn chart, which keeps its white background and its own
-  dark labels as a light card;
 - each email sample preview (the content sample, the setup text editor's
   saved sample and the new campaign's copy preview), a light card that
   shows the email as it is sent.
@@ -2193,7 +2191,22 @@ logo backing name a colour. An image that draws in the ink
 colour, such as the select arrow, has a dark twin. A parish logo gets a
 white backing in dark, because it was drawn for a light header.
 
-Dark charts and a guard against new literal colours are later slices of
+**Charts.** A chart drawn on an Admin page takes the page's scheme. Its
+background, axes, gridlines, labels, titles, legend and tooltip are drawn in
+the portal tokens (paper, ink, muted text, border and control border), and
+its marks in the chart palette, a token set with a light and a dark value
+for each colour. A chart's specification names its colours by their light
+values, which an emailed or downloaded chart keeps; the page draws each in
+the matching token's value for its scheme. In dark, the chart's lines, bars
+and markers keep 3:1 against the paper and its text 4.5:1, and the pledge
+bands' ramp turns round (dark bands under light labels for small pledges,
+bright bands under dark labels for large ones), so each band's label keeps
+4.5:1. A change of scheme redraws every drawn chart in place, holding its
+height, so nothing on the page moves. A chart reads the scheme from
+`data-theme`, never from the device's setting, so it always agrees with the
+Appearance choice.
+
+A guard against new literal colours is a later slice of
 [#1264](https://github.com/epiphany40223/parishkit/issues/1264).
 
 **Why.** Administrators who work in a dark desktop get a portal that
@@ -2207,12 +2220,16 @@ the saved choice or the operating system, keeps the choice as
 `data-theme-choice` (from which `ui-v1.css` draws the selected icon), and
 runs the switch in `admin-appearance.html`, which `admin-base.html` puts at
 the end of the header. `test_design_tokens.py` checks both token sets and
-their contrast. The browser test `test_dark_scheme.py` checks that key Admin
+their contrast, and `CHART_COLORS` and `DARK_CHART_COLORS` (declared by
+`chart-v1.css`) with theirs; `chart-v1.js` draws each chart in its scheme.
+The browser test `test_dark_scheme.py` checks that key Admin
 pages leave no light surface or light ink in dark. It also checks the
 choice: it overrides the device in place, holds across a reload from the
 first paint, reaches other tabs, and leaves Family pages and print light;
 and the switch: keyboard use, focus ring, axe in both schemes, and its
-place at phone and laptop widths.
+place at phone and laptop widths. `test_chart_scheme.py` checks that every
+chart page draws its charts' text and marks in the tokens of each scheme
+and redraws them in place when the scheme changes.
 **Precedent.** #732 (tokens), #1264 (the switch's place: Administrator,
 pk-local batch 24a).
 
