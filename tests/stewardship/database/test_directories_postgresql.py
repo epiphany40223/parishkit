@@ -822,6 +822,35 @@ def test_staff_testing_mode_with_a_bad_code_is_refused_without_echo(
         assert b"private!" not in body and b"exact-code" not in body
 
 
+def test_refused_code_page_in_testing_keeps_the_mode_choice_and_form_in_step(
+    response_service, google
+):
+    """The refused Exact Family code page shows one mode in both places (#1535).
+
+    An Administrator in Testing sends a malformed code. The segmented
+    Responses-shown pair is drawn from the page's query and the filter form's
+    hidden ``mode`` from what was sent; both must say Testing.
+    """
+    browser, _ = signed_in()
+    route = reverse("admin:family_directory")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = search(
+            browser, route, {"exact_code": "private!<b>", "mode": "testing"}
+        )
+    assert response.status_code == 400
+    body = body.decode()
+    assert (
+        '<button type="submit" name="mode" value="testing" aria-current="page">' in body
+    )
+    assert (
+        '<button type="submit" name="mode" value="production" aria-current="page">'
+        not in body
+    )
+    form = body[body.index('<form id="table-filters"') :]
+    form = form[: form.index("</form>")]
+    assert '<input type="hidden" name="mode" value="testing">' in form
+
+
 def test_family_name_is_the_surname_not_a_first_name_mailing_name(
     live_response_service,
 ):

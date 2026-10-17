@@ -260,10 +260,13 @@ def directory(request, campaign_id):
             # Every closed choice was accepted before the code was checked,
             # so the sort sent is one the selection knows. The mode sent is
             # still admitted: a reader may not ask for Testing responses
-            # even on a refused page.
+            # even on a refused page. It is kept in the query too, so the
+            # mode choice agrees with the filter form's hidden mode field.
             refusal = error
             admit_mode(principal, error.query.mode)
-            query = DirectoryQuery.parse({"sort": error.query.sort})
+            query = DirectoryQuery.parse(
+                {"sort": error.query.sort, "mode": error.query.mode}
+            )
         admit_mode(principal, query.mode)
         admit_report_read(campaign_id)
         _audit(
