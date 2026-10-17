@@ -21,10 +21,16 @@ MARKED = "document.querySelector('h1').dataset.mark"
 # answering an applied filter (the fixtures' searches and choices), with the
 # number of filters each fixture applies.
 UNFILTERED = [
+    "/census-changes",
     "/information-unfiltered",
     "/financial-unfiltered",
 ]
-FILTERED = {"/family-directory": 1, "/information": 2, "/financial-report": 3}
+FILTERED = {
+    "/census-changes-automatic-filtered": 1,
+    "/family-directory": 1,
+    "/information": 2,
+    "/financial-report": 3,
+}
 
 
 @pytest.mark.parametrize("path", UNFILTERED)
@@ -106,9 +112,10 @@ def test_in_place_apply_updates_the_count_and_keeps_the_panel(page, component_or
 
 # The first data each report page shows (the Family directory opens Filters by
 # default, so it is not here): Additional information's matching count, and
-# the summary of Financial stewardship and Limitations, which sits above their
-# filters.
+# the summary of Financial stewardship, Limitations and Census changes, which
+# sits above their filters.
 FIRST_DATA = {
+    "/census-changes": "#census-summary dl",
     "/information-unfiltered": "#information-matching",
     "/financial-unfiltered": ".stat-tiles",
     "/limitations-report": "#limitations-summary dl",
@@ -174,9 +181,14 @@ OPEN_PANELS = sorted(FILTERED)
 # The most each open panel may take on a laptop once its filters share the
 # rows of a grid (#1411). With one field per row, as before, Additional
 # information's took about 690 px and Financial stewardship's about 1,460;
-# the grid takes about 310 and 470, and the limits leave room for wider
-# fonts. The Family directory keeps its filter bar, so it is not here.
-OPEN_PANEL_HEIGHT = {"/information": 420, "/financial-report": 700}
+# the grid takes about 310 and 470 (Census changes about 260), and the
+# limits leave room for wider fonts. The Family directory keeps its filter
+# bar, so it is not here.
+OPEN_PANEL_HEIGHT = {
+    "/census-changes-automatic-filtered": 340,
+    "/information": 420,
+    "/financial-report": 700,
+}
 # The left and bottom edges of each field cell in the open panel's form,
 # rounded to whole pixels: the cells of a row align at the bottom.
 CELLS = """form => [...form.children].filter((node) => node.matches("div, fieldset"))
