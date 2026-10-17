@@ -19,12 +19,17 @@ QUERIES = {
         WHERE n.nspname='public' AND c.relname LIKE 'stewardship_%'
               AND c.relkind IN ('r','v','S','p','m','f')
     """,
+    # attacl holds column-level grants (database-grants installs many, such as
+    # runtime_grants.BACKUP_PANEL_COLUMNS); without it a committed column GRANT
+    # or REVOKE went unnoticed (#1519). PostgreSQL resets it to NULL once the
+    # last column grant is revoked or its grantee dropped, so no normalising.
     "columns": """
         SELECT c.relname || '.' || a.attname,
                format_type(a.atttypid,a.atttypmod), a.attnotnull,
                a.attidentity, a.attgenerated, co.collname,
                pg_get_expr(d.adbin,d.adrelid),
-               row_number() OVER (PARTITION BY c.oid ORDER BY a.attnum)
+               row_number() OVER (PARTITION BY c.oid ORDER BY a.attnum),
+               a.attacl::text
         FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid
         JOIN pg_namespace n ON n.oid=c.relnamespace
         LEFT JOIN pg_attrdef d ON d.adrelid=c.oid AND d.adnum=a.attnum
