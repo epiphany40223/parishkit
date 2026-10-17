@@ -20,7 +20,10 @@ from google.auth.exceptions import RefreshError
 from parishkit.config import ConfigError
 from parishkit.email.google_workspace import xoauth2_string
 from parishkit.parishsoft import ParishSoftAPIError, ParishSoftConfig
-from parishkit.parishsoft_source import CoherentParishSoftClient
+from parishkit.parishsoft_source import (
+    CoherentParishSoftClient,
+    SourceOrganizationMismatch,
+)
 from parishkit.parishsoft_transport import ExactSourceResponse
 from parishkit.retry import RetryError, RetryPolicy
 
@@ -40,7 +43,10 @@ from .source.credentials import SourceCredential
 
 MAX_INPUT = MAX_FILE_BYTES * 2 + 4096
 MAX_RESPONSE = 65536
-OUTCOMES = frozenset({"valid", "invalid", "unavailable"})
+# "mismatch" (#1492): a ParishSoft key that authenticates but sees another
+# organization than the one configured. Like "invalid" it is permanent, so it
+# is never retried, but it has its own word so the smoke check names it.
+OUTCOMES = frozenset({"valid", "invalid", "mismatch", "unavailable"})
 REQUEST_FIELDS = frozenset({"target", "settings", "candidate", "profile"})
 FIXED_ENDPOINTS = frozenset(
     {
@@ -272,8 +278,10 @@ def classify(target, value, settings, *, profile):
     """Run one provider check in the restricted session and name its outcome.
 
     The installer's helper and the human-run smoke command share this
-    ladder, so "valid", "invalid" and "unavailable" mean the same in both.
-    ``profile`` selects the endpoints the check may reach.
+    ladder, so "valid", "invalid", "mismatch" and "unavailable" mean the
+    same in both. ``profile`` selects the endpoints the check may reach.
+    "mismatch" is a ParishSoft key whose organization is not the configured
+    one: permanent, never a temporary outage (#1492).
     """
     try:
         with CheckSession(profile) as session:
@@ -287,13 +295,21 @@ def classify(target, value, settings, *, profile):
     except (ConfigError, CryptographicError):
         # Closed candidate parsers reject malformed private bytes locally.
         return "invalid"
+    except SourceOrganizationMismatch:
+        # Checked before the generic failures below: it is a kind of
+        # incomplete source collection, but no retry can ever pass it.
+        return "mismatch"
     except ParishSoftAPIError as error:
         return "invalid" if error.status_code in {401, 403} else "unavailable"
+    except RetryError as error:
+        # One attempt only, but the shared client may still wrap its failure.
+        if isinstance(error.last_exception, SourceOrganizationMismatch):
+            return "mismatch"
+        return "unavailable"
     except (
         CredentialValidationUnavailable,
         requests.ConnectionError,
         requests.Timeout,
-        RetryError,
         OSError,
         smtplib.SMTPServerDisconnected,
     ):

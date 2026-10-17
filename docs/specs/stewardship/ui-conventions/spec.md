@@ -1499,7 +1499,10 @@ around it, two gates keep it in place instead:
   the field), and gives back the reader's own value (kept in a hidden field)
   when the rule stops holding. First use:
   the directory's "Campaign mail can reach" while Include mailing columns is
-  ticked.
+  ticked. When the Administrator needs to see why a locked field cannot
+  change, the reason may also be one line in the field's own hint slot (the
+  line a hint would take, so nothing shifts), as the locked ParishSoft
+  organization ID shows ([#1492](https://github.com/epiphany40223/parishkit/issues/1492)).
 
 The two overlap, and are to be merged into one shared gate once both have
 landed. The Ministry follow-up request form greys its outcome and contact
