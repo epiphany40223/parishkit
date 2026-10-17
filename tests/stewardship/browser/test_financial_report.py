@@ -49,8 +49,6 @@ def test_financial_mobile_keyboard_and_accessibility(
     assert page.get_by_text("Example <Family>", exact=False).count() == 1
     # Other text is in its method's tip (#1544), still escaped.
     assert page.get_by_text("Another way: Stock <gift>", exact=True).count() == 1
-    # The chip names a method by its short label where it has one (#1569).
-    assert page.locator(".status-badge", has_text="Online").count() == 1
     assert page.get_by_role("cell", name="$1,234.50", exact=True).count() == 1
     # Entered by Staff (#794) is the Latest response cell's Staff chip
     # (#1544), not a column of its own.
@@ -233,14 +231,22 @@ def test_financial_columns_lead_with_family_and_name_the_parishsoft_year(
 # Whether any cell of the results table's body wraps to a second line: the
 # client rectangles of each cell's content must all share one line (every
 # rectangle starts above every other one's bottom). A cell that stacks two
-# values (.stack-line, #1544) is checked one stacked line at a time.
-# Returns the offending cells' text with each row's height.
+# values (.stack-line, #1544) is checked one stacked line at a time. The
+# Share methods cell is the one exception: its chips may wrap inside it
+# (#1569), so it is checked chip by chip, each chip with its tip on one line.
+# Returns the offending cells' text with each row's height and the number
+# of lines its Share methods chips take.
 WRAPPED = """() => {
-    const rows = [...document.querySelectorAll("[data-table-region] table tbody tr")];
+    const table = document.querySelector("[data-table-region] table");
+    const shares = [...table.tHead.rows[0].cells].findIndex(
+        (th) => th.textContent.trim().startsWith("Share methods"));
+    const rows = [...table.tBodies[0].rows];
     const wrapped = [];
     for (const row of rows) {
         for (const cell of row.children) {
-          const lines = cell.querySelectorAll(".stack-line");
+          const chips = cell.cellIndex === shares;
+          const lines = cell.querySelectorAll(
+            chips ? ":scope > .nowrap" : ".stack-line");
           for (const unit of lines.length ? lines : [cell]) {
             const range = document.createRange();
             range.selectNodeContents(unit);
@@ -252,7 +258,14 @@ WRAPPED = """() => {
           }
         }
     }
-    return [wrapped, rows.map((row) => row.getBoundingClientRect().height)];
+    // A chip line is a distinct top among the cell's chips.
+    const chipLines = (row) => {
+        const chips = row.cells[shares].querySelectorAll(":scope > .nowrap");
+        const tops = [...chips].map((c) => Math.round(c.getBoundingClientRect().top));
+        return new Set(tops).size;
+    };
+    const height = (row) => row.getBoundingClientRect().height;
+    return [wrapped, rows.map((row) => [height(row), chipLines(row)])];
 }"""
 # The results table's scroll box: its visible and full widths.
 BOX_WIDTHS = """() => {
@@ -269,9 +282,10 @@ def test_rows_stay_one_line_and_scroll_in_their_box_on_a_phone(
 
     At 1280 px every cell is on one line, except that the ParishSoft cell
     stacks Contributed under Pledged, one line each, so each row is two
-    short lines tall; a table wider than the space beside the Admin menu
-    (the typical rows, by about 50-60 px) scrolls in its own box, never the
-    page. At 320 px the rows keep that shape and the table scrolls in its
+    short lines tall, and that Share methods chips may wrap inside their
+    cell (#1569), each chip on one line, making that row taller; a table
+    wider than the space beside the Admin menu scrolls in its own box, never
+    the page. At 320 px the rows keep that shape and the table scrolls in its
     box, a focusable region.
     """
     page.set_viewport_size({"width": 1280, "height": 900})
@@ -279,8 +293,11 @@ def test_rows_stay_one_line_and_scroll_in_their_box_on_a_phone(
     wrapped, heights = page.evaluate(WRAPPED)
     assert wrapped == [], wrapped
     # The two stacked ParishSoft lines plus the cell padding (about 63 px),
-    # well under three lines of text.
-    assert heights and max(heights) < 72, heights
+    # well under three lines of text. A row grows past that only as its
+    # chips wrap (#1569): a chip line with its "i" tip is about 30 px.
+    assert heights, heights
+    for height, lines in heights:
+        assert height < max(72, 20 + 32 * lines), heights
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     page.set_viewport_size({"width": 320, "height": 900})
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
@@ -294,43 +311,57 @@ def test_rows_stay_one_line_and_scroll_in_their_box_on_a_phone(
     assert box.get_attribute("role") == "region"
 
 
-def test_share_methods_show_the_first_chip_and_a_plus_chip_with_all_of_them(
+def test_share_methods_show_every_short_label_chip_with_other_text_tips(
     page, component_origin
 ):
-    """The first share method is a chip; "+N" opens every method (#1544).
+    """Each share method is its own short-label chip; Other text is a tip (#1569).
 
-    The "+1" chip is a toggletip button, reached and opened by keyboard,
-    named by its visible text, whose bubble lists each method in order with
-    any Other text; opening it never moves or resizes the table's box. A
-    lone method with Other text keeps its "i" tip with that text.
+    The chips are in the row's order, named by their short labels, with no
+    "+N" chip. A method with Other text has an "i" toggletip beside its chip
+    that shows the full label and the text, reached and opened by keyboard,
+    and opening it never moves or resizes the table's box. Only the Share
+    methods cell may wrap; money and date cells stay no-wrap.
     """
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + "/financial-report")
-    cell = page.locator("[data-table-region] table tbody tr").first.locator("td").nth(3)
-    assert cell.locator(".status-badge").all_inner_texts() == ["Online <giving>"]
-    button = cell.locator(".toggletip-button")
+    row = page.locator("[data-table-region] table tbody tr").first
+    cell = row.locator("td").nth(3)
+    assert cell.locator(".status-badge").all_inner_texts() == ["Online", "Another way"]
+    assert cell.evaluate("c => getComputedStyle(c).whiteSpace") == "normal"
+    for index in (1, 4, 5):
+        money_or_date = row.locator("td").nth(index)
+        assert money_or_date.evaluate("c => getComputedStyle(c).whiteSpace") == "nowrap"
+    button = cell.get_by_role("button", name="More information", exact=True)
     assert button.count() == 1
-    assert button.evaluate("b => b.firstChild.textContent") == "+1"
-    assert page.get_by_role("button", name="+1 more share method", exact=True).count()
     bubble = cell.locator(".toggletip-bubble")
     assert bubble.is_hidden()
     before = page.evaluate(TABLE_BOX)
     button.focus()
     page.keyboard.press("Enter")
     visible(bubble)
-    assert bubble.locator(".toggletip-line").all_inner_texts() == [
-        "Online <giving>",
-        "Another way: Stock <gift>",
-    ]
+    # The full label, the Family's words, still escaped.
+    assert bubble.inner_text() == "Another way: Stock <gift>"
     # Within a hundredth of a pixel: Firefox can return the same position
     # with float noise (2070.61669921875 vs 2070.616668701172), while any
     # real move or resize is at least a whole pixel.
     assert page.evaluate(TABLE_BOX) == pytest.approx(before, abs=0.01)
     page.keyboard.press("Escape")
     assert bubble.is_hidden()
-    # A Family with one method that has Other text: its chip and an "i" tip.
+    # Three methods, each its own chip, the Other one with its tip.
     page.goto(component_origin + "/financial-typical")
     rows = page.locator("[data-table-region] table tbody tr")
+    cell = rows.first.locator("td").nth(3)
+    assert cell.locator(".status-badge").all_inner_texts() == [
+        "Online",
+        "Envelope",
+        "Other",
+    ]
+    tips = cell.locator(".toggletip-bubble")
+    assert tips.count() == 1
+    assert (
+        tips.first.evaluate("b => b.textContent") == "Other: Quarterly stock transfer"
+    )
+    # A Family with one method that has Other text: its chip and an "i" tip.
     cell = rows.nth(2).locator("td").nth(3)
     assert cell.locator(".status-badge").all_inner_texts() == ["Other"]
     button = cell.get_by_role("button", name="More information", exact=True)
