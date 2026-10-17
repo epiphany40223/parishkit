@@ -155,7 +155,7 @@ def test_bounce_report_asks_then_reports_once_per_key(
     # The page's form with the same key, box ticked: the same report.
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response = browser.post(
-            f"/admin/mail/outgoing/{message.pk}/bounce-report/",
+            f"/admin/mail/sent/{message.pk}/bounce-report/",
             {
                 "command_id": str(key),
                 "address": ADDRESS,

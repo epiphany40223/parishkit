@@ -498,6 +498,9 @@ input[data-time-entry=list] { max-width: 24rem; }
 /* Inside a filter bar (the Family directory) the hint takes a line of its
    own under the fields, not a place in their row (#563). */
 .filter-bar > [data-complete-hint] { flex-basis: 100%; margin: 0; }
+/* So does a filter bar's browser zone note (Sent mail's From and Through,
+   #1562): a line of its own under the fields. */
+.filter-bar > [data-browser-zone-note] { flex-basis: 100%; margin: 0; }
 /* System logs shows the server's refusal of a filter (#1332) in its gate's
    reserved hint row, not in a line of its own, so the page is no taller
    for it: the message and the hint share one grid cell, at the hint's
@@ -1031,6 +1034,15 @@ details.filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div
 /* A field as wide as its longest choice, so a long option reads whole
    (Limitations' Show, #227); it still shrinks to the row on a phone. */
 .filter-bar > div.fit { flex: 0 1 auto; }
+/* Sent mail's five filters share one row beside the Admin menu at desktop
+   width (#1562): each grows from a short basis instead of starting at
+   its widest choice. */
+.filter-bar.mail-filters > div { flex: 1 1 7.5rem; min-width: 6.5rem; }
+.filter-bar.mail-filters > div.short { flex: 0 1 8.5rem; min-width: 8.5rem; }
+.filter-bar.mail-filters > div > :is(input, select) { width: 100%; }
+/* Its Production / Testing links keep one weight, so choosing one never
+   moves the other under the pointer (no layout shift, #736). */
+#delivery-mode .choice-links a { font-weight: 650; }
 .filter-bar button { margin: 0; }
 /* A filter bar's hint row with the server's refusal over the gate's hint
    (.hint-row-messages, the Family directory's Exact Family code, #1332)

@@ -142,11 +142,11 @@ def test_active_campaign_steps_counts_and_today(response_service, google):
         "Additional information",
         "Ministry requests",
         "Family email progress",
-        "Outgoing mail",
+        "Sent mail",
     ]
     # The follow-up request the harness made is open in the queue.
     assert "Ministry requests — 2 open" in listed
-    assert 'href="/admin/mail/outgoing/"' in html
+    assert 'href="/admin/mail/sent/"' in html
     since = database_now() - timedelta(hours=24)
     recent = (
         Submission.objects.filter(

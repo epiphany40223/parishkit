@@ -1557,7 +1557,7 @@ def schedule_delete(request, campaign_id):
                     "uncertain result, so they can't be deleted yet."
                 ),
                 fix=_(
-                    "Wait for it to finish, or resolve it on the Outgoing mail "
+                    "Wait for it to finish, or resolve it on the Sent mail "
                     "page, then try again."
                 ),
             )

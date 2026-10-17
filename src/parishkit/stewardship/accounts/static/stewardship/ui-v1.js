@@ -2136,7 +2136,7 @@
     refreshTable(region, control, action.href, init, load, {owner, form: save ? form : null})
       .finally(settle);
   }, true);
-  // An in-place review (Outgoing mail's bulk review, #382; Past campaigns'
+  // An in-place review (Sent mail's bulk review, #382; Past campaigns'
   // import, #1018) shows what its form's last Review would change, in an
   // element marked data-review-of="<form id>", with Apply. Editing that form again makes
   // the review out of date, and Apply would still apply the reviewed values,

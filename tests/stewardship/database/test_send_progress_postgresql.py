@@ -193,7 +193,7 @@ def test_the_web_login_follows_a_real_send_during_a_work_order_hold(
         # The help links each page it tells the reader to use (navigation
         # rule 6, #521). The help's own words around each link keep the
         # sidebar's links to the same pages from satisfying the check.
-        outgoing = f'<a href="{reverse("admin:deliveries")}">Outgoing mail</a> page'
+        outgoing = f'<a href="{reverse("admin:deliveries")}">Sent mail</a> page'
         assert body.count(outgoing) == 2
         background = f'<a href="{reverse("admin:background")}">Background work</a>'
         assert f"or on {background} if it failed" in body
@@ -225,7 +225,7 @@ def test_a_finished_send_is_not_in_progress_and_is_summarised(
     """Delivery unknown is settled: uncertain, never sent, and not in progress.
 
     The page says no send is in progress, summarises the send in one line
-    with no progress bar, links to Outgoing mail and keeps checking.
+    with no progress bar, links to Sent mail and keeps checking.
     """
     uncertain(family_mail)
     browser, _ = signed_in()
@@ -237,7 +237,7 @@ def test_a_finished_send_is_not_in_progress_and_is_summarised(
     assert "No Family email send is in progress right now" in body
     assert "Last send: Invitation email, finished <time" in body
     assert "0 sent, 0 failed, 1 not sure it arrived, 0 not sent." in body
-    assert 'href="/admin/mail/outgoing/">Outgoing mail</a>' in body
+    assert 'href="/admin/mail/sent/">Sent mail</a>' in body
     assert "<progress" not in body
     assert "data-live-pending" in body
 

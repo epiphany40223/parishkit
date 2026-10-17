@@ -81,7 +81,7 @@ class Action(StrEnum):
     SOURCE_FALLBACK = "source_fallback_requested"
     BACKGROUND_VIEWED = "background_viewed"
     DELIVERY_VIEWED = "delivery_viewed"
-    # One Outgoing mail bulk retry or "confirm all not sent" (#382 M4); each
+    # One Sent mail bulk retry or "confirm all not sent" (#382 M4); each
     # message it resolves also has its own resolution audit event.
     DELIVERY_BULK_RESOLVED = "delivery_bulk_resolved"
     DAILY_DIGEST_VIEWED = "daily_digest_viewed"

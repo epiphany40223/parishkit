@@ -1,4 +1,4 @@
-"""Outgoing mail's bulk actions under the real web login and guards (#382 M4).
+"""Sent mail's bulk actions under the real web login and guards (#382 M4).
 
 Each bulk action selects by the rules each message's own page uses,
 previews an exact count, and resolves every message through the ordinary
@@ -85,7 +85,7 @@ def preview_unsent(browser, purpose="all"):
 
 
 def outgoing(browser, **values):
-    """Post one bulk form to Outgoing mail as the signed-in Administrator."""
+    """Post one bulk form to Sent mail as the signed-in Administrator."""
     with web_login():
         return post(browser, reverse("admin:deliveries"), values)
 

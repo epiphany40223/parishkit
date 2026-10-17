@@ -4,7 +4,7 @@ One row per send of the current campaign (``send_history``), newest first,
 counted with the live progress panel's rules. The page is read
 (``send_reads.read_history``) in one ``read_transaction`` snapshot, takes no
 lock (in particular not the global work-order lock the sending workers take)
-and records one audited Outgoing mail view, like the panel.
+and records one audited Sent mail view, like the panel.
 """
 
 from django.db import DatabaseError, transaction

@@ -208,7 +208,7 @@ def test_the_refused_address_alone_gets_the_same_email_again(
     )
     assert follow_ups_as_web(message.pk, admin) == [(1, "delivered")]
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        html = browser.get(f"/admin/mail/outgoing/{message.pk}/").content.decode()
+        html = browser.get(f"/admin/mail/sent/{message.pk}/").content.decode()
     assert f"To: {ADDRESSES[0]} (delivered), {ADDRESSES[1]} (delivered)</p>" in html
     assert 'id="email-reached"' not in html
 
@@ -240,7 +240,7 @@ def test_still_refused_waits_and_never_resends_the_accepted_address(
         }
         assert TaskRun.objects.get(pk=retry.task_id).state == "retry_wait"
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            html = browser.get(f"/admin/mail/outgoing/{message.pk}/").content.decode()
+            html = browser.get(f"/admin/mail/sent/{message.pk}/").content.decode()
         assert f"{ADDRESSES[1]} (refused for now, trying again)" in html
         assert '<p id="email-reached">Delivered to 1 of 2 addresses.</p>' in html
         # The About panel explains the automatic retry.

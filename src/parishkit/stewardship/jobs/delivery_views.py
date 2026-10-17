@@ -1,6 +1,7 @@
 """Admin-only mail metadata and evidence forms; private payloads never serialize."""
 
 from contextlib import contextmanager
+from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
 from django.conf import settings
@@ -47,7 +48,7 @@ from parishkit.stewardship.web.tables import (
 
 from . import delivery_bulk
 from .delivery_admin import clear_recipient_refusal, report_recipient_bounce
-from .delivery_metadata import DELIVERY_SORTING, STATES
+from .delivery_metadata import DELIVERY_SORTING, MODES, PURPOSE_CHOICES, STATES
 from .delivery_reads import (
     ACTION_LABELS,
     REFUSAL_SORTING,
@@ -62,6 +63,7 @@ from .delivery_reads import (
     read_sending_holds,
     unresolved_refusals,
     with_family_names,
+    with_recipients,
     with_refusal_counts,
 )
 from .delivery_resolution import resolve_delivery
@@ -248,14 +250,46 @@ def _previous(request, window):
     return values.urlencode()
 
 
+def _mode_links(request):
+    """Sent mail's Production / Testing links: this view in each mode (#1562).
+
+    Each keeps the page's applied filters, size and sort and starts again at
+    page 1, as a new filter does. Returns ``[(mode, query)]``.
+    """
+    links = []
+    for mode in MODES:
+        values = request.GET.copy()
+        values.pop("page", None)
+        values["mode"] = mode
+        links.append((mode, values.urlencode()))
+    return links
+
+
+def _recipient_query(row, mode):
+    """The query that lists everything a row's recipient was sent (#1562).
+
+    A Family email's recipient is its Family (by DUID), any other email's its
+    Administrator address; the link keeps the mode shown. None when the
+    address is unknown. The recipient history pages of a later #1562 slice
+    replace this link.
+    """
+    duid = row["family__family_duid"]
+    recipient = str(duid) if duid else row.get("recipient_address")
+    if not recipient:
+        return None
+    return urlencode({"recipient": recipient, "mode": mode})
+
+
 @require_http_methods(["GET", "HEAD", "POST"])
 @sensitive_post_parameters("note")
 def delivery_list(request):
-    """Search exact operational identifiers without fetching message content.
+    """Sent mail: every email, filtered by exact or closed choices (#1562).
 
-    A POST is one of the page's bulk actions (#382 M4, ``_bulk``): it is
-    answered with this page, whose bulk review region shows the preview,
-    the result or the refusal in place.
+    Never fetches message content: an Administrator email's address comes
+    from a definer read that returns only addresses. A POST is one of the
+    page's bulk actions (#382 M4, ``_bulk``): it is answered with this page,
+    whose bulk review region shows the preview, the result or the refusal
+    in place.
     """
     bulk, status = _bulk(request) if request.method == "POST" else ({}, 200)
     if isinstance(bulk, HttpResponse):
@@ -264,14 +298,27 @@ def delivery_list(request):
     refusal = bulk.pop("_refusal", None)
 
     def load(actor):
-        """Capture one filtered page without reading any private message payload."""
-        data = read_listing(request.GET)
+        """Capture one filtered page without reading any private message payload.
+
+        The page shows Production email unless its query names Testing (or
+        a Testing send).
+        """
+        data = read_listing(
+            request.GET, actor=actor.identity, default_mode="production"
+        )
         values = data["values"]
+        rows = with_recipients(
+            with_refusal_counts(with_family_names(data["rows"], data["snapshot"])),
+            actor.identity,
+        )
         return dict(
             table=_table(
                 request,
                 data["window"],
-                with_refusal_counts(with_family_names(data["rows"], data["snapshot"])),
+                [
+                    row | {"recipient_query": _recipient_query(row, values["mode"])}
+                    for row in rows
+                ],
                 data["has_next"],
                 total=data["total"],
                 sorting=DELIVERY_SORTING,
@@ -279,7 +326,14 @@ def delivery_list(request):
             ),
             states=STATES,
             selected_state=values["state"],
-            query=values["q"],
+            purposes=PURPOSE_CHOICES,
+            selected_purpose=values["purpose"],
+            recipient=values["recipient"],
+            start=values.get("start", ""),
+            end=values.get("end", ""),
+            zone=values.get("zone", ""),
+            mode=values["mode"],
+            mode_links=_mode_links(request),
             send=data["send"],
             holds=read_sending_holds(database_now()),
             # The link line's count (#935), drawn once per page load.
@@ -428,7 +482,7 @@ def delivery_detail(request, message_id):
         """Pin history's upper version to the selected message observation.
 
         The page names the email by its purpose and its Family's name (from
-        the latest ParishSoft data, as Outgoing mail reads it), its
+        the latest ParishSoft data, as Sent mail reads it), its
         recipient addresses (read for ``actor`` through the definer function,
         #1024) and the refused addresses its delivery recorded (#1015).
         ``commands`` are the offered resolutions; ``decisions`` says whether

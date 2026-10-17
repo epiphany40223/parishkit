@@ -115,7 +115,7 @@ def test_steps_follow_the_viewers_menu():
 
 
 def test_active_and_paused_steps_carry_the_open_counts():
-    """The queues show their open counts; Outgoing mail filters to the emails
+    """The queues show their open counts; Sent mail filters to the emails
     that may not have arrived while there are some; paused mail comes first."""
     entries = menu(counts={"information_queue": 3, "ministry_report": 0})
     active = home_steps.next_steps("active", "administrator", entries, mail_unknown=2)
@@ -124,7 +124,7 @@ def test_active_and_paused_steps_carry_the_open_counts():
         "Additional information",
         "Ministry requests",
         "Family email progress",
-        "Outgoing mail",
+        "Sent mail",
     ]
     assert (active[1].count, str(active[1].note)) == (3, "open")
     assert (active[2].count, str(active[2].note)) == (0, "open")
@@ -160,7 +160,7 @@ def test_closed_and_activating_steps():
     ]
     assert labels(home_steps.next_steps("activating", "administrator", menu())) == [
         "Production activation",
-        "Outgoing mail",
+        "Sent mail",
     ]
     assert home_steps.next_steps(None, "administrator", menu()) == []
 
@@ -180,7 +180,7 @@ def test_draft_in_production_preparation_leads_with_go_live_readiness():
     assert labels(home_steps.home(context)["steps"]) == [
         "Go-live readiness",
         "Production activation",
-        "Outgoing mail",
+        "Sent mail",
     ]
     context["dashboard"] = {"campaign": campaign("scheduled")}
     assert labels(home_steps.home(context)["steps"])[0] == "Production activation"
@@ -232,7 +232,7 @@ def test_template_links_available_steps_and_names_greyed_ones():
     assert '<a href="/information_queue/">Additional information</a> — 5 open' in html
     assert f"Ministry requests — {navigation.NO_CAMPAIGN}" in html
     assert (
-        '<a href="/deliveries/?state=delivery_unknown">Outgoing mail</a>'
+        '<a href="/deliveries/?state=delivery_unknown">Sent mail</a>'
         " — 1 may not have arrived"
     ) in html
     context["dashboard"] = {"campaign": None}

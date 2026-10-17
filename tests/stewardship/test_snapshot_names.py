@@ -71,7 +71,7 @@ def test_default_names_a_family_without_a_surname(monkeypatch):
 
 
 def test_outgoing_mail_words_a_nameless_family_as_name_not_recorded(monkeypatch):
-    """Outgoing mail and Refused addresses name a Family with no name fields
+    """Sent mail and Refused addresses name a Family with no name fields
     with the shared blank-name words, and a Family the snapshot lacks with
     None, which the page marks Not in ParishSoft (#1216)."""
     from parishkit.stewardship.jobs.delivery_reads import with_family_names

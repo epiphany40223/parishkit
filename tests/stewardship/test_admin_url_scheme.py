@@ -254,8 +254,8 @@ SLASHLESS_EXPECTED = {
     "/admin/mail/controls": "/admin/mail/controls/",
     "/admin/mail/family-progress": "/admin/mail/family-progress/",
     "/admin/mail/family-history": "/admin/mail/family-history/",
-    "/admin/mail/outgoing": "/admin/mail/outgoing/",
-    f"/admin/mail/outgoing/{T}": f"/admin/mail/outgoing/{T}/",
+    "/admin/mail/sent": "/admin/mail/sent/",
+    f"/admin/mail/sent/{T}": f"/admin/mail/sent/{T}/",
     "/admin/mail/refusals": "/admin/mail/refusals/",
     f"/admin/mail/refusals/{T}": f"/admin/mail/refusals/{T}/",
     "/admin/mail/family-portal": "/admin/mail/family-portal/",
@@ -319,6 +319,10 @@ OLD_ADDRESSES = (
     f"/admin/configuration/requests/{T}",
     # Mail and Family portal (NAV-8).
     "/admin/deliveries",
+    # Outgoing mail, renamed Sent mail (#1562), with its email pages.
+    "/admin/mail/outgoing/",
+    f"/admin/mail/outgoing/{T}/",
+    f"/admin/mail/outgoing/{T}/resolution/",
     f"/admin/deliveries/{T}/resolve",
     "/admin/deliveries/family-sends",
     "/admin/family-portal",

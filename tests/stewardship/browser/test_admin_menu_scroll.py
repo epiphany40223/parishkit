@@ -149,7 +149,7 @@ def test_the_entry_stays_in_place_after_collapsed_groups_are_set(
     )
     page.reload()
     visible(sidebar.get_by_role("link", name="Pages and emails"))
-    hidden(sidebar.get_by_role("link", name="Outgoing mail"))
+    hidden(sidebar.get_by_role("link", name="Sent mail"))
     top = _follow(page, sidebar)
     hidden(sidebar.get_by_role("link", name="Pages and emails"))
     _assert_kept(page, top)
@@ -270,7 +270,7 @@ def test_the_menu_works_with_storage_blocked(browser_engine, component_origin):
         assert _shown(sidebar, TARGET)
         # Groups still collapse.
         sidebar.locator('details[data-menu-group="mail"] > summary').click()
-        hidden(sidebar.get_by_role("link", name="Outgoing mail"))
+        hidden(sidebar.get_by_role("link", name="Sent mail"))
         assert not failures
     finally:
         context.close()

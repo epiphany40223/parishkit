@@ -1,4 +1,4 @@
-"""Outgoing mail's bulk actions, without a database (#382 M4).
+"""Sent mail's bulk actions, without a database (#382 M4).
 
 The selection rules shared with each message's page, the preview's
 validation and binding, and how one application treats each message's

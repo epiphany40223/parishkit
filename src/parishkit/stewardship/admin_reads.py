@@ -504,7 +504,7 @@ def send_row(row):
     """One ``send_history.SendRow`` as counts, states, identifiers and instants.
 
     ``send`` is the send's key (``definition:revision:mode:cycle``), the
-    value Outgoing mail's ``send`` filter takes.
+    value Sent mail's ``send`` filter takes.
     """
     return {
         "send": row.listed.key.token,

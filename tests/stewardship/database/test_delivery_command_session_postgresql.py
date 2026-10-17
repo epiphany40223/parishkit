@@ -46,7 +46,7 @@ def form(family_mail, google, request):
     with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
         if request.param == "resolution":
             message = failed_delivery(family_mail)
-            path = f"/admin/mail/outgoing/{message.pk}/resolution/"
+            path = f"/admin/mail/sent/{message.pk}/resolution/"
             values |= dict(
                 expected_version=str(message.version),
                 action="note",

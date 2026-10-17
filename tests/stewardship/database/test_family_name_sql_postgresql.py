@@ -76,7 +76,7 @@ def test_sql_family_name_treats_non_array_heads_as_none(response_service):
 
 
 def test_outgoing_mail_name_keys_match_every_edge_case(response_service):
-    """Outgoing mail's Family sort keys (delivery_metadata.with_name_keys,
+    """Sent mail's Family sort keys (delivery_metadata.with_name_keys,
     #934) are each NAME_CASES name, lowercased, and its surname alone; they
     name a Family without any usable name "Name not recorded in ParishSoft",
     as the page does (#1216)."""
