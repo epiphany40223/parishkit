@@ -72,7 +72,8 @@ def test_weekly_report_shows_the_response_funnel(
         assert funnel.locator("tbody tr").count() == 4
         text = funnel.inner_text()
         assert "Email invites sent" in text and "40%" in text
-        assert "Submitted more than once" in text and "7 (2% of Submitted)" in text
+        # No side figures (#1532).
+        assert "more than once" not in text and "of Submitted" not in text
         # After the requests and their pager, outside the in-place region.
         assert page.evaluate(
             """() => {

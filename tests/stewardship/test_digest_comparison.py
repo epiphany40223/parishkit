@@ -188,7 +188,8 @@ def test_the_email_carries_the_section_charts_first(renderer):
     validate_digest_body(result.html, result.text, result.chart.data, images)
     html = result.html
     start = html.index(HEADING)
-    assert start > html.index("Open this exact report")
+    # After the Response dashboard button at the report's end (#1532).
+    assert start > html.rindex("Open the Response dashboard</a>")
     assert (
         html.index(f"cid:{COMPARISON_CHART_IDS[0]}", start)
         < html.index(f"cid:{COMPARISON_CHART_IDS[1]}", start)

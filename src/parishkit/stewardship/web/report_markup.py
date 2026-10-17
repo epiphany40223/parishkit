@@ -31,6 +31,10 @@ TRACK = hex6(CHART_COLORS["chart-track"])
 BAR_COLOURS = {BLUE, TRACK}
 # Cell background colours: the bars, and the primary button's cell.
 CELL_COLOURS = BAR_COLOURS | {ACCENT}
+# The daily digest's as-of paragraph before it became the opening line
+# (#1532). A retained report compiled before then still carries it; like
+# the values below it is frozen history, so it stays literal.
+_RETAINED_AS_OF = "margin:0 0 20px;font-size:16px;color:#1b2a31;"
 # The bar fill and the heading rule before they took the tokens (#732). A
 # report compiled before then and retained for delivery or a retry still
 # carries them, so the validators still admit them; nothing compiles them
@@ -44,8 +48,10 @@ _RETAINED_TH = (
 # The only inline styles a compiled report may carry.
 STYLES = {
     "caption": f"margin:0 0 20px;font-size:14px;color:{MUTED};",
-    # The daily digest's as-of line: body text, not a muted caption (#1016).
-    "as-of": f"margin:0 0 20px;font-size:16px;color:{INK};",
+    # The daily digest's opening line, body text rather than a muted caption
+    # (#1016), and the Response dashboard link beside it (#1532).
+    "opening": f"padding:0 16px 20px 0;font-size:16px;color:{INK};",
+    "opening-link": "padding:0 0 20px;font-size:16px;white-space:nowrap;",
     "heading": (
         f"margin:28px 0 12px;font-size:{HEADING_PX}px;line-height:1.3;color:{INK};"
     ),
@@ -95,6 +101,7 @@ _RETAINED_STYLES = {
         "font-weight:bold;line-height:1.3;text-decoration:none;"
     ),
     _RETAINED_TH,
+    _RETAINED_AS_OF,
 }
 _STYLE_VALUES = frozenset(STYLES.values()) | _BUTTON_STYLES | _RETAINED_STYLES
 # Closed values for the presentational table attributes the bars use.

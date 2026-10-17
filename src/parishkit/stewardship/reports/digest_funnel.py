@@ -2,12 +2,13 @@
 
 The digest states every figure as of the end of its report day (#721), so
 its funnel is the Response dashboard's (``response_metrics``), counted at
-that instant, with one of the dashboard's side figures. The Administrator
-trimmed the digest (#969, #1016): it has no caption, leaves out the "Link
-followed" stage, "Invitations not sent (already responded)" and "Submitted
-without a delivered invitation", which stay on the dashboard and in
-``pk-admin report responses``, and names its first stage "Email invites
-sent". The funnel reads
+that instant, without the dashboard's side figures. The Administrator
+trimmed the digest (#969, #1016, #1532): it has no caption, leaves out the
+"Link followed" stage and every figure the dashboard reports beside the
+funnel ("Submitted more than once", "Invitations not sent (already
+responded)" and "Submitted without a delivered invitation"), which stay on
+the dashboard and in ``pk-admin report responses``, and names its first
+stage "Email invites sent". The funnel reads
 durable timestamps only, so counting it again later gives the same numbers:
 the compiling worker counts it for the email and the saved report page
 counts it again when it is opened, the way both read the ParishSoft data age
@@ -103,28 +104,6 @@ def stage_rows(metrics):
     )
 
 
-def figure_rows(metrics):
-    """The digest's figures beside the funnel, as (label, count, whole, portion).
-
-    Only "Submitted more than once" (#969), shown like a funnel line with a
-    share (#1016): its share of the Families that submitted, which
-    ``portion`` names ("2% of Submitted") because it is not the funnel's
-    share of email invites sent. ``whole`` is what its bar is drawn against.
-    The other dashboard figures are left out of the digest but still counted
-    in ``ResponseMetrics``.
-    """
-    submitted = metrics.stage("submitted")
-    again = metrics.submitted_again
-    return (
-        (
-            "Submitted more than once",
-            again,
-            submitted,
-            f"{share(again, submitted)} of {STAGE_LABELS['submitted']}",
-        ),
-    )
-
-
 def funnel_text(metrics):
     """The funnel as plain-text lines for the email's text part."""
     lines = [FUNNEL_HEADING]
@@ -132,23 +111,17 @@ def funnel_text(metrics):
         f"{label}: {count:,} ({portion})" + (f" — {note.lower()}" if note else "")
         for label, count, portion, note in stage_rows(metrics)
     ]
-    lines.append("")
-    lines += [
-        f"{label}: {count:,} ({portion})"
-        for label, count, _whole, portion in figure_rows(metrics)
-    ]
     return "\n".join(lines)
 
 
 def funnel_context(metrics, mode):
-    """The saved report page's funnel panel: its stages, figure and Testing note.
+    """The saved report page's funnel panel: its stages and Testing note.
 
     The daily and weekly report pages share it (and the
     ``components/digest-funnel.html`` panel), so both show the funnel alike.
     """
     return {
         "funnel_stages": stage_rows(metrics) if metrics else (),
-        "funnel_figures": figure_rows(metrics) if metrics else (),
         "funnel_testing_note": TESTING_NOTE
         if metrics is None and mode == "testing"
         else "",

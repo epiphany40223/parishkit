@@ -235,7 +235,9 @@ def test_the_saved_report_shows_the_response_funnel(
     assert "Email invites sent" in text and "40%" in text
     assert "Compared with email invites sent" in text
     assert "Link followed" not in text and "mail-scanner" not in text
-    assert "Submitted more than once" in text and "7 (2% of Submitted)" in text
+    # No side figures (#1532).
+    assert "more than once" not in text and "of Submitted" not in text
+    expect(funnel.locator("dl")).to_have_count(0)
     assert "already responded" not in text and "Families at each stage" not in text
     assert "without a delivered invitation" not in text
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
