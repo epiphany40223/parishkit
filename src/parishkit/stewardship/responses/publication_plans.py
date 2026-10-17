@@ -6,7 +6,9 @@ versions. This module keeps what a later worker needs to re-check, right
 before each PUT, that nothing changed since the Administrator confirmed:
 
 - ``record_plan`` (the worker, after preflight) stores the plans with each
-  proposal's version and the read and planned payload hashes;
+  proposal's version and the read and planned payload hashes and, in
+  Production mode, marks the changes already in ParishSoft
+  ``resolved_upstream`` in the same transaction;
 - ``confirm_plan`` (web) records an Administrator's freshly signed-in
   confirmation of exactly the counts shown;
 - ``matches_confirmed`` is the pure pre-PUT check of a fresh plan against
@@ -14,17 +16,19 @@ before each PUT, that nothing changed since the Administrator confirmed:
 - ``record_outcome`` (the worker, under the source mutation fence) records
   one write attempt on an entity.
 
-Nothing here calls ParishSoft or changes a proposal. SQL independently
-checks every row, its authority and its audit
-(``schema/migrations/0087_publication_plans.sql``), so a forged or stale
-write is refused even if this code were bypassed. Audit events hold an
-outcome word and a count only, never a value or a name.
+Nothing here calls ParishSoft, and only that mark changes a proposal. SQL
+independently checks every row, its authority and its audit
+(``schema/migrations/0087_publication_plans.sql``, and 0112 for the mark),
+so a forged or stale write is refused even if this code were bypassed.
+Audit events hold an outcome word and a count only, never a value or a
+name.
 """
 
 import re
 from uuid import UUID
 
 from django.db import transaction
+from django.db.models import F
 
 from parishkit.stewardship.accounts.policy import Capability, allows, current_principal
 from parishkit.stewardship.audit.schemas import Action, ActorKind
@@ -33,6 +37,7 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.source.leases import verify_source
 
+from .models import ProposedChange
 from .publication import Outcome
 from .publication_models import (
     FAILURE_KIND,
@@ -81,7 +86,8 @@ def record_plan(
     version to be the proposal's current one (so a decision or edit made
     since the read refuses the plan, and preflight runs again) and each
     outcome to agree with its proposal. The same ``request_key`` returns the
-    plan already recorded for it.
+    plan already recorded for it. A Production-mode plan also marks its
+    already-matching changes resolved upstream (``_mark_upstream``).
     """
     if (
         not _uuids(actor_id, campaign_id, source_snapshot_id, request_key)
@@ -133,6 +139,7 @@ def record_plan(
                 )
                 for item in plan.fields
             )
+        _mark_upstream(record, plans)
         record_action(
             Action.CENSUS_PUBLICATION_PLANNED,
             actor_kind=ActorKind.SYSTEM,
@@ -143,6 +150,62 @@ def record_plan(
         )
     record.refresh_from_db()
     return record
+
+
+def _mark_upstream(record, plans):
+    """Mark the plan's already-matching changes *Already in ParishSoft*.
+
+    In the plan's own transaction (the data spec's preflight step 4), each
+    change whose field row says ``already_in_parishsoft`` moves from pending
+    or failed to ``resolved_upstream`` at the next version, its decision and
+    values unchanged, so it leaves the To do list. A Testing-mode plan marks
+    nothing. The derived guard (frozen migration 0112) admits exactly this,
+    for a field row at the change's current version in a non-Testing plan
+    recorded in this transaction; ``resolved_upstream`` is terminal there,
+    so the mark is final. The rows are locked in pk order first, as every
+    other proposal writer locks them.
+    """
+    ids = sorted(
+        item.proposal_id
+        for plan in plans
+        for item in plan.fields
+        if item.outcome is Outcome.ALREADY_IN_PARISHSOFT
+    )
+    if not ids:
+        return
+    # The guard stamps the system mode; the in-memory row has a placeholder.
+    testing = PublicationPlan.objects.values_list("testing", flat=True).get(
+        pk=record.pk
+    )
+    if testing:
+        return
+    list(
+        ProposedChange.objects.select_for_update(no_key=True)
+        .filter(pk__in=ids)
+        .order_by("pk")
+    )
+    ProposedChange.objects.filter(pk__in=ids).update(
+        execution="resolved_upstream", version=F("version") + 1
+    )
+
+
+def marked_upstream(fields, rows):
+    """The proposal ids the plan's own check marked *Already in ParishSoft*.
+
+    ``fields`` are one entity's ``PublicationField`` rows and ``rows`` its
+    current proposals. A row counts only when its field row says
+    ``already_in_parishsoft`` and the proposal is ``resolved_upstream`` at
+    the version right after the one recorded, which only the check's mark
+    makes; any other planned row that moved still invalidates the entity.
+    """
+    current = {row.pk: (row.execution, row.version) for row in rows}
+    return {
+        item.proposal_id
+        for item in fields
+        if item.outcome == Outcome.ALREADY_IN_PARISHSOFT.value
+        and current.get(item.proposal_id)
+        == ("resolved_upstream", item.proposal_version + 1)
+    }
 
 
 def confirmation_counts(plan_id):
@@ -239,11 +302,16 @@ def matches_confirmed(entity, fields, fresh, rows):
     still written and not blocked, every proposal has the same version (so
     no decision or Administrator edit changed) and the same outcome, and
     both payload hashes are unchanged (so ParishSoft holds what was read).
-    Anything else invalidates the entity without a write.
+    The rows the check itself marked *Already in ParishSoft*
+    (``marked_upstream``) are left out: they are no longer planned and
+    wrote nothing. Anything else invalidates the entity without a write.
     """
     versions = {row.pk: row.version for row in rows}
+    marked = marked_upstream(fields, rows)
     recorded = {
-        (item.proposal_id, item.proposal_version, item.outcome) for item in fields
+        (item.proposal_id, item.proposal_version, item.outcome)
+        for item in fields
+        if item.proposal_id not in marked
     }
     planned = {
         (item.proposal_id, versions.get(item.proposal_id), item.outcome.value)

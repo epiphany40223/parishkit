@@ -371,6 +371,11 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # file, after 0090's rerun has put 0090's derived guard back; its bodies
 # keep the phrases ``CLOSURE_REPLACED`` (0107) and ``CLOSURE_REPLACED_ONLY``
 # (0096) look for, so neither puts an older body back afterwards.
+# 0112 (#528, ADM-09) creates nothing: it replaces the derived guard and
+# 0087's confirmation guard in place, which 0087's (``CLOSURE_CREATED``),
+# 0090's (``CLOSURE_RERUN``) and 0108's (``CLOSURE_ALTERED``) files bring back
+# older, so ``CLOSURE_REPLACED`` runs 0112's file again afterwards. Its derived
+# guard keeps the phrase ``CLOSURE_REPLACED_ONLY`` (0096) looks for.
 # 0103 (#1330) creates nothing: it replaces 0091's campaign pointer function
 # in place. No closure file installs that function again, and 0091's
 # ``CLOSURE_OLD_BODIES`` rerun touches only bodies still reading Ministry
@@ -717,6 +722,14 @@ CLOSURE_REPLACED = {
     "public.stewardship_proposal_review_guard_v1()": (
         ("stewardship_responses", "0008_proposal_review_edit"),
         "OR decided=edited",
+    ),
+    "public.stewardship_response_derived_guard_v1()": (
+        ("stewardship_responses", "0010_upstream_at_check"),
+        "f.outcome='already_in_parishsoft'",
+    ),
+    "public.stewardship_publication_confirmation_guard_v1()": (
+        ("stewardship_responses", "0010_upstream_at_check"),
+        "p.version<>f.proposal_version+1",
     ),
 }
 

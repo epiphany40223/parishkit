@@ -2580,7 +2580,7 @@ published at least one entity, requests the final full refresh as the
 the lease normally (not yet built). The worker may already create
 `source_refresh` tasks, so this needs no task-creator change. The preflight
 also marks already-matching changes `resolved_upstream` in a Production-mode
-plan (a new forward migration, not yet built).
+plan (frozen migration 0112).
 
 Writes use shared v2 `PUT` contact primitives, expected-tenant guard, current
 full payload merge, idempotent retry, and read-after-write verification as
