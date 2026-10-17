@@ -449,11 +449,15 @@ def contact_section(html):
 
 
 def test_the_queue_offers_export_these_requests():
-    """The section carries the applied view, the source note and the zone."""
+    """The closed export disclosure (#227) carries the applied view, the
+    source note and the zone."""
     html = followup_page(total=1)
-    start = html.index('<section aria-labelledby="followup-export-heading">')
-    section = html[start:]
-    assert "Export these requests" in section
+    start = html.index('<details class="export-panel">')
+    section = html[start : html.index("</details>", start)]
+    assert (
+        '<summary id="followup-export-heading">'
+        "Export these requests (CSV, XLSX or PDF)</summary>" in section
+    )
     assert 'id="table-export" data-table-sync' in section
     assert '<input type="hidden" name="search" value="">' in section
     assert '<input type="hidden" name="state" value="unresolved">' in section
