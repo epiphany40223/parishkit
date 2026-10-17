@@ -3818,7 +3818,10 @@
   // value (confirm-dialog.html; the Ministry follow-up queue's bulk
   // outcomes, #1131). One limited to one kind of row is available only
   // while every ticked row is of that kind (wireSelection), so the dialog
-  // acts on every ticked row.
+  // acts on every ticked row. A row's control may carry its own dialog
+  // text too, and post more of its row's fields than its own name and
+  // value: data-confirm-with, a query string (Census changes' decision,
+  // version and request key, #879), so one dialog serves every row.
   const openConfirm = (dialog, opener) => {
     const form = document.getElementById(dialog.dataset.confirmForm || "");
     if (!(form instanceof HTMLFormElement)) return;
@@ -3868,7 +3871,8 @@
     confirming = {
       dialog, opener, form, chosen, values, busy: false, done: false,
       doneOne: text("doneOne"), doneMany: text("doneMany"),
-      extra: bulk && opener.name ? [opener.name, opener.value] : null,
+      extra: bulk ? (opener.name ? [[opener.name, opener.value]] : [])
+        : [...new URLSearchParams(opener.dataset.confirmWith || "")],
     };
     dialog.showModal();
     // The safe choice takes focus first.
@@ -3927,9 +3931,11 @@
     cancel.focus();
   };
   // A refusal whose errors name fields in the dialog (field_id: the bulk
-  // outcome's contact date and time, #1332) is shown at those fields
-  // instead: the message fills the dialog's field-error line (its first
-  // .errorlist with an id) and each field is marked and described by it.
+  // outcome's contact date and time, #1332, by id; or Census changes' Edit
+  // value, #879, by its name in the dialog's form, since each row's field
+  // has its own id) is shown at those fields instead: the message fills the
+  // dialog's field-error line (its first .errorlist with an id) and each
+  // field is marked and described by it.
   // Confirm stays unavailable, naming the line, until one of them is
   // edited: the edit clears the mark (wireValidity) and then lets the
   // form's complete gate decide again. Any change on the form counts,
@@ -3940,7 +3946,8 @@
     try {
       ids = (JSON.parse(raw)?.errors || []).map((item) => item?.field_id).filter(Boolean);
     } catch { return false; }
-    const fields = [...new Set(ids)].map((id) => document.getElementById(id))
+    const fields = [...new Set(ids)].map((id) => document.getElementById(id)
+      || state.form.elements.namedItem(id))
       .filter((node) => node instanceof HTMLElement && state.dialog.contains(node)
         && node.matches("input, select, textarea") && !node.disabled);
     const list = state.dialog.querySelector(".errorlist[id]");
@@ -4117,14 +4124,16 @@
   const acceptConfirm = async (state) => {
     const {dialog, form, chosen} = state;
     // The form's own fields (CSRF, base version), never its row boxes: the
-    // chosen rows are exactly the ones the dialog named.
-    const fields = new Set(chosen.map((item) => item.field));
+    // chosen rows are exactly the ones the dialog named, and the opener's
+    // own fields (state.extra) are sent once, as it gives them.
+    const fields = new Set([...chosen.map((item) => item.field),
+      ...state.extra.map(([name]) => name)]);
     const body = new URLSearchParams();
     new FormData(form).forEach((value, name) => {
       if (!fields.has(name) && typeof value === "string") body.append(name, value);
     });
     chosen.forEach((item) => body.append(item.field, item.value));
-    if (state.extra) body.append(...state.extra);
+    state.extra.forEach(([name, value]) => body.append(name, value));
     // The answer's page may carry a data-confirm-announce line (below).
     const answer = await followChange(state, form.action, body);
     if (!answer) return;
@@ -4136,6 +4145,10 @@
     // itself with the view's fields, and the answer is that page, redrawn
     // from directly (data-confirm-answer-page).
     const region = form.closest(REGIONS) || state.opener.closest(REGIONS);
+    // A row's control in a table whose rows have ids (Census changes, #879)
+    // returns focus to that row's first action once it is redrawn, so the
+    // reader stays where they were; when the row is gone, the fallback.
+    const row = state.opener.closest("tr[id]")?.id;
     const fresh = dialog.hasAttribute("data-confirm-answer-page")
       ? new DOMParser().parseFromString(answer.text, "text/html")
       : await freshPage(region?.dataset.refreshUrl || window.location.href);
@@ -4145,6 +4158,7 @@
     const fallback = dialog.dataset.confirmFallback || "";
     redrawFrom(fresh);
     const target = (state.opener.isConnected && state.opener)
+      || (row && document.getElementById(row)?.querySelector("[data-confirm-open]:not(:disabled)"))
       || document.getElementById(fallback) || document.querySelector("main h1");
     target?.focus({preventScroll: true});
     target?.scrollIntoView({block: "nearest"});
@@ -4157,52 +4171,6 @@
     announce(outcome || fillIn(chosen.length === 1 ? state.doneOne : state.doneMany,
       state.values));
   };
-
-  // A submit button that asks first (#528): data-confirm-submit="<dialog id>"
-  // opens that components/confirm-dialog.html <dialog>, named by the button's
-  // data-confirm-name. Confirm submits the button's own form with that button
-  // (requestSubmit), so it goes through the form's usual path, in place
-  // included; Cancel, Escape or closing the dialog sends nothing, and focus
-  // returns to the button. Used where one row's form posts with the page's
-  // own filters, which the action tables' dialog cannot carry.
-  let askedSubmit = null;
-  const wiredSubmits = new WeakSet();
-  document.addEventListener("click", (event) => {
-    if (!(event.target instanceof Element)) return;
-    const button = event.target.closest("[data-confirm-submit]");
-    if (!button || button.disabled || !button.form) return;
-    const dialog = document.getElementById(button.dataset.confirmSubmit);
-    if (!(dialog instanceof HTMLDialogElement)) return;
-    event.preventDefault();
-    wireDialog(dialog);
-    if (!wiredSubmits.has(dialog)) {
-      wiredSubmits.add(dialog);
-      dialog.querySelector("[data-confirm-accept]")?.addEventListener("click", () => {
-        const state = askedSubmit?.dialog === dialog ? askedSubmit : null;
-        if (!state) return;
-        askedSubmit = null;
-        dialog.close();
-        state.button.form?.requestSubmit(state.button);
-      });
-      dialog.addEventListener("close", () => {
-        const state = askedSubmit?.dialog === dialog ? askedSubmit : null;
-        askedSubmit = null;
-        if (state?.button.isConnected) state.button.focus();
-      });
-    }
-    dialog.querySelector("[data-confirm-title]").textContent = fillIn(
-      dialog.dataset.titleOne, {name: button.dataset.confirmName || ""});
-    const error = dialog.querySelector("[data-confirm-error]");
-    error.hidden = true;
-    dialog.querySelector("[data-confirm-status]").textContent = "";
-    dialog.querySelectorAll("[data-confirm-accept], [data-confirm-cancel]").forEach((control) => {
-      control.disabled = false;
-    });
-    askedSubmit = {dialog, button};
-    dialog.showModal();
-    // The safe choice takes focus first.
-    dialog.querySelector("[data-confirm-cancel]")?.focus();
-  });
 
   // The review dialog of Admin editors (UX conventions, "Review dialog",
   // #750): components/confirm-dialog.html with review=True, opened by a form
