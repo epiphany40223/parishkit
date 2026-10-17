@@ -318,7 +318,10 @@ def test_share_methods_show_the_first_chip_and_a_plus_chip_with_all_of_them(
         "Online <giving>",
         "Another way: Stock <gift>",
     ]
-    assert page.evaluate(TABLE_BOX) == before
+    # Within a hundredth of a pixel: Firefox can return the same position
+    # with float noise (2070.61669921875 vs 2070.616668701172), while any
+    # real move or resize is at least a whole pixel.
+    assert page.evaluate(TABLE_BOX) == pytest.approx(before, abs=0.01)
     page.keyboard.press("Escape")
     assert bubble.is_hidden()
     # A Family with one method that has Other text: its chip and an "i" tip.
@@ -370,7 +373,10 @@ def test_heading_tips_float_without_moving_the_table(
     bubble = page.locator(f"#financial-source-{column}-tip")
     visible(bubble)
     assert "July 1, 2025" in bubble.inner_text()
-    assert page.evaluate(TABLE_BOX) == before
+    # Within a hundredth of a pixel: Firefox can return the same position
+    # with float noise (2070.61669921875 vs 2070.616668701172), while any
+    # real move or resize is at least a whole pixel.
+    assert page.evaluate(TABLE_BOX) == pytest.approx(before, abs=0.01)
     # The whole bubble is drawn inside the viewport, beside its button.
     inside = bubble.evaluate(
         """b => { const r = b.getBoundingClientRect();
