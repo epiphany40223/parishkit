@@ -87,7 +87,7 @@ def test_workflow_partition_count_matches_required_combiner():
     assert f"--count {count} " in run
 
 
-@pytest.mark.parametrize("count", [1, 2, 3, 4, 8, 14, 16, 32])
+@pytest.mark.parametrize("count", [1, 2, 3, 4, 8, 14, 16, 22, 32])
 @pytest.mark.parametrize("per_job", [1, 2, 3, 4])
 def test_packed_jobs_cover_every_partition_once(count, per_job):
     """Packing never drops or repeats a partition, and partition one, which
