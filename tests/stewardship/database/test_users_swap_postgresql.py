@@ -398,6 +398,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # (runtime_grants.CLOSURE_FUNCTIONS); ``closure_functions_absent`` makes it
 # whole again once the table is gone. It also replaces the safe context, so
 # ``CLOSURE_REPLACED_ONLY`` puts 0109's back after the reruns above.
+# 0110 (#558) creates nothing: it replaces the baseline financial selection
+# in place, which 0094's rerun (``CLOSURE_REPLACED``) brings back older, so
+# ``CLOSURE_REPLACED`` runs 0110's file after it.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -689,6 +692,9 @@ CLOSURE_ALTERED = {
 # 0101 (#528) replaces the task-type maps 0077's file brings back.
 # 0107 (#528, ADM-09.04) replaces the review guard 0096's file brings back
 # with the one that also admits an edited value.
+# 0110 (#558) replaces the baseline financial selection that 0094's file,
+# run again above for the limitations report, puts back without the
+# browser-zone days, so its entry comes after 0094's.
 CLOSURE_REPLACED = {
     "public.stewardship_debug_off_switch_guard_v1()": (
         ("stewardship_jobs", "0031_debug_allow"),
@@ -713,6 +719,10 @@ CLOSURE_REPLACED = {
     "public.stewardship_information_report_v2(uuid,jsonb,integer,uuid,integer)": (
         ("stewardship_reports", "0028_information_status_counts"),
         "'counts',(SELECT jsonb_build_object(",
+    ),
+    "public.stewardship_financial_report_v1(uuid,jsonb,integer,integer)": (
+        ("stewardship_reports", "0030_financial_local_days"),
+        "CASE WHEN zoned THEN",
     ),
     **dict.fromkeys(
         (

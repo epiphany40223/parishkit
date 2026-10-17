@@ -25,7 +25,11 @@ from parishkit.stewardship.audit.log_views import FIELD_IDS as LOG_IDS
 from parishkit.stewardship.audit.log_views import FIELD_LINES as LOG_LINES
 from parishkit.stewardship.audit.log_views import field_ids, refusal_sizes
 from parishkit.stewardship.reports import information_views, ministry_export_views
-from parishkit.stewardship.reports.financial import FIELD_MESSAGES, FinancialQuery
+from parishkit.stewardship.reports.financial import (
+    DATES,
+    FIELD_MESSAGES,
+    FinancialQuery,
+)
 from parishkit.stewardship.reports.financial_views import FIELD_IDS, FIELD_LINES
 from parishkit.stewardship.reports.information import (
     FIELD_MESSAGES as INFORMATION_MESSAGES,
@@ -127,15 +131,27 @@ def test_financial_messages_are_the_page_hints_and_fields_exist():
 
     Every refusable field has a hint (data-missing-hint) that says the same
     as the server, so the two never disagree, its element carries the mark
-    tag, and its range's reserved line is drawn once.
+    tag, and its range's reserved line is drawn once. A response date
+    passes its zone note through the mark tag (#558); a From date's hint is
+    on its cell, since the zone check replaces an input's own hint, and a
+    Through date's order hint, which the zone check restores, is its
+    message too.
     """
     assert set(FIELD_IDS) == set(FIELD_MESSAGES) == set(FIELD_LINES)
     for field, element in FIELD_IDS.items():
-        tag = re.search(rf'<input id="{element}" [^>]*>', TEMPLATE).group(0)
-        assert f'name="{field}"' in tag
-        assert f'{{% filter_mark filter_error "{field}" %}}' in tag
-        hint = re.search(r"data-missing-hint=\"{% translate '([^']*)' %}\"", tag)
-        assert hint.group(1) == str(FIELD_MESSAGES[field])
+        cell = re.search(
+            rf'<div(?: data-missing-hint="[^"]*")?><label for="{element}">.*?</div>',
+            TEMPLATE,
+        ).group(0)
+        tag = re.search(rf'<input id="{element}" [^>]*>', cell).group(0)
+        assert f'name="{field}"' in tag and "aria-describedby" not in tag
+        described = ' "financial-zone-help"' if field in DATES else ""
+        assert f'{{% filter_mark filter_error "{field}"{described} %}}' in tag
+        hints = re.findall(
+            r"data-(?:missing|order)-hint=\"{% translate '([^']*)' %}\"", tag
+        ) or re.findall(r"data-missing-hint=\"{% translate '([^']*)' %}\"", cell)
+        ends = {"first_end", "latest_end"}
+        assert hints == [str(FIELD_MESSAGES[field])] * (2 if field in ends else 1)
     for line in set(FIELD_LINES.values()):
         assert TEMPLATE.count(f'{{% filter_line filter_error "{line}" ') == 1
 
