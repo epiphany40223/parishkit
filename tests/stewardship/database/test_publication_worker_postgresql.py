@@ -332,6 +332,8 @@ def test_a_verify_mismatch_is_a_failure_then_the_next_read_invalidates(confirmed
 
     state.gateway.write_member_contact = normalizing
     assert run(state).invalidated == 1
+    # No retry after a mismatch (#1604): the closing read invalidates.
+    assert len(state.gateway.writes) == 1
     assert results(state.entity) == [
         ("failed", "verify_mismatch"),
         ("invalidated", ""),
@@ -341,10 +343,10 @@ def test_a_verify_mismatch_is_a_failure_then_the_next_read_invalidates(confirmed
 
 def test_a_put_accepted_but_not_applied_is_never_published(confirmed):
     """ParishSoft accepting the PUT and keeping the old value (as it does with
-    ``null``, #528) fails verification every time. ParishSoft still holds
-    exactly what preflight read, so each attempt may send the same body
-    again (an idempotent PUT); after ATTEMPTS the entity is invalidated and
-    the change is never recorded published."""
+    ``null``, #528) fails verification. Another attempt would send the same
+    body again, so exactly one PUT is sent (#1604): one ``verify_mismatch``
+    is recorded, the entity is invalidated and the change is never recorded
+    published."""
     state = confirmed
     original = dict(state.gateway.records[state.first.entity_key])
 
@@ -355,14 +357,50 @@ def test_a_put_accepted_but_not_applied_is_never_published(confirmed):
     state.gateway.write_member_contact = ignoring
     result = run(state)
     assert (result.published, result.invalidated) == (0, 1)
-    assert result.failed_attempts == ATTEMPTS
-    assert state.gateway.writes == [(state.first.entity_key, state.planned)] * ATTEMPTS
+    assert result.failed_attempts == 1
+    assert state.gateway.writes == [(state.first.entity_key, state.planned)]
     assert results(state.entity) == [
-        *[("failed", "verify_mismatch")] * ATTEMPTS,
+        ("failed", "verify_mismatch"),
         ("invalidated", ""),
     ]
     assert proposal(state.first)[0] == "failed"
     assert state.gateway.records[state.first.entity_key] == original
+
+
+def test_a_put_that_lands_after_its_mismatch_is_published_without_a_retry(
+    confirmed,
+):
+    """A PUT that shows up only after its read back is still recorded.
+
+    The read back mismatches, so the PUT is not sent again (#1604); the
+    entity is then closed, and the closing read finds the planned record
+    and records it published, still with one PUT.
+    """
+    state = confirmed
+    gateway = state.gateway
+    pending = []
+
+    def late(member_id, payload, *, timeout):
+        """Accept the body but apply it only after the next read."""
+        gateway.writes.append((member_id, dict(payload)))
+        pending.append((member_id, payload))
+
+    def land_after_read_back():
+        """Apply the held write once the worker's read back has answered."""
+        if pending and len(gateway.reads) > 2:
+            member_id, payload = pending.pop()
+            gateway.records[member_id].update(payload)
+
+    gateway.write_member_contact = late
+    gateway.on_read = land_after_read_back
+    result = run(state)
+    assert (result.published, result.failed_attempts) == (1, 1)
+    assert gateway.writes == [(state.first.entity_key, state.planned)]
+    assert results(state.entity) == [
+        ("failed", "verify_mismatch"),
+        ("published", ""),
+    ]
+    assert proposal(state.first)[0] == "published"
 
 
 def test_the_fake_refuses_what_the_live_put_refuses(confirmed):

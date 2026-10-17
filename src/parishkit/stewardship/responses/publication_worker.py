@@ -26,7 +26,9 @@ construction:
   recording ``published`` and moving the
   proposals ``queued -> published``; anything else records ``failed`` with
   a sanitized word, and the entity is tried again (at most ``ATTEMPTS``
-  times in a run); a published entity is never written again;
+  times in a run), except after ``verify_mismatch``: a PUT that was
+  accepted but read back as something else is not sent again (#1604);
+  a published entity is never written again;
 - an entity whose proposals are queued and whose fresh read already equals
   the planned record (a crash after its PUT) is verified and recorded
   ``published`` without a second PUT;
@@ -283,10 +285,14 @@ def _read(claim, gateway, item):
 
 
 def _attempt(execution, claim, gateway, item):
-    """One attempt on one entity: returns its final result, "failed" or "stop".
+    """One attempt on one entity: its final result, "failed", "mismatch" or "stop".
 
     "stop" means the system left Production mode; the caller invalidates
-    every remaining entity.
+    every remaining entity. "mismatch" is a failed attempt (recorded
+    ``failed`` with ``verify_mismatch``) that must not be retried: the PUT
+    was accepted and the read back answered, but ParishSoft does not hold
+    the planned record. Another attempt would learn nothing and send the
+    same body again (#1604), so the caller closes the entity instead.
     """
     execution.check()
     if not _production():
@@ -332,7 +338,7 @@ def _attempt(execution, claim, gateway, item):
             return "failed"
         if fresh is None or payload_digest(fresh) != item.entity.planned_sha256:
             _record(claim, item, "failed", "verify_mismatch")
-            return "failed"
+            return "mismatch"
     _record(claim, item, "published")
     return "published"
 
@@ -427,8 +433,14 @@ def publish_plan(execution, plan_id, gateway, *, enabled):
                     result = _attempt(execution, claim, gateway, item)
                     if result == "stop":
                         stopped = True
+                    elif result == "mismatch":
+                        # A failed attempt, but no retry: the entity is closed
+                        # below (read back once more, then invalidated).
+                        counts["failed"] += 1
                     elif result in counts:
                         counts[result] += 1
+                    # Only a transport or write failure (where the PUT may not
+                    # have landed) is tried again.
                     if result != "failed":
                         break
             # Every entity this run did not finish is closed, so none is

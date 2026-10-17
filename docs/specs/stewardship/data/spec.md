@@ -2094,7 +2094,15 @@ operations with bounded shared retries. Each entity is verified by an uncached
 read after write, which must equal the plan's expected record, so the fields
 the PUT left out are checked as well as the written ones. Success marks its
 fields published/resolved; failure records a sanitized error and leaves the
-entity retryable without replaying successful entities. An entity's written
+entity retryable without replaying successful entities. Only a failure where
+the PUT may not have landed (a failed read, a refused, timed-out or
+unavailable write, or a failed read back) is retried within the run. A read
+back that answers with anything other than the expected record
+(`verify_mismatch`) ends the entity's attempts: ParishSoft accepted the PUT
+but did not apply it as planned (as it ignores `null`), so another attempt
+would only send the same body again. The entity is then closed like any
+other unfinished one, and its change goes back to `failed`
+([#1604](https://github.com/epiphany40223/parishkit/issues/1604)). An entity's written
 proposals are `queued` from just before its PUT until its outcome: `published` when verified, or, when the entity is
 invalidated, back to `failed` (an attempt failed) or `pending`. Every entity a
 run leaves without a published or invalidated outcome, and any left by a
