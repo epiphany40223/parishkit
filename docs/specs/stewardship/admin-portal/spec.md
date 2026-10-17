@@ -5637,7 +5637,13 @@ bar's only action is Mark entered in ParishSoft, and clearing stays per row.
 The dialog posts to `roster/marks/`, which records each chosen tick exactly
 as a single tick is recorded (its own entry and audit event), all in one
 transaction or none; a change someone else ticked or cleared first refuses
-the whole request, naming that change in the dialog.
+the whole request, naming that change in the dialog. A change listed twice
+(the Family answered again and both requests were resolved) names each row,
+in its box, its tick and that refusal, with the day it was resolved in the
+browser's time zone
+([#558](https://github.com/epiphany40223/parishkit/issues/558)); the dialog
+posts the browser's zone for the refusal, which leaves the day out rather
+than guess when no known zone came.
 
 Its CSV, XLSX and PDF downloads carry the page's columns, without the tick
 ([downloaded files](../ui-conventions/spec.md#downloaded-files)), for every
