@@ -6335,4 +6335,39 @@
     event.preventDefault();
     segment.focus();
   });
+
+  // Secret fields (SecretInput, accounts/secret_input.py, #1475): the
+  // server draws a Show/Hide button beside each masked key or token, and
+  // this switches its field between password and text. Only the type
+  // changes: the value is never read, logged, stored or sent from here, so
+  // the form posts exactly what it would while masked. data-shown carries
+  // the state and CSS swaps the visible word in a reserved width, which
+  // also changes the accessible name ("Show/Hide the Slack bot token"); a
+  // name change on the focused button is not reliably read out, so the
+  // polite status line beside it says the new state. Delegated, so a field
+  // an in-place redraw brings in (drawn masked by the server) works at once.
+  const showSecret = (button, shown) => {
+    const field = document.getElementById(button.getAttribute("aria-controls"));
+    if (!field) return;
+    field.type = shown ? "text" : "password";
+    button.dataset.shown = String(shown);
+    const status = button.parentElement.querySelector("[data-secret-status]");
+    if (status) status.textContent = shown ? button.dataset.shownStatus : button.dataset.hiddenStatus;
+  };
+  // Mask every shown secret under root again.
+  const maskSecrets = (root) => {
+    root.querySelectorAll?.('[data-secret-reveal][data-shown="true"]')
+      .forEach((button) => showSecret(button, false));
+  };
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest?.("[data-secret-reveal]");
+    if (button) showSecret(button, button.dataset.shown !== "true");
+  });
+  // Mask again before the request leaves (capture, ahead of handlers that
+  // post in place), so a page the browser keeps in its history is masked,
+  // and on leaving or returning to the page, including a page restored from
+  // the back/forward cache.
+  document.addEventListener("submit", (event) => maskSecrets(event.target), true);
+  window.addEventListener("pagehide", () => maskSecrets(document));
+  window.addEventListener("pageshow", () => maskSecrets(document));
 })();

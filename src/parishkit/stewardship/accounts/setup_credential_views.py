@@ -14,6 +14,7 @@ from parishkit.stewardship.web.contracts import expected_version
 from . import setup_help
 from .authentication import runtime
 from .integration_forms import LABELS, CredentialForm
+from .secret_input import SecretInput
 from .sessions import SETUP_FRESH_SECONDS, require_fresh
 from .setup_credentials import TARGETS, credential_status, stage_credential
 from .setup_drafts import view_draft
@@ -95,8 +96,9 @@ MISSING = {
 class SetupCredentialForm(CredentialForm):
     """Reuse the write-only widget; this attempt/version replaces a live intent.
 
-    API keys and bot tokens are single-line secrets, so they use a password
-    input that never redisplays its value; the Google service-account key is
+    API keys and bot tokens are single-line secrets, so they use the shared
+    ``SecretInput`` (masked, with the Show control, #1475), which never
+    redisplays its value; the Google service-account key is
     multi-line JSON and keeps the write-only text area. When a credential is
     already saved and still current, the secret field may be left empty to
     keep it. A saved one that is ``stale`` (entered for settings changed
@@ -129,15 +131,8 @@ class SetupCredentialForm(CredentialForm):
             )
         candidate = self.fields["candidate"]
         if target in {"parishsoft", "slack"}:
-            candidate.widget = forms.PasswordInput(
-                render_value=False,
-                attrs={
-                    "autocomplete": "off",
-                    "spellcheck": "false",
-                    "autocapitalize": "off",
-                },
-            )
-            # PasswordInput is built after the field, so restore maxlength.
+            candidate.widget = SecretInput(target)
+            # The widget is built after the field, so restore maxlength.
             candidate.widget.attrs.update(candidate.widget_attrs(candidate.widget))
         candidate.label = FIELD_LABELS[target]
         candidate.required = not saved or stale

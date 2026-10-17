@@ -89,7 +89,8 @@ def test_single_line_secrets_use_a_password_input_that_never_echoes(target):
     """API keys and bot tokens are one line; the value is never re-rendered."""
     form = SetupCredentialForm(target, {"candidate": "synthetic-secret"})
     html = str(form["candidate"])
-    assert html.startswith("<input") and 'type="password"' in html
+    assert html.startswith('<span class="secret-field"><input')
+    assert 'type="password"' in html
     assert 'autocomplete="off"' in html and 'spellcheck="false"' in html
     assert "maxlength=" in html and "required" in html
     assert "synthetic-secret" not in html
