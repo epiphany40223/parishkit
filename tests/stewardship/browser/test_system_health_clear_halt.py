@@ -11,12 +11,17 @@ import pytest
 
 from .system_health_components import (
     BACKUP_PAGE,
+    CLEAR_CLEARING_PAGE,
     CLEAR_DONE,
+    CLEAR_NONE_STATUS,
     CLEAR_PAGE,
     CLEAR_PREVIEW,
+    CLEAR_REFUSED_STATUS,
+    CLEAR_STATUS,
+    CLEAR_STUCK_PAGE,
 )
 from .test_system_health import _away, _axe, _not_reloaded, _places, _routed
-from .waits import visible
+from .waits import eventually, visible
 
 
 def expect(locator):
@@ -112,3 +117,79 @@ def test_the_clear_region_fits_and_is_accessible(
         "() => document.documentElement.scrollWidth <= window.innerWidth"
     )
     assert _axe(page, axe_source) == []
+
+
+def test_a_changed_halt_holds_both_buttons_for_good(page, component_origin):
+    """Once a poll shows the preview's halt is gone, the preview is marked
+    "This changed since you looked" and both buttons are held; a later poll
+    that shows the same halt again, with a different mailbox check, draws no
+    usable button under the note: the reader reopens the preview."""
+    from urllib.request import urlopen
+
+    def body(path):
+        """The component at ``path``, as text."""
+        with urlopen(component_origin + path) as response:
+            return response.read().decode()
+
+    bodies = {
+        "now": body(CLEAR_STATUS),
+        "none": body(CLEAR_NONE_STATUS),
+        "refused": body(CLEAR_REFUSED_STATUS),
+    }
+    served = {"name": "now"}
+
+    def poll(route):
+        """Answer the page's poll with whichever state the test chose."""
+        route.fulfill(status=200, content_type="text/html", body=bodies[served["name"]])
+
+    region = _open(page, component_origin)
+    page.route(f"{component_origin}{CLEAR_STATUS}", poll)
+    region.get_by_role("button", name="Clear the halt", exact=True).click()
+    confirm = region.get_by_role("button", name="Confirm: clear the halt")
+    again = region.get_by_role("button", name="Check again")
+    # The poll brings the passed check (once the pointer leaves the tile
+    # grid), so Confirm is usable.
+    _away(page)
+    expect(confirm).to_be_enabled(timeout=30000)
+    served["name"] = "none"
+    note = region.locator("[data-live-stale-note]")
+    expect(note).to_have_text(
+        "This changed since you looked; review it again.", timeout=30000
+    )
+    expect(confirm).to_be_disabled()
+    expect(again).to_be_disabled()
+    # The same halt shows again with another check outcome: still held.
+    served["name"] = "refused"
+    eventually(
+        page,
+        """() => {
+            const mirror = document.querySelector(
+                'template[data-live-mirror^="clear-halt-check-"]');
+            return !!mirror && mirror.innerHTML.includes('refused');
+        }""",
+    )
+    page.wait_for_timeout(1500)
+    expect(confirm).to_be_disabled()
+    expect(again).to_be_disabled()
+    expect(note).to_have_text("This changed since you looked; review it again.")
+
+
+def test_the_section_follows_a_clear_and_a_lasting_halt(page, component_origin):
+    """Right after a clear, while a sender still reports Halted, the line
+    says the senders start again within about 30 seconds; when no halt is
+    recorded for long it says to restart the mail sender, with the
+    runbook link."""
+    page.goto(component_origin + CLEAR_CLEARING_PAGE + "#health-mail")
+    line = page.locator("#clear-halt-reason")
+    expect(line).to_have_text(
+        "The halt was cleared; the mail senders start again within about 30 seconds."
+    )
+    expect(
+        page.locator("#clear-halt").get_by_role("button", name="Clear the halt")
+    ).to_be_disabled()
+    page.goto(component_origin + CLEAR_STUCK_PAGE + "#health-mail")
+    expect(line).to_contain_text("restart the mail sender")
+    expect(line).not_to_contain_text("within about 30 seconds")
+    expect(
+        line.get_by_role("link", name="Mail-provider outage runbook")
+    ).to_be_visible()
