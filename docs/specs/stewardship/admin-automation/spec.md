@@ -1770,6 +1770,11 @@ signatures:
   live and Ministries reviews, each returning the review instead of a
   response), and `campaign confirm` its Apply routing into
   `campaign_views.confirm_route`; the page now calls both.
+  `campaign shares-preview` moved Share options' review (after the page's
+  version and formset checks) into `option_editing.review_options`, which
+  the page's Review now calls; `campaign shares-confirm` needed none, as
+  the page's Apply is `confirm_intent` with its salt and
+  `campaign_views._scope`.
 - **PR 11:** user, event and follow-up actions from their views (the users
   model of #952 replaces the rule actions; #922 retired the assignment and
   Chairperson actions). The event acknowledgements moved each view's
@@ -1951,13 +1956,13 @@ none.
 | `campaign_end_date_check` | `schedule preview` (PR 4): Campaign settings' no-save live check of a live campaign's end date answers what a preview of that end date would refuse |
 | `configuration_request` | `config request show --watch` (PR 4); `config request cancel` ([#944](https://github.com/epiphany40223/parishkit/pull/944)), an operator recovery with no page button |
 | `campaign_settings`, `campaign_create`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), Campaign settings' read, Review and Apply, a live campaign's Ministries included (#1119); `campaign create-preview`, `campaign create` and `campaign clone` (PR 10); until #145, creating or copying a campaign is refused, except the first campaign through [Create the campaign](../admin-portal/spec.md#create-the-campaign) (#142) ([navigation rule 10](../ui-conventions/spec.md#navigation-rules)): commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, will get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
-| `share_settings` | `campaign shares` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the Share options read; Share option changes (PR 10) |
+| `share_settings` | `campaign shares`, `campaign shares-preview`, `campaign shares-confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), Share options' read, Review and Apply |
 | `reminder_workgroup` (its review and apply, #750) | `workgroup show`, `workgroup preview`, `workgroup confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
 | `content_catalog`, `content_edit`, `content_revision`, `content_delete`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content history` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `content preview`, `content confirm` (PR 10), the plain-text preview with `content preview` |
 | `parish_settings`, `ministries` | `parish show`, `parish preview`, `parish confirm`, `ministries list` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); Ministries changes nothing since [#1267](https://github.com/epiphany40223/parishkit/issues/1267) |
 | `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list`, `files delete`, `files rename` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
 | `artwork_settings` (its upload and removal reviews, #750) | `artwork show`, `artwork remove-preview`, `artwork remove` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); uploads are `artwork_upload`'s, below |
-| `branding_settings`: **Apply** in its review dialog (#750) | `branding show` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); `branding confirm --expected-version …`, a configuration request for logos already uploaded (PR 10) |
+| `branding_settings`: **Apply** in its review dialog (#750) | `branding show` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); applying logos comes with the uploads below: staged logos belong to the sign-in that uploaded them, and each `pk-admin` run is its own sign-in, so a command cannot apply logos staged in the browser |
 | `hosted_file_upload`, `artwork_upload`, `branding_settings` uploads | Pending: file uploads; a later PR may accept `--file` |
 | `branding_asset` | Permanent: image previews and bytes for the browser |
 
@@ -2352,6 +2357,38 @@ repeat returns the original request. Both need a full-scope session, as
 the page's posts record activity; neither is fresh-gated nor prompts, as
 the page asks for no recent sign-in. The command shapes are defaults,
 pending Administrator confirmation.
+
+`campaign shares-preview --expected-version … --changes … [--campaign ID]`
+and `campaign shares-confirm --token … [--campaign ID]` change a
+campaign's Share options through the page's own pieces: its target and
+editability checks (`campaign_views._target`; a campaign the page does not
+edit now is the page's own refusal, `stale_version`, as its 409), its
+formset (`share_forms.ShareOptions`), its review
+(`option_editing.review_options`) and its Apply (`confirm_intent` with the
+page's salt, bound to the campaign, and `campaign_views._scope`), so a
+token from either channel confirms on the other. The change document is
+`{"options": [...], "delete": [...]}`: `options` is the kept and new
+options in their new order (`id` for a saved one, none for a new one;
+`name`, the label; `free_text`, false when left out) and `delete` the
+saved ids removed, as the page's Delete boxes. The document becomes the
+page's own Review post, so its rules apply unchanged: every saved option
+must be in exactly one of the two lists ("retained or explicitly
+deleted"), so leaving one out never deletes it. The preview prints the
+page's compact review lines (`label`, `before`, `after`), the `options`
+the change saves and `preview.token`, and records nothing; the page's
+field errors are `invalid` at `options.<n>.name` (the document's position)
+and its formset errors and unchanged safeguard at `options`; another
+version is `stale_version`. An unknown campaign is `not_available` for
+`campaign shares-preview`; `campaign shares-confirm` never looks the
+campaign up (it only binds the salt), so a token confirmed against another
+or an unknown campaign fails its signature as `invalid`, as the page's
+Apply does. `campaign shares-confirm` records the request
+with `admin_cmd_campaign_shares_confirm` in its own transaction, and a
+repeat returns the original request. Both need a full-scope session;
+neither is fresh-gated nor prompts, as the page asks for no recent sign-in
+and its Apply is the reviewed token. The names, the explicit `delete` list
+and `--campaign` defaulting to the current campaign are defaults, pending
+Administrator confirmation.
 
 ### Production transition and withdrawal
 
@@ -3968,7 +4005,8 @@ exactly the commands that exist.
   `content show` and `content history` first), Ministries, parish, logos
   and Share options
   (`parish show`, `ministries list`, `branding show` and `campaign shares`
-  first, then `parish preview` and `parish confirm`), hosted files (`files list`,
+  first, then `parish preview` and `parish confirm`, and `campaign
+  shares-preview` and `campaign shares-confirm`), hosted files (`files list`,
   `files delete`, `files rename`), artwork (`artwork show`, then
   `artwork remove-preview` and `artwork remove`), the No-reminders
   WorkGroup (`workgroup show`, `workgroup preview`, `workgroup confirm`),
