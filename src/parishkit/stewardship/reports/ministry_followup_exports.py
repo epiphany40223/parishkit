@@ -326,6 +326,55 @@ def _audit(principal, campaign_id, outcome, count=0, ministries=()):
         )
 
 
+def export_file_name(fmt, now):
+    """The download's file name, stamped with the UTC instant ``now``."""
+    return f"stewardship-ministry-requests-{now.strftime('%Y%m%d-%H%M%SZ')}.{fmt}"
+
+
+def export_body(campaign_id, query, principal, fmt, zone, progress):
+    """The queue's filtered requests as the chosen file's bytes, times in ``zone``.
+
+    Runs inside the guarded read. ``query``, ``fmt`` and ``zone`` are what
+    ``_choices`` returned. ``progress`` is a dict that receives ``count``
+    and ``ministries`` (the Ministry DUIDs of the rows) as soon as the
+    selection is read, so a file that fails afterwards, a PDF above the
+    limit included, is still audited with what it reached. The page's
+    download and ``pk-admin followup export`` (#463) both render through
+    here, so their CSV, XLSX and PDF cannot drift.
+    """
+    # The queue's own selection with its default Member presence, so a
+    # Member no longer in ParishSoft is left out of the file as from the
+    # queue (#1217, Administrator, 2026-10-13).
+    result = followup_page(campaign_id, query, principal, whole=True)
+    progress["count"] = count = len(result["rows"])
+    progress["ministries"] = tuple(row["ministry_duid"] for row in result["rows"])
+    # Refused before any contact is read or page drawn. The page opens its
+    # content before its response is returned, so this reaches the view as
+    # an exception, never as a broken download.
+    if fmt == "pdf" and count > EXPORT_PDF_LIMIT:
+        raise PdfTooLarge("Too many requests for one PDF.")
+    contacts = request_contacts(campaign_id, principal, result["rows"])
+    parish = (
+        SystemConfiguration.objects.select_related("active_configuration__parish")
+        .get()
+        .active_configuration.parish
+    )
+    document = queue_document(
+        result,
+        contacts,
+        query,
+        parish_name=parish.name,
+        requested_at=database_now(),
+        zone=zone,
+    )
+    output = io.BytesIO()
+    # The PDF dates itself in the parish's date format, lent explicitly, as
+    # the other on-request downloads do.
+    with dates.using(parish.date_format):
+        render_information(document, output, format=fmt)
+    return output.getvalue()
+
+
 @page_download("ministry_followup")
 @require_POST
 def export(request, campaign_id):
@@ -343,7 +392,7 @@ def export(request, campaign_id):
             raise ValueError("The export takes the queue's form only.")
         query, fmt, zone = _choices(request.POST)
         admit_report_read(campaign_id)
-        finalized, count, ministries = False, 0, ()
+        finalized, progress = False, {}
 
         def finish(completed):
             """Audit completion once, after releasing the read transaction."""
@@ -356,8 +405,8 @@ def export(request, campaign_id):
                     principal,
                     campaign_id,
                     Outcome.SUCCEEDED if completed else Outcome.FAILED,
-                    count,
-                    ministries,
+                    progress.get("count", 0),
+                    progress.get("ministries", ()),
                 )
             except (DatabaseError, StorageInvariantError) as error:
                 emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
@@ -373,40 +422,9 @@ def export(request, campaign_id):
 
         def content():
             """Read, shape and render the file inside the guarded read."""
-            nonlocal count, ministries
-            # The queue's own selection with its default Member presence, so
-            # a Member no longer in ParishSoft is left out of the file as
-            # from the queue once #1217 lands (Administrator, 2026-10-13).
-            result = followup_page(campaign_id, query, principal, whole=True)
-            count = len(result["rows"])
-            ministries = tuple(row["ministry_duid"] for row in result["rows"])
-            # Refused before any contact is read or page drawn. Content
-            # opens before the response is returned, so this reaches the
-            # view as an exception, never as a broken download.
-            if fmt == "pdf" and count > EXPORT_PDF_LIMIT:
-                raise PdfTooLarge("Too many requests for one PDF.")
-            contacts = request_contacts(campaign_id, principal, result["rows"])
-            parish = (
-                SystemConfiguration.objects.select_related(
-                    "active_configuration__parish"
-                )
-                .get()
-                .active_configuration.parish
+            return iter(
+                (export_body(campaign_id, query, principal, fmt, zone, progress),)
             )
-            document = queue_document(
-                result,
-                contacts,
-                query,
-                parish_name=parish.name,
-                requested_at=database_now(),
-                zone=zone,
-            )
-            output = io.BytesIO()
-            # The PDF dates itself in the parish's date format, lent
-            # explicitly, as the other on-request downloads do.
-            with dates.using(parish.date_format):
-                render_information(document, output, format=fmt)
-            return iter((output.getvalue(),))
 
         response = campaign_response(
             request,
@@ -421,9 +439,8 @@ def export(request, campaign_id):
             return _error(campaign_id, status=503)
         handed_off = response.status_code == 200 and response.streaming
         if handed_off:
-            stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%SZ")
             for name, value in download_headers(
-                f"stewardship-ministry-requests-{stamp}.{fmt}",
+                export_file_name(fmt, datetime.now(UTC)),
                 content_type=FORMATS[fmt],
             ).items():
                 response[name] = value

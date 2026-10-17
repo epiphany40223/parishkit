@@ -226,6 +226,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "followup roster-bulk",
         "followup information-show",
         "followup information-update",
+        # The queue's Export these requests (PR 11c).
+        "followup export",
     }
     # Past campaigns' archive import (#1018), listed with the reports.
     reports |= {"history list", "history preview", "history confirm", "history remove"}
@@ -299,6 +301,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "export census",
                 "export limitations",
                 "export roster",
+                "followup export",
             }
         ), name
         if name in acknowledged:
@@ -624,6 +627,21 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert options["--show"]["choices"] == ["todo", "all"]
     assert "--ministry" in options and "--campaign" not in options
     assert roster["result_fields"] == census["result_fields"]
+    # The follow-up queue's Export these requests (PR 11c): the same, with
+    # the page's own event and followup list's filters, without the search,
+    # the page and size, or the Status choice the export refuses.
+    followup = entries["followup export"]
+    assert followup["scope"] == "full" and not followup["changes_state"]
+    assert followup["audit_event"] == "ministry_followup_exported"
+    assert followup["streams"] and not followup["prompts"]
+    assert not followup["fresh_gated"]
+    assert not followup["request_key"] and not followup["expected_version"]
+    options = {option["name"]: option for option in followup["options"]}
+    assert options["--format"]["choices"] == ["csv", "xlsx", "pdf"]
+    assert "not_in_parishsoft" not in options["--state"]["choices"]
+    for absent in ("--search", "--page", "--size", "--campaign"):
+        assert absent not in options, absent
+    assert followup["result_fields"] == census["result_fields"]
     # The export lifecycle: status is any session's passive read with
     # --watch and no view event; every other command needs a full-scope
     # session. The three changes are keyed (but cancel) and record their
