@@ -92,14 +92,18 @@ def test_tiles_and_figures_carry_every_count():
     """One tile per stage with its share of Invited; three figures beside them."""
     value = metrics()
     shown = tiles(value)
-    assert [(tile["key"], tile["count"], tile["share"]) for tile in shown] == [
-        ("invited", 4, "100%"),
-        ("link_followed", 5, "125%"),
-        ("form_opened", 4, "100%"),
-        ("progressed", 3, "75%"),
-        ("submitted", 3, "75%"),
+    assert [(tile.key, tile.text, tile.details, tile.bar) for tile in shown] == [
+        ("invited", "4", (), (4, 4)),
+        (
+            "link_followed",
+            "5",
+            ("125% compared with invited", "Includes mail-scanner prefetches"),
+            (5, 4),
+        ),
+        ("form_opened", "4", ("100% compared with invited",), (4, 4)),
+        ("progressed", "3", ("75% compared with invited",), (3, 4)),
+        ("submitted", "3", ("75% compared with invited",), (3, 4)),
     ]
-    assert shown[1]["note"] == "Includes mail-scanner prefetches"
     assert [count for _label, count in figures(value)] == [0, 0, 1]
 
 

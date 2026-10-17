@@ -565,10 +565,11 @@ Cards show:
   never any Family's own pledges.
 
 Giving cards include mapped funds/period and source as-of. Missing/incomplete
-source displays Unavailable, not zero.
+source is never shown as zero: it reads Unavailable, or, in a tile, "—".
 
 On the Participation page the cards are visuals first
-([#720](https://github.com/epiphany40223/parishkit/issues/720)): tiles for
+([#720](https://github.com/epiphany40223/parishkit/issues/720)):
+[stat tiles](../ui-conventions/spec.md#stat-tiles) for
 the active Families, active Members and the two pledge figures, then one
 [chart engine](#chart-engine) chart, "Responses and email reach", with a
 progress bar against the active Families for each of the responded, eligible
@@ -579,7 +580,13 @@ line under its name, so it fits at phone width; its tooltip and accessible
 name carry the same count and share, so the chart has no exact-values table
 ([chart engine](#chart-engine),
 [#1266](https://github.com/epiphany40223/parishkit/issues/1266)). Without an
-observation nothing is drawn and every card is a tile reading Unavailable.
+observation nothing is drawn and every card is a tile reading "—", with a
+toggletip saying no ParishSoft data has been loaded yet. A pledge total that
+cannot be added up reads "—" the same way, with the reason for its cause:
+no giving definition for the campaign, an answer whose amount is not known
+(current annual pledges), or a snapshot that does not hold every pledge for
+last year's period (last year's pledges). No reason promises that a later
+refresh will fix it.
 Applying report options redraws the chart in place, keeping its space until
 it is drawn.
 
@@ -708,8 +715,9 @@ only.
 
 `/admin/reports/responses/` shows the funnel of the current campaign at the
 database's current instant, labelled **Counted at**. Data comes first: a
-tile per [funnel stage](#funnel-stages) with its count, its share compared
-with Invited and a [share bar](../ui-conventions/spec.md#charts) drawing that
+[stat tile](../ui-conventions/spec.md#stat-tiles)
+per [funnel stage](#funnel-stages) with its count, its share compared
+with Invited and a [share bar](../ui-conventions/spec.md#stat-tiles) drawing that
 share ([#720](https://github.com/epiphany40223/parishkit/issues/720)), the
 three figures reported beside the funnel, then the funnel
 chart and the [activity chart](#response-activity-over-time) with its send
