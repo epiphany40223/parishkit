@@ -1368,8 +1368,16 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
    Cancel never moves. dvh follows a phone's changing toolbar; vh is the
    fallback. The status line it ends with on the page (review-outcome.html)
    keeps one line of space whether or not it says anything, and cuts a long
-   line short, so it never moves a control. */
-.review-dialog { margin-top: 5vh; margin-top: 5dvh; width: min(44rem, calc(100vw - 2rem)); max-height: 90vh; max-height: 90dvh; }
+   line short, so it never moves a control.
+   A refusal below the buttons never moves them either (#1482): a long
+   review stops short of the height limit by the refusal's room, and once a
+   refusal shows, ui-v1.js holds the body at its height and the limit rises
+   by that room, so the dialog grows downwards into it. A refusal taller
+   than the room (a long one on a phone) is never cut short: it squeezes
+   the body (min-height: 0), so the buttons rise only by what does not fit
+   in the room. */
+.review-dialog { --refusal-room: min(7rem, 20vh); --refusal-room: min(7rem, 20dvh); margin-top: 5vh; margin-top: 5dvh; width: min(44rem, calc(100vw - 2rem)); max-height: calc(90vh - var(--refusal-room)); max-height: calc(90dvh - var(--refusal-room)); }
+.review-dialog:has(> [data-confirm-error]:not([hidden])) { max-height: 90vh; max-height: 90dvh; }
 .review-dialog[open] { display: flex; flex-direction: column; }
 .review-dialog > * { flex: none; }
 .review-dialog .dialog-body { flex: 1 1 auto; min-height: 0; overflow: auto; margin-bottom: 1rem; }
