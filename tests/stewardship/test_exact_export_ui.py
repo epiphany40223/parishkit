@@ -10,7 +10,7 @@ from django.urls import reverse
 from parishkit.stewardship.reports import exact_ui
 
 
-@pytest.mark.parametrize("action", ["create", "detail", "cancel", "retry"])
+@pytest.mark.parametrize("action", ["detail", "cancel", "retry"])
 def test_native_exact_outage_has_safe_recovery_link(monkeypatch, action):
     """A failing owner yields fixed text and the correct native status namespace."""
     identifier = uuid4()
@@ -21,10 +21,7 @@ def test_native_exact_outage_has_safe_recovery_link(monkeypatch, action):
 
     monkeypatch.setattr(exact_ui, "runtime", unavailable)
     factory = RequestFactory()
-    if action == "create":
-        response = exact_ui.create(factory.post("/"), identifier)
-        link = reverse("admin:participation")
-    elif action == "detail":
+    if action == "detail":
         response = exact_ui.detail(factory.get("/"), identifier)
         link = reverse("admin:report_export", args=[identifier])
     else:
@@ -38,13 +35,22 @@ def test_native_exact_outage_has_safe_recovery_link(monkeypatch, action):
     assert b"private source value" not in response.content
 
 
-@pytest.mark.parametrize("action", ["create", "cancel", "retry"])
+@pytest.mark.parametrize("action", ["cancel", "retry"])
 def test_native_exact_mutations_reject_get(action):
     """Link prefetching and reload cannot issue an export mutation."""
     request, identifier = RequestFactory().get("/"), uuid4()
-    response = (
-        exact_ui.create(request, identifier)
-        if action == "create"
-        else exact_ui.command(request, identifier, action=action)
-    )
+    response = exact_ui.command(request, identifier, action=action)
     assert response.status_code == 405
+
+
+def test_the_latest_data_form_is_gone():
+    """The Response dashboard offers no latest-data form (#1537): its
+    address is gone, with no redirect, and ``export exact create`` is the
+    way to request one."""
+    from django.urls import NoReverseMatch, Resolver404, resolve
+
+    assert not hasattr(exact_ui, "create")
+    with pytest.raises(NoReverseMatch):
+        reverse("admin:report_exact_create")
+    with pytest.raises(Resolver404):
+        resolve("/admin/reports/participation/exact-exports/")

@@ -7,7 +7,7 @@ through the functions the pages use (``reports.export_services`` and
 may see, so an export requested on a page can be followed and fetched from
 the command line and the other way round:
 
-- ``export create`` is the Participation page's export form
+- ``export create`` is the Response dashboard's export form
   (``create_export``), for the generation its fact set names;
 - ``export status`` is the export status page's read (``export_state``),
   admitted passively like the page, with no view event (the page records
@@ -377,7 +377,7 @@ def read_export(caller, service, export_id):
 def create_export_command(
     caller, service, *, fact_set_id, fmt, zone, request_key, context
 ):
-    """``export create``: the Participation page's export form.
+    """``export create``: the Response dashboard's export form.
 
     The page posts the generation it shows (its fact set) to that
     generation's campaign, so the campaign is the fact set's own; an

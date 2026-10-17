@@ -409,8 +409,7 @@ DESCRIPTIONS = {
         "shows."
     ),
     "admin_cmd_export_exact_create": _(
-        "An automation session requested an exact daily export, as the "
-        "Participation page's exact-export form does."
+        "An automation session requested an exact daily export of the latest data."
     ),
     "admin_cmd_export_exact_cancel": _(
         "An automation session cancelled an exact daily export, as its status "
@@ -493,7 +492,9 @@ DESCRIPTIONS = {
         "Someone opened the active parishioner family directory with mailing columns."
     ),
     "ministry_report_viewed": _("Someone opened a Ministry report."),
-    "participation_viewed": _("Someone opened the participation report."),
+    "participation_viewed": _(
+        "Someone opened the participation statistics and daily chart."
+    ),
     "campaign_comparison_viewed": _(
         "Someone opened the campaign comparison report (or ran report comparison)."
     ),

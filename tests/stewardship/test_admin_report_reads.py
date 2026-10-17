@@ -45,7 +45,7 @@ def report_list():
         reports=[
             {
                 "command": "report participation",
-                "page": "participation",
+                "page": "response_dashboard",
                 "available": True,
             },
             {
@@ -130,13 +130,13 @@ def responses():
         families=(),
     )
     query = SimpleNamespace(mode="production")
-    return admin_report_reads.response_model(CAMPAIGN, query, {"metrics": metrics})
+    return admin_report_reads.response_model(CAMPAIGN, query, metrics)
 
 
 def no_rehearsal():
     """Testing mode with no active rehearsal: no figures, as on the page."""
     query = SimpleNamespace(mode="testing")
-    return admin_report_reads.response_model(CAMPAIGN, query, {"metrics": None})
+    return admin_report_reads.response_model(CAMPAIGN, query, None)
 
 
 def financial():
@@ -383,7 +383,7 @@ GOLDEN = {
             "reports": [
                 {
                     "command": "report participation",
-                    "page": "participation",
+                    "page": "response_dashboard",
                     "available": True,
                 },
                 {
@@ -657,7 +657,12 @@ def test_every_report_command_has_its_models_fields():
     }
     reports = {spec.name for spec in admin_cli.COMMANDS if spec.name[:7] == "report "}
     assert reports == set(models)
-    assert set(admin_report_reads.REPORT_COMMANDS.values()) == reports - {
+    listed = {
+        command
+        for commands in admin_report_reads.REPORT_COMMANDS.values()
+        for command in commands
+    }
+    assert listed == reports - {
         "report list",
         "report source-form",
         "report data-to-fix",

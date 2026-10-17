@@ -1043,12 +1043,14 @@
   // - a shared table's sort headings, navigator links and forms, and the
   //   page's filter form (form#table-filters, #484), unless that form is
   //   itself a form[data-in-place] because its options reshape far more of
-  //   the page than a table (the participation report's options, which
-  //   refresh its statistics, chart and export panels, #519);
+  //   the page than a table;
   // - a[data-in-place]: a link that shows another view of this page (the
-  //   response dashboard's mode and grain, a list's Refresh). Its value, if
-  //   any, is a stable key that finds the link again in the fresh page, for
-  //   focus and to announce the view now shown ("By day");
+  //   Response dashboard's mode and Chart population pairs, #1535, #1537,
+  //   whose links sit in the region they refresh, so each refresh redraws
+  //   them with the current sort, size and zone; a list's Refresh). Its
+  //   value, if any, is a stable key that finds the link again in the fresh
+  //   page, for focus and to announce the view now shown ("Testing
+  //   rehearsal");
   // - form[data-in-place]: a form whose answer is this page again, such as a
   //   POST whose server redirects back here (Post/Redirect/Get). A POST
   //   saves a change unless the form is marked data-in-place-read (System
@@ -1070,7 +1072,7 @@
   // button is marked data-in-place-native instead, so the browser submits
   // it natively and loads the queue once.
   // A page script can follow an a[data-in-place] link on the reader's behalf
-  // (the participation report applying this browser's time zone as it
+  // (the Response dashboard applying this browser's time zone as it
   // loads, report-v1.js) by marking the link data-in-place-quiet. The regions
   // are swapped, but focus is not moved and nothing is announced, since the
   // reader did not act, and the address (or, should the fetch fail, the

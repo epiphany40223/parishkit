@@ -1,7 +1,6 @@
 """Draft editor uses real Google sessions, YAML requests, SQL guards and source."""
 
 import re
-from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
 
@@ -15,7 +14,6 @@ from parishkit.stewardship.accounts.request_models import ConfigurationChangeReq
 from parishkit.stewardship.campaigns.lifecycle import Action
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.deployment import ServiceRole
-from parishkit.stewardship.reports.workspace_views import fund_names
 
 from ..campaign_factory import campaign, financial
 from ..policy_factory import address
@@ -405,28 +403,6 @@ def test_a_selection_gone_from_parishsoft_shows_its_last_name(auth_service, goog
     assert "Old fund (no longer in ParishSoft; retained selection)" in content
     assert "Renamed" not in content
     assert "Ministry 999" not in content and "Fund 998" not in content
-
-
-def test_participation_names_each_periods_funds(auth_service):
-    """Participation's financial periods name their funds from the
-    statistics' own snapshot, never their DUIDs (#1123)."""
-    snapshot = publish(source())
-
-    def period(*funds):
-        """One financial period holding these fund DUIDs."""
-        return SimpleNamespace(funds=funds)
-
-    statistics = SimpleNamespace(
-        source_id=snapshot.pk,
-        financial=SimpleNamespace(upcoming=period(9), comparison=period(9, 77)),
-    )
-    with task_login(ServiceRole.WEB):
-        names = fund_names(statistics)
-    assert names == {
-        "upcoming": ["Offertory"],
-        "comparison": ["Offertory", "Unavailable fund"],
-    }
-    assert fund_names(SimpleNamespace(source_id=None, financial=None)) is None
 
 
 @pytest.mark.parametrize("with_source", [False, True])

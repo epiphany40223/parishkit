@@ -137,6 +137,13 @@ HOSTED = {
     # A setup test page's live status region (#1354), whose follow-up re-reads
     # the panel each test page draws around it.
     "setup-test-status.html": ("setup-mail.html", "setup-notification.html"),
+    # A binary choice (#1535): every page that draws the shared segmented
+    # pair names the region its links refresh (region_id, required).
+    "segmented-choice.html": tuple(
+        path.name
+        for path in sorted(TEMPLATES.glob("*.html"))
+        if "components/segmented-choice.html" in path.read_text()
+    ),
 }
 
 
@@ -150,7 +157,9 @@ def test_every_in_place_control_names_its_region_as_a_fragment():
     template that draws it around the control. A hosted fragment template
     may name its region ``{{ region_id|default:'…' }}``: each include's
     region is then the region_id it passes (Refresh from ParishSoft's run,
-    #521; the held-email groups, #757), else the default.
+    #521; the held-email groups, #757), else the default. Without a default
+    (``{{ region_id }}``, a binary choice's segments, #1535) every include
+    must pass one.
     The earlier data-region-link name is gone."""
     found = 0
     for path in sorted(TEMPLATES.rglob("*.html")):
@@ -166,7 +175,9 @@ def test_every_in_place_control_names_its_region_as_a_fragment():
                 if (path.name in HOSTED)
                 else [text]
             )
-            named = re.fullmatch(r"\{\{ region_id\|default:'([\w-]+)' \}\}", fragment)
+            named = re.fullmatch(
+                r"\{\{ region_id(?:\|default:'([\w-]+)')? \}\}", fragment
+            )
             for host in hosts:
                 if named is None:
                     # A shared partial (Take a backup now's button) may hold a
@@ -192,6 +203,7 @@ def test_every_in_place_control_names_its_region_as_a_fragment():
                 for include in includes:
                     passed = re.search(r"\bregion_id=([\"'])([\w-]+)\1", include)
                     region = passed.group(2) if passed else named.group(1)
+                    assert region, (path.name, include)
                     assert names_region(host, region), (path.name, region)
     assert found >= 8
 
@@ -477,23 +489,28 @@ def test_acknowledgements_act_in_place():
     assert "data-in-place-anywhere" not in form
 
 
-def test_participation_options_apply_in_place():
-    """Apply report options (#519 PR 5) is a data-in-place GET landing on
-    the statistics, and the statistics, chart and export panels are regions,
-    so every panel the options reshape is refreshed together. The chart keeps
-    its daily table's own region inside it, and no form opts out of the
-    in-place filter path any more."""
-    text = (TEMPLATES / "participation.html").read_text()
-    form = re.search(r'<form id="table-filters"[^>]*>', text).group(0)
-    assert '#participation-statistics" ' in form
-    assert 'data-in-place="report-options"' in form
-    assert "data-in-place-message=" in form and "data-filter-reload" not in form
-    for region in (
-        "participation-statistics",
-        "participation-chart",
-        "participation-export",
-    ):
-        assert names_region(text, region), region
+def test_response_dashboard_choices_apply_in_place():
+    """The Response dashboard (#1537) is one region holding every panel, the
+    report options (its zone) and both binary choices (#519 PR 5, #1535):
+    Responses shown and the Chart population each land on it, so every
+    answer redraws the page's links with the view now shown. The daily
+    table keeps its own region inside the chart panel, and no form opts out
+    of the in-place filter path any more. No Apply button is left."""
+    text = (TEMPLATES / "response-dashboard.html").read_text()
+    region = re.search(r'<div id="response-dashboard"[^>]*>', text).group(0)
+    assert names_region(text, "response-dashboard")
+    assert "data-report-options" in region and "data-report-zone" in region
+    choices = re.findall(
+        r"\{% include \"stewardship/components/segmented-choice\.html\""
+        r"[^%]*%\}",
+        text,
+    )
+    assert len(choices) == 2
+    assert all('region_id="response-dashboard"' in choice for choice in choices)
+    keys = " ".join(choices)
+    for key in ("mode-production", "mode-testing", "scope-historical", "scope-current"):
+        assert f'_key="{key}"' in keys, key
+    assert "Apply report options" not in text and '<select id="scope"' not in text
     chart = text.split('id="participation-chart"', 1)[1]
     assert "data-table-region" in chart.split('id="participation-export"', 1)[0]
     for path in TEMPLATES.rglob("*.html"):

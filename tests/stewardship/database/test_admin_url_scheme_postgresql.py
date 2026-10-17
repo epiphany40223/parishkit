@@ -103,16 +103,16 @@ def test_slashless_forms_redirect_and_old_addresses_are_gone(auth_service, googl
 def test_empty_report_roots_are_named_after_their_report(auth_service, google):
     """With no current campaign, each report root names its own report.
 
-    The reports root opens Participation, and Participation and Ministry
+    The reports root opens the Response dashboard, and it and Ministry
     requests are menu entries greyed out without a campaign, so each page
     names itself in the menu's reason page (#1128).
     """
     setup(auth_service.store)
     browser, _ = signed_in()
     response = browser.get(reverse("admin:reports"))
-    assert response["Location"] == reverse("admin:participation")
+    assert response["Location"] == reverse("admin:response_dashboard")
     for name, label in (
-        ("participation", b"Participation"),
+        ("response_dashboard", b"Response dashboard"),
         ("ministry_report", b"Ministry requests"),
     ):
         response = browser.get(
@@ -227,7 +227,7 @@ def test_new_report_pages_refuse_or_explain_without_a_current_campaign(
 ):
     """No current campaign: no moved report page or form is a server error.
 
-    The reports root opens Participation; the others refuse plainly
+    The reports root opens the Response dashboard; the others refuse plainly
     (the menu pages with the menu's "No current campaign", #1128), and no
     form starts an export.
     """
@@ -240,7 +240,6 @@ def test_new_report_pages_refuse_or_explain_without_a_current_campaign(
     pages = (
         ("reports", []),
         ("response_dashboard", []),
-        ("participation", []),
         ("campaign_comparison", []),
         ("financial_report", []),
         ("limitations_report", []),
@@ -256,8 +255,8 @@ def test_new_report_pages_refuse_or_explain_without_a_current_campaign(
         response = browser.get(reverse(f"admin:{name}", args=args))
         assert response.status_code < 500, (name, response.status_code)
         if name == "reports":
-            # It opens Participation, refused below.
-            assert response["Location"] == reverse("admin:participation"), name
+            # It opens the Response dashboard, refused below.
+            assert response["Location"] == reverse("admin:response_dashboard"), name
         else:
             assert 400 <= response.status_code < 500, (name, response.status_code)
             # Never "this campaign is no longer current": there is none.
@@ -272,7 +271,6 @@ def test_new_report_pages_refuse_or_explain_without_a_current_campaign(
     }
     for name, args in (
         ("report_export_create", []),
-        ("report_exact_create", []),
         ("financial_report", []),
         ("financial_export", []),
         ("limitations_report", []),
@@ -298,7 +296,7 @@ def test_new_report_pages_refuse_or_explain_without_a_current_campaign(
 def test_reports_root_takes_a_ministry_leader_to_ministry_requests(
     auth_service, google
 ):
-    """/admin/reports/ opens Ministry requests for a viewer without Participation."""
+    """/admin/reports/ opens Ministry requests for a viewer without the dashboard."""
     store = auth_service.store
     _current(store)
     # A Ministry leader leads through a ParishSoft role (#922).

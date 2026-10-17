@@ -1,6 +1,15 @@
-"""Admin/Staff live reports with exact fact selection and response-owned guards."""
+"""The Response dashboard (#1537): the funnel, the statistics and the daily chart.
 
-import json
+One page (``reports/responses/``, the current campaign) shows, top to
+bottom, the Families by stage tiles and the Response funnel
+(``response_dashboard``), the current active population statistics, and the
+daily participation chart and table with their export, each read under the
+page's one campaign read guard. Production is the default; an
+Administrator's Testing rehearsal view (``mode=testing``) shows the
+rehearsal's funnel only, since the statistics, the daily chart and the
+export count Production responses.
+"""
+
 from contextlib import ExitStack
 from uuid import uuid4
 
@@ -17,28 +26,36 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
+from parishkit.stewardship.campaigns.domain import Money
 from parishkit.stewardship.campaigns.models import Campaign
-from parishkit.stewardship.observability import Event, emit_failure
-from parishkit.stewardship.source.catalog_names import fund_display_name
-from parishkit.stewardship.source.version_models import SnapshotFund
+from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
+from parishkit.stewardship.web.stat_tiles import tile
 from parishkit.stewardship.web.tables import paginate
 
-from .chart_specs import PROGRESS, participation_chart, population_progress
-from .daily_digest import statistics_cards
+from .chart_specs import participation_chart, population_progress
 from .digest_presentation import participation_table_context
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES, _principal
 from .facts import FactUnavailable
 from .ministries import can_report, unscoped
 from .read_admission import admit_report_read
+from .response_dashboard import _admit_mode, funnel_panels, read_metrics
+from .response_dashboard import _audit as _audit_funnel
 from .selection import guarded_participation
 from .statistics import StatisticsUnavailable, calculate_statistics
 from .statistics_selection import capture_statistics
-from .workspace import DAILY_SORTING, RenderedReport, ReportQuery
+from .workspace import (
+    DAILY_SIZE,
+    DAILY_SIZES,
+    DAILY_SORTING,
+    SCOPE_LABELS,
+    RenderedReport,
+    ReportQuery,
+)
 
 REPORTABLE = ("draft", "scheduled", "active", "closed", "archived")
 
@@ -54,13 +71,13 @@ def campaign_ids():
 
 @require_GET
 def index(request):
-    """Open the current campaign's Participation, or Ministry requests.
+    """Open the current campaign's Response dashboard, or Ministry requests.
 
-    ``/admin/reports/`` keeps its old meaning rather than opening the group's
-    first entry (admin-portal spec, "Menu groups"): Participation, or Ministry
-    requests for a viewer who may not open Participation (a Ministry leader),
-    which checks its own access. Default navigation is per request, never a
-    mutation of the current pointer.
+    ``/admin/reports/`` keeps its own meaning rather than opening the group's
+    first entry (admin-portal spec, "Menu groups"): the Response dashboard,
+    or Ministry requests for a viewer who may not open it (a Ministry
+    leader), which checks its own access. Default navigation is per
+    request, never a mutation of the current pointer.
     """
     try:
         service = runtime()
@@ -77,11 +94,11 @@ def index(request):
             "current_campaign_id", flat=True
         ).get()
         # Only the current campaign is reported until #145 (rule 10). With no
-        # current campaign the root still opens Participation, whose greyed
-        # page says why in the menu's words (#1128), rather than a page of
-        # its own that no link reaches (navigation rule 1).
+        # current campaign the root still opens the Response dashboard, whose
+        # greyed page says why in the menu's words (#1128), rather than a
+        # page of its own that no link reaches (navigation rule 1).
         if current not in choices:
-            response = redirect("admin:participation")
+            response = redirect("admin:response_dashboard")
         else:
             admit_report_read(current)
             response = redirect(query.url())
@@ -116,18 +133,37 @@ def _audit(principal, campaign_id, outcome):
 
 
 @require_GET
-def participation(request, campaign_id):
-    """The Participation page, its daily chart drawn in the browser (#720)."""
+def dashboard(request, campaign_id):
+    """The Response dashboard of one campaign, read under the campaign guard.
+
+    The query is parsed first, so only a malformed address is a 400; a
+    fault while shaping the page is the report's 503. A Testing view is
+    for Administrators only, checked before anything is read and again
+    inside the guard. Every view records ``response_dashboard_viewed`` (the
+    funnel read) when it ends; a Production view also records
+    ``participation_viewed``, started and then succeeded or failed, since
+    only it reads the statistics and the daily chart. When those cannot be
+    read from their inputs, the page still shows the funnel, says the
+    other panels are unavailable, and records that read as failed.
+    """
     finish, handed_off = None, False
     try:
         service = runtime()
         principal = _principal(request, service.store)
-        query = ReportQuery.parse(request.GET)
+        try:
+            query = ReportQuery.parse(request.GET)
+        except ValueError:
+            return private_response("Invalid report filters.\n", status=400)
+        production = query.mode == "production"
+        _admit_mode(principal, query)
         identities = (campaign_id,)
         admit_report_read(campaign_id)
-        _audit(principal, campaign_id, Outcome.STARTED)
+        if production:
+            _audit(principal, campaign_id, Outcome.STARTED)
         finalized = False
         response_guard = None
+        # False once the statistics or daily facts could not be read.
+        participation_read = True
 
         def finish(completed):
             """Audit only server completion after the read-only transaction closes."""
@@ -135,39 +171,47 @@ def participation(request, campaign_id):
             if finalized:
                 return
             finalized = True
-            try:
-                _audit(
-                    principal,
-                    campaign_id,
-                    Outcome.SUCCEEDED if completed else Outcome.FAILED,
-                )
-            except (DatabaseError, StorageInvariantError) as error:
-                emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
+            audits = [(_audit_funnel, completed)]
+            if production:
+                audits.append((_audit, completed and participation_read))
+            for audit, succeeded in audits:
+                try:
+                    audit(
+                        principal,
+                        campaign_id,
+                        Outcome.SUCCEEDED if succeeded else Outcome.FAILED,
+                    )
+                except (DatabaseError, StorageInvariantError) as error:
+                    emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
 
         def authorize(guard):
             """Refresh roles and lifecycle inside all acquired campaign barriers."""
-            nonlocal response_guard
+            nonlocal response_guard, principal
             fresh = _principal(request, service.store, read_only=True)
             if fresh.identity != principal.identity:
                 raise PermissionError("Report access changed.")
+            _admit_mode(fresh, query)
+            principal = fresh
             for identifier in identities:
                 admit_report_read(identifier)
             response_guard = guard
 
         def content():
             """Prepare before headers and transfer generation protection to WSGI."""
+            nonlocal participation_read
             with ExitStack() as stack:
-                selected = stack.enter_context(
-                    guarded_participation(
-                        response_guard,
-                        campaign_id=campaign_id,
-                        population_scope=query.scope,
-                        browser_timezone=query.timezone,
+                metrics = read_metrics(campaign_id, query.mode)
+                participation, cause = None, None
+                if production:
+                    participation, cause = _participation(
+                        stack, response_guard, campaign_id, query
                     )
+                    participation_read = participation is not None
+                context = _page_context(
+                    campaign_id, query, participation, metrics, principal, cause
                 )
-                context = _page_context(campaign_id, query, selected, principal)
                 payload = render_to_string(
-                    "stewardship/participation.html", context, request=request
+                    "stewardship/response-dashboard.html", context, request=request
                 ).encode()
                 response_guard.check()
                 return RenderedReport(payload, stack.pop_all())
@@ -180,6 +224,10 @@ def participation(request, campaign_id):
             content_type="text/html; charset=utf-8",
             on_close=finish,
         )
+        # Admission refused before streaming (busy or closing): the Admin
+        # report error page, as the other campaign reports answer.
+        if response.status_code == 503 and not response.streaming:
+            return report_unavailable()
         handed_off = response.status_code == 200 and response.streaming
         return response
     except (PermissionError, ObjectDoesNotExist):
@@ -188,11 +236,47 @@ def participation(request, campaign_id):
         return report_unavailable()
     except SAFE_FAILURES:
         return report_unavailable()
-    except ValueError:
-        return private_response("Invalid report filters.\n", status=400)
+    except ValueError as error:
+        # The page is built before the response starts, so a shaping fault
+        # lands here; the reader's options were already validated above.
+        emit_failure(error, event=Event.REPORT_SHAPING_FAILED)
+        return report_unavailable()
     finally:
         if finish is not None and not handed_off:
             finish(False)
+
+
+def _participation(stack, guard, campaign_id, query):
+    """The daily chart's selection and statistics, as ``(result, cause)``.
+
+    The selection's generation protection joins ``stack``. Inputs that
+    cannot be read (``FactUnavailable``, ``StatisticsUnavailable``) leave
+    the funnel shown and these panels out (#1537), rather than refusing the
+    whole page; a database failure still ends it. ``result`` is then None and
+    ``cause`` is "facts" (the daily chart is not ready) or "statistics" (the
+    ParishSoft inputs are missing or unreadable). The swallowed error is
+    debug-logged, as ``report_unavailable`` does, so a real code fault stays
+    visible to a maintainer.
+    """
+    try:
+        selected = stack.enter_context(
+            guarded_participation(
+                guard,
+                campaign_id=campaign_id,
+                population_scope=query.scope,
+                browser_timezone=query.timezone,
+            )
+        )
+        return (
+            selected,
+            calculate_statistics(capture_statistics(campaign_id)),
+        ), None
+    except FactUnavailable:
+        debug_swallowed("participation facts unavailable")
+        return None, "facts"
+    except StatisticsUnavailable:
+        debug_swallowed("participation statistics unavailable")
+        return None, "statistics"
 
 
 def daily_table(chart, presented, query):
@@ -207,8 +291,10 @@ def daily_table(chart, presented, query):
     table = paginate(
         list(zip(chart.days, presented["rows"], strict=True)),
         {"page": str(query.page), "size": query.size, "sort": query.sort},
+        default=int(DAILY_SIZE),
         carry=query.carried(),
         sorting=DAILY_SORTING,
+        sizes=DAILY_SIZES,
     )
     keys = ["date", "first", "participation", "pledge"]
     return {
@@ -218,85 +304,136 @@ def daily_table(chart, presented, query):
     }
 
 
-def fund_names(statistics):
-    """Each financial period's fund names, read from the statistics' snapshot.
-
-    The page names the funds, never their DUIDs (#1123). A fund that
-    snapshot lacks reads "Unavailable fund". None without financial periods.
-    """
-    financial = statistics.financial
-    if financial is None:
-        return None
-    wanted = set(financial.upcoming.funds) | set(financial.comparison.funds)
-    rows = (
-        SnapshotFund.objects.filter(
-            snapshot_id=statistics.source_id,
-            source_key__in=[str(duid) for duid in wanted],
-        ).values_list("source_key", "payload__canonical")
-        if statistics.source_id
-        else ()
-    )
-    names = {
-        int(key): fund_display_name(int(key), json.loads(text).get("name"))
-        for key, text in rows
-    }
-    return {
-        period: [
-            names.get(duid, _("Unavailable fund"))
-            for duid in getattr(financial, period).funds
-        ]
-        for period in ("upcoming", "comparison")
-    }
+def known_money(amount):
+    """A ``MoneyAmount`` as ``Money`` for a stat tile, or ``None`` if unknown."""
+    return Money(amount.cents) if amount.available else None
 
 
 def statistics_panel(statistics):
-    """The statistics panel's tiles and its progress chart (#720).
+    """The statistics panel's stat tiles and its progress chart (#720, #1540).
 
-    The responded and email cards are drawn as progress bars against active
-    Families; the other cards stay tiles. Without an observation nothing is
-    drawn, and every card, those three included, is a tile reading
-    Unavailable.
+    With an observation, the responded and email-reach counts are drawn as
+    progress bars against active Families, and the active Families and
+    Members are tiles. Without one nothing is drawn, and all five are tiles
+    reading "—" with the reason, never zero. With giving enabled two pledge
+    tiles end the row (#728): the current annual pledges, and last year's
+    pledges of every Family in the ParishSoft data, whatever its status
+    today (so not a subtotal of these Families).
     """
-    progress = population_progress(statistics.active)
-    drawn = set(dict(PROGRESS)) if progress else set()
+    active = statistics.active
+    no_data = _("No ParishSoft data has been loaded for this campaign yet.")
+    if active is None:
+        figures = [
+            (key, label, None, no_data)
+            for key, label in (
+                ("active_families", _("Active Families")),
+                ("active_members", _("Active Members")),
+                ("eligible_email", _("Families with eligible email")),
+                ("deliverable_email", _("Families with deliverable email")),
+                ("responses", _("Families that have responded")),
+            )
+        ]
+    else:
+        figures = [
+            ("active_families", _("Active Families"), active.families, ""),
+            ("active_members", _("Active Members"), active.active_members, ""),
+        ]
+    if statistics.financial_enabled:
+        pledges = known_money(active.annual_pledge) if active else None
+        everyone = known_money(statistics.comparison_pledge_all)
+        # One reason per cause, so each says what is actually missing.
+        if active is None:
+            annual_reason = everyone_reason = no_data
+        elif statistics.financial is None:
+            annual_reason = everyone_reason = _(
+                "Giving is turned on, but this campaign has no giving "
+                "definition yet, so pledges cannot be totalled."
+            )
+        else:
+            annual_reason = _(
+                "The total is added up only when every responding Family's "
+                "pledge amount is known."
+            )
+            everyone_reason = _(
+                "The ParishSoft data kept for this campaign does not hold "
+                "every pledge for last year's period, so the total is not "
+                "added up."
+            )
+        figures += [
+            ("annual_pledges", _("Current annual pledges"), pledges, annual_reason),
+            (
+                "comparison_pledges_all",
+                _("Last year's pledges (all Families)"),
+                everyone,
+                everyone_reason,
+            ),
+        ]
     return {
         "tiles": tuple(
-            card for card in statistics_cards(statistics) if card[0] not in drawn
+            tile(key, label, value, unknown_reason="" if value is not None else reason)
+            for key, label, value, reason in figures
         ),
-        "progress": progress,
+        "progress": population_progress(active),
     }
 
 
-def _page_context(campaign_id, query, selected, principal):
-    """Format detached shared observations; never recompute money in templates."""
+def scope_links(query):
+    """Each Chart population segment's address (#1535): this page with that
+    scope, the daily table back on its first page, its sort and size and
+    the zone kept."""
+    return {scope: query.url(page=1, scope=scope) for scope in SCOPE_LABELS}
+
+
+def mode_links(query):
+    """Each Production / Testing rehearsal segment's address (#1537).
+
+    This page in that mode, the daily table back on its first page, its
+    population, sort, size and the zone kept.
+    """
+    return {mode: query.url(page=1, mode=mode) for mode in ("production", "testing")}
+
+
+def _page_context(campaign_id, query, participation, metrics, principal, cause=None):
+    """Format detached shared observations; never recompute money in templates.
+
+    ``metrics`` is the funnel of the mode shown (None: a Testing view with
+    no rehearsal). ``participation`` is the daily chart's selection and the
+    statistics, read in Production only: None in a Testing view, which
+    shows no statistics, daily chart or export, or when they could not be
+    read, which the page says; ``cause`` ("facts" or "statistics") picks its
+    wording.
+    """
     campaign = Campaign.objects.select_related("active_configuration").get(
         pk=campaign_id
     )
-    statistics = calculate_statistics(capture_statistics(campaign_id))
+    context = {
+        "campaign": campaign,
+        "query": query,
+        "testing": query.mode == "testing",
+        # Testing responses are shown to Administrators only (#477).
+        "can_test": "administrator" in principal.roles,
+        "mode_links": mode_links(query),
+        "metrics": None,
+        "participation_unavailable": query.mode == "production"
+        and participation is None,
+        "participation_cause": cause,
+    }
+    if metrics is not None:
+        context.update(funnel_panels(metrics))
+    if participation is None:
+        return context
+    selected, statistics = participation
     mutable = True
     try:
         admit_campaign(campaign_id, mutating=True)
     except PermissionError:
         mutable = False
-    context = {
-        "campaign": campaign,
-        "query": query,
+    context |= {
+        "scope_links": scope_links(query),
         "selection": selected,
         "statistics": statistics,
         **statistics_panel(statistics),
-        "fund_names": fund_names(statistics),
         "export_key": uuid4(),
-        "exact_key": uuid4(),
-        "exact_row_count": max(
-            0,
-            (
-                selected.expected.through_date
-                - campaign.active_configuration.start_date
-            ).days
-            + 1,
-        )
-        if selected.expected is not None
-        else None,
         # No list of earlier exports: exports are point-in-time (#1398).
         "export_allowed": mutable,
     }

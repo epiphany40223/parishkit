@@ -2096,9 +2096,9 @@ pk-admin report roster --show all --ministry 9
 | Command | The page | What it prints |
 | --- | --- | --- |
 | `report list` | Campaign reports | `campaign_id` (null without a current campaign) and `reports`: each report your menu offers, with `command`, `page` and `available` (false while the menu greys it out) |
-| `report participation` | Participation | `status` (`current`, `updating` or `unavailable`), `fact_set_id` (for `export create --fact-set`), the figures' source and dates, `statistics` (the active Families, Members, email, responses and, with Financial stewardship, pledge totals, including the comparison pledges of every Family, `comparison_pledge_all`) and `days`, the daily table |
+| `report participation` | Response dashboard (statistics and daily table) | `status` (`current`, `updating` or `unavailable`), `fact_set_id` (for `export create --fact-set`), the figures' source and dates, `statistics` (the active Families, Members, email, responses and, with Financial stewardship, pledge totals, including the comparison pledges of every Family, `comparison_pledge_all`) and `days`, the daily table |
 | `report comparison` | Campaign comparison | `day` and `date` (the comparison day: the current campaign's last complete day, or `--day`), `status`, `last_year`, `current` (the current campaign's figures at the day and so far, and its renewal of last year's Families), `years` (each imported year's figures at the day and final figures, renewal and, for a final year, its pledge distribution) and `averages` (the imported years' mean of each figure at the day); see below |
-| `report responses` | Response dashboard | `metrics`: the funnel `stages`, the three figures beside it, the `activity` buckets, the `sends` and each list's length (`lists`); null in Testing without a rehearsal |
+| `report responses` | Response dashboard (Families by stage) | `metrics`: the funnel `stages`, the three figures beside it, the `activity` buckets, the `sends` and each list's length (`lists`), which the page no longer shows; null in Testing without a rehearsal |
 | `report financial` | Financial report | The summary over every pledge: `families`, `annual_total`, `frequencies`, `shares` (by share option id), `no_share`, `cannot_give` and the comparison period |
 | `report limitations` | Limitations | `cannot_serve` (Members who cannot participate in ministries) and `cannot_attend` (Families who cannot attend Mass or prayer services) |
 | `report census` | Census changes | `matching`: how many changes the filters keep, split by `routes` (`automatic`, `by_hand`) and `kinds` (`contact`, `moved`, `deceased`, `new_member`), and `statuses`, the page's summary of every change by status; see below |
@@ -2391,7 +2391,7 @@ is exit 1 (`not_available`).
 
 ## Report exports
 
-A report export (the Participation page's **Export**, and the export of
+A report export (the Response dashboard's **Export**, and the export of
 every other report page) is a file the server makes in the background. From
 the command line, getting one takes three steps: request it, wait until it
 is ready, and fetch it. Each step does what the export's status page does
@@ -2406,7 +2406,7 @@ pk-admin export fetch EXPORT_ID
 pk-admin exports clean
 ```
 
-- `export create` requests a Participation export, as the page's export
+- `export create` requests a participation export, as the Response dashboard's export
   form does: `--fact-set` names the participation figures to export (the
   page exports the ones it shows; take their `fact_set_id` from
   `report participation`), `--format` is `csv`, `png`, `pdf` or `xlsx`,
@@ -2554,8 +2554,9 @@ pk-admin export postal --format xlsx --timezone America/New_York
 
 #### Exact daily exports
 
-When the Participation page has no complete figures ready yet, its exact
-export calculates today's figures first and then makes the file. From the
+An exact (latest-data) export calculates today's figures first and then
+makes the file; the Response dashboard does not offer it, so the command
+line is the way to request one. From the
 command line it takes two steps more than `export create`: follow the
 calculation, then fetch the export it hands off to.
 

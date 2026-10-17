@@ -71,7 +71,7 @@ def test_only_copy_campaign_uses_the_multi_campaign_control():
         "limitations-report.html",
         "ministry-followup.html",
         "ministry-roster.html",
-        "participation.html",
+        "response-dashboard.html",
     ],
 )
 def test_report_pages_do_not_name_the_campaign(template):

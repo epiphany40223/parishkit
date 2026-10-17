@@ -54,6 +54,7 @@ when it lands.
   [Review, Apply and Change status](#review-apply-and-change-status),
   [review dialog](#review-dialog),
   [conditional fields](#conditional-fields),
+  [binary choices](#binary-choices),
   [Basic and Advanced modes](#basic-and-advanced-modes),
   [single-campaign interim](#single-campaign-interim),
   [addresses and legacy URLs](#addresses-and-legacy-urls),
@@ -63,7 +64,8 @@ when it lands.
 - Admin page layout: [page help](#page-help),
   [button labels](#button-labels), [shared visual style](#shared-visual-style),
   [colour scheme](#colour-scheme),
-  [status indicators](#status-indicators), [time entry](#time-entry),
+  [status indicators](#status-indicators), [stat tiles](#stat-tiles),
+  [time entry](#time-entry),
   [schedules](#schedules), [schedule previews](#schedule-previews).
 - Tables: [Admin tables](#admin-tables),
   [empty tables and lists](#empty-tables-and-lists),
@@ -346,11 +348,22 @@ A chart's caption never repeats figures its table, legend or drawn values
 already show; it keeps only what they don't, such as a scope note, and the
 chart keeps its accessible name and description
 ([chart engine](../reports/spec.md#chart-engine)).
-A stat tile that states a share may also draw it as a **share bar**: a plain
-progress bar at the tile's foot, so the bars of a row of tiles line up. Its
-exact figures are always printed in the tile, so it has no tooltip, and it is
-hidden from assistive technology, which reads the text instead
-([#720](https://github.com/epiphany40223/parishkit/issues/720)).
+A stat tile that states a share may also draw it as a
+[share bar](#stat-tiles).
+
+**Hover guide line.** A chart whose x axis is dates, times or campaign days
+and that shows tooltips draws a faint vertical guide line at the x value the
+pointer, a tap or (where the chart has one) its slider is on, through every
+panel of the chart, and that x value's tooltip lists its figures. Pointing
+anywhere over the plot picks the nearest x value (each x value has an
+invisible full-height hover band), so no one has to find a thin line or a
+small point. The line is one shared colour (the ink colour at half opacity,
+following the colour scheme), appears only while an x value is inspected, is
+drawn over the chart without moving anything, is hidden from assistive
+technology, is cleared when the page starts to print (so a pointer resting on
+a chart does not leave it in the printout) and never appears in a download or
+email image. Category and bar charts, whose rows or bars react as a whole, have no guide
+line ([#1536](https://github.com/epiphany40223/parishkit/issues/1536)).
 
 ## Admin portal interaction
 
@@ -403,8 +416,9 @@ never scrolls to show it (Administrator, pk-local review of
   control (not one a base or included template draws); a template test
   refuses an in-place control whose fragment names no region there.
 - **Controls.** A link that shows another view of the page (`a[data-in-place]`:
-  the [response dashboard](../reports/spec.md#response-dashboard)'s mode and
-  grain, the
+  each segment of a [binary choice](#binary-choices), such as the
+  [Response dashboard](../reports/spec.md#response-dashboard)'s mode and
+  Chart population, each of which refreshes the page's one region; the
   [Family timeline](../reports/spec.md#family-timeline)'s mode and When sort,
   "Refresh current work" on "Background work", "Refresh list" on
   "Families on the form now", the page links of a mail delivery's
@@ -421,9 +435,7 @@ never scrolls to show it (Administrator, pk-local review of
   event; Clear verified refusal on a
   [refused address](../admin-portal/spec.md#refused-addresses); Dismiss on an
   integration's finished key change; the
-  [participation report](../reports/spec.md#campaign-statistics)'s Apply
-  report options, which refreshes its statistics, chart and export panels;
-  the [Campaign comparison](../campaign-history/spec.md#page-layout)'s
+  [Campaign comparison](../campaign-history/spec.md#page-layout)'s
   Compare on day, which refreshes everything below it)
   names its region by its
   URL's fragment. A POST form saves a change unless it is marked
@@ -1002,7 +1014,7 @@ the resend admission refuses it; Queue new manual report while an earlier
 Weekly Admin digest is still being prepared or delivered (checked when the
 page opens); and Upload on Hosted files while the library is full. A button
 the server draws disabled because other campaign work holds the page (report
-exports, follow-up saves, Participation) or because the sign-in is not
+exports, follow-up saves, the Response dashboard) or because the sign-in is not
 recent (automation approval) names that notice too.
 
 The same applies wherever the page already knows the refusal, whatever the
@@ -1517,6 +1529,61 @@ in place (`data-enabled-when` on the row's own Delete box), so the rows below
 never move; a redrawn form shows a deleted row's saved values, still greyed,
 and unticking Delete gives them back (#563).
 
+### Binary choices
+
+**Rule.** A single choice between exactly two mutually exclusive ways an
+Admin page behaves or what it shows (two views of the same page) is a
+**segmented pair**: a short visible label and two equal segments, the
+chosen one filled. Choosing a segment applies it at once, in place; there
+is no Apply button. It is never a two-option select, a pair of radio
+buttons with an Apply button, a checkbox or a toggle switch. **Why.** One
+choice should take one action, and every such choice should look and work
+the same, so a reader learns it once; a switch reads as on and off, while
+these are two named views. **Shared code.**
+`components/segmented-choice.html` (the pair, its label and its two links)
+and the shared segmented style in `ui-v1.css`, which the
+[Basic and Advanced modes](#basic-and-advanced-modes) toggle uses too;
+`test_segmented_choice.py` (the template and the guard below) and the
+browser tests of each page that draws one. **Precedent.**
+[#1535](https://github.com/epiphany40223/parishkit/issues/1535)
+(Administrator, 2026-10-17), from the Response dashboard's Production |
+Testing rehearsal.
+
+- **Where.** The Response dashboard's Responses shown (Production |
+  Testing rehearsal) and Chart population (Historical as of day | Current
+  population), and the Family timeline's Records shown (Production |
+  Testing rehearsal). The family directory's Responses shown and the roster
+  changes' Show are still menus in their filter forms; their conversion is
+  tracked in #1535.
+- **Links.** Each segment is a link to the page's own address with that
+  choice (`a[data-in-place]`, marked `aria-current="page"` when chosen), so
+  each view has a real address that a reload or bookmark keeps. The link
+  carries the page's other view state (a table's sort and page size, the
+  browser's time zone), and the pair is redrawn with every in-place answer
+  (`data-table-sync` or inside a region), so its links always match the
+  page shown.
+- **In place.** Choosing a segment refreshes the page's regions without a
+  reload or a scroll jump ([in-place controls](#in-place-controls)); the
+  address is replaced, focus stays on the segment just chosen, and the view
+  now shown is announced by its segment's text ("Current population").
+- **Look.** Both segments keep one size and weight and the pair keeps its
+  place, so choosing one changes only colours
+  ([no layout shift](#no-layout-shift)). The chosen segment is filled in the
+  accent colour; the focus ring sits inside the segment, drawn in the paper
+  colour on the chosen one, as on Basic and Advanced.
+- **Accessibility.** The pair is a group (`role="group"`) named by its
+  visible label; Tab reaches each segment and Enter follows it, and a
+  screen reader names the chosen one as the current page.
+- **Not this pattern.** A binary filter among several applied together
+  (the Census changes' Include history box stays in its form), tri-state
+  filters (Any, Yes or No), export options sent with an action ("Include
+  mailing columns" for an export), stored settings saved through Review and
+  Apply (a checkbox there is a setting, not a view), and choices of three
+  or more (Appearance).
+- **Guard.** A template test refuses an Admin template's `<select>` with
+  exactly two written options, unless it is listed as an exception with
+  its reason. A menu built from a loop is checked in review.
+
 ### Basic and Advanced modes
 
 **Rule.** A settings editor whose full form is much harder than what most
@@ -1540,8 +1607,10 @@ adopters #1122 (the
 and #1062 (Parish logos), then the scheduling editors of #1129.
 
 - **Where and how it looks.** The toggle sits at the top of the editor,
-  above both modes, so switching never moves it. It is a segmented pair
-  with a short visible label ("Mode") and exactly two segments, **Basic**
+  above both modes, so switching never moves it. It is a segmented pair,
+  drawn as every [binary choice](#binary-choices) is but with radios and
+  this section's own behaviour; it has a short visible label ("Mode") and
+  exactly two segments, **Basic**
   and **Advanced**, never "Simple" (Administrator decision, 2026-10-12). It is
   never a checkbox, a link to another page or a second settings page. The
   chosen segment is filled; both segments keep one size and weight, so
@@ -2360,6 +2429,72 @@ colours, which are dark enough for that. **Precedent.** #601 (log level icons), 
 [System health dashboard](../admin-portal/spec.md#health-dashboard), its
 first user).
 
+### Stat tiles
+
+**Rule.** A page's headline figures (a few counts, money totals or shares
+that sum up the page) are **stat tiles**, all drawn by one component: the
+server helper `parishkit.stewardship.web.stat_tiles` and the template
+`components/stat-tiles.html`. Each tile has a short label, one big value
+and up to two short explanation lines. A long list of figures, or facts
+that are not numbers (file names, dates, yes or no), stays a key/value
+list (`<dl>`). A state (Working, Warning, Error) is a
+[status indicator](#status-indicators), not a stat tile.
+**Why.** The same card had been drawn by hand in several templates, with
+different markup, three ways of formatting numbers, three ways of showing
+a missing value (the word "Unavailable", "—", or a misleading zero) and
+two ways of reading to a screen reader. **Precedent.**
+[#1540](https://github.com/epiphany40223/parishkit/issues/1540)
+(Administrator, 2026-10-17), built like the
+[schedule previews](#schedule-previews) component.
+
+- **Look.** A row of flat cards (`--paper-soft` background, `--border`
+  edge, `--radius-small` corners) that wraps on narrow screens: the label
+  above the value, the value large and in tabular figures, the
+  explanation lines below in the muted text colour. Every colour and
+  radius comes from the [design tokens](#shared-visual-style), so the
+  [colour scheme](#colour-scheme) applies.
+- **Numbers.** The helper formats every value from its type, following
+  [numbers and money](#numbers-and-money): a count is grouped, money is
+  USD with cents and a share is a percentage. Templates never format a
+  tile's value. A tile that states a share prints the count and what it
+  is compared with as well as the percentage.
+- **Unknown values.** A value that is not known reads "—" with a
+  [toggletip](#page-help) saying why, in plain language. The toggletip's
+  button is described by its reason, so a screen reader announces it when
+  the button gets focus. A value never reads zero, and never a word such
+  as "Unavailable" in the value's place. The helper refuses an unknown
+  value without a reason, and the include refuses a row with no
+  accessible name.
+- **Words.** The label is short plain language naming what is counted.
+  An explanation line says what the value is compared with or what it
+  leaves out; it never repeats a figure another tile or the page already
+  shows, as for [chart captions](#charts). A tile has no heading of its
+  own: the label is not a heading, and the row is named by its panel's
+  heading.
+- **Trend.** Where a comparison exists, a tile may end with one trend
+  line, written in words with an arrow ("↑ 12.5% more"), never colour
+  alone.
+- **Share bar.** A tile that states a share may also draw it as a plain
+  progress bar at the tile's foot, so the bars of a row of tiles line up.
+  Its exact figures are always printed in the tile, so it has no tooltip,
+  and it is hidden from assistive technology, which reads the text instead
+  ([#720](https://github.com/epiphany40223/parishkit/issues/720)).
+- **Reading order.** The row is a list with an accessible name. Each tile
+  reads its label, then its value, then its explanation, in that order;
+  no visible text is hidden from assistive technology, and nothing uses a
+  mouse-only `title` tooltip.
+- **Times.** A time in a tile is shown in the browser's time zone, with no
+  "UTC" label ([dates and times](#dates-and-times)).
+- **No layout shift.** The tiles of a row stretch to one height. An
+  in-place update replaces their contents and keeps the row's tiles, so
+  nothing below moves ([no layout shift](#no-layout-shift)).
+- **Shared code.** The helper's `tile()` builds each tile and the include
+  draws a row of them. A guard test fails when a template outside
+  `components/` draws stat-tile markup by hand; the templates not yet
+  moved onto the component are listed in it, each with why, and the list
+  may only shrink. Email and PDF reports cannot load the stylesheet and
+  keep their own layouts.
+
 ### Time entry
 
 Every Admin field that takes a time of day accepts it in any common form,
@@ -2786,7 +2921,11 @@ Admin tables share one component, so paging, sorting, selection and styling
 behave the same everywhere. A long table has a row navigator above and below
 it: the rows shown and "Page N of M", a rows-per-page choice (25, 50, 100, 250
 or All, where the table's source allows it), Previous and Next, and a
-page-number field. A page number past the end shows the last page.
+page-number field. A page number past the end shows the last page. A summary
+table that follows its chart may offer 5 as a smaller first size and default
+to it, since the chart already shows the whole series (the Response
+dashboard's daily table,
+[#1537](https://github.com/epiphany40223/parishkit/issues/1537)).
 
 Column headings sort the table on the server. Each sortable heading is a
 control that sorts by that column; choosing the sorted column again reverses
@@ -2874,9 +3013,10 @@ table, including none. A response the
 server refuses (a malformed filter's 400, a denial, an unavailable report) is
 shown as returned; a POST is never sent twice, since each report read is
 audited. While a request is in flight, repeating the same submission is
-ignored. The participation report's options reshape its statistics, chart and
-exports rather than one table, so its options form is an
-[in-place control](#in-place-controls) of all three panels instead. When
+ignored. The Response dashboard's Chart population reshapes its chart,
+table and export rather than one table, so it is a
+[binary choice](#binary-choices) whose links refresh the page's region
+instead. When
 the fetch fails or returns another page (a sign-in), the ordinary page load happens and its fragment lands on the table rather than at
 the top. The link preparation history keeps only the fragment and always
 loads in full. A table region is one kind of region that
@@ -3324,8 +3464,11 @@ what the report holds. Troubleshooting uses the page's Technical details and
 the audit log, not a download; the recorded exceptions are the System logs
 export and the command line's Census changes JSON Lines below. Every data export is offered as CSV, XLSX and PDF unless a
 recorded technical or design reason says otherwise (Administrator decision,
-2026-10-10); a page may add a format, such as the participation chart's PNG
-or System logs' JSON Lines. An export form is its format menu and its
+2026-10-10); a page may add a format, such as System logs' JSON Lines. The
+Response dashboard's export drops the participation chart's PNG
+([#1537](https://github.com/epiphany40223/parishkit/issues/1537)): its page
+holds more than one chart, and the PNG is still accepted from the command
+line. An export form is its format menu and its
 button; it carries no explanation of how each format writes dates or money
 (Administrator decision, 2026-10-17,
 [#1538](https://github.com/epiphany40223/parishkit/issues/1538)). **Shared code.** `reports/pdf_design.py` and
@@ -3406,7 +3549,7 @@ deliveries. Any other download (campaign dates, contact dates, no times at
 all) asks nothing: its form sends the browser's zone in a hidden
 `data-browser-zone` field, which sets the file's frame times (Captured at,
 Requested at, Source as of), and the file names that zone. The one exception
-is Participation: its export forms post the page's own `query.timezone`, the
+is the Response dashboard: its export form posts the page's own `query.timezone`, the
 zone the page was drawn in, which `report-v1.js` fills with the browser's
 (the [participation graph](../reports/spec.md#participation-graph)). The
 server falls back to the parish's time zone rather than refusing a missing or
