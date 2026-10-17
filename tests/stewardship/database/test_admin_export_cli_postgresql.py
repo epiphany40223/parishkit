@@ -296,6 +296,46 @@ def test_retry_reruns_a_failed_export(cli, http_scenario):  # noqa: F811
     assert len(commands("retry")) == 1
 
 
+def test_retry_ends_one_window_after_the_failure(
+    cli,
+    http_scenario,  # noqa: F811
+    monkeypatch,
+):
+    """``export status`` names when Retry ends; past it a new retry is
+    ``not_available``, and a recorded key still replays its result (#1398)."""
+    from datetime import timedelta
+
+    from parishkit.stewardship.reports import export_services
+
+    run, secret = cli
+    request = create(http_scenario)
+    with work_transaction():
+        act(act(_status(request.task), "claim"), "permanent_failure")
+    failed = request.task.chain_runs.order_by("-retry_sequence").first()
+    code, document = run("export", "status", str(request.pk), secret=secret)
+    assert code == 0 and document["result"]["state"] == "failed"
+    end = failed.updated_at + timedelta(minutes=60)
+    assert document["result"]["expires_at"] == end.isoformat()
+    key = uuid4()
+    argv = ("export", "retry", str(request.pk), "--request-key", str(key))
+    code, document = run(*argv, secret=secret)
+    assert code == 0 and document["result"]["created"], document
+    # The retry fails too; one window later a new Retry is refused.
+    retried = request.task.chain_runs.get(retry_command_id=key)
+    with work_transaction():
+        act(act(_status(retried), "claim"), "permanent_failure")
+    retried.refresh_from_db()
+    later = retried.updated_at + timedelta(minutes=61)
+    monkeypatch.setattr(export_services, "database_now", lambda: later)
+    code, document = run(
+        "export", "retry", str(request.pk), "--request-key", str(uuid4()), secret=secret
+    )
+    assert code == 1 and document["error"]["code"] == "not_available", document
+    code, again = run(*argv, secret=secret)
+    assert code == 0 and not again["result"]["created"], again
+    assert len(commands("retry")) == 1
+
+
 def test_an_expired_export_is_no_longer_available(cli, http_scenario):  # noqa: F811
     """Exports are point-in-time (#1398): past its window the file is gone."""
     run, secret = cli
