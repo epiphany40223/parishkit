@@ -1038,11 +1038,26 @@ details.filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div
    width (#1562): each grows from a short basis instead of starting at
    its widest choice. */
 .filter-bar.mail-filters > div { flex: 1 1 7.5rem; min-width: 6.5rem; }
-.filter-bar.mail-filters > div.short { flex: 0 1 8.5rem; min-width: 8.5rem; }
+/* From and Through are wide enough for Chromium's empty "mm/dd/yyyy"
+   placeholder beside its calendar button. */
+.filter-bar.mail-filters > div.short { flex: 0 1 9.25rem; min-width: 9.25rem; }
 .filter-bar.mail-filters > div > :is(input, select) { width: 100%; }
-/* Its Production / Testing links keep one weight, so choosing one never
-   moves the other under the pointer (no layout shift, #736). */
-#delivery-mode .choice-links a { font-weight: 650; }
+/* Every label sits on one line of the toggletip's height, and the fields
+   line up at their tops, so Recipient's label (with its toggletip) and the
+   plain labels share one baseline although a date control is a little
+   taller than a text box; Apply still sits at the fields' foot. */
+.filter-bar.mail-filters { align-items: start; }
+.filter-bar.mail-filters > button { align-self: end; }
+.filter-bar.mail-filters > div > :is(label, .label-row) { display: flex; align-items: center; min-height: 1.75rem; margin: 0 0 .25rem; }
+/* Its Production / Testing choices are link-styled buttons in small POST
+   forms, since they carry the private Recipient filter (#1562). They keep
+   the choice-links pill look and one weight, so choosing one never moves
+   the other under the pointer (no layout shift, #736). */
+#delivery-mode .choice-links .mode-choice, #delivery-mode .choice-links .mode-choice:not(:disabled):hover { min-height: 0; margin: 0; padding: .3rem .9rem; border: 1px solid var(--accent); border-radius: 999px; background: none; box-shadow: none; color: var(--link); font-weight: 650; line-height: inherit; }
+#delivery-mode .choice-links .mode-choice[aria-current=true], #delivery-mode .choice-links .mode-choice[aria-current=true]:not(:disabled):hover { background: var(--accent); color: var(--paper); text-decoration: none; }
+/* A row's Recipient is a link-styled button posting the private recipient
+   (#1562): it reads as a link in its cell, never as a portal button. */
+.recipient-link, .recipient-link:not(:disabled):hover { min-height: 0; margin: 0; padding: 0; border: 0; vertical-align: baseline; background: none; box-shadow: none; color: var(--link); line-height: inherit; text-align: start; }
 .filter-bar button { margin: 0; }
 /* A filter bar's hint row with the server's refusal over the gate's hint
    (.hint-row-messages, the Family directory's Exact Family code, #1332)
