@@ -40,9 +40,7 @@
 <section class="panel" data-setup-progress>
 <h2>{% translate "Current status" %}</h2>
 <p class="setup-progress-summary" data-progress-summary>{{ summary_text }}</p>
-<ol class="setup-load-phases" aria-label="{% translate 'Parts of the load' %}">{% for phase in phases %}
-<li class="setup-load-{{ phase.state }}" data-load-phase="{{ phase.key }}"><span class="setup-load-label">{{ phase.label }}</span> <span class="setup-load-status" data-load-status>{{ phase.status }}</span></li>{% endfor %}
-</ol>
+{% translate "Parts of the load" as phases_label %}{% include 'stewardship/components/stage-boxes.html' with stages=phases label=phases_label key_attribute="load-phase" %}
 <h3>{% translate "Downloaded from ParishSoft" %}</h3>
 <ul class="setup-load-collections" data-load-collections>{% for item in collections %}
 <li class="setup-load-{{ item.state }}" data-collection="{{ item.key }}"><span class="setup-load-label">{{ item.label }}</span> <span class="setup-load-status" data-load-status>{{ item.text }}</span></li>{% endfor %}

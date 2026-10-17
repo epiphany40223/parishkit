@@ -63,7 +63,8 @@ when it lands.
 - Admin page layout: [page help](#page-help),
   [button labels](#button-labels), [shared visual style](#shared-visual-style),
   [colour scheme](#colour-scheme),
-  [status indicators](#status-indicators), [time entry](#time-entry),
+  [status indicators](#status-indicators), [stage boxes](#stage-boxes),
+  [time entry](#time-entry),
   [schedules](#schedules).
 - Tables: [Admin tables](#admin-tables),
   [empty tables and lists](#empty-tables-and-lists),
@@ -2337,6 +2338,34 @@ warning and error marks are now cut out, so they take the status border
 colours, which are dark enough for that. **Precedent.** #601 (log level icons), #1214 (the
 [System health dashboard](../admin-portal/spec.md#health-dashboard), its
 first user).
+
+### Stage boxes
+
+**Rule.** A page that follows a long piece of work through its major
+stages shows them as one row of stage boxes: one box per stage, in order,
+left to right, wrapping onto more rows on a phone with no sideways scroll.
+Each box names its stage and its state in words, Not started, In progress,
+Done or Failed (Finishing setup also has Waiting for the server operator),
+so its text, and its name as a list item, carry the state; a mark (a
+bullet, a pointer, a check, a cross or a pause) and a colour from the
+[design tokens](#shared-visual-style) only reinforce it, in light and dark.
+The boxes show only stages the server reports, never invented ones. While
+the work runs, the page updates the boxes in place from a passive status
+read, and announces a change of state politely through the page's
+announcer, once per change, not on every poll; every state draws the same
+boxes and keeps the lines around them reserved, so an update moves nothing
+([no layout shift](#no-layout-shift)). **Why.** The Administrator,
+2026-10-17, on the campaign wizard's Load ParishSoft data: "one box for
+each major step in the loading process, proceeding from left to right",
+and the same boxes, from the same code, as setup's Loading parish data and
+Finishing setup, so a reader learns the pattern once. **Shared code.** The
+`components/stage-boxes.html` include, `accounts/stages.py` (`rows`, which
+marks the stages before the current one done, and the state words) and
+`.stage-boxes` in `ui-v1.css`. **Precedent.** Setup's Loading parish data
+and Finishing setup (#1354), and Load ParishSoft data
+([#1404](https://github.com/epiphany40223/parishkit/issues/1404) PR 5);
+the other stage-progress displays move to it in
+[#1579](https://github.com/epiphany40223/parishkit/issues/1579).
 
 ### Time entry
 

@@ -437,6 +437,7 @@ sections:
     "Shared visual style": [ADM-03]
     "Colour scheme": [ADM-03]
     "Status indicators": [ADM-03, ADM-13]
+    "Stage boxes": [ADM-02, ADM-03]
     "Time entry": [ADM-03]
     "Schedules": [ADM-03, BG-05]
     "Tables": [ADM-03]

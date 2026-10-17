@@ -334,7 +334,9 @@ Wizard pages do not list the time limits. The shared
 [inactivity dialog](../architecture/spec.md#identity-and-session-security)
 warns five minutes before sign-out and lets the Admin stay signed in, which
 also keeps the setup attempt. The progress page names the three parts of the load
-(download, save, check) and, during the download, each ParishSoft collection
+(download, save, check) as
+[stage boxes](../ui-conventions/spec.md#stage-boxes), as Finishing setup
+names its steps, and, during the download, each ParishSoft collection
 as done, in progress (Ministry rosters as "N of M") or waiting, with its
 record count; the saved-record bar appears once saving starts. The worker
 encodes one step per finished collection in the task's two monotonic
