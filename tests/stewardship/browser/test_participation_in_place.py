@@ -1,9 +1,9 @@
 """The participation report's options apply in place (#519 PR 5).
 
 The report is served at its real address (report_components.REAL), where
-its options' form sends them, with the answers for the choices these tests
-make. Each test sets a mark outside every region, which only a full page
-load could lose, as test_in_place.py does.
+its Chart population links (a binary choice, #1535) lead, with the answers
+for the choices these tests make. Each test sets a mark outside every
+region, which only a full page load could lose, as test_in_place.py does.
 """
 
 import pytest
@@ -24,7 +24,15 @@ pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
 
-APPLY = "#table-filters button[type=submit]"
+# The Chart population's Current population segment (#1535).
+CURRENT = '#participation-scope a[data-in-place="scope-current"]'
+# The binary choice's box and each segment's, page-relative: choosing a
+# segment must change only colours, never a size or a place (#1535).
+PAIR_LAYOUT = """() => [...document.querySelectorAll(
+    '#participation-scope, #participation-scope a')].map((node) => {
+  const box = node.getBoundingClientRect();
+  return [box.x + scrollX, box.y + scrollY, box.width, box.height];
+}).flat()"""
 ZONE = "timezone=America%2FLos_Angeles"
 # The current-population answer's all-Families comparison card, which the
 # first page lacks: it shows that the statistics panel was swapped in place.
@@ -56,36 +64,44 @@ def zones(page):
 
 
 def test_options_apply_in_place(page, component_origin):
-    """Apply report options sends one GET and swaps the statistics, chart and
-    export panels: no reload, the reader's place and focus kept, the options
-    announced, the address replaced, and the fresh daily chart drawn."""
+    """Choosing Current population (a binary choice, #1535) sends one GET
+    and swaps the statistics, chart and export panels: no reload, no Apply
+    button, the reader's place kept, focus on the segment just chosen, the
+    view announced, the address replaced, the chosen segment marked, the
+    pair not moved or resized, and the fresh daily chart drawn."""
     page.set_viewport_size(VIEWPORT)
     page.goto(component_origin + REAL + "?" + ZONE)
     page.evaluate(MARK)
-    page.get_by_label("Chart population").select_option("current")
+    choice = page.get_by_role("group", name="Chart population")
+    expect(choice.locator("a[aria-current=page]")).to_have_text("Historical as of day")
+    assert page.get_by_role("button", name="Apply report options").count() == 0
     # The inactive subtotal option was removed (#728).
     expect(page.locator("input[name=inactive]")).to_have_count(0)
-    offset = scroll_below(page, APPLY)
+    offset = scroll_below(page, CURRENT)
+    layout = page.evaluate(PAIR_LAYOUT)
     gets = count_requests(page, "GET", "scope=current")
-    page.locator(APPLY).click()
+    page.locator(CURRENT).click()
     visible(
         page.get_by_role("heading", name="Daily participation — Current population")
     )
     visible(page.locator("#participation-statistics .stat-value", has_text=REFRESHED))
     assert page.evaluate(MARKED) == "kept"
     assert abs(page.evaluate("window.scrollY") - offset) < 40
-    assert page.evaluate(
-        f"document.activeElement === document.querySelector('{APPLY}')"
+    eventually(
+        page,
+        "() => document.activeElement?.dataset.inPlace === 'scope-current'",
+        True,
     )
     has_text(
-        page.get_by_role("status").filter(has_text="Report options applied."),
-        "Report options applied.",
+        page.get_by_role("status").filter(has_text="Current population"),
+        "Current population",
     )
+    expect(choice.locator("a[aria-current=page]")).to_have_text("Current population")
+    assert page.evaluate(PAIR_LAYOUT) == pytest.approx(layout, abs=1)
     assert page.url == (
         component_origin
         + REAL
-        + f"?scope=current&{ZONE}"
-        + "&size=50&sort=date_asc#participation-statistics"
+        + f"?scope=current&page=1&sort=date_asc&{ZONE}#participation-statistics"
     )
     assert len(gets) == 1
     assert page.locator("input[name=population_scope]").input_value() == "current"
@@ -96,7 +112,7 @@ def test_options_apply_in_place(page, component_origin):
 
 
 def test_options_redraw_the_progress_chart_in_place(page, component_origin):
-    """Apply report options redraws the statistics' progress chart (#720)
+    """Choosing a Chart population redraws the statistics' progress chart (#720)
     with the fresh counts, and both charts keep their space until drawn, so
     the panels below each stay as far below it as they were (#736)."""
     from .test_charts import assert_clean, watch
@@ -112,8 +128,7 @@ def test_options_redraw_the_progress_chart_in_place(page, component_origin):
     eventually(page, FITTED)
     top = page.evaluate(CHART_TOP)
     export = page.evaluate(EXPORT_TOP)
-    page.get_by_label("Chart population").select_option("current")
-    page.locator(APPLY).click()
+    page.locator(CURRENT).click()
     visible(page.locator("#participation-statistics .stat-value", has_text=REFRESHED))
     expect(rendered).to_have_count(1)
     expect(daily).to_have_count(1)
@@ -131,7 +146,7 @@ def test_daily_table_refreshes_every_panel(page, component_origin):
     page.goto(component_origin + REAL + "?" + ZONE)
     page.evaluate(MARK)
     body = page.request.get(
-        component_origin + REAL + f"?scope=current&{ZONE}&size=50&sort=date_asc"
+        component_origin + REAL + f"?scope=current&page=1&sort=date_asc&{ZONE}"
     ).text()
     page.route(
         lambda url: "sort=date_desc" in url,
@@ -168,9 +183,14 @@ def test_browser_zone_is_applied_in_place_once(page, component_origin):
     assert documents == [component_origin + REAL]
     assert fetches == [component_origin + REAL + "?" + ZONE]
     assert page.evaluate("document.activeElement === document.body")
-    assert "Report options applied." not in page.locator("main").inner_text()
+    assert page.get_by_role("status").filter(has_text="Current population").count() == 0
+    # The Chart population's links carry the zone too (#1535).
+    for link in page.locator("#participation-scope a").all():
+        assert ZONE in link.get_attribute("href")
     page.goto(component_origin + REAL + "?timezone=UTC")
-    expect(page.locator("input[data-report-zone]")).to_have_value("UTC")
+    expect(page.locator("[data-report-options]")).to_have_attribute(
+        "data-report-zone", "UTC"
+    )
     assert page.url.endswith("?timezone=UTC")
 
 
