@@ -10,7 +10,7 @@
   default whenever the dialog opens (data-confirm-reset).
 {% endcomment %}<fieldset class="dialog-fields"><legend>{% translate "Record a contact attempt (optional)" %}</legend>
 <p class="help">{% translate "The same contact attempt is recorded on each request." %}</p>
-<p class="help" id="bulk-zone-help" data-browser-zone-note hidden>{% translate "Enter the date and time in this computer's time zone:" %} <span data-browser-zone-name></span>.</p>
+{% translate "Enter the date and time in this computer's time zone:" as zone_note %}{% include "stewardship/components/zone-note.html" with note_text=zone_note note_id="bulk-zone-help" %}
 <div class="field-row" data-missing-hint="{% translate 'Enter the date and time of the contact attempt to record it.' %}">
 <div><label for="bulk-contact-channel">{% translate "How" %}</label><select id="bulk-contact-channel" name="contact_channel" data-confirm-reset><option value="" selected>{% translate "No contact attempt to record" %}</option>{% for key,label in channels.items %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></div>
 <div class="short"><input type="hidden" name="contact_zone" value="" data-enabled-when="contact_channel!=" data-browser-zone data-zone-missing-hint="{% translate "Your browser didn't report a time zone, so this contact time can't be saved. Check your computer's time zone setting." %}">

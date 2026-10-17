@@ -1965,7 +1965,20 @@ current authorization/filter snapshot.
    does not claim the mutation lease.
 2. Validate the upstream organization without cache and fetch uncached current
    contact payloads for every affected entity without holding a database lock.
-3. Re-evaluate each approved field against baseline/proposed/current.
+3. Re-evaluate each approved field against baseline/proposed/current. After
+   an Administrator resolved a conflict with *Use the Family's value anyway*
+   ([reports](../reports/spec.md#automatic-census-review), ADM-09.03), the
+   ParishSoft value they accepted takes the baseline's place. That accepted
+   base is recorded on the immutable review row with the source snapshot it
+   came from, and counts only while that snapshot is still the proposal's
+   comparison source and no later decision review (Back to To review or
+   Ignore, which also returns the change to `conflict`) has undone it; a
+   later edit keeps it. Reconciliation moves the comparison source whenever,
+   and only when, ParishSoft's value changes, so the base goes stale by
+   itself. An approval resting on a stale base returns to `unreviewed` while
+   the change stays open (a queued change keeps it, and its plan meets a
+   conflict), and a same-intent Family resubmission carries neither the base
+   nor such an approval.
 4. Mark already-matching fields resolved upstream.
 5. If any field on an entity is a three-way conflict, block all writes to that
    entity and return it for re-review.

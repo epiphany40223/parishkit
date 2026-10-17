@@ -1,9 +1,10 @@
-"""``census resolve`` and ``census review``: documents, options, vocabulary.
+"""``census resolve``, ``review``, ``edit`` and ``resolve-conflict``.
 
-Both are Census changes row writes (#463, #528). The commands' behavior
-against a database is in
-``database/test_admin_census_resolve_cli_postgresql.py`` and
-``database/test_admin_census_review_cli_postgresql.py``.
+Their documents, options and vocabulary. All are Census changes row writes
+(#463, #528, #1434). The commands' behavior against a database is in
+``database/test_admin_census_resolve_cli_postgresql.py``,
+``database/test_admin_census_review_cli_postgresql.py`` and
+``database/test_admin_census_edit_cli_postgresql.py``.
 """
 
 import io
@@ -186,6 +187,18 @@ def test_the_document_names_ids_versions_and_states_only():
             *("census", "review", str(PROPOSAL)),
             *("--decision", "approved", "--expected-version", "0"),
         ],
+        # census edit: a value or --clear, never both nor neither.
+        ["census", "edit", str(PROPOSAL), "--expected-version", "1"],
+        [
+            *("census", "edit", str(PROPOSAL), "--expected-version", "1"),
+            *("--value", "Pat", "--clear"),
+        ],
+        ["census", "edit", "--value", "Pat", "--expected-version", "1"],
+        ["census", "edit", str(PROPOSAL), "--value", "Pat"],
+        # census resolve-conflict: each required piece missing.
+        ["census", "resolve-conflict", "--expected-version", "1"],
+        ["census", "resolve-conflict", str(PROPOSAL)],
+        ["census", "resolve-conflict", str(PROPOSAL), "--expected-version", "0"],
     ],
 )
 def test_options_outside_the_pages_vocabulary_are_usage_errors(argv):
@@ -232,3 +245,164 @@ def test_only_a_unique_violation_is_the_racing_write():
         IntegrityError("no cause"),
     ):
         assert not admin_census.racing_write(error), error
+
+
+def test_the_edit_document_names_ids_versions_and_states_only():
+    """Golden document (#1434): whether an edit is set, never its value, the
+    note, the Family or the Member; an unchanged edit has no review."""
+    proposal = {
+        "id": PROPOSAL,
+        "version": 4,
+        "decision": "approved",
+        "execution": "pending",
+        "edited": True,
+    }
+    model = admin_census.CensusEdit(
+        created=True,
+        unchanged=False,
+        request_key=KEY,
+        review={
+            "id": RESOLUTION,
+            "proposal_id": PROPOSAL,
+            "edited": True,
+            "expected_version": 3,
+            "created_at": CREATED,
+        },
+        proposal=proposal,
+    )
+    document = model.to_document()
+    assert document == {
+        "created": True,
+        "unchanged": False,
+        "request_key": str(KEY),
+        "review": {
+            "id": str(RESOLUTION),
+            "proposal_id": str(PROPOSAL),
+            "edited": True,
+            "expected_version": 3,
+            "created_at": "2026-10-12T18:30:00+00:00",
+        },
+        "proposal": {
+            "id": str(PROPOSAL),
+            "version": 4,
+            "decision": "approved",
+            "execution": "pending",
+            "edited": True,
+        },
+    }
+    for name in members(document):
+        assert FORBIDDEN.search(name) is None, name
+    assert not {"note", "value"} & set(members(document))
+    unchanged = admin_census.CensusEdit(
+        created=False,
+        unchanged=True,
+        request_key=KEY,
+        review=None,
+        proposal=proposal,
+    ).to_document()
+    assert unchanged["review"] is None and unchanged["unchanged"]
+
+
+@pytest.mark.parametrize("handler", ["census_edit", "census_resolve_conflict"])
+def test_edit_and_resolve_conflict_check_the_role_first(monkeypatch, handler):
+    """Both are an Administrator's (``PUBLISH_CENSUS``): the read-only role
+    check comes before any input, key or lookup (#1341)."""
+    calls = []
+
+    def denied(caller, service, *, read_only=False, capability=None):
+        """Refuse as the admission does for a user who lacks the capability."""
+        calls.append((read_only, capability))
+        raise PermissionError("denied")
+
+    def unexpected(*arguments, **options):
+        """Nothing after the role check may run."""
+        raise AssertionError("read or looked up before the role check")
+
+    monkeypatch.setattr(admin_changes, "_admit_change", denied)
+    monkeypatch.setattr(admin_cli, "_input", unexpected)
+    monkeypatch.setattr(admin_cli, "_request_key", unexpected)
+    args = Namespace(value="Pat", note="", clear=False)
+    with pytest.raises(PermissionError):
+        getattr(admin_cli, handler)(args, None, None, {"caller": None})
+    assert calls == [(True, Capability.PUBLISH_CENSUS)]
+
+
+def test_edit_reads_one_input_from_standard_input():
+    """The value and the note cannot both come from standard input."""
+    args = Namespace(value="-", note="-", clear=False)
+    with pytest.raises(admin_cli.UsageError):
+        admin_cli.census_edit(args, None, None, {"caller": None})
+
+
+def test_edit_passes_the_value_the_clear_and_the_note(monkeypatch):
+    """``--value`` is passed as typed (``-`` reads standard input), ``--clear``
+    as None, and the note stripped, as the page posts them."""
+    from parishkit.stewardship import admin_census as module
+
+    seen = []
+    monkeypatch.setattr(admin_cli, "_role_first", lambda *arguments: None)
+    monkeypatch.setattr(
+        module, "edit_census", lambda *arguments, **options: seen.append(options)
+    )
+    context = {
+        "caller": None,
+        "stdin": io.BytesIO(b"  Pat  \n"),
+        "stderr": io.StringIO(),
+    }
+    common = {"proposal_id": PROPOSAL, "expected_version": 2, "request_key": KEY}
+    admin_cli.census_edit(
+        Namespace(value=" Pat ", note=" why ", clear=False, **common),
+        None,
+        None,
+        context,
+    )
+    admin_cli.census_edit(
+        Namespace(value="-", note="", clear=False, **common), None, None, context
+    )
+    admin_cli.census_edit(
+        Namespace(value=None, note="", clear=True, **common), None, None, context
+    )
+    assert [(options["value"], options["note"]) for options in seen] == [
+        (" Pat ", "why"),
+        ("Pat", ""),
+        (None, ""),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("value", "stdin"),
+    [("x" * 1001, b""), ("-", "é".encode() * 1001), ("-", b"\xff")],
+)
+def test_an_edit_the_service_cannot_read_is_refused_with_a_reason(
+    monkeypatch, value, stdin
+):
+    """More than 1,000 characters (as an option or on standard input), or
+    input that is not UTF-8, is ``invalid`` with a fixed reason for the
+    field ``value``, before the service is called."""
+    from parishkit.stewardship import admin_census as module
+
+    monkeypatch.setattr(admin_cli, "_role_first", lambda *arguments: None)
+    monkeypatch.setattr(module, "edit_census", pytest.fail)
+    context = {"caller": None, "stdin": io.BytesIO(stdin), "stderr": io.StringIO()}
+    args = Namespace(
+        proposal_id=PROPOSAL,
+        expected_version=2,
+        request_key=KEY,
+        value=value,
+        note="",
+        clear=False,
+    )
+    with pytest.raises(admin_changes.InvalidChange) as raised:
+        admin_cli.census_edit(args, None, None, context)
+    assert raised.value.fields == [
+        {"field": "value", "code": "invalid", "message": admin_cli.TOO_LONG_EDIT}
+    ]
+    # Exactly 1,000 characters is the service's to judge.
+    seen = []
+    monkeypatch.setattr(
+        module, "edit_census", lambda *arguments, **options: seen.append(options)
+    )
+    admin_cli.census_edit(
+        Namespace(**{**vars(args), "value": "x" * 1000}), None, None, context
+    )
+    assert len(seen[0]["value"]) == 1000

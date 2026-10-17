@@ -1514,12 +1514,57 @@
   // again) or, when it is not such a refusal, removes it. Keyed by the form
   // (or the control, outside any form) so a submitter outside its form
   // (form="…") still finds its own line.
+  //
+  // A typed refusal whose errors name a field of that form (FieldError's
+  // field_id, such as Census changes' Edit value, #528) also marks the field
+  // as a server field error is marked (#592): aria-invalid="true" and
+  // described by the line. As the server's rule cannot be checked again
+  // here, the mark and the line clear on the field's first edit (input or
+  // change), and whenever the line goes.
   const refusalNotes = new WeakMap();
+  const refusedFields = new WeakMap(); // key → [{field, clear}]
+  const unmarkRefused = (key) => {
+    (refusedFields.get(key) || []).forEach(({field, clear}) => {
+      field.removeEventListener("input", clear);
+      field.removeEventListener("change", clear);
+      field.removeAttribute("data-refused");
+      field.setAttribute("aria-invalid", "false");
+      const ids = (field.getAttribute("aria-describedby") || "").split(/\s+/)
+        .filter((id) => id && id !== refusalNotes.get(key)?.id);
+      if (ids.length) field.setAttribute("aria-describedby", ids.join(" "));
+      else field.removeAttribute("aria-describedby");
+    });
+    refusedFields.delete(key);
+  };
   const clearRefusal = (key) => {
+    unmarkRefused(key);
     refusalNotes.get(key)?.remove();
     refusalNotes.delete(key);
   };
+  const markRefused = (key, note, text) => {
+    if (!(key instanceof HTMLFormElement)) return;
+    let errors = [];
+    try { errors = JSON.parse(text)?.errors || []; } catch { return; }
+    const fields = errors.map((error) => error?.field_id
+      && key.elements.namedItem(error.field_id))
+      .filter((field) => field instanceof HTMLElement && field.matches("input, select, textarea"));
+    if (!fields.length) return;
+    note.id = `${key.id || "form"}-refusal`;
+    const marked = [];
+    fields.forEach((field) => {
+      const clear = () => clearRefusal(key);
+      field.setAttribute("aria-invalid", "true");
+      field.setAttribute("data-refused", "");
+      const ids = (field.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean);
+      field.setAttribute("aria-describedby", [note.id, ...ids.filter((id) => id !== note.id)].join(" "));
+      field.addEventListener("input", clear);
+      field.addEventListener("change", clear);
+      marked.push({field, clear});
+    });
+    refusedFields.set(key, marked);
+  };
   const showRefusal = (key, control, status, text) => {
+    unmarkRefused(key);
     const note = document.createElement("p");
     note.className = "notice notice-error";
     note.setAttribute("role", "alert");
@@ -1542,6 +1587,7 @@
       (control.closest(".actions, p") || control).after(note);
     }
     refusalNotes.set(key, note);
+    markRefused(key, note, text);
   };
   // Load the page a control leads to and bring this page up to date from it.
   // Success: every region present in both pages is swapped (the one the
@@ -2599,17 +2645,29 @@
   // a test settles, re-reads this address's panel in place, so the panel is
   // drawn again from the server's current state; if a test is in flight
   // again, the fresh region is watched anew. A pending region is already
-  // polled.
-  window.addEventListener("pageshow", (event) => {
-    if (!event.persisted) return;
-    const follow = document.querySelector(
-      '[data-live-status="setup-test"]:not([data-live-pending]) a[data-live-follow][data-in-place]');
-    const panel = document.getElementById("setup-test-panel");
-    if (!follow || !panel) return;
+  // polled. Load parish data does the same with its hidden
+  // a[data-reread-on-show] link (#1353), since its load may have been
+  // discarded from another tab while the page was away; it also re-reads
+  // when its tab is shown again, as its progress page's status does
+  // (live-status-v1.js). Each re-read refreshes every in-place region on
+  // the page, the step bar included.
+  const reread = (selector) => {
+    const follow = document.querySelector(selector);
+    const id = follow?.getAttribute("href").replace(/^#/, "");
+    const panel = id && document.getElementById(id);
+    if (!panel) return;
     const here = new URL(window.location.href);
     here.hash = panel.id;
     follow.href = here.href;
     follow.click();
+  };
+  window.addEventListener("pageshow", (event) => {
+    if (!event.persisted) return;
+    reread('[data-live-status="setup-test"]:not([data-live-pending]) a[data-live-follow][data-in-place], '
+      + "a[data-reread-on-show][data-in-place]");
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") reread("a[data-reread-on-show][data-in-place]");
   });
 
   // A control's value for the rules below (data-show-when and

@@ -29,10 +29,17 @@ from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.responses.census import FAMILY_FIELDS
 from parishkit.stewardship.responses.census_resolution import allowed
-from parishkit.stewardship.responses.census_review import reviewable
-from parishkit.stewardship.responses.comparison import ADDRESS_COMPONENTS
-from parishkit.stewardship.responses.member_census import MEMBER_FIELDS
+from parishkit.stewardship.responses.census_review import (
+    FIELDS,
+    edit_limit,
+    editable,
+    resolvable,
+    reviewable,
+)
+from parishkit.stewardship.responses.comparison import ADDRESS_COMPONENTS, ValueKind
+from parishkit.stewardship.responses.member_census import MEMBER_FIELDS, browser_value
 from parishkit.stewardship.responses.member_requests import REQUEST_FIELDS
+from parishkit.stewardship.responses.merge import KnownValue
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.source.source_status import (
     NAME_NOT_RECORDED,
@@ -402,6 +409,26 @@ def member_duid(row):
     return int(key)
 
 
+def edit_control(row):
+    """What a row's Edit value field draws (#528, ADM-09.04).
+
+    The field starts with the value publication would write now: the
+    Administrator's edit when there is one, else the Family's answer, in
+    the form the Family form shows it (a phone's display). A date is a date
+    field, Gender its census choices, and anything else text no longer than
+    ParishSoft takes (``census_review.edit_limit``).
+    """
+    definition = FIELDS[row["field"]]
+    value = row["admin_value"] if row["admin_value_set"] else row["submitted_value"]
+    return {
+        "value": browser_value(definition, KnownValue(True, value)) or "",
+        "type": "date" if definition.kind is ValueKind.DATE else "text",
+        "choices": definition.choices,
+        "maxlength": edit_limit(row["field"]),
+        "edited": row["admin_value_set"],
+    }
+
+
 def shape(row):
     """Word one proposal row for the page and the downloads."""
     shown = row | {
@@ -442,8 +469,10 @@ def shape(row):
     state = SimpleNamespace(
         handling=row["handling"],
         entity_kind=row["entity_kind"],
+        field=row["field"],
         execution=row["execution"],
         decision=row["decision"],
+        current_available=row["current_available"],
     )
     shown["can_resolve"] = allowed(state, "entered")
     shown["can_reopen"] = allowed(state, "reopened")
@@ -454,6 +483,13 @@ def shape(row):
         for action, decision in REVIEW_CHOICES
         if shown["automatic"] and reviewable(state, decision)
     ]
+    # Use the Family's value anyway (ADM-09.03): on a Conflict an
+    # Administrator may approve over ParishSoft's current value.
+    shown["resolve_conflict"] = shown["automatic"] and resolvable(state)
+    # Edit value (ADM-09.04): on the same rows a Review is offered on.
+    shown["edit"] = (
+        edit_control(row) if shown["automatic"] and editable(state) else None
+    )
     if isinstance(shown.get("resolution_at"), str):
         shown["resolution_at"] = datetime.fromisoformat(shown["resolution_at"])
     if shown.get("resolution_action") and not shown.get("resolution_by"):

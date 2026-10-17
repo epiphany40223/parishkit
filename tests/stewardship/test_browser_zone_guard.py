@@ -50,12 +50,11 @@ STATIC = PACKAGE / "accounts/static/stewardship"
 
 # Hand-drawn date controls that need no browser zone, by (template, id).
 CALENDAR_INPUTS = {
-    # The Repeat a reminder panel's day range: whole days that are expanded
-    # into send dates of the zoned schedule form around it, never instants.
-    ("schedule-repeat.html", "repeat-from"): "Repeat range day",
-    ("schedule-repeat.html", "repeat-until"): "Repeat range day",
-    ("schedule-repeat-entry.html", "repeat-from"): "Repeat range day",
-    ("schedule-repeat-entry.html", "repeat-until"): "Repeat range day",
+    # The repeat rule's day range (both mail repeat panels draw it from
+    # components/repeat-rule.html): whole days that are expanded into send
+    # dates of the zoned schedule form around it, never instants.
+    ("repeat-rule.html", "repeat-from"): "Repeat range day",
+    ("repeat-rule.html", "repeat-until"): "Repeat range day",
 }
 # Date controls that still filter instants by a campaign-zone day, waiting
 # for their own #558 slice. Remove an entry when its page moves.

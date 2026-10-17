@@ -2,9 +2,10 @@
 New scheduled email's Repeat (#878; #469): drawn after the mail type, shown by
 ui-v1.js only for a Reminder. Checked, it hides the send date and shows the
 rule. The page's send time and Email to send apply to every date. The rule's
-controls keep the date-change review repeat panel's data-repeat hooks
-(schedule-repeat.html), so one script expands and checks both. They are named
-only so the server can read and refuse them with the rest of the form
+controls are the shared repeat rule (components/repeat-rule.html, #1129),
+which the date-change review's panel (schedule-repeat.html) draws too, so one
+script expands and checks both. Here they are named only so the server can
+read and refuse them with the rest of the form
 (schedule_entry_views.RepeatRule); what is saved is the dates the script lists as fitting, posted as hidden
 repeat-dates fields (data-repeat-posted, in the form). Dates and the send
 time are the browser's (#558), so the page carries moments for the script to
@@ -22,17 +23,5 @@ changes.
 <div class="field">{{ repeat.repeat.errors }}<label><input type="checkbox" name="{{ repeat.repeat.html_name }}" id="{{ repeat.repeat.auto_id }}" data-repeat="enabled" aria-describedby="repeat-help"{% if repeat.repeat.value %} checked{% endif %}> {% translate "Repeat" %}</label>
 <p class="help" id="repeat-help">{% translate "Send this reminder on several dates. Each date is saved as its own reminder." %}</p></div>
 <div data-repeat-rule hidden>
-<div class="field"><label for="repeat-frequency">{% translate "How often" %}</label>
-<select id="repeat-frequency" name="{{ repeat.frequency.html_name }}" data-repeat="frequency">{% for value, label in repeat.fields.frequency.choices %}<option value="{{ value }}"{% if repeat.frequency.value == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
-<p class="help" data-repeat-when="daily" hidden>{% translate "A reminder every day goes to every Family that has not responded yet. Near the sending mailbox's daily limit, sending spreads out or waits." %}</p>
-<fieldset class="field" data-repeat-when="weekly"><legend>{% translate "On these days" %}</legend>
-<div class="repeat-days">{% for value, label in repeat.fields.weekdays.choices %}<label><input type="checkbox" name="{{ repeat.weekdays.html_name }}" data-repeat="weekday" value="{{ value }}"{% if value in repeat.weekdays.value %} checked{% endif %}> {{ label }}</label> {% endfor %}</div></fieldset>
-<div data-repeat-when="monthly" hidden>
-<div class="field"><label for="repeat-by">{% translate "Repeat on" %}</label><select id="repeat-by" name="{{ repeat.by.html_name }}" data-repeat="by">{% for value, label in repeat.fields.by.choices %}<option value="{{ value }}"{% if repeat.by.value == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
-<div class="field" data-repeat-by="day"><label for="repeat-day">{% translate "Day of the month" %}</label><input id="repeat-day" name="{{ repeat.day.html_name }}" type="number" min="1" max="31" inputmode="numeric" data-repeat="day" value="{{ repeat.day.value|default_if_none:'1' }}" aria-describedby="repeat-day-help">
-<p class="help" id="repeat-day-help">{% translate "1 to 31. A month without that day, such as the 31st in September, is skipped." %}</p></div>
-<div class="field" data-repeat-by="weekday" hidden><label for="repeat-ordinal">{% translate "Which one" %}</label><select id="repeat-ordinal" name="{{ repeat.ordinal.html_name }}" data-repeat="ordinal">{% for value, label in repeat.fields.ordinal.choices %}<option value="{{ value }}"{% if repeat.ordinal.value == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
-<label for="repeat-month-weekday">{% translate "Day of the week" %}</label><select id="repeat-month-weekday" name="{{ repeat.month_weekday.html_name }}" data-repeat="month-weekday">{% for value, label in repeat.fields.month_weekday.choices %}<option value="{{ value }}"{% if repeat.month_weekday.value == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div></div>
-<div class="field"><label for="repeat-from">{% translate "From" %}</label><input id="repeat-from" name="{{ repeat.start.html_name }}" type="date" data-repeat="from" value="{{ repeat.start.value|default_if_none:values.start_date }}"></div>
-<div class="field"><label for="repeat-until">{% translate "Until" %}</label><input id="repeat-until" name="{{ repeat.until.html_name }}" type="date" data-repeat="until" value="{{ repeat.until.value|default_if_none:values.end_date }}"></div>
+{% include 'stewardship/components/repeat-rule.html' with rule=repeat named=True from_value=values.start_date until_value=values.end_date %}
 </div></div>

@@ -176,6 +176,9 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "census resolve",
         # An Automatic row's Review (#528, ADM-09).
         "census review",
+        # Its Edit value and Use the Family's value anyway (#1434).
+        "census edit",
+        "census resolve-conflict",
         "export census",
         "export limitations",
         "export roster",
@@ -766,6 +769,32 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert options["--decision"]["required"]
     assert options["--expected-version"]["required"]
     assert not options["--note"]["required"]
+    # census edit and census resolve-conflict (#1434): keyed and versioned,
+    # full scope, neither fresh-gated nor prompting, as census review.
+    edit = entries["census edit"]
+    conflict = entries["census resolve-conflict"]
+    for entry, event in (
+        (edit, "admin_cmd_census_edit"),
+        (conflict, "admin_cmd_census_resolve_conflict"),
+    ):
+        assert entry["scope"] == "full" and entry["changes_state"]
+        assert entry["request_key"] and entry["expected_version"]
+        assert not entry["prompts"] and not entry["fresh_gated"]
+        assert entry["audit_event"] == event
+        assert entry["arguments"] == ["PROPOSAL_ID"]
+        options = {option["name"]: option for option in entry["options"]}
+        assert options["--expected-version"]["required"]
+        assert not options["--note"]["required"]
+    assert edit["result_fields"] == [
+        "created",
+        "unchanged",
+        "request_key",
+        "review",
+        "proposal",
+    ]
+    assert conflict["result_fields"] == review["result_fields"]
+    options = {option["name"]: option for option in edit["options"]}
+    assert {"--value", "--clear"} <= set(options)
 
 
 def test_every_state_change_has_a_registered_described_event():
@@ -827,6 +856,10 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_census_resolve",
         # census review: an Automatic row's Review (#528, ADM-09).
         "admin_cmd_census_review",
+        # census edit and census resolve-conflict: its Edit value and Use
+        # the Family's value anyway (#1434).
+        "admin_cmd_census_edit",
+        "admin_cmd_census_resolve_conflict",
         "admin_cmd_users_confirm",
         "admin_cmd_users_import_leaders",
         "admin_cmd_events_acknowledge",

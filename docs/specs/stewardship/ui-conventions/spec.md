@@ -1026,7 +1026,8 @@ marks and message from the answer. The server's mark clears, with its
 message and summary item, on the first edit of a field it marks (either
 end of a range), or when an in-place Apply is answered without it.
 **Shared code.** `web/filter_errors.py` (`FilterError`), the `filter_mark`
-and `filter_line` template tags; first use: Financial stewardship.
+and `filter_line` template tags; used by Financial stewardship and the
+Additional information queue.
 
 A file field marked `data-max-bytes` (with `data-max-bytes-message`, the
 server's own words) is refused at the field as soon as a file over that
@@ -1039,6 +1040,15 @@ choice hides drops its refusal, and shows it again if it reappears with
 the same file. The reverse proxy refuses an oversized request before the
 page could explain it, so this check is what keeps such a refusal on the
 form. First use: Parish logos (#1062).
+
+An in-place form refused with a typed JSON answer shows the refusal as one
+line after its buttons ([in-place controls](#in-place-controls)). When the
+answer's errors name a field of that form (`FieldError` field identifiers),
+that field is marked the same way: `aria-invalid="true"` and described by
+the line. Like any server-only error, the mark and the line clear on the
+field's first edit (`ui-v1.js` `showRefusal`; first used by Census changes'
+Edit value,
+[#528](https://github.com/epiphany40223/parishkit/issues/528)).
 
 A mark clears as soon as its error does, without waiting for Save (#592). An
 error the browser checks clears once the value is valid. One only the
@@ -2340,8 +2350,15 @@ learned once. **Shared code.**
 - `campaigns/recurrence.py`: repeat rules. Its cases
   (`tests/stewardship/fixtures/recurrence_cases.json`) also pin the page
   script's `ParishRecurrence`.
+- `components/repeat-rule.html`: the one repeat rule's controls (how often,
+  the days, the monthly choices, From and Until), with its choices from
+  New scheduled email's `RepeatRule` form.
 - `campaigns/intervals.resolve_local`: the daylight-saving rule.
 - `ParishEditorMode`: the Basic and Advanced modes.
+- `components/zone-note.html`: the note that names the browser's zone
+  beside typed dates and times, hidden until the page script knows the
+  zone. `test_zone_note_component.py` lists the pages that still write it
+  by hand.
 
 **Precedent.** [#1129](https://github.com/epiphany40223/parishkit/issues/1129)
 (Administrator, 2026-10-12).
@@ -2372,7 +2389,8 @@ learned once. **Shared code.**
   when there is no campaign. The page converts a typed time through the
   schedule's next occurrence, as
   [New and Edit scheduled email](../admin-portal/spec.md#new-and-edit-scheduled-email)
-  does. A note beside the fields names the zone the times are typed in. The
+  does. The shared zone note beside the fields names the zone the times
+  are typed in. The
   [ParishSoft refresh schedule](../admin-portal/spec.md#parishsoft-refresh-schedule-settings)
   is the recorded exception: its times are typed and shown in its schedule
   zone (decision 18).
@@ -2406,10 +2424,16 @@ learned once. **Shared code.**
 
 **Adoption.** The ParishSoft refresh schedule follows all of these rules
 except the browser-zone entry, which is its recorded exception
-([#1122](https://github.com/epiphany40223/parishkit/issues/1122)). Later
+([#1122](https://github.com/epiphany40223/parishkit/issues/1122)), so its
+note names its schedule zone instead. The date-change review draws the
+shared zone note, as do System logs and Ministry requests; New and Edit
+scheduled email follows once its open changes land. The two mail
+repeat panels, New scheduled email's Repeat and the date-change review's
+Repeat a reminder, draw one repeat rule, so they offer the same choices in
+the same order and one page script expands both. Later
 [#1129](https://github.com/epiphany40223/parishkit/issues/1129) slices bring
-the shared zone note, preview and Basic and Advanced modes to the mail
-schedule editors, reminder repeats and digests. Until each change lands, an
+the shared preview and Basic and Advanced modes to the mail schedule
+editors, reminder repeats and digests. Until each change lands, an
 editor keeps the behavior its feature spec describes.
 
 ## Tables

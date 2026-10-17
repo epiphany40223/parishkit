@@ -324,6 +324,12 @@ class Action(StrEnum):
     # and the queue's bulk outcome (#463 PR 11a).
     ADMIN_CMD_FOLLOWUP_UPDATE = "admin_cmd_followup_update"
     ADMIN_CMD_FOLLOWUP_BULK = "admin_cmd_followup_bulk"
+    # census edit: an Automatic row's Edit value or Clear edit (#1434,
+    # ADM-09.04).
+    ADMIN_CMD_CENSUS_EDIT = "admin_cmd_census_edit"
+    # census resolve-conflict: an Automatic Conflict's Use the Family's value
+    # anyway (#1434, ADM-09.03).
+    ADMIN_CMD_CENSUS_RESOLVE_CONFLICT = "admin_cmd_census_resolve_conflict"
 
 
 # Closed field identifiers are operational metadata, never census values.

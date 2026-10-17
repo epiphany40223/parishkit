@@ -235,7 +235,15 @@ unknown-delivery acknowledgement come from the server. No page offers a
 manual check or asks for a reload, and a page restored from the browser's
 history checks again by itself: a settled test page re-reads its panel in
 place on `pageshow`, so Continue never outlives a change to an earlier
-step's settings. A status read the server refuses (signed
+step's settings. Load parish data re-reads its panel in place, and the
+Loading parish data page reads its settled status region once more, whenever
+the page is shown again (its tab shown, or `pageshow`); each also re-reads
+the step bar in place. So neither says the parish data is loaded, nor shows
+its step as completed, after the load was discarded from another tab
+([#1353](https://github.com/epiphany40223/parishkit/issues/1353)). That
+re-check of a settled status never retries and never adds a line under the
+status: a failed read (setup finished meanwhile, say) stops it quietly and
+leaves the page as it was. A status read the server refuses (signed
 out, no longer allowed, or a bad request such as Slack being off) stops the
 watching instead of being retried.
 
@@ -357,6 +365,19 @@ shows as loaded. Each discard is audited as
 staging is never used again: finalization and campaign staging bind only to
 the current load. It is disposed of with the attempt's other source staging
 when setup ends, and the time zone the load fixed can change again.
+The progress page of a load that failed for good names the most common cause
+(a wrong key or organization ID) and links to ParishSoft connection and to
+Load parish data, whose Load again starts a new load; Back goes to ParishSoft
+connection. Only a load that ended with the setup attempt itself (expired)
+still says to cancel setup and start again. A discarded load's progress page
+stays readable, passively only (it is never renewed), and says the load is no
+longer used, with a link to Load parish data and no Continue; a bound load
+that succeeded but is no longer valid is shown the same way. While a
+still-valid load exists, the ParishSoft connection page says that saving a
+different key or organization ID discards the loaded data and that keeping
+the saved key keeps it. The page says so in a static line in its saved-key
+notice, so nothing moves as the key is typed
+([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
 
 The two-hour watchdog is an intentional hard, non-extendable fail-safe. A normal
 complete ParishSoft load is expected to take several minutes (about ten for a

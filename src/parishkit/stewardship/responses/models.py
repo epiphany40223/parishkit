@@ -417,8 +417,17 @@ class ProposalReview(ImmutableRecord):
     one immutable row: who, when, the optional note, and the review state the
     proposal carries afterwards (its ``decision`` and edit fields), which SQL
     pairs with the proposal (schema/migrations/0096_proposal_review.sql). The
-    edit fields record the whole resulting state, so a later Edit value needs
-    only a wider review guard; today they must equal the proposal's own.
+    edit fields record the whole resulting state. A row is either a decision
+    (the edit fields stay the proposal's own) or, since 0107, an Edit value
+    or Clear edit (ADM-09.04: the decision stays and the edit fields change).
+
+    Since 0108 a row may instead resolve a Conflict (ADM-09.03, "Use the
+    Family's value anyway"): ``accepted_base`` is set, the decision becomes
+    approved, and ``accepted_value``/``accepted_source_id`` record the
+    ParishSoft value the Administrator accepted and the snapshot it came
+    from. The base is active while that snapshot is still the proposal's
+    ``current_source_id`` (``accepted_base.with_accepted_base``); publication
+    then merges against it rather than the Family's baseline.
     """
 
     proposal = models.ForeignKey(
@@ -430,6 +439,11 @@ class ProposalReview(ImmutableRecord):
     admin_value_set = models.BooleanField(default=False)
     admin_value = models.JSONField(null=True)
     note = models.TextField(default="", blank=True)
+    # A conflict resolution's accepted ParishSoft value (0108). No foreign
+    # key on the snapshot: source retention must stay free to drop it.
+    accepted_base = models.BooleanField(default=False, db_default=False)
+    accepted_value = models.JSONField(null=True)
+    accepted_source_id = models.UUIDField(null=True)
 
     class Meta:
         db_table = "stewardship_proposal_review"
@@ -453,6 +467,19 @@ class ProposalReview(ImmutableRecord):
                 condition=models.Q(admin_value_set=True)
                 | models.Q(admin_value__isnull=True),
                 name="proposal_review_admin_value_shape",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    accepted_base=False,
+                    accepted_value__isnull=True,
+                    accepted_source_id__isnull=True,
+                )
+                | models.Q(
+                    accepted_base=True,
+                    decision="approved",
+                    accepted_source_id__isnull=False,
+                ),
+                name="proposal_review_accepted_shape",
             ),
         ]
 

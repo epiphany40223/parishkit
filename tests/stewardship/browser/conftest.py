@@ -162,6 +162,7 @@ from .send_history_components import components as send_history_components
 from .send_progress_components import components as send_progress_components
 from .settings_components import POSTS as SETTINGS_POSTS
 from .settings_components import components as settings_components
+from .setup_back_path_components import components as setup_back_path_components
 from .setup_live_components import POSTS as SETUP_LIVE_POSTS
 from .setup_live_components import components as setup_live_components
 from .signed_in_components import POSTS as SIGNED_IN_POSTS
@@ -2215,6 +2216,7 @@ def component_origin():
     responses.update(
         setup_live_components(context, admin, NOW, SETUP_MAIL_STATUS, setup_draft)
     )
+    responses.update(setup_back_path_components(context, admin, NOW, SETUP_LOAD_STATUS))
     responses.update(in_place_commands_components(context, admin))
     responses.update(campaign_test_components(context, admin))
     responses.update(backup_test_components(context, admin))

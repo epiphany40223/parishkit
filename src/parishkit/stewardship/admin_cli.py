@@ -2538,6 +2538,88 @@ def census_review(args, preamble, runtime, context):
     )
 
 
+# The longest edited value ``census_review.edit_census_change`` reads, in
+# characters; standard input is bounded by its UTF-8 bytes.
+MAX_EDIT = 1000
+TOO_LONG_EDIT = f"Enter text of at most {MAX_EDIT:,} characters."
+
+
+def census_edit(args, preamble, runtime, context):
+    """Edit the value publication writes, or clear the edit (#1434, ADM-09.04).
+
+    ``--value`` (or ``-`` for standard input) is Edit value's Save value and
+    ``--clear`` its Clear edit. Without ``--request-key`` a new key is made
+    and written to standard error before anything is done. An edit keeps
+    the decision and can be changed again until publication of the change
+    starts, so, as on the page, it asks nothing.
+    """
+    from .accounts.policy import Capability
+    from .admin_census import edit_census
+    from .admin_changes import InvalidChange
+    from .responses.census_resolution import MAX_NOTE
+
+    # Standard input carries one input only.
+    if args.value == "-" and args.note == "-":
+        raise UsageError("Only one input may be read from standard input.")
+    # The role first (#1341): an Administrator's, so Staff are denied before
+    # any input or lookup.
+    _role_first(context, runtime, Capability.PUBLISH_CENSUS)
+
+    key = _request_key(args, context)
+    note = _input(args.note, context, MAX_NOTE * 4).strip()
+    # The service reads the value as the Family form reads its own answer,
+    # which trims it; standard input is trimmed already (``_input``).
+    value = None
+    if not args.clear:
+        try:
+            value = _input(args.value, context, MAX_EDIT * 4)
+        except ValueError:
+            value = None
+        # Longer than the service reads (or not UTF-8 text) is refused here,
+        # with a fixed reason for the field, as the service's own reasons.
+        if value is None or len(value) > MAX_EDIT:
+            raise InvalidChange(
+                [{"field": "value", "code": "invalid", "message": TOO_LONG_EDIT}]
+            )
+    return edit_census(
+        context["caller"],
+        runtime,
+        args.proposal_id,
+        value=value,
+        expected_version=args.expected_version,
+        note=note,
+        request_key=key,
+        context=context,
+    )
+
+
+def census_resolve_conflict(args, preamble, runtime, context):
+    """Use the Family's value anyway on a census Conflict (#1434, ADM-09.03).
+
+    Without ``--request-key`` a new key is made and written to standard
+    error before anything is done. ``census review --decision
+    ignored|unreviewed`` undoes it, so, as on the page, it asks nothing.
+    """
+    from .accounts.policy import Capability
+    from .admin_census import resolve_conflict
+    from .responses.census_resolution import MAX_NOTE
+
+    # The role first (#1341), as census review.
+    _role_first(context, runtime, Capability.PUBLISH_CENSUS)
+
+    key = _request_key(args, context)
+    note = _input(args.note, context, MAX_NOTE * 4).strip()
+    return resolve_conflict(
+        context["caller"],
+        runtime,
+        args.proposal_id,
+        expected_version=args.expected_version,
+        note=note,
+        request_key=key,
+        context=context,
+    )
+
+
 def report_source_form(args, preamble, runtime, context):
     """Families the form cannot open, by DUID only (#774)."""
     from .admin_source_form import read_source_form
@@ -3962,6 +4044,39 @@ def _census_review_options(parser):
         help="an optional note, or - to read it from standard input",
     )
     _request_key_option(parser)
+
+
+def _census_change_options(parser):
+    """A census change, its version and an optional note, as review takes."""
+    parser.add_argument("proposal_id", type=_uuid, metavar="PROPOSAL_ID")
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_version,
+        help="the change's version, as export census --format jsonl prints it",
+    )
+    parser.add_argument(
+        "--note",
+        default="",
+        help="an optional note, or - to read it from standard input",
+    )
+    _request_key_option(parser)
+
+
+def _census_edit_options(parser):
+    """Options of ``census edit``: Edit value's Save value or Clear edit."""
+    _census_change_options(parser)
+    edit = parser.add_mutually_exclusive_group(required=True)
+    edit.add_argument(
+        "--value",
+        help="the value to publish instead of the Family's answer, or - to "
+        "read it from standard input",
+    )
+    edit.add_argument(
+        "--clear",
+        action="store_true",
+        help="clear the edit, so publication writes the Family's answer",
+    )
 
 
 def _snapshot_option(parser):
@@ -5425,7 +5540,7 @@ def _report_specs():
     (``admin_digests``) and PR 8e the Family-level exports
     (``admin_family_exports``).
     """
-    from .admin_census import CensusReport, CensusResolve, CensusReview
+    from .admin_census import CensusEdit, CensusReport, CensusResolve, CensusReview
     from .admin_census_export import CensusExport
     from .admin_data_to_fix import DataToFixReport
     from .admin_digests import DailyDigest, DigestList, WeeklyDigest, WeeklyRequest
@@ -5931,6 +6046,35 @@ def _report_specs():
             CensusReview.field_names(),
             8,
             options=(_census_review_options,),
+            request_key=True,
+            expected_version=True,
+        ),
+        # An Automatic row's Edit value and Clear edit (#1434, ADM-09.04):
+        # the page's service, keyed; reversible, so it asks nothing.
+        CommandSpec(
+            "census edit",
+            "Edit the value an automatic census change publishes, or clear it.",
+            census_edit,
+            "full",
+            True,
+            CensusEdit.field_names(),
+            8,
+            options=(_census_edit_options,),
+            request_key=True,
+            expected_version=True,
+        ),
+        # An Automatic Conflict's Use the Family's value anyway (#1434,
+        # ADM-09.03): the page's service, keyed; census review undoes it, so
+        # it asks nothing.
+        CommandSpec(
+            "census resolve-conflict",
+            "Approve an automatic census conflict over ParishSoft's value.",
+            census_resolve_conflict,
+            "full",
+            True,
+            CensusReview.field_names(),
+            8,
+            options=(_census_change_options,),
             request_key=True,
             expected_version=True,
         ),

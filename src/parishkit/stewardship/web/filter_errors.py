@@ -14,6 +14,8 @@ form offers, a sort or page size the table does not accept) stays a plain
 ``ValueError`` and keeps the report's error page.
 """
 
+from datetime import date
+
 from .refusals import with_status_code
 
 
@@ -34,6 +36,16 @@ class FilterError(ValueError):
         super().__init__(str(message))
         self.field, self.message, self.query = field, message, query
         self.fields = (field,) if pair is None else (field, pair)
+
+
+def iso_date(value):
+    """Whether ``value`` is blank or one canonical ISO date (YYYY-MM-DD)."""
+    if not value:
+        return True
+    try:
+        return date.fromisoformat(value).isoformat() == value
+    except ValueError:
+        return False
 
 
 def error_context(error, ids, lines):
