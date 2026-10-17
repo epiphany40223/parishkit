@@ -289,7 +289,12 @@ def test_every_format_renders_from_one_document(format):
 
 def test_comparison_headings_match_the_page():
     """CSV and XLSX head the ParishSoft columns with the page's labels (#404)
-    and its comparison years (#932)."""
+    and its comparison years (#932).
+
+    The page groups the two under one ParishSoft heading (#1544), so its
+    Pledged and Contributed headings, read under it, say what each export
+    heading says.
+    """
     from pathlib import Path
 
     from openpyxl import load_workbook
@@ -319,8 +324,8 @@ def test_comparison_headings_match_the_page():
     template = (
         Path(accounts.__file__).parent / "templates/stewardship/financial-report.html"
     ).read_text(encoding="utf-8")
-    for heading in labels:
-        assert f'{{% translate "{heading}"' in template
+    for heading in ("ParishSoft", "Pledged", "Contributed"):
+        assert f'{{% translate "{heading}" %}}' in template
     # The stopgap About sentence mapping the old export names is gone.
     assert "Source pledged" not in template
     # The unavailable-giving note says what the page's notice says.

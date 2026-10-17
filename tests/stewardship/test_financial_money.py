@@ -102,3 +102,32 @@ def test_complete_empty_and_incomplete_observations_are_not_equivalent():
 def test_family_display_drops_zero_cents(cents, expected):
     """Family pages show whole dollars without ".00"; other amounts keep cents."""
     assert MoneyAmount(cents).family_display == expected
+
+
+@pytest.mark.parametrize(
+    "cents,expected",
+    [
+        (None, "Unavailable"),
+        (0, "$0"),
+        (123450, "$1,235"),
+        (123449, "$1,234"),
+        (10288, "$103"),
+        (-250, "-$3"),
+        (-49, "$0"),
+    ],
+)
+def test_whole_display_rounds_half_away_from_zero(cents, expected):
+    """The Financial report's page shows whole dollars (#1544)."""
+    assert MoneyAmount(cents).whole_display == expected
+
+
+def test_whole_dollars_tag_keeps_cents_for_screen_readers():
+    """Rounded cents are hidden from screen readers, which hear the exact sum."""
+    from parishkit.stewardship.accounts.templatetags.stewardship import whole_dollars
+
+    assert whole_dollars(MoneyAmount(120000)) == "$1,200"
+    assert whole_dollars(MoneyAmount(None)) == "Unavailable"
+    assert whole_dollars(MoneyAmount(123450)) == (
+        '<span aria-hidden="true">$1,235</span>'
+        '<span class="visually-hidden">$1,234.50</span>'
+    )
