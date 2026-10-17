@@ -52,9 +52,10 @@ from parishkit.stewardship.web.refusals import (
     with_default_code,
 )
 
-from . import admin_navigation, field_tips, setup_help
+from . import admin_navigation, campaign_wizard, field_tips, setup_help
 from .admin_editing import (
     confirm,
+    direct_key,
     editable_configuration,
     error_response,
     form_action,
@@ -632,18 +633,25 @@ def _review(request, review):
     )
 
 
-def _signed(actor, configuration, patch, fingerprint):
-    """Sign a Campaign settings change (not a live end date) for Apply."""
+def _signed(actor, configuration, patch, fingerprint, key=None):
+    """Sign a Campaign settings change (not a live end date) for Apply.
+
+    ``key`` is a direct save's page-drawn request key (#1404 PR 4); a
+    Review shown in the dialog takes a fresh one.
+    """
     return sign_preview(
         actor=actor,
         configuration=configuration,
         patch=patch,
         salt=SALT,
         snapshot=fingerprint,
+        key=key,
     )
 
 
-def review_settings(service, actor, state, campaign, editable, opened, form, reason):
+def review_settings(
+    service, actor, state, campaign, editable, opened, form, reason, key=None
+):
     """The page's Review of a bound settings form, without a request (#463).
 
     Campaign settings' Review post and ``pk-admin campaign preview`` both
@@ -659,6 +667,8 @@ def review_settings(service, actor, state, campaign, editable, opened, form, rea
     holds the refusal (the page answers 400 with it), or ``{"reconcile":
     values}`` when only a draft's dates change while it has mail schedules,
     which Dates and mail schedules reviews together. Nothing is requested.
+    ``key`` signs a draft's change with a direct save's request key
+    (``_signed``).
     """
     open_fields, live_at, reasons = opened
     _refuse_locked_changes(form, open_fields, reason, reasons)
@@ -676,7 +686,7 @@ def review_settings(service, actor, state, campaign, editable, opened, form, rea
             ),
         )
     if editable:
-        return _draft_review(service, actor, state, campaign, form)
+        return _draft_review(service, actor, state, campaign, form, key)
     return _live_review(service, actor, state, campaign, form, (open_fields, live_at))
 
 
@@ -697,7 +707,7 @@ def _answer(request, review, page):
     return _review(request, review)
 
 
-def _draft_review(service, actor, state, campaign, form):
+def _draft_review(service, actor, state, campaign, form, key=None):
     """Review a draft's change: its review, or why it is refused.
 
     None means the form holds the refusal. A change of only the campaign's
@@ -777,7 +787,7 @@ def _draft_review(service, actor, state, campaign, form):
         ),
         "notes": [REMOVES_SHARE_OPTIONS] if removes_share_options else [],
         "compact": _compact(changed),
-        "preview": _signed(actor, configuration, patch, fingerprint),
+        "preview": _signed(actor, configuration, patch, fingerprint, key),
     }
 
 
@@ -1000,7 +1010,12 @@ def campaign_settings(request, campaign_id):
     tip. Review posts the form without a page load and answers the shared
     review dialog's fragment (UX conventions, Review dialog, #750); Apply
     posts its signed preview here and is answered with the change's status.
-    No configuration is written directly.
+    Inside the campaign wizard the form's Save and continue posts ``save``
+    instead (#1404 PR 4): the same Review, recorded at once by
+    ``campaign_wizard.save_step`` once the work transaction has ended, and
+    answered with the change's status. A draft's dates-only change that
+    leads to Dates and mail schedules' combined review leads there either
+    way. No configuration is written directly.
     """
     try:
         service = runtime()
@@ -1014,11 +1029,19 @@ def campaign_settings(request, campaign_id):
                 request.POST,
                 preview_fields=set(CampaignSettingsForm.base_fields),
                 multiple_fields=MULTIPLE_FIELDS,
+                direct=True,
             )
             if action == "confirm":
                 response = _confirm(request, service, actor, campaign_id)
                 response["Cache-Control"] = "no-store"
                 return response
+        key = direct_key(request.POST) if action == "save" else None
+        saved = None
+        if key is not None and (
+            repeat := campaign_wizard.repeated_save(request, actor, key)
+        ):
+            repeat["Cache-Control"] = "no-store"
+            return repeat
         with (
             read_transaction()
             if request.method in {"GET", "HEAD"}
@@ -1031,7 +1054,7 @@ def campaign_settings(request, campaign_id):
             form = _settings_form(
                 configuration,
                 campaign,
-                request.POST if action == "preview" else None,
+                request.POST if action in {"preview", "save"} else None,
                 source=source,
                 open_fields=open_fields,
                 reason=(reason := _lock_reason(campaign, held)),
@@ -1064,8 +1087,26 @@ def campaign_settings(request, campaign_id):
                     (open_fields, live_at, reasons),
                     form,
                     reason,
+                    key,
                 )
-                response = _answer(request, review, page)
+                if action == "save" and review and review.get("kind") == "settings":
+                    saved = review["preview"]
+                elif action == "save" and review and "reconcile" not in review:
+                    # Only a draft's change saves directly; the wizard is
+                    # never shown for any other (``save_step`` refuses it).
+                    raise campaign_wizard.setup_ended()
+                else:
+                    response = _answer(request, review, page)
+        if saved is not None:
+            response = campaign_wizard.save_step(
+                request,
+                service,
+                actor,
+                token=saved,
+                salt=SALT,
+                current_scope=_scope,
+                campaign_id=campaign_id,
+            )
         # Recheck access after the observation ends, so a GET's read-only
         # snapshot cannot hide a revocation committed while it rendered.
         if not allows(

@@ -533,9 +533,11 @@ def test_review_and_apply_in_the_review_dialog(auth_service, google):
     page = browser.get(url(row))
     body = page.content.decode()
     assert flow_steps(page.content) == (STEPS, "Make changes")
-    assert 'data-review-open="campaign-review"' in body
+    # A Testing draft is in the campaign wizard, whose Save and continue
+    # saves directly (#1404 PR 4, test_campaign_direct_save_postgresql);
+    # the page's Review and Apply, used outside the wizard, stay as they are.
+    assert "data-direct-save" in body and ">Save</button>" not in body
     assert '<dialog id="campaign-review"' in body
-    assert body.count(">Save</button>") == 1
     assert "data-in-place data-table-sync" not in body
     requests = ConfigurationChangeRequest.objects.count()
     review = post(browser, url(row), fields(store, row, name="Renamed in dialog"))

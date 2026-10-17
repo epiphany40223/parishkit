@@ -604,6 +604,7 @@
   const GATE_MARKS = [
     "data-time-gated", "data-acknowledgment-gated", "data-complete-gated", "data-change-gated",
     "data-live-stale-gated", "data-schedule-gated", "data-download-ended-gated",
+    "data-save-spent-gated",
   ];
   const gated = (node) => GATE_MARKS.some((mark) => node.hasAttribute(mark));
   document.querySelectorAll("button[disabled], input[disabled]").forEach((node) => {
@@ -958,7 +959,10 @@
     if (zone && !zone.value) {
       const missing = form.querySelector("[data-zone-missing]");
       if (missing) missing.hidden = false;
-      form.querySelectorAll('button[type="submit"]').forEach((button) => {
+      // form.elements, not the form's descendants: inside the campaign
+      // wizard New and Edit's button is the action row's Save and go back,
+      // a submit of this form drawn after it (#1404 PR 4b).
+      [...form.elements].filter(isSubmit).forEach((button) => {
         button.disabled = true;
         if (missing?.id) {
           button.setAttribute("aria-describedby", [button.getAttribute("aria-describedby"),
@@ -1567,6 +1571,13 @@
     });
     refusedFields.set(key, marked);
   };
+  // A JSON refusal's same-origin link ({url, label}, such as Outgoing mail
+  // for held send work), or null when it has none.
+  const refusalLink = (text) => {
+    let link = null;
+    try { link = JSON.parse(text)?.refusal?.link; } catch { /* not JSON: no link */ }
+    return link?.url && link.label && sameOrigin(link.url) ? link : null;
+  };
   const showRefusal = (key, control, status, text) => {
     unmarkRefused(key);
     const note = document.createElement("p");
@@ -1574,9 +1585,8 @@
     note.setAttribute("role", "alert");
     note.setAttribute("data-in-place-refusal", "");
     note.textContent = refusalText(status, text);
-    let link = null;
-    try { link = JSON.parse(text)?.refusal?.link; } catch { /* refusalText fell back already */ }
-    if (link?.url && link.label && sameOrigin(link.url)) {
+    const link = refusalLink(text);
+    if (link) {
       const anchor = document.createElement("a");
       anchor.href = link.url;
       anchor.textContent = link.label;
@@ -2329,9 +2339,28 @@
   // page's own Review stays the way on. Its hint after the row keeps its
   // line (data-idle hides it with visibility), and names the button only
   // while it is shown.
+  // On a step that saves directly (Campaign settings, Share options, #1404
+  // PR 4) a change does not hold Continue: the row's one primary switches
+  // to Save and continue, the page form's own submit button in the same
+  // grid cell, and back to Continue once the form holds the saved values
+  // again. The one not offered is data-step-inactive (hidden with
+  // visibility, so the cell keeps its width) and inert. Save and continue
+  // is described by the form's complete hint, as the page's Save was.
   const gateStepContinue = () => {
     const form = document.querySelector("form[data-campaign-continue]");
     if (!form) return;
+    const save = document.querySelector("[data-campaign-save]");
+    const direct = save?.form;
+    if (direct?.matches("[data-direct-save]")) {
+      const changed = direct.hasAttribute("data-holds-change");
+      form.toggleAttribute("data-step-inactive", changed);
+      form.inert = changed;
+      save.toggleAttribute("data-step-inactive", !changed);
+      save.inert = !changed;
+      const hint = direct.querySelector("[data-complete-hint][id]");
+      if (hint) save.setAttribute("aria-describedby", hint.id);
+      return;
+    }
     const held = Boolean(document.querySelector("form[data-require-change][data-holds-change]"))
       || [...document.querySelectorAll('form input[type="file"]')]
         .some((node) => !node.matches(":disabled") && node.files?.length > 0);
@@ -4007,6 +4036,30 @@
   // width would move Cancel beside it): its progress is the status line's.
   // Returns the POST's answer ({response, text}) once it is applied;
   // otherwise refuseConfirm has said why in the dialog, and it returns false.
+  // Follow a recorded change's status (statusUrl, a passive read) from its
+  // first reading, status, until it settles or CONFIRM_WAIT_MS passes.
+  // Returns {status, outcome}: "settled" (applied, failed or cancelled, or
+  // no status to follow), "waiting" (still pending at the deadline) or
+  // "lost" (signed out or no longer allowed to read the status, such as
+  // after a change that removed the reader's own access: waiting cannot
+  // help, so it ends at once, #952). The review dialog's Apply and a
+  // campaign wizard step's direct save (#1404 PR 4) both follow with it.
+  const settleChange = async (statusUrl, status) => {
+    const deadline = Date.now() + CONFIRM_WAIT_MS;
+    while (status && !["applied", "failed", "cancelled"].includes(status.state)) {
+      if (Date.now() >= deadline) return {status, outcome: "waiting"};
+      await pause(CONFIRM_POLL_MS);
+      let next;
+      try {
+        next = await readPage(statusUrl, {method: "GET"});
+      } catch { continue; /* keep waiting until the deadline */ }
+      if ([401, 403, 404].includes(next.response.status) || next.response.redirected) {
+        return {status, outcome: "lost"};
+      }
+      if (next.response.ok) status = changeStatus(next.text) || status;
+    }
+    return {status, outcome: "settled"};
+  };
   const followChange = async (state, url, body, onRecorded) => {
     const {dialog} = state;
     state.busy = true;
@@ -4037,27 +4090,15 @@
     onRecorded?.();
     // Follow the change until it is applied (a passive status read).
     const statusUrl = answer.response.url;
-    let status = changeStatus(answer.text);
-    const deadline = Date.now() + CONFIRM_WAIT_MS;
-    while (status && !["applied", "failed", "cancelled"].includes(status.state)) {
-      if (Date.now() >= deadline) {
-        refuseConfirm(state, "The change is saved but not applied yet, so the list is unchanged for now.",
-          {href: statusUrl, text: "See the change's status"});
-        return false;
-      }
-      await pause(CONFIRM_POLL_MS);
-      let next;
-      try {
-        next = await readPage(statusUrl, {method: "GET"});
-      } catch { continue; /* keep waiting until the deadline */ }
-      if ([401, 403, 404].includes(next.response.status) || next.response.redirected) {
-        // Signed out or no longer allowed to read the status (such as after
-        // a change that removed the reader's own access): waiting cannot
-        // help, so say so at once (#952).
-        refuseConfirm(state, CONFIRM_STATUS_LOST);
-        return false;
-      }
-      if (next.response.ok) status = changeStatus(next.text) || status;
+    const {status, outcome} = await settleChange(statusUrl, changeStatus(answer.text));
+    if (outcome === "waiting") {
+      refuseConfirm(state, "The change is saved but not applied yet, so the list is unchanged for now.",
+        {href: statusUrl, text: "See the change's status"});
+      return false;
+    }
+    if (outcome === "lost") {
+      refuseConfirm(state, CONFIRM_STATUS_LOST);
+      return false;
     }
     if (status && status.state !== "applied") {
       refuseConfirm(state, status.text || "The change was not applied. Nothing was changed.",
@@ -4573,6 +4614,181 @@
     redrawFrom(fresh, region);
     if (!showOutcome(outcome, text)) announce(text);
   };
+
+  // A campaign wizard step's direct save (#1404 PR 4; UX conventions,
+  // "Wizards", rules 4 and 5): a form marked data-direct-save (Campaign
+  // settings, Share options and the sub-pages that save, while the wizard
+  // applies) is posted by the action row's Save and continue (a sub-page's
+  // Save and go back) without a page load and without the review dialog. The form is inert and aria-busy meanwhile, and the
+  // row's reserved status line (#campaign-step-status) says "Saving…".
+  // - A refusal for the values (status 400 drawing this same form) marks
+  //   the fields and shows the error summary, as a refused Review does
+  //   (showFieldErrors); the form keeps what was typed.
+  // - A Review that leads to another page (Campaign settings' dates-only
+  //   change with schedules, Dates and mail schedules' combined review)
+  //   opens it.
+  // - Any other refusal (a stale page, held work, setup ended) is said in
+  //   the status line, with nothing saved, and with the refusal's own link
+  //   when it has one (Outgoing mail for held send work).
+  // - A recorded change is followed in place (settleChange), the line
+  //   saying it is being applied. Once applied, this page is read again for
+  //   its action row's data-next-url (the next step not done yet, which a
+  //   change of the modules can move) and that step opens, its stepper's
+  //   status line saying what was saved and when (sessionStorage, as the
+  //   review dialog's return does), and, when Financial stewardship was
+  //   turned off, that the share options were removed (data-direct-removed).
+  //   A sub-page's Save and go back (Pages and emails' editor, New and Edit
+  //   scheduled email, #1404 PR 4b) opens its step again: its row's
+  //   data-next-url is marked data-next-fixed, since the step's address
+  //   never moves, so this page is not read again first (an email's
+  //   revision page may no longer exist once a new revision is saved).
+  // - A change that is not applied, or not yet, says so with a link to its
+  //   status, and the page stays. Its request key is spent (a later save
+  //   with it would be the same request), so the typed values are kept at
+  //   the version they came from and only a new key is taken from the page.
+  //   When the page cannot be read again (the sign-in ended), Save and
+  //   continue is held (data-save-spent-gated) and the line says to reload.
+  const SAVE_UNREACHABLE = "The server could not be reached, so nothing was saved. Try again in a moment.";
+  const SAVE_RELOAD = "Reload the page to make another change.";
+  const SAVE_STATUS_LOST = "The change was saved, but its status can no longer be checked: your sign-in ended or your account no longer has access. " + SAVE_RELOAD;
+  const saveStep = async (form, submitter) => {
+    reviewing.add(form);
+    const line = document.getElementById("campaign-step-status");
+    // ``link`` is the change's status page, or a refusal's own link
+    // ({url, label}: Outgoing mail when send work blocks the change).
+    const say = (text, link) => {
+      if (!line) return;
+      line.replaceChildren(text);
+      if (link) {
+        const anchor = document.createElement("a");
+        anchor.href = link.url || link;
+        anchor.textContent = link.label || "See the change's status";
+        line.append(" ", anchor);
+      }
+    };
+    const opener = submitter || form;
+    const body = new URLSearchParams(new FormData(form, submitter || undefined));
+    // Read before the save: the form's drawn (saved) state against the
+    // posted one. Only Campaign settings carries the note.
+    const financial = form.elements.namedItem("financial_enabled");
+    const removes = financial instanceof HTMLInputElement && financial.defaultChecked
+      && !financial.checked;
+    form.setAttribute("aria-busy", "true");
+    opener.setAttribute("aria-disabled", "true");
+    opener.classList.add("is-busy");
+    form.inert = true;
+    say("Saving…");
+    const finish = (text, link) => {
+      form.inert = false;
+      form.removeAttribute("aria-busy");
+      opener.removeAttribute("aria-disabled");
+      opener.classList.remove("is-busy");
+      reviewing.delete(form);
+      say(text, link);
+    };
+    // Hold Save and continue for good (until a reload), saying why.
+    const hold = (text, link) => {
+      finish(text, link);
+      document.querySelectorAll("[data-campaign-save]")
+        .forEach((node) => holdButton(node, "data-save-spent-gated"));
+    };
+    // The change is recorded but the page stays: keep what was typed (at
+    // the version it came from) and take only a new request key from the
+    // page read again, so a retry is a request of its own and, if the
+    // version moved meanwhile, is refused as a stale page.
+    const keep = async (text, link) => {
+      let fresh = null;
+      try {
+        const page = await readPage(window.location.href, {method: "GET"});
+        if (page.response.ok && !page.response.redirected) {
+          fresh = new DOMParser().parseFromString(page.text, "text/html");
+        }
+      } catch { /* not readable: held below */ }
+      const key = fresh?.getElementById(form.id)?.elements.namedItem("request_key");
+      if (!key?.value || !form.elements.namedItem("request_key")) {
+        hold(`${text} ${SAVE_RELOAD}`, link);
+        return;
+      }
+      form.elements.namedItem("request_key").value = key.value;
+      finish(text, link);
+    };
+    let answer = null;
+    try {
+      answer = await readPage(formUrl(form), {method: "POST", body});
+    } catch { /* no answer: said below */ }
+    if (!answer) {
+      finish(SAVE_UNREACHABLE);
+      return;
+    }
+    let status = answer.response.ok ? changeStatus(answer.text) : null;
+    const answered = new URL(answer.response.url || formUrl(form), document.baseURI);
+    if (!status && answer.response.ok && answer.response.redirected && sameOrigin(answered.href)
+      && answered.pathname !== new URL(formUrl(form)).pathname) {
+      window.location.assign(answered.href);
+      return;
+    }
+    if (!status) {
+      const parsed = new DOMParser().parseFromString(answer.text, "text/html");
+      if (answer.response.status === 400 && form.id && parsed.getElementById(form.id)) {
+        finish("");
+        showFieldErrors(form, parsed);
+        return;
+      }
+      finish(refusalText(answer.response.status, answer.text), refusalLink(answer.text));
+      return;
+    }
+    say(status.text || "Applying your change…");
+    const statusUrl = answer.response.url;
+    const settled = await settleChange(statusUrl, status);
+    status = settled.status;
+    if (settled.outcome === "waiting") {
+      await keep("Your change is saved but not applied yet.", statusUrl);
+      return;
+    }
+    if (settled.outcome === "lost") {
+      hold(SAVE_STATUS_LOST);
+      return;
+    }
+    if (status.state !== "applied") {
+      await keep(status.text || "The change was not applied. Nothing was changed.", statusUrl);
+      return;
+    }
+    const text = [form.dataset.directSaved, fillIn(
+      "Applied at {time}.", {time: clockTime()}), removes && form.dataset.directRemoved]
+      .filter(Boolean).join(" ");
+    const row = document.querySelector("[data-campaign-step-actions][data-next-fixed]");
+    const fresh = row ? null : await freshPage(window.location.href);
+    if (!row && !fresh) return;
+    const next = (row || fresh.querySelector("[data-campaign-step-actions]"))?.dataset.nextUrl;
+    if (next && sameOrigin(next)) {
+      const target = new URL(next, document.baseURI);
+      try {
+        window.sessionStorage.setItem(REVIEW_OUTCOME, JSON.stringify(
+          {path: target.pathname, id: "campaign-step-outcome", text, at: Date.now()}));
+      } catch { /* No storage: the next step shows no status line. */ }
+      window.location.assign(target.href);
+      return;
+    }
+    // No later step to open (the wizard ended meanwhile): the page is
+    // redrawn in place with what was applied. A sub-page always names its
+    // step, so it has no fresh copy to redraw from: it is loaded again.
+    if (!fresh) {
+      window.location.reload();
+      return;
+    }
+    finish("");
+    redrawFrom(fresh);
+    if (!showOutcome("campaign-step-outcome", text)) announce(text);
+  };
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (event.defaultPrevented || !(form instanceof HTMLFormElement)
+      || !form.matches("form[data-direct-save]") || !sameOrigin(formUrl(form))) return;
+    event.preventDefault();
+    // A repeat (Enter pressed twice) while a save is under way is ignored.
+    if (reviewing.has(form)) return;
+    saveStep(form, event.submitter);
+  }, true);
 
   // Basic and Advanced editor modes (#1121; ui-conventions spec, "Basic and
   // Advanced modes"). A settings editor wraps its toggle

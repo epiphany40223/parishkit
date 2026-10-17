@@ -402,11 +402,17 @@ def test_a_blocked_schedule_review_offers_no_apply():
 
 def test_new_and_edit_scheduled_email_review_in_the_dialog():
     """The entry form is gated on a change and opens schedule-review; Apply
-    posts to Dates and mail schedules, then returns there to its line."""
+    posts to Dates and mail schedules, then returns there to its line.
+
+    Inside the campaign wizard the form saves directly instead (#1404 PR
+    4b), with the same change gate.
+    """
     source = (TEMPLATES / "schedule-entry.html").read_text(encoding="utf-8")
     assert re.search(
-        r'id="schedule-entry-form" data-schedule-entry '
-        r'data-review-open="schedule-review" data-require-change="base_digest"',
+        r'id="schedule-entry-form" data-schedule-entry \{% if direct %\}'
+        r"data-direct-save [^\n]*?"
+        r'\{% else %\}data-review-open="schedule-review"\{% endif %\} '
+        r'data-require-change="base_digest"',
         source,
     )
     assert re.search(

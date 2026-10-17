@@ -342,7 +342,9 @@ def test_empty_content_editor_can_start_from_the_default(auth_service, google):
     assert b"Personal prayer" in started.content
     assert b"Start from the default text" not in started.content
     # The form posts to the clean path; a POST accepts no query string.
-    assert f'<form method="post" action="{path}"'.encode() in started.content
+    assert f'<form id="content-form" method="post" action="{path}"'.encode() in (
+        started.content
+    )
     assert browser.get(path + "?start=other").status_code == 400
     assert browser.get(catalog + "?start=default").status_code == 400
     assert ConfigurationChangeRequest.objects.count() == requests

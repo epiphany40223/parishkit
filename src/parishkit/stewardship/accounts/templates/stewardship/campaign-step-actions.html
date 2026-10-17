@@ -12,11 +12,30 @@ secondary and first, and one primary control, last.
   ui-v1.js), Continue is unavailable, named by
   the hint after the row, so the page's own Save stays the way on; the
   hint's line is always reserved (data-idle hides it), so nothing moves.
+- Campaign settings and Share options (``wizard.direct``, #1404 PR 4):
+  the same Continue and, in the same grid cell, Save and continue, a submit
+  button of the page's own form (``wizard.direct_form``, which is marked
+  data-direct-save and posts its save action). One of the two is shown at a
+  time (ui-v1.js gateStepContinue): Continue while the form holds no change,
+  Save and continue once it does. The other is data-step-inactive, hidden
+  with visibility only, so the cell keeps the longer label's width and the
+  switch moves nothing (no layout shift). The status line after the row
+  (always reserved) says "Saving…", then the result or the refusal; the
+  row's data-next-url is where an applied save goes on to, read again from
+  this page once the change is applied, since a change of the modules can
+  add or remove Share options.
 - Preview and test email: Continue to <next step> once a test of the
   invitation's current revision is accepted, a plain link; before that the
   test is the step's purpose, so there is no Continue.
 - Go-live readiness, the last step: Back only; the go-live flow follows.
-- A sub-page of a step (``wizard.sub``): Return to <step> only.
+- A sub-page of a step (``wizard.sub``): Return to <step>, and on a
+  sub-page that saves (``wizard.direct``: Pages and emails' editor, New and
+  Edit scheduled email, #1404 PR 4b) Save and go back, a submit button of
+  the page's own form (``wizard.direct_form``, marked data-direct-save),
+  available as that form's own button was (its change gate, if it has
+  one). The same reserved status line follows the row, and data-next-url
+  is the step, which an applied save opens again as it is (data-next-fixed:
+  the step's address never moves, so the page is not read again first).
 - Create the campaign, step 1 before the campaign exists
   (``wizard.creating``): nothing here; the page draws its own row inside its
   form, whose one primary is Create the campaign and continue (#1404 PR 3).
@@ -26,11 +45,13 @@ in-place region, so the page's redraw after a review dialog's Apply also
 renames Continue when the change altered the steps (Financial stewardship
 turned on or off adds or removes Share options).
 {% endcomment %}{% with wizard=admin_chrome.campaign_wizard %}{% if wizard and not wizard.creating %}{% with current=wizard.current upcoming=wizard.upcoming %}
-<div id="campaign-step-actions" class="campaign-step-actions" data-in-place-region data-campaign-step-actions>
+<div id="campaign-step-actions" class="campaign-step-actions" data-in-place-region data-campaign-step-actions{% if wizard.direct and wizard.sub %} data-next-url="{{ current.url }}" data-next-fixed{% elif wizard.direct and upcoming.url %} data-next-url="{{ upcoming.url }}"{% endif %}>
 {% if wizard.sub %}{% blocktranslate trimmed asvar back_label with label=current.label %}Return to {{ label }}{% endblocktranslate %}{% button href=current.url variant="secondary" data-campaign-step-back %}{{ back_label }}{% endbutton %}
+{% if wizard.direct %}<div class="campaign-step-primary" data-campaign-primary>{% button type="submit" form=wizard.direct_form data-campaign-save %}{% translate "Save and go back" %}{% endbutton %}</div>{% endif %}
 {% else %}{% if wizard.previous.url %}{% button href=wizard.previous.url variant="secondary" data-campaign-step-back %}{% translate "Back" %}<span class="setup-sr-only">: {{ wizard.previous.label }}</span>{% endbutton %}{% endif %}
-{% if upcoming.url %}{% if wizard.reviewable %}<form method="post" action="{% url 'admin:campaign_step_continue' %}" data-campaign-continue>{% csrf_token %}<input type="hidden" name="step" value="{{ current.key }}">{% button type="submit" %}{% if current.key == 'schedules' and wizard.no_schedules %}{% translate "Continue without schedules for now" %}{% else %}{% blocktranslate trimmed with label=upcoming.label %}Continue to {{ label }}{% endblocktranslate %}{% endif %}{% endbutton %}</form>
+{% if upcoming.url %}{% if wizard.reviewable %}{% if wizard.direct %}<div class="campaign-step-primary" data-campaign-primary>{% endif %}<form method="post" action="{% url 'admin:campaign_step_continue' %}" data-campaign-continue>{% csrf_token %}<input type="hidden" name="step" value="{{ current.key }}">{% button type="submit" %}{% if current.key == 'schedules' and wizard.no_schedules %}{% translate "Continue without schedules for now" %}{% else %}{% blocktranslate trimmed with label=upcoming.label %}Continue to {{ label }}{% endblocktranslate %}{% endif %}{% endbutton %}</form>{% if wizard.direct %}{% button type="submit" form=wizard.direct_form data-campaign-save data-step-inactive %}{% translate "Save and continue" %}{% endbutton %}</div>{% endif %}
 {% elif current.key == 'mail_test' and current.state == 'done' %}{% blocktranslate trimmed asvar continue_label with label=upcoming.label %}Continue to {{ label }}{% endblocktranslate %}{% button href=upcoming.url data-campaign-continue %}{{ continue_label }}{% endbutton %}{% endif %}{% endif %}{% endif %}
-</div>{% if wizard.reviewable and upcoming.url and not wizard.sub %}
+</div>{% if wizard.direct and wizard.sub or wizard.direct and upcoming.url %}
+<p class="help campaign-step-status" id="campaign-step-status" role="status" data-step-status></p>{% elif wizard.reviewable and upcoming.url and not wizard.sub %}
 <p class="help unchanged-hint" id="campaign-continue-hint" data-continue-hint data-idle>{% translate "Review and apply your changes, or undo them, to continue." %}</p>{% endif %}
 {% endwith %}{% endif %}{% endwith %}
