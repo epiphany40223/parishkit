@@ -676,6 +676,19 @@ if [ "$mode" = upgrade ]; then
         # killed, container and all, the kill is logged and the run stops
         # with the maintenance page up (phase offline). The limits are far
         # above any expected run (seconds to minutes).
+        # The System logs search's indexes (#765, migration file 0116) need
+        # pg_trgm, and creating an extension needs CREATE on the database,
+        # which only the operator superuser holds (runbook, Text search
+        # extension). IF NOT EXISTS leaves an installed one alone, so this
+        # runs before every migration; it takes well under a second.
+        step "4. Text search extension (pg_trgm)"
+        if ! extension=$("${dc[@]}" exec -T postgres psql -U pk_stewardship_operator \
+            -d "$database" -At -v ON_ERROR_STOP=1 \
+            -c "CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public" 2>&1); then
+            echo "Could not install the pg_trgm extension: $(tail -3 <<<"$extension")" >&2
+            exit 1
+        fi
+        echo "    pg_trgm is installed"
         grants() {
             # grants STEP: database-grants as the operator-only provisioning profile.
             oneoff 600 "database-grants" "$1" database-provision database-grants \

@@ -381,6 +381,9 @@ FROZEN = {
     "0116_sent_mail_recipients.sql": (
         "42f1fe9ef354c7239f22c98a56262eb1a40ffb2cc63410edf9e8a2faf8de7d6a"
     ),
+    "0116_log_search_indexes.sql": (
+        "9749a393a6c4fa0bf50a232ecffea144ced687880712a505fec1ec74a018ee1b"
+    ),
 }
 
 

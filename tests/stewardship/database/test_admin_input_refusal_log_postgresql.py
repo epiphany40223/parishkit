@@ -383,14 +383,33 @@ def test_any_other_failure_never_raises(caplog, monkeypatch):
 
 
 def test_the_cap_count_reads_the_partial_index():
-    """The count uses (actor_id, created_at) of the refusal rows."""
+    """The count uses (actor_id, created_at) of the refusal rows.
+
+    Other actors' refusals are seeded and analysed first: on an empty table
+    every index costs the same, and the System logs search's pattern index
+    on ``event`` (#765) would serve the event condition just as cheaply.
+    """
     with transaction.atomic(), connection.cursor() as cursor:
+        # The writer's trigger is skipped (replica role, superuser test
+        # database only); the context check still applies.
+        cursor.execute("SET LOCAL session_replication_role = replica")
+        cursor.execute(
+            "INSERT INTO stewardship_operational_log "
+            "(id,correlation_id,actor_id,event,level,schema,context) "
+            "SELECT gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),"
+            "'admin_input_refused','INFO','refusal',%s::jsonb "
+            "FROM generate_series(1,2000)",
+            [json.dumps(refused(uuid4()).context())],
+        )
+        cursor.execute("RESET session_replication_role")
+        cursor.execute("ANALYZE stewardship_operational_log")
         cursor.execute("SET LOCAL enable_seqscan = off")
         cursor.execute(
             "EXPLAIN " + refusals._COUNT,
             ["admin_input_refused", uuid4(), "INFO", refusals.WINDOW],
         )
         plan = "\n".join(row[0] for row in cursor.fetchall())
+        transaction.set_rollback(True)
     assert "operational_refusal_actor_time" in plan
 
 

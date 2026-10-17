@@ -8569,13 +8569,15 @@ Only Admins access the combined log screen. It supports:
   128 characters, of reviewed fields only), never key names, actor
   addresses, the "what went wrong" sentence or credentials. The search text
   is a private filter: it travels only in POST bodies, like the
-  [Find a Family](#admin-navigation) search, never in a link. It has no
-  text index: it reads the entries in the date range, which the page says.
-  Every log read (page or export) runs under the 60-second interactive
-  statement limit; a read it stops is recorded as a timeout (what, limit,
-  time taken) and answered with the page's unavailable message. A trigram
-  index is a schema change left until the log needs one
-  ([#765](https://github.com/epiphany40223/parishkit/issues/765));
+  [Find a Family](#admin-navigation) search, never in a link. Trigram
+  indexes ([#765](https://github.com/epiphany40223/parishkit/issues/765))
+  find the entries for a phrase holding three letters or digits in a row
+  without reading the others; a shorter phrase has nothing to look up and
+  reads the entries in the date range, which the page says. What a search
+  finds is the same either way. Every log read (page or export) runs under
+  the 60-second interactive statement limit; a read it stops is recorded as
+  a timeout (what, limit, time taken) and answered with the page's
+  unavailable message;
 - bookmarkable views (#536): a GET may carry only the filters that are not
   private (the Show choices, Activity, type, Ministry, From and Through with
   their zone, rows per page and sort). The search text, identifiers (actor,

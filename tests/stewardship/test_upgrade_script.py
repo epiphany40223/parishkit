@@ -415,6 +415,12 @@ case "$*" in
     *" upgrade-users "*"--operation-id "*)
         [ -z "$FAKE_USERS_FAIL" ] || { echo "upgrade refused" >&2; exit 1; }
         echo '{"users_upgrade_applied": true}' ;;
+    *"CREATE EXTENSION IF NOT EXISTS pg_trgm"*)
+        if [ -n "$FAKE_EXTENSION_FAIL" ]; then
+            echo 'ERROR:  permission denied to create extension "pg_trgm"' >&2
+            exit 1
+        fi
+        echo "CREATE EXTENSION" ;;
     *"database-grants"*)
         if [ -n "$FAKE_GRANTS_FAIL" ]; then
             # The cause, then an empty last line, as a real traceback ends.
@@ -710,6 +716,42 @@ def test_an_upgrade_with_the_override_runs_migration_and_grants(tmp_path):
     assert retarget < migration < first(calls, "database-grants")
     assert migration < first(calls, "up --detach --wait web")
     assert "running migration and grants: the check answered: f" in output
+
+
+def test_the_operator_installs_the_text_search_extension_before_migrating(tmp_path):
+    """pg_trgm (#765) is installed as the superuser right before the
+    migration, only when step 4 migrates; a refusal stops the run with the
+    maintenance page up and nothing migrated."""
+    install = "psql -U pk_stewardship_operator -d stewardship -At -v ON_ERROR_STOP=1 "
+    calls, output, _ = run_host(tmp_path, "upgrade", noop="f", schema_change="1")
+    extension = first(
+        calls, "CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public"
+    )
+    assert install in calls[extension] and " exec -T postgres " in calls[extension]
+    assert (
+        first(calls, " retarget-image ") < extension < first(calls, "--rm -T migration")
+    )
+    assert "pg_trgm is installed" in output
+    # The users upgrade installs it before its base migration too.
+    calls, _, _ = run_host(
+        tmp_path / "users", "upgrade", noop="f", schema_change="1", env=USERS
+    )
+    assert first(calls, "pg_trgm") < first(calls, "--users-upgrade-base")
+    # A release that migrates nothing never touches it.
+    calls, _, _ = run_host(tmp_path / "current", "upgrade")
+    assert not any("pg_trgm" in call for call in calls)
+    calls, output, _ = run_host(
+        tmp_path / "refused",
+        "upgrade",
+        noop="f",
+        status=1,
+        schema_change="1",
+        extension_fail=True,
+    )
+    refused = 'ERROR:  permission denied to create extension "pg_trgm"'
+    assert f"Could not install the pg_trgm extension: {refused}" in output
+    assert not any(" migration" in call for call in calls)
+    assert "caddy serves the maintenance page" in output
 
 
 def test_a_failed_backup_abandons_before_web_stops(tmp_path):
