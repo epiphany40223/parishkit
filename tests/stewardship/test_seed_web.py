@@ -223,27 +223,38 @@ def _census_inputs(projection):
 def test_create_campaign_fields_fill_the_real_form_and_validator():
     """A catalog like the synthetic parish's (25 Ministries by name, 4 funds).
 
-    The seeder fills Create the campaign's own form (#142); the form and
-    the campaign validator both admit what it posts.
+    The seeder fills Create the campaign's own form (#142), Campaign
+    settings' form since #1404 PR 3, keeping its default leader roles; the
+    form and the campaign validator both admit what it posts.
     """
     from datetime import date
 
-    from parishkit.stewardship.accounts.campaign_forms import CampaignForm
+    from parishkit.stewardship.accounts.campaign_forms import CampaignSettingsForm
     from parishkit.stewardship.campaigns import configuration
     from parishkit.stewardship.local.seed_web import campaign_fields
 
     names = sorted(f"Ministry {n}" for n in range(25))
+    roles = ["Chairperson", "Staff"]
     options = {
         # Sorted by display name, as the source catalog sorts them.
         "ministries": [(str(9000 + n), name) for n, name in enumerate(names)],
         "funds": [("303", "Capital"), ("300", "Offertory"), ("301", "Other")],
+        "leader_choices": [(role, role) for role in roles],
+        "leader_roles": roles,
     }
-    initial = {"timezone": "America/New_York", "base_digest": "a" * 64}
-    blank = CampaignForm(initial=initial, previous={}, **options)
+    initial = {
+        "timezone": "America/New_York",
+        "ministry_leader_roles": roles,
+        "base_digest": "a" * 64,
+    }
+    blank = CampaignSettingsForm(initial=initial, previous={}, **options)
     data = campaign_fields(blank, (date(2026, 9, 27), date(2026, 10, 27)))
-    form = CampaignForm(data, initial=initial, previous={}, **options)
+    assert data["ministry_leader_roles"] == roles
+    form = CampaignSettingsForm(data, initial=initial, previous={}, **options)
     assert form.is_valid(), form.errors
     values = form.values()
+    # The default roles stay the default: the campaign saves none of its own.
+    assert "ministry_leader_roles" not in values
     assert values["modules"] == ["census", "financial", "ministry"]
     assert len(values["ministry_duids"]) == 25
     assert values["financial"]["fund_duids"] == [303]
