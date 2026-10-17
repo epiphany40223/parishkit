@@ -52,10 +52,7 @@ from parishkit.stewardship.reports.export_models import (
     DirectoryExportSnapshot,
     ExportRequest,
 )
-from parishkit.stewardship.reports.export_services import (
-    regenerate_export,
-    retry_export,
-)
+from parishkit.stewardship.reports.export_services import retry_export
 from parishkit.stewardship.reports.response_dashboard import list_counts
 from parishkit.stewardship.reports.response_metrics import MODES
 from parishkit.stewardship.source.leases import release_source
@@ -647,7 +644,7 @@ def test_directory_testing_switch_reads_the_rehearsal(
     assert requested.context["report_mode"] == "testing"
 
     # Another Administrator queues a Testing export, then becomes Staff: they
-    # can no longer retry or regenerate it (authorize, before any other
+    # can no longer retry it (authorize, before any other
     # check), as for downloading it.
     store = harness.service.store
     second = address("second@example.org")
@@ -673,10 +670,11 @@ def test_directory_testing_switch_reads_the_rehearsal(
     assert change(store, store.active(), uuid4(), patch).state == "applied"
     patch = [{"operation": "add", "section": "login_rules", **demoted}]
     assert change(store, store.active(), uuid4(), patch).state == "applied"
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        for again in (regenerate_export, retry_export):
-            with pytest.raises(PermissionError):
-                again(store, requester, theirs.pk, request_key=uuid4())
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(PermissionError),
+    ):
+        retry_export(store, requester, theirs.pk, request_key=uuid4())
 
     # Staff: no switch, and Testing is refused on the page and the export.
     staff = address("staff@example.org", roles=("staff",))

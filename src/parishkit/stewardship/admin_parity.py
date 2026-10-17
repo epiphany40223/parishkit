@@ -317,7 +317,6 @@ LEDGER = {
     "report_export": command("export status", "export exact status"),
     "report_export_cancel": command("export cancel", "export exact cancel"),
     "report_export_retry": command("export retry", "export exact retry"),
-    "report_export_regenerate": command("export regenerate"),
     "report_export_download": command("export download"),
     "report_exact_create": command("export exact create"),
     # The digests (PR 8d): the retained reports an emailed digest links to,

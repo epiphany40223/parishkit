@@ -29,7 +29,6 @@ from parishkit.stewardship.schema_primitives import timezone_names
 from .export_models import ExportRequest, TimelineExportSnapshot
 from .export_services import (
     TASK_TYPE,
-    ExportConflict,
     ExportRequestBound,
     admit_campaign,
     audit,
@@ -38,30 +37,6 @@ from .export_services import (
 
 REPORT = "family_timeline"
 MODES = ("production", "testing")
-
-
-class RehearsalEnded(ExportConflict):
-    """A Testing timeline export's rehearsal has ended, so it is not regenerated.
-
-    The capture is bound to the rehearsal it was taken in; once that one is
-    no longer the campaign's active rehearsal (a new one, or the return to
-    Production), the Family's records it named are gone from the page, so
-    the export is made again instead.
-    """
-
-
-def rehearsal_ended(request):
-    """Whether ``request`` is a Testing timeline export whose rehearsal ended.
-
-    The status page shows Regenerate unavailable with this reason, and a
-    regeneration is refused with it, rather than a bare denial.
-    """
-    from .response_dashboard import rehearsal_epoch
-
-    if request.report != REPORT or request.parameters.get("mode") != "testing":
-        return False
-    epoch = rehearsal_epoch(request.campaign_id)
-    return epoch is None or str(epoch) != request.parameters.get("rehearsal_epoch_id")
 
 
 def capture(campaign_id, family, mode, epoch, *, current_mode):
@@ -156,16 +131,13 @@ def create_timeline_export(
     format,
     browser_timezone,
     request_key,
-    snapshot=None,
 ):
     """Capture one Family's timeline and queue its file, as the page's form does.
 
     Only an Administrator may request it, as only an Administrator sees the
     full timeline (and Testing records) on the page. A request key already
     used for the same selection returns that export; for another selection
-    it is ``ExportRequestBound`` (the page's 409). ``snapshot`` is the
-    retained capture an expired export is regenerated from, never accepted
-    from a form.
+    it is ``ExportRequestBound`` (the page's 409).
     """
     from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 
@@ -182,8 +154,6 @@ def create_timeline_export(
         raise ValueError("Unsupported timeline export format.")
     if type(browser_timezone) is not str or browser_timezone not in timezone_names():
         raise ValueError("Export timezone must be an IANA name.")
-    if snapshot is not None and not isinstance(snapshot, TimelineExportSnapshot):
-        raise TypeError("Regeneration requires a retained timeline capture.")
 
     def admit(*args):
         """Both enqueue and its owning transaction recheck current authorization."""
@@ -198,18 +168,6 @@ def create_timeline_export(
         # A Family of another campaign is refused like a missing one.
         family = FamilyCampaign.objects.get(pk=family_id, campaign_id=campaign_id)
         epoch = rehearsal_epoch(campaign_id) if mode == "testing" else None
-        if (
-            snapshot is not None
-            and mode == "testing"
-            and (
-                epoch is None
-                or str(epoch) != snapshot.parameters.get("rehearsal_epoch_id")
-            )
-        ):
-            raise RehearsalEnded(
-                "The Testing rehearsal this export was made in has ended; "
-                "export the timeline again."
-            )
         if mode == "testing" and epoch is None:
             raise PermissionError("The campaign has no Testing rehearsal to export.")
         parameters = {
@@ -227,30 +185,25 @@ def create_timeline_export(
                 previous.parameters,
                 previous.format,
                 previous.browser_timezone,
-            ) != (REPORT, campaign_id, parameters, format, browser_timezone) or (
-                snapshot is not None and previous.timeline_snapshot_id != snapshot.pk
-            ):
+            ) != (REPORT, campaign_id, parameters, format, browser_timezone):
                 raise ExportRequestBound("Export request identity is already bound.")
             return previous
         system = SystemConfiguration.objects.get()
         configuration_id = system.active_configuration_id
         correlation_id = uuid4()
-        if snapshot is None:
-            snapshot = TimelineExportSnapshot.objects.create(
-                campaign_id=campaign_id,
-                family=family,
-                configuration_id=configuration_id,
-                actor_id=user_id,
-                correlation_id=correlation_id,
-                parameters=parameters,
-                document=capture(
-                    campaign_id, family, mode, epoch, current_mode=system.mode
-                ),
-            )
-            # The insert trigger sets the time and the event count.
-            snapshot.refresh_from_db(fields=["created_at", "row_count"])
-        elif snapshot.campaign_id != campaign_id or snapshot.parameters != parameters:
-            raise ValueError("Retained timeline scope differs from the request.")
+        snapshot = TimelineExportSnapshot.objects.create(
+            campaign_id=campaign_id,
+            family=family,
+            configuration_id=configuration_id,
+            actor_id=user_id,
+            correlation_id=correlation_id,
+            parameters=parameters,
+            document=capture(
+                campaign_id, family, mode, epoch, current_mode=system.mode
+            ),
+        )
+        # The insert trigger sets the time and the event count.
+        snapshot.refresh_from_db(fields=["created_at", "row_count"])
         identifier = uuid4()
         task = enqueue(
             task_type=TASK_TYPE,

@@ -31,7 +31,6 @@ from .test_admin_export_cli_postgresql import download, read_only_session
 from .test_admin_report_cli_postgresql import cli  # noqa: F401
 from .test_background_grants_postgresql import task_login
 from .test_directory_responses_postgresql import quality_funnel  # noqa: F401
-from .test_export_cleanup_postgresql import expire_publication
 from .test_export_views_postgresql import post, restricted_download_pool
 from .test_financial_report_postgresql import pledge
 from .test_financial_source_postgresql import financial_source
@@ -173,19 +172,6 @@ def test_a_financial_export_is_the_pages(
         job_route = reverse("admin:report_export_download", args=[made.pk])
         response, page_body = search(browser, job_route, {})
     assert response.status_code == 200 and page_body == body
-
-    # Regenerating an expired financial file is fresh-gated too, as on the
-    # status page: it asks first, then the session stands in for the
-    # recent sign-in in the new export's transaction.
-    expire_publication(made)
-    regenerate = ("export", "regenerate", str(made.pk), "--request-key", str(uuid4()))
-    gates = count("automation_fresh_gate")
-    code, document = run(*regenerate)
-    assert code == 4 and document["error"]["code"] == "confirmation_required"
-    assert count("automation_fresh_gate") == gates
-    code, document = run(*regenerate, "--yes")
-    assert code == 0 and document["result"]["created"], document
-    assert count("automation_fresh_gate") == gates + 1
 
     # A read-only session cannot request one, nor stand in for a sign-in.
     gates = count("automation_fresh_gate")

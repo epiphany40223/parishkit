@@ -1,6 +1,5 @@
 """Real-role complete information captures, immutable inputs and export ownership."""
 
-from datetime import timedelta
 from uuid import uuid4
 
 import pytest
@@ -217,7 +216,7 @@ def test_native_information_exports_use_real_worker_and_guarded_downloads(
     settings,
     monkeypatch,
 ):
-    """One fixture proves three formats, native ownership and retained regeneration."""
+    """One fixture proves three formats and native ownership."""
     harness = live_response_service
     respond(harness, "Complete exported Family request")
     browser, login = signed_in()
@@ -234,7 +233,6 @@ def test_native_information_exports_use_real_worker_and_guarded_downloads(
     # Surname, then heads, as on every Admin table.
     assert ", " in name
     name = name.encode()
-    first = None
     for format in ("csv", "xlsx", "pdf"):
         fields = query.form_values() | dict(
             history="yes",
@@ -267,7 +265,6 @@ def test_native_information_exports_use_real_worker_and_guarded_downloads(
             response = post(browser, reverse("admin:information_export"), fields)
             assert response.status_code == 302
             request = ExportRequest.objects.get(request_key=fields["request_key"])
-            first = first or request
             assert (
                 post(browser, reverse("admin:information_export"), fields)["Location"]
                 == response["Location"]
@@ -309,27 +306,3 @@ def test_native_information_exports_use_real_worker_and_guarded_downloads(
                 # The file names the Family as the page does (#932), from the
                 # snapshot its capture read; CSV quotes the comma.
                 assert b'\r\n"' + name + b'",' in body
-    harness, form, answers, _ = revisit(harness)
-    answers["additional_information"] = (
-        "A later Family request must not replace the export"
-    )
-    submit(harness, form, answers)
-    from parishkit.stewardship.reports import export_services
-
-    with work_transaction():
-        now = export_services.database_now()
-    monkeypatch.setattr(
-        export_services, "database_now", lambda: now + timedelta(days=8)
-    )
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        fields = {"request_key": str(uuid4())}
-        response = post(
-            browser, reverse("admin:report_export_regenerate", args=[first.pk]), fields
-        )
-        assert response.status_code == 302
-        regenerated = ExportRequest.objects.get(request_key=fields["request_key"])
-        assert regenerated.information_snapshot_id == first.information_snapshot_id
-        assert (
-            regenerated.information_snapshot.document["rows"][0]["text"]
-            == "Complete exported Family request"
-        )

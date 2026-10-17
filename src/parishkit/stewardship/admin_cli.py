@@ -2261,33 +2261,6 @@ def export_retry(args, preamble, runtime, context):
     )
 
 
-def export_regenerate(args, preamble, runtime, context):
-    """Request an expired export again, as its page's Regenerate does (PR 8b).
-
-    Regenerating a directory, mail-merge or financial export is fresh-gated
-    (#547), so for those, and only those, the command asks at the
-    confirmation prompt (or takes ``--yes``) before a request key is made or
-    any transaction opens.
-    """
-    from .admin_exports import regenerate_export_command, regeneration_prompts
-
-    if regeneration_prompts(context["caller"], runtime, args.export_id):
-        confirm(
-            context,
-            (
-                "Regenerate an export of Family codes or financial detail: "
-                "a new copy of its file.",
-            ),
-        )
-    return regenerate_export_command(
-        context["caller"],
-        runtime,
-        args.export_id,
-        request_key=_request_key(args, context),
-        context=context,
-    )
-
-
 def export_download(args, preamble, runtime, context):
     """Stream an export's stored file to standard output (PR 8b).
 
@@ -3769,7 +3742,7 @@ def _export_status_options(parser):
 
 
 def _export_keyed_options(parser):
-    """Options of ``export retry`` and ``export regenerate``: export and key."""
+    """Options of ``export retry``: the export and the request key."""
     _export_id_option(parser)
     _request_key_option(parser)
 
@@ -5639,19 +5612,6 @@ def _report_specs():
             8,
             options=(_export_keyed_options,),
             request_key=True,
-        ),
-        CommandSpec(
-            "export regenerate",
-            "Request an expired export again from its retained inputs.",
-            export_regenerate,
-            "full",
-            True,
-            ExportChange.field_names(),
-            8,
-            options=(_export_keyed_options,),
-            request_key=True,
-            fresh_gated=True,
-            prompts=True,
         ),
         CommandSpec(
             "export download",
