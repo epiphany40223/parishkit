@@ -2578,8 +2578,11 @@ every campaign state. There is no second, read-only copy of the settings.
 - **What one Review covers.** On a draft, one Review covers every changed
   setting, applied as one change, except that a change of the dates alone,
   while the campaign has schedules, leads to Dates and mail schedules'
-  combined review instead (and dates changed with other settings are
-  refused, to be reconciled there first). On a live campaign, one Review
+  combined review instead. Dates or the time zone changed with other
+  settings, while the campaign has schedules, are refused at the first
+  changed date or time zone field, and Save waits with the same words while
+  both differ from the saved values (#1330), so the dates are reconciled
+  there first. On a live campaign, one Review
   covers a changed end date and changed Ministry leader roles together: one
   configuration request with one campaign update holding both values,
   applied together or not at all (decision 2 on #1119). Its review lists the
