@@ -439,6 +439,48 @@ returns it (`created` false). It prints `switch_id`, `created` and
 pk-admin system debug-allow
 ```
 
+### `system mail-clear-preview` and `system mail-clear`
+
+System health's **Clear the halt** (its button comes with ADM-13 PR 4b),
+for a mail sender halted by a fault that waiting cannot fix, once the
+cause is fixed (the
+[mail-provider outage runbook](stewardship-launch-runbooks.md#mail-provider-outage)
+describes when). Both need a full-scope session; neither needs a recent
+sign-in.
+
+`system mail-clear-preview` asks the mail sender to check that the
+mailbox still signs in (unless a check is already running, or one passed
+in the last five minutes), waits for it (at most two minutes; `--no-wait`
+prints at once), and prints `halt` (`halt_id`, `kind`: `before_data` or
+`after_data`, `began_at`), `mailbox_check` (`status`: `waiting`, `running`,
+`passed`, `refused`, `unavailable` or `unanswered`), `waiting` (emails
+waiting to be sent), `unsettled` and `unsettled_ids` (emails in
+`delivery_unknown`, which must be settled first, as `delivery resolve`
+does), `delivery_paused`, `reason` (why the halt cannot be cleared now:
+`checking`, `check_failed`, `check_needed`, `unsettled`; null when it can)
+and `preview.token`, the signed binding, valid for 15 minutes and for this
+Administrator only (null with a reason). It records no audit event. It is
+refused (exit 1, `stale_version`) while no mail sender is halted, or its
+halt is not recorded yet (within about 30 seconds of the halt).
+
+`system mail-clear --token TOKEN` clears that halt. It always prompts (or
+takes `--yes`) with what clearing does. It records the clear signal (the
+token's key names it, so a repeat returns the first, `created` false) and
+`mail_halt_cleared` with `admin_cmd_system_mail_clear`, and prints
+`clear_id`, `halt_id`, `created` and `created_at`. Both mail senders act on
+it within about 30 seconds and send one probe email per consumer (so up to
+two); if the fault is still there, sending halts again under a new halt. A halt that changed
+since the preview, an expired token, a mailbox check that no longer
+allows it or an email that became `delivery_unknown` is exit 1,
+`stale_version`: review again. With `--token -` the token is read from
+standard input, so add `--yes`. Follow it with `system health --watch 60`
+(the mail senders).
+
+```text
+pk-admin system mail-clear-preview
+pk-admin system mail-clear --token TOKEN
+```
+
 ### Watching and errors
 
 `--watch SECONDS` (2 to 300) on `task show`, `send progress`,
@@ -3613,3 +3655,7 @@ Each change is recorded in System logs as on the page
   they printed `custom`, the word Pages and emails now shows (Edited; it
   was Customized). `empty` and `default` are unchanged. The only readers
   are Administrator-run assistants.
+- `pk-admin/1` (ADM-13 PR 4a, #530): additive. `system mail-clear-preview
+  [--no-wait]` (asks for a mailbox check, records no event) and `system
+  mail-clear --token TOKEN` (always prompts; its event), Clear the halt
+  ahead of System health's button. Neither needs a recent sign-in (#1547).
