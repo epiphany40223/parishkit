@@ -19,7 +19,15 @@ import re
 import pytest
 
 from .keyboard import tab_to_next
-from .schedule_list_components import ADD_DAY, ADD_ON, APPLY, CALENDAR, LIST, NEW
+from .schedule_list_components import (
+    ADD_DAY,
+    ADD_ON,
+    APPLY,
+    CALENDAR,
+    LIST,
+    NEW,
+    NOW,
+)
 from .test_components import axe_violations
 from .test_schedule_list import (
     ADD,
@@ -142,6 +150,12 @@ def test_the_list_links_the_calendar(page, component_origin):
     assert link.get_attribute("href") == "/admin/campaign/schedules/calendar/"
 
 
+def at_now(page):
+    """Give the browser the server's "now" (October 5), as the page's own
+    clock decides which days are already past."""
+    page.clock.install(time=NOW)
+
+
 def add_link(page, day):
     """October ``day``'s Add, by the name a screen reader hears."""
     return page.get_by_role("link", name=f"Add an email on October {day}, 2054")
@@ -150,17 +164,21 @@ def add_link(page, day):
 def test_each_campaign_day_has_an_add_named_with_its_date(
     page, component_origin, axe_source
 ):
-    """Every day October 1–31 has one Add; November 1, after the campaign,
-    has none. Each opens New with its own day, and the grid is the same
+    """With "now" October 5, today and every later day through October 31
+    has one Add; October 1–4 (passed) and November 1 (after the campaign)
+    have none. Each opens New with its own day, and the grid is the same
     before and after an Add takes focus (nothing moves)."""
     page.set_viewport_size({"width": 1280, "height": 900})
+    at_now(page)
     page.goto(component_origin + CALENDAR)
     failures = watch(page)
     adds = page.locator("table.calendar-month a.calendar-add")
-    assert adds.count() == 31
+    assert adds.count() == 27
     assert set(adds.all_inner_texts()) == {"Add"}
-    first = add_link(page, 1)
-    assert first.get_attribute("href") == f"{NEW}?date=2054-10-01"
+    for day in (1, 2, 3, 4):
+        assert cell(page, day).locator("a.calendar-add").count() == 0
+    first = add_link(page, 5)
+    assert first.get_attribute("href") == f"{NEW}?date=2054-10-05"
     assert add_link(page, 31).get_attribute("href") == f"{NEW}?date=2054-10-31"
     assert cell(page, 1, month=1).locator("a.calendar-add").count() == 0
     # The Add sits on its day's number line, inside the cell.
@@ -191,15 +209,17 @@ def test_a_zone_a_day_ahead_keeps_add_on_the_campaign_dates(
     browser_engine, component_origin
 ):
     """The campaign's dates are calendar dates: in Auckland the Adds are
-    still October 1–31, though the sends move a day on."""
+    still the campaign's dates, though the sends move a day on and the
+    browser's "today" is October 6, so the Adds start there."""
     context = browser_engine.new_context(timezone_id="Pacific/Auckland")
     try:
         page = context.new_page()
         page.set_viewport_size({"width": 1280, "height": 900})
+        at_now(page)
         page.goto(component_origin + CALENDAR)
         adds = page.locator("table.calendar-month a.calendar-add")
-        assert adds.count() == 31
-        assert adds.first.get_attribute("href") == f"{NEW}?date=2054-10-01"
+        assert adds.count() == 26
+        assert adds.first.get_attribute("href") == f"{NEW}?date=2054-10-06"
     finally:
         context.close()
 
@@ -210,6 +230,7 @@ def test_a_keyboard_reaches_a_day_add_and_opens_new_with_that_date(
     """Tab reaches each day's Add in reading order; Enter opens New with
     the day filled in, and its Cancel returns to the calendar."""
     page.set_viewport_size({"width": 1280, "height": 900})
+    at_now(page)
     page.goto(component_origin + CALENDAR)
     # From October 11's Add, Tab reaches that day's send (a daily digest),
     # then October 12's Add: each day's Add comes before its sends.
@@ -243,6 +264,7 @@ def test_add_on_a_day_applies_and_returns_to_the_calendar(page, component_origin
     page returns to the calendar, whose reserved status line says what was
     applied and takes focus."""
     page.set_viewport_size({"width": 1280, "height": 900})
+    at_now(page)
     page.goto(component_origin + CALENDAR)
     line = page.locator("#schedules-outcome")
     assert line.inner_text() == ""

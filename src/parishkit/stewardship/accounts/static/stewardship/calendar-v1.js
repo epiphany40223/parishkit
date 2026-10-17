@@ -9,9 +9,9 @@
 // are never shifted. The grids are drawn once, as the page loads and before
 // anything can be chosen, so nothing moves under the pointer later. Text is
 // only ever set as text: nothing read from the page is parsed as markup.
-// Each day of the campaign's dates also gets an Add link (#1521) that opens
-// New scheduled email with that day as its send date; the page itself never
-// changes anything.
+// Each day of the campaign's dates that is today or later (browser-local)
+// also gets an Add link (#1521) that opens New scheduled email with that day
+// as its send date; the page itself never changes anything.
 (() => {
   const root = document.querySelector("[data-calendar]");
   const template = document.getElementById("calendar-month");
@@ -73,10 +73,11 @@
     return link;
   }
 
-  // Whether ``key`` is one of the campaign's dates (ISO days compare as
-  // text); only those get an Add.
-  const inCampaign = (key) => Boolean(root.dataset.start && root.dataset.end)
-    && root.dataset.start <= key && key <= root.dataset.end;
+  // Whether ``key`` is one of the campaign's dates and not already past
+  // (ISO days compare as text); only those get an Add, since New would
+  // refuse a passed time.
+  const canAdd = (key, today) => Boolean(root.dataset.start && root.dataset.end)
+    && root.dataset.start <= key && key <= root.dataset.end && key >= today;
 
   // A visible note in a day: Today, Campaign opens or Campaign closes.
   function marker(text) {
@@ -96,7 +97,7 @@
     number.className = "calendar-day";
     number.textContent = String(day);
     head.append(number);
-    if (root.dataset.addUrl && inCampaign(key)) head.append(addLink(key));
+    if (root.dataset.addUrl && canAdd(key, today)) head.append(addLink(key));
     cell.append(head);
     if (key === today) {
       cell.setAttribute("aria-current", "date");

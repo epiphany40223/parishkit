@@ -3087,7 +3087,8 @@ and audited configuration request as
 [New and Edit scheduled email](#new-and-edit-scheduled-email), so the server
 checks it exactly as that page does.
 
-- **Add on a day.** Each day of the campaign's dates has a small **Add**
+- **Add on a day.** Each day of the campaign's dates that is today or later
+  (in the browser's zone) has a small **Add**
   link beside its number, reachable by keyboard and named with its date ("Add
   an email on October 12, 2054"). It opens New scheduled email
   (`?date=` that day) as a Reminder with that day as the send date, in the
@@ -3098,7 +3099,7 @@ checks it exactly as that page does.
   on New ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)),
   and the time and email still have to be chosen. Cancel, and Apply
   once the change is applied, return to the calendar, whose status line says
-  what was applied. Days outside the campaign's dates have no Add. Until a
+  what was applied. Days outside the campaign's dates, or already past, have no Add. Until a
   schedule exists the calendar draws no grid, and its link to Dates and mail
   schedules is the way to add one.
 - **Move…** Each send the calendar links (a dated schedule that has not run:

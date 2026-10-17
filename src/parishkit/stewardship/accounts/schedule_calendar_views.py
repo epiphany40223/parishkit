@@ -3,10 +3,10 @@
 A page under Dates and mail schedules that changes nothing itself. It lists
 each send the current schedule revisions make, in sending order: the
 Initial invitation, each reminder, and every day or week of the Daily and
-Weekly Admin digests, expanded with the scheduler's own evaluation (``SchedulePlan.page``). The
-table of sends is the page's text equivalent; the page script
-(``calendar-v1.js``) draws the same sends as month grids, bucketed by the
-browser's local day, since every Admin time is browser-local.
+Weekly Admin digests, expanded with the scheduler's own evaluation
+(``SchedulePlan.page``). The table of sends is the page's text equivalent;
+the page script (``calendar-v1.js``) draws the same sends as month grids,
+bucketed by the browser's local day, since every Admin time is browser-local.
 
 Each send is a ``schedule_table.ScheduleRow`` with its own send time, so the
 calendar shows the same names, emails, statuses and Edit links as the
