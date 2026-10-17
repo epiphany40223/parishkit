@@ -28,7 +28,7 @@ from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.domain import Money
 from parishkit.stewardship.campaigns.models import Campaign
-from parishkit.stewardship.observability import Event, emit_failure
+from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
@@ -201,14 +201,14 @@ def dashboard(request, campaign_id):
             nonlocal participation_read
             with ExitStack() as stack:
                 metrics = read_metrics(campaign_id, query.mode)
-                participation = None
+                participation, cause = None, None
                 if production:
-                    participation = _participation(
+                    participation, cause = _participation(
                         stack, response_guard, campaign_id, query
                     )
                     participation_read = participation is not None
                 context = _page_context(
-                    campaign_id, query, participation, metrics, principal
+                    campaign_id, query, participation, metrics, principal, cause
                 )
                 payload = render_to_string(
                     "stewardship/response-dashboard.html", context, request=request
@@ -247,12 +247,16 @@ def dashboard(request, campaign_id):
 
 
 def _participation(stack, guard, campaign_id, query):
-    """The daily chart's selection and the statistics, or None if unavailable.
+    """The daily chart's selection and statistics, as ``(result, cause)``.
 
     The selection's generation protection joins ``stack``. Inputs that
     cannot be read (``FactUnavailable``, ``StatisticsUnavailable``) leave
     the funnel shown and these panels out (#1537), rather than refusing the
-    whole page; a database failure still ends it.
+    whole page; a database failure still ends it. ``result`` is then None and
+    ``cause`` is "facts" (the daily chart is not ready) or "statistics" (the
+    ParishSoft inputs are missing or unreadable). The swallowed error is
+    debug-logged, as ``report_unavailable`` does, so a real code fault stays
+    visible to a maintainer.
     """
     try:
         selected = stack.enter_context(
@@ -263,9 +267,16 @@ def _participation(stack, guard, campaign_id, query):
                 browser_timezone=query.timezone,
             )
         )
-        return selected, calculate_statistics(capture_statistics(campaign_id))
-    except (FactUnavailable, StatisticsUnavailable):
-        return None
+        return (
+            selected,
+            calculate_statistics(capture_statistics(campaign_id)),
+        ), None
+    except FactUnavailable:
+        debug_swallowed("participation facts unavailable")
+        return None, "facts"
+    except StatisticsUnavailable:
+        debug_swallowed("participation statistics unavailable")
+        return None, "statistics"
 
 
 def daily_table(chart, presented, query):
@@ -382,14 +393,15 @@ def mode_links(query):
     return {mode: query.url(page=1, mode=mode) for mode in ("production", "testing")}
 
 
-def _page_context(campaign_id, query, participation, metrics, principal):
+def _page_context(campaign_id, query, participation, metrics, principal, cause=None):
     """Format detached shared observations; never recompute money in templates.
 
     ``metrics`` is the funnel of the mode shown (None: a Testing view with
     no rehearsal). ``participation`` is the daily chart's selection and the
     statistics, read in Production only: None in a Testing view, which
     shows no statistics, daily chart or export, or when they could not be
-    read, which the page says.
+    read, which the page says; ``cause`` ("facts" or "statistics") picks its
+    wording.
     """
     campaign = Campaign.objects.select_related("active_configuration").get(
         pk=campaign_id
@@ -404,6 +416,7 @@ def _page_context(campaign_id, query, participation, metrics, principal):
         "metrics": None,
         "participation_unavailable": query.mode == "production"
         and participation is None,
+        "participation_cause": cause,
     }
     if metrics is not None:
         context.update(funnel_panels(metrics))

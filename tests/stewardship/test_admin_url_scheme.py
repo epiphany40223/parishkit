@@ -561,9 +561,9 @@ def test_old_digest_addresses_are_gone():
 def test_old_response_list_addresses_are_gone():
     """The response list pages are 404, not redirected (#933, #864).
 
-    The dashboard's "Lists of Families" links open the family directory's
-    presets instead; the old addresses, with or without their trailing
-    slash or download suffix, resolve to nothing.
+    The family directory's presets replace them (the dashboard's former
+    "Lists of Families" panel is gone, #1537); the old addresses, with or
+    without their trailing slash or download suffix, resolve to nothing.
     """
     for key in ("submitted", "started", "not-opened", "more-than-once", "data-quality"):
         for old in (

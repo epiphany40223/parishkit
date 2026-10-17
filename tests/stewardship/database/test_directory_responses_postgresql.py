@@ -288,7 +288,7 @@ def test_directory_response_filters_follow_the_dashboard_rows(
         legacy, installed = parity(harness, as_of)
         assert legacy == installed and len(installed) == 6
     metrics = read(harness, settled)
-    # The dashboard's "Lists of Families" lengths, from the same rows.
+    # The response presets' lengths (the dashboard's former panel showed them).
     assert list_counts(metrics.families) == {
         "submitted": 2,
         "started": 1,

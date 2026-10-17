@@ -18,10 +18,13 @@ from django.http import QueryDict
 from django.template.loader import render_to_string
 from django.urls import reverse
 
+from parishkit.stewardship import observability
+from parishkit.stewardship.reports import workspace_views
 from parishkit.stewardship.reports.chart_specs import participation_chart
 from parishkit.stewardship.reports.digest_presentation import (
     participation_table_context,
 )
+from parishkit.stewardship.reports.facts import FactUnavailable
 from parishkit.stewardship.reports.response_dashboard import (
     HOURLY_SPAN,
     DashboardQuery,
@@ -30,6 +33,7 @@ from parishkit.stewardship.reports.response_dashboard import (
     funnel_panels,
     tiles,
 )
+from parishkit.stewardship.reports.statistics import StatisticsUnavailable
 from parishkit.stewardship.reports.workspace import ReportQuery
 from parishkit.stewardship.reports.workspace_views import (
     daily_table,
@@ -350,3 +354,36 @@ def test_unreadable_statistics_leave_the_funnel_and_say_so():
     for gone in ("participation-statistics", "participation-chart", "export-format"):
         assert gone not in page
     assert 'id="production-unavailable"' not in render()
+
+
+@pytest.mark.parametrize(
+    ("error", "cause"),
+    [(FactUnavailable("x"), "facts"), (StatisticsUnavailable("x"), "statistics")],
+)
+def test_swallowed_participation_errors_are_logged(monkeypatch, caplog, error, cause):
+    """The in-page degradation keeps its debug log, so a real code fault
+    hidden as "unavailable" stays visible (#1537)."""
+    from contextlib import ExitStack
+
+    def fail(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(workspace_views, "guarded_participation", fail)
+    monkeypatch.setattr(observability, "debug_logging_enabled", lambda: True)
+    with caplog.at_level("DEBUG", logger="parishkit.stewardship.debug"):
+        result = workspace_views._participation(ExitStack(), None, None, ReportQuery())
+    assert result == (None, cause)
+    assert [r.exc_info[1] for r in caplog.records] == [error]
+
+
+def test_no_parishsoft_data_wording_differs_from_a_pending_chart():
+    """No ParishSoft data yet is not a wait of a few minutes (#1537)."""
+    context = page_context(ReportQuery(mode="testing")) | {
+        "query": ReportQuery(),
+        "testing": False,
+        "participation_unavailable": True,
+        "participation_cause": "statistics",
+    }
+    with using("us_long"):
+        page = render_to_string("stewardship/response-dashboard.html", context)
+    assert "none is available yet" in page and "few minutes" not in page

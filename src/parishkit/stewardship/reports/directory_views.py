@@ -89,8 +89,9 @@ def _principal(request, store, *, read_only=False):
 
 # Closed, non-private values a link may carry (GET): the reach presets (such
 # as "no campaign mail can reach"), the mailing-columns preset and, for the
-# response dashboard's "Lists of Families" links (#933), the Response and
-# ParishSoft data to check choices, the response columns, the sort and the
+# family directory's response presets (#933; the Response dashboard no longer
+# links them), the Response and ParishSoft data to check choices, the
+# response columns, the sort and the
 # mode (Testing links are admitted for Administrators only). Each is a
 # closed vocabulary ``DirectoryQuery.parse`` checks; search text and exact
 # codes stay POST only.

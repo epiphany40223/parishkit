@@ -36,7 +36,8 @@
 <p id="production-only">{% translate "Population statistics, daily participation and the export count Production responses only. Choose Production to see them." %}</p>
 {% elif participation_unavailable %}
 {# The statistics or daily facts could not be read from their inputs: the funnel above still shows (#1537), and no zero is assumed. #}
-<p id="production-unavailable">{% translate "Population statistics, daily participation and the export are unavailable right now; no zero values have been assumed. Refresh this page in a few minutes." %}</p>
+{% if participation_cause == "statistics" %}<p id="production-unavailable">{% translate "Population statistics, daily participation and the export need ParishSoft data, and none is available yet; no zero values have been assumed. They appear after the first ParishSoft update completes." %}</p>
+{% else %}<p id="production-unavailable">{% translate "Population statistics, daily participation and the export are unavailable right now; no zero values have been assumed. Refresh this page in a few minutes." %}</p>{% endif %}
 {% else %}
 <section class="panel" id="participation-statistics"><h2 id="participation-statistics-heading">{% translate "Current active population statistics" %}</h2>
 {% if campaign.state == 'archived' %}<p class="notice">{% translate "Archived campaign: its Family information is kept as it was in the last ParishSoft data it used, not from a later campaign." %}</p>{% endif %}
@@ -74,7 +75,7 @@
 <label for="export-format">{% translate "Export format" %}</label><select id="export-format" name="format">{% export_format_options "csv" "xlsx" "pdf" %}</select>
 {% button type="submit" enabled=export_allowed aria-describedby=export_allowed|yesno:",participation-export-locked" %}{% translate "Generate export" %}{% endbutton %}</form>
 {% else %}<p id="participation-chart-export-unavailable">{% translate "Exports of the chart become available once a complete chart has been calculated." %}</p>
-{% button type="submit" enabled=False aria-describedby="participation-chart-export-unavailable" %}{% translate "Generate export" %}{% endbutton %}{% endif %}
+{% button type="submit" enabled=False aria-describedby=export_allowed|yesno:"participation-chart-export-unavailable,participation-chart-export-unavailable participation-export-locked" %}{% translate "Generate export" %}{% endbutton %}{% endif %}
 </section>
 {% endif %}
 </div>
