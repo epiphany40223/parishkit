@@ -352,6 +352,19 @@ exact figures are always printed in the tile, so it has no tooltip, and it is
 hidden from assistive technology, which reads the text instead
 ([#720](https://github.com/epiphany40223/parishkit/issues/720)).
 
+**Hover guide line.** A chart whose x axis is dates, times or campaign days
+and that shows tooltips draws a faint vertical guide line at the x value the
+pointer, a tap or (where the chart has one) its slider is on, through every
+panel of the chart, and that x value's tooltip lists its figures. Pointing
+anywhere over the plot picks the nearest x value (each x value has an
+invisible full-height hover band), so no one has to find a thin line or a
+small point. The line is one shared colour (the ink colour at half opacity,
+following the colour scheme), appears only while an x value is inspected, is
+drawn over the chart without moving anything, is hidden from assistive
+technology and never appears in a printed page, download or email image.
+Category and bar charts, whose rows or bars react as a whole, have no guide
+line ([#1536](https://github.com/epiphany40223/parishkit/issues/1536)).
+
 ## Admin portal interaction
 
 ### JavaScript requirement
