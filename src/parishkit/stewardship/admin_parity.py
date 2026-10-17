@@ -412,8 +412,9 @@ LEDGER = {
     "ministry_followup_update": command("followup show", "followup update"),
     # Bulk outcomes on the queue (#1131): followup bulk (#463 PR 11a).
     "ministry_followup_bulk": command("followup list", "followup bulk"),
-    # Export these requests (#1157): the queue's filtered set with contacts.
-    "ministry_followup_export": pending("PR 11", "followup export"),
+    # Export these requests (#1157): the queue's filtered set with contacts,
+    # through the page's own writer (#463 PR 11c).
+    "ministry_followup_export": command("followup export"),
     # The roster Entered in ParishSoft tick and its list (#528), one at a
     # time or in bulk (#463 PR 11b).
     "ministry_followup_roster": command("followup show", "followup roster-entered"),

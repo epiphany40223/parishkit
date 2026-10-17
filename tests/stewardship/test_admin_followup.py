@@ -320,7 +320,7 @@ def test_the_parser_s_choices_are_the_page_s():
 
 def test_the_ledger_covers_the_queue_its_requests_and_the_bulk_outcome():
     """The queue, a request's page, its Save and the bulk outcome are
-    covered; the queue's export stays pending in PR 11 (the roster tick and
+    covered, and so is the queue's export (PR 11c; the roster tick and
     Family information follow-up are PR 11b's,
     test_admin_roster_information.py)."""
     for route, commands in (
@@ -328,12 +328,11 @@ def test_the_ledger_covers_the_queue_its_requests_and_the_bulk_outcome():
         ("ministry_followup_item", ("followup show",)),
         ("ministry_followup_update", ("followup show", "followup update")),
         ("ministry_followup_bulk", ("followup list", "followup bulk")),
+        ("ministry_followup_export", ("followup export",)),
     ):
         assert LEDGER[route].kind == "command", route
         assert LEDGER[route].detail == commands, route
         assert LEDGER[route].owed is None, route
-    route = "ministry_followup_export"
-    assert LEDGER[route].kind == "pending" and LEDGER[route].pr == "PR 11"
 
 
 def test_the_contact_instant_needs_its_offset():

@@ -109,7 +109,8 @@ and exits 2. Each command prints exactly one JSON document (schema
 (`logs export`, see [System logs](#system-logs), `export census`, see
 [Census changes download](#census-changes-download), `export limitations`,
 see [Limitations download](#limitations-download), `export roster`, see
-[Roster changes download](#roster-changes-download), and `export download`, see
+[Roster changes download](#roster-changes-download), `followup export`, see
+[Ministry follow-up download](#ministry-follow-up-download), and `export download`, see
 [report exports](#report-exports)), whose document goes to standard error; warnings, such as a session with less than
 72 hours left, and structured logs go to standard error. The document's
 fields, the exit codes and the error codes are in the specification's
@@ -2584,6 +2585,37 @@ The files are the page's own, with its columns. They name Members and
 Families, so create them private, as above, and delete them once used; the
 wrapper refuses to write one to a terminal.
 
+### Ministry follow-up download
+
+`followup export` writes the page's **Export these requests** download of
+the Ministry follow-up queue to standard output: every request the
+filters select, not one page, with each Member's contact details as the
+request page shows them. Its document (`campaign_id`, `file_name`,
+`content_type`, `format`, `timezone`, `size`, `sha256`, `count`) goes to
+standard error, as for `export roster`. It needs a full-scope session, as
+every export does; Administrators and Staff may run it, and a Ministry
+leader gets only the requests of the Ministries they lead, as on the page.
+It takes `followup
+list`'s filters, `--ministry DUID`, `--action`, `--state` (`unresolved`,
+the default, `any`, `new`, `in_progress`, `resolved` or
+`closed_no_response`), `--outcome` and `--sort`, but no search, page or
+size, plus `--format` (`xlsx`, the default, `csv` or `pdf`) and
+`--timezone` (UTC, the default, or a time zone name, for the file's
+times). A PDF holds at most 1,000 requests; more is exit 1 (`invalid`, at
+`format`): choose CSV or XLSX, or narrow the filters. It records the
+page's "downloaded" event (`ministry_followup_exported`) with the number
+of requests and the Ministries in the file, never their values.
+
+```sh
+(umask 077; pk-admin followup export --state any --format csv > requests.csv)
+```
+
+The file is made when you run the command and is not kept anywhere else:
+run it again for a newer one. It is the page's own file, with its columns,
+and names Members with their contact details, so create it private, as
+above, and delete it once used; the wrapper refuses to write it to a
+terminal.
+
 ### Census changes download
 
 `export census` writes the page's download of **Census changes** to
@@ -2889,6 +2921,9 @@ page refuses, or text past its length, is exit 1 (`invalid`), with
 `error.fields` naming the option (`outcome`, `notes`, `contact_at`,
 `contact_notes` or `request`). A request that is not one of the current
 campaign's, or is outside your Ministries, is exit 1 (`not_available`).
+
+The queue's **Export these requests** is `followup export`, see
+[Ministry follow-up download](#ministry-follow-up-download).
 
 ## Roster tick and Additional information
 
@@ -3410,3 +3445,8 @@ Each change is recorded in System logs as on the page
   `followup roster-bulk`, the Entered in ParishSoft tick and Roster changes
   to enter's bulk mark, and `followup information-show` and `followup
   information-update`, an Additional information request's page and Save.
+- `pk-admin/1` (#463 PR 11c): additive. `followup export [--ministry DUID]
+  [--action A] [--state S] [--outcome O] [--sort S] [--format
+  csv|xlsx|pdf] [--timezone ZONE]`, the Ministry follow-up queue's Export
+  these requests (full scope, the page's `ministry_followup_exported`),
+  streamed as `export roster` is.
