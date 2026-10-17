@@ -1021,8 +1021,11 @@ refused day. A refusal no field can show (an unknown or repeated field, a
 choice no form offers, a sort or page size the table does not accept) keeps
 the report's error page. A range out of order is refused at its end with
 both ends marked, and its message is shown once, after them, in a line
-the form reserves so that a refusal shown in place moves nothing. An
-in-place Apply keeps the filter form and what was typed, and takes the
+the form reserves so that a refusal shown in place moves nothing. Where
+that line is apart from the complete gate's hint row (Financial
+stewardship's dates and amounts), the gate's hint, in the same words, is
+held hidden in its row while the message shows, so the form says it once.
+An in-place Apply keeps the filter form and what was typed, and takes the
 marks and message from the answer. The server's mark clears, with its
 message and summary item, on the first edit of a field it marks (either
 end of a range), or when an in-place Apply is answered without it.

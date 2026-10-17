@@ -893,6 +893,14 @@ details.filter-panel > form:not(.filter-bar) > fieldset > legend { grid-column: 
    ends, or the form after Apply when the range has no fieldset. */
 details.filter-panel > form:not(.filter-bar) > .field-error-line,
 details.filter-panel > form:not(.filter-bar) > fieldset > .field-error-line { grid-column: 1 / -1; margin: 0; }
+/* A range whose message line sits in its fieldset, apart from the gate's
+   reserved hint row (Financial stewardship's dates and amounts, #1469):
+   the hint, in the server's words, is held hidden while a line shows them,
+   so the form says it once. Both keep their room (visibility only), so
+   nothing moves either way and an unrefused page lays out as before. The
+   class is the one the Additional information queue's form uses for a
+   line that is the form's own child. */
+.filter-line-hides-hint:has(> fieldset > .field-error-line > .errorlist:not([hidden])) > [data-complete-hint] { visibility: hidden; }
 /* The theme's short-field rule (a date's div, from 48rem, above) gives a
    date cell an end margin and caps its box at 14rem, which left the dates
    narrower than the selects beside them and ragged against the row above.
