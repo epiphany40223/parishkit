@@ -1,8 +1,9 @@
 """Local laptop environment (#476): the constants its fake providers share.
 
-The LOCAL deployment profile runs the production-shaped stack on a laptop with
-synthetic data and no real provider. These constants are referenced where a
-value is installed and again where it is used, so a misconfigured file cannot
+The LOCAL deployment profile runs the production-shaped stack on a laptop,
+by default with synthetic data from the fake ParishSoft (#1399 lets it read
+the real ParishSoft instead). These constants are referenced where a value
+is installed and again where it is used, so a misconfigured file cannot
 cross between LOCAL and Production in either direction (see the safety
 guarantees in docs/specs/stewardship/local-environment/spec.md).
 
@@ -15,6 +16,7 @@ from parishkit.parishsoft_http_worker import (
     LOCAL_SOURCE_BASE_URL,
     PROFILES,
     admitted_base_url,
+    default_base_url,
 )
 from parishkit.stewardship.deployment import DeploymentProfile
 
@@ -36,13 +38,17 @@ LOCAL_ORGANIZATION_ID = 1001
 LOCAL_ORGANIZATION_NAME = "Synthetic Parish"
 
 
-def source_base_url(profile):
-    """The one ParishSoft base URL a deployment profile's clients talk to.
+def source_base_url(profile, base_url=None):
+    """The one ParishSoft base URL a deployment's clients talk to.
 
-    LOCAL reaches only the fake; every other profile reaches only the real API.
-    Every ``ParishSoftConfig`` the application builds takes its base URL from
-    here, so the choice is never a per-call-site decision.
+    ``base_url`` is the deployment's ``parishsoft_base_url`` setting; None is
+    the profile's default (the fake in LOCAL, the real API elsewhere). Only
+    LOCAL may name the fake (#1399). Every ``ParishSoftConfig`` and helper
+    session the application builds takes its base URL from here, so the
+    choice is never a per-call-site decision.
     """
     if not isinstance(profile, DeploymentProfile):
         raise ValueError("A deployment profile is required.")
-    return admitted_base_url(profile.value)
+    return admitted_base_url(
+        profile.value, default_base_url(profile.value) if base_url is None else base_url
+    )

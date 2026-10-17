@@ -16,6 +16,7 @@ from types import MappingProxyType
 from urllib.parse import urlsplit
 
 from parishkit.config import ConfigError, load_yaml_config
+from parishkit.parishsoft_http_worker import admitted_base_url, default_base_url
 from parishkit.paths import runtime_root
 
 from .authentication_policy import AuthenticationLimits
@@ -29,7 +30,7 @@ class DeploymentProfile(StrEnum):
 
     Development and test are plain HTTP on loopback with no proxy. LOCAL is the
     production-shaped laptop environment (#476): HTTPS through one Caddy hop,
-    synthetic data, no real provider. New code that distinguishes LOCAL must
+    synthetic data by default, and no real mail. New code that distinguishes LOCAL must
     test ``is LOCAL`` or ``behind_proxy``, never ``!= DEVELOPMENT``, which
     would silently change meaning as profiles are added.
     """
@@ -70,6 +71,27 @@ def recorded_profile():
         return DeploymentProfile(settings.STEWARDSHIP_DEPLOYMENT_PROFILE)
     except (AttributeError, ValueError, ImproperlyConfigured):
         raise ConfigError("The deployment profile is unavailable.") from None
+
+
+def recorded_parishsoft_base_url():
+    """The ParishSoft base URL this process's deployment chose (#1399).
+
+    ``profile_settings`` records the deployment's ``parishsoft_base_url``
+    only when it differs from the profile's default, so an absent value is
+    that default (the fake in LOCAL, the real API elsewhere). The value is
+    checked against the recorded profile again, so the fake can never be
+    reached outside LOCAL whatever the settings say.
+    """
+    from django.conf import settings
+
+    profile = recorded_profile().value
+    value = getattr(settings, "STEWARDSHIP_PARISHSOFT_BASE_URL", None)
+    try:
+        return admitted_base_url(
+            profile, default_base_url(profile) if value is None else value
+        )
+    except ValueError:
+        raise ConfigError("The ParishSoft base URL is not admitted.") from None
 
 
 class ServiceRole(StrEnum):
@@ -203,8 +225,14 @@ LOCAL_SMTP_LATENCY_MAX_MS = 5000
 # docs/guides/stewardship-member-requests.md#parishsoft-publication). While
 # it is off the publish worker refuses before it takes the source lease or
 # makes any ParishSoft call. "1" (or ``parishsoft_publication: true`` in the
-# deployment YAML) on the worker turns it on.
+# deployment YAML) on the worker turns it on. The local profile refuses it:
+# pk-local may read the real ParishSoft (#1399) but never writes to it.
 PARISHSOFT_PUBLICATION_VARIABLE = "PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION"
+# The ParishSoft base URL (#1399): the real API or, in the local profile
+# only, the local fake (``parishsoft_http_worker.BASE_URLS``). Unset means
+# the profile's default, the fake in LOCAL and the real API elsewhere, so
+# only a LOCAL deployment that chose the real API ever records a value.
+PARISHSOFT_BASE_URL_VARIABLE = "PARISHKIT_STEWARDSHIP_PARISHSOFT_BASE_URL"
 
 
 @dataclass(frozen=True)
@@ -236,6 +264,8 @@ class DeploymentConfiguration:
     # How long a finished export stays downloadable, and a failed one
     # retryable (#1398; reports.export_window), in whole minutes.
     export_download_window_minutes: int = 60
+    # None is the profile's default; see PARISHSOFT_BASE_URL_VARIABLE.
+    parishsoft_base_url: str | None = None
 
 
 def _mapping(value: object, keys: set[str] | frozenset[str], label: str) -> dict:
@@ -423,6 +453,7 @@ def load_deployment(
             "local_smtp_latency_ms",
             "parishsoft_publication",
             "export_download_window_minutes",
+            "parishsoft_base_url",
         },
         "deployment",
     )
@@ -730,13 +761,30 @@ def load_deployment(
     window = _integer(
         window, "export_download_window_minutes", MINIMUM_MINUTES, MAXIMUM_MINUTES
     )
+    if publication and profile is DeploymentProfile.LOCAL:
+        # pk-local may read the real ParishSoft (#1399); it never writes.
+        raise ConfigError("parishsoft_publication is refused in the local profile")
+    base_url = select("PARISHSOFT_BASE_URL", None)
+    if base_url in (None, ""):
+        base_url = deployment.get("parishsoft_base_url")
+    if base_url is not None:
+        try:
+            admitted_base_url(profile.value, base_url)
+        except ValueError:
+            raise ConfigError(
+                "parishsoft_base_url must be the ParishSoft API or, in the local "
+                "profile only, the local fake"
+            ) from None
+        if base_url == default_base_url(profile.value):
+            # The default is recorded as unset, so naming it renders nothing.
+            base_url = None
     supplied_keys = set(explicit) | {
         key for key in env if key.startswith("PARISHKIT_STEWARDSHIP_")
     }
     if supplied_keys - consumed_keys:
         raise ConfigError("unknown deployment environment or CLI override")
-    # Production only: LOCAL holds synthetic data, so weaker limits there are
-    # a developer's choice, not an operational warning.
+    # Production only: LOCAL is a laptop reached only on localhost, so weaker
+    # limits there are a developer's choice, not an operational warning.
     if profile is DeploymentProfile.PRODUCTION:
         limits.warn_if_weaker()
     return DeploymentConfiguration(
@@ -761,4 +809,5 @@ def load_deployment(
         latency,
         publication,
         window,
+        base_url,
     )

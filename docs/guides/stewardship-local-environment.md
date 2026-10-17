@@ -40,10 +40,13 @@ under `/opt/parishkit` with real Linux ownership. The image is built inside the
 VM from your checkout, including uncommitted edits to tracked files. The
 application services have the same route out to the Internet as on a
 production host; Caddy, Mailpit and the fake ParishSoft have none. Code
-checks keep mail on Mailpit (`http://localhost:8025`), ParishSoft on a fake
-service with a synthetic parish and Google sign-in on a stand-in client, so
-nothing can email a real person. The one real provider the VM can reach is
-Slack, and only with a test token you install yourself.
+checks keep mail on Mailpit (`http://localhost:8025`) and Google sign-in on
+a stand-in client, so nothing can email a real person. ParishSoft is a fake
+service with a synthetic parish unless you choose the real ParishSoft API
+with `deploy --parishsoft real`; pk-local then reads real parish data,
+which stays on the laptop and must never be committed, and it never writes
+to ParishSoft. The other real provider the VM can reach is Slack, and only
+with a test token you install yourself.
 
 ## Prerequisites
 
@@ -78,6 +81,7 @@ never needs a copy of the repository.
 | `start` | Start a stopped deployment's services (after `down` or a VM restart) in the recorded clock mode. |
 | `deploy [--schema-change]` | Build the image from this checkout, then upgrade the running deployment to it, data and all, by the Production upgrade's steps (`tools/stewardship-upgrade-host.sh` in local mode; [below](#testing-a-pull-request-on-seeded-data)). `--schema-change` is what `STEWARDSHIP_SCHEMA_CHANGE=1` is to Production: without it, a build whose upgrade check expects migration or grant changes is refused before anything stops. Refuses unless a snapshot exists to return to. |
 | `deploy --bulk on\|off` / `deploy --smtp-latency-ms N` | The same deploy, rendering the bulk Family send on or off, or the modeled Gmail latency of `N` milliseconds (0–5000; 0 turns it off). Each carries over to later deploys until changed. For [rehearsing a bulk send](#rehearsing-a-bulk-send). |
+| `deploy --parishsoft real\|fake` | The same deploy, reading the real ParishSoft API or the fake (the default). It carries over to later deploys until changed, and a `deploy --rollback` goes back to the fake. With the real API, install a real `parishsoft` key for the real organization (Integrations); the synthetic parish's key and organization belong to the fake. That key can write contact fields; pk-local's code refuses every ParishSoft write, but treat the key as Production's. Use a normal-clock deployment (a seeded one, or after `seed --testing`): under the fake clock the services check ParishSoft's certificate against a date about 17 days ago, and the deploy warns. The key and the real data it reads stay on the laptop, but every `snapshot` copies them, so delete snapshots you no longer need. When you switch back with `--parishsoft fake`, reinstall the fake key and organization `up` printed (Integrations). |
 | `deploy --rollback` | The upgrade's image-only rollback to the image the last `deploy` replaced; refused when the schema or a grant changed in between (then `reset --seeded`). |
 | `snapshot [--seeded]` | Stop the services, copy the runtime root to `/opt/parishkit-snapshots/post-setup` (or `seeded`) with numeric ownership and modes preserved, start again. Replaces the earlier copy. |
 | `snapshot save NAME [--replace]` | The same for any name (1–32 of `a-z`, `0-9`, `-`), with a record of its migrations, mode and campaign state. Refused before anything stops when the Mac would keep less than 20 GiB plus twice the copy, the VM less than 5 GiB, or there are already 8 other snapshots (`PARISHKIT_LOCAL_SNAPSHOT_LIMIT`). An existing name needs `--replace`. A failed save starts the services again and leaves no half copy. |

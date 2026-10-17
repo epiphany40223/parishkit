@@ -87,15 +87,18 @@ class ParishSoftContactGateway:
     """
 
     def __init__(self, session, *, profile):
-        """Bind one publication session and the profile's one base URL."""
+        """Bind one publication session and the one base URL it was opened for."""
         if not isinstance(session, BoundedPublicationSession):
             raise TypeError("ParishSoft publication requires its own session.")
         self.session = session
-        self.base_url = admitted_base_url(profile)
+        self.base_url = admitted_base_url(profile, session.base_url)
 
     @classmethod
-    def open(cls, execution, credential, *, profile, on_timeout):
+    def open(cls, execution, credential, *, profile, base_url, on_timeout):
         """Build the gateway for one running publish task.
+
+        ``base_url`` is the deployment's chosen ParishSoft base URL; the
+        session refuses a LOCAL profile, which never writes (#1399).
 
         ``on_timeout(limit, elapsed)`` records a request killed at its
         deadline (``source.transport.source_timeout_recorder``), so every
@@ -117,13 +120,14 @@ class ParishSoftContactGateway:
             before_request=before_request,
             check=execution.check,
             profile=profile,
+            base_url=base_url,
             on_timeout=on_timeout,
         )
         session.headers["x-api-key"] = credential.api_key
         return cls(session, profile=profile)
 
     @classmethod
-    def open_operator(cls, credential, *, profile, on_timeout):
+    def open_operator(cls, credential, *, profile, base_url, on_timeout):
         """Build the gateway for the human-run contact smoke check.
 
         No task owns that run, so there is no ownership to check; every call
@@ -134,6 +138,7 @@ class ParishSoftContactGateway:
             SimpleNamespace(check=lambda: None),
             credential,
             profile=profile,
+            base_url=base_url,
             on_timeout=on_timeout,
         )
 

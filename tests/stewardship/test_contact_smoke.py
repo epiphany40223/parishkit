@@ -395,6 +395,27 @@ def test_the_command_refuses_without_an_explicit_confirmed_member(
         smoke.check_parishsoft_contact(configuration, **contact_args(**changes))
 
 
+def test_the_command_never_runs_in_the_local_profile(
+    tmp_path, monkeypatch, no_database
+):
+    """pk-local never writes to ParishSoft (#1399): refused before the
+    database, the tenant read or the gateway."""
+    from dataclasses import replace
+
+    from parishkit.stewardship.deployment import DeploymentProfile
+
+    configuration = replace(
+        consumer(tmp_path, ServiceRole.WORKER, parishsoft=b"key"),
+        profile=DeploymentProfile.LOCAL,
+    )
+    monkeypatch.setattr(
+        smoke, "check_parishsoft", lambda *a, **k: pytest.fail("checked")
+    )
+    with pytest.raises(ConfigError, match="local profile"):
+        smoke.check_parishsoft_contact(configuration, **contact_args(send=True))
+    assert no_database == []
+
+
 def test_the_command_runs_only_in_the_worker(tmp_path, no_database):
     """The worker holds the ParishSoft credential; nothing else may run it."""
     configuration = consumer(tmp_path, ServiceRole.WEB)

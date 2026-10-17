@@ -474,9 +474,54 @@ def test_banner_flag_is_set_only_in_local(settings, profile):
         settings.STEWARDSHIP_DEPLOYMENT_PROFILE = profile.value
     context = branding_context.local_environment(RequestFactory().get("/"))
     if profile is DeploymentProfile.LOCAL:
-        assert context == {"local_environment": True}
+        assert context == {"local_environment": True, "local_real_parishsoft": False}
     else:
         assert context == {}
+
+
+@pytest.mark.parametrize(
+    ("choice", "real"),
+    [(None, False), ("http://fake-parishsoft:8080/api/v2", False), ("real", True)],
+)
+def test_banner_names_the_parishsoft_the_deployment_reads(settings, choice, real):
+    """LOCAL's banner follows the ParishSoft setting (#1399), in both wordings."""
+    from parishkit.parishsoft import DEFAULT_API_BASE_URL
+
+    settings.STEWARDSHIP_DEPLOYMENT_PROFILE = "local"
+    if choice is not None:
+        value = DEFAULT_API_BASE_URL if choice == "real" else choice
+        settings.STEWARDSHIP_PARISHSOFT_BASE_URL = value
+    context = branding_context.local_environment(RequestFactory().get("/"))
+    assert context == {"local_environment": True, "local_real_parishsoft": real}
+    shown = render_to_string("stewardship/base.html", context)
+    synthetic = "synthetic data, no real email and no real ParishSoft."
+    read_only = "real ParishSoft data, read only, and no real email."
+    assert (synthetic in shown, read_only in shown) == (not real, real)
+
+
+def test_banner_falls_back_to_the_fake_wording_on_a_misrecorded_choice(settings):
+    """A choice LOCAL may not make shows the default wording, not an error."""
+    settings.STEWARDSHIP_DEPLOYMENT_PROFILE = "local"
+    settings.STEWARDSHIP_PARISHSOFT_BASE_URL = "https://other.example/api/v2"
+    context = branding_context.local_environment(RequestFactory().get("/"))
+    assert context["local_real_parishsoft"] is False
+
+
+def test_error_page_banner_follows_the_parishsoft_setting(settings):
+    """The error page, which may render without context processors, shows
+    the same ParishSoft wording in LOCAL."""
+    from parishkit.parishsoft import DEFAULT_API_BASE_URL
+    from parishkit.stewardship.web.error_pages import error_page
+    from parishkit.stewardship.web.report_errors import report_unavailable
+
+    settings.STEWARDSHIP_DEPLOYMENT_PROFILE = "local"
+    settings.STEWARDSHIP_PARISHSOFT_BASE_URL = DEFAULT_API_BASE_URL
+    request = RequestFactory().get("/", HTTP_SEC_FETCH_MODE="navigate")
+    page = error_page(request, report_unavailable())
+    assert b"real ParishSoft data, read only, and no real email." in page.content
+    del settings.STEWARDSHIP_PARISHSOFT_BASE_URL
+    page = error_page(request, report_unavailable())
+    assert b"synthetic data, no real email and no real ParishSoft." in page.content
 
 
 def test_banner_is_registered_and_rendered_only_when_flagged(settings):
