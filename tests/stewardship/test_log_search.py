@@ -172,7 +172,21 @@ def test_only_a_term_with_a_trigram_compares_the_indexed_expressions():
     index read all of itself (#765), so its type and value conditions compare
     ``Unindexed`` copies of the same text instead."""
     assert indexable("lag") and indexable("kind_17x") and indexable("日本語")
-    for text in ("ab", "42", "a-b", "a_b_c", "%", 'é "x"'):
+    assert indexable("٣٣٣") and indexable("a²bcd")
+    # Superscripts, fractions and circled digits are no pg_trgm word
+    # characters, alone or mixed into a short run.
+    for text in (
+        "ab",
+        "42",
+        "a-b",
+        "a_b_c",
+        "%",
+        'é "x"',
+        "²²²",
+        "½½½",
+        "①②③",
+        "ab²cd",
+    ):
         assert not indexable(text), text
     assert "event__icontains" in str(type_condition("lag", type_column="event"))
     (short,) = type_condition("ab", type_column="event").children[:1]

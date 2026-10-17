@@ -1,5 +1,6 @@
 """The System logs text search indexes and migration file 0116 (#765)."""
 
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -60,15 +61,15 @@ def populated():
         transaction.set_rollback(True)
 
 
-def plans(text):
+def plans(text, **filters):
     """The EXPLAIN text of the search's count and page reads of both logs.
 
     Sequential and plain index scans are switched off, so a bitmap scan of
     an index appears exactly when the query's conditions match what that
     index holds; with only a few rows the planner would otherwise read the
-    table either way.
+    table either way. ``filters`` are more ``LogQuery`` fields.
     """
-    operational, audit = log_reads.sources(LogQuery(text=text), None)
+    operational, audit = log_reads.sources(LogQuery(text=text, **filters), None)
     found = {}
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute("SET LOCAL enable_seqscan = off")
@@ -193,6 +194,26 @@ def test_an_indexable_search_reads_every_arm_from_an_index(populated):
             assert LISTED in plan and "hashed SubPlan" not in plan, plan
             assert "Bitmap Index Scan on audit_event_type_trgm" in plan, plan
             assert "audit_context_value_trgm" not in plan, plan
+
+
+def test_a_one_day_range_keeps_the_trigram_indexes(populated):
+    """With From and Through on one day, the text condition is still read
+    from the trigram indexes beside the date range, and the matching audit
+    contexts are still listed once, up front (#765)."""
+    today = datetime.now(UTC).date().isoformat()
+    day = {"start": today, "end": today, "zone": "UTC"}
+    for text in ("keep_role", "web request"):
+        for (name, read), plan in plans(text, **day).items():
+            assert "Seq Scan" not in plan, (text, name, read, plan)
+            assert "created_at" in plan, (text, name, read, plan)
+            wanted = (
+                ("operational_value_trgm", "operational_event_trgm")
+                if name == "operational"
+                else ("audit_context_value_trgm", "audit_event_type_trgm")
+            )
+            assert any(f"Bitmap Index Scan on {i}" in plan for i in wanted), plan
+            if name == "audit":
+                assert "InitPlan" in plan, (text, read, plan)
 
 
 def test_a_term_without_a_trigram_never_reads_a_trigram_index(populated):
