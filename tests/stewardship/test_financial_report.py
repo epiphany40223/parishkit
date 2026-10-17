@@ -17,6 +17,7 @@ from parishkit.stewardship.reports.financial import (
     parse_money,
     share_labels,
 )
+from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.presentation import parish_date
 
 from .financial_factory import CAMPAIGN, configuration
@@ -58,6 +59,7 @@ def test_query_accepts_only_the_closed_bounded_grammar():
                 "pledge_max": ["999999999.99"],
                 "first_start": ["2026-01-01"],
                 "first_end": ["2026-01-01"],
+                "zone": ["America/Los_Angeles"],
                 "share": [OTHER],
                 "sort": ["pledge_desc"],
                 "page": ["3"],
@@ -65,6 +67,7 @@ def test_query_accepts_only_the_closed_bounded_grammar():
         )
     )
     assert query.page == 3 and query.share == OTHER
+    assert query.zone == "America/Los_Angeles"
     # The page is navigation, never part of the filter identity.
     assert "page" not in query.form_values()
     assert FinancialQuery.parse({}) == FinancialQuery()
@@ -81,6 +84,7 @@ def test_query_accepts_only_the_closed_bounded_grammar():
         "frequency": "any",
         "share": "any",
         "sort": "name",
+        "zone": "",
     }
     for values in (
         {"pledge_min": "1,234"},
@@ -109,6 +113,29 @@ def test_query_accepts_only_the_closed_bounded_grammar():
             FinancialQuery.parse(values)
     with pytest.raises(ValueError):
         FinancialQuery.parse(MultiValueDict({"sort": ["name", "newest"]}))
+
+
+@pytest.mark.parametrize(
+    "name", ["first_start", "first_end", "latest_start", "latest_end"]
+)
+@pytest.mark.parametrize("zone", [None, "", "Mars/Olympus", "UTC+5", "../etc/zone"])
+def test_a_date_needs_the_browsers_zone(name, zone):
+    """Each response date is a day in the browser's zone (#558): without a
+    catalog zone it is refused as UnknownZone, never read in another zone."""
+    values = {name: "2026-03-08"} | ({} if zone is None else {"zone": zone})
+    with pytest.raises(UnknownZone):
+        FinancialQuery.parse(values)
+    query = FinancialQuery.parse(values | {"zone": "Asia/Kathmandu"})
+    assert query.form_values()[name] == "2026-03-08"
+    assert query.form_values()["zone"] == "Asia/Kathmandu"
+
+
+def test_a_zone_without_dates_is_unused():
+    """Without dates the zone matters to nothing: a catalog zone is kept (it
+    travels with the filters) and an unknown one is dropped, not refused."""
+    assert FinancialQuery.parse({"zone": "Mars/Olympus"}).zone == ""
+    assert FinancialQuery.parse({"zone": "America/Chicago"}).zone == "America/Chicago"
+    assert FinancialQuery.parse({"zone": "", "pledge_min": "5"}).pledge_min == "5"
 
 
 def test_money_is_parsed_exactly_and_absence_stays_unavailable():

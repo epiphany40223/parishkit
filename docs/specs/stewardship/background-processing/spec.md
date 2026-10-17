@@ -2508,12 +2508,14 @@ through the export status interface.
 
 Files are written atomically below `<root>/reports`, have opaque names, and use
 the owner-only directory/file/temporary-file permissions defined by
-[runtime storage](../operations/spec.md#runtime-storage) and the retention policy defined by
-[operations](../operations/spec.md#temporary-retention-and-housekeeping).
-Expired files can be regenerated from retained source/config where permitted.
-An active parishioner family directory file's head emails are the one exception to "retained":
-they may come from the current ParishSoft data, and the file says so (see
-the [active parishioner family directory](../reports/spec.md#active-parishioner-family-directory)).
+[runtime storage](../operations/spec.md#runtime-storage). A file is
+point-in-time: it can be downloaded for a short window, and when the export
+ends cleanup deletes it and the request's saved capture and pins, as
+[point-in-time exports](../operations/spec.md#point-in-time-exports) defines;
+nothing regenerates it. A render reads the request's capture, except that an
+active parishioner family directory file's head emails may come from the
+current ParishSoft data, and the file says so (see the
+[active parishioner family directory](../reports/spec.md#active-parishioner-family-directory)).
 Files are served only through an authorized application response. A short-lived
 single-use download grant authorizes that application response, never proxy
 file access or an internal-redirect handoff. Caddy has no export-storage mount.
@@ -2526,8 +2528,10 @@ pre-first-batch drainage use that same service.
 
 Artifact cleanup retries are bounded. Exhaustion records a durable CRITICAL
 operational signal with the failed task transition; admission checks alone
-must not emit that signal. Cleanup preserves retained requests, receipts,
-audit history and calculation pins independently of artifact expiry.
+must not emit that signal. Cleanup keeps requests, receipts and audit
+history; it deletes the file, the request's saved capture and its
+calculation pins when the export ends, as
+[point-in-time exports](../operations/spec.md#point-in-time-exports) says.
 
 After repairing the cause, an Admin can retry the latest failed cleanup run
 from its background-task detail page. The CSRF-protected POST is replay-safe

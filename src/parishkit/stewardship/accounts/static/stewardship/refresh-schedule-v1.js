@@ -32,10 +32,24 @@
 // A stored quick rule (which the editor no longer offers) is a row without
 // controls; Remove quick updates takes every such row out at once, a change
 // reviewed like any other.
-(() => {
+// Once a change is applied in the review dialog (#750), the page redraws the
+// settings form's region with a fresh editor, and this script wires that one
+// (wireEditor runs again, on the region's parishkit:swap). Each wiring's
+// listeners outside the editor, its pending check and its timer end with the
+// next wiring (its AbortController), so only the editor on the page acts.
+(function wireEditor() {
   const root = document.querySelector("[data-refresh-schedule]");
   const form = root && root.closest("form");
   if (!root || !form) return;
+  wireEditor.wiring?.abort();
+  wireEditor.wiring = new AbortController();
+  const {signal} = wireEditor.wiring;
+  if (!wireEditor.watching) {
+    wireEditor.watching = true;
+    document.addEventListener("parishkit:swap", (event) => {
+      if (event.target instanceof Element && event.target.querySelector("[data-refresh-schedule]")) wireEditor();
+    });
+  }
   const csrf = form.querySelector('input[name="csrfmiddlewaretoken"]');
   const basicSets = JSON.parse(document.getElementById("refresh-schedule-basic")?.textContent || "[]");
   const SCOPES = ["rules", "skips"];
@@ -200,13 +214,13 @@
   // the window points at nothing.
   let pointer = null;
   const track = (event) => { pointer = {x: event.clientX, y: event.clientY}; };
-  document.addEventListener("pointermove", track, {passive: true});
-  document.addEventListener("pointerdown", track, {passive: true});
+  document.addEventListener("pointermove", track, {passive: true, signal});
+  document.addEventListener("pointerdown", track, {passive: true, signal});
   document.addEventListener("pointerup", (event) => {
     if (event.pointerType !== "mouse") pointer = null;
-  });
-  document.addEventListener("pointercancel", () => { pointer = null; });
-  document.documentElement.addEventListener("pointerleave", () => { pointer = null; });
+  }, {signal});
+  document.addEventListener("pointercancel", () => { pointer = null; }, {signal});
+  document.documentElement.addEventListener("pointerleave", () => { pointer = null; }, {signal});
   // The browser's own scroll anchoring stays on for the page, so a note the
   // header's polls show above main moves nothing. The regions steady (below)
   // manages opt out of it (ui-v1.css), so it does not add a second
@@ -456,6 +470,13 @@
     const mine = latest;
     timer = window.setTimeout(() => run(mine), delay);
   };
+  // A redrawn editor replaces this one: its waiting or running check is
+  // dropped, so no late answer is drawn into the new editor.
+  signal.addEventListener("abort", () => {
+    window.clearTimeout(timer);
+    latest += 1;
+    if (controller) controller.abort();
+  });
 
   // Adding and removing rows. Each row's Remove is drawn by the server (and
   // in the row template), so every row, saved or new, can be removed.
@@ -653,13 +674,13 @@
   // The time entry re-enables Save as soon as an entry reads again (on
   // input, and on focusout at the document); keep this gate's verdict until
   // the next check answers by gating after it, at the window.
-  window.addEventListener("input", () => { gate(); markRows(); });
-  window.addEventListener("focusout", () => { gate(); markRows(); });
+  window.addEventListener("input", () => { gate(); markRows(); }, {signal});
+  window.addEventListener("focusout", () => { gate(); markRows(); }, {signal});
   // The back/forward cache can restore rows and values without events.
   window.addEventListener("pageshow", (event) => {
     SCOPES.forEach((scope) => rowList(scope).forEach(applyShape));
     if (event.persisted) schedule(0);
-  });
+  }, {signal});
   markRows();
   gate();
 })();

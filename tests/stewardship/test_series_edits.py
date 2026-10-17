@@ -7,7 +7,11 @@ database/test_campaign_series_postgresql.py.
 
 import pytest
 
-from parishkit.stewardship.accounts.series_edits import SeriesEditError, plan
+from parishkit.stewardship.accounts.series_edits import (
+    SeriesEditError,
+    plan,
+    rule_text,
+)
 from parishkit.stewardship.campaigns.recurrence import canonical_rule
 
 SERIES = "00000000-0000-4000-8000-0000000000a1"
@@ -142,3 +146,51 @@ def test_an_edit_that_would_touch_sent_mail_is_refused(options, read_only, messa
     """Unknown reminder, all sent, a sent one after the cut, a rule before it."""
     with pytest.raises(SeriesEditError, match=message):
         edit(read_only=read_only, **options)
+
+
+def test_per_date_times_come_before_the_one_time():
+    """The page's times by date (#558) win; a date without one takes the time."""
+    result = edit(
+        scope="following",
+        start=IDS[2],
+        time_of_day="10:00:00",
+        times={DAYS[2]: "11:00:00"},
+    )
+    assert [row["time"] for row in result["add"]] == ["11:00:00", "10:00:00"]
+
+
+@pytest.mark.parametrize(
+    ("rule", "text"),
+    [
+        (RULE, "Every Monday, October 1, 2054 – October 31, 2054"),
+        (
+            RULE | {"weekdays": [0, 3, 4]},
+            "Every Monday, Thursday and Friday, October 1, 2054 – October 31, 2054",
+        ),
+        (
+            {"frequency": "daily", "start": "2054-10-01", "end": "2054-10-02"},
+            "Every day, October 1, 2054 – October 2, 2054",
+        ),
+        (
+            {
+                "frequency": "monthly",
+                "start": "2054-10-01",
+                "end": "2054-12-31",
+                "monthly": {"day": 15},
+            },
+            "Day 15 of every month, October 1, 2054 – December 31, 2054",
+        ),
+        (
+            {
+                "frequency": "monthly",
+                "start": "2054-10-01",
+                "end": "2054-12-31",
+                "monthly": {"ordinal": -1, "weekday": 4},
+            },
+            "The last Friday of every month, October 1, 2054 – December 31, 2054",
+        ),
+    ],
+)
+def test_rules_read_in_plain_words(rule, text):
+    """Every frequency is a sentence with its calendar dates, never raw."""
+    assert rule_text(rule) == text

@@ -19,7 +19,7 @@ import pytest
 from .automation_components import APPROVAL
 from .campaign_settings_components import DRAFT
 from .user_components import NEW, NEW_TAKEN, SUGGESTED
-from .waits import has_attribute, visible
+from .waits import has_attribute, recorded, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -148,7 +148,9 @@ def test_removing_parishsoft_quick_updates_is_a_change(page, component_origin):
     page.get_by_role("button", name="Remove quick updates").click()
     expect(page.locator("[data-quick-rule]")).to_have_count(0)
     expect(save).to_be_enabled()
-    assert "kind=quick" not in requests[-1]
+    # The check runs from a timer; wait for the route to record it.
+    recorded(page, requests, 1)
+    assert "kind=quick" not in requests[0]
     # Shown again from history, the removal still counts.
     page.evaluate(RESTORE)
     expect(save).to_be_enabled()

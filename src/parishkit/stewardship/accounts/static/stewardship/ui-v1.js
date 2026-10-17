@@ -364,6 +364,15 @@
   const TIME_LONE_SUFFIX = /^[ap]\.?(?:m\.?)?$/i;
   const TIME_WORDS = new Map([["noon", 12], ["midnight", 0]]);
   const pad2 = (number) => String(number).padStart(2, "0");
+  // The page script's one weekday source (#1129), matching the server's
+  // wall_clock.WEEKDAYS: the day names Monday first, and mondayFirst, which
+  // turns a JavaScript day number (getDay or getUTCDay: Sunday 0) into that
+  // index (Monday 0, as Python's date.weekday() and every stored schedule
+  // count). The test_wall_clock guard keeps every other script from holding
+  // its own list of day names.
+  const WEEKDAY_NAMES = Object.freeze(["Monday", "Tuesday", "Wednesday", "Thursday",
+    "Friday", "Saturday", "Sunday"]);
+  const mondayFirst = (jsDay) => (jsDay + 6) % 7;
   const timeWords = (text) => String(text ?? "").split(TIME_SPACES).filter(Boolean);
   // A read time is {hour, minute, second}; its canonical text is "HH:MM",
   // or "HH:MM:SS" for a kept saved time with seconds.
@@ -596,12 +605,14 @@
   // starts (before any script could have disabled it) came back from an
   // earlier visit and is enabled again, as the server drew it.
   // live-status-v1.js holds a kept preview's button for good once the
-  // status no longer shows what it reviews (data-live-stale-gated, #530).
+  // status no longer shows what it reviews (data-live-stale-gated, #530),
+  // and an export's Download once its window ends (data-download-ended-gated,
+  // #1398).
   // refresh-schedule-v1.js holds the ParishSoft Save while its schedule has
   // problems (data-schedule-gated), alongside the change gate (#1330).
   const GATE_MARKS = [
     "data-time-gated", "data-acknowledgment-gated", "data-complete-gated", "data-change-gated",
-    "data-live-stale-gated", "data-schedule-gated",
+    "data-live-stale-gated", "data-schedule-gated", "data-download-ended-gated",
   ];
   const gated = (node) => GATE_MARKS.some((mark) => node.hasAttribute(mark));
   document.querySelectorAll("button[disabled], input[disabled]").forEach((node) => {
@@ -915,7 +926,7 @@
         pad2(at.getDate())}`,
       time: canonicalTime({hour: at.getHours(), minute: at.getMinutes(),
         second: at.getSeconds()}),
-      weekday: (at.getDay() + 6) % 7,
+      weekday: mondayFirst(at.getDay()),
     };
   };
   // localMoment: the moment (ms) a date ("YYYY-MM-DD") and canonical time
@@ -2042,6 +2053,10 @@
       owner = event.submitter?.form || form;
     }
     if (!region || !sameOrigin(written || "")) return;
+    // A form that also opens the review dialog (Off-site backups' settings,
+    // #750) is in place only for a button marked data-review-skip (Test
+    // access): its Save is the dialog's Review (below), never an in-place save.
+    if (form.matches("form[data-review-open]") && !event.submitter?.hasAttribute("data-review-skip")) return;
     // A submitter marked data-in-place-native submits natively: Save and
     // next on the last follow-up item, whose answer is the queue (#534),
     // loads it once rather than fetching it and then loading it again.
@@ -4074,10 +4089,12 @@
     }
   };
   // Swap every region of this page that the fresh page also has, except one
-  // only its own control replaces (data-in-place-own).
-  const redrawFrom = (fresh) => {
+  // only its own control replaces (data-in-place-own). ``own`` is the region
+  // whose control's answer this is (a review dialog's form's region, #750),
+  // which is swapped even when it is marked so.
+  const redrawFrom = (fresh, own = null) => {
     document.querySelectorAll(REGIONS).forEach((other) => {
-      if (ownedElsewhere(other, null)) return;
+      if (ownedElsewhere(other, own)) return;
       const copy = fresh.getElementById(other.id);
       if (isRegion(copy)) swapRegion(other, copy);
     });
@@ -4181,7 +4198,8 @@
   // marked data-review-open="<dialog id>" (New and Edit user, Import
   // Ministry leaders, New and Edit scheduled email, Campaign settings, its
   // date change on Dates and mail schedules, Share options, Campaign images,
-  // Parish logos, Parish settings and Create the campaign's confirmation).
+  // Parish logos, Parish settings, the integration settings pages and Create
+  // the campaign's confirmation).
   //
   // Review posts the form, submitter included, without a page load. Until
   // the answer arrives the form is inert and aria-busy, and its Review
@@ -4220,6 +4238,14 @@
   // redraw, so the redraw never wipes it. Across a page change that line's text waits in sessionStorage,
   // for that address only and for a minute: it is the review's short
   // sentence and a time, never an answer, a value or a credential.
+  // A value made only of what Python's str.strip() removes (str.isspace:
+  // U+0085 and U+001C-U+001F are, U+FEFF is not; JavaScript's trim() and \s
+  // differ on all three). The server decides "a key was pasted" with
+  // str.strip() (integration_views), and the key field's own cleaning strips
+  // the same way, so the page and the server always take the same path for
+  // a pasted key (#750). test_review_dialog checks this class against
+  // str.isspace for every code point.
+  const SERVER_SPACE = /^[\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]*$/;
   const REVIEW_OUTCOME = "pk-review-outcome";
   const REVIEW_OUTCOME_MS = 60000;
   const REVIEW_UNREACHABLE = "The server could not be reached, so nothing was reviewed. Try again in a moment.";
@@ -4486,6 +4512,16 @@
     const form = event.target;
     if (event.defaultPrevented || !(form instanceof HTMLFormElement)
       || !form.matches("form[data-review-open]")) return;
+    // A submission that is no Review takes the form's other way: a button
+    // marked data-review-skip (Off-site backups' Test access, which posts in
+    // place), or any submission while the field a form names in
+    // data-review-native holds a value (an integration's pasted new key,
+    // which submits natively: its slow install is followed on the page, the
+    // recorded exception of UX conventions "Review dialog", #456). A value
+    // holds something unless it is all SERVER_SPACE, as the server reads it.
+    if (event.submitter?.hasAttribute("data-review-skip")) return;
+    const native = form.dataset.reviewNative && form.elements.namedItem(form.dataset.reviewNative);
+    if (native && "value" in native && !SERVER_SPACE.test(native.value)) return;
     const dialog = document.getElementById(form.dataset.reviewOpen);
     if (!(dialog instanceof HTMLDialogElement) || !sameOrigin(formUrl(form))) return;
     event.preventDefault();
@@ -4540,7 +4576,10 @@
     state.done = true;
     dialog.close();
     if (fromAnswer) window.history.replaceState(window.history.state, "", fromAnswer);
-    redrawFrom(fresh);
+    // The Apply is the answer to the form's own Review, so the form's region
+    // is redrawn even when only its own controls replace it (data-in-place-own:
+    // an integration's settings, which Dismiss and Test access leave alone).
+    redrawFrom(fresh, region);
     if (!showOutcome(outcome, text)) announce(text);
   };
 
@@ -4798,8 +4837,6 @@
   const isoDay = (day) => day.toISOString().slice(0, 10);
   const monthDays = (day) => new Date(Date.UTC(day.getUTCFullYear(),
     day.getUTCMonth() + 1, 0)).getUTCDate();
-  // Monday is 0, as in wall_clock.WEEKDAYS and Python's date.weekday().
-  const mondayFirst = (day) => (day.getUTCDay() + 6) % 7;
   const expandRecurrence = (rule) => {
     const start = civilDay(rule?.start);
     const end = civilDay(rule?.end);
@@ -4829,14 +4866,14 @@
       const date = day.getUTCDate();
       if (rule.frequency === "daily") dates.push(isoDay(day));
       else if (rule.frequency === "weekly") {
-        if (weekdays.has(mondayFirst(day))) dates.push(isoDay(day));
+        if (weekdays.has(mondayFirst(day.getUTCDay()))) dates.push(isoDay(day));
       } else if (byDay) {
         if (date === monthly.day) dates.push(isoDay(day));
         // The month's last day in range stands for a missing chosen day.
         else if (date === monthDays(day) && monthly.day > date) {
           missing.push(isoDay(day).slice(0, 7));
         }
-      } else if (mondayFirst(day) === monthly.weekday && (monthly.ordinal === -1
+      } else if (mondayFirst(day.getUTCDay()) === monthly.weekday && (monthly.ordinal === -1
         ? date + 7 > monthDays(day) : Math.ceil(date / 7) === monthly.ordinal)) {
         dates.push(isoDay(day));
       }
@@ -4866,12 +4903,11 @@
     monthly: "Choose a day of the month from 1 to 31, or a weekday.",
     frequency: "Choose how often to repeat.",
   };
-  const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
   const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July",
     "August", "September", "October", "November", "December"];
   const spokenDay = (text) => {
     const day = civilDay(text);
-    return `${DAY_NAMES[mondayFirst(day)]}, ${MONTH_NAMES[day.getUTCMonth()]} ${
+    return `${WEEKDAY_NAMES[mondayFirst(day.getUTCDay())]}, ${MONTH_NAMES[day.getUTCMonth()]} ${
       day.getUTCDate()}, ${day.getUTCFullYear()}`;
   };
   // The rule a repeat panel's controls describe, for expandRecurrence.
@@ -5409,6 +5445,29 @@
     // The browser can restore the checkbox and the rule on Back.
     window.addEventListener("pageshow", update);
     update();
+  });
+
+  // Edit of a reminder in a remembered series (#469,
+  // schedule-series-scope.html): "This and following" and "The whole series"
+  // grey the send date (data-enabled-when) and keep each reminder's own
+  // date, so the greyed box shows this reminder's date as drawn, never one
+  // typed before the choice, which would not be used. The drawn date is the
+  // field's default (filled in this browser's zone above). An input event
+  // lets the change gate look again; a greyed field does not count anyway.
+  document.querySelectorAll("[data-series-scope]").forEach((group) => {
+    const form = group.closest("form");
+    const date = form?.querySelector('[data-schedule-field="date"] input');
+    if (!date) return;
+    const restore = () => {
+      const chosen = group.querySelector('input[type="radio"]:checked');
+      if (chosen && chosen.value !== "this" && date.value !== date.defaultValue) {
+        date.value = date.defaultValue;
+        date.dispatchEvent(new Event("input", {bubbles: true}));
+      }
+    };
+    group.addEventListener("change", restore);
+    // The browser can restore a typed date and a chosen scope on Back.
+    window.addEventListener("pageshow", restore);
   });
 
   // Plain multi-select lists: say how many items are chosen, since a long list
@@ -6282,4 +6341,39 @@
     event.preventDefault();
     segment.focus();
   });
+
+  // Secret fields (SecretInput, accounts/secret_input.py, #1475): the
+  // server draws a Show/Hide button beside each masked key or token, and
+  // this switches its field between password and text. Only the type
+  // changes: the value is never read, logged, stored or sent from here, so
+  // the form posts exactly what it would while masked. data-shown carries
+  // the state and CSS swaps the visible word in a reserved width, which
+  // also changes the accessible name ("Show/Hide the Slack bot token"); a
+  // name change on the focused button is not reliably read out, so the
+  // polite status line beside it says the new state. Delegated, so a field
+  // an in-place redraw brings in (drawn masked by the server) works at once.
+  const showSecret = (button, shown) => {
+    const field = document.getElementById(button.getAttribute("aria-controls"));
+    if (!field) return;
+    field.type = shown ? "text" : "password";
+    button.dataset.shown = String(shown);
+    const status = button.parentElement.querySelector("[data-secret-status]");
+    if (status) status.textContent = shown ? button.dataset.shownStatus : button.dataset.hiddenStatus;
+  };
+  // Mask every shown secret under root again.
+  const maskSecrets = (root) => {
+    root.querySelectorAll?.('[data-secret-reveal][data-shown="true"]')
+      .forEach((button) => showSecret(button, false));
+  };
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest?.("[data-secret-reveal]");
+    if (button) showSecret(button, button.dataset.shown !== "true");
+  });
+  // Mask again before the request leaves (capture, ahead of handlers that
+  // post in place), so a page the browser keeps in its history is masked,
+  // and on leaving or returning to the page, including a page restored from
+  // the back/forward cache.
+  document.addEventListener("submit", (event) => maskSecrets(event.target), true);
+  window.addEventListener("pagehide", () => maskSecrets(document));
+  window.addEventListener("pageshow", () => maskSecrets(document));
 })();

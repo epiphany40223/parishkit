@@ -281,7 +281,7 @@ def test_names_reach_only_the_exported_file(
     The names the page shows are in the file the worker renders and
     ``export download --stream`` writes (what ``export fetch`` runs), and in
     no document. A repeat returns the same export; the key for other DUIDs
-    is refused; the file can be regenerated once it expires.
+    is refused.
     """
     from parishkit.stewardship.reports.export_models import (
         ExportRequest,
@@ -290,7 +290,6 @@ def test_names_reach_only_the_exported_file(
 
     from .test_admin_export_cli_postgresql import download
     from .test_admin_family_export_cli_postgresql import render
-    from .test_export_cleanup_postgresql import expire_publication
 
     _, secret, row = paired(admin.service)
     key = uuid4()
@@ -363,26 +362,12 @@ def test_names_reach_only_the_exported_file(
     rows = list(csv.reader(io.StringIO(text)))
     assert rows == [["Family", "Family DUID"], [names[1], "1"], ["", "999999"]]
 
-    # An expired file is regenerated from the retained capture.
-    expire_publication(made)
-    code, regenerated, _ = admin(
-        "export",
-        "regenerate",
-        str(made.pk),
-        "--request-key",
-        str(uuid4()),
-        secret=secret,
-    )
-    assert code == 0 and regenerated["result"]["created"], regenerated
-    again = ExportRequest.objects.get(pk=regenerated["result"]["export"]["id"])
-    assert again.family_test_names_snapshot_id == capture.pk
-
 
 def test_names_export_in_xlsx_and_pdf(admin, family_test, reports_root):  # noqa: F811
     """--format: the names as XLSX or PDF, with the CSV's columns (#966).
 
     The format binds the request key as the selection does; the worker
-    renders each file; a regenerated file keeps its format.
+    renders each file.
     """
     from openpyxl import load_workbook
 
@@ -391,7 +376,6 @@ def test_names_export_in_xlsx_and_pdf(admin, family_test, reports_root):  # noqa
 
     from .test_admin_export_cli_postgresql import download
     from .test_admin_family_export_cli_postgresql import render
-    from .test_export_cleanup_postgresql import expire_publication
 
     _, secret, _ = paired(admin.service)
     names = page_names(1)
@@ -419,17 +403,6 @@ def test_names_export_in_xlsx_and_pdf(admin, family_test, reports_root):  # noqa
         else:
             assert body.startswith(b"%PDF-")
     assert names_trail() == (2, 2, 2)
-    # Regeneration keeps the original's format.
-    expire_publication(made["pdf"])
-    code, regenerated, _ = admin(
-        "export",
-        "regenerate",
-        str(made["pdf"].pk),
-        "--request-key",
-        str(uuid4()),
-        secret=secret,
-    )
-    assert code == 0 and regenerated["result"]["export"]["format"] == "pdf"
 
 
 def test_the_constraint_still_refuses_a_png_names_export(admin, family_test):  # noqa: F811

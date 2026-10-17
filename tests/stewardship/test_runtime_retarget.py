@@ -221,6 +221,20 @@ def test_a_record_from_a_release_without_a_defaulted_path_still_matches(
         retarget.retarget_image(deployment, image=NEW)
 
 
+def test_the_export_download_window_can_change_after_provisioning(deployment):
+    """The window is an operational switch, not a provisioning input (#1398):
+    a retarget with another value is accepted and renders it, so a shorter
+    window applies at once; the default renders nothing."""
+    layout = RuntimeLayout(deployment)
+    shorter = replace(deployment, export_download_window_minutes=30)
+    retarget.retarget_image(shorter, image=NEW)
+    worker = json.loads(read_private(layout.service_directory / "worker.yaml"))
+    assert worker["deployment"]["export_download_window_minutes"] == 30
+    retarget.retarget_image(deployment, image=NEW)
+    worker = json.loads(read_private(layout.service_directory / "worker.yaml"))
+    assert "export_download_window_minutes" not in worker["deployment"]
+
+
 def test_any_other_change_is_refused_and_nothing_is_written(deployment):
     """Changed inputs, missing passwords, bad images and online services refuse."""
     layout = RuntimeLayout(deployment)

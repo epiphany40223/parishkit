@@ -34,6 +34,11 @@
 // data-live-announce sentence instead, which is copied into the page's
 // [data-live-announcer] element only when that sentence changes.
 //
+// A status read answered 410 Gone settles the region: the answer's
+// [data-live-gone] element (an ended export's "no longer available"
+// sentence, #1398) replaces the region's contents and watching stops; a 410
+// without one is treated as a refusal (below).
+//
 // A pending region may hold a template[data-live-refused]: when a status
 // read is refused (signed out, or no longer allowed, such as after a change
 // that removed the reader's own access), its content replaces the region as
@@ -128,6 +133,17 @@
 // with it.
 (function () {
   "use strict";
+  // Server clock minus this computer's clock. The times being counted from
+  // (running times, and an export's download window, below) are server
+  // times, so a computer whose clock is off would otherwise show a wrong
+  // (even negative) elapsed time or end a window early or late. The Admin
+  // session chrome renders the server's time into every Admin page; without
+  // it, trust this clock. It is taken once, when the script loads, because
+  // that stamp is the time the page was drawn: a region watched later (after
+  // an in-place swap) is counted against the same stamp.
+  const serverNow = Date.parse(
+    document.querySelector("[data-admin-session]")?.getAttribute("data-server-now") || "");
+  const skew = Number.isFinite(serverNow) ? serverNow - Date.now() : 0;
   const DELAYS = [2000, 2000, 3000, 4000, 6000, 8000, 10000];
   // Stop after an hour of watching; the manual refresh link still works.
   const GIVE_UP_MS = 60 * 60 * 1000;
@@ -234,14 +250,6 @@
       // Same parish date format as ui-v1.js applies at page load.
       if (window.ParishDates) window.ParishDates.localize(scope);
     }
-
-    // Server clock minus this computer's clock. The times being counted from
-    // are server times, so a computer whose clock is off would otherwise show
-    // a wrong (even negative) elapsed time. The Admin session chrome renders
-    // the server's time into every Admin page; without it, trust this clock.
-    const serverNow = Date.parse(
-      document.querySelector("[data-admin-session]")?.getAttribute("data-server-now") || "");
-    const skew = Number.isFinite(serverNow) ? serverNow - Date.now() : 0;
 
     function ago(seconds) {
       // Whole units, rounded down, in the same words as the server's first
@@ -613,6 +621,11 @@
         if (offset) node.scrollLeft = offset;
       });
       announce();
+      // A poll that brings a ready Download in starts its window check: this
+      // swap is the region's own, so no parishkit:swap event (whose listener
+      // above would watch the region again) reaches expire(). Polls answer
+      // after the script's main block has run, so expire() is defined.
+      expire();
     }
 
     function announce() {
@@ -676,9 +689,25 @@
           stop("");
           return;
         }
-        if ([400, 401, 403, 404].includes(response.status) || response.redirected) {
-          // Signed out, no longer allowed, or refused as a bad request (such
-          // as Slack turned off): retrying cannot help.
+        if (response.status === 410) {
+          // Gone for good, such as an export that ended while it was being
+          // prepared (cancelled elsewhere, #1398): a settled answer, never
+          // retried. Its page's [data-live-gone] sentence takes the
+          // region's place, so the page says why and links back.
+          const parsed = new DOMParser().parseFromString(await response.text(), "text/html");
+          if (stopped || gone()) return;
+          const answer = parsed.querySelector("[data-live-gone]");
+          if (answer) {
+            region.replaceChildren(document.importNode(answer, true));
+            region.removeAttribute("data-live-pending");
+            region.setAttribute("data-live-state", "gone");
+            stop("");
+            return;
+          }
+        }
+        if ([400, 401, 403, 404, 410].includes(response.status) || response.redirected) {
+          // Signed out, no longer allowed, gone, or refused as a bad request
+          // (such as Slack turned off): retrying cannot help.
           const settled = region.querySelector("template[data-live-refused]");
           if (settled) {
             region.replaceChildren(settled.content.cloneNode(true));
@@ -807,4 +836,57 @@
     speak(region);
     watch(region);
   });
+
+  // Download windows (#1398; UX conventions, "Point-in-time downloads"). A
+  // ready export's Download form names its window's end (data-download-until).
+  // When the end passes while the page is open, Download is disabled in
+  // place, marked data-download-ended-gated (one of ui-v1.js's GATE_MARKS, so
+  // no other gate enables it again), and the [data-download-window] line just
+  // below it shows its expired sentence instead of "Ready to download until".
+  // Both sentences share the line's one grid cell (ui-v1.css .export-window),
+  // so its height never changes and nothing moves. The end is a server time,
+  // so it is counted by the server's clock (``skew``, above). It is checked
+  // when the page loads, when it is shown again (Back, or a hidden tab),
+  // after every in-place swap and every live poll that changes a region
+  // (adopt(), above), and every second only while some Download is still
+  // open, so a copy shown at or after its end never offers Download and a
+  // page with none runs no timer. This is a convenience: after the end the
+  // server answers Download with its 410 "no longer available" page.
+  let ticking = 0;
+  const expire = () => {
+    // Disable each Download whose window has ended and say so on its line.
+    document.querySelectorAll("form[data-download-until]").forEach((form) => {
+      const end = Date.parse(form.getAttribute("data-download-until"));
+      if (!Number.isFinite(end) || Date.now() + skew < end) return;
+      form.removeAttribute("data-download-until");
+      const line = form.closest("[data-live-status]")?.querySelector("[data-download-window]");
+      const ended = line?.querySelector("[data-window-ended]");
+      let focused = false;
+      form.querySelectorAll('button[type="submit"]').forEach((button) => {
+        focused ||= document.activeElement === button;
+        button.setAttribute("autocomplete", "off");
+        button.disabled = true;
+        button.setAttribute("data-download-ended-gated", "");
+        if (ended?.id) button.setAttribute("aria-describedby", ended.id);
+      });
+      if (!line || !ended) return;
+      line.querySelector("[data-window-open]")?.setAttribute("data-window-off", "");
+      ended.removeAttribute("data-window-off");
+      // A keyboard reader on Download keeps a place: the reason's link,
+      // which sits just below it, so nothing scrolls.
+      if (focused) ended.querySelector("a")?.focus({ preventScroll: true });
+    });
+    // Tick only while a Download is still open; a swap that brings a ready
+    // form in starts the timer again.
+    const open = document.querySelector("form[data-download-until]") !== null;
+    if (open && !ticking) ticking = window.setInterval(expire, 1000);
+    else if (!open && ticking) {
+      window.clearInterval(ticking);
+      ticking = 0;
+    }
+  };
+  expire();
+  window.addEventListener("pageshow", expire);
+  document.addEventListener("visibilitychange", expire);
+  document.addEventListener("parishkit:swap", expire);
 })();

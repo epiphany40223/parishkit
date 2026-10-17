@@ -1,4 +1,10 @@
-"""Bounded artifact expiry/crash cleanup, preserving requests, receipts and pins."""
+"""Bounded artifact expiry/crash cleanup, and the discard of ended exports' data.
+
+Exports are point-in-time (#1398): when an export ends, its file is removed
+here (one task per attempt), and its saved capture and pins are discarded by
+the SQL discard functions of frozen migration 0109 (``produce_discards``).
+The request, receipts and audit history stay.
+"""
 
 from pathlib import Path
 from uuid import uuid4
@@ -26,6 +32,7 @@ from parishkit.stewardship.storage import StorageInvariantError
 from .artifacts import remove_attempt_artifacts
 from .export_models import ExportArtifactCleanup, ExportAttempt
 from .export_services import admit_campaign, authorize
+from .export_window import apply_to_database
 
 TASK_TYPE = "report_export_cleanup"
 MAX_CLEANUP_ATTEMPTS = 5
@@ -73,6 +80,9 @@ def _eligible(attempt):
     """A current renderer or unexpired publication always prevents file removal."""
     admit_campaign(attempt.request.campaign_id, mutating=True)
     with connection.cursor() as cursor:
+        # The file's end is its window's (#1398), which SQL reads from here;
+        # the cleanup receipt's trigger, later on this connection, too.
+        apply_to_database(cursor)
         cursor.execute("SELECT stewardship_export_disposable_v1(%s)", (attempt.pk,))
         return cursor.fetchone() == (True,)
 
@@ -283,6 +293,8 @@ def produce_cleanup(guard, *, limit=20):
     if connection.in_atomic_block:
         raise StorageInvariantError("Export cleanup production owns its transaction.")
     guard.check()
+    with connection.cursor() as cursor:
+        apply_to_database(cursor)
     unowned = list(_unowned().values_list("pk", flat=True)[: UNOWNED_LIMIT + 1])
     if not unowned or (
         len(unowned) <= UNOWNED_LIMIT
@@ -311,3 +323,84 @@ def produce_cleanup(guard, *, limit=20):
                 )
             )
         return tuple(result)
+
+
+# How often the scheduler discards ended exports' saved data, in seconds. An
+# export's data goes within about this long of its end.
+DISCARD_INTERVAL_SECONDS = 60
+# Exports of each kind per discard transaction: few, so the work order and
+# the capture rows are held only briefly; the next pass takes the rest.
+DISCARD_BATCH = 10
+# The batch's own SQL limits, so it never holds up other work for long; a
+# batch stopped by either is logged (what, limit, elapsed) and rolled back,
+# and the next pass tries again.
+DISCARD_LIMITS = {"statement_timeout": 10, "lock_timeout": 2}
+_last_discard = [None]
+
+
+def produce_discards(guard, *, batch=DISCARD_BATCH, clock=None):
+    """Discard the saved data of ended exports, a small batch at a time.
+
+    When an export ends (its window is over, it was cancelled, or a failed
+    one was not retried within one window; ``export_window``), its capture's
+    document is cleared, its fact and source pins are released and its link
+    to a fact generation is cleared, in SQL
+    (``stewardship_export_discard_due_v1``, frozen migration 0109), which
+    rechecks that each export has ended and records each discard. The
+    scheduler runs this as its own producer (``runtime_process``), so a
+    failing discard never stops expired files' cleanup; it runs at most once
+    a minute, failed or not, and returns no tasks.
+
+    A cheap unlocked check comes first; only when something is due does it
+    take the work order, as a retry does, so a retry and a discard never
+    race. The batch has its own statement and lock limits: one stopped by
+    either is recorded as a timeout and rolled back. An export the SQL could
+    not discard this time is skipped there, and the batch writes how many as
+    a WARNING operational log entry; candidates are drawn in random order,
+    so one that keeps failing cannot hold back the rest.
+    """
+    import time
+
+    from parishkit.stewardship.audit.timeouts import record_timeout
+    from parishkit.stewardship.jobs.broker import sql_timeout_kind
+
+    if not isinstance(guard, SchedulerGuard):
+        raise TypeError("Export discards require an owned scheduler input.")
+    now = (clock or time.monotonic)()
+    if (
+        _last_discard[0] is not None
+        and now - _last_discard[0] < DISCARD_INTERVAL_SECONDS
+    ):
+        return ()
+    # Before the work: a pass that fails waits a minute like any other.
+    _last_discard[0] = now
+    guard.check()
+    with connection.cursor() as cursor:
+        apply_to_database(cursor)
+        cursor.execute(
+            "SELECT (public.stewardship_export_discard_due_v1(0)->>'pending')::boolean"
+        )
+        if not cursor.fetchone()[0]:
+            return ()
+    started = time.monotonic()
+    try:
+        with work_transaction(), connection.cursor() as cursor:
+            for kind, seconds in DISCARD_LIMITS.items():
+                cursor.execute(f"SET LOCAL {kind} = '{seconds}s'")
+            cursor.execute(
+                "SELECT public.stewardship_export_discard_due_v1(%s)", [batch]
+            )
+    except Exception as error:
+        kind = sql_timeout_kind(error)
+        if kind not in DISCARD_LIMITS:
+            raise
+        record_timeout(
+            Event.TASK_TIMED_OUT,
+            what=kind,
+            level="WARNING",
+            bind_task=False,
+            limit_seconds=DISCARD_LIMITS[kind],
+            elapsed_seconds=time.monotonic() - started,
+        )
+        return ()
+    return ()

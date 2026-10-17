@@ -80,6 +80,10 @@ REASONS = frozenset(
         # System health: allowing debug logging again in Production, which
         # only the server operator may do.
         "production_only",
+        # A schedule change's Apply (or schedule confirm) whose reviewed send
+        # time has passed since its review (#1464): INFO, the reader reviews
+        # again.
+        "send_time_passed",
         "unclassified",
         "usage",
         "configuration",

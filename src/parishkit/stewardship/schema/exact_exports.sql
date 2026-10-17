@@ -202,12 +202,15 @@ DO $$ DECLARE name text; BEGIN
     END LOOP;
 END $$;
 
-CREATE FUNCTION stewardship_exact_source_pin_guard_v1() RETURNS trigger
+CREATE FUNCTION public.stewardship_exact_source_pin_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
     IF OLD.parent_kind='report' THEN
-        IF EXISTS(SELECT 1 FROM stewardship_exact_export_request
-            WHERE id=OLD.parent_id AND source_id=OLD.snapshot_id) THEN
+        -- Until the export has ended and its saved data is discarded (#1398).
+        IF EXISTS(SELECT 1 FROM stewardship_exact_export_request r
+            WHERE r.id=OLD.parent_id AND r.source_id=OLD.snapshot_id
+              AND NOT EXISTS(SELECT 1 FROM stewardship_export_discard d
+                  WHERE d.exact_request_id=r.id)) THEN
             RAISE EXCEPTION 'Retained exact export still requires its source input' USING ERRCODE='23514';
         END IF;
     END IF;

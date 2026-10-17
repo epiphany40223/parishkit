@@ -87,6 +87,16 @@ def record(name, duids, *, found=True):
         SourceSnapshot.objects.filter(pk=current).update(cursor=cursor)
 
 
+def missing_workgroup(harness):
+    """System health's unknown No-reminders WorkGroup, as ``(name,
+    severity)``, or None when it lists none (#861, #1214)."""
+    health, _page = read_health(harness.service.store)
+    found = [
+        problem for problem in health.problems if problem.kind == "workgroup_missing"
+    ]
+    return (found[0].workgroup, found[0].severity) if found else None
+
+
 def values(harness):
     """The current campaign's configuration values."""
     return Campaign.objects.get(pk=harness.campaign.pk).active_configuration.values
@@ -196,20 +206,21 @@ def test_a_reminder_prepared_ahead_is_not_sent_once_the_family_is_excluded(
 
 
 def test_an_unknown_workgroup_shows_on_system_health_and_excludes_nobody(invited):  # noqa: F811
-    """A name ParishSoft does not have is a visible notice, not a silent no-op."""
+    """A name ParishSoft does not have is a visible problem, not a silent
+    no-op: an error while the Reminder is still to come, a warning after."""
     harness, path, provider, due_at = invited
     set_workgroup(harness, "Typo")
     record("Typo", (), found=False)
     assert excluded_duids(values(harness)) == frozenset()
-    _health, page = read_health(harness.service.store)
-    assert page["workgroup_missing"] == "Typo"
+    assert missing_workgroup(harness) == ("Typo", "error")
+    with campaign_clock(due_at + INSIDE):
+        assert missing_workgroup(harness) == ("Typo", "warning")
     with campaign_clock(due_at - INSIDE):
         plan()
     assert reminders().filter(state="pending").count() == FAMILIES
-    # Found, the notice goes away.
+    # Found, the problem goes away.
     record("Typo", {1})
-    _health, page = read_health(harness.service.store)
-    assert page["workgroup_missing"] is None
+    assert missing_workgroup(harness) is None
 
 
 def test_refreshes_record_the_workgroup_and_a_change_is_promoted(tmp_path, monkeypatch):

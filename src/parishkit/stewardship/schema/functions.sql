@@ -2806,7 +2806,14 @@ CREATE FUNCTION public.stewardship_fact_disposable(identifier uuid) RETURNS bool
         WHERE ROW(r.campaign_id,r.population_scope,r.source_id,r.submission_watermark,
                 r.timezone_configuration_id,r.through_date)=
             ROW(f.campaign_id,f.population_scope,f.source_id,f.submission_watermark,
-                f.timezone_configuration_id,f.through_date))
+                f.timezone_configuration_id,f.through_date)
+            -- A latest-data export that has ended keeps nothing (#1398).
+            AND NOT EXISTS(SELECT 1 FROM stewardship_export_discard d
+                WHERE d.exact_request_id=r.id))
+    -- An export still linked to the generation keeps it; an ended export's
+    -- discard clears the link (#1398), so only those go.
+    AND NOT EXISTS(SELECT 1 FROM stewardship_export_request WHERE fact_set_id=identifier)
+    AND NOT EXISTS(SELECT 1 FROM stewardship_exact_export_resolution WHERE fact_set_id=identifier)
     AND NOT EXISTS(SELECT 1 FROM stewardship_daily_digest_snapshot r
         JOIN stewardship_daily_fact_set f ON f.id=identifier
         WHERE ROW(r.campaign_id,r.population_scope,r.source_id,r.submission_watermark,
@@ -5611,7 +5618,10 @@ BEGIN
             'archive_year','archive_days','archive_family_rows','void_reason','task_state',
             -- How old the Google sign-in was when a setup credential was
             -- sealed, in whole seconds (#1402; audit.schemas).
-            'sign_in_age_seconds']
+            'sign_in_age_seconds',
+            -- An export's report kind and file format (#1398), so the audit
+            -- log answers who exported what without its request row.
+            'report','format']
         WHEN 'boundary' THEN ARRAY['occurrence_id','kind','intended_unix_microseconds','actual_unix_microseconds','lag_microseconds','before_state','after_state']
         WHEN 'schedule' THEN ARRAY['definition_id','previous_revision_id','selected_revision_id','cancelled_messages','skipped_occurrences','failed_occurrences','delivered_slots']
         WHEN 'timeout' THEN ARRAY['task_id','task_type','attempt','limit_seconds','elapsed_seconds','what','helper','count','outcome']
@@ -5689,7 +5699,7 @@ BEGIN
                 'configuration_activating','configuration_busy','scope_changed','credential_unreadable',
                 'credential_changed','provider_status','provider_timeout','provider_unreachable',
                 'source_configuration','organization_changed','source_health_check','mail_health_check',
-                'due_work_health_check','backup_health_check','export_cleanup','fact_verification',
+                'due_work_health_check','backup_health_check','export_cleanup','export_discard','fact_verification',
                 'source_retention','family_engagement','alert_mail','security_mail','slack_alert',
                 'smtp_systemic','smtp_unavailable','web_health_check','web_unresponsive',
                 'admin_command','admin_command_outcome_unknown','digest_funnel_chart',
@@ -5756,6 +5766,14 @@ BEGIN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('key_changed','organization_changed','reload') THEN RETURN false; END IF;
         ELSIF key='task_state' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('succeeded','failed') THEN RETURN false; END IF;
+        -- An export's report kind and file format (#1398): the closed sets
+        -- export_report_known admits (audit.schemas.EXPORT_REPORTS, EXPORT_FORMATS).
+        ELSIF key='report' THEN
+            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('participation','additional_information',
+                'family_directory','postal_outreach','ministry','financial','family_test_names',
+                'family_timeline','campaign_comparison','campaign_archive') THEN RETURN false; END IF;
+        ELSIF key='format' THEN
+            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('csv','xlsx','pdf','png') THEN RETURN false; END IF;
         ELSIF key='review_reason' THEN
             IF jsonb_typeof(value)<>'string' OR length(text_value) NOT BETWEEN 1 AND 500
                OR position('@' in text_value)>0 THEN RETURN false; END IF;

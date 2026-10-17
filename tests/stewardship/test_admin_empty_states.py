@@ -43,7 +43,6 @@ NEXT_STEP = re.compile(r"[.:;!?]\s+\S")
 # an entry when its page is converted, and never add one without review.
 ALLOWED = {
     # Pages deferred until the pull requests changing them merge (#227).
-    "census-changes.html": {"No matching census changes."},
     "directory.html": {"No matching Families."},
     "participation.html": {"No campaign dates to show."},
     # The shared chart's exact-values table; the page around each chart
@@ -87,9 +86,8 @@ def test_the_scan_finds_the_empty_branches():
     text = template("deliveries.html")
     branches = [branch.group(0) for branch in EMPTY.finditer(text)]
     assert any("No email matches this view." in branch for branch in branches)
-    assert bare_messages(template("census-changes.html")) == {
-        "No matching census changes."
-    }
+    # The chart's reviewed exception stays bare, so it always has one.
+    assert bare_messages(template("components/chart.html")) == {"Nothing to show yet."}
 
 
 @pytest.mark.parametrize("name", SCANNED)

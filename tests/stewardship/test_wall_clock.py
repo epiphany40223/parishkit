@@ -78,3 +78,25 @@ def test_no_feature_keeps_its_own_weekday_table():
         and '"Monday"' in path.read_text(encoding="utf-8")
     ]
     assert owners == []
+
+
+def test_the_page_script_keeps_one_weekday_table():
+    """The page scripts name the days in one list, ui-v1.js's WEEKDAY_NAMES.
+
+    It is in wall_clock.WEEKDAYS's order, so a day number means the same day
+    on the page and on the server; ``mondayFirst`` is defined once with it.
+    """
+    static = SOURCE / "accounts" / "static" / "stewardship"
+    owners = {
+        path.name: path.read_text(encoding="utf-8").count('"Monday"')
+        for path in static.rglob("*.js")
+        # Vendored, minified libraries (Vega) are not ParishKit page scripts.
+        if not path.name.endswith(".min.js")
+    }
+    assert {name: count for name, count in owners.items() if count} == {"ui-v1.js": 1}
+    script = (static / "ui-v1.js").read_text(encoding="utf-8")
+    names = [str(day) for day in WEEKDAYS]
+    listed = "".join(f'"{name}",' for name in names).rstrip(",")
+    assert listed in "".join(script.split()), "WEEKDAY_NAMES left Monday-first order"
+    assert script.count("const mondayFirst =") == 1
+    assert "getDay() + 6" not in script and "getUTCDay() + 6" not in script

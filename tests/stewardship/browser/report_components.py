@@ -171,16 +171,10 @@ def components(context, admin):
             "report_name": "Participation",
         },
     )
+    # An ended export answers the fixed "no longer available" page (#1398).
     pages["/report-export-expired"] = (
-        "report-export",
-        {
-            "job": job,
-            "status": {"state": "expired"},
-            "mutable": True,
-            "retry_key": UUID(int=30),
-            "report_url": "/participation",
-            "report_name": "Participation",
-        },
+        "report-export-gone",
+        {"report_url": "/participation", "report_name": "Participation"},
     )
     pages["/report-exact"] = (
         "report-exact",

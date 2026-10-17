@@ -75,7 +75,8 @@ def test_a_refused_campaign_zone_names_the_field_and_code(auth_service, google):
     assert refused.status_code == 400
     row = only_entry()
     assert row.context["route"] == "admin:campaign_create"
-    assert row.context["form"] == "campaign_form"
+    # Step 1 is Campaign settings' own form since #1404 PR 3.
+    assert row.context["form"] == "campaign_settings_form"
     assert row.context["fields"] == ["timezone"]
     assert row.context["codes"] == ["invalid_choice"]
 

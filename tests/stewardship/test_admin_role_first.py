@@ -17,12 +17,12 @@ from parishkit.stewardship import (
     admin_cli,
     admin_delivery_control,
     admin_digests,
-    admin_exports,
     admin_followup,
     admin_history,
     admin_hosted_files,
     admin_integration_changes,
     admin_integration_keys,
+    admin_roster_tick,
     admin_tests,
     system_health,
 )
@@ -70,10 +70,11 @@ STAFF_MAY = {
 # (it checks the role before it reads anything), with that read.
 ADMITTING_READ = {
     "files delete": (admin_hosted_files, "preview_deletion", {"file_id": ["a"]}),
-    "export regenerate": (admin_exports, "regeneration_prompts", {"export_id": "a"}),
     "history confirm": (admin_history, "pending_replacement", {"token": "-"}),
     # The page's own admission, which admits a leader of any Ministry.
     "followup bulk": (admin_followup, "admit_followup", {}),
+    # Roster changes to enter's admission: Administrators and Staff only.
+    "followup roster-bulk": (admin_roster_tick, "admit_roster", {}),
 }
 
 # Everything a handler may read, look up or prompt with after its role check.

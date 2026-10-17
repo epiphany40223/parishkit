@@ -854,7 +854,7 @@ them unnotified; the Administrator accepted that (decision 13).
 | --- | --- | --- |
 | Session approved | Yes | `automation_approved` |
 | Production confirmation, withdrawal or Testing cleanup through a session | Yes | `automation_irreversible` |
-| Other fresh-gated action through a session (pause, resume, resolution, chosen-Family test, Family portal maintenance, Testing cleanup's sign-in, a Family-code, mail-merge or financial export and its regeneration) | Yes | No |
+| Other fresh-gated action through a session (pause, resume, resolution, chosen-Family test, Family portal maintenance, Testing cleanup's sign-in, a Family-code, mail-merge or financial export) | Yes | No |
 | A session changes user rules, replaces an integration key or the backup key, or changes Slack or other notification settings | Yes | `automation_policy_change`, observed when the session submits the change, before the configuration installer applies it; dispatch re-checks Administrator status, so an Administrator the change removes is not reached |
 | Refused use (an unknown secret, first per host digest per hour; host mismatch; web misuse) | Yes | `automation_refused` |
 | Session ended by revocation, role loss, recovery or restore | Yes | No |
@@ -1241,9 +1241,9 @@ sign-in, with no browser step:
   [shared rules for health actions](../admin-portal/spec.md#shared-rules-for-health-actions));
 - the code and financial reads and files
   ([#547](https://github.com/epiphany40223/parishkit/issues/547)): creating
-  or regenerating a Family-directory, mail-merge, Family timeline or
-  financial export, which PR 8's `export directory`, `export postal`,
-  `export family-timeline`, `export financial` and `export regenerate` run,
+  a Family-directory, mail-merge, Family timeline or financial export,
+  which PR 8's `export directory`, `export postal`, `export family-timeline`
+  and `export financial` run,
   and the campaign archive workbook, which `export archive` runs
   ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) part (a));
 - integration setting changes (PR 10's `integration confirm`, including
@@ -1273,8 +1273,7 @@ both in `delivery_control_commands`, both in `withdrawal_commands`, the Family
 portal maintenance switch, `confirmation_commands`, the `require_fresh`
 call in `confirmation_views` (in `_fresh_after_cleanup`), and the #547 sites:
 `directory_export_views.create`,
-`financial_export_views.create`, `export_ui.command` (regenerate of a
-directory or financial export), `integration_views.integration_settings`
+`financial_export_views.create`, `integration_views.integration_settings`
 (previews, removals and confirmations of settings) and
 `go_live_commands.start_cleanup`. Each command reuses the service below its
 view, so it adapts the view's check rather than skipping it.
@@ -1511,7 +1510,8 @@ Administrator who is now Staff) is `denied` with no prompt, never
 `invalid`, `stale_version` or `not_available`, and learns nothing of the
 state the prompt would describe. The capability is the action's own, so a
 command Staff may run (`export financial`, `export directory`, `export
-postal`, `export family-timeline`, `census resolve`, `followup bulk`) still prompts Staff;
+postal`, `export family-timeline`, `census resolve`, `followup bulk`,
+`followup roster-bulk`) still prompts Staff;
 the action then admits again as its page's post does.
 
 ### Audit attribution
@@ -1783,7 +1783,11 @@ signatures:
   Chairperson actions). The event acknowledgements moved each view's
   transaction into a request-free `acknowledge_now` in
   `security_event_views` and `critical_event_views`, which the views now
-  call.
+  call. PR 11b's roster tick and information follow-up needed none: the
+  commands call the pages' own admissions and services
+  (`set_roster_entered`, `mark_many_entered`, `update_information`) and
+  the information page's request-free `information_page` and
+  `information_history`.
 - **PR 12:** `go_live_commands` and `go_live_views.testing_families`, cleanup
   retry and cancel, the link preparation controls in `activation_views.links`,
   `confirmation_views._fresh_after_cleanup`, `confirmation_commands`, the
@@ -1954,7 +1958,7 @@ none.
 
 | URL names | Command or exemption |
 | --- | --- |
-| `schedule_settings`, `schedule_new`, `schedule_edit`, `schedule_delete` | `schedule show` (PR 3a); `schedule preview`, `schedule confirm` (PR 4): a change document adds, changes or deletes the same schedules. Its `series` entries (#469) edit or delete a remembered reminder series, ahead of the New/Change page's series scopes (slice 2b-3) |
+| `schedule_settings`, `schedule_new`, `schedule_edit`, `schedule_delete` | `schedule show` (PR 3a); `schedule preview`, `schedule confirm` (PR 4): a change document adds, changes or deletes the same schedules. Its `series` entries (#469) edit or delete a remembered reminder series; Edit scheduled email offers the same "this and following" and "the whole series" for a time or email change, while a new rule or deleting a series is the command line's alone for now |
 | `schedule_calendar` | `schedule show` (PR 3a): the read-only Campaign calendar (#469) draws the saved schedules and campaign dates that `schedule show` lists |
 | `campaign_end_date_check` | `schedule preview` (PR 4): Campaign settings' no-save live check of a live campaign's end date answers what a preview of that end date would refuse |
 | `configuration_request` | `config request show --watch` (PR 4); `config request cancel` ([#944](https://github.com/epiphany40223/parishkit/pull/944)), an operator recovery with no page button |
@@ -2031,7 +2035,7 @@ right after confirm, exactly as editing that reminder alone on the page
 does. An edit that gives a `repeat` rule yielding the same reminders still
 saves the new rule; one with no `repeat` and the same reminders changes
 nothing. The planning is the pure `accounts.series_edits.plan`, which
-the New/Change page will share, and its reminders and series records go
+Edit scheduled email shares, and its reminders and series records go
 through the same `schedule_changes.build_preview`, forms, signed preview
 and confirmation, so an in-flight or unknown send still blocks. An unknown
 series, a `from` outside it, a reminder from the cut date that has sent or
@@ -2060,7 +2064,13 @@ Administrator confirmation; the
 shows the format. `schedule confirm` records `admin_cmd_schedule_confirm`
 in the request's own durable transaction, only when it creates the request;
 a repeated confirmation returns the original request and records nothing.
-Its configuration checks before intake are `unavailable` during a restore
+It checks the previewed send times again as the page's Apply does
+([New and Edit scheduled email](../admin-portal/spec.md#new-and-edit-scheduled-email),
+[#1464](https://github.com/epiphany40223/parishkit/issues/1464)): one that
+was ahead at preview and has since passed is `stale_version`, and nothing
+changes; preview again with a later time. A missed reminder a series edit
+adds again on its past date was already past at preview, so it is not
+refused. Its configuration checks before intake are `unavailable` during a restore
 review or an activating change, as for `schedule preview`. A database error
 once the request row is written is `outcome_unknown`, never `unavailable`,
 because it may have struck the commit; one before that rolled back and is
@@ -2672,8 +2682,9 @@ guarded in SQL: only an Administrator, for the current Testing draft, with
 one `{"duid", "name"}` row per reviewed DUID in the review's order; the
 export needs the configure capability to read, as the page does. Migration
 0037 admitted only CSV for this kind; `0049_family_test_names_formats.sql`
-widens that arm of `export_report_known` to CSV, XLSX and PDF. An expired
-file is regenerated from the retained capture, in its original format.
+widens that arm of `export_report_known` to CSV, XLSX and PDF. The file is
+[point-in-time](../operations/spec.md#point-in-time-exports): its capture is
+deleted when the export ends, so nothing regenerates it.
 
 ### Reports and exports
 
@@ -2685,7 +2696,7 @@ file is regenerated from the retained capture, in its original format.
 | `campaign_comparison_export` | `export comparison [--day N] --format F [--timezone Z]` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) slice 6, [downloads](../campaign-history/spec.md#downloads-and-sharing)): the page's download form, through the same capture (`comparison_exports.read_capture`) and service (`create_comparison_export`), with the page's `campaign_comparison_exported` and `admin_cmd_export_comparison`; without `--timezone` the file's request time uses the parish's time zone ([#1161](https://github.com/epiphany40223/parishkit/issues/1161)) |
 | `daily_digest_chart`, `daily_digest_download` | Permanent: PNG images; the data is in the matching report or digest read |
 | `financial_report`, `limitations_report`, `information_queue` | `report financial`, `report limitations`, `report information`: summaries and counts (PR 8c; `report limitations` was `report talents` until #970); Family-level rows only as exports (PR 8e, PR 8h for limitations) |
-| `information_item` | One Family's submission and its follow-up history: `followup …` (PR 11), with the Ministry follow-up items; it prints only the item's state and history, and the submission's content comes through `export information` (PR 8e) |
+| `information_item` | One Family's submission and its follow-up history: `followup information-show ITEM_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see [users and follow-up](#users-and-follow-up)); it prints only the item's state and history, and the submission's content comes through `export information` (PR 8e) |
 | `ministry_report` | `report ministry`, and `report ministry --ministry DUID --requests join\|leave` for one Ministry's join or leave count (PR 8c); rows only as exports (PR 8e). The Members joining and leaving pages (`ministry_joiners`, `ministry_leavers`) were retired ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)); the commands stay, and `export ministry`, which writes one Ministry's join or leave list, now covers this summary, whose counts it lists. Since [#1133](https://github.com/epiphany40223/parishkit/issues/1133) the page is one Ministry requests page with the follow-up queue: its By Ministry counts are `report ministry`'s summary, and its queue is `followup list` (PR 11a) |
 | `ministry_packet` | A packet of Members' contacts, so export only: `export ministry-packet` (PR 8e) |
 | `past_campaign_archive` | `export archive` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) part (a), [archive export](../campaign-history/spec.md#download-campaign-archive)): Past campaigns' Download campaign archive, through the same service (`create_archive_export`), with the page's `campaign_archive_exported` and `admin_cmd_export_archive`; [fresh-gated](#fresh-gated-actions-from-the-command-line) |
@@ -2698,7 +2709,7 @@ file is regenerated from the retained capture, in its original format.
 | `limitations_export` | `export limitations [--show S] [--format F] [--timezone Z]` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)): the page's download through the page's own writer (`limitation_views.export_body`), with #752's audit fields |
 | `census_changes`, `census_changes_export` | `report census`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export census` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command is `census resolve PROPOSAL_ID --action entered\|ignored\|reopened` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), through the same `census_resolution` service. An Automatic row's Review (Approve, Ignore, Back to To review; ADM-09) posts there too; its command is `census review PROPOSAL_ID --decision approved\|ignored\|unreviewed` ([#528](https://github.com/epiphany40223/parishkit/issues/528)), through the same `census_review` service. The Review's Edit value and Clear edit (ADM-09.04) are `census edit PROPOSAL_ID --value TEXT\|- \| --clear`, and its Use the Family's value anyway (ADM-09.03) is `census resolve-conflict PROPOSAL_ID` ([#1434](https://github.com/epiphany40223/parishkit/issues/1434)), through the same service |
 | `census_publication`, `census_publication_confirmation`, `census_publication_retries` (new, [#528](https://github.com/epiphany40223/parishkit/issues/528); not built yet) | `census publish-check`, `census publish-plan`, `census publish-confirm` and `census publish-rerun`: the [Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft) page's Check ParishSoft, plan, Apply and Run again, through the same `publication_tasks` and `publication_plans` services; see [the commands](#publish-to-parishsoft-commands) |
-| `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_regenerate`, `report_export_download` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export regenerate`, `export download --stream` (PR 8b); an exact request's status, cancel and retry, which these pages also serve, are `export exact status --watch`, `export exact cancel` and `export exact retry` (PR 8h) |
+| `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_download` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export download --stream` (PR 8b; `report_export_regenerate` and `export regenerate` were removed by [#1398](https://github.com/epiphany40223/parishkit/issues/1398)); an exact request's status, cancel and retry, which these pages also serve, are `export exact status --watch`, `export exact cancel` and `export exact retry` (PR 8h) |
 | `report_exact_create` | `export exact create` (PR 8h); the handed-off file through `export fetch` |
 | `daily_digest_snapshot` | `digest daily SNAPSHOT_ID` (PR 8d) |
 | `weekly_digest_snapshot`, `weekly_digest_item` | `digest weekly SNAPSHOT_ID`: each item's identifier and states; an item's text stays on the page (PR 8d) |
@@ -3027,20 +3038,19 @@ The export lifecycle commands work on any report export the Administrator
 may see, through the functions the export pages use
 (`reports.export_services`, and `export_views.prepare_download` for the
 download), so an export requested on a page is followed and fetched from
-the command line and the other way round. `export status` admits passively
+the command line and the other way round. Their files follow the
+[point-in-time](../operations/spec.md#point-in-time-exports) rule's download
+window, so there is no `export regenerate`; it was removed with the page's
+Regenerate ([#1398](https://github.com/epiphany40223/parishkit/issues/1398)).
+`export status` admits passively
 like the status page (any session) and records nothing, as the page
 records nothing. `export create` (the Participation page's form, for the
 generation its `--fact-set` names), `export comparison` (the Campaign
 comparison page's download form, for the current campaign on `--day`),
-`export cancel`, `export retry` and
-`export regenerate` admit as the pages' form posts do, so they need a
-full-scope session; each records the page's own events and, only when it
-made the change, its `admin_cmd_export_*` event, keyed as the page's form
-is. Regenerating a directory, mail-merge or financial export is
-[fresh-gated](#fresh-gated-actions-from-the-command-line): as the status
-page (`export_ui.FRESH_REPORTS`, after its owner and capability check),
-`export regenerate` asks at the prompt for those kinds only, then calls
-`require_fresh` in the export lock. `export download --stream` admits as the download does, consumes the
+`export cancel` and `export retry` admit as the pages' form posts do, so
+they need a full-scope session; each records the page's own events and,
+only when it made the change, its `admin_cmd_export_*` event, keyed as the
+page's form is. `export download --stream` admits as the download does, consumes the
 page's one-use grant and streams the stored file under the page's campaign
 read guard and fresh check, recording the page's `export_downloaded`
 events (opening, then succeeded or failed) and no `admin_cmd_*` event, as
@@ -3301,9 +3311,9 @@ unknown email `not_available`, and a key used with another intent `invalid`.
 | `ministry_followup_item` | `followup show REQUEST_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11a; see below) |
 | `ministry_followup_update` | `followup update REQUEST_ID` (PR 11a; see below); follow-up has no assignment ([#552](https://github.com/epiphany40223/parishkit/issues/552)) |
 | `ministry_followup_bulk` | `followup bulk` (PR 11a; see below), the queue's bulk outcome ([#1131](https://github.com/epiphany40223/parishkit/issues/1131)), through the same `workflows.followup` service |
-| `information_update` | `followup …` (PR 11), with the Family information follow-up |
+| `information_update` | `followup information-update ITEM_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see below), the item's Save, through the same `responses.information` service |
 | `ministry_followup_export` | The queue's Export these requests ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)), the follow-up queue's filtered set with each Member's contact details: `followup export` (PR 11) |
-| `ministry_followup_roster`, `ministry_roster_bulk` | A resolved join or leave's Entered in ParishSoft tick ([#528](https://github.com/epiphany40223/parishkit/issues/528)), one at a time or several from Roster changes to enter ([#879](https://github.com/epiphany40223/parishkit/issues/879)): `followup roster-entered REQUEST_ID --set\|--clear` (PR 11), through the same `workflows.roster` service |
+| `ministry_followup_roster`, `ministry_roster_bulk` | A resolved join or leave's Entered in ParishSoft tick ([#528](https://github.com/epiphany40223/parishkit/issues/528)), one at a time or several from Roster changes to enter ([#879](https://github.com/epiphany40223/parishkit/issues/879)): `followup roster-entered REQUEST_ID --set\|--clear` and `followup roster-bulk` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see below), through the same `workflows.roster` service |
 | `ministry_roster`, `ministry_roster_export` | Roster changes to enter ([#528](https://github.com/epiphany40223/parishkit/issues/528)): `report roster`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export roster [--show S] [--ministry DUID] [--format F] [--timezone Z]` (PR 8g, [#463](https://github.com/epiphany40223/parishkit/issues/463)), the page's download through the page's own writer (`ministry_roster_views.export_body`) |
 
 The users commands (#952) call the same service functions as the
@@ -3442,10 +3452,76 @@ filters) and history (`followup_history`), and its services
   `--contact-notes` without `--contact-channel`. Neither change is
   fresh-gated, as the page asks for no recent sign-in.
 
-The roster tick (`followup roster-entered`), the queue's export and Family
-information follow-up stay pending in PR 11. The names, options and fields
-are defaults pending Administrator confirmation; the
+The queue's export (`followup export`) stays pending in PR 11. The names,
+options and fields are defaults pending Administrator confirmation; the
 [operator guide](../../../guides/stewardship-admin-automation.md#ministry-follow-up)
+lists the fields.
+
+`followup roster-entered`, `followup roster-bulk`, `followup
+information-show` and `followup information-update`
+([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b) are
+a resolved request's Entered in ParishSoft tick, Roster changes to enter's
+bulk mark, and an Additional information item's page and Save, through the
+pages' own pieces.
+
+- **Roster tick.** `followup roster-entered REQUEST_ID --set|--clear
+  --expected-version N` admits as the request page's tick does
+  (`ministry_followup_views._principal`) and then refuses a Ministry
+  leader at once (`denied`, as `workflows.roster.can_tick` does in the
+  service), so a leader learns nothing of a request. `N` is the tick's
+  current sequence, as `followup show` prints `roster.sequence` (0 before
+  any tick); the command passes the page's next sequence to
+  `set_roster_entered`, so a tick someone changed since is
+  `stale_version`. A request that takes no tick (only a join or leave a
+  person resolved as joined or leave confirmed does) is `invalid` at
+  `request`; a tick that already says so `invalid` at `set` or `clear`.
+  It asks nothing, as the page's tick does not.
+- **Bulk mark.** `followup roster-bulk --request ID:VERSION ... [--yes]`
+  admits with the list's own `ministry_roster_views._principal`
+  (Administrators and Staff) before any input or prompt, refuses more than
+  250 requests or a request chosen twice before the prompt, and asks (or
+  takes `--yes`), as the list's confirmation dialog does. It calls
+  `mark_many_entered`, all or none; `VERSION` is each tick's current
+  sequence.
+  The operator finds the requests with `followup list --state resolved`
+  (`roster.eligible`, `roster.entered`, `roster.sequence`). That list shows
+  each Member and Ministry's newest request only, while Roster changes to
+  enter reads every request, so an older resolved request that a newer one
+  replaced can be missing from `followup list`: a known gap, handled on the
+  page or by `followup roster-entered` with the ID.
+- **Information item.** `followup information-show ITEM_ID [--page N]`
+  admits passively with the page's `information_views._principal`
+  (`ADDITIONAL_FOLLOWUP`, Staff and Administrators), reads through the
+  shared report read and the page's `information_page` and
+  `information_history`, and records the page's `information_viewed`
+  (started, then succeeded or failed). It prints the item's id, version,
+  disposition, instants, flags, replacement and completing account id,
+  and each history revision's flags, account ids and instants: never the
+  Family's name or DUID, the submitted text or the Staff notes.
+  `followup information-update ITEM_ID --expected-version N [--needed
+  yes|no] [--completed yes|no] [--confirm-clear] [--notes TEXT|-]` is the
+  item's Save through `responses.information.update_information`: a
+  left-out option keeps its current value, as the page's form opens
+  filled in (a repeat of a recorded key keeps its first revision's
+  values), notes are at most 5,000 characters with line breaks as the
+  browser counts them, and clearing a completed follow-up without
+  `--confirm-clear`, the page's confirmation box, is `invalid` at
+  `confirm_clear`.
+- **Keys, scope and audit.** The three changes need a full-scope session,
+  run in the page's command scope, and are not fresh-gated, as the pages
+  ask for no recent sign-in. An item or request that is not a Live one of
+  the current campaign is `not_available`. The key binds each entry or
+  revision as on the page (the bulk mark's per-request keys derive from
+  it), so a repeat returns what was recorded and records nothing, and the
+  key with another change is `invalid`. They record the services' own
+  events (`ministry_roster_entered` per entry, `information_updated`) and
+  `admin_cmd_followup_roster_entered`, `admin_cmd_followup_roster_bulk` or
+  `admin_cmd_followup_information_update` in the same transaction, once
+  for each run that recorded something.
+
+The names, options and fields are defaults pending Administrator
+confirmation; the
+[operator guide](../../../guides/stewardship-admin-automation.md#roster-tick-and-additional-information)
 lists the fields.
 
 `report roster [--show todo|all] [--ministry DUID]` is Roster changes to
@@ -3481,8 +3557,8 @@ read and `roster_rows` with `report roster`'s Show and Ministry choices.
 its files are the page's. A Ministry DUID, format or time zone the page
 refuses is `invalid`, reported after the session recheck. It records the
 page's `roster_changes_exported` with the rows in the file, and no
-`admin_cmd_*` event; the row's Entered in ParishSoft tick stays owed to
-`followup roster-entered` (PR 11). The name, its options and the
+`admin_cmd_*` event; the row's Entered in ParishSoft tick is `followup
+roster-entered`'s and `followup roster-bulk`'s (PR 11b). The name, its options and the
 document's fields are defaults pending Administrator confirmation; the
 [operator guide](../../../guides/stewardship-admin-automation.md#roster-changes-download)
 lists them.

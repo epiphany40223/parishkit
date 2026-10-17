@@ -269,6 +269,12 @@ def applied_filters(query, ignore=()):
     )
 
 
+# Also a template filter: an empty report table tells "nothing matches these
+# filters" from "nothing to show yet" with the panel's own count (#227), so
+# the message and the panel summary never disagree.
+register.filter("applied_filters", applied_filters)
+
+
 @register.tag
 def filterpanel(parser, token):
     """Wrap a report's filter form in a collapsible "Filters" panel (#227).

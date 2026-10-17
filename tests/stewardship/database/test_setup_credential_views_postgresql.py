@@ -108,7 +108,9 @@ def test_write_only_form_real_csrf_staging_and_cancellation(setup_http, google):
         kept = post(
             browser, URL, {"candidate": "", "organization_id": "1", "version": version}
         )
-        assert kept.status_code == 302 and kept["Location"] == "/admin/setup/source"
+        # Load parish data is blocked until the Parish profile is saved too,
+        # so Save and continue opens that step needing work (#1476).
+        assert kept.status_code == 302 and kept["Location"] == "/admin/setup/parish"
         assert SetupSealedCredential.objects.get().version == staged
         moved = post(
             browser, URL, {"candidate": "", "organization_id": "2", "version": version}

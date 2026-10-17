@@ -256,6 +256,18 @@ DESCRIPTIONS = {
         "ParishSoft's current value, as the Census changes page's Use the "
         "Family's value anyway does."
     ),
+    "admin_cmd_followup_roster_entered": _(
+        "An automation session set or cleared a Ministry request's Entered "
+        "in ParishSoft tick, as the request's tick on Ministry requests does."
+    ),
+    "admin_cmd_followup_roster_bulk": _(
+        "An automation session marked several Ministry requests Entered in "
+        "ParishSoft, as Roster changes to enter's bulk mark does."
+    ),
+    "admin_cmd_followup_information_update": _(
+        "An automation session recorded follow-up on an Additional "
+        "information request, as the request's Save does."
+    ),
     "admin_cmd_refresh_start": _(
         "An automation session asked for a full ParishSoft refresh, as the "
         "Refresh from ParishSoft page's confirmation does."
@@ -347,7 +359,8 @@ DESCRIPTIONS = {
     ),
     "admin_cmd_export_regenerate": _(
         "An automation session requested an expired report export again, "
-        "as the export's Regenerate button does."
+        "as the export's Regenerate button did before exports became "
+        "point-in-time."
     ),
     "admin_cmd_export_financial": _(
         "An automation session requested a financial report export, as the "

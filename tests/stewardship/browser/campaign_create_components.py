@@ -3,7 +3,9 @@
 The browser checks need no database. Every page is the real
 ``campaign-create.html`` (or its confirmation fragment):
 
-- ``PAGE``: the empty creation form, posting to ``PAGE``. A test answers
+- ``PAGE``: the empty creation form, posting to ``PAGE``, on step 1 of the
+  campaign wizard (#1404 PR 3): the stepper with every later step
+  unavailable, and Campaign settings' form, leader roles included. A test answers
   its Review with ``REVIEW`` (the real confirmation fragment) or
   ``REFUSED`` (the page drawn again with the name's error, status 400).
 - Apply posts to ``PAGE``, which the fixture server redirects to
@@ -23,12 +25,12 @@ from uuid import UUID
 
 from django.template.loader import render_to_string
 
-from parishkit.stewardship.accounts import setup_help
+from parishkit.stewardship.accounts import campaign_wizard, setup_help
 from parishkit.stewardship.accounts.admin_editing import (
     receipt_status,
     summary_errors,
 )
-from parishkit.stewardship.accounts.campaign_forms import CampaignForm
+from parishkit.stewardship.accounts.campaign_forms import CampaignSettingsForm
 
 from .stepper_components import PATH as STEPPER
 
@@ -45,22 +47,26 @@ VALUES = {
     "end_date": "2054-10-31",
 }
 POSTS = {PAGE: (303, APPLIED, "")}
+ROLES = ["Chairperson", "Staff"]
 
 
 def _form(data=None):
     """The creation form as the view builds it, bound to ``data`` if given."""
     form = setup_help.apply(
-        CampaignForm(
+        CampaignSettingsForm(
             data,
             initial={
                 "timezone": "America/New_York",
                 "census": True,
                 "additional_information": True,
+                "ministry_leader_roles": ROLES,
                 "base_digest": "a" * 64,
             },
             previous={},
             ministries=[("4", "Community outreach"), ("5", "Choir")],
             funds=[("9", "Offertory")],
+            leader_choices=[(role, role) for role in ROLES],
+            leader_roles=ROLES,
         ),
         setup_help.ADMIN_CAMPAIGN,
         replace=True,
@@ -81,7 +87,11 @@ def components(context, admin):
                 "stewardship/campaign-create.html",
                 context
                 | {
-                    "admin_chrome": admin,
+                    # Before the campaign exists the page is step 1; the
+                    # status once it is created draws no stepper.
+                    "admin_chrome": admin
+                    if created
+                    else admin | {"campaign_wizard": campaign_wizard.creation()},
                     "configuration": {
                         "mode": "testing",
                         "testing_recipient": "testing@example.org",

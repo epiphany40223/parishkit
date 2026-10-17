@@ -66,6 +66,8 @@ from .test_taskrun_postgresql import act
 pytestmark = pytest.mark.django_db(transaction=True)
 
 STAFF = Principal(uuid4(), frozenset({"staff"}), frozenset())
+# The fixture campaign's zone, which the date filter cases below send.
+NY = "America/New_York"
 
 
 def pledge(harness, form, **financial):
@@ -187,8 +189,8 @@ def test_effective_response_exact_money_filters_and_privacy(response_service):
         ({"search": "no such family"}, 0),
         ({"search": str(row["family_duid"])}, 1),
         ({"active": "inactive"}, 0),
-        ({"latest_start": "2000-01-01", "latest_end": "2999-12-31"}, 1),
-        ({"first_end": "2000-01-01"}, 0),
+        ({"latest_start": "2000-01-01", "latest_end": "2999-12-31", "zone": NY}, 1),
+        ({"first_end": "2000-01-01", "zone": NY}, 0),
     ):
         assert report(harness, **values)["total"] == found, values
 
@@ -572,11 +574,19 @@ def test_several_families_summary_order_and_pages(response_service):
         ({"pledge_min": "500", "pledge_max": "500.00"}, {2}),
         ({"search": "zETa"}, {6}),
         ({"search": "6"}, {6}),
-        # Dates are campaign-local days: every response is on the opening day.
-        ({"first_start": "2054-10-01", "first_end": "2054-10-01"}, {1, 2, 6}),
-        ({"latest_start": "2054-10-01", "latest_end": "2054-10-01"}, {1, 2, 6}),
-        ({"first_start": "2054-10-02"}, set()),
-        ({"latest_end": "2054-09-30"}, set()),
+        # Dates are days in the browser's zone (#558), here the campaign's:
+        # every response is on the opening day. Other zones and a DST day:
+        # test_financial_local_days_postgresql.py.
+        (
+            {"first_start": "2054-10-01", "first_end": "2054-10-01", "zone": NY},
+            {1, 2, 6},
+        ),
+        (
+            {"latest_start": "2054-10-01", "latest_end": "2054-10-01", "zone": NY},
+            {1, 2, 6},
+        ),
+        ({"first_start": "2054-10-02", "zone": NY}, set()),
+        ({"latest_end": "2054-09-30", "zone": NY}, set()),
     ):
         filtered = report(harness, **values)
         assert {row["family_duid"] for row in filtered["rows"]} == expected, values

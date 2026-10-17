@@ -157,8 +157,7 @@ def test_integration_save_waits_for_a_change_on_its_first_draw():
     """change_gate marks the form; Test access is exempt; the hint follows
     the buttons. A redrawn refusal (no change_gate) is not gated."""
     html = settings_page("backup", workspace_configured=True, change_gate=True)
-    form = tag(html, r'<form method="post" class="panel"[^>]*>')
-    assert 'id="integration-form"' in form
+    form = tag(html, r'<form method="post"[^>]*id="integration-form"[^>]*>')
     assert 'data-require-change="base_digest"' in form
     test = tag(html, r"<button[^>]*>(?=Test access)")
     assert "data-change-exempt" in test

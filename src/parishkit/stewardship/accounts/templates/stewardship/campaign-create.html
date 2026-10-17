@@ -7,9 +7,14 @@
 <p>{% translate "Every page and email starts with built-in default text. After the campaign is created you can change its pages and emails, share options, mail schedules and images, then check Go-live readiness." %}</p>
 <p>{% translate "The campaign time zone starts on your browser's time zone; choose any time zone. You can change it on Campaign settings while the campaign is a draft. Its Families and Family codes are added by the next full ParishSoft refresh." %}</p>{% endaboutpage %}
 {% comment %}
-Create the campaign (campaign_create_views.campaign_create). Its button is
-labelled with the action itself (UX conventions, "A confirmation when Review
-would only repeat the page", #1356) and waits until every required field is
+Create the campaign (campaign_create_views.campaign_create), step 1 of the
+campaign wizard before the campaign exists (#1404 PR 3): base.html draws the
+stepper above it (campaign_wizard.creation), every later step unavailable
+until the campaign exists, and the form is the Campaign settings form, so no
+question is asked again on a later step. Its action row is the wizard's row
+inside the form, with no Back and one primary, Create the campaign and
+continue, labelled with the action itself (UX conventions, "A confirmation
+when Review would only repeat the page", #1356); it waits until every required field is
 filled in (data-require-complete); its hint keeps one line reserved after
 it, so it showing or going never moves anything (no layout shift). It posts
 the Review without a page load (data-review-open, "Review dialog", #750): an
@@ -34,7 +39,7 @@ says a campaign exists) and links Campaign settings (#563).
 {% else %}<form id="settings-form" method="post" action="{{ page_url }}" class="panel" data-review-open="campaign-create-review" data-campaign-form data-new-campaign data-require-complete data-missing-hint="{% translate 'Fill in the required fields to create the campaign.' %}">
 {% csrf_token %}<input type="hidden" name="action" value="preview">
 {% include 'stewardship/campaign-fields.html' %}
-{% button type="submit" autocomplete="off" aria-describedby="settings-complete-hint" %}{% translate "Create the campaign" %}{% endbutton %}<p class="help" id="settings-complete-hint" data-complete-hint="reserve"></p>
+<div class="campaign-step-actions">{% button type="submit" autocomplete="off" aria-describedby="settings-complete-hint" data-campaign-create %}{% translate "Create the campaign and continue" %}{% endbutton %}</div><p class="help" id="settings-complete-hint" data-complete-hint="reserve"></p>
 </form>{% endif %}</div>
 {% include 'stewardship/components/review-outcome.html' with outcome_id="campaign-create-outcome" %}
 {% translate "Create the campaign?" as review_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="campaign-create-review" title=review_title apply_url=page_url outcome_id="campaign-create-outcome" fallback="campaign-create-outcome" describedby="campaign-create-summary" redraw_answer=True %}

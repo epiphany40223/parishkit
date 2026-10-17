@@ -19,6 +19,7 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.filter_errors import (
     FilterError,
     error_context,
@@ -76,13 +77,16 @@ def _principal(request, store, *, read_only=False):
     return principal
 
 
-def _error(campaign_id, *, status):
-    """No private filter or exception values, and a way back to the report."""
+def _error(campaign_id, *, status, zone=False):
+    """No private filter or exception values, and a way back to the report.
+
+    ``zone`` marks dates sent without the browser's time zone (#558).
+    """
     debug_swallowed("report request refused")
     response = HttpResponse(
         render_to_string(
             "stewardship/financial-report-error.html",
-            {"campaign_id": campaign_id, "status": status},
+            {"campaign_id": campaign_id, "status": status, "zone": zone},
         ),
         status=status,
         headers={"Cache-Control": "no-store"},
@@ -142,6 +146,8 @@ def report(request, campaign_id):
             # Every closed choice was accepted before a field rule was
             # checked, so the submitted sort is one the selection knows.
             refusal, query = error, FinancialQuery(sort=error.query.sort)
+        except UnknownZone:
+            return _error(campaign_id, status=400, zone=True)
         except ValueError:
             # Only the requester's own filters are a 400. A later ValueError is
             # a data problem that no change of filters could fix.
