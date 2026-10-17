@@ -71,7 +71,9 @@ def test_testing_view_without_a_rehearsal_is_accessible(
     errors = watch(page)
     page.goto(component_origin + "/response-dashboard-testing")
     assert "no Testing responses to show" in page.locator("main").inner_text()
-    current = page.locator(".choice-links a[aria-current=page]")
+    current = page.get_by_role("group", name="Responses shown").locator(
+        "a[aria-current=page]"
+    )
     assert current.all_inner_texts() == ["Testing rehearsal"]
     assert page.locator("[data-chart]").count() == 0
     assert_clean(page, errors)

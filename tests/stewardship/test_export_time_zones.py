@@ -93,10 +93,12 @@ def test_a_form_asks_for_a_zone_only_with_action_times(form):
 
 
 def test_the_participation_page_asks_for_no_zone():
-    """Its report options carry the zone the page was drawn in, hidden."""
+    """Its report options carry the zone the page was drawn in (#1535)."""
     page = (TEMPLATES / "participation.html").read_text()
     assert not ZONE_MENU.search(page)
-    assert re.search(r'<input type="hidden" name="timezone"[^>]*data-report-zone', page)
+    assert re.search(
+        r'data-report-options data-report-zone="\{\{ query\.timezone \}\}"', page
+    )
 
 
 def test_the_directory_asks_only_with_response_columns():
