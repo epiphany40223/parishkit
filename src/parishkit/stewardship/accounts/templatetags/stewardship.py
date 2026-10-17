@@ -15,7 +15,7 @@ from parishkit.stewardship.accounts.sessions import SETUP_FRESH_SECONDS, freshne
 from parishkit.stewardship.campaigns import single_campaign
 from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAME
 from parishkit.stewardship.source.source_status import source_status_label
-from parishkit.stewardship.web import dates, presentation
+from parishkit.stewardship.web import dates, presentation, stat_tiles
 from parishkit.stewardship.web.buttons import portal_classes
 from parishkit.stewardship.web.exports import DEFAULT_EXPORT_FORMAT
 
@@ -30,6 +30,16 @@ for name in (
     "instant",
 ):
     register.filter(name, getattr(presentation, name))
+
+
+@register.simple_tag
+def stat_tiles_row(labelledby="", label="", tiles_id=""):
+    """A stat-tile row's name attribute and toggletip id prefix (#1540).
+
+    Raises (see ``stat_tiles.row_name``) when the row has no name.
+    """
+    (attribute, value), prefix = stat_tiles.row_name(labelledby, label, tiles_id)
+    return {"name": format_html('{}="{}"', attribute, value), "prefix": prefix}
 
 
 @register.simple_tag

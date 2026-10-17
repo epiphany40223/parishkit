@@ -6,12 +6,12 @@ from uuid import UUID
 
 import pytest
 
-from parishkit.stewardship.reports.daily_digest import statistics_cards
 from parishkit.stewardship.reports.statistics import (
     StatisticsInputs,
     StatisticsUnavailable,
     calculate_statistics,
 )
+from parishkit.stewardship.reports.workspace_views import statistics_panel
 from parishkit.stewardship.responses.financial_inputs import financial_definition
 
 from .financial_factory import CAMPAIGN, configuration, cursor, record
@@ -202,8 +202,9 @@ def test_pre_728_retained_snapshot_shape_renders_unavailable():
     result = calculate(document)
     assert result.active.annual_pledge.canonical == "10.00"
     assert not result.comparison_pledge_all.available
-    labels = dict(statistics_cards(result))
-    assert labels["Last year's pledges (all Families)"] == "Unavailable"
+    tiles = {tile.label: tile for tile in statistics_panel(result)["tiles"]}
+    assert tiles["Last year's pledges (all Families)"].text == "—"
+    assert tiles["Current annual pledges"].text == "$10.00"
 
 
 @pytest.mark.parametrize("count", [False, -1, 1, "missing"])
