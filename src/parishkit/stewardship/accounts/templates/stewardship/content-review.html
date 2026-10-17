@@ -1,0 +1,21 @@
+{% load i18n stewardship %}{% comment %}
+The review of one Pages and emails editor change (#750; content_views._preview),
+drawn in the shared review dialog (UX conventions, "Review dialog") that
+content-settings.html includes, never as a page of its own: Preview changes
+posts the form without a page load and ui-v1.js moves this fragment's
+content into the dialog's body, which scrolls on a phone while the title and
+buttons stay in view. It is a full review, since it renders what Families
+will see: a fictional sample of the current and the proposed content
+(content-sample.html: subject, the page or email, its plain-text version)
+and the schedules the new text switches at once. The signed preview
+(data-review-preview) is what the dialog's Apply posts to the editor; once
+the change is applied the reader returns to Pages and emails, whose status
+line starts with data-review-done. A review lasts fifteen minutes, as every
+review does.
+{% endcomment %}{% blocktranslate asvar done %}{{ label }} changed.{% endblocktranslate %}<div data-review-answer data-review-done="{{ done }}">
+<p class="notice">{% translate "Fictional sample preview — not a live Family or an email delivery. Placeholders are filled in with sample values, and any markup that is not allowed has been removed." %}</p>
+<section aria-labelledby="content-review-current"><h3 id="content-review-current">{% translate "Current content" %}</h3>{% include 'stewardship/content-sample.html' with sample=before %}</section>
+<section aria-labelledby="content-review-proposed"><h3 id="content-review-proposed">{% translate "Proposed content" %}</h3>{% include 'stewardship/content-sample.html' with sample=after %}</section>
+{% if affected %}<section aria-labelledby="content-review-schedules"><h3 id="content-review-schedules">{% translate "Schedules using this template" %}</h3><p>{% translate "Applying this change switches all of these schedules to the new text and subject at once. If one of them is sending right now, the change waits until that finishes." %}</p><ul>{% for schedule in affected %}<li>{{ schedule.label|default:schedule.values.kind }} — {% if schedule.due_at %}<time datetime="{{ schedule.due_at|instant }}" data-local-instant>{{ schedule.due_at|instant }}</time>{% else %}{% translate "Recurring" %}{% endif %} — {{ schedule.values.subject }}</li>{% endfor %}</ul></section>{% endif %}
+<input type="hidden" name="preview" value="{{ preview }}" data-review-preview>
+</div>
