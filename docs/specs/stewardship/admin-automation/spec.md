@@ -1003,7 +1003,11 @@ success or failure, to standard error:
   addresses, aliases or redirects
   ([#864](https://github.com/epiphany40223/parishkit/issues/864)). The
   command follows the page it mirrors, so a version bump would only carry
-  a legacy form the Administrator declined.
+  a legacy form the Administrator declined. The same holds for `delivery
+  list`'s filters in
+  [#1562](https://github.com/epiphany40223/parishkit/issues/1562):
+  `--search` became `--recipient` (which also takes an email address) and
+  stayed on `pk-admin/1`.
 - Output never contains credentials, session secrets or digests, Family
   access tokens, cipher material or exception text. Family-level personal data
   follows [personal data on the command line](#personal-data-on-the-command-line).
