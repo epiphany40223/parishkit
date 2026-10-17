@@ -25,8 +25,8 @@ catch-up handoff, boundary races or integrated Gate 3 review.
 
 ## Following activation and withdrawal outcome
 
-An Admin can finish a cleaned-up campaign's go-live process with fresh Google
-authentication and explicit typed confirmation. Prepare inactive Family links
+An Admin can finish a cleaned-up campaign's go-live process with explicit typed
+confirmation (any sign-in age since #1547). Prepare inactive Family links
 as bounded background work before the short final transaction; never enumerate
 Families or construct their messages while holding final activation locks.
 Preserve stable manual Family codes. Select the prepared generation atomically
