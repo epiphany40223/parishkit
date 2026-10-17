@@ -218,7 +218,15 @@ def check_candidate(target, settings, value, *, seconds, check, profile):
             )
         except OSError:
             raise CredentialValidationUnavailable() from None
-        if process.returncode != 0 or output not in {b"valid\n", b"invalid\n"}:
+        # A key for another ParishSoft organization ("mismatch", #1492) is
+        # refused for good, as an invalid key is: retrying cannot change
+        # which organization it sees. Only "unavailable" (or no answer) waits
+        # and tries again.
+        if process.returncode != 0 or output not in {
+            b"valid\n",
+            b"invalid\n",
+            b"mismatch\n",
+        }:
             raise CredentialValidationUnavailable()
         return output == b"valid\n"
     except ProviderCheckDrainFailure:
