@@ -1059,7 +1059,8 @@ the report's error page. A range out of order is refused at its end with
 both ends marked, and its message is shown once, after them, in a line
 the form reserves so that a refusal shown in place moves nothing. Where
 that line is apart from the complete gate's hint row (the Additional
-information queue's Submitted dates), the gate's hint, in the same words,
+information queue's Submitted dates, Financial stewardship's dates and
+amounts), the gate's hint, in the same words,
 is held hidden in its row while the message shows, so the form says it
 once. A form whose complete gate already has a hint row (System logs, the
 Follow-up packet, an Additional information item's Save) shows the message

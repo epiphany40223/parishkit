@@ -27,12 +27,14 @@ from parishkit.stewardship.web.tables import report_table
 DATED_ZONE = "America/Havana"
 
 
-def refused_values():
-    """The view's context for At most below At least, refused at its field."""
-    sent = FinancialQuery(pledge_min="500", pledge_max="100")
-    error = FilterError(
-        "pledge_max", FIELD_MESSAGES["pledge_max"], sent, pair="pledge_min"
-    )
+def refused_values(name="pledge_max", pair="pledge_min", **sent_fields):
+    """The view's context for a range out of order, refused at its end.
+
+    By default At most below At least; ``name`` and ``pair`` name another
+    range's ends, and ``sent_fields`` the values sent.
+    """
+    sent = FinancialQuery(**(sent_fields or dict(pledge_min="500", pledge_max="100")))
+    error = FilterError(name, FIELD_MESSAGES[name], sent, pair=pair)
     shown = FinancialQuery()
     return error_context(error, FIELD_IDS, FIELD_LINES) | dict(
         query=sent, applied=shown, query_fields=shown.form_values()
@@ -190,6 +192,24 @@ def components(context, admin):
         # Filters the server refused at At most (#1332): drawn again with
         # the values sent, the error at the field and the unfiltered results.
         "/financial-refused": values | refused_values(),
+        # Each response-date range refused the same way, a Through date
+        # before its From date (#1469: the message said once).
+        "/financial-refused-first": values
+        | refused_values(
+            "first_end",
+            "first_start",
+            first_start="2026-11-02",
+            first_end="2026-11-01",
+            zone=DATED_ZONE,
+        ),
+        "/financial-refused-latest": values
+        | refused_values(
+            "latest_end",
+            "latest_start",
+            latest_start="2026-11-02",
+            latest_end="2026-11-01",
+            zone=DATED_ZONE,
+        ),
         "/financial-dated": values
         | dict(query=dated, query_fields=dated.form_values()),
     }
