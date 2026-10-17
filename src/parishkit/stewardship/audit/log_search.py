@@ -27,8 +27,6 @@ leave, as before. The read path bounds the whole read by a statement timeout
 (``log_views.READ_SECONDS``); #536 and #765 record the measurements.
 """
 
-import re
-
 from django.db.models import (
     BooleanField,
     Exists,
@@ -92,12 +90,16 @@ SHOWN_VALUE_SQL = """EXISTS (
 # index then reads every one of its entries, slower than the table, and
 # PostgreSQL's estimate does not know that (#765 measured 5 s against 3 s
 # without the indexes at 2,000,000 entries).
-TRIGRAM = re.compile(r"[^\W_]{3}")
-
-
 def indexable(text):
     """Whether a trigram index can narrow a search for ``text``."""
-    return TRIGRAM.search(text) is not None
+    # Python's \w admits Unicode "No" characters (superscripts, fractions,
+    # circled digits) that pg_trgm does not treat as word characters; only
+    # letters and decimal digits count (a term of the others would make the
+    # index read all of itself).
+    return any(
+        all(ch.isalpha() or ch.isdecimal() for ch in text[i : i + 3])
+        for i in range(len(text) - 2)
+    )
 
 
 def like_pattern(text):

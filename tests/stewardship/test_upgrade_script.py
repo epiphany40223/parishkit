@@ -746,6 +746,24 @@ def test_the_operator_installs_the_text_search_extension_before_migrating(tmp_pa
     assert f"Could not install the pg_trgm extension: {refused}" in output
     assert not any(" migration" in call for call in calls)
     assert "caddy serves the maintenance page" in output
+    # A hung install is killed under its own limit and logged: what ran,
+    # the limit and the elapsed time; nothing migrates, the page stays up.
+    calls, output, _ = run_host(
+        tmp_path / "hung",
+        "upgrade",
+        noop="f",
+        status=1,
+        schema_change="1",
+        timeout="CREATE EXTENSION",
+    )
+    killed = next(call for call in calls if call.startswith("timeout "))
+    assert killed.startswith("timeout --kill-after=10 60 docker compose ")
+    assert "TIMEOUT: installing the pg_trgm extension killed after " in output
+    assert "(limit 60s)" in output
+    assert not any(" migration" in call for call in calls)
+    assert "caddy serves the maintenance page" in output
+    log = next((tmp_path / "hung" / "logs").glob("stewardship-upgrade-*.log"))
+    assert "TIMEOUT: installing the pg_trgm extension killed after " in log.read_text()
 
 
 def test_a_failed_backup_abandons_before_web_stops(tmp_path):

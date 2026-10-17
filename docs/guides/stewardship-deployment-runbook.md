@@ -1185,6 +1185,8 @@ What to watch after deploying it: a System logs search for a word of three
 or more letters or digits answers in milliseconds instead of reading every
 entry in the date range; shorter words read the entries as before.
 
+Each log write now also updates the four new indexes; at Production's rate (tens of thousands of audit events a month and about a hundred operational rows) this is negligible, and the only visible effect would be a rare insert that flushes a GIN index's pending list.
+
 ### Refresh schedule modes (#1122)
 
 The release that gives the ParishSoft refresh schedule editor Basic and
