@@ -38,6 +38,12 @@ PRESENCE = reverse("admin:presence")
 # Families than the page first showed.
 BACKGROUND_LATER = "/in-place-background-later"
 PRESENCE_LATER = "/in-place-presence-later"
+# Background work showing every task (two rows, each with its own Technical
+# details), and the routed answer to its re-read with one more running.
+BACKGROUND_ALL = f"{BACKGROUND}?state=all"
+BACKGROUND_ALL_LATER = "/in-place-background-all-later"
+# A Rows per page choice of 25, and the routed answer to its re-read.
+BACKGROUND_25_LATER = "/in-place-background-25-later"
 FORM = "/in-place-form"
 # Where each fixture POST answers (status, Location or None, body). The
 # conftest adds the answers whose bodies are rendered pages.
@@ -162,11 +168,13 @@ def task(number):
     }
 
 
-def background_page(number, active):
-    """The background page ``number`` of 51 tasks, with ``active`` running."""
+def background_page(number, active, size=50, tasks=1, state="nonterminal"):
+    """The background page ``number`` of 51 tasks, with ``active`` running,
+    ``size`` rows per page and ``tasks`` rows drawn, in Task state
+    ``state``."""
     table = window_table(
-        PageWindow(number, 50),
-        [task(number)],
+        PageWindow(number, size),
+        [task(number + index * 100) for index in range(tasks)],
         number == 1,
         total=(51, False),
         sorting=TASK_SORTING,
@@ -177,9 +185,16 @@ def background_page(number, active):
             "counts": {"active": active, "queued": 0, "retry_wait": 0, "abandoned": 0}
         },
         "states": ("nonterminal", "all"),
-        "selected_state": "nonterminal",
+        "selected_state": state,
         "table": table,
     }
+
+
+def size_query(table, size):
+    """The query a Rows per page choice of ``size`` reads: the navigator form's
+    carried fields, the size and page 1 (ui-v1.js resets the page)."""
+    fields = [*table.carried_fields, (table.size_name, size), (table.page_name, 1)]
+    return "&".join(f"{name}={value}" for name, value in fields)
 
 
 def presence_page(count):
@@ -250,6 +265,20 @@ def components(context, admin):
         # The table's Next leads to page 2.
         f"{BACKGROUND}?{first.next_query}": html(
             "stewardship/background.html", second_context
+        ),
+        BACKGROUND_ALL: html(
+            "stewardship/background.html",
+            background_page(1, 1, tasks=2, state="all")[1],
+        ),
+        BACKGROUND_ALL_LATER: html(
+            "stewardship/background.html",
+            background_page(1, 2, tasks=2, state="all")[1],
+        ),
+        f"{BACKGROUND}?{size_query(first, 25)}": html(
+            "stewardship/background.html", background_page(1, 1, size=25)[1]
+        ),
+        BACKGROUND_25_LATER: html(
+            "stewardship/background.html", background_page(1, 2, size=25)[1]
         ),
         PRESENCE: html("stewardship/presence.html", presence_context),
         PRESENCE_LATER: html("stewardship/presence.html", presence_page(2)[1]),

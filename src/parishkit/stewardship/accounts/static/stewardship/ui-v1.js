@@ -1719,21 +1719,35 @@
     if (event.persisted) unloading = false;
   });
   // How to find the focused element again after a quiet refresh replaces
-  // the region it is in: its id, else its tag, link target and text. Null
-  // when focus is not in an in-place region.
+  // the region it is in: its id, else its nearest ancestor with an id (the
+  // region itself at most) and its position among that ancestor's elements
+  // of the same tag, link target and text. The position matters because a
+  // paged table draws its navigator twice (two Next links alike) and every
+  // row has its own Technical details summary: the first match would move
+  // focus to another copy (#1586 review). Null when focus is not in an
+  // in-place region.
   const heldFocus = () => {
     const node = document.activeElement;
     if (!(node instanceof Element) || !node.closest(REGIONS)) return null;
-    return node.id ? {id: node.id}
-      : {tag: node.tagName, href: node.getAttribute("href"), text: node.textContent};
+    if (node.id) return {id: node.id};
+    const anchor = node.parentElement?.closest("[id]");
+    if (!anchor) return null;
+    const held = {anchor: anchor.id, tag: node.tagName, href: node.getAttribute("href"),
+      text: node.textContent};
+    held.index = heldMatches(anchor, held).indexOf(node);
+    return held;
   };
+  // The elements under ``anchor`` that look like the held one (see heldFocus).
+  const heldMatches = (anchor, held) => [...anchor.querySelectorAll(held.tag)]
+    .filter((node) => node.getAttribute("href") === held.href && node.textContent === held.text);
   // Focus the fresh element matching ``held`` without scrolling, unless
-  // focus already moved somewhere still on the page.
+  // focus already moved somewhere still on the page. An element that cannot
+  // be found again at the same place is not replaced by another copy.
   const refocusHeld = (held) => {
     if (!held || (document.activeElement && document.activeElement !== document.body)) return;
+    const anchor = held.id ? null : document.getElementById(held.anchor);
     const match = held.id ? document.getElementById(held.id)
-      : [...document.querySelectorAll(held.tag)].find((node) => node.closest(REGIONS)
-        && node.getAttribute("href") === held.href && node.textContent === held.text);
+      : anchor && heldMatches(anchor, held)[held.index];
     match?.focus({preventScroll: true});
   };
   const refreshRegions = async (region, control, url, init, fallback, options, controller, form) => {
@@ -2775,8 +2789,8 @@
   // again, nothing is announced, the address keeps its fragment, and a view
   // that is passive never extends the sign-in. A read is skipped (and tried
   // at the next tick) while the reader is busy: another in-place request is
-  // in flight, a form control has focus, text is selected or a dialog is
-  // open. Hidden tabs are not read; the page catches up at once when shown
+  // in flight, the reader is mid-edit in a region (see readerBusy), text
+  // is selected or a dialog is open. Hidden tabs are not read; the page catches up at once when shown
   // again or brought back from the back/forward cache. A failed read never
   // navigates: after three in a row, a line after the link says the page is
   // not current, and the next read that works removes it; a refusal (signed
@@ -2784,6 +2798,8 @@
   // and says so.
   const REREAD_MIN_MS = 5000;
   const REREAD_FAILURES = 3;
+  // Said when a read is refused; live-status-v1.js says the same.
+  const UPDATES_REFUSED = "Couldn't check for updates. Reload the page or sign in again.";
   let rereadTimer = 0;
   let rereadFailures = 0;
   let rereadStopped = false;
@@ -2805,12 +2821,31 @@
     line.textContent = text;
     line.hidden = !text;
   };
+  // Input types the reader types into; focus in one means they may be
+  // mid-entry, so a re-read waits (a select or button merely focused after
+  // its choice was applied does not).
+  const TEXT_ENTRY = new Set(["text", "search", "number", "date", "datetime-local", "time",
+    "month", "week", "email", "url", "tel", "password"]);
+  const isTextEntry = (node) => node instanceof HTMLTextAreaElement
+    || (node instanceof HTMLInputElement && TEXT_ENTRY.has(node.type))
+    || (node instanceof HTMLElement && node.isContentEditable);
+  // Whether a control in an in-place region shows a change the page has not
+  // applied: its value differs from the one the server drew (controlValue).
+  const unapplied = () => [...document.querySelectorAll(REGIONS)].some((region) =>
+    [...region.querySelectorAll("input, select, textarea")].some((node) =>
+      node.type !== "hidden" && controlValue(node, true) !== controlValue(node, false)));
   const readerBusy = () => {
-    // Whether a periodic re-read would get in the reader's way now.
+    // Whether a periodic re-read would get in the reader's way now: another
+    // in-place request is in flight, the reader is mid-edit in a region the
+    // re-read replaces (focus in a text-entry field there, or a control
+    // there with an unapplied change), text is selected, or a dialog is
+    // open. Controls outside the regions are never replaced, so they never
+    // hold a read (UX conventions, "Pages that update themselves").
     const active = document.activeElement;
     const selection = window.getSelection ? window.getSelection() : null;
     return Boolean(tableRequest || saving
-      || (active && active.matches("input, select, textarea, [contenteditable]"))
+      || (active && active.closest(REGIONS) && isTextEntry(active))
+      || unapplied()
       || (selection && !selection.isCollapsed)
       || document.querySelector("dialog[open]"));
   };
@@ -2854,7 +2889,7 @@
           && new URL(response.url).pathname !== window.location.pathname;
         if (elsewhere || (response && [400, 401, 403, 404, 410].includes(response.status))) {
           rereadStopped = true;
-          rereadProblem("Couldn't check for updates. Reload the page or sign in again.");
+          rereadProblem(UPDATES_REFUSED);
           return;
         }
         rereadFailures += 1;

@@ -14,6 +14,9 @@ import pytest
 from .conftest import NOW
 from .in_place_components import (
     BACKGROUND,
+    BACKGROUND_25_LATER,
+    BACKGROUND_ALL,
+    BACKGROUND_ALL_LATER,
     BACKGROUND_LATER,
     FORM,
     PRESENCE,
@@ -110,18 +113,99 @@ def test_rereads_pause_while_hidden_and_catch_up_when_shown(page, component_orig
     assert len(reads) == 1
 
 
-def test_rereads_wait_while_the_reader_uses_a_control(page, component_origin):
-    """While a form control has focus (the Task state filter), the update
-    waits for the next tick after the reader moves on."""
+def test_focus_on_the_bottom_next_stays_there(page, component_origin):
+    """The table draws its navigator twice, so the bottom Next has a twin
+    above with the same address and text: a re-read puts focus back on the
+    bottom one, never the first match."""
+    opened(page, component_origin, BACKGROUND)
+    reads = answer_reads(page, component_origin, BACKGROUND, BACKGROUND_LATER)
+    page.locator("#table .table-nav").nth(1).get_by_role("link", name="Next").focus()
+    page.clock.fast_forward(TICK)
+    has_text(page.locator("#background-counts"), counts(2))
+    eventually(page, IDLE)
+    assert page.evaluate(FOCUSED_NEXT) == 1
+    assert len(reads) == 1
+
+
+# Which of the table's Next links has focus (0 the top one), or -1.
+FOCUSED_NEXT = """() => [...document.querySelectorAll('#table [data-table-next]')]
+    .indexOf(document.activeElement)"""
+
+
+def test_focus_on_a_rows_technical_details_stays_on_that_row(page, component_origin):
+    """Every row has its own Technical details summary with the same text:
+    focus on the second row's stays on that row's fresh summary."""
+    opened(page, component_origin, BACKGROUND_ALL)
+    reads = answer_reads(page, component_origin, BACKGROUND_ALL, BACKGROUND_ALL_LATER)
+    details = page.locator("#table details.technical-details")
+    assert details.count() == 2
+    second = details.nth(1).get_attribute("id")
+    details.nth(1).locator("summary").focus()
+    page.clock.fast_forward(TICK)
+    has_text(page.locator("#background-counts"), counts(2))
+    eventually(page, IDLE)
+    assert page.evaluate("document.activeElement.tagName") == "SUMMARY"
+    assert page.evaluate("document.activeElement.closest('details').id") == second
+    assert len(reads) == 1
+
+
+def test_rereads_wait_while_the_reader_is_mid_edit(page, component_origin):
+    """Focus in a text-entry field in the table (the navigator's Page box)
+    holds the update; so does a value typed there but not applied after the
+    reader moves on. Once the box shows what the page drew, updates go on."""
+    opened(page, component_origin, BACKGROUND)
+    reads = answer_reads(page, component_origin, BACKGROUND, BACKGROUND_LATER)
+    box = page.locator("#table [data-page-number]").first
+    box.focus()
+    page.clock.fast_forward(TICK)
+    page.evaluate("() => true")
+    assert reads == []
+    box.fill("2")
+    page.evaluate("document.activeElement.blur()")
+    page.clock.fast_forward(TICK)
+    page.evaluate("() => true")
+    assert reads == []
+    box.fill("1")
+    page.evaluate("document.activeElement.blur()")
+    page.clock.fast_forward(TICK)
+    has_text(page.locator("#background-counts"), counts(2))
+    assert len(reads) == 1
+
+
+def test_a_focused_control_outside_the_table_does_not_hold_updates(
+    page, component_origin
+):
+    """Task state sits outside every region a re-read replaces, so focus on
+    it never pauses the updates."""
     opened(page, component_origin, BACKGROUND)
     reads = answer_reads(page, component_origin, BACKGROUND, BACKGROUND_LATER)
     page.get_by_label("Task state").focus()
     page.clock.fast_forward(TICK)
-    page.evaluate("() => true")
-    assert reads == []
-    page.evaluate("document.activeElement.blur()")
+    has_text(page.locator("#background-counts"), counts(2))
+    assert page.evaluate("document.activeElement.id") == "task-state"
+    assert len(reads) == 1
+
+
+def test_updates_go_on_after_a_rows_per_page_change(page, component_origin):
+    """A Rows per page choice is applied in place and hands focus to the
+    fresh choice; that applied, focused choice does not pause the updates."""
+    opened(page, component_origin, BACKGROUND)
+    size = page.locator("#table [data-page-size]").first
+    size.select_option("25")
+    eventually(page, IDLE)
+    eventually(
+        page,
+        "() => document.activeElement.matches('#table [data-page-size]')"
+        " && document.activeElement.value === '25'",
+    )
+    shown = page.url.split("#")[0]
+    assert "size=25" in shown
+    reads = answer_reads(
+        page, component_origin, shown[len(component_origin) :], BACKGROUND_25_LATER
+    )
     page.clock.fast_forward(TICK)
     has_text(page.locator("#background-counts"), counts(2))
+    assert page.evaluate(MARKED) == "kept"
     assert len(reads) == 1
 
 

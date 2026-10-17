@@ -882,32 +882,164 @@ def test_hosted_file_upload_is_in_place():
     assert "data-in-place-focus" in UploadForm().fields["file"].widget.attrs
 
 
-# Page-refresh controls the go-live redesign removes (#1586 slice 2).
+# Page-refresh controls the go-live redesign removes (#1586 slice 2), kept
+# here until then (#1585) so a new one elsewhere still fails.
 GO_LIVE_REFRESH = {
-    "go-live-readiness.html": "Refresh readiness preview",
-    "go-live-cleanup.html": "Refresh cleanup progress",
-    "go-live-links.html": "Refresh preparation progress",
-    "production-progress.html": "Refresh Production progress",
+    "go-live-readiness.html": {"Refresh readiness preview"},
+    "go-live-cleanup.html": {"Refresh cleanup progress"},
+    "go-live-links.html": {"Refresh preparation progress"},
+    "production-progress.html": {"Refresh Production progress"},
 }
+# Wording of a control that re-reads the page's own state.
+REREAD_WORDING = re.compile(
+    r"^(?:Refresh|Reload|Re-read|Check for updates|Check again|Check status|"
+    r"Update now|Update status|Get latest)\b",
+    re.IGNORECASE,
+)
+# Controls with that wording that are not page refreshes, with why.
+NOT_PAGE_REFRESH = {
+    # Actions that start a ParishSoft download.
+    "Refresh from ParishSoft",
+    "Refresh now",
+    # A refusal page's way back to the item it refused (another page).
+    "Reload this request",
+    "Reload this item",
+    # Asks the email provider again which held emails went out (an action).
+    "Check again for emails that may have gone out",
+    # The Family portal's closed-campaign page (not an Admin page).
+    "Check again",
+}
+# A control's opening and closing: a link, a button, the {% button %} tag,
+# or an <input> (its label is its value).
+CONTROL = re.compile(
+    r"<(?P<tag>a|button)\b(?P<attrs>[^>]*)>(?P<inner>.*?)</(?P=tag)>"
+    r"|\{%\s*button\b(?P<battrs>.*?)%\}(?P<binner>.*?)\{%\s*endbutton\s*%\}"
+    r"|<input\b(?P<iattrs>(?:[^>{]|\{[{%].*?[%}]\})*)>",
+    re.IGNORECASE | re.DOTALL,
+)
+# A translated literal, either quote, optionally saved "as" a variable.
+TRANSLATE = re.compile(
+    r"\{%\s*(?:translate|trans)\s+(?P<q>[\"'])(?P<text>.*?)(?P=q)"
+    r"(?:\s+as\s+(?P<var>\w+))?[^%]*%\}",
+    re.DOTALL,
+)
+# A blocktranslate's text, optionally saved "asvar".
+BLOCK = re.compile(
+    r"\{%\s*blocktrans(?:late)?\b(?P<args>[^%]*)%\}(?P<text>.*?)"
+    r"\{%\s*endblocktrans(?:late)?\s*%\}",
+    re.DOTALL,
+)
+# The source tree, for labels built in Python (button and link labels).
+PACKAGE = TEMPLATES.parents[2]
+PYTHON_LABEL = re.compile(
+    r"(?:gettext(?:_lazy)?|pgettext(?:_lazy)?|_)\(\s*(?:[\"'][^\"']*[\"']\s*,\s*)?"
+    r"(?P<q>[\"'])(?P<text>[^\"']+)(?P=q)"
+    r"|[\"'](?:label|button|link_text|action_label)[\"']\s*:\s*(?P<q2>[\"'])"
+    r"(?P<text2>[^\"']+)(?P=q2)"
+)
+
+
+def control_labels(text):
+    """Every visible control's label in a template source ``text``: the
+    translated literals inside it (either quote, translate or
+    blocktranslate), a variable a translate ... as saved, the plain text,
+    and an input's value. A hidden link (the periodic re-read's own, a live
+    status's follow link) is not a visible control."""
+    saved = {m["var"]: m["text"] for m in TRANSLATE.finditer(text) if m["var"]}
+    for m in BLOCK.finditer(text):
+        var = re.search(r"\basvar\s+(\w+)", m["args"])
+        if var:
+            saved[var.group(1)] = m["text"]
+    labels = []
+    for m in CONTROL.finditer(text):
+        attrs = m["attrs"] or m["battrs"] or m["iattrs"] or ""
+        if re.search(r"(?<![\w-])hidden(?![\w-])", attrs):
+            continue
+        if m["iattrs"] is not None:
+            value = re.search(r"\bvalue=(?P<q>[\"'])(?P<v>.*?)(?P=q)", attrs, re.DOTALL)
+            inner = value["v"] if value else ""
+        else:
+            inner = m["inner"] if m["inner"] is not None else m["binner"]
+        labels += [t["text"] for t in TRANSLATE.finditer(inner) if not t["var"]]
+        labels += [b["text"] for b in BLOCK.finditer(inner)]
+        labels += [
+            saved[v] for v in re.findall(r"\{\{\s*(\w+)\s*\}\}", inner) if v in saved
+        ]
+        plain = re.sub(r"\{[%{#].*?[%}#]\}|<[^>]*>", " ", inner, flags=re.DOTALL)
+        labels.append(plain)
+    return {" ".join(label.split()) for label in labels} - {""}
+
+
+def test_control_labels_reads_every_way_a_label_is_written():
+    """The guard below sees a label however a template writes it."""
+    source = (
+        "<a href='x'>{% translate 'Refresh A' %}</a>"
+        '<button>{% trans "Refresh B" %}</button>'
+        "{% button type='submit' %}{% blocktranslate %}Refresh C{% endblocktranslate %}"
+        "{% endbutton %}"
+        '{% translate "Refresh D" as label %}<a href="y">{{ label }}</a>'
+        '<input type="submit" value="{% translate \'Refresh E\' %}">'
+        "<a href='z'>Check for updates</a>"
+        '<a hidden href="w">{% translate "Refresh hidden" %}</a>'
+        '<a href="v">{% translate "Refresh F" %}</a> <a href="u">'
+        '{% translate "Refresh G" %}</a>'
+    )
+    labels = {label for label in control_labels(source) if REREAD_WORDING.match(label)}
+    assert labels == {
+        "Refresh A",
+        "Refresh B",
+        "Refresh C",
+        "Refresh D",
+        "Refresh E",
+        "Check for updates",
+        "Refresh F",
+        "Refresh G",
+    }
 
 
 def test_no_manual_page_refresh_controls():
     """Admin pages update themselves (UX conventions, "Pages that update
-    themselves", #1586): no template draws a link or button that re-reads
-    the page's own state, other than the go-live pages slice 2 converts.
-    "Refresh from ParishSoft" and "Refresh now" start a download (actions),
-    so they are not page refreshes."""
-    actions = {"Refresh from ParishSoft", "Refresh now"}
+    themselves", #1586): no template draws a visible link, button or input,
+    and no Python code builds a label, with wording that re-reads the page's
+    own state ("Refresh…", "Check for updates", …), other than the go-live
+    pages slice 2 converts (#1585). The controls in NOT_PAGE_REFRESH are not
+    page refreshes. Every occurrence in a file counts."""
     found = {}
-    for path in TEMPLATES.rglob("*.html"):
-        text = path.read_text()
-        for label in re.findall(
-            r'<(?:a|button)\b[^>]*>\s*\{% translate "(Refresh[^"]*)" %\}', text
-        ) + re.findall(r'\{% button [^%]*%\}\{% translate "(Refresh[^"]*)" %\}', text):
-            if label not in actions:
-                found[path.name] = label
+    for path in sorted(TEMPLATES.rglob("*.html")):
+        for label in control_labels(path.read_text()):
+            if REREAD_WORDING.match(label) and label not in NOT_PAGE_REFRESH:
+                found.setdefault(path.name, set()).add(label)
     assert found == GO_LIVE_REFRESH
+    built = {}
+    for path in sorted(PACKAGE.rglob("*.py")):
+        if "migrations" in path.parts or "tests" in path.parts:
+            continue
+        for m in PYTHON_LABEL.finditer(path.read_text()):
+            label = m["text"] or m["text2"]
+            # A message (a sentence ending in a stop) is not a control label.
+            sentence = label.rstrip().endswith((".", "?", "!"))
+            exempt = sentence or label in NOT_PAGE_REFRESH
+            if REREAD_WORDING.match(label) and not exempt:
+                built.setdefault(path.name, set()).add(label)
+    assert built == {}
     for path in TEMPLATES.rglob("*.html"):
         text = path.read_text()
         assert "data-live-restart" not in text, path.name
         assert "data-live-refresh-label" not in text, path.name
+        # The periodic re-read's own link is never a visible control.
+        for tag in re.findall(r"<a\b[^>]*\bdata-reread-every\b[^>]*>", text):
+            assert re.search(r"(?<![\w-])hidden(?![\w-])", tag), path.name
+
+
+def test_refused_updates_say_the_same_in_both_scripts():
+    """A refused automatic read (the sign-in ended) says one sentence on
+    every page, whether a status region or a periodic re-read was refused
+    (UX conventions, "Pages that update themselves", #1586)."""
+    scripts = TEMPLATES.parents[1] / "static/stewardship"
+    said = {
+        re.search(r'const UPDATES_REFUSED = "([^"]+)";', (scripts / name).read_text())[
+            1
+        ]
+        for name in ("ui-v1.js", "live-status-v1.js")
+    }
+    assert said == {"Couldn't check for updates. Reload the page or sign in again."}
