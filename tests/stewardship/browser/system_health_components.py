@@ -26,7 +26,6 @@ from parishkit.stewardship.system_health import (
     group_processes,
     loaded_query,
     loaded_states,
-    page_findings,
     resave_tile,
     source_form_tile,
 )
@@ -242,6 +241,19 @@ def health(
         data_as_of=now - timedelta(hours=9),
         connection=Connection("working", now - timedelta(minutes=10)),
     )
+    backup_request = (
+        BackupRequestStatus(
+            state="waiting",
+            status=request or "held",
+            created_at=now - timedelta(minutes=12),
+            held_at=now - timedelta(minutes=2),
+            claimed_at=now - timedelta(minutes=1) if request else None,
+            finished_at=now if request == "finished" else None,
+            failure_kind=None,
+        )
+        if troubled or waiting or request
+        else None
+    )
     problems = find_problems(
         mode="production",
         processes=processes,
@@ -250,6 +262,10 @@ def health(
         incidents=incidents,
         refresh=refresh,
         backup_at=now - timedelta(hours=13),
+        backup_request=backup_request,
+        # Off-site copies are set up, except on the troubled page, where
+        # their absence in Production is a warning (decision 5).
+        offsite_set_up=not troubled,
     )
     return SystemHealth(
         checked_at=now,
@@ -276,19 +292,7 @@ def health(
         backup_key_matches=True,
         backup_bytes=48 * 1024 * 1024,
         backup_version="1.4.2",
-        backup_request=BackupRequestStatus(
-            state="waiting",
-            status=request or "held",
-            created_at=now - timedelta(minutes=12),
-            held_at=now - timedelta(minutes=2),
-            claimed_at=now - timedelta(minutes=1) if request else None,
-            finished_at=now if request == "finished" else None,
-            failure_kind=None,
-        )
-        if troubled or waiting or request
-        else None,
-        # Off-site copies are set up, except on the troubled page, where
-        # their absence in Production is a warning (decision 5).
+        backup_request=backup_request,
         offsite=None
         if troubled
         else SimpleNamespace(
@@ -344,6 +348,8 @@ def services_state(model, now, state):
             incidents=model.incidents,
             refresh=model.refresh,
             backup_at=model.backup_at,
+            backup_request=model.backup_request,
+            offsite_set_up=model.offsite is not None,
         ),
     )
 
@@ -390,6 +396,8 @@ def mail_state(model, now, state):
                 incidents=model.incidents,
                 refresh=model.refresh,
                 backup_at=model.backup_at,
+                backup_request=model.backup_request,
+                offsite_set_up=model.offsite is not None,
             ),
         }
     return replace(model, **values)
@@ -464,9 +472,7 @@ def components(context, admin):
             | {
                 "admin_chrome": chrome,
                 "health": model,
-                "dashboard": dashboard(
-                    model, findings=page_findings(model), loaded=loaded
-                ),
+                "dashboard": dashboard(model, loaded=loaded),
                 "source_form_count": form,
                 "source_form_tile": source_form_tile(form),
                 "resave_tile": resave_tile(resave),

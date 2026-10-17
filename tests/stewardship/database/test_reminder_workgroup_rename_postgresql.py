@@ -24,7 +24,6 @@ from parishkit.stewardship.source.workgroups import (
     current_evidence,
     excluded_duids,
 )
-from parishkit.stewardship.system_health import read_health
 
 from .campaign_builders import campaign_clock
 from .test_family_mail_bulk_postgresql import (  # noqa: F401
@@ -47,6 +46,7 @@ from .test_family_mail_prepare_ahead_postgresql import (  # noqa: F401
 from .test_family_mail_worker_postgresql import dispatch_worker  # noqa: F401
 from .test_reminder_workgroup_postgresql import (
     NAME,
+    missing_workgroup,
     record,
     set_workgroup,
     target,
@@ -110,8 +110,7 @@ def test_a_rename_keeps_the_previous_families_until_a_refresh(invited):  # noqa:
     assert identity_workgroup(harness, 1) == NAME
     assert identity_workgroup(harness, OTHER) is None
     # System health does not call the new name missing before a refresh.
-    _health, page = read_health(harness.service.store)
-    assert page["workgroup_missing"] is None
+    assert missing_workgroup(harness) is None
     with campaign_clock(due_at - INSIDE):
         plan()
     assert skipped_targets(due_at) == {target(1)}
@@ -165,8 +164,7 @@ def test_a_misspelled_rename_keeps_skipping_after_its_refresh(invited):  # noqa:
     harness, _path, _provider, due_at = invited
     misspelled(harness)
     assert excluded_duids(values(harness)) == {1}
-    _health, page = read_health(harness.service.store)
-    assert page["workgroup_missing"] == MISSPELLED
+    assert missing_workgroup(harness) == (MISSPELLED, "error")
     with campaign_clock(due_at - INSIDE):
         plan()
     assert skipped_targets(due_at) == {target(1)}
@@ -182,8 +180,7 @@ def test_a_correction_after_a_misspelling_applies_its_families(invited):  # noqa
     assert excluded_duids(values(harness)) == {1}
     record(RENAMED, {OTHER})
     assert excluded_duids(values(harness)) == {OTHER}
-    _health, page = read_health(harness.service.store)
-    assert page["workgroup_missing"] is None
+    assert missing_workgroup(harness) is None
     with campaign_clock(due_at - INSIDE):
         plan()
     assert skipped_targets(due_at) == {target(OTHER)}
