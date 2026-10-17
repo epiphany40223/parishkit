@@ -207,7 +207,9 @@ def test_request_without_a_valid_profile_is_invalid(monkeypatch, overrides):
     ("body", "expected"),
     [
         (b'[{"organizationID":123}]', "valid"),
-        (b'[{"organizationID":124}]', "unavailable"),
+        # A key that sees another organization is its own permanent outcome,
+        # never a temporary outage (#1492).
+        (b'[{"organizationID":124}]', "mismatch"),
         (b'[{"organizationID":123},{"organizationID":124}]', "unavailable"),
         (b'[{"organizationID":"123"}]', "unavailable"),
         (b"[]", "unavailable"),
@@ -452,6 +454,8 @@ def test_request_local_failures_cannot_reject_a_credential(monkeypatch, stage, e
     [
         (b"valid\n", 0, True),
         (b"invalid\n", 0, False),
+        # Refused for good like an invalid key, so it is never retried (#1492).
+        (b"mismatch\n", 0, False),
         (b"unavailable\n", 0, None),
         (b"private\n", 0, None),
         (b"valid\n", 1, None),
