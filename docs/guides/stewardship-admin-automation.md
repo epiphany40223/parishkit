@@ -1332,8 +1332,9 @@ change and finish switching to it (see
 and `integration schedule-preview` previews the ParishSoft refresh schedule
 (see [Previewing the refresh schedule](#previewing-the-refresh-schedule)),
 and `integration key replace` saves a new key (see
-[Replacing a key](#replacing-a-key)); the Backup encryption key stays on its
-page for now.
+[Replacing a key](#replacing-a-key)), and the `integration backup-key`
+commands replace the Backup encryption key (see
+[Replacing the backup encryption key](#replacing-the-backup-encryption-key)).
 
 ```sh
 pk-admin integration list
@@ -1346,7 +1347,8 @@ integration, its `target`, `name` and whether it is `configured`.
 
 `integration show TARGET` takes `parishsoft`, `google_workspace` (Google
 Workspace mail), `email` (Outgoing email addresses), `slack` or `backup`
-(Off-site backups); the Backup encryption key stays on its page. Google
+(Off-site backups); the Backup encryption key has its own commands (see
+[Replacing the backup encryption key](#replacing-the-backup-encryption-key)). Google
 Workspace mail or Outgoing email addresses not set up is exit 1
 (`not_available`), as the page finds nothing to show.
 
@@ -1615,6 +1617,63 @@ in the wrong format at `key`, never quoting it. Each run is a new key
 change: if the outcome is unknown (exit 6), read the named request with
 `config request show` and the key change with `integration key status`
 before you try again.
+
+### Replacing the backup encryption key
+
+The `integration backup-key` commands are the **Backup encryption key**
+page's three steps, in the same order and with the same checks as the
+page and the backup runbook's "Replacing the key". They need a full-scope
+session and an Administrator, and stand in for the page's recent sign-in.
+Make the new key pair on the key machine first (`pk-stewardship
+backup-keygen`) and save only its `public_key` value in a file you own
+with mode 600; never give this server the private key.
+
+```sh
+pk-admin integration backup-key challenge --public-key-file ~/new-backup.pub
+# on the key machine: run backup-prove with the new private key and paste
+# the challenge line; it prints a 12-character code
+pk-admin integration backup-key preview --intent INTENT --code-stdin
+                                    # type the code, then Ctrl-D (not shown)
+pk-admin integration backup-key confirm --token TOKEN   # prompts
+```
+
+- `challenge` reads the public key from the file, as `--secret-file`
+  reads a key (a private regular file, here at most 200 bytes), and sends
+  it to the command on its own line, never as an argument. It refuses a
+  private key, a text that is not one public key, and the key already in
+  use, in the page's words. It prints `version`, `current` (the key in use
+  as the page's "Key in use" shows it: `source`, `fingerprint` and, for
+  the installed key, `backup_at`), `fingerprint` (the new key's: compare it
+  with the one `backup-keygen` printed), `challenge` (the line to paste
+  into `backup-prove`) and `intent`, which `preview` takes within fifteen
+  minutes. It records nothing.
+- `preview` takes the intent and the code `backup-prove` printed, from
+  `--code-file PATH` or `--code-stdin` (echo off at a terminal; piped, it
+  needs no `--yes`, as nothing prompts). The code is read as the page
+  reads it: any case, spaces or dashes. A code that does not match is
+  `invalid` at `code`; check that you used the new private key, and try
+  again with the same intent. An expired intent, or one made before the
+  settings changed, is `stale_version`: start again with `challenge`. It
+  prints `version`, `changes` (the fingerprint `before`, null when the
+  key in use is not known yet, and `after`) and `preview.token`. It
+  records nothing.
+- `confirm` prompts with both fingerprints and what the change means,
+  then makes the page's configuration request; `--yes` answers the
+  prompt, and `--token -` needs it. It records the fresh gate's event and
+  notice, `admin_cmd_integration_backup_key_confirm` and a `policy_change`
+  notice. Once the configuration installer applies it, every
+  Administrator is told by the page's `backup_key_replaced` security
+  event, and the next backup is sealed to the new key. It prints
+  `created` and `request`; follow the request with
+  `config request show REQUEST_ID --watch 5`. Keep the old private key
+  until every backup sealed to it has been deleted by retention, and open
+  the next backup with the new private key, as the restore drill does (see
+  the backup runbook's
+  [Replacing the key](stewardship-backup-runbook.md#replacing-the-key)).
+
+Staff is exit 1 (`denied`) before the public key or the code is read, and
+a read-only session is refused. No private key, code or pasted text is ever
+printed or recorded.
 
 ### Following a key change and finishing the switch
 
@@ -3398,6 +3457,18 @@ Each change is recorded in System logs as on the page
   fresh-gated and prompting, recording
   `admin_cmd_integration_key_finish_switching` and a `policy_change`
   notice).
+- `pk-admin/1` (#463): additive. `integration backup-key challenge
+  --public-key-stdin`, `integration backup-key preview --intent TOKEN
+  --code-stdin` and `integration backup-key confirm --token TOKEN [--yes]`,
+  the Backup encryption key page's steps (full scope; the confirmation is
+  fresh-gated and prompting, recording
+  `admin_cmd_integration_backup_key_confirm` and a `policy_change` notice).
+  The public key and the code follow the preamble as one
+  `pk-admin-public-key/1 <base64>` or `pk-admin-proof/1 <base64>` line,
+  which the host wrapper's `--public-key-file PATH`, or `--code-file PATH`
+  or `--code-stdin`, sends. The results have `version`, `current`,
+  `fingerprint`, `challenge` and `intent`; `version`, `changes` and
+  `preview`; and `created` and `request`.
 - `pk-admin/1` (#463): additive. `integration key replace TARGET
   --expected-version V --secret-stdin [--changes JSON] [--yes]`, a settings
   page's Save with a new key (full scope, fresh-gated and prompting,

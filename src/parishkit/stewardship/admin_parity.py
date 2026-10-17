@@ -426,15 +426,17 @@ LEDGER = {
     # Integrations and credentials.
     "integrations": command("integration list"),
     # The settings page as it opens, its Save, its Remove, the backup
-    # folder check and its Save with a new key (#463); the Backup
-    # encryption key's steps are still owed.
+    # folder check, its Save with a new key and the Backup encryption key's
+    # three steps (#463).
     "integration_settings": command(
         "integration show",
         "integration preview",
         "integration confirm",
         "integration backup-probe",
         "integration key replace",
-        owed="PR 10",
+        "integration backup-key challenge",
+        "integration backup-key preview",
+        "integration backup-key confirm",
     ),
     "integration_status": command("integration status"),
     # The ParishSoft page's live refresh schedule check (#632).

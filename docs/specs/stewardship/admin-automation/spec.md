@@ -866,9 +866,9 @@ A row applies once a command can take its action. On `main` no command yet
 confirms Production, withdraws or runs Testing cleanup (PR 12), so nothing
 records an `irreversible` notice or observes `automation_irreversible` yet.
 `users confirm`'s high-impact changes, `integration confirm`'s Slack changes
-and removals, `integration key finish-switching` and `integration key
-replace` record the `policy_change` notice and observe
-`automation_policy_change`; the backup key change (PR 10) will too. The
+and removals, `integration key finish-switching`, `integration key
+replace` and `integration backup-key confirm` record the `policy_change`
+notice and observe `automation_policy_change`. The
 [delivery plan](#delivery-plan) says which commands have landed.
 
 ### High-impact changes
@@ -1344,16 +1344,25 @@ command line (decision 15) through the same service functions, validation,
 sealing, confirmation and audit as the portal, and the same
 [credential installer protocol](../../../guides/stewardship-credential-installers.md),
 unchanged. The database and `require_fresh` side below is built (PR 5a),
-and so are `integration key replace` and the wrapper's secret input
-([#463](https://github.com/epiphany40223/parishkit/issues/463)); the backup
-key commands come later in PR 10.
+and so are `integration key replace`, the backup key commands and the
+wrapper's secret input
+([#463](https://github.com/epiphany40223/parishkit/issues/463)).
 
-- **Which commands.** The wrapper accepts `--secret-file` and
-  `--secret-stdin` only for the commands in its `SECRET` list (today
-  `integration key replace`), only once, and never with a `-` input:
-  standard input then carries the key. In the command line the container
-  sees, `--secret-file PATH` becomes `--secret-stdin`, so the path never
-  reaches it either.
+- **Which commands.** The wrapper's `secret_row` table names, for each
+  command that takes a value it reads itself, the file option, the
+  standard input option, the line's tag and the page's limit:
+  `integration key replace` (`--secret-file`, `--secret-stdin`,
+  `pk-admin-secret/1`, 128 KiB), `integration backup-key challenge`
+  (`--public-key-file` only, `pk-admin-public-key/1`, 200 bytes) and
+  `integration backup-key preview` (`--code-file`, `--code-stdin`,
+  `pk-admin-proof/1`, 200 bytes; the page's field limit,
+  `backup_key.MAX_FIELD`). It accepts each option only for its command,
+  only once, and never with a `-` input: standard input then carries the
+  value. In the command line the container sees, `--X-file PATH` becomes
+  `--X-stdin`, so the path never reaches it either; `--public-key-stdin` is
+  the container's alone and refused from the operator. The rest of this
+  section says "key" for any of the three values; a piped value needs
+  `--yes` only for a command that prompts.
 - **Reading a secret file.** `--secret-file PATH` first refuses a path that
   is a symbolic link or not a regular file (`test -L`, `test -f` and not
   `test -p`), so opening a FIFO cannot block, then opens the file once
@@ -1443,9 +1452,13 @@ key commands come later in PR 10.
   The paths are host paths the container cannot read: the wrapper reads the
   public key file and the proof code (file or terminal) exactly as it reads a
   secret, and sends each after the preamble on its own tagged base64 line,
-  `pk-admin-public-key/1 <base64>` and `pk-admin-proof/1 <base64>`.
+  `pk-admin-public-key/1 <base64>` and `pk-admin-proof/1 <base64>`. A
+  value over the page's 200-byte field limit, or not UTF-8, is `invalid` at
+  `public_key` or `code`, never quoting it.
   Its configuration request has no SQL freshness check (only Python's
-  `require_fresh`), so it needs no SQL change.
+  `require_fresh`), so it needs no SQL change. See
+  [Integrations and credentials](#integrations-and-credentials) for each
+  step.
 - **Setup wizard credentials** stay with the one-time first-Admin wizard,
   which is a permanent exemption (see [setup wizard](#setup-wizard)); its
   offline counterpart is `pk-stewardship bootstrap`. As defense in depth,
@@ -3566,7 +3579,7 @@ lists them.
 | `credential_status` | `integration key status TARGET [--request-id ID] [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
 | Key replacement through `integration_settings` | `integration key replace TARGET` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see [secret replacement](#secret-replacement) and below) |
 | `select_credential` | `integration key finish-switching-preview TARGET` and `integration key finish-switching TARGET` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
-| Backup encryption key change, through `integration_settings` with proof of possession | `integration backup-key challenge`, `integration backup-key preview`, `integration backup-key confirm` (PR 10) |
+| Backup encryption key change, through `integration_settings` with proof of possession | `integration backup-key challenge`, `integration backup-key preview` and `integration backup-key confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see [secret replacement](#secret-replacement) and below) |
 
 The refresh schedule is given to `integration preview parishsoft` as
 `--refresh-schedule DOCUMENT` (`-` reads standard input), with or without
@@ -3793,6 +3806,53 @@ follows) and `request` (the selection, as `config request show`); never
 the key or its fingerprint. Each run is a new key change, with no
 `--request-key`: a repeat while the first is pending is `not_available`,
 and a later error is `outcome_unknown` naming the selection request.
+
+The Backup encryption key page's three steps run through the page's own
+pieces in `accounts.backup_key` (full scope, as the page's posts record
+activity; Administrators only, the role checked before the value's line is
+read, so Staff is `denied` before anything else; a read-only session is
+refused, and a live full-scope session stands in for the page's recent
+sign-in, so the page's step-up resume has no counterpart):
+
+- `integration backup-key challenge --public-key-file PATH` runs the page's
+  `check_new_key` and `start_proof` in one read snapshot: a private key
+  (the top bit set, or the private half of the key in use), a text that is
+  not one public key or the key already in use is `invalid` at
+  `public_key` in the page's words, never quoting the paste. It prints
+  `version`, `current` (the page's "Key in use": `source`, `fingerprint`,
+  `backup_at`), `fingerprint` (the new key's), `challenge` (the sealed code
+  line `pk-stewardship backup-prove` opens on the key machine) and
+  `intent`, the page's own signed intent, in which the pasted key is
+  encrypted under a server key exactly as in the page's hidden field
+  (valid fifteen minutes). It records nothing.
+- `integration backup-key preview --intent TOKEN (--code-file PATH |
+  --code-stdin)` runs the page's `finish_proof`: a code that does not
+  match is `invalid` at `code` in the page's words (the same intent may be
+  tried again); an expired intent, or one made before the settings
+  changed, is `stale_version`; an altered one is `invalid` at `intent`;
+  another Administrator's is `denied`. A match is reviewed by the page's
+  `review_change` (which the page's review also calls): it prints
+  `version`, `changes` (one row, `field` `fingerprint`, `before` (null
+  where the page says "Not known yet") and `after`) and `preview.token`.
+  It records nothing.
+- `integration backup-key confirm --token TOKEN|-` (fresh-gated and
+  prompting) refuses a token the page did not sign before the prompt. The
+  prompt names the old and new fingerprints, as the review shows them,
+  says every Administrator is told and that backups already made stay
+  sealed to the old key; `--yes` answers it (`--token -` needs it). It
+  then confirms through `admin_editing.confirm_intent` with the page's
+  salt, with the fresh gate under the work lock (its event and
+  `fresh_gated` notice), and in the request's durable transaction records
+  `admin_cmd_integration_backup_key_confirm` (subject: the automation
+  session) and a `policy_change` notice observing
+  `automation_policy_change`. The configuration installer applies it and
+  its activation records the `backup_key_replaced` security event, as for
+  the page. It prints `created` and `request`; a repeat returns the
+  original request and records nothing new, and a later error is
+  `outcome_unknown` naming the request.
+
+No private key, typed code or pasted text appears in any output, log or
+audit row; the fingerprints are printed only where the page shows them.
 
 Secret values never pass through command output. The backup destination is an
 `integration` target; backups themselves already run as `pk-stewardship
