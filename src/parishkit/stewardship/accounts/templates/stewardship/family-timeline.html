@@ -50,7 +50,6 @@
 {% if export %}<section class="panel" aria-labelledby="timeline-export-heading">
 <h2 id="timeline-export-heading">{% translate "Export this timeline" %}</h2>
 <p>{% if testing %}{% translate "The file holds this Family's details, the summary and every line of the Testing rehearsal timeline above, as they are when you queue the export; later activity is not included." %}{% else %}{% translate "The file holds this Family's details, the summary and every line of the timeline above, as they are when you queue the export; later activity is not included." %}{% endif %}{% if show_codes %} {% translate "It includes the Family code." %}{% endif %}</p>
-<p class="notice">{% translate "Sensitive parish information: download only to a trusted device and share only with authorized recipients." %}</p>
 <form id="timeline-export" data-submit-waits data-keep-choices method="post" action="{{ export.url }}">{% csrf_token %}
 <input type="hidden" name="mode" value="{{ mode }}"><input type="hidden" name="request_key" value="{{ export.request_key }}">
 <fieldset{% if not export.mutable %} disabled aria-describedby="timeline-export-unavailable"{% endif %}><legend>{% translate "Timeline export options" %}</legend>
