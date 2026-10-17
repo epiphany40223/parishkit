@@ -2034,7 +2034,7 @@ A panel's summary says how many are applied
 ("Filters: 2 applied", or "none applied"), and that count follows an in-place
 Apply while the panel and its form keep their elements. A report's export form
 is likewise a closed disclosure (for example, "Export complete results (CSV,
-XLSX or PDF)") with its sensitive-data notice inside. The Family directory,
+XLSX or PDF)"). The Family directory,
 Additional information, Financial stewardship, Limitations and Census
 changes follow this (#227); System logs, Ministry follow-up and the
 remaining report pages are still to convert.
@@ -3333,6 +3333,17 @@ money, headers) are in the reports'
 [shared report behavior](../reports/spec.md#shared-report-behavior).
 **Precedent.** #926, #929, and the Administrator's decisions of 2026-10-10
 on [#958](https://github.com/epiphany40223/parishkit/pull/958).
+
+Export forms and export status pages carry no sensitive-data banner
+(Administrator decision, 2026-10-17,
+[#1539](https://github.com/epiphany40223/parishkit/issues/1539)). A sentence
+that says what the file holds or leaves out (for example, that a Family
+link's private email-link part is not included) stays as plain help in the
+export form. The privacy line inside each downloaded file stays: it travels
+with the file to readers who never saw the page
+([file design](../reports/spec.md#file-design)). **Why.** The banner was a
+reminder that gated nothing; the protections are role checks, `no-store`,
+download windows and audit records.
 
 A download may split one combined page cell into its parts, because a
 spreadsheet needs one value per cell to sort, filter or merge on: the parts

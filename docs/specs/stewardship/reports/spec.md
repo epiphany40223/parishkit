@@ -49,7 +49,9 @@ details and partial responses.
 
 Exports represent the complete filtered result, not merely the current page,
 unless the user explicitly selects rows. Before generation, the UI shows scope,
-row count estimate, format and sensitive-data warning. It asks for a time zone
+row count estimate and format, with no sensitive-data banner (the
+[downloaded files](../ui-conventions/spec.md#downloaded-files) rule). It asks
+for a time zone
 only when the file's rows hold exact times of actions; any other download uses
 the browser's zone unasked and names it in the file (the
 [time zone question](../ui-conventions/spec.md#downloaded-files),
