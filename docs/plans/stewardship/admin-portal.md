@@ -5,7 +5,9 @@ Task status: [Administration portal checklist](../../tasks/stewardship/admin-por
 This plan implements the
 [administration portal specification](../../specs/stewardship/admin-portal/spec.md).
 All routes, partial endpoints, job status, exports, and destructive workflows
-remain below `/admin/` and apply server-side authorization.
+remain below `/admin/` and apply server-side authorization. Since
+[#1547](https://github.com/epiphany40223/parishkit/issues/1547) no Admin
+action checks how long ago the Admin signed in; there is no step-up.
 
 ## Work packages
 
@@ -158,7 +160,7 @@ remain below `/admin/` and apply server-side authorization.
    campaign go-live gate, progress/retry/cancel UI, and BG-03 batched cleanup.
    Invalidate rehearsal credentials/sessions at gate acquisition and include
    their sensitive detail in cleanup readiness and final activation checks.
-3. Implement fresh-auth typed final confirmation and the short atomic
+3. Implement typed final confirmation and the short atomic
    draft-to-scheduled/direct-active transition with commit-time boundary check.
    Direct activation inserts only the durable catch-up demand/task and version
    guards; BG-04 materializes overdue work asynchronously. Show active campaign
@@ -184,7 +186,7 @@ remain below `/admin/` and apply server-side authorization.
    old-link invalidation/manual-code fallback, and atomically activate the
    current restore-epoch generation after manifest rechecks. Do not send
    replacement mail or resolve holds implicitly.
-2. Implement delivery pause/resume with fresh authentication, impact counts,
+2. Implement delivery pause/resume with impact counts,
    pre-provider recheck, held message visibility, coalescing, and post-close
    receipt/digest resolution.
 3. Implement closed-campaign end-date extension/readiness/reopen directly to
@@ -198,7 +200,7 @@ remain below `/admin/` and apply server-side authorization.
    explicit reasoned skip resolutions with coverage preview and safe work
    cancellation. Recheck the shared inventory transactionally at archive/Return.
 5. Test restore/pause/reopen/archive races, held messages, inconsistent state,
-   successor denial, and audit/reauthentication; include final-day/weekly mail
+   successor denial, and audit; include final-day/weekly mail
    not yet due, failed/unknown delivery, stale coverage, and durable skips across
    scheduler retries, schedule revisions, and unarchive/reopen.
 
@@ -289,8 +291,7 @@ switched off:
    switched off), the page's off and Testing states, Check ParishSoft with
    its in-place status, the plan table and counts, and
    `census_publication_viewed`.
-3. **Confirm and run**: Publish in the review dialog with the fresh sign-in
-   step-up, the run's in-place status and per-Member outcomes, Run again,
+3. **Confirm and run**: Publish in the review dialog, the run's in-place status and per-Member outcomes, Run again,
    the final full refresh, the refusal codes, the newest-plan check shared
    with the command line, and the publication audit types moved into the
    ParishSoft refreshes group, renamed "ParishSoft refreshes and
@@ -320,7 +321,7 @@ evidence on #528, a reviewed change replacing the gateway's
    dependent invalidation without uploading secrets or arbitrary attachments.
    Add asynchronous **Revalidate selected backup**, preserving the immutable
    backup and independent recovery expiry under the canonical purge workflow.
-4. Require fresh authentication, exact campaign name and generated phrase, then
+4. Require the exact campaign name and generated phrase, then
    queue the idempotent purge worker after atomic prerequisite recheck.
 5. Expose safe pre-delete rollback, resumable deletion, cleanup retry, terminal
    tombstone, and CRITICAL failure behavior without offering forbidden rollback.
@@ -373,6 +374,8 @@ the tests; items here only name them.
    guards (four session-bound fresh-gate guards and two secret request
    guards), plus any ADM-13 System health guard already installed, accept a full-scope automation session, caller-aware freshness
    checks, the confirmation prompt and `--yes`. Security-focused review.
+   (#1547 later removed the sign-in age checks; the automation acceptance,
+   prompt and notices stay.)
 7. **PR 6, refresh and Testing sends.** Refresh, sample and chosen-Family
    tests.
 8. **PR 7, delivery controls.** Pause, resume, closed-campaign resolution and
@@ -493,7 +496,7 @@ of 2026-10-04 are recorded in the specification.
    reads, including the backups panel's size and version columns, and the
    backup login's request updates), request mode and the backup lock, the
    panel's size, version and request state, and the runbook steps; **3b**
-   the Take a backup now button with its preview, fresh sign-in, audit
+   the Take a backup now button with its preview, audit
    event and command or pending exemption.
 5. **PR 4, clear a halted mail sender.** Halt identities, the clear signal
    and the mailbox check request with their guards (migration), the check
@@ -522,7 +525,7 @@ of 2026-10-04 are recorded in the specification.
    the read and clear definers (frozen migration 0078), the in-process
    override and children's environment, and `debug-off-clear`; **6b** the
    web's grants (no migration: grants are `database-grants`'), the button
-   with its preview, fresh sign-in, audit event and `system debug-off`,
+   with its preview, audit event and `system debug-off`,
    the operator clear's `debug_logging_allowed` event, the panel's
    who-and-when line and the runbook updates; **6c** Allow debug logging
    again (Testing only; the guard change is frozen migration 0088, with the
@@ -563,4 +566,4 @@ tracked on #530.
 - Long-running or external work returns durable status instead of blocking a web
   request.
 - Lifecycle, publication, restore, and purge mutations are transactional,
-  reauthenticated where specified, confirmed, and replayable from audit.
+  confirmed, and replayable from audit.

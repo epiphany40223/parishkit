@@ -1161,11 +1161,10 @@ Because LOCAL has no Google sign-in, a local-only route signs an Admin in.
     core of `accounts.authentication.complete_identity` MUST be refactored
     into one function that both paths call: the identity rate limiter, the
     recovery-epoch check (against the epoch stored with the token), `PortalUser`
-    get-or-create and the disabled check, `reauthenticate_admin` or
-    `issue_admin`, the session-guard `IntegrityError` handling and
-    `rotate_token`. The local path MUST NOT call `issue_admin` or
-    `reauthenticate_admin` directly. Sessions, audit, user roles and step-up
-    therefore behave as after Google sign-in (see
+    get-or-create and the disabled check, `issue_admin`, the session-guard
+    `IntegrityError` handling and `rotate_token`. The local path MUST NOT
+    call `issue_admin` directly. Sessions, audit and user roles therefore
+    behave as after Google sign-in (see
     [identity and session security](../architecture/spec.md#identity-and-session-security)).
   - The subject stored in `PortalUser.google_subject` is
     `local-test:<normalized email>`, which cannot collide with Google's
@@ -1175,29 +1174,14 @@ Because LOCAL has no Google sign-in, a local-only route signs an Admin in.
   - The route is one of the access gate's authentication routes, so it
     works before setup completes and during restore review, when the
     developer needs it to reach the setup wizard. In LOCAL the login page
-    and the fresh-authentication prompt describe the operator command
-    instead of offering Google; a new link opened in a signed-in browser
-    is a step-up of that session in place. The text each page puts around
-    the prompt does not mention Google in LOCAL either
+    describes the operator command instead of offering Google, and its text
+    does not mention Google
     ([#619](https://github.com/epiphany40223/parishkit/issues/619)); other
     profiles keep their Google wording unchanged.
-  - A step-up returns to the page named by the most recent
-    fresh-authentication prompt
-    ([#613](https://github.com/epiphany40223/parishkit/issues/613)). Each
-    prompt records its return path in the browser's `localStorage` (the
-    printed link is often opened in a new tab), replacing any earlier one,
-    for ten minutes. A prompt copy that CSS hides (a page that draws one
-    control with and without its step-up and shows one) records nothing
-    ([#1385](https://github.com/epiphany40223/parishkit/issues/1385)); a
-    prompt inside a closed section still records, since opening the section
-    shows it. The sign-in page's script sends it as the form's `next`
-    and clears it when the form is submitted, so a link opened but not
-    submitted keeps it. The POST passes it to the shared core, which honours
-    it only when the sign-in is a step-up of this browser's live session for
-    the same user, and revalidates it as a same-origin Admin path, as it does
-    Google's `next`; authentication routes, including this one, fall back to
-    `/admin/`. A new session, or a browser without storage, returns to
-    `/admin/`.
+  - Every local sign-in, like a Google one, issues a new session and opens
+    `/admin/`; no return path is recorded or honoured, and a link opened in
+    an already signed-in browser replaces that session
+    ([#1547](https://github.com/epiphany40223/parishkit/issues/1547)).
 - **Where the protection comes from.** The real guard is reachability: Caddy
   publishes only on the VM's loopback and Lima forwards only to the laptop's
   loopback. The `Host` check is defence in depth; behind Docker's published

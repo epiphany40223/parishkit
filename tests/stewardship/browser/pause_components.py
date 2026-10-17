@@ -31,7 +31,6 @@ def components(context, admin):
     values = context | {
         "admin_chrome": admin,
         "available": True,
-        "fresh": True,
         # The preview panels' cautions and coverage labels, as page() gives.
         "cautions": CAUTIONS,
         "coverage_labels": COVERAGE_LABELS,

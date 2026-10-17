@@ -3,14 +3,14 @@ refresh-accept-preview`` with ``system refresh-accept`` (ADM-13 PR 5b, #530).
 
 The control appears while the ParishSoft refresh panel shows a refused large
 change. Preview (every recorded count, counts only), then the tick box and
-confirm, answered with the page in place; a stale sign-in gets the "Confirm
-with Google" step-up; a repeated confirmation returns the first acceptance;
+confirm, answered with the page in place; a sign-in of any age accepts
+(#1547); a repeated confirmation returns the first acceptance;
 a refusal that changed since the preview ("no longer the newest") is
 answered as "This changed since you looked"; an empty load and a lapsed
 acceptance grey the button with their reasons. Confirming records
 ``source_drop_accepted`` naming the acceptance and asks for a full refresh.
-The commands do the same on the restricted web login, with the automation
-session as the fresh sign-in.
+The commands do the same on the restricted web login, bound to the
+automation command session.
 
 The refusal itself is seeded as the schema owner with the guards off
 (``unguarded``): the worker's side of recording one is 5a's
@@ -25,7 +25,6 @@ import pytest
 from django.db import connection, transaction
 
 from parishkit.stewardship import system_health
-from parishkit.stewardship.accounts import sessions
 from parishkit.stewardship.accounts.configuration_models import (
     AppliedConfigurationVersion,
 )
@@ -50,7 +49,7 @@ from parishkit.stewardship.source.refresh_models import (
 from ..log_samples import sample as log_sample
 from ..policy_factory import address
 from ..test_source_corpus import source
-from .auth_builders import signed_in, unguarded
+from .auth_builders import signed_in, stale_sign_in, unguarded
 from .automation_builders import paired
 from .campaign_builders import change
 from .test_admin_test_sample_cli_postgresql import runner
@@ -423,22 +422,16 @@ def test_the_tick_box_and_the_binding_are_checked_by_the_server(parish, google):
     assert 'value="accept_preview"' in cancelled.content.decode()
 
 
-def test_a_stale_sign_in_gets_the_google_step_up(parish, google, monkeypatch):
-    """Answered in the region: the step-up form, returning to this page."""
+def test_an_old_sign_in_accepts_without_a_step_up(parish, google):
+    """A sign-in older than five minutes accepts at once (#1547)."""
     refusal()
     browser, _ = signed_in()
+    stale_sign_in()
     token = token_of(post(browser, action="accept_preview").content.decode())
-    monkeypatch.setattr(sessions, "FRESH_SECONDS", -1)
-    for values in (
-        {"action": "accept_preview"},
-        {"action": "accept_confirm", "token": token, "checked": "yes"},
-    ):
-        response = post(browser, **values)
-        assert response.status_code == 403
-        body = response.content.decode()
-        assert 'data-accept-refused="reauthenticate"' in body
-        assert 'name="next" value="/admin/system/health/"' in body
-    assert not SourceDropAcceptance.objects.exists()
+    confirmed = post(browser, action="accept_confirm", token=token, checked="yes")
+    assert confirmed.status_code == 200, confirmed.content.decode()
+    assert "data-accept-done" in confirmed.content.decode()
+    assert SourceDropAcceptance.objects.count() == 1
 
 
 def test_only_an_administrator_may_accept(parish, google):

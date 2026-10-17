@@ -78,13 +78,12 @@ def test_the_mail_message_page_shows_retry_unavailable_with_why():
     )
 
 
-def test_delivery_confirms_wait_for_a_recent_sign_in():
-    """Without a recent sign-in each Confirm is drawn disabled, named by the
-    sign-in notice; with one it is the confirm form."""
+def test_delivery_confirms_never_wait_for_a_sign_in():
+    """Each reviewed control's Confirm is its form, whatever the sign-in's
+    age (#1547): no sign-in notice names it."""
     text = (TEMPLATES / "delivery-control.html").read_text()
-    assert 'id="delivery-fresh-reason"' in text
-    assert "control_token and fresh" not in text
-    assert text.count('aria-describedby="delivery-fresh-reason"') == 3
+    assert "fresh" not in text.replace("refresh", "")
+    assert text.count('<input type="hidden" name="action" value="confirm">') == 3
 
 
 def test_the_weekly_report_in_progress_is_shown_unavailable():
@@ -196,11 +195,11 @@ def unavailable(html, label, reason):
     assert f'id="{reason}"' in html
 
 
-def test_testing_cleanup_without_a_recent_sign_in_is_unavailable():
-    """Start Testing cleanup is in view, named by the sign-in step (#1331)."""
+def test_testing_cleanup_needs_no_recent_sign_in():
+    """A signed cleanup preview offers Start Testing cleanup at once (#1547)."""
     text = (TEMPLATES / "go-live-readiness.html").read_text()
-    assert 'id="cleanup-fresh-reason"' in text
-    assert 'disabled=True aria-describedby="cleanup-fresh-reason"' in text
+    assert "cleanup-fresh-reason" not in text
+    assert '<input type="hidden" name="action" value="cleanup">' in text
 
 
 def test_queue_without_a_weekly_schedule_is_unavailable():
@@ -317,7 +316,7 @@ def _review(groups=(), needed=0):
 GROUP = HeldGroup(uuid4(), "initial", None, unreviewed=2, reachable=2)
 
 
-def _restore_page(review, *, fresh=True, refusal="", step=None):
+def _restore_page(review, *, refusal="", step=None):
     """The Restore review page as its view renders it."""
     return render_to_string(
         "stewardship/restore-review.html",
@@ -326,7 +325,6 @@ def _restore_page(review, *, fresh=True, refusal="", step=None):
             "step": step or {},
             "release_ready": not refusal,
             "release_refusal": refusal,
-            "fresh": fresh,
             "page_url": "/admin/maintenance",
         },
     )
@@ -339,33 +337,32 @@ def test_release_while_a_campaign_change_runs_is_unavailable_with_why():
     assert "a campaign change or a purge is still running" in html
 
 
-def test_restore_decisions_wait_for_a_recent_sign_in():
-    """Without a recent sign-in every decision and the release name the one
-    step-up notice; with one they are available (#1331)."""
-    stale = _restore_page(_review([GROUP]), fresh=False)
-    assert stale.count('id="restore-fresh-reason"') == 1
-    for label in ("Release the site", "Assume these were sent", "Send these again"):
-        unavailable(stale, label, "restore-fresh-reason")
-    fresh = _restore_page(_review([GROUP]))
-    assert "restore-fresh-reason" not in fresh
-    assert "data-step-up-notice" not in fresh
-    # A refused step's own step-up takes the id, after the panel's controls.
+def test_restore_decisions_need_no_recent_sign_in():
+    """Every decision and the release are available whatever the sign-in's age
+    (#1547); a step refused because the session ended says so after the
+    panel's controls."""
+    page = _restore_page(_review([GROUP]))
+    assert "restore-fresh-reason" not in page
+    for label in ("Assume these were sent", "Send these again"):
+        buttons = re.findall(rf"<button[^>]*>{label}</button>", page)
+        assert buttons and all(" disabled" not in button for button in buttons)
     refused = _restore_page(
-        _review([GROUP]),
-        fresh=False,
-        step={"refused": "reauthenticate", "panel": "release"},
+        _review([GROUP]), step={"refused": "signed_out", "panel": "release"}
     )
-    assert refused.count('id="restore-fresh-reason"') == 1
-    assert refused.index("Release the site") < refused.index('restore-fresh-reason"')
+    assert 'data-restore-refused="signed_out"' in refused
+    assert refused.index("Release the site") < refused.index(
+        'data-restore-refused="signed_out"'
+    )
 
 
-def test_held_email_decisions_wait_for_a_recent_sign_in():
-    """The Held emails page names its step-up notice the same way (#1331)."""
+def test_held_email_decisions_need_no_recent_sign_in():
+    """The Held emails page offers its decisions the same way (#1547)."""
     held = HeldEmails(groups=(GROUP,))
     html = render_to_string(
         "stewardship/held-emails.html",
-        {"held": held, "step": {}, "fresh": False, "page_url": "/held"},
+        {"held": held, "step": {}, "page_url": "/held"},
     )
-    assert html.count('id="restore-fresh-reason"') == 1
+    assert "restore-fresh-reason" not in html
     for label in ("Assume these were sent", "Send these again"):
-        unavailable(html, label, "restore-fresh-reason")
+        buttons = re.findall(rf"<button[^>]*>{label}</button>", html)
+        assert buttons and all(" disabled" not in button for button in buttons)

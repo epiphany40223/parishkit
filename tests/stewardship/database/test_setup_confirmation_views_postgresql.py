@@ -86,10 +86,10 @@ def test_final_confirmation_freezes_once_then_shows_passive_original_progress(
     assert not setup_http.configured()
 
 
-def test_finishing_page_asks_for_a_fresh_sign_in_when_install_cannot_start(
+def test_finishing_page_keeps_installing_after_an_old_sign_in(
     setup_http, monkeypatch, tmp_path
 ):
-    """An old original sign-in blocks credential intake; the page says how to fix."""
+    """An old original sign-in asks for nothing: installation goes on (#1547)."""
     from datetime import timedelta
 
     request, _, token = prepared(setup_http, monkeypatch, tmp_path)
@@ -108,16 +108,12 @@ def test_finishing_page_asks_for_a_fresh_sign_in_when_install_cannot_start(
         response = browser.get("/admin/setup/cancel")
         assert response.status_code == 200, response.content
         body = response.content.decode()
-        assert "For security, installing credentials needs a Google sign-in" in body
-        assert "Your setup is kept." in body
-        assert 'name="next" value="/admin/setup/cancel"' in body
-        assert response.context["reauthenticate"]
-        # The polled region carries the same notice for the page to show in
-        # place, with an empty CSRF token the page fills from its own.
+        assert "needs a Google sign-in" not in body
+        assert "reauthenticate" not in response.context
+        # The polled region still follows installation, with no sign-in notice.
         region = browser.get("/admin/setup/cancel?format=status").content.decode()
-        assert "For security, installing credentials needs a Google sign-in" in region
-        assert '<template data-live-mirror="setup-step-up">' in region
-        assert 'name="csrfmiddlewaretoken" value=""' in region
+        assert "Install the ParishSoft credential" in region
+        assert "setup-step-up" not in region
 
 
 def test_missing_readiness_disables_ui_and_server_refuses_forced_confirmation(

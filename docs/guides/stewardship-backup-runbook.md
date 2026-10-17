@@ -87,9 +87,7 @@ the Administrator proves they hold it:
 1. On the key machine, make a new pair with `backup-keygen` into a new file,
    as in [The key](#the-key), and record its fingerprint with it.
 2. Paste only the printed `public_key` value on the page and select
-   **Continue** (a Google sign-in from the last five minutes is needed, and
-   again to confirm; the page asks for it after the code if it has gone
-   stale, and the code expires after 15 minutes).
+   **Continue** (the code expires after 15 minutes).
    The page shows the new fingerprint and a challenge line starting with
    `PKBKP1:`.
 3. On the key machine, run `backup-prove` with the new private key and paste

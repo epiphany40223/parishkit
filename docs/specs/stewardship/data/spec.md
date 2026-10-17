@@ -163,7 +163,7 @@ identity, outgoing sender/reply address, optional Slack channel, backup
 target, and backup encryption key. Secret values remain in credential files.
 
 `SecretReplacementRequest` records target type, sealed-staging reference and
-expiry, actor/reauthentication, expected prior fingerprint, validation/test and
+expiry, actor and the acting session's sign-in instant, expected prior fingerprint, validation/test and
 installer checkpoints, resulting safe fingerprint, consumer acknowledgement,
 and terminal outcome. It never stores plaintext. A target-specific uniqueness
 constraint permits only one nonterminal request per credential target; only the
@@ -1340,7 +1340,7 @@ instead of allocating another. State sets, fencing, and allowed transitions are
 owned by [background processing](../background-processing/spec.md#durable-scheduling-and-task-execution).
 `ProductionTransitionRequest` stores campaign/Admin, state, gate version,
 inventory digest and counts, non-sensitive Testing aggregate reference, cleanup
-TaskRun, batch checkpoints/counts, acknowledgement and reauthentication times,
+TaskRun, batch checkpoints/counts, acknowledgement time and the acting session's sign-in instant,
 readiness evidence, activation result, and sanitized failure. Its states are
 `cleanup_queued`, `cleanup_running`, `cleanup_retry_wait`, `cleanup_complete`,
 `cleanup_failed`, `activated`, and `cancelled`. `cleanup_failed` means automatic
@@ -2026,8 +2026,8 @@ current authorization/filter snapshot.
    fetched payload that lacks any field of the provider's request schema
    blocks its entity, so a write can never clear a field that was not read.
 7. Persist the plan with the recorded source version and source-payload digests,
-   present counts and conflicts, and require fresh Google authentication and
-   final confirmation before queueing writes. The plan also records each
+   present counts and conflicts, and require final confirmation before
+   queueing writes. The plan also records each
    planned proposal's version, which any decision or Administrator edit
    changes; confirmation requires every version unchanged and the counts
    shown equal to the plan's, and a Testing-mode plan is never confirmed.

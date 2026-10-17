@@ -521,14 +521,19 @@ def test_worker_acknowledges_only_bytes_it_reads_from_its_mount(working, tmp_pat
     assert working["published"] == []
 
 
-def test_stale_sign_in_gets_step_up_and_stages_nothing(working):
-    """A key is never read or sealed without a recent Google sign-in."""
+def test_an_old_sign_in_stages_the_key(working):
+    """A sign-in older than five minutes saves and stages the key (#1547).
+
+    The page carries no sign-in notice or warning that the key is not kept.
+    """
     stale_sign_in()
+    page = working["browser"].get(URL)
+    assert b"enter it again when you return" not in page.content
+    assert b"the last five minutes" not in page.content
     response = save(working)
-    assert response.status_code == 403
+    assert response.status_code == 302 and response["Location"] == URL
     assert CANDIDATE not in response.content
-    assert not SecretReplacementRequest.objects.exists()
-    assert not ConfigurationChangeRequest.objects.exists()
+    assert SecretReplacementRequest.objects.count() == 1
 
 
 def test_blank_key_keeps_the_settings_preview(working):
@@ -562,46 +567,6 @@ def test_key_with_a_first_schedule_change_says_to_save_them_apart(working):
     assert re.search(
         r'data-error-summary.*?<a href="#id_candidate">Nothing was saved', html, re.S
     )
-    assert CANDIDATE not in response.content
-    assert not SecretReplacementRequest.objects.exists()
-
-
-def test_stale_key_save_page_says_nothing_was_done(working):
-    """A browser save refused for a stale sign-in explains itself plainly.
-
-    The key is never kept for after the step-up (secrets are not stored), so
-    the page says nothing was done and the key must be entered again.
-    """
-    browser, store = working["browser"], working["service"].store
-    # The page warns that a step-up discards what was entered (the pasted
-    # key included) only when Save would ask for one (#1159); a sign-in that
-    # ages after a fresh render gets this refusal page, which says the same.
-    hint = b"what you entered is not kept: enter it again when you return"
-    assert hint not in browser.get(URL).content
-    stale_sign_in()
-    page = browser.get(URL)
-    assert hint in page.content
-    # One step-up notice, not one for the settings and another for the key.
-    assert page.content.count(b"the last five minutes") == 1
-    fields = {
-        "action": "preview",
-        "base_digest": store.active().digest,
-        "organization_id": "12345",
-        "intent": hidden(page, "intent"),
-        "candidate": CANDIDATE.decode(),
-        "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
-    }
-    with identity("pk_stewardship_web"):
-        response = browser.post(
-            URL,
-            fields,
-            HTTP_ACCEPT="text/html,*/*;q=0.8",
-            HTTP_SEC_FETCH_MODE="navigate",
-        )
-    assert response.status_code == 403
-    assert b"Confirm with Google" in response.content
-    assert b"Nothing was done or sent." in response.content
-    assert b"enter it again after you return" in response.content
     assert CANDIDATE not in response.content
     assert not SecretReplacementRequest.objects.exists()
 

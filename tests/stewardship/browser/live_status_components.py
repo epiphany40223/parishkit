@@ -30,8 +30,8 @@ from parishkit.stewardship.web.contracts import PageWindow
 from parishkit.stewardship.web.tables import window_table
 
 from .automation_components import canonical
+from .family_test_components import family_tests_page
 from .send_progress_components import _send
-from .step_up_components import render
 
 REQUEST, RUNNING = UUID(int=700), UUID(int=703)
 CREDENTIAL = reverse("admin:credential_status", args=[REQUEST])
@@ -157,8 +157,7 @@ def components(context, admin):
 
     def family_tests(items):
         """Send to chosen Families with these recent tests, none pending."""
-        return render(
-            "family-tests",
+        return family_tests_page(
             context,
             admin,
             confirm=False,

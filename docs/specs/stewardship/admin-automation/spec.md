@@ -33,11 +33,12 @@ last open questions; no decision remains open.
 5. **Fresh-gated and irreversible actions** (the
    [fresh-gated actions](#fresh-gated-actions-from-the-command-line), such as
    the final Production confirmation and pre-start withdrawal, and the
-   irreversible Testing cleanup): no browser step-up and no per-action browser
-   approval. A full-scope session may run them; the command line asks for
+   irreversible Testing cleanup): no per-action browser approval (and, since
+   [#1547](https://github.com/epiphany40223/parishkit/issues/1547), no page
+   needs a recent sign-in either). A full-scope session may run them; the command line asks for
    confirmation at the prompt, which `--yes` skips. Every action is audited
    under the approving Administrator.
-6. **Emergency pause:** no step-up either, as in 5.
+6. **Emergency pause:** no per-action browser approval either, as in 5.
 7. **Secret replacement:** browser-only for now (reversed by decision 15).
 8. **Family-level personal data:** only in owner-only export files from a
    full-scope session; terminal output shows counts and summaries only.
@@ -75,8 +76,8 @@ last open questions; no decision remains open.
     session, and the wrapper exits 2 when `/etc/machine-id` is missing (see
     [session file](#session-file)).
 19. **Role grants need no fresh sign-in** (#383): the portal keeps its
-    low-friction role changes without a fresh Google sign-in, and sessions
-    follow the portal.
+    low-friction role changes, and sessions follow the portal. Since #1547 no
+    Admin action needs a recent sign-in.
 
 ## Purpose and scope
 
@@ -98,7 +99,7 @@ This interface gives them:
   scope allows, including the fresh-gated ones, without the Administrator at a
   browser, for at most 30 days;
 - **safeguards:** previews, version checks and the database guards wherever
-  the page has them, a confirmation prompt for fresh-gated and irreversible
+  the page has them, a confirmation prompt for privileged (fresh-gated) and irreversible
   actions, and notices to every Administrator when a session is approved and
   when it takes such an action;
 - **readable state:** versioned JSON documents for status and progress, and a
@@ -117,7 +118,7 @@ locks as the page; the throughput work is
   that feeds it the session file. There is no HTTP JSON API and no MCP server
   in this work (see [interface choice](#interface-choice)).
 - Commands act through an **automation session**: a durable database record,
-  approved by one Administrator in a freshly signed-in browser, that lives up
+  approved by one Administrator in a signed-in browser, that lives up
   to 30 days. Its secret stays in an owner-only file on the host; the database
   keeps only its SHA-256 digest (see [automation sessions](#automation-sessions)).
 - Each invocation opens a short-lived **command session**, an ordinary Admin
@@ -126,11 +127,12 @@ locks as the page; the throughput work is
 - Commands use the **web's restricted SQL login** and a narrow, web-equivalent
   Django assembly with the web's signing keyring, so every SQL guard and grant
   applies as for the page.
-- **Fresh-gated actions accept a full-scope automation session** in place of a
-  recent Google sign-in, including integration key and backup key
-  replacement. Six SQL guards and the Python freshness checks change to
-  say so explicitly, and each ADM-13 System health guard includes the same
-  clause when it is built; only the one-time setup wizard stays browser-only (see
+- **Fresh-gated (privileged) actions accept a full-scope automation session**,
+  including integration key and backup key replacement; only the one-time
+  setup wizard stays browser-only. No action checks a sign-in's age
+  ([#1547](https://github.com/epiphany40223/parishkit/issues/1547)), so the
+  session does not stand in for anything: each SQL guard binds the row to a
+  live session of the actor, which a command session is (see
   [SQL guards that accept automation sessions](#sql-guards-that-accept-automation-sessions)).
 - Previews become **preview and confirm commands** carrying the same signed
   tokens as the page; the typed value or acknowledgement the page asks for is
@@ -171,11 +173,11 @@ What it does guarantee:
   approved the session, and every state-changing command is in the audit trail,
   marked as coming from that automation session, next to the domain records it
   produced.
-- **A recent sign-in behind each session.** The database refuses to create a
-  session unless the approving browser session belongs to an Administrator and
-  signed in with Google within the last five minutes. SQL proves that recent
-  sign-in; that the Administrator actually clicked **Approve** rests on the
-  page's CSRF-protected form, as for every other Admin action.
+- **A live Administrator sign-in behind each session.** The database refuses
+  to create a session unless the approving browser session is a live Google
+  sign-in of an Administrator (of any age, since #1547). That the
+  Administrator actually clicked **Approve** rests on the page's
+  CSRF-protected form, as for every other Admin action.
 - **No new network exposure.** Nothing new listens on the public origin except
   the approval and access pages, which are ordinary authenticated Admin pages.
 - **A useless database copy.** The database stores only a digest of each
@@ -225,12 +227,7 @@ accepted this (decision 13): someone holding the file on the host could make
 the same changes through a Django shell, without any notice at all.
 
 Host access already exposes the installed credentials themselves, so replacing
-them adds little an intruder lacked (decision 15). One side effect is
-accepted: the secret request guards' automation clause is keyed by principal
-and sign-in instant, and the approving browser session shares that instant,
-so for the session's life (up to 30 days) that browser session would also
-pass those two SQL checks; Python's `require_fresh` still refuses it once its
-own five-minute window has passed. It cannot run the setup
+them adds little an intruder lacked (decision 15). It cannot run the setup
 wizard, purge a campaign, act as anyone but its Administrator, extend its own
 lifetime, approve a new session (approval needs a Google sign-in in the
 browser), or print credentials. A read-only session can read status and
@@ -239,8 +236,8 @@ progress, counts and summaries, and nothing else.
 ### Mitigations
 
 - **Administrators only, approved in the browser.** Only an Administrator can
-  approve a session, and only from a browser session that signed in with
-  Google within five minutes; the SQL guard on the session table enforces both.
+  approve a session, and only from a live, Google-signed-in browser session;
+  the SQL guard on the session table enforces both.
 - **Bounded lifetime.** At most 30 days, requested at pairing; the approver can
   shorten it, never lengthen it. The command line warns on standard error when
   a session has less than 72 hours left.
@@ -347,7 +344,7 @@ rule in
 [identity and session security](../architecture/spec.md#identity-and-session-security)
 stands. In LOCAL, where Google sign-in is replaced by the
 [local test sign-in](../local-environment/spec.md#local-test-sign-in), the
-approval page accepts that sign-in's step-up exactly as other Admin pages do.
+approval page accepts that sign-in exactly as other Admin pages do.
 
 ### Session records
 
@@ -362,8 +359,8 @@ a table is now required):
   - `principal_id`: the approving Administrator, as whom every command acts;
   - `approving_session_id`: the browser `PortalSession` that approved it (an
     opaque UUID, kept after that row is cleaned up);
-  - `authenticated_at`: that browser session's Google sign-in instant, at most
-    five minutes before approval;
+  - `authenticated_at`: that browser session's Google sign-in instant, kept as
+    audit evidence (any age since #1547);
   - `expires_at`: at most 30 days after approval;
   - `scope`: `read_only` or `full`;
   - `label`: 1 to 64 printable characters describing the session (for example
@@ -426,14 +423,11 @@ Pairing has two steps, so an agent gets the code at once and can relay it:
    built from the route by name, never written out) and
    `expires_at`, and exits 0.
 3. The Administrator opens the link in a browser signed in to the portal. The
-   page requires the Administrator role and fresh Google authentication (the
-   ordinary [step-up](../architecture/spec.md#identity-and-session-security)).
-   A sign-in older than five minutes is never refused: the page renders its
-   **Confirm with Google** step and keeps **Continue** and **Approve**
-   unavailable until the sign-in is fresh, as the backup key page does. It
+   page requires the Administrator role and a live Admin session; it checks no
+   sign-in age ([identity and session security](../architecture/spec.md#identity-and-session-security),
+   [#1547](https://github.com/epiphany40223/parishkit/issues/1547)). It
    then asks for the user code. Code entry has no attempt limit (applying
-   decision 12's rationale): only an Administrator who just signed in with
-   Google reaches the field, a wrong code identifies no pairing record, and
+   decision 12's rationale): only a signed-in Administrator reaches the field, a wrong code identifies no pairing record, and
    because `--expect-email` is required, a correct guess can only approve a
    pairing that expects the guesser's own email. The code's ten-minute life
    and 40 bits of entropy suffice, and no Valkey failure can block approval.
@@ -458,8 +452,8 @@ Pairing has two steps, so an agent gets the code at once and can relay it:
    UUID and `authenticated_at`, records `automation_session_approved` and
    creates the approval [notice](#notifications). The SQL guard refuses the
    insert unless the approving session is live, belongs to the principal, is
-   not a command session, signed in within five minutes, and the principal is
-   an Administrator. The pairing record is left as it is: `wait` recognizes
+   not a command session, and the principal is an Administrator; the
+   sign-in's age is not checked. The pairing record is left as it is: `wait` recognizes
    the approval by the new session row's secret digest.
 6. **Wait.** `pk-admin login wait --name <name> [--timeout SECONDS]` (default
    and maximum ten minutes, bounded by the pairing record's expiry) runs
@@ -729,9 +723,8 @@ the row:
 
 A scope never adds a capability. Read-only is enforced in the seam, not only
 by the command dispatcher: for an automation caller with read-only scope,
-`authenticated_admin(activity=True)`, `admit_admin_action` and `require_fresh`
-all refuse. The SQL guards that accept automation in place of a fresh sign-in
-also require `full`.
+`authenticated_admin(activity=True)`, `admit_admin_action` and `sign_in_instant`
+all refuse.
 
 ### Revocation and listing
 
@@ -764,8 +757,8 @@ The source of truth is `stewardship_automation_session`.
   request naming no session, several, or a malformed one is refused, and a
   session that has already ended is left as it is. There is no bulk revoke.
   The list stays off the Users page, which lists only who may sign in
-  (#952). Approving a new session from this page first asks
-  for a fresh sign-in, as the approval page does.
+  (#952). Approving a new session from this page works as the approval
+  page does.
 - `pk-stewardship admin sessions` lists the caller's own sessions, with the
   page's filter and sort (`--include-ended`, `--sort`).
 
@@ -787,8 +780,8 @@ effect at the next command or guard.
   secret; it never accepts a browser session key, so a copied browser cookie
   cannot drive it.
 - **Approval.** Refused for a non-Administrator, from a command session (the
-  SQL guard checks `stewardship_automation_login`), without a fresh sign-in,
-  and for a mismatched expected email.
+  SQL guard checks `stewardship_automation_login`), from a browser session
+  that is no longer live, and for a mismatched expected email.
 
 ### Notifications
 
@@ -854,7 +847,7 @@ them unnotified; the Administrator accepted that (decision 13).
 | --- | --- | --- |
 | Session approved | Yes | `automation_approved` |
 | Production confirmation, withdrawal or Testing cleanup through a session | Yes | `automation_irreversible` |
-| Other fresh-gated action through a session (pause, resume, resolution, chosen-Family test, Family portal maintenance, Testing cleanup's sign-in, a Family-code, mail-merge or financial export) | Yes | No |
+| Other fresh-gated action through a session (pause, resume, resolution, chosen-Family test, Family portal maintenance, starting Testing cleanup, a Family-code, mail-merge or financial export) | Yes | No |
 | A session changes user rules, replaces an integration key or the backup key, or changes Slack or other notification settings | Yes | `automation_policy_change`, observed when the session submits the change, before the configuration installer applies it; dispatch re-checks Administrator status, so an Administrator the change removes is not reached |
 | Refused use (an unknown secret, first per host digest per hour; host mismatch; web misuse) | Yes | `automation_refused` |
 | Session ended by revocation, role loss, recovery or restore | Yes | No |
@@ -882,9 +875,8 @@ as the portal (decision 13):
 - demoting or deleting another Administrator.
 
 Each also creates an `automation_policy_change` notice, as does any key
-replacement and any change to Slack or other notification settings. The portal
-asks for no fresh sign-in for these changes (decision 19, #383), so a session
-needs none either.
+replacement and any change to Slack or other notification settings. These
+changes keep the portal's low-friction role maintenance (decision 19, #383).
 
 ## Running a command
 
@@ -1076,8 +1068,8 @@ Field errors reuse the closed `web.contracts.ErrorCode` values with
 server-owned field identifiers.
 
 Exceptions map in this order, and the first match wins. Order matters:
-`StartupBusy` subclasses `ConfigError`, and `FreshAuthenticationRequired` and
-`UserFacingDenied` subclass `PermissionError`.
+`StartupBusy` subclasses `ConfigError`, and `UserFacingDenied` subclasses
+`PermissionError`.
 
 | Exception | Exit |
 | --- | --- |
@@ -1086,7 +1078,7 @@ Exceptions map in this order, and the first match wins. Order matters:
 | Usage errors, other `ConfigError` raised during admission, credential receipt mismatch | 2 |
 | Confirmation declined, or end of input at the prompt | 4 |
 | Automation session missing, ended, expired or revoked, a host mismatch, a command session ended by a role change, or pairing not finished, including `UserFacingDenied` for an ended session | 5 |
-| `PermissionError` (including `FreshAuthenticationRequired`), `ValueError`, `StaleRecordError`, other `ConfigError` raised by a domain function, and a database guard's refusal (SQLSTATE class 23, 42501 or P0001) that its command does not map otherwise, as `denied` | 1 |
+| `PermissionError`, `ValueError`, `StaleRecordError`, other `ConfigError` raised by a domain function, and a database guard's refusal (SQLSTATE class 23, 42501 or P0001) that its command does not map otherwise, as `denied` | 1 |
 | `admin_reads.NotAvailable` (an unknown task or campaign, or no current campaign), and `ObjectDoesNotExist` from a command that changes nothing, as `not_available`; a bare `LookupError` or `KeyError` is a bug (`internal`) | 1 |
 | Any error after a durable commit (for example an export queued but its download failed), or an unexpected error in a state-changing command | 6 |
 | An unexpected error in a read | 3, with `internal`; retry at most once, then report it |
@@ -1153,8 +1145,7 @@ so a capability denial is a refusal after admission.
   the durable entry once the session's Administrator is known: `command`,
   the catalog name, in place of `route`, with `codes`, `fields` and
   `reason`. Its level follows the reason, as on the page: `denied` is
-  WARNING, except `FreshAuthenticationRequired`, which has reason
-  `fresh_authentication_required` and is INFO; `invalid`, `stale_version`
+  WARNING; `invalid`, `stale_version`
   and `not_available` are INFO unless their reason is a server-state one.
   The values are found as the page finds them. `reason` is the refusal's
   own closed reason (`web.refusals.reason_of`), else `unexpected_fields`
@@ -1222,9 +1213,15 @@ activity (`activity=True`) as a page action does.
 
 ### Fresh-gated actions from the command line
 
-On the page these actions need a Google sign-in within the last five minutes.
-From PR 5 on, a **full-scope, live automation session** stands in for that
-sign-in, with no browser step:
+The name is historical: before
+[#1547](https://github.com/epiphany40223/parishkit/issues/1547) these
+actions needed a Google sign-in within the last five minutes on the page.
+No Admin action checks a sign-in's age any more (see
+[identity and session security](../architecture/spec.md#identity-and-session-security)),
+so "fresh-gated" now simply means a privileged command, and the catalog's
+`fresh_gated` field, the `automation_fresh_gate` event and the `fresh_gated`
+notice keep their names for compatibility. A **full-scope, live automation
+session** runs these commands, with no browser step:
 
 - the delivery controls: pause (including the emergency pause), resume and
   closed-campaign resolution;
@@ -1253,90 +1250,39 @@ sign-in, with no browser step:
   cleanup`)
   ([#547](https://github.com/epiphany40223/parishkit/issues/547)).
 
-The #547 actions have no SQL freshness check (only Python's `require_fresh`),
-except Testing cleanup, whose guard only requires the recorded instant to equal
-the live session's `authenticated_at`, which a command session's
-`require_fresh` returns; none needs an SQL change. Their commands stay
-functional with no extra hold, and keep the audit and notices below.
+In Python, `sign_in_instant` (in `accounts.sessions`) takes the caller. For a
+web caller it returns the admitted session's Google sign-in instant, whatever
+its age. For an automation caller it locks the automation session row
+(`FOR SHARE`), requires it live and `full`, records the
+[audit event and notice](#notifications), and returns the command session's
+`authenticated_at`, which the domain function writes into its record as the
+page writes its session's sign-in instant. A read-only or no-longer-live
+session is refused (`denied`). Each command reuses the service below its view,
+so it runs the view's check rather than skipping it.
 
-Since [#547](https://github.com/epiphany40223/parishkit/issues/547) Testing
-cleanup is fresh-gated on the page, and records that fresh instant; it is also
-irreversible and asks for an acknowledgement, and prompts like the other
-fresh-gated actions. The first design's per-action browser approval for
-cleanup, confirmation and withdrawal is removed.
-
-In Python, `require_fresh` takes the caller. For a web caller it is unchanged.
-Until PR 5 it refuses every automation caller outright. From PR 5, for an
-automation caller it locks the automation session row (`FOR SHARE`), requires
-it live and `full`, and returns the command session's `authenticated_at`,
-which the domain function writes into its record as the page writes the fresh
-instant. The call sites that accept automation are `campaign_family_test`,
-both in `delivery_control_commands`, both in `withdrawal_commands`, the Family
-portal maintenance switch, `confirmation_commands`, the `require_fresh`
-call in `confirmation_views` (in `_fresh_after_cleanup`), and the #547 sites:
-`directory_export_views.create`,
-`financial_export_views.create`, `integration_views.integration_settings`
-(previews, removals and confirmations of settings) and
-`go_live_commands.start_cleanup`; and, for key replacement,
-`integration_credentials.save_credential` and `admit_admin_action` for
-`SECRET_REPLACEMENT` (see [secret replacement](#secret-replacement)). Each
-command reuses the service below its view, so it adapts the view's check
-rather than skipping it.
-
-The Production confirmation also requires, in Python, a sign-in after cleanup
-finished: `confirmation_commands` refuses when the fresh instant precedes the
-cleanup's `complete` event, and the confirmation view's
-`_fresh_after_cleanup` shows step-up guidance on the same comparison. For an
-automation caller both treat the post-cleanup requirement as met (the view's
-logic moves to the service layer in PR 12), matching the
-[SQL change](#sql-guards-that-accept-automation-sessions).
+Testing cleanup is also irreversible and asks for an acknowledgement, and
+prompts like the other fresh-gated actions. The Production confirmation needs
+only completed cleanup, not a sign-in after it. The first design's per-action
+browser approval for cleanup, confirmation and withdrawal is removed.
 
 ### SQL guards that accept automation sessions
 
-The page's fresh sign-in is also enforced in SQL. Each of these guards admits
-a row only when a live `stewardship_portal_session` for the actor has
-`authenticated_at` equal to the row's recorded instant **and** within the last
-five minutes:
-
-| Guard (baseline file) | Protects |
-| --- | --- |
-| `stewardship_delivery_control_guard_v1` (`delivery_control.sql`) | Pause, resume and resolution commands |
-| `stewardship_family_mail_test_guard_v1` (`family_mail_tests.sql`) | Chosen-Family test sends |
-| `stewardship_production_confirmation_guard_v1` (`production_confirmation.sql`) | The Production confirmation; it also requires the sign-in to follow cleanup's completion |
-| `stewardship_production_withdrawal_guard_v1` (`production_withdrawal.sql`) | Pre-start withdrawal |
-
-Each changes so that the five-minute clause becomes "within the last five
-minutes **or** `stewardship_automation_fresh_v1(login.id, actor)`", keeping
-every other clause (the live, unrevoked, unexpired session, 60-minute activity,
-equality with the recorded instant, the Administrator check). For the
-Production confirmation, the post-cleanup clause is likewise satisfied by an
-automation session instead of a sign-in after cleanup: the confirmation prompt
-and the [notices](#notifications) replace it, as decided.
-
-`stewardship_automation_fresh_v1(login uuid, actor uuid)`, a `SECURITY
-INVOKER` function, returns true only when a `stewardship_automation_login` row
-links that session to an automation session whose principal is `actor`, whose
-scope is `full`, which is [live](#session-records) (unrevoked, unexpired,
-principal an enabled Administrator, no later recovery), and whose
-`authenticated_at` equals the command session's. It is new, created by the
-first migration.
-
-These guards' other callers are unaffected: a browser session has no link row,
-so for it the predicate is exactly today's. The changes follow the
-[post-launch schema policy](../operations/spec.md#post-launch-schema-policy):
-a new forward migration whose frozen SQL file re-creates the four functions
-with `CREATE OR REPLACE`, copied verbatim from the edited baseline files, and
-ends with a `DO` block that raises unless each installed body contains the
-automation clause. Tests run each changed guard against both its old and new
-definition, proving the old refuses an automation command session and the new
-admits it while still refusing a read-only, revoked, expired or
-non-Administrator session.
-
-Nothing else needs a guard change. Testing cleanup's guard
-(`go_live.sql`) and the production cleanup checks (`production.sql`) compare
-the recorded instant with a live session's `authenticated_at` without a
-five-minute window, and the 60-minute activity checks throughout the schema
-are met by the command session.
+Each SQL guard for these actions admits a row only when a live
+`stewardship_portal_session` of the actor (unrevoked, unexpired, active in the
+last 60 minutes) has, where the guard binds one, `authenticated_at` equal to
+the row's recorded instant, whatever its age. When that session is a command
+session (it has a `stewardship_automation_login` row), its automation session
+must also be live and full scope (`stewardship_automation_fresh_v1(login,
+actor)`), so a read-only, revoked or expired automation session is refused in
+SQL as well as in Python. Before #1547 the guards instead required the
+instant to be within the last five minutes or that live full-scope
+automation session; frozen migration 0113
+(`stewardship_accounts.0027_no_sign_in_age`) re-created the thirteen guards
+without the age clause, under the
+[post-launch schema policy](../operations/spec.md#post-launch-schema-policy).
+`stewardship_automation_fresh_principal_v1(principal, instant)` stays
+installed but unused, as do the recorded sign-in columns; dropping them is
+[#1550](https://github.com/epiphany40223/parishkit/issues/1550).
 
 ### Secret replacement
 
@@ -1344,7 +1290,7 @@ Integration key replacement and the backup encryption key change run from the
 command line (decision 15) through the same service functions, validation,
 sealing, confirmation and audit as the portal, and the same
 [credential installer protocol](../../../guides/stewardship-credential-installers.md),
-unchanged. The database and `require_fresh` side below is built (PR 5a),
+unchanged. The database and `sign_in_instant` side below is built (PR 5a),
 and so are `integration key replace`, the backup key commands and the
 wrapper's secret input
 ([#463](https://github.com/epiphany40223/parishkit/issues/463)).
@@ -1456,8 +1402,8 @@ wrapper's secret input
   `pk-admin-public-key/1 <base64>` and `pk-admin-proof/1 <base64>`. A
   value over the page's 200-byte field limit, or not UTF-8, is `invalid` at
   `public_key` or `code`, never quoting it.
-  Its configuration request has no SQL freshness check (only Python's
-  `require_fresh`), so it needs no SQL change. See
+  Its configuration request records the session's sign-in instant through
+  `sign_in_instant`, as the page does, and needs no SQL change. See
   [Integrations and credentials](#integrations-and-credentials) for each
   step.
 - **Setup wizard credentials** stay with the one-time first-Admin wizard,
@@ -1465,64 +1411,31 @@ wrapper's secret input
   offline counterpart is `pk-stewardship bootstrap`. As defense in depth,
   `setup_credentials` refuses an automation caller outright.
 
-Every call site that today requires a fresh browser sign-in for these flows
-(`integration_credentials`, `integration_selection_views`,
-`integration_views`, `backup_key`, and `admit_admin_action` for
-`SECRET_REPLACEMENT`) uses the caller-aware `require_fresh`, so a full-scope
-session stands in for the sign-in as for the other
+Every call site of these flows (`integration_credentials`,
+`integration_selection_views`, `integration_views`, `backup_key`, and
+`admit_admin_action` for `SECRET_REPLACEMENT`) records the sign-in instant
+through the caller-aware `sign_in_instant`, so a full-scope session runs them
+as it runs the other
 [fresh-gated actions](#fresh-gated-actions-from-the-command-line).
 `DESTRUCTIVE_CONFIRMATION` has no caller today; a later workflow that uses it
 decides in its own specification whether automation may.
 
 Two secret request guards check the sign-in instant recorded on the request,
-not a session row, and gain an automation clause in the
-[PR 5 migration](#schema-impact); every existing condition stays, including
-the setup-install branch and the rule about empty required consumers:
-
-- `stewardship_sealed_intake_admission_v1`, on insert of a
-  `stewardship_secret_request` by the web login, refuses a recorded instant
-  older than five minutes by the clock. It also admits an instant for which
-  `stewardship_automation_fresh_principal_v1(requested_by, instant)` is true.
-- `stewardship_secret_state_v2`, at the staged-to-testing step, refuses a
-  recorded instant more than five minutes before the request's own
-  `created_at`. That step runs as the target's installer login
-  (`pk_stewardship_credential_<target>`), so it gains the same alternative
-  through the same function.
-
-`stewardship_automation_fresh_principal_v1(principal uuid, instant
-timestamptz) RETURNS boolean` is true only when a live, full-scope automation
-session of that principal has exactly that `authenticated_at`, and false
-otherwise: its body is a single `EXISTS` over `public.`-qualified tables and
-functions, it is not `STRICT`, and it never returns NULL. Because the
-installer logins can read no automation table, and their admission
-(`admit_installer_database` through `admit_grants`) refuses unlisted definer
-routines and extra grants, it is a `SECURITY DEFINER` function owned by the
-schema owner with a fixed `search_path` (`pg_catalog, public, pg_temp`).
-
-- **Privileges.** The migration revokes it from `PUBLIC` (`REVOKE ALL ON
-  FUNCTION … FROM PUBLIC`, as for `stewardship_family_login_v1`). `EXECUTE` is
-  not granted by the migration: it comes from `provision_grants` through
-  `runtime_functions(role, target)` in the `database-grants` step. PR 5 adds
-  the function to `runtime_functions(ServiceRole.WEB)` (otherwise web
-  admission, which checks the granted functions, would fail) and makes
-  `runtime_functions` target-aware so the three credential installer targets
-  (`parishsoft`, `google_workspace`, `slack`) each get it.
-  `admit_installer_database` passes
-  `functions=runtime_functions(ServiceRole.CREDENTIAL_INSTALLER, target)` to
-  `admit_grants`. Admission tests cover the web and each installer login. The
-  deploy order is the migration, then `database-grants`, then service start.
-- **Calling it.** PostgreSQL checks `EXECUTE` when an expression is
-  initialized, even in an untaken `CASE` branch, so each guard calls it in its
-  own statement reached only on the web or installer path that needs it, and
-  tests it as `NOT coalesce(stewardship_automation_fresh_principal_v1(…),
-  false)`.
-- **Revoked mid-flight.** If the session is revoked or expires between
-  submission and the installer's test, the staged-to-testing step is refused.
-  The installer logs a failure on each pass, retrying with its usual backoff
-  of at most 60 seconds, until the staging lifetime (one hour) expires; that
-  target's installer queue is blocked until then. The request then expires,
-  the old key stays installed, and `integration key status` and the page show
-  the change as expired.
+not a session row: `stewardship_sealed_intake_admission_v1` (on insert of a
+`stewardship_secret_request` by the web login) and `stewardship_secret_state_v2`
+(at the staged-to-testing step, run as the target's installer login
+`pk_stewardship_credential_<target>`). Every other condition stays, including
+the setup-install branch and the rule about empty required consumers.
+Before #1547 they refused an instant older than five minutes unless
+`stewardship_automation_fresh_principal_v1(requested_by, instant)` (a
+`SECURITY DEFINER` function the web and installer logins may execute) admitted
+a live full-scope automation session with that instant; migration 0113 removed
+the age check, so the recorded instant may be of any age and the helper is no
+longer called. A request's instant cannot tell a browser from an automation
+session (an automation session records its approving browser sign-in), so
+for secret requests only Python's check requires a live full-scope automation
+session; if it is revoked or expires between submission and the installer's
+test, the change still proceeds as a browser one would.
 
 The setup guards (`stewardship_setup_install_binding_v1`,
 `stewardship_setup_secret_guard_v1`) do not change.
@@ -1595,20 +1508,20 @@ new context keys:
   invocation's correlation ID, and context `outcome` only. Because the session
   row is kept, this event identifies the channel, label and approver
   permanently.
-- **Fresh gates.** When an automation session stands in for a fresh
-  sign-in (from PR 5b), the state-changing command records one
+- **Fresh gates.** When an automation session runs a
+  [fresh-gated (privileged) action](#fresh-gated-actions-from-the-command-line)
+  (from PR 5b), the state-changing command records one
   `automation_fresh_gate` event (the Administrator as actor, the automation
   session as subject, context `outcome` only) and its dashboard notice
   (`fresh_gated`, or `irreversible` with the `automation_irreversible`
   incident for the Production confirmation and pre-start withdrawal), in
-  the action's own transaction, so an action whose fresh sign-in an
-  automation session supplied is told apart from one a browser supplied. A
-  read, a preview or a page's passive check (`require_fresh(...,
-  record=False)`) records neither. One per invocation and kind: a notice of
+  the action's own transaction, so a privileged action an automation session
+  ran is told apart from one a browser ran. A read, a preview or a passive
+  check (`sign_in_instant(..., record=False)`) records neither. One per invocation and kind: a notice of
   the same kind for the session and the invocation's correlation ID already
   recorded suppresses a second, so an irreversible gate after a fresh-gated
-  one still records its own notice and incident. Testing cleanup's fresh
-  gate (#547, in `go_live_commands.start_cleanup`) is not marked
+  one still records its own notice and incident. Testing cleanup's gate
+  (#547, in `go_live_commands.start_cleanup`) is not marked
   irreversible, so it records `fresh_gated`; its `irreversible` notice and
   incident are recorded by the cleanup command itself (PR 12).
 - **Read commands** record exactly the view events the page records (for
@@ -1721,7 +1634,7 @@ host_digest)` is the only command-line constructor; it performs the
 [command session](#command-sessions) admission. It is called only from
 `admin_cli`, which a test enforces. It never rotates and never touches CSRF.
 
-`principal`, `authenticated_admin`, `require_fresh`,
+`principal`, `authenticated_admin`, `sign_in_instant`,
 `admit_admin_action` and the domain command functions take the caller, and
 every existing check stays in them. Views keep form parsing and rendering
 only; command modules keep every rule.
@@ -1732,7 +1645,7 @@ Logic that lives in views moves to service modules in the PR that first needs
 it, in its own commit, with existing view tests unchanged except for call
 signatures:
 
-- **PR 1:** `sessions.authenticated_admin`, `require_fresh`,
+- **PR 1:** `sessions.authenticated_admin`, `sign_in_instant`,
   `privileged_actions.admit_admin_action` and `_actor`,
   `admin_editing.principal`.
 - **PR 3a:** the home summary's caller use (`admin_dashboard.observe`);
@@ -1748,10 +1661,10 @@ signatures:
 - **PR 4:** the schedule preview and confirm from `schedule_views._preview`
   and its POST handling; configuration request status from
   `ministry_views.configuration_request`.
-- **PR 5:** the automation branch of `require_fresh` at every call site listed
+- **PR 5:** the automation branch of `sign_in_instant` at every call site listed
   under [fresh-gated actions](#fresh-gated-actions-from-the-command-line) and
   [secret replacement](#secret-replacement), including the post-cleanup check
-  in `confirmation_commands`.
+  in `confirmation_commands` (removed by #1547).
 - **PR 6a:** the refresh request and the page's read from `refresh_views`
   (`request_manual_refresh`, `read_refresh_page`).
 - **PR 6b:** the sample test page's list as `campaign_mail.recent_tests`.
@@ -1760,7 +1673,7 @@ signatures:
   read, `send controls`, moved the page's status into a request-free
   `delivery_control_commands.controls`, which the page now calls. The
   previews and `confirm` already took the caller through `principal` and
-  `require_fresh`, so the controls needed only `confirm`'s optional
+  `sign_in_instant`, so the controls needed only `confirm`'s optional
   `record` hook, which the page does not pass. The
   maintenance switch (PR 7a) needed none: `family_maintenance.current_state`
   and `set_closed` were already request-free, and the command adds the
@@ -1889,10 +1802,10 @@ From PR 3, where the route-parity test lands:
   and tests through both paths, or with an exemption recorded in the
   [action inventory](#action-inventory); this includes new actions on an
   existing page, not only new URL names;
-- a new fresh-gated action states whether automation may run it; if so, it
-  uses `require_fresh` and its SQL guard uses
-  `stewardship_automation_fresh_v1`; if not, its specification says how it
-  refuses an automation caller;
+- a new privileged (fresh-gated) action states whether automation may run
+  it; if so, it records the sign-in instant through `sign_in_instant` and its
+  SQL guard binds the row to a live session of the actor; if not, its
+  specification says how it refuses an automation caller;
 - the route-parity test lists every `admin:` URL name and fails when one has
   neither a command nor an exemption in `admin_parity.LEDGER`, or when an
   entry names no route. Exemptions are **permanent** (web-only
@@ -1974,7 +1887,7 @@ checks that every other ledger route is named here.
 | `signed_in_sessions` (list and Sign out, new, #953) | Permanent: browser session chrome; the operator's offline recovery signs everyone out |
 | `maintenance` | Permanent: the status page the access gate shows |
 | `campaign_step_continue` ([#1404](https://github.com/epiphany40223/parishkit/issues/1404)) | Permanent: the browser [Campaign setup stepper](../admin-portal/spec.md#create-the-campaign)'s own progress (a step kept as is, then the next step page); the command line applies settings directly and has no stepper |
-| `held_emails` ([#757](https://github.com/epiphany40223/parishkit/issues/757)) | Permanent: held-email decisions need a fresh Google sign-in in the browser, which the decision guard checks (migration 0017) |
+| `held_emails` ([#757](https://github.com/epiphany40223/parishkit/issues/757)) | Permanent: held-email decisions stay in the browser. The exemption predates [#1547](https://github.com/epiphany40223/parishkit/issues/1547), when they needed a recent Google sign-in that the decision guard (migration 0017) checked; since migration 0113 the guard binds only a live session of the actor |
 | `automation_access`, `automation_approval`, `automation_sessions` (revoke) and `automation_notices` (acknowledgement) (new) | Permanent: these pages are the human side of the interface (PR 2); `sessions` takes the page's filter and sort for one's own sessions (#621) |
 | `response_dashboard` ([#517](https://github.com/epiphany40223/parishkit/issues/517)) | `report responses` with counts (PR 8c) |
 
@@ -2060,8 +1973,8 @@ the page's request status does. See
 [campaign configuration](../admin-portal/spec.md#campaign-configuration).
 
 `schedule preview` and `schedule confirm` take `--campaign` as
-`schedule show` does. The Dates and mail schedules page asks for no fresh sign-in and
-no typed value, so neither command is fresh-gated or prompts, and neither
+`schedule show` does. The Dates and mail schedules page is not a privileged
+action and asks for no typed value, so neither command is fresh-gated or prompts, and neither
 waits for PR 5. `schedule preview` admits as the page's form post does,
 recording activity, so it needs a full-scope session although it changes
 nothing. It takes `--expected-version` (the `version` of `schedule show`,
@@ -2212,7 +2125,7 @@ lists the fields.
 are the page's row actions (#947), through its own
 `hosted_file_uses.delete_many` and `rename`, admitted as the page's POST
 (`CONFIGURE`, recording activity), so they need a full-scope session. The
-page asks for no recent sign-in, so neither is fresh-gated and neither
+page's action is not privileged, so neither is fresh-gated and neither
 creates an automation notice. `files delete` takes one to 100 distinct
 IDs, refuses before its prompt any that is in use (the page offers Delete
 only for unused files), prompts because a deletion cannot be undone, and
@@ -2317,8 +2230,8 @@ configuration request as the page's Delete does, through
 campaign and scope (`campaign_views._scope`), with
 `admin_cmd_content_confirm` in the request's own transaction; a repeat
 returns the original request. Both need a full-scope session; neither is
-fresh-gated nor prompts, as the page asks for no recent sign-in and the
-reviewed token stands in for its dialog. Each checks the role first
+fresh-gated nor prompts, as the page's action is not privileged and the
+reviewed token replaces its dialog. Each checks the role first
 (#1341). The editor's own Review and Apply join these verbs in a later
 slice. The two modes, `--delete` repeated for several emails, no prompt,
 the `deleting` and `plain_text` fields, the plain-text mode needing a
@@ -2343,7 +2256,7 @@ page's salt (bound to the current campaign and the slot, so another slot's
 token is `invalid`) and removal scope, with `admin_cmd_artwork_remove` in
 the request's own transaction; a repeat returns the original request.
 Both need a full-scope session, as the page's requests record activity;
-neither is fresh-gated nor prompts, as the page asks for no recent sign-in
+neither is fresh-gated nor prompts, as the page's action is not privileged
 and shows no confirmation dialog: the reviewed token is the confirmation,
 and a removal deletes nothing (the image stays in the activated
 configurations' history). The command shapes are defaults, pending
@@ -2380,8 +2293,7 @@ records the configuration request as the page's Apply does, through
 `admin_editing.confirm_intent` with the page's salt and scope, with
 `admin_cmd_workgroup_confirm` in the request's own transaction; a repeat
 returns the original request. The preview and confirm need a full-scope
-session; none is fresh-gated or prompts, as the page asks for no recent
-sign-in and shows no confirmation dialog: the reviewed token is the
+session; none is fresh-gated or prompts, as the page's action is not privileged and shows no confirmation dialog: the reviewed token is the
 confirmation. A `--name` that is blank once trimmed is `invalid` before
 anything else (turning the exclusion off takes `--clear`), so an unset
 shell variable cannot silently clear it. Once the change is applied,
@@ -2435,7 +2347,7 @@ archived campaign as the page does), a Ministries token with the page's
 change; it adds `admin_cmd_campaign_confirm` in the request's own
 transaction, and a repeat returns the original request. The preview and
 confirm need a full-scope session; neither is fresh-gated or prompts, as
-the page asks for no recent sign-in and its Apply is the reviewed token.
+the page's action is not privileged and its Apply is the reviewed token.
 The inventory's placeholder `campaign ministries` folded into `campaign
 preview` when #1119 made the page one editor. The document shape and
 `kind` are defaults, pending Administrator confirmation. The
@@ -2485,7 +2397,7 @@ whole); a version other than the applied one is `stale_version`.
 does, with `admin_cmd_parish_confirm` in the request's own transaction; a
 repeat returns the original request. Both need a full-scope session, as
 the page's posts record activity; neither is fresh-gated nor prompts, as
-the page asks for no recent sign-in. The command shapes are defaults,
+the page's action is not privileged. The command shapes are defaults,
 pending Administrator confirmation.
 
 `campaign shares-preview --expected-version … --changes … [--campaign ID]`
@@ -2515,7 +2427,7 @@ or an unknown campaign fails its signature as `invalid`, as the page's
 Apply does. `campaign shares-confirm` records the request
 with `admin_cmd_campaign_shares_confirm` in its own transaction, and a
 repeat returns the original request. Both need a full-scope session;
-neither is fresh-gated nor prompts, as the page asks for no recent sign-in
+neither is fresh-gated nor prompts, as the page's action is not privileged
 and its Apply is the reviewed token. The names, the explicit `delete` list
 and `--campaign` defaulting to the current campaign are defaults, pending
 Administrator confirmation.
@@ -2586,7 +2498,7 @@ Administrator's id rather than the email address the page shows.
 [fresh-gated](#fresh-gated-actions-from-the-command-line): it checks the
 note with the page's `clean_message` first (`invalid`, with no prompt),
 always asks at the [prompt](#command-line-confirmation) with the page's
-notices, then, in one transaction, passes `require_fresh` (the
+notices, then, in one transaction, passes `sign_in_instant` (the
 `automation_fresh_gate` event and notice), calls the page's `set_closed`
 (`family_maintenance_started` or `family_maintenance_ended`, the
 Administrator as actor) and records `admin_cmd_portal_maintenance_set`. It
@@ -2613,8 +2525,7 @@ or closed) follows the page's nesting: `pause_available`,
 Resolve held messages choices (`resolution`) are null unless
 `resolve_available`; and `family_recovery` and `report_recovery` (the
 overdue Admin digests) are null unless the campaign is also paused. The
-page's fresh sign-in hint is browser chrome and the fingerprints a preview
-binds are internal, so neither prints. The
+fingerprints a preview binds are internal, so they do not print. The
 [operator guide](../../../guides/stewardship-admin-automation.md#pause-and-resume-mail)
 lists the fields.
 
@@ -2649,7 +2560,7 @@ the [prompt](#command-line-confirmation) (`--yes` answers it), naming the
 action, the reason, the counts and the page's own caution for that
 preview (for a resolution, with each type's follow-up coverage), after the role check and the token's signature check (an
 altered token is `invalid` before the prompt). The page's `confirm` then
-passes `require_fresh` in its own transaction (`automation_fresh_gate` and
+passes `sign_in_instant` in its own transaction (`automation_fresh_gate` and
 the `fresh_gated` notice) and records the control, whose effect records
 the page's own events (`campaign_pause` or `campaign_resume`; for a
 resolution `delivery_held_<decision>`, with `campaign_resume` when it ends
@@ -2714,8 +2625,8 @@ campaign that is not the current Testing draft, is `denied`. `test families
 that these real Families' names and codes will be sent to the Testing
 recipient.") at the [prompt](#command-line-confirmation) before any
 transaction, then runs the page's `request_tests` in the delivery pages'
-command scope, where the session stands in for the fresh sign-in
-([fresh-gated actions](#fresh-gated-actions-from-the-command-line)) and
+command scope, where the session runs it as a
+[fresh-gated action](#fresh-gated-actions-from-the-command-line) and
 leaves the `automation_fresh_gate` event and notice. It records
 `admin_cmd_test_families` only for a new key, and a repeat, from either
 channel, returns the original tickets (`id`, `sequence`, `state`,
@@ -2866,7 +2777,7 @@ lists the fields.
 ([#463](https://github.com/epiphany40223/parishkit/issues/463)) is a Census
 changes row's Record outcome
 ([#528](https://github.com/epiphany40223/parishkit/issues/528)): full scope,
-keyed, and not fresh-gated, as the page asks for no recent sign-in. Entered
+keyed, and not fresh-gated, as the page's action is not privileged. Entered
 in ParishSoft cannot be undone and the page asks first, so `--action
 entered` [prompts by default](#mitigations) (or takes `--yes`; `--note -`
 then needs `--yes`); Ignore and Reopen ask nothing, as on the page. It admits as the page's post does (`census_change_views._principal`,
@@ -2986,7 +2897,7 @@ plus `admin_cmd_export_<kind>` when it created one. Each admits as its
 page's form post does, with the page's capability, so it needs a full-scope
 session. Creating a financial export is one of the
 [fresh-gated actions](#fresh-gated-actions-from-the-command-line), so
-`export financial` calls the caller-aware `require_fresh` once admitted.
+`export financial` calls the caller-aware `sign_in_instant` once admitted.
 The rows reach only the file, fetched with `export fetch`; the command
 prints the `export status` document. Filters are the page's, given as
 `--filter NAME=VALUE`, read once the reader is admitted, as on the page; a
@@ -3016,7 +2927,7 @@ is not current, or a key rotation holding the key lock, is `unavailable`
 the file, never in this process. `--filter` refuses a search and an exact
 Family code, which would put a name or a code in the shell's history. Both
 are [fresh-gated](#fresh-gated-actions-from-the-command-line), as
-`export financial` is: each asks at the prompt, then calls `require_fresh`
+`export financial` is: each asks at the prompt, then calls `sign_in_instant`
 inside its export lock, for a repeated key too, as the page does.
 `--filter mode=testing` exports the campaign's Testing rehearsal, as the
 directory's [Testing switch](../reports/spec.md#response-filters) does
@@ -3051,7 +2962,7 @@ PR 8h's second part) is the Limitations report's in-memory download,
 streamed as `export census` is, with the same document (`campaign_id`,
 `file_name`, `content_type`, `format`, `timezone`, `size`, `sha256`,
 `count`) on standard error. It needs a full-scope session and is neither
-prompting nor fresh-gated, as the page asks for no recent sign-in. It
+prompting nor fresh-gated, as the page's action is not privileged. It
 admits as the download does (`limitation_views._principal` with `export`:
 `CAMPAIGN_REPORT` and `REPORT_EXPORT`, so Administrators and Staff, never a
 Ministry leader), passively and then recording activity as the download's
@@ -3076,7 +2987,7 @@ is the Census changes page's in-memory download, streamed as `logs export`
 is: the file alone on standard output, its document (`campaign_id`,
 `file_name`, `content_type`, `format`, `timezone`, `size`, `sha256`,
 `count`) on standard error. It needs a full-scope session and is neither
-prompting nor fresh-gated, as the page asks for no recent sign-in. It
+prompting nor fresh-gated, as the page's action is not privileged. It
 admits as the download does (`census_change_views._principal` with
 `export`: the census capability and `REPORT_EXPORT`, so Administrators and
 Staff, never a Ministry leader), passively and then recording activity as
@@ -3112,7 +3023,7 @@ an Administrator only, as the page. The id is the Family's campaign record
 id, the opaque id in the page's address; a Family of another campaign is
 `not_available`. The file can hold the Family's code, so it is
 [fresh-gated](#fresh-gated-actions-from-the-command-line), as on its page:
-it asks at the prompt, then calls `require_fresh` in the export lock. The
+it asks at the prompt, then calls `sign_in_instant` in the export lock. The
 file is fetched with `export fetch`.
 
 The export lifecycle commands work on any report export the Administrator
@@ -3181,9 +3092,8 @@ value, name or note; the values stay in `export census`.
   counts and the page's sentence, answered `yes`, then calls
   `confirm_and_publish` with those counts. It is
   [fresh-gated](#fresh-gated-actions-from-the-command-line): a full-scope,
-  live automation session stands in for the page's five-minute sign-in,
-  which the confirmation's SQL guard (migration 0087) already accepts, so
-  it needs no guard change. The service records
+  live automation session runs it, as the confirmation's SQL guard
+  (migration 0087, without the sign-in age since 0113) accepts. The service records
   `census_publication_confirmed`, and the command
   `admin_cmd_census_publish_confirm` in the same transaction, once per
   key. `--watch` follows the run.
@@ -3251,31 +3161,29 @@ lists the fields.
 `system health` covers the page, its fragment and `/admin/system/`
 (ADM-13 PR 2b), and `system backup-now` (ADM-13 PR 3b) is Take a backup
 now: it shows the page's preview at the prompt, records the request with
-the page's `request_backup` (the request's guard admits the session as the
-fresh sign-in) and records `backup_requested` and
+the page's `request_backup` (the request's guard admits the command session) and records `backup_requested` and
 `admin_cmd_system_backup_now`. `system debug-off` (ADM-13 PR 6b) is Turn off
 debug logging, the same way: the page's preview at the prompt, the switch
-set with the page's `turn_off_debug` (the switch's guard admits the session
-as the fresh sign-in), recording `debug_logging_turned_off` and
+set with the page's `turn_off_debug` (the switch's guard admits the command
+session), recording `debug_logging_turned_off` and
 `admin_cmd_system_debug_off`. `system refresh-accept-preview` and `system
 refresh-accept` (ADM-13 PR 5b) are Accept this change once, as `artwork
 remove-preview` and `artwork remove` are their page's review and Apply: the
 preview prints the page's counts, its example Families' DUIDs (never their
 names, PR 5c) and its signed binding, and changes and records nothing; the confirmation takes that token, prompts with the counts
 that fell too far and the page's tick box, records the acceptance with the
-page's `accept_change` (the acceptance's guard admits the session as the
-fresh sign-in) and asks for a full refresh, recording `source_drop_accepted`
+page's `accept_change` (the acceptance's guard admits the command session) and asks for a full refresh, recording `source_drop_accepted`
 and `admin_cmd_system_refresh_accept`. The other ADM-13 rows name routes and
 `admin_cmd_system_debug_off`. `system debug-allow` (ADM-13 PR 6c) is
 Allow debug logging again, in Testing only: the page's preview at the
 prompt (refused before it in Production or while no switch is set), the
 switch cleared with the page's `allow_debug` (the guard admits the
-session as the fresh sign-in), recording `debug_logging_allowed` naming
+command session), recording `debug_logging_allowed` naming
 the switch and `admin_cmd_system_debug_allow`. `--switch` names the switch
 cleared, so a repeat returns it. The other ADM-13 rows name routes and
 commands that do not exist yet: each action, its route and its command land together in their
 own ADM-13 pull request (PR 3 to PR 6); ADM-11 PR 5, which lets automation
-pass the fresh-sign-in check, has landed. The ADM-13 action routes will be
+run fresh-gated actions, has landed. The ADM-13 action routes will be
 POSTs to the [System health](../admin-portal/spec.md#health-actions) page,
 `system_health_status` is its passive status fragment, and `system`
 (`/admin/system/`) only redirects to it.
@@ -3284,7 +3192,7 @@ POSTs to the [System health](../admin-portal/spec.md#health-actions) page,
 **Retry**, through the page's own functions in `jobs.task_retries`; the
 task's stored type selects which of the four retries runs, and a task the
 page offers no retry for, or an unknown task, is `not_available`. No retry
-page asks for a fresh sign-in or a typed value, so it waits for no PR 5. It
+is a privileged action or asks for a typed value, so it waits for no PR 5. It
 admits as the page's form post does (`BACKGROUND_WORK`, recording activity,
 so it needs a full-scope session) and runs in the page's command scope (the
 work transaction, the command session's row locked, the Administrator
@@ -3361,8 +3269,7 @@ address](../admin-portal/spec.md#mail-message-page) (#806 slice 4). The
 page's tick ("I saw a bounce message for this address from this email") is
 asked at the prompt, as for `delivery refusal-clear`: a report is not
 fresh-gated and clearing undoes it, so the prompt follows the page's
-acknowledgement, not irreversibility. It admits as the page's post does (no
-fresh sign-in) and calls the page's `report_recipient_bounce` in the same
+acknowledgement, not irreversibility. It admits as the page's post does and calls the page's `report_recipient_bounce` in the same
 command scope, so the service's Administrator check, the web-only definer
 `stewardship_report_recipient_bounce_v1` and the refusal guard decide as for
 the page, keyed by its `command_id` (the refusal's id) and recording
@@ -3459,7 +3366,7 @@ ID rather than address) and the banner's `alert_counts`, `summary` and
 most 500) is printed as `critical.token`. `events acknowledge` needs a
 full-scope session and admits as the page's post does, with the page's
 capability (`MANAGE_USERS` for `--security`, `SYSTEM_LOGS` for
-`--critical`); the pages ask for no recent sign-in and no confirmation, so
+`--critical`); the pages' actions are not privileged and no confirmation, so
 it is neither fresh-gated nor prompting, and creates no automation notice.
 It runs the views' request-free `acknowledge_now`, which records the page's
 `security_event_acknowledged` or `critical_events_acknowledged` and, through
@@ -3531,7 +3438,7 @@ filters) and history (`followup_history`), and its services
   `request`). An option that would have no effect is a usage error (exit
   2): `--outcome` without `--state resolved`, or `--contact-at` or
   `--contact-notes` without `--contact-channel`. Neither change is
-  fresh-gated, as the page asks for no recent sign-in.
+  fresh-gated, as the page's action is not privileged.
 
 The names, options and fields are defaults pending Administrator
 confirmation; the
@@ -3626,8 +3533,8 @@ pages' own pieces.
   `--confirm-clear`, the page's confirmation box, is `invalid` at
   `confirm_clear`.
 - **Keys, scope and audit.** The three changes need a full-scope session,
-  run in the page's command scope, and are not fresh-gated, as the pages
-  ask for no recent sign-in. An item or request that is not a Live one of
+  run in the page's command scope, and are not fresh-gated, as the pages'
+  actions are not privileged. An item or request that is not a Live one of
   the current campaign is `not_available`. The key binds each entry or
   revision as on the page (the bulk mark's per-request keys derive from
   it), so a repeat returns what was recorded and records nothing, and the
@@ -3664,7 +3571,7 @@ PR 8g) is the list's in-memory download, streamed as `export limitations`
 is, with the same document (`campaign_id`, `file_name`, `content_type`,
 `format`, `timezone`, `size`, `sha256`, `count`) on standard error. It
 needs a full-scope session and is neither prompting nor fresh-gated, as the
-page asks for no recent sign-in. It admits with the page's own
+page's action is not privileged. It admits with the page's own
 `ministry_roster_views._principal`, passively first, so a reader without
 the page is refused before anything is read or built, then recording
 activity as the download's post does, and reads through the shared report
@@ -3809,7 +3716,7 @@ records nothing new, the fresh gate's trail included.
 change line's **Dismiss** (`parishsoft`, `google_workspace` or `slack`;
 `ID` is `integration show`'s `key.request_id`). Both need a full-scope
 session, as the pages' posts record activity, and an Administrator; neither
-page asks for a recent sign-in or a confirmation, so neither command is
+page action is privileged or asks for a confirmation, so neither command is
 fresh-gated or prompts. `integration backup-probe` queues the page's own
 check (`integration_views.queue_probe`) of the given link, or of the saved
 folder without `--folder`, as the Google Workspace mailbox user; the command
@@ -3844,8 +3751,8 @@ no longer pending once the key is installed and acknowledged, even while
 its automatic switch is still queued; `integration status TARGET` shows
 whether that switch finished. `integration key finish-switching-preview
 TARGET` is the review on **Finish switching to the new key**: it needs a
-full-scope session, as the page records activity, stands in for the page's
-recent sign-in with it (a preview records no notice), and is offered only
+full-scope session, as the page records activity, passes the page's
+fresh gate with it (a preview records no notice), and is offered only
 while the settings page's key change line is `unselected`; otherwise it is
 `not_available`. It runs the page's own `_selection`, candidate check and
 salt (bound to the key change), so a token from either channel confirms on
@@ -4101,7 +4008,8 @@ time:
      function body and the constraint contain the new values.
    - The **session guard** enforces the [pairing](#pairing) rules on insert:
      web login only; a live approving browser session of the principal that
-     signed in within five minutes and is not a command session; the
+     is not a command session (signed in within five minutes until migration
+     0113 removed the age check, #1547); the
      principal an Administrator; `expires_at` after `statement_timestamp()`
      and at most 30 days after it; scope and digest formats. On update it
      admits only `last_used_at` forward to at most now (web), and `revoked_at`
@@ -4152,7 +4060,10 @@ time:
    function-equality test checks each copy against the baseline, and the
    upgrade-parity test checks the catalog. The Production confirmation's
    post-cleanup clause still requires cleanup's `complete` event; an
-   automation session only replaces the sign-in after it. Admission
+   automation session only replaces the sign-in after it (migration 0113
+   later dropped the sign-in-after-cleanup and five-minute clauses; the
+   session-bound guards still call `stewardship_automation_fresh_v1` for a
+   command session, and no guard calls the principal helper). Admission
    (`admit_admin_action`) refuses an automation caller for
    `DESTRUCTIVE_CONFIRMATION`, which no workflow uses yet. As the
    [secret replacement](#secret-replacement) rules accept, the two secret
@@ -4161,7 +4072,7 @@ time:
    that instant admits the request. The secret guards call the function
    only for the logins granted it (the web or the schema owner at intake;
    the parishsoft, google_workspace and slack installers at testing), so
-   any other login keeps its plain refusal. `require_fresh` refuses an
+   any other login keeps its plain refusal. `sign_in_instant` refuses an
    automation caller outside a transaction, since the row lock must last
    until the action commits. Telling an automation action apart in the
    audit trail (its `admin_cmd_*` event and the fresh-gated notice) comes
@@ -4192,7 +4103,7 @@ MUST prove:
   prints its pending document at once; `wait` can be repeated while pending;
   expiry clean-up (`pairing_abandoned`); single use; a wrong code refused
   without identifying any record; approval needs the Administrator role and
-  fresh authentication, refused for Staff and Ministry leaders, from a command
+  a live Admin session of any sign-in age, refused for Staff and Ministry leaders, from a command
   session and for a mismatched expected email; the approver can lower but not
   raise the scope and lifetime; the SQL guard refuses a direct insert that
   breaks any pairing rule; the approving session unchanged; the secret never
@@ -4238,15 +4149,14 @@ MUST prove:
   link rows, records `role_lost`, `user_removed` and `recovery` endings with
   their notices, resolves quiet automation incidents, and the session guard
   refuses any other ending from the worker;
-- **fresh gates:** before PR 5, `require_fresh` refuses every automation
-  caller; each of the four changed session-bound guards, run against its old
-  and its new definition, refuses an automation command session under the old
-  and admits a full-scope one under the new, and under the new still refuses
-  read-only, revoked, expired, non-Administrator and recovered sessions and
-  behaves exactly as before for browser sessions; the frozen file's `DO` block
-  fails against an unchanged guard; `require_fresh` admits a full-scope
-  automation caller at each listed call site, including the post-cleanup check,
-  which a browser session still must pass;
+- **fresh gates:** `sign_in_instant` admits a full-scope, live automation
+  caller at each listed call site, recording its event and notice, and
+  refuses a read-only or no-longer-live session (`denied`); each guard that
+  migration 0113 replaced, run against its old and its new definition,
+  admits a session whose sign-in is older than five minutes only under the
+  new, still refuses revoked, expired, idle and other actors' sessions, and
+  admits a command session; the frozen file's `DO` block fails against an
+  unchanged guard;
 - **confirmation:** each prompting command changes nothing on a wrong answer
   or end of input (exit 4), acts on the correct typed value, and acts with
   `--yes`; a prompting command with a `-` input and no `--yes` is refused;
@@ -4287,7 +4197,7 @@ MUST prove:
   `admin_cli`; every module moved onto the seam keeps its existing view
   tests, changed only in call signatures; a read-only automation caller is
   refused by `authenticated_admin(activity=True)`, `admit_admin_action` and
-  `require_fresh` directly, without the dispatcher;
+  `sign_in_instant` directly, without the dispatcher;
 - **parity:** for every command, the same capability denial, stale refusal
   and success as the page through the shared function, with the same domain
   audit events plus one `admin_cmd_*` event for state changes whose subject is
@@ -4324,7 +4234,9 @@ live campaign needs first: reading state, moving schedules, refreshing,
 testing and controlling sends. The go-live steps matter again only for the
 next campaign and come last. PR 1 to PR 3 go in order; later PRs depend on
 PR 3 and may land in any order, except that PR 6, PR 7, PR 10 and PR 12
-follow PR 5, which makes fresh-gated actions accept automation. PR 2 and PR 5
+follow PR 5, which makes fresh-gated actions accept automation. The PR
+entries keep the names of their time: `require_fresh` became
+`sign_in_instant` when #1547 removed the sign-in age checks. PR 2 and PR 5
 carry the schema changes, and PR 10 handles secrets; all three get
 security-focused reviews, and none is deployed to Production without the
 Administrator's approval of that deploy.
@@ -4518,8 +4430,8 @@ items 16 to 19 last, closing every open question.
   pattern suggested in the issue, still rejected. Such a token is provisioned
   by host access alone, approved by no person, never expires, is tied to no
   one's role and is rotated only by reinstalling. An automation session
-  differs on each point: an Administrator approves it after a fresh Google
-  sign-in; it expires within 30 days; it is listed and revocable in the
+  differs on each point: an Administrator approves it from a Google-signed-in
+  browser session; it expires within 30 days; it is listed and revocable in the
   portal and ends when that Administrator loses the role; it acts as, and is
   attributed to, exactly one Administrator; and only its digest is stored.
 - **Per-action browser approval and step-up** (the first design): rejected by

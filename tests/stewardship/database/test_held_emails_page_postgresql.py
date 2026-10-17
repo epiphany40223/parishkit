@@ -9,7 +9,6 @@ test_restore_review_postgresql.py, and what the planner does with a decision
 after release in test_restore_review_delivery_postgresql.py.
 """
 
-import re
 from datetime import timedelta
 from uuid import uuid4
 
@@ -321,8 +320,8 @@ def test_a_review_begun_since_the_preview_settles_nothing(released):
     assert not RestoreHoldResolution.objects.exists()
 
 
-def test_a_stale_sign_in_gets_the_step_up_in_place(released):
-    """A decision needs a sign-in within five minutes, before the note."""
+def test_an_old_sign_in_decides_a_send(released):
+    """A sign-in older than five minutes previews and settles a send (#1547)."""
     browser = released
     session = portal_session(browser)
     with unguarded():
@@ -332,23 +331,19 @@ def test_a_stale_sign_in_gets_the_step_up_in_place(released):
     invitation = ScheduleDefinition.objects.get(kind="initial")
     with campaign_clock(NOW), task_login(ServiceRole.WEB, exact=True, reconnect=True):
         shown = browser.get(PAGE).content.decode()
-        refused = post(
+        preview = post(
             browser,
             action="group-preview",
             definition=invitation.pk,
             group_action="assume",
         )
-    # The page knows: each decision is unavailable, named by the step-up
-    # notice (#1331); a forged preview is still refused.
-    assert shown.count('id="restore-fresh-reason"') == 1
-    assert re.search(
-        r'<button[^>]*disabled[^>]*aria-describedby="restore-fresh-reason"[^>]*>'
-        r"Assume these were sent",
-        shown,
-    )
-    assert refused.status_code == 403
-    assert b"Confirm with Google" in refused.content
-    assert b'data-restore-preview="assume"' not in refused.content
+        count = undecided(invitation)
+        done = settle(browser, invitation.pk, "assume", count)
+    assert "restore-fresh-reason" not in shown
+    assert preview.status_code == 200
+    assert b'data-restore-preview="assume"' in preview.content
+    assert done.status_code == 200
+    assert f"{count} held emails settled".encode() in done.content
 
 
 def test_a_malformed_step_is_refused_in_place(released):

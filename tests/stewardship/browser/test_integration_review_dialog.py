@@ -6,10 +6,10 @@ in place at the applied version and says what was applied in the status
 line under the form, with no reload and no layout shift. Save with a new key
 pasted submits natively instead (the slow key install is followed on the
 page, the recorded exception), so no key ever reaches the dialog. Remove
-Slack is a confirmation. A field's error stays on the form; a stale
-sign-in's step-up shows in the dialog. ParishSoft's refresh schedule change
-keeps its full review, and the redrawn schedule editor works again. Pages
-and answers are ``integration_dialog_components``'.
+Slack is a confirmation. A field's error stays on the form. ParishSoft's
+refresh schedule change keeps its full review, and the redrawn schedule
+editor works again. Pages and answers are
+``integration_dialog_components``'.
 """
 
 import re
@@ -25,7 +25,6 @@ from .integration_dialog_components import (
     SLACK_REMOVE,
     SLACK_REMOVING,
     SLACK_REVIEW,
-    SLACK_STEP_UP,
 )
 from .refresh_schedule_components import BASIC, CHECK, check_answer
 from .review_helpers import answer_reviews
@@ -229,25 +228,6 @@ def test_a_field_error_stays_on_the_form(page, component_origin):
     assert field.input_value() == "CREFUSED"
     assert page.evaluate(MARKED) == "kept"
     assert not failures
-
-
-def test_a_stale_sign_in_offers_the_step_up_in_the_dialog(page, component_origin):
-    """A Save refused for a stale sign-in shows the shared step-up notice in
-    the dialog, with Confirm with Google returning to the page, and no
-    Apply; the form keeps the reader's values at their version."""
-    answer_reviews(page, component_origin, SLACK_STEP_UP, 403, address=SLACK)
-    page.goto(component_origin + SLACK)
-    page.get_by_label("Slack channel ID").fill(NEW_CHANNEL)
-    page.get_by_role("button", name="Save", exact=True).click()
-    dialog = dialog_of(page, "Review the Slack notifications settings")
-    error = dialog.locator("[data-confirm-error]")
-    visible(error.locator("[data-step-up-notice]"))
-    visible(error.get_by_role("button", name="Confirm with Google"))
-    assert dialog.get_by_role("button", name="Apply").is_hidden()
-    dialog.get_by_role("button", name="Cancel").click()
-    hidden(dialog)
-    assert page.get_by_label("Slack channel ID").input_value() == NEW_CHANNEL
-    assert page.locator(DIGEST).input_value() == "a" * 64
 
 
 def test_a_schedule_change_keeps_its_full_review_and_the_editor_works_after(

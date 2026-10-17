@@ -702,8 +702,6 @@ def test_the_local_seeders_leader_import_takes_the_pages_path(deployment, monkey
         return 0.0
 
     monkeypatch.setattr(seeder, "wait_until", waiting)
-    # The step-up is the local test sign-in, which only LOCAL admits.
-    monkeypatch.setattr(seed_web, "sign_in_admin", lambda request, email: request)
     request = seed_web.new_request(session=SessionStore(session_key=live_key(browser)))
     with web():
         email = seeder.import_leader_user(

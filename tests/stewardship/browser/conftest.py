@@ -178,7 +178,6 @@ from .setup_order_components import components as setup_order_components
 from .signed_in_components import POSTS as SIGNED_IN_POSTS
 from .signed_in_components import components as signed_in_components
 from .source_form_components import components as source_form_components
-from .step_up_components import components as step_up_components
 from .stepper_components import POSTS as STEPPER_POSTS
 from .stepper_components import components as stepper_components
 from .system_health_components import components as system_health_components
@@ -272,7 +271,6 @@ def finishing_context(**status):
         status
         | finishing(status)
         | {
-            "next": "/admin/setup/cancel",
             "status_url": SETUP_FINISHING_STATUS,
             "confirmed_ago": waited_words(
                 status["server_now"] - status["confirmed_at"]
@@ -813,7 +811,6 @@ def component_origin():
             {
                 "label": "Backup encryption key",
                 "current": KeyStatus("installed", "0123456789abcdef", backup_at=NOW),
-                "fresh": False,
                 "key_error": "This is not a backup public key.",
             },
         ),
@@ -823,7 +820,6 @@ def component_origin():
             {
                 "label": "Backup encryption key",
                 "current": KeyStatus("configured", "0123456789abcdef"),
-                "fresh": True,
                 "new_fingerprint": "fedcba9876543210",
                 # A real challenge line is one unbroken 87-character word.
                 "challenge": "PKBKP1:" + "A" * 80,
@@ -1626,7 +1622,6 @@ def component_origin():
                 "confirm": True,
                 "sendable": False,
                 "unavailable": "Only 1 more Family test may be requested now.",
-                "fresh": True,
                 "refresh_url": "/family-tests-check",
             },
         ),
@@ -2229,24 +2224,21 @@ def component_origin():
     responses.update(report_components(context, admin))
     responses.update(information_components(context, admin))
     responses.update(log_components(context, admin))
-    # Family portal availability while open (#563): with a recent sign-in,
-    # and without one, when both change buttons wait for it.
-    for path, fresh in (("/family-portal", True), ("/family-portal-stale", False)):
-        responses[path] = (
-            "text/html",
-            render_to_string(
-                "stewardship/family-portal-maintenance.html",
-                context
-                | {
-                    "admin_chrome": admin,
-                    "state": SimpleNamespace(
-                        closed=False, message="", since=None, actor_id=None
-                    ),
-                    "message_limit": 500,
-                    "fresh": fresh,
-                },
-            ),
-        )
+    # Family portal availability while open (#563).
+    responses["/family-portal"] = (
+        "text/html",
+        render_to_string(
+            "stewardship/family-portal-maintenance.html",
+            context
+            | {
+                "admin_chrome": admin,
+                "state": SimpleNamespace(
+                    closed=False, message="", since=None, actor_id=None
+                ),
+                "message_limit": 500,
+            },
+        ),
+    )
     responses.update(directory_components(context, admin))
     responses.update(followup_components(context, admin))
     responses.update(source_form_components(context, admin))
@@ -2302,7 +2294,6 @@ def component_origin():
     responses.update(home_steps_components(context, admin))
     responses.update(automation_components(context, admin))
     responses.update(signed_in_components(context, admin))
-    responses.update(step_up_components(context, admin))
     responses.update(stepper_components(context, admin))
     responses.update(refresh_schedule_components(context, admin, NOW))
     responses.update(integration_dialog_components(context, admin, NOW))

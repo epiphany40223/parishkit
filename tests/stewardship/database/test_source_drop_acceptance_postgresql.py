@@ -1,13 +1,14 @@
 """Accepting a large ParishSoft change once, under the real guard (#530).
 
-The web login records an acceptance only for a freshly signed-in
-Administrator, only for the newest refusal with no full refresh promoted
-since, only with the counts exactly as recorded, and never for an empty load;
-nobody changes or deletes one. Whether an acceptance is live is derived in
-SQL: it ends at 24 hours, at the next refusal and at the next promoted full
-refresh. The worker reads the live one, a full refresh within the reviewed
-counts goes through under it and records it, and the refresh after that
-compares with the accepted counts (#831's required test).
+The web login records an acceptance only for a signed-in Administrator's
+live session (any sign-in age, #1547), only for the newest refusal with no
+full refresh promoted since, only with the counts exactly as recorded, and
+never for an empty load; nobody changes or deletes one. Whether an
+acceptance is live is derived in SQL: it ends at 24 hours, at the next
+refusal and at the next promoted full refresh. The worker reads the live
+one, a full refresh within the reviewed counts goes through under it and
+records it, and the refresh after that compares with the accepted counts
+(#831's required test).
 """
 
 import logging
@@ -130,7 +131,7 @@ def web_with(*privileges):
 
 
 def administrator():
-    """A freshly signed-in Administrator's live session.
+    """A just-signed-in Administrator's live session.
 
     The source tests' configuration (``setup``) has one Administrator address
     rule; its user and a session that signed in just now are written as the
@@ -203,15 +204,15 @@ def refused(message):
         yield
 
 
-def test_the_web_accepts_the_newest_refusal_once_for_a_fresh_administrator(tmp_path):
-    """Fresh sign-in, the counts as recorded, times from the database clock."""
+def test_the_web_accepts_the_newest_refusal_once_for_an_administrator(tmp_path):
+    """The session's own sign-in, the counts as recorded, database times."""
     credential, execution, lease, *_ = setup(tmp_path)
     attempt = refuse(execution, lease, credential, FELL)
     administrator()
     current = session()
     with web_with("SELECT", "INSERT"):
-        # A stale sign-in, another Administrator's id or a made-up session
-        # is refused.
+        # A sign-in instant not the session's, another Administrator's id or
+        # a made-up session is refused.
         for values in (
             {"authenticated_at": current.authenticated_at.replace(year=2000)},
             {"actor_id": uuid4()},
@@ -606,8 +607,13 @@ def test_the_migration_check_refuses_a_weakened_guard(old, new):
 
 
 def test_the_migration_check_passes_and_refuses_drift():
-    """The closing DO block passes as installed and refuses each drift."""
+    """The closing DO block passes with 0080's guard and refuses each drift.
+
+    0113 (#1547) later replaces the guard, so each rolled-back transaction
+    first puts 0080's own body back.
+    """
     with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(GUARD)
         cursor.execute(CHECK)
         transaction.set_rollback(True)
     table = "public.stewardship_source_drop_acceptance"
@@ -672,6 +678,7 @@ def test_the_migration_check_passes_and_refuses_drift():
             pytest.raises(DatabaseError, match=message),
             transaction.atomic(),
         ):
+            cursor.execute(GUARD)
             cursor.execute(change_sql)
             cursor.execute(CHECK)
 
@@ -696,7 +703,7 @@ def unguarded_session(user, *, authenticated_at):
 
 def test_the_guard_refuses_repeatable_read_and_non_administrators(tmp_path):
     """READ COMMITTED only; a disabled user or one who is no Administrator is
-    refused even with a fresh session."""
+    refused even with a live session."""
     credential, execution, lease, *_ = setup(tmp_path)
     attempt = refuse(execution, lease, credential, FELL)
     current = administrator()
@@ -723,43 +730,32 @@ def test_the_guard_refuses_repeatable_read_and_non_administrators(tmp_path):
     assert not SourceDropAcceptance.objects.exists()
 
 
-def test_a_live_full_scope_automation_session_stands_in_for_a_fresh_sign_in(
-    tmp_path,
-):
-    """A command session linked to a live full-scope automation session is
-    admitted though its sign-in is ten minutes old; unlinked, it is not."""
-
+def test_a_live_session_of_any_sign_in_age_is_admitted(tmp_path):
+    """A live session signed in three hours ago is admitted (#1547); the same
+    kind of session idle for over an hour, expired or revoked is refused."""
     credential, execution, lease, *_ = setup(tmp_path)
     attempt = refuse(execution, lease, credential, FELL)
-    fresh = administrator()
-    stale = database_now() - timedelta(minutes=10)
-    user = PortalUser.objects.get(pk=fresh.principal_id)
-    command = unguarded_session(user, authenticated_at=stale)
-    with web_with("SELECT", "INSERT"), refused("fresh Administrator"):
-        web_accept(attempt, command)
-    automation = uuid4()
-    with unguarded(), connection.cursor() as cursor:
-        cursor.execute(
-            "INSERT INTO stewardship_automation_session (id, correlation_id, "
-            "version, principal_id, approving_session_id, authenticated_at, "
-            "expires_at, scope, label, secret_digest, host_digest) VALUES "
-            "(%s,%s,1,%s,%s,%s,statement_timestamp()+interval '1 day','full',"
-            "'Synthetic',%s,%s)",
-            [
-                automation,
-                uuid4(),
-                user.pk,
-                fresh.pk,
-                stale,
-                "a" * 64,
-                "b" * 64,
-            ],
-        )
-        cursor.execute(
-            "INSERT INTO stewardship_automation_login "
-            "(portal_session_id, automation_session_id) VALUES (%s,%s)",
-            [command.pk, automation],
-        )
+    user = PortalUser.objects.get(pk=administrator().principal_id)
+    hours_ago = database_now() - timedelta(hours=3)
+    for kind in ("idle", "expired", "revoked"):
+        login = unguarded_session(user, authenticated_at=hours_ago)
+        # Read after the row is written: its checks keep activity before
+        # expiry and revocation.
+        now = database_now()
+        values = {
+            "idle": {"last_activity_at": now - timedelta(minutes=61)},
+            "expired": {
+                "last_activity_at": now - timedelta(minutes=1),
+                "expires_at": now,
+            },
+            "revoked": {"revoked_at": now},
+        }[kind]
+        with unguarded():
+            PortalSession.objects.filter(pk=login.pk).update(**values)
+        with web_with("SELECT", "INSERT"), refused("fresh Administrator"):
+            web_accept(attempt, login)
+    login = unguarded_session(user, authenticated_at=hours_ago)
     with web_with("SELECT", "INSERT"):
-        accepted = web_accept(attempt, command)
-    assert accepted.session_id == command.pk
+        accepted = web_accept(attempt, login)
+    assert accepted.session_id == login.pk
+    assert accepted.authenticated_at == hours_ago

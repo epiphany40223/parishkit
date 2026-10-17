@@ -266,15 +266,14 @@ def test_a_test_access_post_with_extra_fields_is_counted(recorded):
 
 
 def test_a_refusal_drawn_in_place_is_recorded_without_a_status(recorded):
-    """A 200 step-up or pairing answer is a refusal; a plain 200 is not."""
+    """A 200 refusal drawn in place is a refusal; a plain 200 is not."""
     answer(HttpResponse(status=200))
     assert recorded == []
-    answer(refused_in_place(HttpResponse(), "fresh_authentication_required"))
+    answer(refused_in_place(HttpResponse(), "pairing_code_refused"))
     (record,) = recorded
     context = record.context()
-    assert context["reason"] == "fresh_authentication_required"
+    assert context["reason"] == "pairing_code_refused"
     assert "status" not in context
-    assert record.level == "INFO"
 
 
 def test_a_pairing_refusal_drawn_in_place_is_info(recorded):
@@ -287,7 +286,7 @@ def test_a_pairing_refusal_drawn_in_place_is_info(recorded):
 @pytest.mark.parametrize(
     ("refused", "status", "reason"),
     [
-        ("reauthenticate", 403, "fresh_authentication_required"),
+        ("signed_out", 403, "denied"),
         ("busy", 409, "stale_page"),
         ("changed", 409, "stale_page"),
         ("production", 403, "production_only"),

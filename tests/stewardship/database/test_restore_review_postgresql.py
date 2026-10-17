@@ -1,7 +1,7 @@
 """The restore review under the real logins and guards (#537, migration 0017).
 
-The operator's admin-recovery login closes the site for review; a freshly
-signed-in Administrator, through the web login, lists the held emails,
+The operator's admin-recovery login closes the site for review; a signed-in
+Administrator's live session, through the web login, lists the held emails,
 settles them and releases the site. Nothing here creates, replaces or
 cancels a Family code or link, and a held email is never sent unless an
 Administrator chose "send again".
@@ -380,8 +380,9 @@ def test_inventory_is_refused_outside_a_review(auth_service, google):
         as_web(list_held_emails_for)
 
 
-def test_settling_needs_a_fresh_administrator_and_is_audited(auth_service, google):
-    """Each decision is versioned, append-only and audited; a stale sign-in fails."""
+def test_settling_needs_a_live_administrator_and_is_audited(auth_service, google):
+    """Each decision is versioned, append-only and audited; a sign-in instant
+    other than the live session's fails."""
     live_campaign(auth_service)
     signed_in()
     with campaign_clock(NOW):
@@ -440,7 +441,7 @@ def test_settling_needs_a_fresh_administrator_and_is_audited(auth_service, googl
     assert resent.state == "resend_authorized"
     # Sent again: the shared exclusion no longer keeps it back.
     assert not excluded(resent)
-    # A sign-in older than five minutes is refused, as is another login.
+    # A sign-in instant not the session's is refused, as is another login.
     other = held(state="unreviewed").first()
     current = administrator()
     with (
@@ -516,8 +517,8 @@ def test_release_reopens_the_site_and_keeps_unsettled_holds(auth_service, google
     # Every unsettled hold still keeps its email from being prepared or sent
     # (the shared exclusion the planner, claim and dispatch guards use).
     assert all(excluded(row) for row in held(state="unreviewed"))
-    # An undecided hold is still decided after release (#757), by a freshly
-    # signed-in Administrator through the web login, and audited.
+    # An undecided hold is still decided after release (#757), by a signed-in
+    # Administrator through the web login, and audited.
     hold = held().order_by("target", "definition__kind").first()
     signed_in()
     decision = as_web(
@@ -543,10 +544,11 @@ def test_release_reopens_the_site_and_keeps_unsettled_holds(auth_service, google
             actor_id=administrator().principal_id,
             correlation_id=uuid4(),
         )
-    # Without a fresh sign-in, or from a login other than web, it is refused.
+    # With another sign-in instant, or from a login other than web, it is
+    # refused.
     other = held(state="unreviewed").first()
     current = administrator()
-    stale = dict(
+    decided = dict(
         hold_id=other.pk,
         expected_version=1,
         state="assumed_delivered",
@@ -560,10 +562,11 @@ def test_release_reopens_the_site_and_keeps_unsettled_holds(auth_service, google
         pytest.raises(DatabaseError, match="fresh Administrator"),
     ):
         settle_held_email(
-            authenticated_at=current.authenticated_at - timedelta(minutes=10), **stale
+            authenticated_at=current.authenticated_at - timedelta(minutes=10),
+            **decided,
         )
     with task_login(ServiceRole.WORKER, exact=True), pytest.raises(DatabaseError):
-        settle_held_email(authenticated_at=current.authenticated_at, **stale)
+        settle_held_email(authenticated_at=current.authenticated_at, **decided)
     other.refresh_from_db()
     assert other.state == "unreviewed" and excluded(other)
     # A second release is refused.
@@ -739,8 +742,9 @@ def test_a_reminder_a_later_one_superseded_may_only_be_assumed_sent(
     )
 
 
-def test_release_needs_a_fresh_administrator(auth_service, google):
-    """A stale sign-in or another login cannot release; the gate stays closed."""
+def test_release_needs_a_live_administrator(auth_service, google):
+    """Another sign-in instant or another login cannot release; the gate stays
+    closed."""
     live_campaign(auth_service)
     signed_in()
     with campaign_clock(NOW):

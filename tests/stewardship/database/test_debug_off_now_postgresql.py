@@ -4,12 +4,12 @@
 The control appears while a service reports debug logging. Preview, then
 confirm, in the shared review dialog (#1356): the preview is a one-sentence
 confirmation, Apply's answer draws the region again, and a refusal is a
-fragment the dialog shows as drawn; a stale sign-in gets the "Confirm with
-Google" step-up; a repeated confirmation returns the first switch; one
+fragment the dialog shows as drawn; a sign-in of any age turns it off
+(#1547); a repeated confirmation returns the first switch; one
 switch at a time; Administrators only; the audit event names the switch,
 and the panel says who set it. The command shows the page's preview at the
 prompt and sets the switch through the page's own ``turn_off_debug`` on the
-restricted web login, with the automation session as the fresh sign-in.
+restricted web login, bound to the automation command session.
 """
 
 import re
@@ -18,7 +18,6 @@ from uuid import uuid4
 
 import pytest
 
-from parishkit.stewardship.accounts import sessions
 from parishkit.stewardship.accounts.automation_models import AutomationSession
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.audit.models import AuditEvent
@@ -26,7 +25,7 @@ from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.debug_switch_models import DebugOffSwitch
 
 from ..policy_factory import address
-from .auth_builders import signed_in, unguarded
+from .auth_builders import signed_in, stale_sign_in, unguarded
 from .automation_builders import paired
 from .campaign_builders import change
 from .test_admin_test_sample_cli_postgresql import runner
@@ -176,23 +175,16 @@ def test_the_page_follows_the_switch_before_the_services_report(auth_service, go
     assert "Debug logging is on in Production in" in body
 
 
-def test_a_stale_sign_in_gets_the_google_step_up(auth_service, google, monkeypatch):
-    """Answered in the dialog: the step-up form, returning to this page."""
+def test_an_old_sign_in_turns_off_debug_logging(auth_service, google):
+    """A sign-in older than five minutes turns it off at once (#1547)."""
     debug_service()
     browser, _ = signed_in()
-    monkeypatch.setattr(sessions, "FRESH_SECONDS", -1)
-    for values in (
-        {"action": "debug_off_preview"},
-        {"action": "debug_off_confirm", "key": str(uuid4())},
-    ):
-        response = post(browser, **values)
-        assert response.status_code == 403
-        body = response.content.decode()
-        assert "<div data-review-refusal>" in body
-        assert 'data-debug-off-refused="reauthenticate"' in body
-        assert 'id="debug-off"' not in body
-        assert 'name="next" value="/admin/system/health/"' in body
-    assert not DebugOffSwitch.objects.exists()
+    stale_sign_in()
+    key = key_of(post(browser, action="debug_off_preview"))
+    confirmed = post(browser, action="debug_off_confirm", key=key)
+    assert confirmed.status_code == 200
+    assert 'id="debug-off"' in confirmed.content.decode()
+    assert DebugOffSwitch.objects.count() == 1
 
 
 def test_only_an_administrator_may_turn_off_debug_logging(auth_service, google):
@@ -236,10 +228,8 @@ def test_stray_fields_are_refused_in_the_dialog(auth_service, google):
     assert not DebugOffSwitch.objects.exists()
 
 
-def test_a_missing_grant_is_said_plainly_not_as_a_step_up(
-    auth_service, google, monkeypatch, caplog
-):
-    """A permission refusal other than the fresh sign-in's is logged and
+def test_a_missing_grant_is_said_plainly(auth_service, google, monkeypatch, caplog):
+    """A permission refusal other than the ended session's is logged and
     answered plainly in the dialog, since a new sign-in would not help."""
     from django.db import DatabaseError
 
@@ -279,8 +269,8 @@ def test_debug_logging_is_turned_off_from_the_command_line(admin):
     """The prompt shows the preview; the switch, its events and a safe repeat."""
     debug_service("worker")
     _, secret, row = paired(admin.service)
-    # The session's sign-in is ten minutes old: only the automation session
-    # stands in for a fresh one.
+    # The session's sign-in is ten minutes old, which no longer matters
+    # (#1547): the command session is bound like a browser's.
     older = row.authenticated_at - timedelta(minutes=10)
     with unguarded():
         AutomationSession.objects.filter(pk=row.pk).update(authenticated_at=older)
