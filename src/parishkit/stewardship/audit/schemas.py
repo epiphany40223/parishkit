@@ -253,6 +253,8 @@ class Action(StrEnum):
     ADMIN_CMD_INTEGRATION_KEY_FINISH_SWITCHING = (
         "admin_cmd_integration_key_finish_switching"
     )
+    # integration key replace: a settings page's Save with a new key pasted.
+    ADMIN_CMD_INTEGRATION_KEY_REPLACE = "admin_cmd_integration_key_replace"
     # workgroup confirm: the No-reminders WorkGroup page's Apply (ADM-11 PR 10).
     ADMIN_CMD_WORKGROUP_CONFIRM = "admin_cmd_workgroup_confirm"
     # campaign confirm: Campaign settings' Apply (ADM-11 PR 10).

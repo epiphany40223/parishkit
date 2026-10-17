@@ -426,13 +426,15 @@ LEDGER = {
     "ministry_roster_bulk": command("report roster", "followup roster-bulk"),
     # Integrations and credentials.
     "integrations": command("integration list"),
-    # The settings page as it opens, its Save, its Remove and the backup
-    # folder check (#463); the key replacement is still owed.
+    # The settings page as it opens, its Save, its Remove, the backup
+    # folder check and its Save with a new key (#463); the Backup
+    # encryption key's steps are still owed.
     "integration_settings": command(
         "integration show",
         "integration preview",
         "integration confirm",
         "integration backup-probe",
+        "integration key replace",
         owed="PR 10",
     ),
     "integration_status": command("integration status"),
