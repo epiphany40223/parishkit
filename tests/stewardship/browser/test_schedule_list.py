@@ -26,13 +26,17 @@ from .schedule_list_components import (
     DATES_END,
     DATES_INVALID,
     DATES_STALE,
+    DAY_MOVED_TEXT,
     EDIT,
     EDIT_CLOSED,
     EDIT_DIGEST,
     EDIT_EMAIL_REFUSED,
     EDIT_INITIAL,
+    EDIT_SERIES,
+    EDIT_SERIES_GATED,
     EMAIL_REFUSAL,
     FAILED,
+    GATED_REASON,
     LIST,
     NEW,
     NEW_BLOCKED,
@@ -484,6 +488,94 @@ def test_edit_review_waits_for_a_change_and_greys_again_on_revert(
     assert button.is_enabled()
     weekday.select_option(saved)
     assert button.is_disabled()
+    assert not failures
+
+
+def test_a_series_reminder_changes_this_and_following_in_place(
+    page, component_origin, axe_source
+):
+    """Part of its series (#469): choosing a scope greys the date in place,
+    showing this reminder's own, is no change by itself, and Review posts
+    the scope without the date; the review says what happens to the series."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + EDIT_SERIES)
+    failures = watch(page)
+    choice = page.get_by_role("group", name="Apply this edit to", exact=False)
+    visible(choice)
+    # "Part of" describes the choice, so a screen reader hears it there.
+    described = choice.get_attribute("aria-describedby").split()
+    assert page.locator(f"#{described[0]}").inner_text() == (
+        "Part of: Every day, October 1, 2054 – October 31, 2054"
+    )
+    date = page.locator('[name="schedule-date"]')
+    time = page.locator('[name="schedule-time"]')
+    this = page.get_by_role("radio", name="This reminder only")
+    assert this.is_checked() and date.is_enabled()
+    button = page.get_by_role("button", name=REVIEW)
+    assert button.is_disabled()
+    # A date typed first is not used by a series scope: the box shows the
+    # reminder's own again (Los Angeles, a day the same as New York's).
+    date.fill("2054-10-11")
+    places = [node.bounding_box() for node in (date, time, button)]
+    page.get_by_role("radio", name="This and following").check()
+    # Greyed in place, not hidden: nothing moves, and a scope is no change.
+    assert date.is_disabled() and date.is_visible()
+    assert date.input_value() == "2054-10-10"
+    visible(page.get_by_text("Used only with \u201cThis reminder only\u201d"))
+    assert same_place([node.bounding_box() for node in (date, time, button)], places)
+    assert button.is_disabled()
+    assert axe_violations(page, axe_source) == []
+    this.check()
+    assert date.is_enabled()
+    page.get_by_role("radio", name="The whole series").check()
+    time.fill("10:30")
+    assert button.is_enabled()
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        button.click()
+    fields = posted(sent.value)
+    assert fields["series-scope"] == ["series"]
+    assert fields["schedule-time"] == ["10:30"]
+    assert "schedule-date" not in fields
+    dialog = page.get_by_role("dialog", name="Review scheduled email change")
+    visible(dialog)
+    assert (
+        "From October 10, 2054, every reminder of this series sends at 10:30 AM"
+        in dialog.inner_text()
+    )
+    # A reminder outside a series has no scope.
+    page.goto(component_origin + EDIT)
+    assert page.locator('[name="series-scope"]').count() == 0
+    assert not failures
+
+
+def test_an_unavailable_scope_says_why_and_a_refusal_shows_at_the_choice(
+    page, component_origin, axe_source
+):
+    """A scope the server would refuse is unavailable with its reason
+    (prerequisite gates); a refusal of the typed time stays on the form."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + EDIT_SERIES_GATED)
+    failures = watch(page)
+    whole = page.get_by_role("radio", name="The whole series")
+    assert whole.is_disabled()
+    reason = page.locator(f"#{whole.get_attribute('aria-describedby')}")
+    assert reason.inner_text() == f"Unavailable: {GATED_REASON}"
+    page.get_by_role("radio", name="This and following").check()
+    page.locator('[name="schedule-time"]').fill("23:00")
+    page.get_by_role("button", name=REVIEW).click()
+    error = page.locator("#id_series-scope_error")
+    visible(error)
+    assert error.inner_text() == DAY_MOVED_TEXT
+    assert (
+        page.get_by_role("radio", name="This and following").get_attribute(
+            "aria-invalid"
+        )
+        == "true"
+    )
+    assert not page.get_by_role(
+        "dialog", name="Review scheduled email change"
+    ).is_visible()
+    assert axe_violations(page, axe_source) == []
     assert not failures
 
 
