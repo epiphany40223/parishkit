@@ -427,7 +427,12 @@ def publish_plan(execution, plan_id, gateway, *, enabled):
             stopped = plan_id in expired
             for entity in unfinished([plan_id]):
                 item = _Entity(entity)
-                for _ in range(ATTEMPTS):
+                # A resumed entity whose PUT was already accepted but read
+                # back wrong goes straight to the closing read: no more PUTs.
+                mismatched = PublicationOutcome.objects.filter(
+                    entity=entity, failure_kind="verify_mismatch"
+                ).exists()
+                for _ in range(0 if mismatched else ATTEMPTS):
                     if stopped:
                         break
                     result = _attempt(execution, claim, gateway, item)

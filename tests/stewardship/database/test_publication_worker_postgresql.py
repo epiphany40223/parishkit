@@ -367,6 +367,37 @@ def test_a_put_accepted_but_not_applied_is_never_published(confirmed):
     assert state.gateway.records[state.first.entity_key] == original
 
 
+def test_a_resumed_run_sends_no_put_after_a_recorded_mismatch(confirmed):
+    """A crash between the recorded ``verify_mismatch`` and the closing read
+    must not cost another PUT when the entity is resumed (#1604)."""
+    state = confirmed
+
+    def ignoring(member_id, payload, *, timeout):
+        """Accept the body and change nothing."""
+        state.gateway.writes.append((member_id, dict(payload)))
+
+    def die_on_closing_read():
+        """Crash on the third read: before PUT, read back, then the close."""
+        if len(state.gateway.reads) == 3:
+            raise Crash
+
+    state.gateway.write_member_contact = ignoring
+    state.gateway.on_read = die_on_closing_read
+    with pytest.raises(Crash):
+        run(state)
+    assert results(state.entity) == [("failed", "verify_mismatch")]
+    assert len(state.gateway.writes) == 1
+    state.gateway.on_read = None
+    drained()
+    result = run(state)
+    assert result.invalidated == 1
+    assert len(state.gateway.writes) == 1
+    assert results(state.entity) == [
+        ("failed", "verify_mismatch"),
+        ("invalidated", ""),
+    ]
+
+
 def test_a_put_that_lands_after_its_mismatch_is_published_without_a_retry(
     confirmed,
 ):

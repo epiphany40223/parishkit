@@ -2102,8 +2102,11 @@ back that answers with anything other than the expected record
 but did not apply it as planned (as it ignores `null`), so another attempt
 would only send the same body again. The entity is then closed like any
 other unfinished one, and its change goes back to `failed`
-([#1604](https://github.com/epiphany40223/parishkit/issues/1604)). An entity's written
-proposals are `queued` from just before its PUT until its outcome: `published` when verified, or, when the entity is
+([#1604](https://github.com/epiphany40223/parishkit/issues/1604)). A resumed
+run (a crash or retry before that closing read) sends no further PUT for an
+entity that already has a `verify_mismatch` outcome: it goes straight to the
+closing read. An entity's written proposals are `queued` from just before
+its PUT until its outcome: `published` when verified, or, when the entity is
 invalidated, back to `failed` (an attempt failed) or `pending`. Every entity a
 run leaves without a published or invalidated outcome, and any left by a
 crashed run once its plan's execution window has passed, is closed, so a
