@@ -34,7 +34,6 @@ from parishkit.stewardship.runtime_grants import (
     CLOSURE_TABLES,
     PUBLICATION_WORKER_TABLES,
 )
-from parishkit.stewardship.schema_inventory import inventory
 from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 
 from .campaign_builders import initialized
@@ -50,22 +49,6 @@ from .test_users_upgrade_postgresql import (
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
-
-
-@pytest.fixture(autouse=True)
-def schema_restored(transactional_db):
-    """Fail the test that leaves the shared database unlike a fresh install.
-
-    These tests replace, drop and reinstall functions, tables and columns on
-    the session's one test database, and only their own restore puts them
-    back. Comparing the baseline test's per-object inventory before and
-    after each test reports any drift (#1284) here, by object name, rather
-    than in the baseline fingerprint of whatever later test shares the
-    database.
-    """
-    before = inventory(connection)
-    yield
-    assert inventory(connection) == before
 
 
 MIGRATIONS = Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema"
@@ -392,7 +375,7 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # in place. No closure file installs that function again, and 0091's
 # ``CLOSURE_OLD_BODIES`` rerun touches only bodies still reading Ministry
 # activity, which 0103's does not, so its body survives the swap and nothing
-# is registered (``schema_restored`` checks this).
+# is registered (the database conftest's schema guard checks this, #1489).
 # 0109 (#1398) creates the discard table (in CLOSURE_TABLES) and the window,
 # ended and discard functions, one of them granted to the scheduler
 # (runtime_grants.CLOSURE_FUNCTIONS); ``closure_functions_absent`` makes it
