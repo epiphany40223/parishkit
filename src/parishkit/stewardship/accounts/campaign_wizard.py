@@ -512,15 +512,20 @@ def load_stages(load, phase):
     return stages.rows(LOAD_STAGES, -1)
 
 
-def load_status(task):
+def load_status(task, *, families):
     """Load ParishSoft data's live status for one refresh run's ``task``.
 
     ``task`` is the run as the Background task read names it (``_task_read``).
     The passive status fragment (``?view=load``) draws the step's live region
-    from it while the run is watched: loading while it is under way, loaded
-    once it succeeded and failed once it failed or was cancelled. The
-    settled answer's follow-up link then re-reads the page in place, which
-    draws the step's full state (the Family count, Continue, Try again).
+    from it while the run is watched: loading while it is under way and
+    failed once it failed or was cancelled. A run that succeeded reads as
+    loaded only when ``families`` (``current_campaign_has_families``) says
+    the campaign has its Families, the same test the page's re-read makes
+    (``completed``); otherwise it is the offer again, so the region never
+    says and announces "loaded" just before the re-read says it is not
+    (#1517 review, L2). The settled answer's follow-up link then re-reads
+    the page in place, which draws the step's full state (the Family count,
+    Continue, Try again).
     """
     from parishkit.stewardship.jobs.models import NONTERMINAL_STATES
 
@@ -531,6 +536,8 @@ def load_status(task):
         else "failed"
         if state in _UNFINISHED
         else "loaded"
+        if families
+        else "offer"
     )
     progress = task["progress"]
     return {
@@ -540,6 +547,21 @@ def load_status(task):
         "progress": (progress["phase"], progress["current"], progress["total"]),
         "polled": True,
     }
+
+
+def current_campaign_has_families():
+    """Whether the current campaign has a Family, in one query.
+
+    Load ParishSoft data's status poll asks it once its run has succeeded,
+    so the poll calls the data loaded exactly when the page would
+    (``completed``'s "load"); the run itself names no campaign.
+    """
+    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+
+    from .runtime_models import SystemConfiguration
+
+    current = SystemConfiguration.objects.values("current_campaign_id")
+    return FamilyCampaign.objects.filter(campaign_id__in=current).exists()
 
 
 def _load_state(campaign, done):

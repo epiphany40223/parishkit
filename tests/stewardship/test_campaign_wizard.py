@@ -732,7 +732,9 @@ def test_load_status_region_draws_one_state_each():
     assert 'datetime="2026-10-17T12:00:00+00:00" data-local-instant' in loaded
     assert loaded.count('data-stage-state="done"') == 4
     # A poll's settled answer follows up by re-reading the page in place.
-    polled = load_region(**wizard.load_status(task_values("succeeded", task)))
+    polled = load_region(
+        **wizard.load_status(task_values("succeeded", task), families=True)
+    )
     assert "data-live-follow" in polled and 'href="#refresh-run"' in polled
     assert "is loaded." in polled and "data-live-pending" not in polled
 
@@ -747,19 +749,22 @@ def task_values(state, task, phase="promoting"):
 
 
 @pytest.mark.parametrize(
-    ("state", "load"),
+    ("state", "families", "load"),
     [
-        ("queued", "loading"),
-        ("running", "loading"),
-        ("retry_wait", "loading"),
-        ("succeeded", "loaded"),
-        ("failed", "failed"),
-        ("cancelled", "failed"),
+        ("queued", False, "loading"),
+        ("running", False, "loading"),
+        ("retry_wait", False, "loading"),
+        ("succeeded", True, "loaded"),
+        # A run that succeeded but left no Families is not the load: the
+        # poll says what the page's re-read will (#1517 review, L2).
+        ("succeeded", False, "offer"),
+        ("failed", False, "failed"),
+        ("cancelled", True, "failed"),
     ],
 )
-def test_load_status_reads_the_run_state(state, load):
-    """The status fragment names the step's state from the run alone."""
+def test_load_status_reads_the_run_state(state, families, load):
+    """The status fragment names the step's state from the run and Families."""
     task = uuid4()
-    status = wizard.load_status(task_values(state, task, "staging"))
+    status = wizard.load_status(task_values(state, task, "staging"), families=families)
     assert status["load"] == load and status["load_task"] == str(task)
     assert status["polled"] is True

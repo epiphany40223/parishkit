@@ -19,14 +19,17 @@
   the campaign's load, not a refresh to repeat. The status region (campaign-load-status.html) polls the run while it loads, and once
   it ends re-reads this page in place, so the stepper, the action row and this region switch to the next state with no reload. The
   button posts in place and its answer also redraws the action row. The region keeps its height (data-keep-height) and every state
-  draws the same summary line, boxes and reserved count line, so nothing moves under the pointer (no layout shift). The page's
-  announcer sits outside the region so an in-place answer never replaces it. Outside the stepper the page is unchanged.{% endcomment %}<p class="visually-hidden" role="status" data-live-announcer="campaign-load"></p>
+  draws the same summary line, boxes and reserved count line, so nothing moves under the pointer (no layout shift). The button sits
+  in a slot as tall as the taller of its two labels in every state (campaign-load-action, ui-v1.css), so when the pressed button goes
+  the action row below stays put. The page's announcer sits outside the region so an in-place answer never replaces it; the button
+  says nothing itself (data-in-place-spoken), since that announcer reads out the region's new state. Outside the stepper the page is unchanged.{% endcomment %}<p class="visually-hidden" role="status" data-live-announcer="campaign-load"></p>
 <div id="refresh-run" class="campaign-load" data-in-place-region data-keep-height>
 {% include 'stewardship/campaign-load-status.html' with load=wizard.load_view load_task=wizard.load_task stages=wizard.load_stages progress=wizard.load_progress families=wizard.families as_of=full_refresh.data_as_of %}
-{% if wizard.load == 'offer' or wizard.load == 'failed' %}<form method="post" action="{% url 'admin:source_refresh' %}#refresh-run" data-in-place="refresh-request" data-in-place-only="campaign-step-actions" data-in-place-message="{% translate 'Load requested.' %}">
+{% translate "Load the campaign's ParishSoft data" as load_label %}{% translate "Try again" as again_label %}<div class="campaign-load-action">{% if wizard.load == 'offer' or wizard.load == 'failed' %}<form method="post" action="{% url 'admin:source_refresh' %}#refresh-run" data-in-place="refresh-request" data-in-place-only="campaign-step-actions" data-in-place-spoken>
   {% csrf_token %}<input type="hidden" name="request_key" value="{{ request_key }}">
   {% button type="submit" data-campaign-load-start %}{% if wizard.load == 'failed' %}{% translate "Try again" %}{% else %}{% translate "Load the campaign's ParishSoft data" %}{% endif %}{% endbutton %}
 </form>{% endif %}
+<span class="button campaign-load-ghost" aria-hidden="true" data-label="{{ load_label }}"></span><span class="button campaign-load-ghost" aria-hidden="true" data-label="{{ again_label }}"></span></div>
 </div>
 {% else %}{# A region of its own, so the in-place re-read once the requested run ends shows the new data age too; data-keep-height keeps that re-read from moving the button or the status below it if the panel shrinks. #}<div id="refresh-latest" data-in-place-region data-keep-height><section class="panel">
   {% if full_refresh %}{% include "stewardship/full-refresh-status.html" with status=full_refresh can_view_task=True on_refresh_page=True %}{% endif %}

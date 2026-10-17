@@ -278,12 +278,18 @@ def test_load_step_loads_then_continues_in_place(
     polls = answer_polls(page, component_origin)
     start.scroll_into_view_if_needed()
     above = summary.bounding_box()
+    # The action row below the button: its Back must not move up when the
+    # pressed button goes (#1517 review, L1).
+    below = back.bounding_box()
+    page.evaluate(SNAPSHOT_SPOKEN)
     start.click()
     has_text(summary, "Loading the campaign's ParishSoft data…")
     assert region.get_by_role("button").count() == 0
     assert row.get_by_role("link", name="Continue to Share options").count() == 0
     assert_no_refresh_wording(page)
     assert_same_box(above, summary.bounding_box())
+    assert_same_box(below, back.bounding_box())
+    assert_spoken_once(page, "Loading the campaign's ParishSoft data.")
     first_box = region.locator("[data-load-stage]").first.bounding_box()
     # The poll moves the boxes on in place: Download done, Save in progress.
     has_attribute(
@@ -310,6 +316,7 @@ def test_load_step_loads_then_continues_in_place(
     assert "Step 2 of 8: Load ParishSoft data" in stepper.inner_text()
     assert_same_box(above, summary.bounding_box())
     assert_same_box(first_box, region.locator("[data-load-stage]").first.bounding_box())
+    assert_same_box(below, back.bounding_box())
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert page.evaluate(MARKED) == "kept"
     assert len(polls) >= 2
@@ -343,6 +350,35 @@ def answer_polls(page, origin):
     return polls
 
 
+# Every live region's text, keyed by the node, kept on the page for a
+# later comparison (``assert_spoken_once``).
+SNAPSHOT_SPOKEN = """() => {
+  const live = document.querySelectorAll('[role="status"], [aria-live]');
+  window.spokenBefore = new Map([...live]
+    .map((node) => [node, node.textContent.trim()]));
+}"""
+CHANGED_SPOKEN = """() => [...document.querySelectorAll('[role="status"], [aria-live]')]
+  .filter((node) => node.textContent.trim()
+    && node.textContent.trim() !== window.spokenBefore.get(node))
+  .map((node) => node.textContent.trim())"""
+
+
+def assert_spoken_once(page, sentence):
+    """Assert the press was announced once: ``sentence``, in one live region.
+
+    Compares with the live regions' text before the press (``SNAPSHOT_SPOKEN``
+    run then). The button's form is data-in-place-spoken, so ui-v1.js's own
+    announcer stays silent and only the region's live-status announcer
+    speaks (#1517 review, L3). Waits past ui-v1.js's short announcement
+    delay.
+    """
+    announcer = page.locator('[data-live-announcer="campaign-load"]')
+    has_text(announcer, sentence)
+    page.wait_for_timeout(300)
+    spoken = page.evaluate(CHANGED_SPOKEN)
+    assert len(spoken) == 1 and spoken[0].startswith(sentence), spoken
+
+
 def assert_same_box(before, after):
     """Assert a control kept its place and size, to within 1 px (#736)."""
     for key in ("x", "y", "width", "height"):
@@ -374,15 +410,18 @@ def answer_load(page, origin, first, reread=None):
     return address
 
 
-def test_failed_load_says_so_and_try_again_loads_again(page, component_origin):
+@pytest.mark.parametrize("width", [320, 1280])
+def test_failed_load_says_so_and_try_again_loads_again(page, component_origin, width):
     """After a failed load the step says so, with Try again (#1404 PR 5).
 
     The stage the run stopped in is marked failed, in words; See what went
     wrong opens its Background task; Try again's in-place answer shows the
-    load under way, with no button and no Continue, and no reload.
+    load under way, with no button and no Continue, and no reload, and the
+    action row below keeps its place.
     """
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
+    page.set_viewport_size({"width": width, "height": 900})
     page.goto(answer_load(page, component_origin, LOAD_FAILED))
     page.evaluate(MARK)
     region = page.locator("#refresh-run")
@@ -400,11 +439,16 @@ def test_failed_load_says_so_and_try_again_loads_again(page, component_origin):
     again = region.get_by_role("button", name="Try again")
     again.scroll_into_view_if_needed()
     above = summary.bounding_box()
+    back = row.locator("[data-campaign-step-back]")
+    below = back.bounding_box()
+    page.evaluate(SNAPSHOT_SPOKEN)
     again.click()
     has_text(summary, "Loading the campaign's ParishSoft data…")
     assert region.get_by_role("button").count() == 0
     assert row.get_by_role("link", name="Continue to Share options").count() == 0
     assert [state for _key, state in stage_states(page)] == ["waiting"] * 4
     assert_same_box(above, summary.bounding_box())
+    assert_same_box(below, back.bounding_box())
+    assert_spoken_once(page, "Loading the campaign's ParishSoft data.")
     assert page.evaluate(MARKED) == "kept"
     assert failures == []

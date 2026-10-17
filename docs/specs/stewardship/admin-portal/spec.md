@@ -3267,7 +3267,10 @@ live.
     Continue. The region polls the run's passive status read (which never
     renews idle time) and is updated in place; once the run ends, the page
     re-reads itself in place, so the stepper, the action row and this
-    region show the next state with no reload.
+    region show the next state with no reload. The poll calls a run that
+    succeeded loaded only when the campaign has its Families, as the page
+    does; a run that succeeded and left none reads as not loaded, so the
+    region never says loaded just before the re-read says otherwise.
   - *Loaded* (the campaign has its Families, the step's completion): "The
     campaign's ParishSoft data is loaded.", every stage done, the line after
     them giving the campaign's Family count and the data's age ("as of",
@@ -3280,10 +3283,13 @@ live.
     was started.
 
   The button acts [in place](../ui-conventions/spec.md#in-place-controls),
-  and its answer also redraws the action row. Every state draws the same
-  summary line, boxes and reserved line after them, the summary line keeps
-  room for its longest wording on a phone, and the region keeps its height
-  (`data-keep-height`), so a change of state moves nothing
+  and its answer also redraws the action row; the button announces nothing
+  itself, since the region reads out its new state. Every state draws the
+  same summary line, boxes and reserved line after them, the summary line
+  keeps room for its longest wording on a phone, the button's slot keeps
+  the height of the taller of its two labels in every state, even with no
+  button, and the region keeps its height (`data-keep-height`), so a change
+  of state moves nothing, the action row below included
   ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). The About
   panel says what the load reads, that the page updates by itself while it
   runs and may be left, what Try again does, and that the scheduled

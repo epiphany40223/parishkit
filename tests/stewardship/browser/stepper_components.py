@@ -174,7 +174,7 @@ def components(context, admin):
             "text/html",
             render_to_string(
                 "stewardship/campaign-load-status.html",
-                campaign_wizard.load_status(task),
+                campaign_wizard.load_status(task, families=True),
             ),
         )
 

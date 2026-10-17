@@ -357,13 +357,19 @@ def task_status(request, task_id):
     if view == "load" and context["is_refresh"]:
         # Load ParishSoft data, the Campaign setup step (#1404 PR 5), polls
         # with ?view=load for its own live region: the refresh's stage boxes
-        # instead of the task's status panel.
-        from parishkit.stewardship.accounts.campaign_wizard import load_status
+        # instead of the task's status panel. Only a succeeded run asks
+        # whether the campaign has its Families (one query, once).
+        from parishkit.stewardship.accounts import campaign_wizard
 
+        task = context["task"]
+        families = (
+            task["state"] == "succeeded"
+            and campaign_wizard.current_campaign_has_families()
+        )
         response = render(
             request,
             "stewardship/campaign-load-status.html",
-            load_status(context["task"]),
+            campaign_wizard.load_status(task, families=families),
         )
         return _finish_html(request, result, response, task_id, audit=False)
     response = render(

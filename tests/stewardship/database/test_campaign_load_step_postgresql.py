@@ -19,6 +19,7 @@ import pytest
 from django.urls import reverse
 from django.utils import timezone
 
+from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.campaigns.family_identity import FamilyStatus
 from parishkit.stewardship.campaigns.lifecycle import Action
 from parishkit.stewardship.deployment import ServiceRole
@@ -134,10 +135,14 @@ def test_load_step_shows_one_state_at_a_time(auth_service, google):
     )
     assert "Refresh now" not in html and QUEUE not in html
     assert "Continue" not in actions(html)
-    # The poll draws the same region from the run alone.
-    polled = page(browser, status)
-    assert state(polled) == "loading" and "data-live-pending" in polled
-    assert 'data-load-stage="staging" data-stage-state="active"' in polled
+    # The poll draws the same region from the run alone, and is passive:
+    # polling never renews the session's idle time (#1517 review, L4).
+    before = PortalSession.objects.get().last_activity_at
+    for _ in range(2):
+        polled = page(browser, status)
+        assert state(polled) == "loading" and "data-live-pending" in polled
+        assert 'data-load-stage="staging" data-stage-state="active"' in polled
+    assert PortalSession.objects.get().last_activity_at == before
     # Every other step says the data is loading.
     content = page(browser, reverse("admin:content_catalog"))
     assert "ParishSoft data is loading; Go-live readiness waits for it." in content
@@ -215,7 +220,8 @@ def test_only_refreshes_since_creation_and_families_count(auth_service, google):
     A refresh requested before the campaign was created could not load it
     (its request binds no campaign), so even a failed one leaves the plain
     offer. A newest run that succeeded but left no Families also reads as
-    the offer: only the Families complete the step.
+    the offer, on the page and in its status poll alike: only the Families
+    complete the step.
     """
     row, _, _ = setup(auth_service.store)
     browser, _ = signed_in()
@@ -223,9 +229,18 @@ def test_only_refreshes_since_creation_and_families_count(auth_service, google):
     html = page(browser)
     assert OFFER in html and "did not load" not in html
     assert "Continue" not in actions(html)
-    refresh_run("succeeded")
+    succeeded = refresh_run("succeeded")
     html = page(browser)
     region = stepper(html.encode())
     assert status_of(region, "Load ParishSoft data") == "Current step — Not done yet"
     assert OFFER in html and "did not load" not in html
     assert "Continue" not in actions(html)
+    # Its poll says the same, never "loaded" just before the re-read says
+    # it is not (#1517 review, L2); once the Families exist, it is loaded.
+    status = reverse("admin:background_task_status", args=[succeeded]) + "?view=load"
+    polled = page(browser, status)
+    assert state(polled) == "offer" and NOT_LOADED in polled
+    assert "is loaded." not in polled and "data-live-follow" in polled
+    populate(row, keys(), [FamilyStatus(1, True, True, True, True)])
+    polled = page(browser, status)
+    assert state(polled) == "loaded" and "is loaded." in polled

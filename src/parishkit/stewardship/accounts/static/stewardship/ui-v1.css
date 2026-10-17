@@ -928,8 +928,21 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 .campaign-load-count { min-height: 1lh; }
 /* Its summary line keeps room for its longest wording (failed, with See
    what went wrong) on a phone, where each state's wording wraps
-   differently, so the boxes below never move when the state changes. */
-@media (max-width: 40rem) { .campaign-load-summary { min-height: 3lh; } }
+   differently, so the boxes below never move when the state changes.
+   Likewise the line after the boxes keeps two lines on a phone, where the
+   Family count with the data's age wraps, so the action row below never
+   moves down when the load ends. */
+@media (max-width: 40rem) { .campaign-load-summary { min-height: 3lh; } .campaign-load-count { min-height: 2lh; } }
+/* Its button's slot (source-refresh.html) is one grid cell holding the
+   button, when there is one, over invisible copies of both its labels
+   (Load and Try again), so it is as tall as the taller button at every width
+   and zoom in every state: when the pressed button goes, the action row
+   below it never moves up under the pointer (#1517 review, L1). */
+.campaign-load-action { display: grid; justify-items: start; }
+.campaign-load-action > * { grid-area: 1 / 1; }
+.campaign-load-action > form { display: flex; }
+.campaign-load-ghost { visibility: hidden; }
+.campaign-load-ghost::before { content: attr(data-label); }
 .button-large { font-size: 1.1rem; padding: .8rem 1.75rem; }
 .spinner { display: inline-block; width: 1em; height: 1em; margin-inline-end: .35em; vertical-align: -.15em; border: 2px solid var(--accent); border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
 /* An export panel collapsed below a report's filters. */

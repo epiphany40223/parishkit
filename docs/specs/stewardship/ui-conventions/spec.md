@@ -482,7 +482,10 @@ never scrolls to show it (Administrator, pk-local review of
   sort heading or navigator inside a `form[data-in-place]` (a selection form
   around its table) is still a table control. A POST form should carry a
   `data-in-place-message` ("Saved.") for the live region; without one the
-  clicked button's text is announced.
+  clicked button's text is announced. A form whose region reads out its own
+  new state through a live-status announcer (`data-live-announcer`) is marked
+  `data-in-place-spoken` instead and announces nothing on success, so two
+  live regions never speak at once (Load ParishSoft data, #1404 PR 5).
 - **Request.** The browser fetches exactly the request the control would
   have made, follows the server's Post/Redirect/Get redirect, and replaces
   every region the fetched page shares with this one, plus the counts,
