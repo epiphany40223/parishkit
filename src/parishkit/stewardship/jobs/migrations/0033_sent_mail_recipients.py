@@ -3,7 +3,8 @@
 Its SQL is the frozen file ``schema/migrations/0115_sent_mail_recipients.sql``
 (prefix 0115, assigned centrally in the repository-wide file sequence), read
 whole and never parsed. It adds the GIN index ``outbox_render_intended_lower``
-over the renderings' lower-cased intended recipients and two
+(operator class ``jsonb_path_ops``) over the renderings' lower-cased
+intended recipients and two
 Administrator-only definer reads for Sent mail:
 ``stewardship_delivery_ids_for_address_v1`` (the emails meant for one
 address) and ``stewardship_delivery_page_recipients_v1`` (the addresses of a
@@ -20,7 +21,7 @@ from pathlib import Path
 
 import django.db.models.functions.comparison
 import django.db.models.functions.text
-from django.contrib.postgres.indexes import GinIndex
+from django.contrib.postgres.indexes import GinIndex, OpClass
 from django.db import migrations, models
 
 FROZEN_SQL = (
@@ -50,14 +51,17 @@ class Migration(migrations.Migration):
                 migrations.AddIndex(
                     model_name="outboxrender",
                     index=GinIndex(
-                        django.db.models.functions.comparison.Cast(
-                            django.db.models.functions.text.Lower(
-                                django.db.models.functions.comparison.Cast(
-                                    "intended_recipients",
-                                    output_field=models.TextField(),
-                                )
+                        OpClass(
+                            django.db.models.functions.comparison.Cast(
+                                django.db.models.functions.text.Lower(
+                                    django.db.models.functions.comparison.Cast(
+                                        "intended_recipients",
+                                        output_field=models.TextField(),
+                                    )
+                                ),
+                                output_field=models.JSONField(),
                             ),
-                            output_field=models.JSONField(),
+                            name="jsonb_path_ops",
                         ),
                         name="outbox_render_intended_lower",
                     ),

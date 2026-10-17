@@ -4865,7 +4865,7 @@ else:
 - `stewardship_delivery_ids_for_address_v1(address, actor)` returns the ids
   of every email any of whose renderings is intended for `address`, compared
   in lower case. A GIN index over the lower-cased intended recipients,
-  `outbox_render_intended_lower`, serves it.
+  `outbox_render_intended_lower` (`jsonb_path_ops`), serves it.
 - `stewardship_delivery_page_recipients_v1(messages, actor)` returns
   `(message, address)` for the intended addresses of the current rendering
   of each listed email that has no Family (a report or notice), at most 500
