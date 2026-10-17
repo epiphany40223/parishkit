@@ -4,13 +4,21 @@ import pytest
 from django.core.management import call_command
 from django.db import connection, transaction
 
-from .schema_leak_guard import FIX, SchemaGuard, failure, schema_connection
+from .schema_leak_guard import (
+    FIX,
+    SchemaGuard,
+    catalog_digest,
+    failure,
+    schema_connection,
+)
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
 TABLE = "stewardship_export_request"
 DISABLE = f"ALTER TABLE {TABLE} DISABLE TRIGGER ALL"
 ENABLE = f"ALTER TABLE {TABLE} ENABLE TRIGGER ALL"
+# Installed with EXECUTE for its owner only (PUBLIC revoked).
+FUNCTION = "stewardship_daily_digest_immutable_v1()"
 
 
 def run(sql):
@@ -81,6 +89,48 @@ def test_an_identical_function_replacement_passes():
     guard = started()
     run(definition)
     assert guard.finish(connection) == []
+
+
+def test_a_revoked_grant_leaves_the_digest_alone():
+    """A GRANT undone by REVOKE rewrites the catalog row but not the digest.
+
+    Many tests grant a throwaway login role the runtime privileges and drop
+    it again. Were the digest to hash row versions, each of them would cost a
+    full inventory (#1498).
+    """
+    before = catalog_digest(connection)
+    guard = started()
+    run(f"GRANT EXECUTE ON FUNCTION {FUNCTION} TO PUBLIC")
+    run(f"REVOKE EXECUTE ON FUNCTION {FUNCTION} FROM PUBLIC")
+    assert catalog_digest(connection) == before
+    assert guard.finish(connection) == []
+
+
+@pytest.mark.parametrize(
+    ("change", "restore", "expected"),
+    [
+        (
+            f"REVOKE EXECUTE ON FUNCTION {FUNCTION} FROM stewardship_tests",
+            f"GRANT EXECUTE ON FUNCTION {FUNCTION} TO stewardship_tests",
+            f"functions: changed {FUNCTION}",
+        ),
+        (
+            f"ALTER TABLE {TABLE} ALTER COLUMN report SET DEFAULT 'x'",
+            f"ALTER TABLE {TABLE} ALTER COLUMN report DROP DEFAULT",
+            f"columns: changed {TABLE}.report",
+        ),
+    ],
+)
+def test_a_committed_grant_or_default_change_is_named(change, restore, expected):
+    """A committed REVOKE or column default is reported, then re-baselined."""
+    guard = started()
+    run(change)
+    try:
+        assert guard.finish(connection) == [expected]
+        guard.start(connection)
+        assert guard.finish(connection) == []
+    finally:
+        run(restore)
 
 
 def test_the_failure_names_the_change_and_the_fix():

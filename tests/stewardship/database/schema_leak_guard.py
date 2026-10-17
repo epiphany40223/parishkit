@@ -7,38 +7,52 @@ prove a migration's check, and commits that change, breaks some later test in
 the same CI partition instead of failing itself. The database conftest uses
 ``SchemaGuard`` to fail the leaking test at its own teardown.
 
-Checking costs two tiers. ``catalog_digest`` hashes object identities and
-catalog row versions (``xmin``) without deparsing anything; committed DDL
-changes it, while a flush (TRUNCATE) or ANALYZE leave it alone. Only when it
-changes does the guard take the schema-baseline test's full ``inventory`` and
-compare definitions, so a ``CREATE OR REPLACE`` with an identical body passes.
+Checking costs two tiers. ``catalog_digest`` hashes the catalogs' definitional
+columns without deparsing anything; committed DDL changes it, while a flush
+(TRUNCATE), ANALYZE or a GRANT that a later REVOKE undoes leave it alone. Only
+when it changes does the guard take the schema-baseline test's full
+``inventory`` and compare definitions.
 """
 
 from contextlib import contextmanager
 
 from parishkit.stewardship.schema_inventory import inventory
 
-# pg_class rows get a new xmin on every TRUNCATE (a new relfilenode), so the
-# digest lists their definitional columns instead. The other catalogs change
-# only through DDL, so an object's oid and row version stand for its definition.
+# One query, summing a 64-bit hash per catalog row: no sort, no deparsing.
+#
+# pg_class, pg_attribute and pg_proc are hashed by content, not by row version
+# (xmin). TRUNCATE gives a pg_class row a new relfilenode, and the many tests
+# that create a login role, grant it the runtime privileges and drop it again
+# rewrite pg_proc and pg_attribute rows with the ACL they started with. Hashing
+# xmin there sent about four in five transactional tests to the full inventory
+# (some 0.1 s locally and several times that on CI's loaded runners). The other
+# catalogs change only through DDL, so an object's oid and row version stand
+# for its definition. Each list covers every column the inventory reads.
 CATALOG_DIGEST = """
-WITH ns AS (SELECT oid FROM pg_namespace WHERE nspname = 'public'),
-rel AS (SELECT oid FROM pg_class WHERE relnamespace = (SELECT oid FROM ns))
-SELECT md5(string_agg(entry, ',' ORDER BY entry)) FROM (
+WITH rel AS (SELECT oid FROM pg_class WHERE relnamespace = 'public'::regnamespace)
+SELECT sum(hashtextextended(entry, 0))::text FROM (
   SELECT concat_ws(':', 'c', oid, relname, relkind, relowner, relacl,
                    relrowsecurity, relforcerowsecurity, reloptions,
                    relpersistence) AS entry
-    FROM pg_class WHERE relnamespace = (SELECT oid FROM ns)
-  UNION ALL SELECT concat_ws(':', 'a', attrelid, attnum, xmin)
+    FROM pg_class WHERE relnamespace = 'public'::regnamespace
+  UNION ALL SELECT concat_ws(':', 'a', attrelid, attnum, attname, atttypid,
+                             atttypmod, attnotnull, attidentity, attgenerated,
+                             attcollation, attisdropped)
     FROM pg_attribute WHERE attrelid IN (SELECT oid FROM rel) AND attnum > 0
+  UNION ALL SELECT concat_ws(':', 'p', oid, proname, proowner, proacl, prolang,
+                             prokind, prosecdef, proleakproof, proisstrict,
+                             proretset, provolatile, proparallel, procost,
+                             prorows, prosupport, prorettype, proargtypes,
+                             proallargtypes, proargmodes, proargnames,
+                             proargdefaults, protrftypes, proconfig, probin,
+                             prosqlbody, prosrc)
+    FROM pg_proc WHERE pronamespace = 'public'::regnamespace
   UNION ALL SELECT concat_ws(':', 'd', oid, xmin)
     FROM pg_attrdef WHERE adrelid IN (SELECT oid FROM rel)
   UNION ALL SELECT concat_ws(':', 'k', oid, xmin)
-    FROM pg_constraint WHERE connamespace = (SELECT oid FROM ns)
+    FROM pg_constraint WHERE connamespace = 'public'::regnamespace
   UNION ALL SELECT concat_ws(':', 'i', indexrelid, xmin)
     FROM pg_index WHERE indrelid IN (SELECT oid FROM rel)
-  UNION ALL SELECT concat_ws(':', 'p', oid, xmin)
-    FROM pg_proc WHERE pronamespace = (SELECT oid FROM ns)
   UNION ALL SELECT concat_ws(':', 't', oid, xmin)
     FROM pg_trigger WHERE tgrelid IN (SELECT oid FROM rel)
   UNION ALL SELECT concat_ws(':', 'r', oid, xmin)
