@@ -21,6 +21,9 @@ These pages are drawn from the real templates and view helpers:
   post the Slack notifications step's form (``SLACK_OFF``), answered as the
   real view answers once Slack is saved off: a redirect to the next step not
   done, Test email (``RETEST``, drawn with Slack off), never Review.
+- ``REDIRECTS``: GET answers that are redirects. Test Slack's real address
+  answers as the real view does while Slack is off: a redirect to the next
+  step needing work, Test email (#1505).
 - ``SLACK_CONNECTION``: the Slack connection step with a token saved and
   Slack on, offering the same button above its form.
 """
@@ -53,6 +56,7 @@ SLACK_FAILED = "/setup-slack-failed"
 SLACK_CONNECTION = "/setup-slack-connection"
 SLACK_OFF = BY_KEY["slack"].url
 POSTS = {FIX: (303, RETEST, ""), SLACK_OFF: (303, RETEST, "")}
+REDIRECTS = {BY_KEY["slack_test"].url: RETEST}
 FAILED_ID = "00000000-0000-4000-8000-000000001476"
 
 
