@@ -142,9 +142,9 @@ def test_it_is_never_sent_in_bulk():
         (True, "Use the edited value anyway", "the edited value"),
     ],
 )
-def test_the_button_and_its_help_line_name_what_is_written(edited, label, writes):
-    """A Conflict row's Review draws the button for what publication will
-    write, with the help line above it, describing it."""
+def test_the_icon_and_its_dialog_name_what_is_written(edited, label, writes):
+    """A Conflict row's icon is named for what publication will write, and
+    its dialog's words say so (#879)."""
     shown = shape(
         row(
             execution="conflict",
@@ -152,11 +152,48 @@ def test_the_button_and_its_help_line_name_what_is_written(edited, label, writes
             admin_value="555-0123" if edited else None,
         )
     )
-    shown["conflict_describedby"] = "who-1 what-1 conflict-1"
     html = page([shown])
-    help_at = html.index('<p class="help" id="conflict-1">')
-    button_at = html.index('value="use_family"')
-    assert help_at < button_at
-    assert f"{label}</button>" in html.replace("\n", "")
-    assert f"publication writes {writes} over the value in ParishSoft now" in html
-    assert 'aria-describedby="who-1 what-1 conflict-1"' in html
+    icon = html[html.rindex("<button", 0, html.index("resolve=use_family")) :]
+    icon = icon[: icon.index("</button>")]
+    assert f'aria-label="{label} for'.replace("'", "&#x27;") in icon
+    assert 'data-confirm-open="census-decide-dialog"' in icon
+    assert (
+        f"publication writes {writes} over the value in ParishSoft now".replace(
+            "'", "&#x27;"
+        )
+        in icon
+    )
+
+
+def test_a_conflict_rows_actions_in_their_order():
+    """An Administrator's edited Conflict row draws Edit value, Clear edit,
+    Use the edited value anyway, then its decisions, each opening its dialog
+    with the row's fields; Staff, or a held campaign, get none (#879)."""
+    from parishkit.stewardship.reports.census_change_views import row_controls
+
+    def actions(administrator=True, mutable=True):
+        """The row's (icon, dialog, decision) as this viewer sees them."""
+        shown = [
+            shape(
+                row(
+                    execution="conflict",
+                    admin_value_set=True,
+                    admin_value="555-0123",
+                )
+            )
+        ]
+        row_controls(shown, administrator=administrator, mutable=mutable)
+        return [
+            (act["icon"], act["dialog"], QueryDict(act["post"]).get("resolve"))
+            for act in shown[0]["actions"]
+        ]
+
+    found = actions()
+    assert found[0] == ("edit", "census-edit-dialog-1", None)
+    assert found[1:3] == [
+        ("clear_edit", "census-decide-dialog", "clear_edit"),
+        ("override", "census-decide-dialog", "use_family"),
+    ]
+    # Still To review, so it can only be ignored (never approved directly).
+    assert [decision for _icon, _dialog, decision in found[3:]] == ["ignore_automatic"]
+    assert actions(administrator=False) == [] and actions(mutable=False) == []

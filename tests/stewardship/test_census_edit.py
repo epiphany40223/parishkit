@@ -10,7 +10,12 @@ from datetime import date
 import pytest
 from django.http import QueryDict
 
-from parishkit.stewardship.reports.census_change_views import SORTING, _resolution
+from parishkit.stewardship.reports.census_change_views import (
+    SORTING,
+    _resolution,
+    row_controls,
+    row_dialogs,
+)
 from parishkit.stewardship.reports.census_changes import CensusQuery, shape
 from parishkit.stewardship.responses.census_review import (
     InvalidEdit,
@@ -156,11 +161,9 @@ def page(shown):
     """The page as an Administrator sees it, for these shaped rows."""
     from django.template.loader import render_to_string
 
+    row_controls(shown, administrator=True, mutable=True)
     for item in shown:
-        item["describedby"] = f"who-{item['id']} what-{item['id']}"
-        item["confirm_name"] = f"{item['label']} for {item['who']}"
         item["edit_key"] = "00000000-0000-4000-8000-00000000000e"
-        item["edit_describedby"] = f"{item['describedby']} edit-complete-{item['id']}"
     return render_to_string(
         "stewardship/census-changes.html",
         {
@@ -176,13 +179,15 @@ def page(shown):
             "action": "/admin/reports/census/",
             "mutable": True,
             "edit_today": "2054-10-06",
+            "row_dialogs": row_dialogs(True),
         },
     )
 
 
-def test_the_review_disclosure_holds_edit_value():
-    """Edit value is its own change-gated form in the row's Review, with the
-    PUT limit, a date capped at today, and Clear edit only while edited."""
+def test_edit_value_is_a_dialog_of_its_own_per_row():
+    """Edit value is a row's pencil icon opening its own change-gated form
+    and dialog (#879), with the PUT limit, a date capped at today; Clear
+    edit is its own icon, only while edited."""
     html = page(
         [
             shape(row(id="plain", field="first_name", submitted_value="Pat")),
@@ -198,27 +203,30 @@ def test_the_review_disclosure_holds_edit_value():
             shape(row(id="sex", field="gender", submitted_value="Female")),
         ]
     )
-    plain = html[
-        html.index('id="edit-plain"') : html.index(
-            "</form>", html.index('id="edit-plain"')
-        )
-    ]
+
+    def form(name):
+        """The row's Edit value form, its dialog included."""
+        at = html.index(f'<form id="census-edit-{name}"')
+        return html[at : html.index("</form>", at)]
+
+    plain = form("plain")
     assert 'data-require-change="version" data-require-complete' in plain
-    assert "data-in-place" in plain and 'data-complete-hint="reserve"' in plain
-    assert 'aria-describedby="who-plain what-plain edit-complete-plain"' in plain
+    assert "data-in-place" not in plain and 'data-complete-hint="reserve"' in plain
+    assert (
+        'id="census-edit-dialog-plain"' in plain and "data-confirm-answer-page" in plain
+    )
+    assert 'data-confirm-form="census-edit-plain"' in plain
+    assert 'aria-describedby="edit-complete-plain"' in plain  # Save value
     assert 'name="value" type="text" value="Pat" required maxlength="30"' in plain
-    assert 'value="edit"' in plain and 'value="clear_edit"' not in plain
+    assert '<input type="hidden" name="resolve" value="edit">' in plain
     assert "data-unchanged-hint" in plain and "data-change-ignore" in plain
+    assert 'id="edit-error-plain"' in plain
     assert "ParishSoft takes at most 30 characters here." in plain
-    dated = html[
-        html.index('id="edit-dated"') : html.index(
-            "</form>", html.index('id="edit-dated"')
-        )
-    ]
+    assert 'data-confirm-open="census-edit-dialog-plain"' in html
+    assert 'aria-label="Edit value of First name for' in html
+    assert html.count("resolve=clear_edit") == 1  # the edited row's icon only
+    dated = form("dated")
     assert 'type="date" value="2000-01-03" required max="2054-10-06"' in dated
-    assert 'value="clear_edit" formnovalidate' in dated
-    sex = html[
-        html.index('id="edit-sex"') : html.index("</form>", html.index('id="edit-sex"'))
-    ]
+    sex = form("sex")
     assert '<option value="Female" selected>' in sex
     assert '<select id="edit-value-sex" name="value"' in sex

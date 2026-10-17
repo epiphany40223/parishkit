@@ -1,0 +1,18 @@
+{% load i18n stewardship %}{% comment %}
+  The fields of one Census changes row's Edit value dialog (#528,
+  ADM-09.04; #879). Included by components/confirm-dialog.html
+  (fields_template) inside the dialog, which sits in the row's own form
+  (census-changes.html). The value starts with the one publication would
+  write now and, like the note, goes back to it whenever the dialog opens
+  (data-confirm-reset). A value the server refuses is shown in the reserved
+  error line and marks the field until it is edited (ui-v1.js
+  refuseAtFields); the unchanged and complete hints keep their lines, so
+  nothing moves the dialog's buttons.
+{% endcomment %}<div class="dialog-fields">
+<div data-missing-hint="{% if row.edit.type == 'date' %}{% translate 'Enter a whole date no later than today.' %}{% else %}{% translate 'Enter the value to publish, within the length shown.' %}{% endif %}"><label for="edit-value-{{ row.id }}">{% translate "Value to publish" %}</label>{% if row.edit.choices %}<select id="edit-value-{{ row.id }}" name="value" data-confirm-reset aria-describedby="edit-help-{{ row.id }}">{% for choice in row.edit.choices %}{% if choice %}<option value="{{ choice }}"{% if choice == row.edit.value %} selected{% endif %}>{{ choice }}</option>{% endif %}{% endfor %}</select>{% else %}<input id="edit-value-{{ row.id }}" name="value" type="{{ row.edit.type }}" value="{{ row.edit.value }}" required{% if row.edit.maxlength %} maxlength="{{ row.edit.maxlength }}"{% endif %}{% if row.edit.type == "date" %} max="{{ edit_today }}"{% endif %} data-confirm-reset aria-describedby="edit-help-{{ row.id }}">{% endif %}</div>
+<div class="field-error-line"><ul class="errorlist" id="edit-error-{{ row.id }}" hidden><li></li></ul></div>
+<p class="help" id="edit-help-{{ row.id }}">{% translate "Publication writes this instead of the Family's answer, which stays as they gave it." %}{% if row.edit.maxlength %} {% blocktranslate with count=row.edit.maxlength %}ParishSoft takes at most {{ count }} characters here.{% endblocktranslate %}{% endif %}</p>
+<label for="edit-note-{{ row.id }}">{% translate "Note (optional)" %}</label><input id="edit-note-{{ row.id }}" name="note" maxlength="2000" value="" data-change-ignore data-confirm-reset>
+</div>
+<p class="help unchanged-hint" data-unchanged-hint data-idle>{% translate "Change the value to save it." %}</p>
+<p class="help" id="edit-complete-{{ row.id }}" data-complete-hint="reserve"></p>
