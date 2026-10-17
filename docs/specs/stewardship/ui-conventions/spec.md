@@ -2180,8 +2180,23 @@ The portal and the emails share one visual style
   the Working look for information. A test checks their contrast in the
   light and dark schemes. Plain notices that are neutral
   move to the information kind page by page.
-
-Cards and headings follow in a later slice of #732.
+- **Cards and headings:** a card is a panel (`panel`) or a fieldset on
+  ordinary markup, and a dialog is the same card: border, paper, the panel
+  corner radius and the ink text. Headings take their size and weight from
+  heading tokens: a section heading (`h2`, a card fieldset's legend and a
+  dialog's title), a subsection heading (`h3` and a heading inside a
+  notice), and the smaller title of a plain fieldset or a table's caption.
+  Every section, card and caption heading reads the weight token. The
+  small control legends (radio and checkbox groups) and the Family
+  portal's headings keep their own sizes. The report emails inline the
+  same tokens: their heading is the subsection size in pixels, the rule
+  under a table's column headings is the portal's, and a bar is drawn in
+  the chart engine's bar and track colours. A test checks that every colour
+  a report compiles is a token's light value. The report validators still
+  admit the bar colour and heading rule from before the change, so a
+  retained report still delivers. The shared email layout and Family mail
+  keep their own heading sizes for now, since changing them changes every
+  Family email.
 
 ### Colour scheme
 
