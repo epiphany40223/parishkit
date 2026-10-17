@@ -34,6 +34,7 @@ from .integration_selection import (
     NOT_KEY_SCOPE,
     authentication_scope,
     integration_records,
+    loaded_organization,
 )
 from .metrics_credentials import credential_receipt
 from .policy import Capability, allows
@@ -60,15 +61,13 @@ STOPPED = {
     "slack": _("Slack alerts are not sent"),
 }
 
-# Why a new key was refused. ParishSoft's covers both of its permanent
-# refusals (#1492): a key it rejects, and a key for another organization,
-# which the check refuses at once rather than retrying for an hour. The
-# request keeps no reason of its own to tell the two apart.
+# Why a new key was refused by its provider. A ParishSoft key for another
+# organization is refused for good too (#1492), but the installer records
+# that cause (#1495) and the page says it instead (MISMATCHED).
 FAILED = {
     "parishsoft": _(
-        "ParishSoft did not accept the new API key for this organization ID: "
-        "the key is wrong, or it belongs to a different ParishSoft "
-        "organization. Check the key and the organization ID, then try again."
+        "ParishSoft did not accept the new API key for this organization ID. "
+        "Check the key and the organization ID, then try again."
     ),
     "google_workspace": _(
         "Google did not accept the new service-account key for the delegated "
@@ -186,6 +185,48 @@ def switch_patch(row, records):
             "values": values,
         }
     ]
+
+
+# A ParishSoft key that authenticates but sees another organization (#1495).
+# Once data is loaded the organization is locked, so the key must change;
+# before the first load either the key or the organization ID may be wrong.
+MISMATCHED = _(
+    "This key belongs to a different ParishSoft organization than the data "
+    "already loaded. Paste the key for the loaded organization."
+)
+MISMATCHED_BEFORE_LOAD = _(
+    "This key belongs to a different ParishSoft organization than the "
+    "configured organization ID. Check the key and the organization ID, then "
+    "try again."
+)
+
+
+def _mismatched(row):
+    """True when the installer refused this key for another organization."""
+    return AuditEvent.objects.filter(
+        event_type=Action.CREDENTIAL_KEY_ORGANIZATION_MISMATCH.value,
+        subject_id=row.pk,
+    ).exists()
+
+
+def _failed_message(target, row):
+    """Name the one reason a failed key change was refused.
+
+    Only a ParishSoft refusal can have the organization-mismatch cause, so
+    other targets (and every other page) add no query for it.
+
+    The before/after-load wording is chosen when the page renders, not when
+    the key was refused: the request records no organization state and the
+    schema is frozen. The one false case is narrow: the Administrator changes
+    the organization ID before the first load and pastes the key for the new
+    ID, the check (still seeing the old ID) refuses it, the old ID stays
+    configured, and a load then finishes within the hour the line stays
+    visible. The line then says "already loaded" for a key that was for
+    another organization than the one configured at the time.
+    """
+    if target != "parishsoft" or not _mismatched(row):
+        return FAILED[target]
+    return MISMATCHED if loaded_organization() is not None else MISMATCHED_BEFORE_LOAD
 
 
 # How long a finished key change stays on its integration's settings page,
@@ -307,7 +348,7 @@ def summary(target, record):
     elif row.state == "cancelled":
         message = _("The key change was cancelled.")
     else:
-        message = FAILED[target]
+        message = _failed_message(target, row)
     return CredentialSummary("failed", row.updated_at, message, row.pk)
 
 

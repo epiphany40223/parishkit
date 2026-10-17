@@ -242,6 +242,7 @@ ACTIVITY_TYPES = {
         "admin_cmd_history_remove",
         "secret_replacement_requested",
         *built_types("secret_request_"),
+        "credential_key_organization_mismatch",
         "credential_consumer_acknowledged",
         "setup_started",
         "setup_credential_staged",
