@@ -934,10 +934,10 @@ configuration's version) and, in the page's order, `pages` and `emails`:
 | --- | --- |
 | `pages[].slot`, `emails[].slot` | The page or mail type, such as `welcome` or `reminder` |
 | `pages[].name`, `emails[].name` | Its name on the page, such as "Family welcome" |
-| `pages[].state` | `empty`, `default` (the default text) or `custom` |
+| `pages[].state` | `empty`, `default` (the default text) or `edited` (the page's Edited) |
 | `emails[].scheduled` | Whether schedules send this mail type (invitations and reminders) |
 | `emails[].singleton` | The confirmation email, which has exactly one text |
-| `emails[].revisions` | Its emails: `id`, `subject`, `excerpt` (the start of its text), `used_by` (the schedules that send it, named as on Dates and mail schedules), `deletable`, `state` (`default` or `custom`) and `resave` |
+| `emails[].revisions` | Its emails: `id`, `subject`, `excerpt` (the start of its text), `used_by` (the schedules that send it, named as on Dates and mail schedules), `deletable`, `state` (`default` or `edited`) and `resave` |
 | `resave` | Null, or the page's re-save notice: `removed` (markup today's cleaning drops), `lost` (placeholders only that markup held) and `blocked` (the page's "Can't be sent until fixed") |
 
 A confirmation email that is only a retired closing note has a null `id`,
@@ -3318,3 +3318,8 @@ campaign's, or is outside your Ministries, is exit 1 (`not_available`).
   `first_end=`, `latest_start=`, `latest_end=`) are now days in the time
   zone `--filter zone=…` names, as on the page; a date without it is exit 1
   (`invalid`). Its only readers are Administrator-run assistants.
+- `pk-admin/1` (#1404 PR 6b): a deliberate change, kept on version 1.
+  `content list` and `content show` print the text state `edited` where
+  they printed `custom`, the word Pages and emails now shows (Edited; it
+  was Customized). `empty` and `default` are unchanged. The only readers
+  are Administrator-run assistants.

@@ -1898,7 +1898,7 @@ checks that every other ledger route is named here.
 | `login`, `logout`, `session_status`, `session_renew` | Permanent: browser sign-in and session chrome; `login start`, `login wait`, `logout`, `whoami`, `sessions` and `commands` cover the automation side (PR 2) |
 | `signed_in_sessions` (list and Sign out, new, #953) | Permanent: browser session chrome; the operator's offline recovery signs everyone out |
 | `maintenance` | Permanent: the status page the access gate shows |
-| `campaign_step_continue` ([#1404](https://github.com/epiphany40223/parishkit/issues/1404)) | Permanent: the browser [Campaign setup stepper](../admin-portal/spec.md#create-the-campaign)'s own progress (a step kept as is, then the next step page); the command line applies settings directly and has no stepper |
+| `campaign_step_continue` ([#1404](https://github.com/epiphany40223/parishkit/issues/1404)) | Permanent: the browser [Campaign setup stepper](../admin-portal/spec.md#create-the-campaign)'s own progress (a step kept as is, then the next step page, or one Pages and emails item kept as is, then Pages and emails, #1404 PR 6b); the command line applies settings directly and has no stepper |
 | `held_emails` ([#757](https://github.com/epiphany40223/parishkit/issues/757)) | Permanent: held-email decisions need a fresh Google sign-in in the browser, which the decision guard checks (migration 0017) |
 | `automation_access`, `automation_approval`, `automation_sessions` (revoke) and `automation_notices` (acknowledgement) (new) | Permanent: these pages are the human side of the interface (PR 2); `sessions` takes the page's filter and sort for one's own sessions (#621) |
 | `response_dashboard` ([#517](https://github.com/epiphany40223/parishkit/issues/517)) | `report responses` with counts (PR 8c) |
@@ -2151,7 +2151,7 @@ record none. Both read the current campaign, as the pages do; none is
 `not_available`. `content list` prints the applied configuration's
 `version` (the base a content change is previewed against) and, in the
 page's order, each Family page's slot, name, text state (`empty`,
-`default` or `custom`) and re-save notice, and each mail type's emails
+`default` or `edited`) and re-save notice, and each mail type's emails
 with their id, subject, excerpt, the schedules that send them, whether
 they can be deleted, text state and re-save notice. As on the page,
 background work holding the campaign is `stale_version`. `content
