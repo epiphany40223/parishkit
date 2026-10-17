@@ -204,7 +204,7 @@ def load_document(request, *, general=None, store=None):
             add_codes(request.campaign_id, payload["rows"], general=general)
         # Head emails are not stored in the capture (#604). They are read from
         # the capture's source, or, once the 15-minute refresh has compacted
-        # it (a retry, a late render or a regeneration), from the current
+        # it (a retry or a late render), from the current
         # ParishSoft data for the same heads; the file then says so.
         emails_as_of = add_head_emails(
             snapshot.source_id, payload["rows"], current=True

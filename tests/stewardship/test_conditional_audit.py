@@ -103,7 +103,7 @@ def test_the_weekly_report_in_progress_is_shown_unavailable():
 @pytest.mark.parametrize(
     ("name", "reason", "count", "notices"),
     [
-        ("report-export.html", "export-locked", 3, 1),
+        ("report-export.html", "export-locked", 2, 1),
         ("report-exact.html", "export-locked", 2, 1),
         # Only Ministry requests' packet is held: one Ministry's lists and
         # their export were retired (#1157), and the packet moved from the

@@ -25,11 +25,9 @@ from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.models import AuditContext
 from parishkit.stewardship.campaigns.read_guards import DownloadPool, ReadLimits
-from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.dispatch import execute_hint
 from parishkit.stewardship.jobs.queues import WorkQueue
-from parishkit.stewardship.reports import export_services
 from parishkit.stewardship.reports.comparison import PAGE_ONLY, WITHHELD
 from parishkit.stewardship.reports.comparison_exports import create_comparison_export
 from parishkit.stewardship.reports.export_models import (
@@ -103,7 +101,7 @@ def test_download_form_queues_each_format_from_a_protected_capture(
     tmp_path,
     monkeypatch,
 ):
-    """The page's form, the worker's three files, the audit and regeneration."""
+    """The page's form, the worker's three files and the audit."""
     harness, _, browser, actor = scenario
     imported(scenario)
     root = tmp_path / "comparison-reports"
@@ -111,7 +109,6 @@ def test_download_form_queues_each_format_from_a_protected_capture(
     settings.STEWARDSHIP_REPORTS_ROOT = root
     settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(ReadLimits(process_pool_size=1))
     assert reverse("admin:campaign_comparison_export") == ROUTE
-    first = None
     for format in ("csv", "xlsx", "pdf"):
         fields = dict(
             day="2", format=format, browser_timezone="UTC", request_key=str(uuid4())
@@ -140,7 +137,6 @@ def test_download_form_queues_each_format_from_a_protected_capture(
             response = post(browser, ROUTE, fields)
             assert response.status_code == 302
             request = ExportRequest.objects.get(request_key=fields["request_key"])
-            first = first or request
             # The same form again is the same export.
             assert post(browser, ROUTE, fields)["Location"] == response["Location"]
             job = response["Location"]
@@ -195,21 +191,6 @@ def test_download_form_queues_each_format_from_a_protected_capture(
     )
     assert len(contexts) == 3
     assert all(c == {"outcome": "started", "count": 2} for c in contexts)
-    # Regeneration after expiry renders the same capture, never a fresh read.
-    with work_transaction():
-        now = export_services.database_now()
-    monkeypatch.setattr(
-        export_services, "database_now", lambda: now + timedelta(days=8)
-    )
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        fields = {"request_key": str(uuid4())}
-        response = post(
-            browser, reverse("admin:report_export_regenerate", args=[first.pk]), fields
-        )
-        assert response.status_code == 302
-        again = ExportRequest.objects.get(request_key=fields["request_key"])
-        assert again.comparison_snapshot_id == first.comparison_snapshot_id
-        assert again.parameters == {"day": 2}
 
 
 def capture_row(harness, actor, document=None, **values):

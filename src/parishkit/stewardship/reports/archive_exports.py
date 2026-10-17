@@ -241,18 +241,13 @@ def archive_offer(campaign_id, *, now):
     return ArchiveOffer(None, fact_set_id=fact_set, **base)
 
 
-def create_archive_export(
-    store, user_id, *, campaign_id, request_key, offer=None, retained=None
-):
+def create_archive_export(store, user_id, *, campaign_id, request_key, offer=None):
     """Queue one campaign archive workbook, as Download campaign archive does.
 
     The request pins the offer's fact set and cutoff (``archive_offer``,
     worked out inside the campaign's export lock when ``offer`` is omitted);
-    the fact pin keeps that generation from compaction for the request's
-    retention. ``retained`` is instead an expired archive request being
-    regenerated: its own pins (fact set, cutoff, final mark and year) are
-    reused, so the file holds the same records with a new request time
-    (``converted_at``) and so a new checksum. A request key already used for
+    the fact pin keeps that generation from compaction until the export
+    ends (point-in-time exports, #1398). A request key already used for
     the same export returns it; for another it is ``ExportRequestBound``
     (the page's 409). Records ``campaign_archive_exported`` with the
     cutoff's campaign day as ``count``, no figure.
@@ -263,10 +258,6 @@ def create_archive_export(
         not isinstance(value, UUID) for value in (user_id, campaign_id, request_key)
     ):
         raise ValueError("Export identities must be canonical UUIDs.")
-    if retained is not None and (
-        retained.report != REPORT or retained.campaign_id != campaign_id
-    ):
-        raise ValueError("Regeneration needs an archive of this campaign.")
 
     def admit(*args):
         """Both enqueue and its owning transaction recheck current authorization."""
@@ -283,19 +274,15 @@ def create_archive_export(
             if (previous.report, previous.campaign_id) != (REPORT, campaign_id):
                 raise ExportRequestBound("Export request identity is already bound.")
             return previous
-        if retained is not None:
-            fact_set_id = retained.fact_set_id
-            parameters = dict(retained.parameters)
-        else:
-            offer = offer or archive_offer(campaign_id, now=campaign_now())
-            if not offer.available or offer.campaign_id != campaign_id:
-                raise FactUnavailable("The campaign archive is unavailable now.")
-            fact_set_id = offer.fact_set_id
-            parameters = {
-                "cutoff_date": offer.cutoff_date.isoformat(),
-                "final": offer.final,
-                "year": offer.year,
-            }
+        offer = offer or archive_offer(campaign_id, now=campaign_now())
+        if not offer.available or offer.campaign_id != campaign_id:
+            raise FactUnavailable("The campaign archive is unavailable now.")
+        fact_set_id = offer.fact_set_id
+        parameters = {
+            "cutoff_date": offer.cutoff_date.isoformat(),
+            "final": offer.final,
+            "year": offer.year,
+        }
         facts = (
             CampaignDailyFactSet.objects.select_for_update()
             .filter(

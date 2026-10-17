@@ -783,7 +783,7 @@ def test_directory_exports_audit_and_admit_their_mode(monkeypatch, mode):
 
     Captures from before the Testing switch have no ``mode`` and are
     Production (#933). A Staff requester (or one who stopped being an
-    Administrator) can no longer download or regenerate a Testing export.
+    Administrator) can no longer download a Testing export.
     """
     from types import SimpleNamespace
 

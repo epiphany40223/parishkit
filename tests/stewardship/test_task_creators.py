@@ -143,7 +143,6 @@ SITES = {
         {
             "admin_family_exports.py",
             "reports/directory_export_views.py",
-            "reports/export_services.py",
         },
     ),
     "reports/exact_services.py::create_exact_export": site(
@@ -174,38 +173,35 @@ SITES = {
         },
     ),
     "reports/comparison_exports.py::create_comparison_export": site(
-        # The Campaign comparison's download form, regenerate and
+        # The Campaign comparison's download form and
         # ``export comparison`` (#1018, slice 6).
         "report_export",
         WEB,
         {
             "admin_exports.py",
             "reports/comparison_export_views.py",
-            "reports/export_services.py",
         },
     ),
     "reports/archive_exports.py::create_archive_export": site(
-        # Download campaign archive, its regenerate and ``export archive``
+        # Download campaign archive and ``export archive``
         # (#1018 part (a)).
         "report_export",
         WEB,
         {
             "admin_family_exports.py",
-            "reports/export_services.py",
             "reports/past_campaign_views.py",
         },
     ),
     "reports/family_test_names.py::create_family_test_names_export": site(
         "report_export",
         WEB,
-        {"admin_tests.py", "reports/export_services.py"},
+        {"admin_tests.py"},
     ),
     "reports/financial_exports.py::create_financial_export": site(
         "report_export",
         WEB,
         {
             "admin_family_exports.py",
-            "reports/export_services.py",
             "reports/financial_export_views.py",
         },
     ),
@@ -214,7 +210,6 @@ SITES = {
         WEB,
         {
             "admin_family_exports.py",
-            "reports/export_services.py",
             "reports/information_export_views.py",
         },
     ),
@@ -223,18 +218,16 @@ SITES = {
         WEB,
         {
             "admin_family_exports.py",
-            "reports/export_services.py",
             "reports/ministry_export_views.py",
         },
     ),
     "reports/timeline_exports.py::create_timeline_export": site(
-        # The Family timeline page's export form, regenerate and
+        # The Family timeline page's export form and
         # ``export family-timeline`` (ADM-11 PR 8g).
         "report_export",
         WEB,
         {
             "admin_family_exports.py",
-            "reports/export_services.py",
             "reports/family_timeline_views.py",
         },
     ),

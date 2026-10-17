@@ -34,6 +34,11 @@
 // data-live-announce sentence instead, which is copied into the page's
 // [data-live-announcer] element only when that sentence changes.
 //
+// A status read answered 410 Gone settles the region: the answer's
+// [data-live-gone] element (an ended export's "no longer available"
+// sentence, #1398) replaces the region's contents and watching stops; a 410
+// without one is treated as a refusal (below).
+//
 // A pending region may hold a template[data-live-refused]: when a status
 // read is refused (signed out, or no longer allowed, such as after a change
 // that removed the reader's own access), its content replaces the region as
@@ -676,9 +681,25 @@
           stop("");
           return;
         }
-        if ([400, 401, 403, 404].includes(response.status) || response.redirected) {
-          // Signed out, no longer allowed, or refused as a bad request (such
-          // as Slack turned off): retrying cannot help.
+        if (response.status === 410) {
+          // Gone for good, such as an export that ended while it was being
+          // prepared (cancelled elsewhere, #1398): a settled answer, never
+          // retried. Its page's [data-live-gone] sentence takes the
+          // region's place, so the page says why and links back.
+          const parsed = new DOMParser().parseFromString(await response.text(), "text/html");
+          if (stopped || gone()) return;
+          const answer = parsed.querySelector("[data-live-gone]");
+          if (answer) {
+            region.replaceChildren(document.importNode(answer, true));
+            region.removeAttribute("data-live-pending");
+            region.setAttribute("data-live-state", "gone");
+            stop("");
+            return;
+          }
+        }
+        if ([400, 401, 403, 404, 410].includes(response.status) || response.redirected) {
+          // Signed out, no longer allowed, gone, or refused as a bad request
+          // (such as Slack turned off): retrying cannot help.
           const settled = region.querySelector("template[data-live-refused]");
           if (settled) {
             region.replaceChildren(settled.content.cloneNode(true));
