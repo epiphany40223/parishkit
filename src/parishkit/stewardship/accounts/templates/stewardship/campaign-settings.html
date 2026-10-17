@@ -23,6 +23,13 @@ each field and shows the summary from this page drawn again. Any other
 refusal (a stale page, background work, a refused Apply) shows inside the
 dialog. A draft's change of its dates alone leads to Dates and mail
 schedules' combined review instead (the form is marked data-review-redirects).
+Inside the campaign wizard (admin_chrome.campaign_wizard.direct, #1404 PR 4)
+the page draws no Save of its own: the form is marked data-direct-save, posts
+action=save with the stepper's request key, and the wizard's action row's
+primary (campaign-step-actions.html) becomes Save and continue once the form
+holds a change; ui-v1.js follows the saved change and opens the next step
+(its status line adds data-direct-removed once Financial stewardship was
+turned off).
 Copy campaign is greyed out until the single-campaign change (#145) removes
 it (navigation rule 10); the server refuses it too.
 The body links no page the menu offers (#1118). Content history is not a
@@ -39,11 +46,11 @@ in every campaign state (navigation rule 1).
 {% if family_test_url %}<p>{% button variant="secondary" href=family_test_url %}{% translate "Try the Family form as a chosen Family" %}{% endbutton %} <span class="help">{% translate "Sends chosen Families' invitations to the Testing recipient; their links work now." %}</span></p>{% endif %}
 <p class="notice">{% translate "These settings lock when the campaign goes live or is scheduled for Production. The campaign's days are in its time zone; send times are shown and entered in your computer's." %}</p>
 <div id="settings-editor" data-in-place-region data-refresh-url="{{ refresh_url }}">
-<form id="settings-form" method="post" action="{{ page_url }}" class="panel" data-review-open="campaign-review" data-review-redirects data-require-change="base_digest" data-campaign-form data-require-complete{% if live_ministries %} data-change-alone="ministry_duids" data-change-alone-hint="{{ ministries_alone }}"{% elif dates_alone %} data-change-alone="start_date end_date timezone" data-change-alone-hint="{{ dates_alone_hint }}"{% endif %}{% if end_saved %} data-live-check="{% url 'admin:campaign_end_date_check' %}" data-live-check-field="end_date" data-live-check-saved="{{ end_saved }}" data-checking-hint="{{ end_check.checking }}" data-check-failed-hint="{{ end_check.failed }}" data-signed-out-hint="{{ end_check.signed_out }}"{% endif %}>
-{% csrf_token %}<input type="hidden" name="action" value="preview">
+{% with wizard=admin_chrome.campaign_wizard %}<form id="settings-form" method="post" action="{{ page_url }}" class="panel" {% if wizard.direct %}data-direct-save data-direct-saved="{% translate 'Campaign settings saved.' %}" data-direct-removed="{% translate 'Its share options were removed.' %}"{% else %}data-review-open="campaign-review" data-review-redirects{% endif %} data-require-change="base_digest" data-campaign-form data-require-complete{% if live_ministries %} data-change-alone="ministry_duids" data-change-alone-hint="{{ ministries_alone }}"{% elif dates_alone %} data-change-alone="start_date end_date timezone" data-change-alone-hint="{{ dates_alone_hint }}"{% endif %}{% if end_saved %} data-live-check="{% url 'admin:campaign_end_date_check' %}" data-live-check-field="end_date" data-live-check-saved="{{ end_saved }}" data-checking-hint="{{ end_check.checking }}" data-check-failed-hint="{{ end_check.failed }}" data-signed-out-hint="{{ end_check.signed_out }}"{% endif %}>
+{% csrf_token %}{% if wizard.direct %}<input type="hidden" name="action" value="save"><input type="hidden" name="request_key" value="{{ wizard.save_key }}">{% else %}<input type="hidden" name="action" value="preview">{% endif %}
 {% include 'stewardship/campaign-fields.html' %}
-{% if open %}{% translate "Change a setting to save it." as unchanged_hint %}{% else %}{% translate "Nothing on this page can change now; each greyed-out setting's i button says why." as unchanged_hint %}{% endif %}<p>{% translate "Save" as save_label %}{% include 'stewardship/components/review-changes-button.html' with describedby="settings-complete-hint" hint=unchanged_hint label=save_label %}</p><p class="help" id="settings-complete-hint" data-complete-hint hidden></p>
-</form>
+{% if wizard.direct %}<p class="help" id="settings-complete-hint" data-complete-hint hidden></p>{% else %}{% if open %}{% translate "Change a setting to save it." as unchanged_hint %}{% else %}{% translate "Nothing on this page can change now; each greyed-out setting's i button says why." as unchanged_hint %}{% endif %}<p>{% translate "Save" as save_label %}{% include 'stewardship/components/review-changes-button.html' with describedby="settings-complete-hint" hint=unchanged_hint label=save_label %}</p><p class="help" id="settings-complete-hint" data-complete-hint hidden></p>{% endif %}
+</form>{% endwith %}
 </div>
 {% include 'stewardship/components/review-outcome.html' with outcome_id="settings-outcome" %}
 {% translate "Review campaign settings" as review_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="campaign-review" title=review_title apply_url=page_url outcome_id="settings-outcome" fallback="settings-form" %}

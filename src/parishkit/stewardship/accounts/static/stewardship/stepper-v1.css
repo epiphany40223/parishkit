@@ -92,9 +92,21 @@
    right-aligned, as the setup wizard's row; they stack on a phone. */
 .campaign-step-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-block: 1.5rem .25rem; }
 .campaign-step-actions > * { margin: 0; }
-.campaign-step-actions > [data-campaign-continue], .campaign-step-actions > [data-campaign-create] { margin-inline-start: auto; }
+.campaign-step-actions > [data-campaign-continue], .campaign-step-actions > [data-campaign-create], .campaign-step-actions > [data-campaign-primary] { margin-inline-start: auto; }
+/* A direct-save step's primary (#1404 PR 4): Continue and Save and continue
+   share one grid cell, so the cell is as wide as the longer label and the
+   switch between them moves nothing; the one not offered keeps its space
+   but is hidden with visibility, so it can be neither seen, focused nor
+   clicked. Continue's button sits inside its own form, so the global
+   button margin is dropped on both, keeping them equally tall. */
+.campaign-step-primary { display: inline-grid; }
+.campaign-step-primary > * { grid-area: 1 / 1; margin: 0; }
+.campaign-step-primary button { inline-size: 100%; margin: 0; }
+.campaign-step-primary [data-step-inactive] { visibility: hidden; }
+/* Its status line keeps one line's height while empty (no layout shift). */
+.campaign-step-status { min-block-size: 1.5em; margin-block: .25rem 0; }
 @media (max-width: 26rem) {
-  .campaign-step-actions > [data-campaign-continue], .campaign-step-actions > [data-campaign-create], .campaign-step-actions > form button { flex: 1 1 100%; width: 100%; }
+  .campaign-step-actions > [data-campaign-continue], .campaign-step-actions > [data-campaign-create], .campaign-step-actions > [data-campaign-primary], .campaign-step-actions > form button { flex: 1 1 100%; width: 100%; }
 }
 @media (forced-colors: active) {
   .setup-steps [aria-current="step"] { outline: 3px solid CanvasText; }

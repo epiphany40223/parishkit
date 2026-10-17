@@ -7,6 +7,7 @@ or its Continue was pressed with nothing changed (#1404), and its Back and
 Continue never save anything on the page.
 """
 
+import re
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -299,6 +300,41 @@ def test_action_row_continues_an_unchanged_step():
     assert 'id="campaign-continue-hint" data-continue-hint data-idle' in html
 
 
+def test_action_row_saves_a_direct_step_in_the_same_place():
+    """Campaign settings and Share options save directly (#1404 PR 4).
+
+    The primary's cell holds Continue and, inactive until the form holds a
+    change, Save and continue, a submit button of the page's own form; the
+    row names the next step an applied save opens, and its status line
+    replaces the hint that pointed at the page's own Save.
+    """
+    stepper = wizard.build(
+        True, "share_options", done={"settings"}, mail_test_url=None, direct=True
+    )
+    assert stepper.direct_form == "settings-form" and stepper.save_key is not None
+    html = actions(stepper)
+    assert f'data-next-url="{reverse("admin:content_catalog")}"' in html
+    assert '<div class="campaign-step-primary" data-campaign-primary>' in html
+    assert f'action="{reverse("admin:campaign_step_continue")}"' in html
+    assert "Continue to Pages and emails" in html
+    assert re.search(
+        r'<button type="submit" form="settings-form" [^>]*data-campaign-save'
+        r" data-step-inactive[^>]*>Save and continue</button>",
+        html,
+    )
+    assert 'id="campaign-step-status" role="status"' in html
+    assert "campaign-continue-hint" not in html
+    # Any other step, and a stepper drawn without ``direct``, is unchanged.
+    for other in (
+        wizard.build(True, "share_options", done={"settings"}, mail_test_url=None),
+        wizard.build(True, "content", done={"settings"}, mail_test_url=None),
+    ):
+        assert other.direct_form is None and other.save_key is None
+        html = actions(other)
+        assert "data-campaign-save" not in html and "data-next-url" not in html
+        assert "campaign-step-status" not in html
+
+
 def test_dates_with_no_schedules_continue_without_them():
     """Dates and mail schedules can be continued with no schedules (#1404)."""
     stepper = wizard.build(
@@ -371,6 +407,7 @@ def test_load_notice_offers_the_load_until_families_exist():
 @pytest.mark.parametrize(
     ("name", "step", "sub"),
     [
+        ("campaign_settings", "settings", False),
         ("content_catalog", "content", False),
         ("content_edit", "content", True),
         ("content_revision", "content", True),
@@ -384,7 +421,11 @@ def test_load_notice_offers_the_load_until_families_exist():
     ],
 )
 def test_sub_pages_draw_their_steps_stepper(monkeypatch, name, step, sub):
-    """Each sub-page draws the stepper with its step current (#1404)."""
+    """Each sub-page draws the stepper with its step current (#1404).
+
+    Only Campaign settings' own page (and Share options') saves directly
+    (#1404 PR 4); its content history, a sub-page, does not.
+    """
     monkeypatch.setattr(wizard, "invitation_revision", lambda *_: None)
     monkeypatch.setattr(wizard, "completed", lambda *_: {"settings"})
     monkeypatch.setattr(wizard, "_load_state", lambda _: None)
@@ -401,6 +442,7 @@ def test_sub_pages_draw_their_steps_stepper(monkeypatch, name, step, sub):
         assert stepper is None
         return
     assert stepper.current.key == step and stepper.sub is sub
+    assert stepper.direct is (name == "campaign_settings")
 
 
 def test_status_offers_the_next_step_once_applied():
