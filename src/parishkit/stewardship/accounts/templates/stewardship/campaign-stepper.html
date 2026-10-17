@@ -3,6 +3,12 @@ The Campaign setup stepper (#142, campaign_wizard.py): the setup wizard's
 compact stepper (setup-wizard.html) over the existing campaign pages, drawn
 by base.html above the page while the current campaign is a Testing draft.
 Its step bar and list are the setup wizard's (stepper-steps.html, #1402).
+Before any campaign exists, base.html also draws it on Create the campaign
+(campaign_wizard.creation, #1404 PR 3): step 1 current, every later step
+unavailable, no load notice and no shared action row. The page naming a
+creation request (?request=, while pending or after a failed Apply) keeps
+it until the campaign exists, since no campaign exists yet; once one does,
+that address draws none.
 Its summary names the next step that is not done yet, as text, and offers
 Leave campaign setup (Home); the moving controls, Back and the one primary
 Continue, are the action row at the bottom of the page

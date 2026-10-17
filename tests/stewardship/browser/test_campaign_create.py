@@ -138,7 +138,11 @@ def test_create_opens_a_confirmation_that_repeats_nothing(page, component_origin
     visible(dialog.get_by_role("button", name="Apply"))
     dialog.get_by_role("button", name="Cancel").click()
     hidden(dialog)
-    eventually(page, "document.activeElement.textContent.trim()", "Create the campaign")
+    eventually(
+        page,
+        "document.activeElement.textContent.trim()",
+        "Create the campaign and continue",
+    )
     assert page.get_by_label("Campaign name").input_value() == VALUES["name"]
 
 
@@ -266,3 +270,70 @@ def test_create_waits_for_the_required_fields(page, component_origin):
     # Emptying a required field holds it again.
     page.get_by_label("Campaign name").fill("")
     greyed(create)
+
+
+def test_create_is_step_one_of_the_campaign_wizard(page, component_origin):
+    """Create the campaign is step 1 of the campaign wizard (#1404 PR 3).
+
+    The stepper says where the Administrator is, and every later step is
+    unavailable: its segment only takes focus and names the reason, so a
+    click opens nothing. The form asks the Ministry leader roles, the
+    default ones ticked, under Ministry stewardship. The one primary is
+    Create the campaign and continue, with no Back, and ticking a module
+    or filling in the form moves neither the stepper nor the button's row
+    sideways; nothing reloads and no script fails.
+    """
+    page.goto(component_origin + PAGE)
+    failures = watch(page)
+    stepper = page.locator("#campaign-stepper")
+    current = stepper.locator(".setup-stepper-current")
+    visible(current)
+    assert current.inner_text() == "Step 1 of 7: Campaign settings"
+    assert stepper.locator(".setup-stepper-count").inner_text() == (
+        "0 of 7 steps completed"
+    )
+    later = stepper.locator(".setup-track [data-step-unavailable]")
+    assert later.count() == 6
+    labels = [
+        "Share options",
+        "Pages and emails",
+        "Dates and mail schedules",
+        "Campaign images",
+        "Preview and test email",
+        "Go-live readiness",
+    ]
+    for index, label in enumerate(labels):
+        assert later.nth(index).get_attribute("aria-disabled") == "true"
+        assert later.nth(index).get_attribute("data-tip") == (
+            f"Step {index + 2} of 7: {label} — "
+            "Not available yet: Create the campaign first."
+        )
+    address = page.url
+    # aria-disabled: Playwright clicks it only when forced, as a reader may.
+    later.first.click(force=True)
+    assert page.url == address
+    create = page.get_by_role("button", name="Create the campaign and continue")
+    visible(create)
+    assert page.locator("#settings-form").get_by_role("link", name="Back").count() == 0
+    assert page.locator("#campaign-step-actions").count() == 0
+    where = "node => node.getBoundingClientRect().top + window.scrollY"
+    bar = stepper.evaluate(where)
+    # The leader roles belong to Ministry stewardship: hidden until it is
+    # ticked, and hidden again once it is unticked.
+    ministry = page.get_by_label("Ministry stewardship")
+    hidden(page.get_by_label("Chairperson"))
+    ministry.check()
+    roles = page.get_by_role("group", name="Ministry selections")
+    for role in ("Chairperson", "Staff"):
+        visible(roles.get_by_label(role))
+        assert roles.get_by_label(role).is_checked()
+    ministry.uncheck()
+    hidden(page.get_by_label("Chairperson"))
+    assert stepper.evaluate(where) == bar
+    ministry.check()
+    fill(page)
+    available(create)
+    assert stepper.evaluate(where) == bar
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert page.evaluate(MARKED) == "kept"
+    assert not failures

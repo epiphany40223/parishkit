@@ -1156,7 +1156,7 @@ opens, applies, refuses and follows its change.
 
 **Rule.** Every Admin editor reviews and applies its change in one shared
 modal dialog over the page: **Review changes** (or the action's own label,
-such as **Create the campaign**) opens the dialog with the
+such as **Create the campaign and continue**) opens the dialog with the
 change and its impact (or, when that would only repeat the page, a
 one-sentence confirmation), the dialog offers **Apply** and **Cancel**, and Apply's
 progress and outcome show inside it. Once the change is applied the dialog
@@ -1246,7 +1246,7 @@ the campaign wizard in #1404 PR 4).
   count; a refusal), and offers **Apply** and **Cancel**; the sentence
   describes the dialog (`aria-describedby`), and its title asks the
   question ("Create the campaign?"). The form's button then carries the
-  action's own label ("Create the campaign", "Save") rather than **Review
+  action's own label ("Create the campaign and continue", "Save") rather than **Review
   changes**, since it opens a dialog that does not review, and the dialog's
   button stays **Apply**. Review still posts the form, so field errors stay
   on the form and the server still validates and signs the preview, which
@@ -1880,6 +1880,7 @@ keeps the single label Save and continue on an unchanged page (rule 3), and
 it has no Leave setup in its summary (rule 11) and no sub-pages. The
 campaign wizard meets rules 1, 7, 9, 11 and 12 and the Return to *step*
 link of rule 10 ([#1407](https://github.com/epiphany40223/parishkit/pull/1407)):
+Create the campaign is its step 1 before the campaign exists (#1404 PR 3);
 an applied change or a Continue stays completed, while Preview and test
 email counts only for a test of the invitation's current revision. It meets
 rule 8 for Continue, which opens the next step not done yet; after a save,
@@ -1887,7 +1888,6 @@ the page redraws in place and stays on the step it completed until the
 direct save (planned, #1404 PR 4). Until the later #1404 pull requests
 land, its Continue is unavailable while the form holds a change, so the
 page's own Save, with its review dialog, is the way on (rules 3 to 5);
-Create the campaign is a separate page before step 1;
 loading the campaign's ParishSoft data is a notice on every step rather than
 a step of its own; and Back asking before it discards (rule 6) and the
 sub-pages' Keep as is and go back and Save and go back (rule 10) are not

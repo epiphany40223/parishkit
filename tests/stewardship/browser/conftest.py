@@ -17,7 +17,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from PIL import Image
 
-from parishkit.stewardship.accounts import setup_help
+from parishkit.stewardship.accounts import campaign_wizard, setup_help
 from parishkit.stewardship.accounts import setup_mail_views as mail_views
 from parishkit.stewardship.accounts import (
     setup_notification_views as notification_views,
@@ -27,7 +27,10 @@ from parishkit.stewardship.accounts.backup_key import KeyStatus
 from parishkit.stewardship.accounts.branding_views import LogoUploadForm
 from parishkit.stewardship.accounts.campaign_create_views import any_zone
 from parishkit.stewardship.accounts.campaign_family_test_views import FamilyTestForm
-from parishkit.stewardship.accounts.campaign_forms import CampaignForm
+from parishkit.stewardship.accounts.campaign_forms import (
+    CampaignForm,
+    CampaignSettingsForm,
+)
 from parishkit.stewardship.accounts.campaign_mail_views import CampaignMailForm
 from parishkit.stewardship.accounts.content_forms import ContentForm
 from parishkit.stewardship.accounts.integration_credentials import (
@@ -179,6 +182,8 @@ from .user_components import POSTS as USER_POSTS
 from .user_components import components as user_components
 from .weekly_components import components as weekly_components
 
+# The default Ministry leader roles a new campaign starts with (#922).
+LEADER_ROLES = ["Chairperson", "Staff"]
 NOW = datetime(2026, 9, 10, 12, tzinfo=UTC)
 # A scheduled full refresh two hours past due, with none running (#510).
 LATE_REFRESH = FullRefreshStatus(
@@ -1614,18 +1619,23 @@ def component_origin():
                 ),
             },
         ),
-        # Create the campaign (#142) with a real parish's long Ministry list.
+        # Create the campaign (#142) with a real parish's long Ministry list,
+        # step 1 of the campaign wizard (#1404 PR 3).
         (
             "/campaign-create-long",
             "campaign-create",
             {
+                "admin_chrome": admin | {"campaign_wizard": campaign_wizard.creation()},
                 "form": any_zone(
-                    CampaignForm(
+                    CampaignSettingsForm(
                         initial={
                             "timezone": "America/New_York",
+                            "ministry_leader_roles": LEADER_ROLES,
                             "base_digest": "a" * 64,
                         },
                         previous={},
+                        leader_choices=[(role, role) for role in LEADER_ROLES],
+                        leader_roles=LEADER_ROLES,
                         # A real parish has hundreds of Ministries, some long-named.
                         ministries=[
                             ("1", "Music ministry"),
@@ -1969,23 +1979,28 @@ def component_origin():
                 ),
             },
         ),
-        # Create the campaign (#142): the first campaign's form.
+        # Create the campaign (#142): the first campaign's form, Campaign
+        # settings' own, on step 1 of the campaign wizard (#1404 PR 3).
         (
             "/campaign-create",
             "campaign-create",
             {
+                "admin_chrome": admin | {"campaign_wizard": campaign_wizard.creation()},
                 "form": any_zone(
                     setup_help.apply(
-                        CampaignForm(
+                        CampaignSettingsForm(
                             initial={
                                 "timezone": "America/New_York",
                                 "census": True,
                                 "additional_information": True,
+                                "ministry_leader_roles": LEADER_ROLES,
                                 "base_digest": "a" * 64,
                             },
                             previous={},
                             ministries=[("4", "Community outreach"), ("5", "Choir")],
                             funds=[("9", "Offertory")],
+                            leader_choices=[(role, role) for role in LEADER_ROLES],
+                            leader_roles=LEADER_ROLES,
                         ),
                         setup_help.ADMIN_CAMPAIGN,
                         replace=True,
