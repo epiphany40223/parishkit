@@ -3281,8 +3281,9 @@ live.
   the item) for the exact saved text that was reviewed: one email of a mail
   type kept as is does not mark the others, and a later save of the item is
   a new revision, which shows its own state. The server refuses a mark for
-  an item the list no longer shows ("That page or email has changed;
-  reload Pages and emails."), with nothing stored. The editor's preview,
+  an item the list no longer shows ("That page or email has changed since
+  this page was opened, so it was not marked.", with the link "Return to
+  Pages and emails, then open it again."), with nothing stored. The editor's preview,
   Start from the default text and Remove stay as they are. The list's
   Continue is always available and accepts every item not yet edited as is;
   the per-item marks are optional and never complete the step, and Go-live

@@ -1002,6 +1002,9 @@ success or failure, to standard error:
   ([#864](https://github.com/epiphany40223/parishkit/issues/864)). The
   command follows the page it mirrors, so a version bump would only carry
   a legacy form the Administrator declined.
+- A documented exception: the `content` commands' state value `custom`
+  was renamed `edited` (#1404) and stayed on `pk-admin/1`, with a guide
+  changelog entry, for the same reasons as the #931 exception above.
 - Output never contains credentials, session secrets or digests, Family
   access tokens, cipher material or exception text. Family-level personal data
   follows [personal data on the command line](#personal-data-on-the-command-line).
