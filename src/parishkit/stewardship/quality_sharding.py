@@ -8,22 +8,24 @@ BROWSER_ENGINES = ("chromium", "firefox", "webkit")
 # The browser CI jobs (#627), one workflow matrix entry each; every entry
 # runs its ENGINE:INDEX/COUNT partitions in turn. test_browser_ci.py requires
 # the matrix to equal this and every engine's partitions to appear exactly
-# once. Measured in CI run 38719928786 (October 2026, #1380), all of an
-# engine's cases take about 3,290 s of tests on WebKit, 2,200 on Chromium and
-# 2,340 on Firefox. Firefox is halved, alone in each of its two jobs, so each
-# half has about 1,200 s of tests, 40% of quality_browser.JOB_SECONDS. (Whole,
-# it ran 2,343 s on a normal runner and was killed at 3,000 s on one about
-# 27% slower, in run 38731308882.) WebKit and Chromium are each split in three
-# and paired, so each of those jobs has about 1,800 s of tests, 60% of the
-# budget. WebKit, the slowest engine, runs last in its job so it inherits
-# whatever time Chromium leaves of its reserved share
-# (quality_browser.partition_limit, #1112).
+# once. Firefox is halved, alone in each of its two jobs (#1380): each half
+# took 1,120 to 1,840 s in October 2026, at most about 60% of
+# quality_browser.JOB_SECONDS. WebKit and Chromium are each split in five and
+# paired, one fifth of each per job (#1529). In thirds (#1151) the paired
+# jobs had grown to 2,700 to 2,930 s of tests on ordinary runners, and two
+# were killed at the 3,000 s budget with no test failed; fifths bring a job to
+# about 1,800 s, 60% of the budget. WebKit, the slowest engine, runs last in
+# its job so it inherits whatever time Chromium leaves of its reserved share
+# (quality_browser.partition_limit, #1112). When a job's tests near 75% of
+# the budget again, split further rather than raising the budget.
 BROWSER_JOBS = (
     "firefox:1/2",
     "firefox:2/2",
-    "chromium:1/3 webkit:1/3",
-    "chromium:2/3 webkit:2/3",
-    "chromium:3/3 webkit:3/3",
+    "chromium:1/5 webkit:1/5",
+    "chromium:2/5 webkit:2/5",
+    "chromium:3/5 webkit:3/5",
+    "chromium:4/5 webkit:4/5",
+    "chromium:5/5 webkit:5/5",
 )
 
 # Scheduling hints only, fitted to the per-test CI_PROGRESS seconds of CI run
