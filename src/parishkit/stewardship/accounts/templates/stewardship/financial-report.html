@@ -44,7 +44,6 @@
 <p id="financial-matching" data-table-sync>{% translate "Matching Families:" %} {{ total|number }}.</p>
 <details class="export-panel"><summary id="financial-export-heading">{% translate "Export complete results (CSV, XLSX or PDF)" %}</summary>
 <p id="financial-export-count" data-table-sync>{% blocktranslate with shown=total|number count counter=total %}{{ shown }} matching Family, using the applied filters and sort above—not just this page. The file uses every matching pledge and its ParishSoft comparison totals as they are when you queue the export; later submissions or ParishSoft refreshes are not included.{% plural %}{{ shown }} matching Families, using the applied filters and sort above—not just this page. The file uses every matching pledge and its ParishSoft comparison totals as they are when you queue the export; later submissions or ParishSoft refreshes are not included.{% endblocktranslate %}</p>
-<p class="notice">{% translate "Sensitive parish financial information: download only to a trusted device and share only with authorized recipients." %}</p>
 <form id="table-export" data-table-sync data-submit-waits method="post" action="{% url 'admin:financial_export' %}">{% csrf_token %}
 {% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
 <input type="hidden" name="request_key" value="{{ request_key }}">
