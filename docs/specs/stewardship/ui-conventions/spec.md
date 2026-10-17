@@ -50,6 +50,7 @@ when it lands.
   [disclosures](#disclosures),
   [prerequisite gates](#prerequisite-gates),
   [field errors and live checks](#field-errors-and-live-checks),
+  [secret fields](#secret-fields),
   [Review, Apply and Change status](#review-apply-and-change-status),
   [review dialog](#review-dialog),
   [conditional fields](#conditional-fields),
@@ -1117,6 +1118,43 @@ refusal carry a closed reason code or error codes: refuse through the
 shared refusal types and builders, give a new kind of refusal its own
 reason code, and build forms on the shared Admin form base. A refusal never
 logs the value it refused.
+
+### Secret fields
+
+**Rule.** Every single-line secret an Admin types (an API key or a bot
+token) is masked by default and has the one shared Show/Hide control beside
+it. **Why.** Keys are pasted, and an Admin needs to check what was pasted
+without giving up the default protection against someone looking at the
+screen or a shared call. **Shared code.** The `SecretInput` widget
+(`accounts/secret_input.py`, template `stewardship/widgets/secret-input.html`)
+and the `data-secret-reveal` handler in `ui-v1.js`;
+`tests/stewardship/test_secret_input.py` fails on any other masked input in
+the Admin portal. **Precedent.**
+[#1475](https://github.com/epiphany40223/parishkit/issues/1475).
+
+The control is a real button, drawn by the server next to the field so it is
+in place on first paint. Tab reaches it, and Enter, Space or a click switch
+the field between masked and plain text; focus stays on the button. Its
+visible text reads Show or Hide, and its width is reserved for the longer
+word, so pressing it moves nothing ([no layout shift](#no-layout-shift)).
+Its accessible name is the visible word followed by the field's name, held
+in the button as visually hidden text ("Show the ParishSoft API key", "Hide
+the ParishSoft API key"), so the name always starts with the word on screen
+(WCAG 2.5.3, Label in Name) and the field's label names only the field. It
+has no `aria-label` and no `aria-pressed`, because the name already says the
+state. A polite status line beside it announces each change ("Your
+ParishSoft API key is shown."). It is always available, also while the field
+is empty.
+
+The control changes only what is shown, never what is submitted: the field's
+name and value post exactly as when masked. It masks the field again by
+itself when the form is submitted and when the reader leaves or returns to
+the page (including a page restored from the back-forward cache). A saved
+secret is never sent back to the browser, so the field starts empty, a
+refused value is not drawn again, and the control shows only what was typed
+in this page view. The page script never logs, stores or sends the value.
+A multi-line secret (the Google service-account JSON key) stays a visible
+text area.
 
 ### Review, Apply and Change status
 
