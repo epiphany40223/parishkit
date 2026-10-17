@@ -80,6 +80,7 @@ SLASHLESS = (
     ("reports/financial", "financial_report"),
     ("reports/limitations", "limitations_report"),
     ("reports/census", "census_changes"),
+    ("reports/census/publication", "census_publication"),
     ("reports/information", "information_queue"),
     ("reports/information/<uuid:item_id>", "information_item"),
     ("reports/ministries", "ministry_report"),

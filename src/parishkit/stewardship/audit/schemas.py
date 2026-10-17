@@ -136,6 +136,8 @@ class Action(StrEnum):
     CENSUS_PUBLICATION_SWITCHED_OFF = "census_publication_switched_off"
     CENSUS_PUBLICATION_READ_UNCONFIRMED = "census_publication_read_unconfirmed"
     CENSUS_PUBLICATION_REFUSED = "census_publication_refused"
+    # Someone opened Publish to ParishSoft (#528, ADM-09); count: plan rows.
+    CENSUS_PUBLICATION_VIEWED = "census_publication_viewed"
     ROSTER_CHANGES_VIEWED = "roster_changes_viewed"
     ROSTER_CHANGES_EXPORTED = "roster_changes_exported"
     RESPONSE_DASHBOARD_VIEWED = "response_dashboard_viewed"
