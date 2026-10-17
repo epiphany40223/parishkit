@@ -13,8 +13,14 @@ import json
 
 import pytest
 
-from .census_components import AUTOMATIC, EDITED, EDITED_PAGE, EDITED_VALUE
-from .test_table_sorting import MARK, MARKED
+from .census_components import (
+    AUTOMATIC,
+    AUTOMATIC_REDRAWS,
+    EDITED,
+    EDITED_PAGE,
+    EDITED_VALUE,
+)
+from .test_table_sorting import MARK, MARKED, fulfil_post_with
 from .waits import has_text
 
 pytestmark = pytest.mark.parametrize(
@@ -146,5 +152,40 @@ def test_edit_value_is_saved_in_place(page, component_origin):
         clear.click()
     has_text(page.locator("#census-notice"), EDITED)
     assert "resolve=clear_edit" in posts[-1] and len(posts) == 3
+    assert page.evaluate(MARKED) == "kept"
+    assert errors == []
+
+
+def test_a_redrawn_table_holds_save_value(page, component_origin):
+    """The table redrawn in place at another page size, sort or filter draws
+    each row's Edit value anew at the same version, carrying the new view
+    settings as hidden fields: they are no change, so Save value stays
+    unavailable until the value itself changes (#1334 re-review)."""
+    from playwright.sync_api import expect  # imported late: collection needs no browser
+
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto(component_origin + AUTOMATIC)
+    page.evaluate(MARK)
+    answers = iter(AUTOMATIC_REDRAWS)
+    fulfil_post_with(page, "**" + AUTOMATIC, component_origin, lambda _: next(answers))
+    form = page.locator("#edit-0")
+    save = form.get_by_role("button", name="Save value", include_hidden=True)
+    expect(save).to_be_disabled()
+    for _path in AUTOMATIC_REDRAWS:
+        page.evaluate("document.getElementById('edit-0').dataset.drawn = 'old'")
+        page.locator("#table thead button").first.click()
+        # The row's form is a new element, drawn with the new view settings.
+        expect(form).not_to_have_attribute("data-drawn", "old")
+        expect(save).to_be_disabled()
+    assert form.locator('input[type=hidden][name="route"]').input_value() == "automatic"
+    # The value itself still counts, and undoing it holds Save again.
+    page.locator("details.census-record").filter(has=form).locator("summary").click()
+    value = form.get_by_label("Value to publish")
+    drawn = value.input_value()
+    value.fill("317 555 0198")
+    expect(save).to_be_enabled()
+    value.fill(drawn)
+    expect(save).to_be_disabled()
     assert page.evaluate(MARKED) == "kept"
     assert errors == []
