@@ -737,11 +737,18 @@ CLOSURE_REPLACED_AGAIN = {
 
 # Run after ``CLOSURE_REPLACED_AGAIN`` the same way: 0106 (#1403) widens
 # 0104's safe context with the refusal schema, and its file also puts back
-# the event check and log writer that 0089's rerun made older.
+# the event check and log writer that 0089's rerun made older. 0111 (#1499)
+# replaces 0104's setup credential guard, which 0104's rerun above brings
+# back, so 0111's file runs again too (its index and constraint statements
+# are idempotent).
 CLOSURE_REPLACED_LAST = {
     "public.stewardship_safe_context_v1(text,jsonb)": (
         ("stewardship_audit", "0004_admin_input_refusal_log"),
         "WHEN 'refusal' THEN",
+    ),
+    "public.stewardship_setup_secret_guard_v1()": (
+        ("stewardship_accounts", "0026_setup_slack_off"),
+        "IF attempt.state='collecting' THEN",
     ),
 }
 

@@ -108,11 +108,16 @@ def failure(items, provider, steps):
 
     Only the newest test counts, and only for the current draft revision: a
     later test, or a saved fix (which bumps the revision), drops the notice.
-    It carries the provider's rejected-key advice and the steps to correct.
+    It carries the provider (a Slack notice offers turning Slack off,
+    #1499), its rejected-key advice and the steps to correct.
     """
     if not items or not items[0]["current"] or items[0]["state"] != "not_sent":
         return None
-    return {"advice": FAILED[provider], "steps": [BY_KEY[key] for key in steps]}
+    return {
+        "provider": provider,
+        "advice": FAILED[provider],
+        "steps": [BY_KEY[key] for key in steps],
+    }
 
 
 def status_response(request, data, empty):
@@ -138,6 +143,18 @@ def tested(items):
     sending; tests are listed newest first, so a current one is among them.
     """
     return any(item["current"] and item["state"] == "accepted" for item in items)
+
+
+def retest(items):
+    """Whether an accepted test exists only for an earlier draft revision.
+
+    Test email then says why it must be sent again (#1499): any saved
+    change, such as turning Slack off, bumps the revision, and only a test
+    of the current revision counts.
+    """
+    return not tested(items) and any(
+        not item["current"] and item["state"] == "accepted" for item in items
+    )
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
@@ -177,6 +194,7 @@ def setup_mail(request):
                 "testing_recipient": preview.draft.sections["testing"][
                     "testing_recipient"
                 ],
+                "retest": retest(data["items"]),
             },
             status=status,
         )
