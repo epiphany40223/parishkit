@@ -960,6 +960,8 @@ details.filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div
 /* Compact filter bars: short fields share one row on wider screens. */
 .filter-bar { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem 1rem; }
 .filter-bar label { margin: 0 0 .25rem; font-size: .925rem; }
+/* A filter-bar label row is at least as tall as its "i" button (1.75rem), tip or not, so a cell whose tip comes and goes (the directory's Export timezone) never changes its row's height and shifts the end-aligned cells beside it. */
+.filter-bar .label-row { min-height: 1.75rem; }
 .filter-bar > div { flex: 0 1 26rem; min-width: 12rem; }
 .filter-bar > div.short { flex: 0 1 9rem; }
 /* A field as wide as its longest choice, so a long option reads whole

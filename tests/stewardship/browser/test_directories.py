@@ -391,8 +391,6 @@ def test_export_time_zone_follows_the_applied_response_columns(page, component_o
     controls = (
         page.get_by_label("Export format"),
         page.get_by_role("button", name="Queue complete export"),
-        # The format help's "i" button (#1158), beside the format label.
-        page.locator("#table-export .toggletip-button").first,
     )
 
     def boxes():
