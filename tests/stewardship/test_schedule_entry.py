@@ -29,6 +29,7 @@ from parishkit.stewardship.accounts.schedule_entry_views import (
     _rule,
     _series_edit,
     _targets,
+    editor_mode,
     entry_form,
     entry_times,
     mailings,
@@ -690,3 +691,27 @@ def test_a_series_time_is_checked_only_on_the_dates_it_changes():
     with pytest.raises(SeriesEditError) as refused:
         _series_edit(entry, rows[1], record, rows, campaign_row, scope="series", **edit)
     assert refused.value.reason == "day_moved"
+
+
+def test_the_page_opens_in_basic_unless_advanced_was_sent_or_a_tool_is_on():
+    """New and Edit's mode is derived, never stored (#1129, additive editor).
+
+    A page drawn for a GET is Basic; a page drawn again for a post keeps
+    Advanced when it was sent from there, and opens Advanced whenever
+    Repeat or the schedule's own email was ticked, so a refused Review
+    never hides a tool in use. Any other mode value is refused.
+    """
+    assert editor_mode(None) == "basic"
+    assert editor_mode(posted()) == "basic"
+    assert editor_mode(posted(editor_mode="basic")) == "basic"
+    assert editor_mode(posted(editor_mode="advanced")) == "advanced"
+    assert editor_mode(posted(editor_mode="basic", edit_email="on")) == "advanced"
+    reminder = {"repeat-repeat": "on", "schedule-kind": "reminder"}
+    assert editor_mode(posted(**reminder)) == "advanced"
+    # A Repeat left ticked under another mail type is hidden, not in use.
+    assert editor_mode(posted(**reminder | {"schedule-kind": "initial"})) == "basic"
+    assert editor_mode(posted(**{"repeat-repeat": "on"})) == "basic"
+    with pytest.raises(UserFacingError):
+        editor_mode(posted(editor_mode="simple"))
+    # The toggle's field is one the page may post, on New and Edit.
+    assert "editor_mode" in _fields(True) and "editor_mode" in _fields(False)
