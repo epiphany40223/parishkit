@@ -7,8 +7,9 @@ again. Runtime exposure belongs to the compiled delivery owners, not these ORM
 declarations or possession of a message UUID.
 """
 
+from django.contrib.postgres.indexes import GinIndex
 from django.db import models
-from django.db.models.functions import Now
+from django.db.models.functions import Cast, Lower, Now
 
 from parishkit.stewardship.storage import (
     ImmutableRecord,
@@ -336,6 +337,22 @@ class OutboxRender(ImmutableRecord):
 
     class Meta:
         db_table = "stewardship_outbox_render"
+        indexes = [
+            # Sent mail's Recipient filter finds the emails meant for one
+            # address, in any case, through an Administrator-only definer
+            # read (#1562, frozen migration 0115). Lower-casing the JSON
+            # text keeps it valid JSON, so containment works on the result.
+            # The default jsonb_ops operator class: Django names another for
+            # an expression (OpClass) only with django.contrib.postgres
+            # installed, which this project does not install.
+            GinIndex(
+                Cast(
+                    Lower(Cast("intended_recipients", models.TextField())),
+                    models.JSONField(),
+                ),
+                name="outbox_render_intended_lower",
+            ),
+        ]
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(payload_digest__regex=r"^[0-9a-f]{64}$"),
