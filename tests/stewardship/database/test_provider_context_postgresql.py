@@ -192,7 +192,7 @@ def test_request_validator_closes_sql_before_provider_io(monkeypatch):
         "django.db.connections.close_all", lambda: events.append("close")
     )
 
-    def external(target, settings, value, *, seconds, check, profile):
+    def external(target, settings, value, *, seconds, check, profile, base_url):
         """No provider call before SQL close or beyond the request's deadline."""
         assert events == ["check", "close"]
         assert (target, settings, value) == (
@@ -201,6 +201,7 @@ def test_request_validator_closes_sql_before_provider_io(monkeypatch):
             b"synthetic-candidate",
         )
         assert 0 < seconds <= 30 and profile is DeploymentProfile.TEST
+        assert base_url is None  # The profile's default ParishSoft base URL.
         return True
 
     monkeypatch.setattr(

@@ -8,8 +8,8 @@ def deployment_document(configuration, *, switches=True):
     """Serialize validated metadata only; credential values are never opened.
 
     ``switches=False`` leaves out the operational switches that are not
-    deployment inputs (the bulk Family send, #430, and the local rehearsal's
-    SMTP latency, BG-12): the provisioning record
+    deployment inputs (the bulk Family send, #430, the local rehearsal's
+    SMTP latency, BG-12, and the ParishSoft base URL, #1399): the provisioning record
     keeps only inputs, so turning a switch on or off is never an input
     change, and an earlier release can still read the record.
     """
@@ -70,6 +70,10 @@ def deployment_document(configuration, *, switches=True):
         # Likewise written only while census publication (#528, BG-09) is
         # on, so a deployment with it off renders what it rendered before.
         result["parishsoft_publication"] = True
+    if configuration.parishsoft_base_url is not None and switches:
+        # Likewise written only when it is not the profile's default, which
+        # only a LOCAL deployment that chose the real API has (#1399).
+        result["parishsoft_base_url"] = configuration.parishsoft_base_url
     if configuration.credential_target is not None:
         result["credential_target"] = configuration.credential_target
     return {"deployment": result}
