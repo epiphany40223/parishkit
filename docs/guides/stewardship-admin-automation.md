@@ -1483,7 +1483,7 @@ pk-admin campaign shares [--campaign ID]
 | `campaign_id` (`campaign shares`) | The campaign, the current one unless `--campaign` names another |
 | `editable` | Whether the page would edit the options now: an unlocked current Testing draft that no background work holds, with the financial module |
 | `financial` | Whether the campaign has the financial module |
-| `options` | Its Share options in order: `id`, `name` (the option's label) and `free_text` |
+| `options` | Its Share options in order: `id`, `name` (the option's label), `short_name` (its short label for Admin tables and charts, empty when unset) and `free_text` |
 
 `ministries list` prints every Ministry, not one page of the table;
 filter it with `jq`. Without ParishSoft data for the configured
@@ -1531,8 +1531,9 @@ options page's **Review** and **Apply**. They need a full-scope session
 and, like the page, change only an unlocked current Testing draft with the
 financial module (`campaign shares` prints `editable`). `--changes` lists
 the whole new list in `options`, in order: a saved option by its `id` with
-its `name` (the label) and `free_text` (`false` when left out), and a new
-option without an `id`. Each saved option the change removes goes in
+its `name` (the label), `short_name` (the short label, at most 12
+characters; blank when left out) and `free_text` (`false` when left out),
+and a new option without an `id`. Each saved option the change removes goes in
 `delete`, as the page's Delete box. Every saved option must be in one of
 the two, so leaving one out by mistake is refused rather than deleting it.
 Both commands take `--campaign`, the current campaign unless it names
@@ -1552,12 +1553,14 @@ pk-admin campaign shares-preview --expected-version "$VERSION" \
 | --- | --- |
 | `version`, `campaign_id` (`campaign shares-preview`) | The version the change was reviewed against, and the campaign |
 | `changes` | The page's review, one line per change: `label` (such as `Added`, `Removed`, `Label` or `Position of …`), `before` (null for an added or removed option) and `after` |
-| `options` | The list the change saves, in order: `id`, `name` and `free_text`; a new option's `id` is the one it will have |
+| `options` | The list the change saves, in order: `id`, `name`, `short_name` and `free_text`; a new option's `id` is the one it will have |
 | `preview.token` | What `campaign shares-confirm --token` takes, valid for fifteen minutes |
 | `created`, `request` (`campaign shares-confirm`) | As `parish confirm` prints them; follow the change with `config request show --watch` |
 
-A label the page refuses is exit 1 (`invalid`) at `options.<n>.name`, `n`
-counting from 0 in your `options`. No change, an `id` the campaign does
+A label the page refuses is exit 1 (`invalid`) at `options.<n>.name`, and
+a short label it refuses (too long, a placeholder, or the same as another
+option's) at `options.<n>.short_name`, `n` counting from 0 in your
+`options`. No change, an `id` the campaign does
 not have or gives twice, or a saved option in neither list is exit 1
 (`invalid`) at `options`. A campaign the page does not edit now (live,
 locked or without the financial module), a version that is no longer

@@ -2729,8 +2729,24 @@ The campaign editor includes:
   Share options, whose **Save** opens a
   [compact review](../ui-conventions/spec.md#review-dialog) (#1356) that
   marks only what changed, one line each (an option added, removed,
-  relabelled, given or losing its free-text response, or moved, with its old
-  and new position), never both whole lists;
+  relabelled, given or losing its free-text response, given a new short
+  label, or moved, with its old and new position), never both whole lists.
+  Each option also has an optional **Short label**
+  ([#1569](https://github.com/epiphany40223/parishkit/issues/1569)): plain
+  text (no placeholders), at most 12 characters, unique among the
+  campaign's short labels ignoring case. Its help says "Shown in the Admin
+  tables and charts instead of the long label. Families still see the full
+  label." Admin screens that list share methods compactly use it (see
+  [Financial stewardship detail](../reports/spec.md#financial-stewardship-detail));
+  blank means the full label, so a campaign without short labels reads as
+  before. The Family portal, the form definition digest (so changing a
+  short label never makes an open Family form stale) and downloads keep the
+  full label. It greys with its row's Delete box like the row's other
+  fields, is stored only when set (the option's `short_label` key) and is
+  carried when a campaign is cloned. The default options come with short
+  labels ("Bank check", "Online", "New e-giving", "Stock gift", "IRA",
+  "Envelopes", "Other"), so a new campaign's chips are short from the
+  start;
 - initial and repeatable reminder date/time, subject, and templates;
 - [report email](../report-emails/spec.md) schedules (on Report emails);
 - additional-information toggle;

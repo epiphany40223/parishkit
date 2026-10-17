@@ -3232,7 +3232,9 @@ search matches that name and the Family sort orders by surname, then that
 name), Family DUID in its own sortable column
 ([#960](https://github.com/epiphany40223/parishkit/issues/960)), Annual
 pledge, Frequency, Approximate installment, Share methods (selected
-share-option labels with any Other text), the ParishSoft comparison pledge
+share-option labels with any Other text; the page uses each option's
+[short label](../admin-portal/spec.md#campaign-configuration) where one is
+set, the exports always the full label), the ParishSoft comparison pledge
 and contribution aggregates, Latest response (the time the Family last
 updated its response), First response (when it first responded) and,
 as the last column, Entered by Staff (described below), in exactly this
@@ -3296,7 +3298,9 @@ A file captured before frozen migration 0066 added the marker to
 the projection leaves the column blank, never No (#794).
 
 Filters include active/inactive, first/latest submission dates, pledge range,
-zero/nonzero/cannot contribute, frequency, and share method. The first and
+zero/nonzero/cannot contribute, frequency, and share method (its choices,
+like the "Share methods chosen" bars below, name each method by its short
+label where one is set, else its full label). The first and
 latest response dates (From, Through) are whole days in the viewer's browser
 time zone: the form sends the browser's zone with the dates, and a date
 without a known zone is refused, never read in another zone

@@ -2607,7 +2607,8 @@ catalog row (`duid`, `name`, `included`; no `active` since #1267) in the page's 
 rather than one page of the table; no promoted catalog for the configured
 organization is `unavailable`, as the page answers 503. `campaign shares`
 defaults to the current campaign (none, or an unknown campaign, is
-`not_available`) and prints the page's `editable` check with the options;
+`not_available`) and prints the page's `editable` check with the options
+(each `id`, `name`, `short_name`, empty when unset, and `free_text`);
 unlike the page, which only edits and refuses a locked campaign, it reads
 a locked or live campaign too, with `editable` false. The values are the
 parish's and the campaign's own, never a Family's. The
@@ -2648,14 +2649,17 @@ page's salt, bound to the campaign, and `campaign_views._scope`), so a
 token from either channel confirms on the other. The change document is
 `{"options": [...], "delete": [...]}`: `options` is the kept and new
 options in their new order (`id` for a saved one, none for a new one;
-`name`, the label; `free_text`, false when left out) and `delete` the
+`name`, the label; `short_name`, the optional
+[short label](../admin-portal/spec.md#campaign-configuration), blank when
+left out; `free_text`, false when left out) and `delete` the
 saved ids removed, as the page's Delete boxes. The document becomes the
 page's own Review post, so its rules apply unchanged: every saved option
 must be in exactly one of the two lists ("retained or explicitly
 deleted"), so leaving one out never deletes it. The preview prints the
 page's compact review lines (`label`, `before`, `after`), the `options`
 the change saves and `preview.token`, and records nothing; the page's
-field errors are `invalid` at `options.<n>.name` (the document's position)
+field errors are `invalid` at `options.<n>.name` or
+`options.<n>.short_name` (the document's position)
 and its formset errors and unchanged safeguard at `options`; another
 version is `stale_version`. An unknown campaign is `not_available` for
 `campaign shares-preview`; `campaign shares-confirm` never looks the
