@@ -64,7 +64,7 @@ when it lands.
   [button labels](#button-labels), [shared visual style](#shared-visual-style),
   [colour scheme](#colour-scheme),
   [status indicators](#status-indicators), [time entry](#time-entry),
-  [schedules](#schedules).
+  [schedules](#schedules), [schedule previews](#schedule-previews).
 - Tables: [Admin tables](#admin-tables),
   [empty tables and lists](#empty-tables-and-lists),
   [row actions](#row-actions-and-confirmation),
@@ -2536,13 +2536,18 @@ learned once. **Shared code.**
   ([#1129](https://github.com/epiphany40223/parishkit/issues/1129)).
 - **Preview.** Before Review, an editor shows the schedule's next
   occurrences in plain words, each with its weekday and date, in the
-  browser's zone, and also in the schedule zone when that differs. The
+  browser's zone only, as every review does
+  ([#558](https://github.com/epiphany40223/parishkit/issues/558)); the
+  refresh schedule is the one list shown in its schedule zone
+  ([schedule previews](#schedule-previews)). The
   preview is redrawn in place as the editor changes
   ([in-place controls](#in-place-controls)), in a region that keeps its
   place ([no layout shift](#no-layout-shift)). The review lists every
   occurrence a change adds. A feature-specific view, such as the refresh
   schedule's seven-day preview or the Campaign calendar, is an extra view of
-  the same evaluation, not a second preview.
+  the same evaluation, not a second preview. Every list of a schedule's
+  occurrences, live or in a review, is drawn by the one
+  [schedule preview](#schedule-previews) component.
 - **Limits** are refused at the field in plain words, with the limit named,
   such as the 30-date limit on a reminder repeat.
 - **Host schedules.** Off-site backups are not edited in the Admin portal.
@@ -2563,6 +2568,172 @@ the same order and one page script expands both. Later
 the shared preview and Basic and Advanced modes to the mail schedule
 editors, reminder repeats and digests. Until each change lands, an
 editor keeps the behavior its feature spec describes.
+
+### Schedule previews
+
+**Rule.** Every list of when a schedule runs or sends is drawn by one
+component: the server helper `parishkit.stewardship.occurrence_preview`
+and the template `components/occurrences.html`. It lists the schedule's
+occurrences, grouped by day, in plain words. It is read-only.
+**Why.** The refresh schedule's seven-day list and the mail schedule
+review's send times were built separately, with different words, time
+forms, empty states and daylight-saving notes. One component reads the
+same everywhere and is tested once. **Precedent.**
+[#1129](https://github.com/epiphany40223/parishkit/issues/1129)
+(Administrator, 2026-10-12). Each feature's own words and limits stay in
+its feature spec: the
+[seven-day preview](../admin-portal/spec.md#seven-day-preview) and the
+[mail schedule review](../admin-portal/spec.md#dates-and-mail-schedules).
+
+- **What it lists.** Each feature chooses one of two scopes, and its
+  feature spec names it:
+  - *a count from now*: the next occurrences after now, earliest first, up
+    to the feature's limit (the mail review's next five sends). Such a
+    list never shows an occurrence that has already passed; a review that
+    needs a past send (a missed reminder sent at once) says so in its own
+    words.
+  - *a window of whole days*: every occurrence on each local day of the
+    window, starting with today (the refresh schedule's seven days). Today
+    is listed whole, so its earlier times are shown with the rest of the
+    day's schedule. They are not marked as already run: the list shows
+    what the schedule does, not what has run.
+
+  Each occurrence is one line: its time, then what runs ("Full refresh",
+  "Reminder 2", "Daily Admin digest for Monday, October 19"). An
+  occurrence that will not run stays listed, struck through, with its
+  reason in words ("covered by the 06:00 full refresh"), so a struck line
+  never relies on the strike alone.
+- **Days.** Occurrences are grouped by their calendar day in the zone the
+  list is shown in. The day is named with its weekday and its date in the
+  [parish date format](#date-format), with "Today" for today.
+- **Time zone.** A list is shown in the browser's zone
+  ([dates and times](#dates-and-times)). The server groups it, so the
+  request that draws it carries the browser's zone (the hidden
+  `data-browser-zone` field New and Edit scheduled email already post);
+  where a page posts a zone and it is not usable, the preview is not drawn
+  and the page says why, as New scheduled email's missing-zone notice
+  does. A caller with no browser at all (the command line, or a review
+  built for a request that posts no zone) passes no zone: the list is then
+  not grouped by day, and each line is a full `data-local-instant` that the
+  page script writes as a day and time, if a page shows it at all. The
+  [refresh schedule](../admin-portal/spec.md#parishsoft-refresh-schedule-settings)
+  is the recorded exception (decision 18): it is grouped and shown in its
+  schedule zone, and the page script adds each time in the browser's zone
+  when the zones differ ("07:00, 13:00 your time"). No other list shows a
+  schedule-zone time.
+- **Times** are `<time datetime="…" data-local-instant data-time-only>`
+  elements with the UTC instant, so the one browser formatter
+  (`date-format-v1.js`) writes them as the time alone, since the day
+  heading or the line names the day. A schedule-zone list writes the wall
+  time on the server and marks the instant `data-other-zone-time`, which
+  the same script fills with the browser's time.
+- **Daylight saving** follows the [one rule](#schedules). A day whose
+  clocks change in the shown zone says so beside its name ("clocks go
+  forward", "clocks go back"). An occurrence whose wall time the change
+  moves, in the zone its schedule is evaluated in, says so in words. When
+  the shown zone is the schedule zone (the refresh list, or a mail review
+  whose browser shares the campaign's zone), the line names the wall time:
+  "Reminder 1, set for 2:30 AM: sends at 3:00 AM, clocks go forward", or
+  "sends once, clocks go back". When the zones differ, the line never
+  names the campaign's wall time ([dates and times](#dates-and-times)):
+  "sends later than set because the campaign's clocks go forward", or
+  "sends once because the campaign's clocks go back". The day note always
+  speaks of the shown zone and the line of the campaign's clocks, so a
+  shifted line on a day with no note, or a note with no shifted line, does
+  not disagree. The general sentence ("a time that happens twice sends
+  once, and a time that is skipped sends right after the change") is shown
+  once, under the list, only when a listed day or occurrence is affected.
+- **More.** When the feature's limit cut a count list short, one line under
+  it says so with the limit named ("Only the next 5 sends are shown. Later
+  sends follow the same pattern."). A window list names its window in its
+  feature's words instead.
+- **States.** The component has four, so no feature writes its own:
+  - *shown*: the days and their occurrences;
+  - *empty*: the schedule is valid and nothing is ahead, in the feature's
+    words ("No more sends: this reminder's time has passed.");
+  - *unavailable*: the schedule cannot be evaluated yet (a rule that
+    cannot be read, a missing zone), in words naming what is missing
+    ("The preview shows once every rule can be read and the schedule has a
+    full refresh.");
+  - *paused*: the occurrences are listed as *shown*, with one notice above
+    them naming why and linking where to see more ("Live campaign email is
+    paused, so these sends are held. Pause and resume mail shows what sends
+    when mail resumes." with a link to Pause and resume mail). Paused sends
+    are not struck: the schedule is unchanged, and resume's recovery plan,
+    not the preview, decides what each held send becomes.
+- **Layouts.** *Grouped*: one collapsible section (`details` and
+  `summary`) per day, the summary giving the day and the feature's counts,
+  today open; for a list of many occurrences a day, such as the refresh
+  schedule. *Compact*: one list, one line per occurrence, each line naming
+  its day; for a few occurrences, such as a mail review. Both layouts take
+  the same context, so a feature changes layout without changing its
+  helper. The server groups by day rather than the page script, which
+  could name each line's day from `data-local-day`, because a grouped list
+  also carries per-day counts and clock changes that only the server knows,
+  and one grouping path serves both layouts; a zone-less caller gets the
+  ungrouped lines above.
+- **In place.** A live preview is redrawn in place as its editor changes
+  ([in-place controls](#in-place-controls)), inside a region that keeps its
+  place ([no layout shift](#no-layout-shift)), and the days a reader opened
+  stay open, matched by date, not by position. The preview is not a live
+  region: the editor's one status line announces a check's result.
+- **Accessibility.** The list is the text equivalent of any picture of the
+  same schedule (the refresh grid, the Campaign calendar's month grids),
+  which points to it. Each day's name is the `summary` (grouped) or begins
+  its line (compact), so a screen reader hears the day with each group.
+  Struck lines carry their reason in words. Color and shape are never the
+  only signal. The component draws no control besides the day sections.
+- **Extra views** read the same day data. The refresh schedule's seven-day
+  grid draws its cells from the component's days, so the two never
+  disagree.
+
+**API.** `occurrence_preview.build(occurrences, *, days=(), shown_zone=None,
+schedule_zone, now, limit=None, more=False, paused=None, layout="compact",
+empty=None, unavailable=None)` returns the include's context.
+
+- Each occurrence is an `Occurrence(day, at, what, kind, wall=None,
+  struck=False, reason=None, shift=None)`. `day` is its local date in the
+  shown zone, which places it even when `at`, the UTC instant, is None (a
+  time that will not run, such as a covered quick time); a zone-less list
+  passes None. `wall` is the
+  schedule-zone wall time for a schedule-zone list, `kind` a class hook,
+  and `shift` "forward" or "back" from the daylight-saving rule.
+- Each `Day(date, change=None, summary=None, extra=None)` carries one
+  day's own data: its clock change in the shown zone, the feature's counts
+  for its summary, and `extra`, a mapping of feature keys copied into the
+  day's context (the refresh grid's `cells`). A window list passes one
+  `Day` per day of its window, so a day with no occurrences is still
+  listed; a count list may pass none, and `build` makes each day from its
+  occurrences, working out its clock change from `shown_zone`.
+- With no `shown_zone`, `build` does not group, makes no day headings and
+  never refuses: it returns one day-less list of lines (above).
+
+The context is:
+
+```text
+{"state": "shown" | "empty" | "unavailable",
+ "layout": "grouped" | "compact",
+ "shown_zone", "schedule_zone", "browser_zone": bool, "grouped": bool,
+ "paused": None | {"text", "url", "label"},
+ "message": text for empty or unavailable,
+ "days": [{"date", "weekday", "today", "change", "summary", "open",
+           ...the Day's extra keys,
+           "items": [{"at", "wall", "text", "kind", "struck",
+                      "reason", "shift_text"}]}],
+ "more": None | text, "dst_note": bool}
+```
+
+The include reads only its own keys. A page draws it with
+`{% include 'stewardship/components/occurrences.html' with
+preview=… level=3 %}`, where `level` is the heading level of its title, if
+the feature gives one. `test_occurrences_component.py` renders each state
+and layout, and lists the templates that still draw an occurrence list by
+hand, so no new one is added.
+
+**Adoption.** Not yet drawn; the
+[ADM-04](../../../plans/stewardship/admin-portal.md#adm-04-campaign-editor-content-schedules-and-previews)
+slices bring it to the refresh schedule's seven-day list and then to the
+mail schedule review. Until each lands, its feature spec's preview stands.
 
 ## Tables
 

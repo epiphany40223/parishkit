@@ -2107,6 +2107,20 @@ says so. The campaign calendar's optional refresh times
 ([#469](https://github.com/epiphany40223/parishkit/issues/469)) come from the
 same preview functions, so the two pages never disagree.
 
+The list is the shared
+[schedule preview](../ui-conventions/spec.md#schedule-previews), in its
+grouped layout and its window-of-whole-days scope (seven days from
+today, today's earlier times included), once its
+[#1129](https://github.com/epiphany40223/parishkit/issues/1129) slice
+lands; until then the page draws it as above. Its days, counts, struck
+times and daylight-saving words stay as described here; what changes is
+that the days a reader opened stay open when a check redraws the list
+(matched by date, so a list that moves on past midnight keeps them), the
+browser's time beside each wall time comes from the shared page script,
+and the "cannot preview yet" line is the component's *unavailable* state.
+The grid stays a refresh-only extra view and draws its cells from the
+component's days. Nothing in the list is removed.
+
 #### Cost and freshness summary
 
 - **Cost**: the estimated daily ParishSoft time and its share of the day,
@@ -2665,6 +2679,34 @@ rules are the shared conversion, so New and Edit scheduled email follow them
 too. The review dialog, like every schedule review, shows when each
 schedule sends only as moments in the browser's zone (a digest also says it
 recurs), never the saved campaign-local date and time.
+
+Each side of a schedule change (Current schedule and Proposed schedule)
+lists when it sends with the shared
+[schedule preview](../ui-conventions/spec.md#schedule-previews), in its
+compact layout, once its
+[#1129](https://github.com/epiphany40223/parishkit/issues/1129) slice
+lands; until then each lists its first five sends from the campaign's
+start as a date key and a browser-local moment. With the component, a side
+uses the count-from-now scope: its next five sends after now, each line
+naming the day in words ("Tuesday, October 20, 2026") and the
+browser-local time. A dated email lists its one send. A daily digest line
+names the campaign day it reports on, the day before it sends ("Daily
+Admin digest for Monday, October 19"); a weekly digest reports what is new
+since its last send, so its line names only the day it sends ("Weekly
+Admin digest, Wednesday, October 21"). Together they replace the general
+sentence about digest dates. A side with nothing ahead says so ("No more
+sends: this email's time has passed."), where it showed nothing before.
+While [live delivery is paused](#live-delivery-pause) the sends are
+listed under the component's paused notice, with a link to Pause and
+resume mail, which shows what resume's recovery plan sends. The
+daylight-saving sentence is shown only when a listed send is affected. The
+page takes the browser's zone with the post, as it does for typed times,
+so the server groups the sends by the browser's day. Campaign settings'
+end-date review, which builds the same review with no zone, lists each
+side's sends ungrouped, each as a full browser-local day and time. The
+command line's `schedule show` and `schedule preview` list the same sends
+from now
+([automation](../admin-automation/spec.md#schedules-and-configuration)).
 
 The date-change review reviews and applies in the
 [review dialog](../ui-conventions/spec.md#review-dialog). **Review changes**

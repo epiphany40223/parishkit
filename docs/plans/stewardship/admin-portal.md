@@ -86,6 +86,68 @@ remain below `/admin/` and apply server-side authorization.
    when an end-date shortening would strand future Family mail.
 6. Add form/request tests for hidden stray values, pending/mismatched config,
    locking, cloning exclusions, preview privacy, and schedule races.
+7. **Shared schedule preview (post-launch,
+   [#1129](https://github.com/epiphany40223/parishkit/issues/1129)).** One
+   [schedule preview](../../specs/stewardship/ui-conventions/spec.md#schedule-previews)
+   component for the refresh schedule's
+   [seven-day list](../../specs/stewardship/admin-portal/spec.md#seven-day-preview)
+   and the [mail schedule review](../../specs/stewardship/admin-portal/spec.md#dates-and-mail-schedules)'s
+   send times. No slice changes the schema, a send, a refresh or a signed
+   preview: the component only draws what the evaluators already compute.
+   It follows draft PR #1511 (the last shared `HH:MM` and weekday helpers),
+   whose `refresh_schedule_grid` change the first slice builds on.
+   - **7a, specification (docs only).** The ui-conventions section, the
+     feature specs' adoption paragraphs, this item and its checklist.
+   - **7b, the component and the refresh list.** `occurrence_preview`
+     (`Occurrence`, `Day`, `build`) with unit tests of grouping across
+     both daylight-saving days in a browser zone and a schedule zone,
+     covered times placed by their `day`, a window of whole days that
+     keeps today's earlier times, the count limit, the zone-less ungrouped
+     list, both shifted-line wordings, and each state;
+     `components/occurrences.html` in both layouts with a render test of
+     each state; the `data-other-zone-time` filler in `date-format-v1.js`,
+     replacing the refresh script's `data-browser-time`; open days kept by
+     date. The refresh editor's `preview_context` builds its days through
+     `build` (grouped, schedule zone, seven `Day` records with their counts
+     and grid `cells`) and the grid reads the same days. A render
+     comparison against the base shows the same days, counts, lines
+     (today's earlier times included, unmarked) and struck reasons. The
+     guard test lists `schedule-summary.html` and `clone-preview.html` as
+     still hand-drawn. Browser tests of the editor in three engines with
+     `--require-no-skips`. No pk-local check: nothing is added or moved.
+   - **7c, the mail schedule review.** A from-now helper beside
+     `preview_slots` (from `SchedulePlan.next_slot`, so no history is
+     scanned) lists the next five sends after the database's now.
+     `schedule_changes.describe` takes an optional zone: with the posted
+     `zone` it builds the sides through `build` (compact, browser zone),
+     and with none (Campaign settings' end-date review through
+     `campaign_end_date.py`, and the command line) it lists them
+     ungrouped and never refuses. Each digest line names its day in words
+     (a daily digest its reported day, a weekly digest its send day), and
+     the paused notice comes from the delivery pause.
+     `schedule-summary.html` draws the include and drops its own list,
+     its daylight-saving sentence and its digest-date sentence.
+     `admin_reads.schedule_entry` (`schedule show`) and `schedule preview`
+     use the same helper, so their `resolved` and `more` keep their shape
+     and list the same sends from now. Tests: the review's context and
+     render for a dated email, both digests, a passed send (empty), a
+     paused campaign, a zone-less review, and a send on a
+     daylight-saving day with the browser and campaign zones equal and
+     different; update `test_schedule_views_postgresql`'s signed-preview
+     test (it asserts the rendered `resolved_slots` instants and the
+     always-on sentence "not a list of who will receive it") and check
+     `test_admin_schedule_cli_postgresql` (it checks only the first `due_at`'s form, and the 2054 fixture
+     campaign makes from-now equal from-start there); the review dialog in
+     three engines. The guard keeps only `clone-preview.html`, which the
+     server refuses until
+     [#145](https://github.com/epiphany40223/parishkit/issues/145)
+     removes it. Administrator check on pk-local before merge (the
+     review's send times look different).
+
+   Later #1129 slices, not planned here: a live preview on New and Edit
+   scheduled email before Review, the Basic and Advanced shell for mail
+   schedules, and the Campaign calendar's refresh times (#469), each
+   drawn by this component.
 
 ### ADM-05: Production transition and pre-start withdrawal
 

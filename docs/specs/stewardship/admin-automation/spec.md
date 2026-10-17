@@ -1917,6 +1917,17 @@ that background work holds while mail is sent, is `stale_version`. Its
 (PR 4) is previewed against. Its `series` lists the campaign's remembered
 reminder series, each with its rule and the reminders it holds.
 
+Each schedule's `resolved` (at most five UTC send times, with `more` when
+there are others) lists its first sends from the campaign's start, as does
+each side of `schedule preview`. Once the mail review adopts the shared
+[schedule preview](../ui-conventions/spec.md#schedule-previews)
+([#1129](https://github.com/epiphany40223/parishkit/issues/1129), ADM-04
+slice 7c), both commands list the next sends after the database's now
+instead, through the one from-now helper beside `preview_slots` that the
+page uses, so the page, `schedule show` and `schedule preview` agree. The
+keys and their shape stay; a passed send is no longer listed. The command
+line has no browser zone, so its sends are not grouped by day.
+
 ### Source refresh
 
 | URL names | Command or exemption |
