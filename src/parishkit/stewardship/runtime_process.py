@@ -183,7 +183,14 @@ def load_web_application(configuration, lease):
             application = StaticFilesHandler(application)
         emit_started()
         return application
-    except Exception:
+    except Exception as error:
+        from .runtime_web import GoogleClockRefused
+
+        if isinstance(error, GoogleClockRefused):
+            # Fixed text naming the cause, with nothing from the client
+            # document (#1399): a LOCAL developer must see why web will not
+            # start. Production never runs under the fake clock.
+            raise GoogleClockRefused(str(error)) from None
         raise ConfigError(
             "Web worker admission failed; use operator health diagnostics."
         ) from None

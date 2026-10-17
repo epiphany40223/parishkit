@@ -8,6 +8,7 @@ from parishkit.stewardship.deployment import DeploymentProfile
 from parishkit.stewardship.runtime_web import (
     LOCAL_OAUTH_DOCUMENT,
     LOCAL_OAUTH_SENTINEL,
+    fake_clock,
     google_provider_settings,
     parse_google_client,
 )
@@ -30,27 +31,32 @@ def test_operator_oauth_document_populates_allauth_secret_without_database(setti
     }
 
 
-# The LOCAL sentinel OAuth client (#476, OPS-10.05).
+# The LOCAL sentinel OAuth client (#476, OPS-10.05) and a real one (#1399).
 @pytest.mark.parametrize("profile", list(DeploymentProfile))
 def test_sentinel_oauth_client_is_admitted_only_in_local(profile):
-    """LOCAL takes only the sentinel; every other profile refuses it, both ways."""
+    """Every profile takes a real client; only LOCAL takes the sentinel."""
     real = b'{"client_id":"synthetic-client","client_secret":"synthetic-secret"}'
+    assert parse_google_client(real, profile=profile) == {
+        "client_id": "synthetic-client",
+        "client_secret": "synthetic-secret",
+    }
     if profile is DeploymentProfile.LOCAL:
         assert parse_google_client(LOCAL_OAUTH_DOCUMENT, profile=profile) == (
             LOCAL_OAUTH_SENTINEL
         )
-        with pytest.raises(ConfigError, match="only the sentinel OAuth client"):
-            parse_google_client(real, profile=profile)
     else:
-        assert parse_google_client(real, profile=profile) == {
-            "client_id": "synthetic-client",
-            "client_secret": "synthetic-secret",
-        }
         with pytest.raises(ConfigError, match="only in the local profile"):
             parse_google_client(LOCAL_OAUTH_DOCUMENT, profile=profile)
     # A malformed document is refused the same way under every profile.
     with pytest.raises(ConfigError, match="file is invalid"):
         parse_google_client(b'{"client_id": 1}', profile=profile)
+
+
+def test_fake_clock_is_read_from_the_libfaketime_variables():
+    """Only libfaketime's own variables mark the fake clock, not any preload."""
+    assert fake_clock({"FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset"})
+    assert not fake_clock({})
+    assert not fake_clock({"LD_PRELOAD": "/usr/lib/libjemalloc.so.2", "PATH": "/"})
 
 
 def test_sentinel_holds_no_real_client_and_the_parser_needs_a_profile():
