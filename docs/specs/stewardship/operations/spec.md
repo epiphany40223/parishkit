@@ -1283,18 +1283,9 @@ readiness.
 
 ## Temporary retention and housekeeping
 
-Generated export files expire after seven days by default; their metadata
-remains. This is the normative retention policy used by the
-[export worker](../background-processing/spec.md#exports-and-graph-rendering).
-Exports, including Family-code and mail-merge exports, are intentionally stored
-without application-layer encryption during this interval. Plaintext exposure
-to the owning application account and privileged host operators is an accepted
-product risk; the low-sensitivity classification of campaign codes does not
-make the accompanying parishioner information public. Owner-only storage under
-[runtime storage](#runtime-storage), authenticated downloads, and expiration
-are the selected controls. Export encryption or a shorter code-specific
-retention period is not required. This exception does not change encrypted
-backup or database-field encryption requirements.
+Generated export files are point-in-time: they are kept only for a short
+download window, as [point-in-time exports](#point-in-time-exports) below
+defines.
 
 The example Families that a refused large ParishSoft change records (DUID
 and directory name only, in `stewardship_source_drop_example`) are deleted
@@ -1355,6 +1346,96 @@ retention.
 
 Live campaign data otherwise remains indefinitely until the Admin web purge
 defined by the [Admin specification](../admin-portal/spec.md#campaign-purge).
+
+### Point-in-time exports
+
+An export is a point-in-time function: it is prepared, offered for download
+for a short time, then gone. The parish keeps no copy of earlier exports, and
+neither the Admin portal nor the command line keeps a history of them; a
+person who wants to keep a file keeps the copy they downloaded (the
+Administrator, 2026-10-15,
+[#1398](https://github.com/epiphany40223/parishkit/issues/1398)). This is the
+normative rule for every export in the shared lifecycle of the
+[export worker](../background-processing/spec.md#exports-and-graph-rendering),
+including Past campaigns'
+[Download campaign archive](../campaign-history/spec.md#download-campaign-archive)
+and the command line's `export` commands; other specs link here rather than
+restating it. Downloads that stream their file in the response store no copy
+and are point-in-time already.
+
+- **Download window.** A finished file can be downloaded, as often as
+  needed, for one window after it is ready: the window starts when its
+  publication is created and lasts 1 hour by default. A new publication
+  records that end as its `expires_at`. The window ends at the earlier of
+  `expires_at` and the publication's creation time plus the current
+  setting, so a shorter setting applies at once to files already published,
+  and a longer one never extends them. Each download still uses its own
+  short-lived, single-use grant. Repeat downloads within the window cover a
+  transfer the browser did not finish, since a grant used up on the server
+  is no proof that the file arrived.
+- **The window setting.** Deployment YAML sets the window in whole minutes
+  (`export_download_window_minutes`, default 60). Startup validation refuses
+  a value below 15 or above 240, since the plaintext exception below relies
+  on the window staying short.
+- **When an export ends,** the worker's export cleanup deletes its file, if
+  it has one, and its saved data: the capture of what the request read
+  (which can hold private contact or giving detail) is discarded, and its
+  fact-generation and source-snapshot pins are released. An export ends at
+  the first of:
+  - its download window ending, for a published file;
+  - its cancellation, for a cancelled request;
+  - its latest failed attempt's time plus the current setting, for a failed
+    request that has not been retried by then. Retry is offered only until then, so a
+    failed request that can still be retried keeps its saved data, and one
+    that can no longer be retried keeps nothing.
+
+  Nothing can rebuild a file afterwards, so there is no Regenerate: a person
+  who needs the file again exports it again from its report, which reads the
+  data as it is then. A failed cleanup is retried as
+  [export cleanup recovery](../background-processing/spec.md#export-cleanup-recovery)
+  says.
+- **What stays.** The request and its attempt, publication, grant, download,
+  cancellation and cleanup records stay, without the saved data, as
+  operational and audit history. Every audit event whose subject is an
+  export request carries the context keys `report` (the request's report
+  kind, as `export status` prints it; a latest-data export is
+  `participation`) and `format` (`csv`, `xlsx`, `pdf` or `png`):
+  `export_requested`, `export_cancelled`, `export_downloaded`,
+  `campaign_comparison_exported`, `campaign_archive_exported` and each
+  `admin_cmd_export_*` event. So for events recorded under this rule, "who
+  exported what, and when" needs no export row. Events recorded before it
+  lack those keys and still rely on the request rows, which is one reason
+  the rows stay.
+- **No history.** No page or command lists earlier exports, and an export's
+  status page is only its preparing step; what that page shows, during and
+  after the window, is the portal-wide
+  [point-in-time downloads](../ui-conventions/spec.md#point-in-time-downloads)
+  rule.
+- **Exports made before this rule** follow it too. Their window ends by the
+  same rule, which counts from when the publication was created, so the
+  seven-day `expires_at` their immutable publications recorded no longer
+  keeps them; an older cancelled or failed request ends by the rules
+  above. The forward migration that brings the rule in, under the
+  [post-launch schema policy](#post-launch-schema-policy), makes cleanup use
+  that end. At deploy, cleanup then deletes the saved data and releases the
+  pins of every export that has already ended, including those whose file
+  expired earlier and whose capture was kept only for Regenerate. No applied
+  migration is edited, and no table, row of history or database is dropped.
+
+Exports, including Family-code and mail-merge exports, are intentionally
+stored without application-layer encryption during their download window.
+Plaintext exposure to the owning application account and privileged host
+operators is an accepted product risk; the low-sensitivity classification of
+campaign codes does not make the accompanying parishioner information public.
+Owner-only storage under [runtime storage](#runtime-storage), authenticated
+downloads, and the short window are the selected controls. Export encryption
+or a shorter code-specific window is not required. This exception does not
+change encrypted backup or database-field encryption requirements.
+
+This rule replaces the earlier seven-day retention, recent-export lists and
+Regenerate;
+[#1398](https://github.com/epiphany40223/parishkit/issues/1398) brings the
+code to it in stages.
 
 ## Observability and health
 

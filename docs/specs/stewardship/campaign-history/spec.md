@@ -340,8 +340,9 @@ not yet absorbed), the download is unavailable with that reason, since a
 request pinned to a set that misses a response could never succeed. The
 worker checks the coverage again and fails rather than write a file
 without it. The request's pin on that fact set protects it from
-[fact compaction](../data/spec.md#derived-fact-retention) for the
-request's retention, like any export's.
+[fact compaction](../data/spec.md#derived-fact-retention) until the
+request's [download window](../operations/spec.md#point-in-time-exports) ends,
+like any export's.
 
 The Families are the [participation graph's](../reports/spec.md#participation-graph)
 respondents: Families of the campaign's historical cohort with a live
@@ -410,16 +411,15 @@ day, and a `note.*` row says the campaign collected no pledges.
   openpyxl stamps the save time into `docProps/core.xml` and every ZIP
   entry: the parts are written in a fixed order with fixed compression, each
   ZIP entry's `date_time` is `as_of` in UTC, and `core.xml`'s created and
-  modified times are rewritten to `as_of`. A regeneration through the
-  shared lifecycle is a new request with a new request time, so its
-  `converted_at` and SHA-256 differ; its publication records its own
-  checksum.
+  modified times are rewritten to `as_of`. Exporting again is a new
+  request with a new request time, so its `converted_at` and SHA-256
+  differ; its publication records its own checksum.
 
 ### Download campaign archive
 
 **Access:** Administrators only, as for Past campaigns (`CONFIGURE` and
-`FINANCIAL_DETAIL`). The file holds Family-level giving, so creating or
-regenerating it needs a Google sign-in within five minutes, as the
+`FINANCIAL_DETAIL`). The file holds Family-level giving, so creating it
+needs a Google sign-in within five minutes, as the
 [financial stewardship detail](../reports/spec.md#financial-stewardship-detail)
 export does; a stale sign-in gets the step-up page, which returns to Past
 campaigns, and nothing is made.
@@ -437,16 +437,18 @@ no current campaign, before day 1 has ended, or while no Family has
 responded by the cutoff (an archive needs at least one Family).
 
 The action queues the shared export lifecycle's `campaign_archive` kind,
-XLSX only, and answers with the shared status page (download, Cancel, Retry,
-Regenerate and retention as for every export). The worker reads the
-submissions itself at generation, under the request's
+XLSX only, and answers with the shared status page (download, Cancel and
+Retry as for every export, within the shared
+[download window](../operations/spec.md#point-in-time-exports)). The worker
+reads the submissions itself at generation, under the request's
 [pins](#what-the-export-reads), so no Family-level capture table exists.
 The request records `campaign_archive_exported` with the cutoff's campaign
 day as `count`. No separate event records the file: the shared publication
 row already holds its SHA-256 and row count (the `families` rows), and the
-file's own `count.*` rows carry the per-sheet counts. The export's
-retention is the shared one; the Drive archive folder is the file's durable
-home.
+file's own `count.*` rows carry the per-sheet counts. Like every export,
+the file is [point-in-time](../operations/spec.md#point-in-time-exports): the
+parish keeps no copy, and the Drive
+archive folder is the file's durable home.
 
 The campaign close-out wizard (#527) produces the final file through this
 action and reminds the Administrator to upload it to the archive folder.
@@ -473,9 +475,12 @@ changes it:
    comparison report uses.
 5. **Proposed Members' Ministry choices:** included with a blank
    `member_id` (default).
-6. **Retention:** the shared export retention (default); the Drive folder
-   keeps the file, as [decision 3](#administrator-decisions) holds for
-   imports.
+6. **Retention:** the shared
+   [point-in-time](../operations/spec.md#point-in-time-exports) download window
+   (the Administrator's 2026-10-15 decision on
+   [#1398](https://github.com/epiphany40223/parishkit/issues/1398) replaced
+   the earlier shared retention); the Drive folder keeps the file, as
+   [decision 3](#administrator-decisions) holds for imports.
 7. **Which campaign:** only the current one (default) until #145 and #527;
    the final file must be downloaded before the next campaign is created.
 
@@ -1264,7 +1269,7 @@ committed.
   version above the watermark or after the cutoff is left out, and a
   fact set whose watermark is short of the cutoff is never offered (the
   newest covering one is); a retry of one request gives the
-  same SHA-256, and a regeneration a new `converted_at` and checksum; no
+  same SHA-256, and exporting again a new `converted_at` and checksum; no
   respondent leaves the action unavailable; access (Staff, a Ministry
   leader and a stale sign-in refused, nothing queued); the request event
   carries the day only; and an exported file imports once the next
@@ -1387,10 +1392,11 @@ linked to #1018 (slice 7 completed part (b)).
    the read guard and stores a protected capture
    (`comparison_exports.capture`) in the immutable
    `stewardship_comparison_export_snapshot` of frozen file 0071: report
-   kind `campaign_comparison` in the shared export lifecycle (status page,
-   download, cancel, retry, and Regenerate from the same capture, so never
-   newer figures). Its SQL guard admits Administrators and Staff only, from
-   the web, and only the document's closed set of keys, as defense in
+   kind `campaign_comparison` in the shared
+   [point-in-time](../operations/spec.md#point-in-time-exports) export
+   lifecycle (status page, download, cancel and retry; a retry renders the
+   same capture, so never newer figures). Its SQL guard admits
+   Administrators and Staff only, from the web, and only the document's closed set of keys, as defense in
    depth; it cannot tell text from text, so keeping notes out is the web
    capture's job.
    The request records `campaign_comparison_exported` with the day as
@@ -1489,9 +1495,8 @@ Part (a), the [archive export](#archive-export), follows in its own slices
   `fact_set_id` and a fact pin, and its parameters are exactly the cutoff
   date, the final mark and the stewardship year, which names the file.
   The worker's campaign read guard runs this kind's read in a
-  repeatable-read transaction. A regeneration reuses the pins with a new
-  request time. A campaign closed before its end date is offered its
-  final file cut off at its last full day (Administrator decision,
+  repeatable-read transaction. A campaign closed before its end date is
+  offered its final file cut off at its last full day (Administrator decision,
   2026-10-13, replacing the default posted on #1018 that the final file
   waits for the end date). Download is unavailable, with the reason,
   before day 1 has ended, for a closed campaign with a live submission
