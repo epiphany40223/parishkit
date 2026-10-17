@@ -189,8 +189,20 @@ BUTTON = {
 # The soft shadow under a panel; the maintenance page's card draws it too.
 SHADOW = {"shadow": "0 1px 2px rgb(16 24 40 / 5%), 0 4px 16px rgb(16 24 40 / 6%)"}
 
+# Section and card heading sizes (ui-conventions "Shared visual style"): a
+# section heading (h2, a card fieldset's legend, a dialog's title), a
+# subsection heading (h3, a notice's heading, a report email's heading) and
+# the smaller title of a plain fieldset or a table card's caption. The h1
+# page title has its own fluid size.
+HEADINGS = {
+    "heading-2": "1.3rem",
+    "heading-3": "1.1rem",
+    "card-heading": "1.05rem",
+    "heading-weight": "650",
+}
+
 # Every custom property ui-v1.css declares on :root from this module.
-CSS_PROPERTIES = {**COLORS, **RADII, **FONTS, **BUTTON, **SHADOW}
+CSS_PROPERTIES = {**COLORS, **RADII, **FONTS, **BUTTON, **SHADOW, **HEADINGS}
 
 # The rem base for email, which has no root font size to inherit.
 REM_PX = 16

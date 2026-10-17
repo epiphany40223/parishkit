@@ -37,7 +37,7 @@ from parishkit.stewardship.source.data_age import Connection, DataAge
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.buttons import EMAIL_TABLE_STYLE
 from parishkit.stewardship.web.digest_content import validate_digest_body
-from parishkit.stewardship.web.report_markup import STYLES
+from parishkit.stewardship.web.report_markup import BLUE, STYLES, layout_attribute
 
 from .test_participation_rendering import document as participation
 
@@ -127,7 +127,7 @@ def test_daily_digest_keeps_exact_values_and_accessible_inline_chart():
         < html.index("Day by day")
         < html.index("Open this exact report")
     )
-    assert html.count('bgcolor="#1f6fae"') == 2
+    assert html.count(f'bgcolor="{BLUE}"') == 2
     assert "<strong>3 out of 1,234 (0.2%)</strong>" in html
     assert (
         'alt="Daily participation chart, October 31, 2026 to November 2, 2026.' in html
@@ -544,6 +544,28 @@ def test_retained_reports_with_the_earlier_button_still_validate():
     validate_digest_body(result.html, result.text, result.chart.data)
 
 
+# The bar fill and the table heading style a report carried before they took
+# the design tokens (#732).
+PRE_TOKEN_BAR = "#1f6fae"
+PRE_TOKEN_TH = (
+    "padding:8px 12px 8px 0;font-size:14px;color:#4f5e66;"
+    "border-bottom:2px solid #d0d5dd;"
+)
+
+
+def test_retained_reports_with_the_earlier_bar_and_rule_still_validate():
+    """A report compiled before the bar and rule took the tokens still delivers."""
+    result = render(document())
+    assert BLUE != PRE_TOKEN_BAR and STYLES["th"] != PRE_TOKEN_TH
+    retained = result.html.replace(f'bgcolor="{BLUE}"', f'bgcolor="{PRE_TOKEN_BAR}"')
+    assert retained != result.html
+    validate_digest_body(retained, result.text, result.chart.data)
+    assert layout_attribute("th", "style", PRE_TOKEN_TH) == PRE_TOKEN_TH
+    assert layout_attribute("th", "style", STYLES["th"]) == STYLES["th"]
+    # Only those two earlier values: an unrelated colour is still refused.
+    assert layout_attribute("td", "bgcolor", "#b8620a") is None
+
+
 def funnel_metrics():
     """A funnel as response_metrics returns it, without the rows behind it."""
     from datetime import UTC, datetime
@@ -605,7 +627,7 @@ def test_a_production_digest_shows_the_response_funnel():
     assert ">Submitted more than once</td>" in result.html
     assert "<strong>7</strong> (2% of Submitted)</td>" in result.html
     figure = result.html[result.html.index(">Submitted more than once</td>") :]
-    assert figure.index('<td width="2%" bgcolor="#1f6fae"') < figure.index("</tr>")
+    assert figure.index(f'<td width="2%" bgcolor="{BLUE}"') < figure.index("</tr>")
     # Four stage rows and one figure row, each with a bar.
     funnel = result.html[
         result.html.index("Response funnel") : result.html.index("Daily participation")
