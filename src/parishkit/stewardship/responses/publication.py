@@ -11,7 +11,9 @@ to later, separately reviewed slices.
 The ParishSoft v2 API writes only two shapes, recorded in the
 credential-free capability fixture: the Member contact PUT and the Family
 contact PUT. Family addresses stay by hand until a verified address read
-exists, so only Member contact fields are ever planned here.
+exists, so only Member contact fields are ever planned here. The live write
+test of 2026-10-17 (#528, #1596) showed both PUTs are partial updates and
+that no value can be cleared, so a blank value is never planned.
 
 The provider value encodings below (text as is, ISO civil dates, phone
 display text, email addresses joined by ``"; "``) are provisional until the
@@ -31,7 +33,7 @@ from enum import StrEnum
 
 from parishkit.parishsoft import split_email_addresses
 
-from .capabilities import Handling, capability
+from .capabilities import Handling, capability, clears_value
 from .comparison import ComparisonValueError, ValueKind
 from .member_census import MEMBER_FIELDS, InvalidMemberSource, source_value
 from .member_requests import REQUEST_FIELDS
@@ -238,10 +240,14 @@ def plan_entity(entity_kind, entity_key, rows, payload=None):
     fields, writes = [], {}
     for row in sorted(rows, key=lambda item: item.field):
         known = capability(entity_kind, row.field)
+        # Defence in depth (#1596): the stored handling, the registry and the
+        # value must all allow a write. A blank value would ask the API to
+        # clear the field, which it cannot do (null is ignored, "" refused).
         if (
             entity_kind != "member"
             or row.handling != Handling.API.value
             or known.handling is not Handling.API
+            or clears_value(_proposed(row))
         ):
             outcome = Outcome.BY_HAND
         elif row.decision != "approved":
