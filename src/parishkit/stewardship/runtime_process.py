@@ -943,7 +943,23 @@ def serve_background(configuration, lease, *, source=False, mail=False):
         status.report()
 
     def idle_status():
-        """Write the status record from an idle consumer (its own connection)."""
+        """Write the status record from an idle consumer (its own connection).
+
+        A mail consumer first records its Family mail halt and lifts it once
+        an Administrator has cleared it; the main process also runs a
+        mailbox check an Administrator asked for (ADM-13 PR 4a,
+        ``jobs.mail_halt``). Both happen before the record, so it reports
+        the sender's state after them.
+        """
+        if role is ServiceRole.MAIL_DISPATCH:
+            from .jobs import mail_halt
+
+            mail_halt.idle(
+                main=not mail,
+                credential_path=configuration.secrets.get("google_workspace"),
+                profile=configuration.profile,
+                check=lease.check,
+            )
         status.report(connect=True)
 
     def stopping(signum, frame):

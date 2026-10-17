@@ -177,6 +177,8 @@ class Action(StrEnum):
     # kind ``operator``; both name the switch as the subject (the operator's
     # definer returns the id it cleared, #1229).
     DEBUG_LOGGING_ALLOWED = "debug_logging_allowed"
+    # Clear the halt (ADM-13 PR 4a); the subject is the clear signal.
+    MAIL_HALT_CLEARED = "mail_halt_cleared"
     # Accept this change once (ADM-13 PR 5b); the subject is the acceptance.
     SOURCE_DROP_ACCEPTED = "source_drop_accepted"
     PRESENCE_VIEWED = "family_presence_viewed"
@@ -306,6 +308,8 @@ class Action(StrEnum):
     ADMIN_CMD_SYSTEM_REFRESH_ACCEPT = "admin_cmd_system_refresh_accept"
     # system debug-allow: System health's Allow debug logging again (PR 6c).
     ADMIN_CMD_SYSTEM_DEBUG_ALLOW = "admin_cmd_system_debug_allow"
+    # system mail-clear: System health's Clear the halt (PR 4a).
+    ADMIN_CMD_SYSTEM_MAIL_CLEAR = "admin_cmd_system_mail_clear"
     # files delete and files rename: the Hosted files page's row actions.
     ADMIN_CMD_FILES_DELETE = "admin_cmd_files_delete"
     ADMIN_CMD_FILES_RENAME = "admin_cmd_files_rename"

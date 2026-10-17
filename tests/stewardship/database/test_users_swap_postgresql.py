@@ -384,6 +384,8 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0110 (#558) creates nothing: it replaces the baseline financial selection
 # in place, which 0094's rerun (``CLOSURE_REPLACED``) brings back older, so
 # ``CLOSURE_REPLACED`` runs 0110's file after it.
+# 0114 (#530) creates three tables (in CLOSURE_TABLES) and their guards
+# (``CLOSURE_CREATED``), and replaces nothing.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -604,6 +606,17 @@ CLOSURE_CREATED = {
             "public.stewardship_export_discard_due_v1(integer)",
         ),
         ("stewardship_reports", "0029_point_in_time_exports"),
+    ),
+    # 0114 (#530) creates the mail halt, clear signal and mailbox check
+    # tables (in CLOSURE_TABLES) with their three guards; all go, so its
+    # file installs whole again.
+    **dict.fromkeys(
+        (
+            "public.stewardship_mail_halt_guard_v1()",
+            "public.stewardship_mail_halt_clear_guard_v1()",
+            "public.stewardship_mailbox_check_guard_v1()",
+        ),
+        ("stewardship_jobs", "0033_mail_halt_clear"),
     ),
 }
 
@@ -1365,6 +1378,9 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
             # Point-in-time exports' discard record (0109, #1398): only its
             # owner-run functions write it; fact compaction reads it.
             "stewardship_export_discard": ("pk_stewardship_worker", "SELECT"),
+            # Clear the halt's halt records (0114, #530): mail dispatch
+            # records them; web only reads them.
+            "stewardship_mail_halt": ("pk_stewardship_mail_dispatch", "INSERT"),
         }
         for table in CLOSURE_TABLES:
             login, privilege = writers.get(table, ("pk_stewardship_web", "INSERT"))
