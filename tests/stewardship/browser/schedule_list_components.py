@@ -40,6 +40,9 @@ checks need no database:
   unavailable (``GATED_REASON``), whose Review answers 400 with the page
   drawn again with "This and following" refused at the choice
   (``DAY_MOVED``), as the view refuses a time that moves a day.
+  ``EDIT_PASSED``: Edit for Reminder 1 whose Apply posts to
+  ``APPLY_PASSED``, which answers 409 with the server's refusal of a
+  reviewed send time that has since passed (``send_time_passed``, #1464).
 - ``NEW_REPEAT``: New, whose Review answers with the review of 30 repeated
   reminders (the most one rule adds), a long review; ``NEW_BLOCKED``: New,
   whose review is blocked by sends in progress, so it has no preview;
@@ -107,6 +110,7 @@ from parishkit.stewardship.accounts.schedule_table import (
 )
 from parishkit.stewardship.accounts.schedule_views import _summary as dates_summary
 from parishkit.stewardship.accounts.series_edits import plan
+from parishkit.stewardship.web.refusals import send_time_passed
 from parishkit.stewardship.web.tables import whole_table
 
 from ..campaign_factory import campaign, schedule
@@ -128,6 +132,11 @@ EDIT_INITIAL = "/schedule-edit-initial"
 EDIT_CLOSED = "/schedule-edit-closed"
 EDIT_SERIES = "/schedule-edit-series"
 EDIT_SERIES_GATED = "/schedule-edit-series-gated"
+EDIT_PASSED = "/schedule-edit-passed"
+APPLY_PASSED = "/schedule-list/apply-passed"
+# The refusal of an Apply whose reviewed send time has passed (#1464), in
+# the server's words, as error_response answers the dialog's script.
+PASSED_REFUSAL = send_time_passed(LIST).refusal.as_dict()
 # Both reminders' series (#469): every day of October 2054.
 SERIES_RULE = {"frequency": "daily", "start": "2054-10-01", "end": "2054-10-31"}
 GATED_REASON = "A reminder of this series has already sent."
@@ -641,6 +650,15 @@ def components(context, admin):
             series=series,
             refusals={"series": GATED_REASON},
         ),
+        EDIT_PASSED: _entry(
+            values,
+            owner,
+            emails,
+            rows,
+            schedule_row=first,
+            post_url=f"{EDIT_PASSED}/review",
+            apply_url=APPLY_PASSED,
+        ),
         PENDING: _status(values, "validating"),
         NEW_REPEAT: _entry(
             values, owner, emails, rows, post_url=f"{NEW_REPEAT}/review"
@@ -751,6 +769,14 @@ def components(context, admin):
             f"{NEW}/review": (200, None, review),
             f"{EDIT}/review": (200, None, edit_review),
             f"{EDIT_SERIES}/review": (200, None, series_review),
+            f"{EDIT_PASSED}/review": (200, None, edit_review),
+            APPLY_PASSED: (
+                409,
+                None,
+                json.dumps(
+                    {"errors": [{"code": "stale_version"}], "refusal": PASSED_REFUSAL}
+                ),
+            ),
             f"{EDIT_SERIES_GATED}/review": (
                 400,
                 None,

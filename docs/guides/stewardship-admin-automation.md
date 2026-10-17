@@ -508,8 +508,9 @@ standard input only for that exact argument, so `--changes=-` or
    as the page does, with the same `--campaign` as the preview (or none
    for both). A token from the page's review works here, and a token from
    here works on the page. An expired token, or one the settings or the
-   campaign's sends have overtaken, is exit 1 (`stale_version`): preview
-   again. An altered token, or one for another campaign, is exit 1
+   campaign's sends have overtaken, or one whose previewed send time has
+   since passed (preview again with a later time), is exit 1
+   (`stale_version`): preview again. An altered token, or one for another campaign, is exit 1
    (`invalid`); another Administrator's is exit 1 (`denied`).
 5. The configuration installer then applies the request; follow it with
    `config request show`. Only your own requests are found; any other is
