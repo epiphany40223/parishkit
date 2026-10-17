@@ -45,23 +45,50 @@ RULES = {}
 # (a CharField does) before it checks the rule.
 SPACE = r"\t\n\v\f\r\x1c-\x1f \x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000"
 
-# A host name and optional port as Django's URLValidator (which URLField and
-# the configuration's typed() run) admits one, so a URL rule built on it never
-# admits a host the server refuses: labels of letters, digits and inner
-# hyphens, at most 63 characters, separated by single dots, ending in a label
-# of at least two letters (or an "xn--" name) and an optional ":port".
-# Non-ASCII letters are admitted as there, less the whitespace among them. An
-# IP address, "localhost" and a trailing dot, which URLValidator also admits,
-# are refused: a parish's public pages have a host name.
-_NON_ASCII = (
-    r"\u00a1-\u167f\u1681-\u1fff\u200b-\u2027\u202a-\u202e\u2030-\u205e"
-    r"\u2060-\u2fff\u3001-\uffff"
-)
+# A host and optional port exactly as Django's URLValidator (which URLField
+# and the configuration's typed() run) admits one, so a URL rule built on it
+# neither admits a host the server refuses nor refuses one the server admits
+# (a value saved earlier must never block an unrelated save). The host is an
+# IPv4 address, a bracketed IPv6 address, "localhost" in any case, or a name:
+# labels of letters, digits and inner hyphens, at most 63 characters,
+# separated by single dots, ending in a label of at least two letters (or an
+# "xn--" name) and an optional trailing dot; then an optional ":port". Names
+# may be at most 253 characters, as URLValidator checks. Non-ASCII
+# characters are admitted as there (U+00A1 to U+FFFF, which includes some
+# Unicode spaces; only what follows the host refuses whitespace).
+_NON_ASCII = r"\u00a1-\uffff"
 _LETTER = "A-Za-z" + _NON_ASCII
 _LABEL = rf"[0-9{_LETTER}]([0-9{_LETTER}\-]{{0,61}}[0-9{_LETTER}])?"
+_OCTET = r"(0|25[0-5]|2[0-4][0-9]|1[0-9]?[0-9]?|[1-9][0-9]?)"
+_IPV4 = rf"{_OCTET}(\.{_OCTET}){{3}}"
+_H = "[0-9A-Fa-f]{1,4}"
+
+
+def _ipv6():
+    """The text of an IPv6 address as Python's ``ipaddress`` reads it.
+
+    Eight groups of 1 to 4 hex digits, or fewer around one "::" (which
+    stands for at least one group); the last 32 bits may be an IPv4
+    address. Written as an alternation over the number of groups left of
+    the "::" so the regular expression stays in the subset both engines read.
+    """
+    alternatives = [rf"{_H}(:{_H}){{7}}", rf"{_H}(:{_H}){{5}}:{_IPV4}"]
+    for left in range(0, 8):
+        head = rf"{_H}(:{_H}){{{left - 1}}}" if left else ""
+        # Groups right of "::" (at most 7 in all; at most 5 before an IPv4).
+        alternatives.append(
+            rf"{head}::({_H}(:{_H}){{0,{6 - left}}})?" if left < 7 else f"{head}::"
+        )
+        if left < 6:
+            alternatives.append(rf"{head}::({_H}:){{0,{5 - left}}}{_IPV4}")
+    return "(" + "|".join(alternatives) + ")"
+
+
 HOST = (
+    r"(?![^\/?#:]{254})"
+    rf"({_IPV4}|\[{_ipv6()}\]|[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]|"
     rf"{_LABEL}(\.{_LABEL})*\."
-    rf"([{_LETTER}][{_LETTER}\-]{{0,61}}[{_LETTER}]|[Xx][Nn]--[A-Za-z0-9]{{1,59}})"
+    rf"([{_LETTER}][{_LETTER}\-]{{0,61}}[{_LETTER}]|[Xx][Nn]--[A-Za-z0-9]{{1,59}})\.?)"
     r"(:[0-9]{1,5})?"
 )
 

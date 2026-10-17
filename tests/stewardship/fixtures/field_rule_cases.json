@@ -43,7 +43,19 @@
       "https://example.org/#",
       "https://example.org:8080",
       "https://www.xn--bcher-kva.example/",
-      "https://pfarrei-m\u00fcnchen.de/"
+      "https://pfarrei-m\u00fcnchen.de/",
+      "https://192.0.2.1/",
+      "https://192.168.1.10",
+      "https://127.0.0.1:8000/x",
+      "https://[::1]/",
+      "https://[2001:db8::1]:8443/a",
+      "https://[::ffff:192.0.2.1]",
+      "https://[1:2:3:4:5:6:7:8]",
+      "https://localhost",
+      "https://LOCALHOST:3000/",
+      "https://example.org./",
+      "https://example.org.:8080/",
+      "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.org"
     ],
     "refuse": [
       "https://user@example.org/",
@@ -58,9 +70,21 @@
       "https://-x-.org",
       "https://a..b.org",
       "https://example-.org",
-      "https://example.org./",
-      "https://192.0.2.1/",
-      "https://example.org/a\u00a0b"
+      "https://example.org/a\u00a0b",
+      "https://256.0.0.1/",
+      "https://01.2.3.4/",
+      "https://1.2.3/",
+      "https://[::1/",
+      "https://[1:2:3:4:5:6:7:8:9]/",
+      "https://[1::2::3]/",
+      "https://[g::1]/",
+      "https://[12345::1]/",
+      "https://[1:2:3:4:5:6:7:8::]/",
+      "https://localhost./",
+      "https://localhost2/",
+      "https://example..org/",
+      "https://.example.org/",
+      "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.org"
     ]
   },
   "online_giving_url": {
@@ -68,7 +92,19 @@
       "https://giving.example.org/parish",
       "https://giving.example.org/parish?tab=home",
       "HTTPS://giving.example.org",
-      "https://giving.example.org/a@b#top"
+      "https://giving.example.org/a@b#top",
+      "https://192.0.2.1/",
+      "https://192.168.1.10",
+      "https://127.0.0.1:8000/x",
+      "https://[::1]/",
+      "https://[2001:db8::1]:8443/a",
+      "https://[::ffff:192.0.2.1]",
+      "https://[1:2:3:4:5:6:7:8]",
+      "https://localhost",
+      "https://LOCALHOST:3000/",
+      "https://example.org./",
+      "https://example.org.:8080/",
+      "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.org"
     ],
     "refuse": [
       "http://giving.example.org/parish",
@@ -80,7 +116,22 @@
       "https://giving.example.org/p#a\u2003b",
       "https://giving.example.c",
       "https://-giving.example.org",
-      "https://giving..example.org"
+      "https://giving..example.org",
+      "https://256.0.0.1/",
+      "https://01.2.3.4/",
+      "https://1.2.3/",
+      "https://[::1/",
+      "https://[1:2:3:4:5:6:7:8:9]/",
+      "https://[1::2::3]/",
+      "https://[g::1]/",
+      "https://[12345::1]/",
+      "https://[1:2:3:4:5:6:7:8::]/",
+      "https://localhost./",
+      "https://localhost2/",
+      "https://example..org/",
+      "https://.example.org/",
+      "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.org",
+      "https://[::1]/p?x=a b"
     ]
   },
   "slack_channel_id": {

@@ -9,12 +9,15 @@ every browser engine against the drawn field's ``pattern``.
 """
 
 import json
+import random
 import re
 from pathlib import Path
 
 import pytest
+from django import forms
 from django.template.loader import render_to_string
 
+from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.integration_forms import (
     SLACK_CHANNEL,
     IntegrationForm,
@@ -26,6 +29,7 @@ from parishkit.stewardship.accounts.parish_views import (
     ParishForm,
 )
 from parishkit.stewardship.accounts.setup_forms import SetupParishForm, SetupSlackForm
+from parishkit.stewardship.schema_primitives import typed
 from parishkit.stewardship.web.field_rules import ERROR_LINE_TEMPLATE, RULES, SPACE
 from parishkit.stewardship.web.presentation import parse_us_phone
 
@@ -171,3 +175,77 @@ def test_parish_settings_save_waits_for_valid_fields():
     assert "settings-complete-hint" in button
     hint = '<p class="help" id="settings-complete-hint" data-complete-hint hidden>'
     assert hint in html
+
+
+# A host the server's URL validator admits that a parish might have saved
+# before the rule existed (or by hand in the configuration).
+STORED_HOSTS = [
+    "https://192.168.1.10/",
+    "http://127.0.0.1:8000",
+    "https://[2001:db8::1]:8443/",
+    "https://[::1]",
+    "https://localhost",
+    "https://LocalHost:3000/",
+    "https://example.org./",
+    "https://example.org.:8080/",
+]
+
+
+def old_server_accepts(value, kind):
+    """Whether the server's own checks (URL field, then the stored-value
+    check) admit ``value``: what a parish could save before the shared rule."""
+    try:
+        text = forms.URLField(assume_scheme="https").clean(value)
+        typed(text, kind)
+    except (forms.ValidationError, ConfigError):
+        return False
+    return kind == "url" or text.lower().startswith("https://")
+
+
+@pytest.mark.parametrize("form_class", [ParishForm, SetupParishForm])
+@pytest.mark.parametrize("stored", STORED_HOSTS)
+def test_a_stored_host_never_blocks_an_unrelated_change(form_class, stored):
+    """A saved website or giving link with an IP address, ``localhost`` or a
+    trailing dot still validates when only another field changes: the whole
+    form is checked on every save, changed or not."""
+    data = PROFILE | {
+        "website": stored,
+        "online_giving_url": stored.replace("http://", "https://"),
+        "date_format": "eu_long",
+    }
+    form = form_class(data=data)
+    assert form.is_valid(), form.errors
+
+
+def values():
+    """Hosts of every kind, valid and not, with and without a port, a
+    trailing dot and a path, from a fixed seed so a failure is repeatable."""
+    rnd = random.Random(1577)
+    pieces = [
+        "example", "ex-ample", "-x", "x-", "a" * 63, "a" * 64, "m\u00fcnchen",
+        "org", "c", "xn--p1ai", "ORG", "0", "1", "255", "256", "01", "localhost",
+        "LOCALHOST", "", "::1", "2001:db8::1", "1::2::3", "::ffff:1.2.3.4",
+        "g::1", "12345::1",
+    ]  # fmt: skip
+    for _ in range(2000):
+        host = rnd.choice([".", ".", ":"]).join(
+            rnd.choice(pieces) for _ in range(rnd.randint(1, 4))
+        )
+        if rnd.random() < 0.3:
+            host = f"[{host}]"
+        yield "https://" + host + rnd.choice(["", "", ".", ":80", ":x", "/", "/a b"])
+
+
+def test_the_host_rules_agree_with_what_the_server_accepted_before():
+    """In both directions: a value the server's checks admitted, the rules
+    admit (so no stored value is newly refused), and a value they refused,
+    the rules refuse (the browser never admits what the server refuses)."""
+    checked = admitted = 0
+    for value in [*values(), *STORED_HOSTS]:
+        checked += 1
+        old = old_server_accepts(value, "url")
+        admitted += old
+        assert WEBSITE.matches(value) is old, value
+        assert GIVING.matches(value) is old_server_accepts(value, "link"), value
+    # The generator reaches both verdicts for a real share of its values.
+    assert 100 < admitted < checked - 100

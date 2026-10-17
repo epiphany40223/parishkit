@@ -1070,9 +1070,11 @@ plain-language refusal and error code. The server matches the whole value
 against it and refuses in those words; the field carries the same
 expression as its `pattern`, the same words as `data-missing-hint` (and
 `data-empty-hint` for an empty required field) and `data-field-rule`. A
-rule admits nothing the field's own server check refuses (a URL rule follows
-the server's URL validator), and shares that check's error code, so a field
-has one code; so the browser never admits what the server refuses, nor
+rule admits nothing the field's own server check refuses and refuses
+nothing it admits (a URL rule's host is exactly the server's URL validator's:
+a name, an IP address, `localhost`, a trailing dot, so a value saved earlier
+never blocks an unrelated save), and shares that check's error code, so a
+field has one code; so the browser never admits what the server refuses, nor
 words a refusal differently. A ruled field keeps a reserved error line
 (`file-size-field.html`): when the Admin leaves it invalid, the page script
 shows the rule's words there, and they go once the value is valid; the line
