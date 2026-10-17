@@ -4847,12 +4847,13 @@ where beside the five filters and Apply it would not fit one row at 1280
 pixels, and on the heading's line it takes no line of its own, so the first
 rows start on a laptop screen
 ([#227](https://github.com/epiphany40223/parishkit/issues/227)). In the
-page's reading order it follows the heading and its About panel. It defaults to the system's current
-operating mode: Testing on a system in Testing mode (before Production is
-activated), Production on a Production system, so every link into the page
-from the status bar, Home, Family email progress, System health or the
-chosen-Family test lists that system's emails. It is a pair of link-styled
-buttons, the chosen one marked current, each a small CSRF form that posts
+page's reading order it follows the heading and its About panel. It
+defaults to the system's current operating mode: Testing on a system in
+Testing mode (before Production is activated), Production on a Production
+system, so every link into the page from the status bar, Home, Family email
+progress, System health or the chosen-Family test lists that system's
+emails. It is a pair of link-styled buttons, the chosen one marked current,
+each a small CSRF form that posts
 the applied filters (the Recipient too) with its mode, redraws the list in
 place and returns to page 1; it follows the shared
 two-choice pattern (the Family timeline's Records shown) until the shared

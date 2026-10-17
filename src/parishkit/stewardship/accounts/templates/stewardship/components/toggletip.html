@@ -13,9 +13,9 @@
   tip_button_text="+2" and tip_button_more (the hidden rest of its name,
   "more share methods"), so it is named by its visible text, and
   tip_lines, a list shown one per line in the bubble instead of tip_text.
-  With zone_note=True it is the browser zone note (zone-note.html) as a
+  With tip_zone_note=True it is the browser zone note (zone-note.html) as a
   tip, for a compact filter bar (Sent mail, #1562): tip_text is the
   sentence before the zone name, ending in a colon, and ui-v1.js
   (wireBrowserTimezone) fills the name and shows the "i" only once the
   browser reports a known zone; until then it stays hidden, as the note does.
-{% endcomment %}<span class="toggletip"{% if zone_note %} data-browser-zone-note hidden{% endif %}><button type="button" class="toggletip-button{% if tip_button_text %} toggletip-chip{% endif %}" aria-expanded="false" aria-controls="{{ tip_id }}"{% if not tip_button_text %} aria-label="{% translate 'More information' %}"{% endif %}{% if tip_label_id %} aria-describedby="{{ tip_label_id }}"{% endif %}>{% if tip_button_text %}{{ tip_button_text }}<span class="visually-hidden"> {{ tip_button_more }}</span>{% else %}i{% endif %}</button><span class="toggletip-bubble" id="{{ tip_id }}" hidden>{% if tip_lines %}{% for line in tip_lines %}<span class="toggletip-line">{{ line }}</span>{% endfor %}{% else %}{{ tip_text }}{% endif %}{% if zone_note %} <span data-browser-zone-name></span>.{% endif %}</span></span>
+{% endcomment %}<span class="toggletip"{% if tip_zone_note %} data-browser-zone-note hidden{% endif %}><button type="button" class="toggletip-button{% if tip_button_text %} toggletip-chip{% endif %}" aria-expanded="false" aria-controls="{{ tip_id }}"{% if not tip_button_text %} aria-label="{% translate 'More information' %}"{% endif %}{% if tip_label_id %} aria-describedby="{{ tip_label_id }}"{% endif %}>{% if tip_button_text %}{{ tip_button_text }}<span class="visually-hidden"> {{ tip_button_more }}</span>{% else %}i{% endif %}</button><span class="toggletip-bubble" id="{{ tip_id }}" hidden>{% if tip_lines %}{% for line in tip_lines %}<span class="toggletip-line">{{ line }}</span>{% endfor %}{% else %}{{ tip_text }}{% endif %}{% if tip_zone_note %} <span data-browser-zone-name></span>.{% endif %}</span></span>
