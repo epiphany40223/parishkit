@@ -5997,49 +5997,10 @@ CREATE FUNCTION public.stewardship_sealed_intake_admission_v1() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
-DECLARE setup_install boolean := false; automation boolean := false;
 BEGIN
-    IF TG_TABLE_NAME='stewardship_secret_request' THEN
-        IF NEW.required_consumers<>'[]'::jsonb
-           AND NEW.reauthenticated_at<statement_timestamp()-interval '5 minutes' THEN
-            -- An initial setup install is inserted by its target installer when
-            -- setup finishes, long after the setup session's sign-in; it relies
-            -- on the live frozen setup instead (as the staged->testing guard
-            -- does). Its request id is the owner's sealed setup credential id,
-            -- and the install binding does not exist yet. The setup query is a
-            -- separate statement, run only for the installer: privileges are
-            -- checked for every table a statement names, even in an unused
-            -- branch, and other roles cannot read these setup tables.
-            IF NEW.target IN ('parishsoft','google_workspace','slack')
-               AND current_user='pk_stewardship_credential_'||NEW.target THEN
-                setup_install := EXISTS (
-                    SELECT 1 FROM public.stewardship_setup_sealed_credential credential
-                    JOIN public.stewardship_setup_attempt attempt
-                        ON attempt.id=credential.attempt_id
-                        AND attempt.owner_id=NEW.requested_by_id
-                    JOIN public.stewardship_setup_config_intent intent
-                        ON intent.attempt_id=credential.attempt_id
-                    JOIN public.stewardship_setup_readiness_binding ready
-                        ON ready.intent_id=intent.id
-                    WHERE credential.id=NEW.id AND credential.target=NEW.target
-                        AND credential.scrubbed_at IS NULL
-                        AND public.stewardship_setup_install_ready_live_v1(ready.id));
-            ELSIF current_user='pk_stewardship_web' OR pg_has_role(current_user,
-                    (SELECT nspowner FROM pg_namespace WHERE nspname='public'),'USAGE') THEN
-                -- A request made through a live full-scope automation session
-                -- records that session's sign-in instant (ADM-11). A separate
-                -- statement, reached only by the web (which holds EXECUTE) or
-                -- the schema owner: EXECUTE is checked whenever an expression
-                -- is initialized, so any other role keeps the plain refusal.
-                automation := coalesce(public.stewardship_automation_fresh_principal_v1(
-                    NEW.requested_by_id,NEW.reauthenticated_at),false);
-            END IF;
-            IF NOT setup_install AND NOT automation THEN
-                RAISE EXCEPTION 'Sealed intake requires fresh authentication'
-                    USING ERRCODE='23514';
-            END IF;
-        END IF;
-    ELSE
+    -- A secret request records its session's sign-in instant at any age
+    -- (#1547); only a staging row is checked here.
+    IF TG_TABLE_NAME<>'stewardship_secret_request' THEN
         IF NOT EXISTS(SELECT 1 FROM stewardship_secret_request
             WHERE id=NEW.request_id AND required_consumers<>'[]'::jsonb) THEN
             RAISE EXCEPTION 'Sealed intake requires installer consumers'
@@ -6201,7 +6162,6 @@ CREATE FUNCTION public.stewardship_secret_state_v2() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
-DECLARE fresh boolean := true;
 BEGIN
     IF TG_OP='DELETE' THEN
         RAISE EXCEPTION 'Secret request history cannot be deleted' USING ERRCODE='23514';
@@ -6246,19 +6206,8 @@ BEGIN
         RAISE EXCEPTION 'Credential acknowledgement requires consumer evidence' USING ERRCODE='23514';
     END IF;
     IF OLD.state='staged' AND NEW.state='testing' THEN
-        IF NEW.reauthenticated_at<NEW.created_at-interval '5 minutes' AND NOT (CASE WHEN NEW.target IN ('parishsoft','google_workspace','slack') THEN public.stewardship_setup_install_live_v1(NEW.id) ELSE false END) THEN
-            fresh := false;
-            IF NEW.target IN ('parishsoft','google_workspace','slack') THEN
-                -- A request made through a full-scope automation session
-                -- records its sign-in instant; the session must still be live
-                -- (ADM-11). Only these targets' installers hold EXECUTE on the
-                -- check, so it is its own statement, reached only for them.
-                fresh := coalesce(public.stewardship_automation_fresh_principal_v1(
-                    NEW.requested_by_id,NEW.reauthenticated_at),false);
-            END IF;
-        END IF;
+        -- The request's sign-in instant may be of any age (#1547).
         IF NEW.actor_id IS NOT NULL OR NEW.expires_at<=statement_timestamp()
-           OR NOT fresh
            OR NEW.required_consumers='[]'::jsonb
            OR NOT EXISTS(SELECT 1 FROM stewardship_sealed_credential_staging WHERE request_id=NEW.id AND ciphertext IS NOT NULL) THEN
             RAISE EXCEPTION 'Credential testing requires a live sealed request' USING ERRCODE='23514';
@@ -8540,10 +8489,27 @@ BEGIN
             USING ERRCODE='23514';
     END IF;
     IF TG_OP='UPDATE' AND NEW.scrubbed_at IS NOT NULL THEN
-        IF attempt.state NOT IN ('expired','completed')
-           OR NEW.ciphertext IS NOT NULL OR NEW.actor_id IS NOT NULL
-           OR NEW.settings<>'{}'::jsonb
+        IF NEW.ciphertext IS NOT NULL OR NEW.settings<>'{}'::jsonb
            OR NEW.fingerprint IS DISTINCT FROM OLD.fingerprint THEN
+            RAISE EXCEPTION 'Setup credential scrub requires its terminal fence'
+                USING ERRCODE='23514';
+        END IF;
+        -- Turning Slack off during setup discards the staged Slack token at
+        -- once (#1499): only the web, for the attempt's owner, while it is
+        -- collecting and its saved Slack step is off. Every other scrub
+        -- needs the terminal fence, by the system.
+        IF attempt.state='collecting' THEN
+            IF current_user<>'pk_stewardship_web' OR NEW.target<>'slack'
+               OR NEW.actor_id IS DISTINCT FROM attempt.owner_id
+               OR NOT EXISTS (SELECT 1 FROM public.stewardship_setup_draft_section slack
+                    WHERE slack.attempt_id=attempt.id AND slack.step='slack'
+                        AND slack.scrubbed_at IS NULL
+                        AND slack.values->'enabled'='false'::jsonb) THEN
+                RAISE EXCEPTION 'Only a setup with Slack turned off discards its Slack token'
+                    USING ERRCODE='23514';
+            END IF;
+        ELSIF attempt.state NOT IN ('expired','completed')
+           OR NEW.actor_id IS NOT NULL THEN
             RAISE EXCEPTION 'Setup credential scrub requires its terminal fence'
                 USING ERRCODE='23514';
         END IF;
@@ -8562,9 +8528,8 @@ BEGIN
             AND login.principal_id=attempt.owner_id AND login.revoked_at IS NULL
             AND login.expires_at>stamp
             AND login.last_activity_at>stamp-interval '60 minutes'
-            -- Setup's credential steps accept a sign-in up to an hour old
-            -- (#1402), the hour inclusive, as the web's check is.
-            AND login.authenticated_at>=stamp-interval '60 minutes'
+            -- Any sign-in age (#1547): the session is live.
+            AND login.authenticated_at<=stamp
         JOIN public.stewardship_portal_user owner ON owner.id=attempt.owner_id
             AND NOT owner.disabled
         JOIN public.stewardship_address_rule rule ON rule.email=owner.email

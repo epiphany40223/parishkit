@@ -112,7 +112,11 @@ BEGIN
               AND login.revoked_at IS NULL AND login.expires_at>clock_timestamp()
               AND login.last_activity_at>clock_timestamp()-interval '60 minutes'
               AND login.authenticated_at=NEW.authenticated_at
-              AND (login.authenticated_at BETWEEN clock_timestamp()-interval '5 minutes' AND clock_timestamp()
+              -- Any sign-in age (#1547); a command session still needs
+              -- its live full-scope automation session (ADM-11).
+              AND login.authenticated_at<=clock_timestamp()
+              AND (NOT EXISTS (SELECT 1 FROM public.stewardship_automation_login command
+                       WHERE command.portal_session_id=login.id)
                    OR public.stewardship_automation_fresh_v1(login.id,NEW.actor_id))) THEN
         RAISE EXCEPTION 'Withdrawal requires fresh Admin authentication' USING ERRCODE='42501';
     END IF;
