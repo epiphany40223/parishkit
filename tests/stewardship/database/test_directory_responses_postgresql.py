@@ -569,7 +569,10 @@ def test_directory_testing_switch_reads_the_rehearsal(
             assert f"Matching Families: {count or 2}.".encode() in body, href
             assert b"data-testing-responses" in body
             assert b">Responded</th>" not in body
-            assert b'<option value="testing" selected>' in body
+            assert (
+                b'<button type="submit" name="mode" value="testing"'
+                b' aria-current="page">' in body
+            )
             assert f'href="{html.escape(href)}" data-page-address'.encode() in body
         # The form applies the switch privately, in either direction.
         response, body = search(
@@ -577,7 +580,11 @@ def test_directory_testing_switch_reads_the_rehearsal(
         )
         assert response.status_code == 200
         assert b"Matching Families: 0." in body and b">Responded</th>" in body
-        assert b'<select id="directory-mode" name="mode"' in body
+        assert b'<div class="segmented-choice" id="directory-mode"' in body
+        assert (
+            b'<button type="submit" name="mode" value="production"'
+            b' aria-current="page">' in body
+        )
         assert f'href="{directory}?response=submitted" data-page-address'.encode() in (
             body
         )
