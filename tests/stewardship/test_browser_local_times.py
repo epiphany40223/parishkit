@@ -253,7 +253,7 @@ def test_follow_up_page_labels_no_utc_entry():
     # The queue's Export these requests (#1157) offers UTC among its zone
     # choices, as every export asking for a zone does; the follow-up itself
     # names no fixed zone (the shared note names the browser's).
-    followup = text[: text.index('<section aria-labelledby="followup-export-heading">')]
+    followup = text[: text.index('<details class="export-panel">')]
     assert "UTC" not in followup
     # Every follow-up instant shown (the request's submitted time, history,
     # contact, the queue's last contact, source as of) is converted in the
