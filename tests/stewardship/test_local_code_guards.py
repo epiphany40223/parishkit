@@ -6,7 +6,9 @@ use-time check that a LOCAL deployment refuses a real provider, with the
 same input admitted (or at least not refused by that check) in Production,
 so a change that removes a guard without its replacement fails here.
 Later #1399 changes replace a guard with its configured successor and
-update the matching case.
+update the matching case. ParishSoft's is now a setting: LOCAL may choose
+the real API for reads, so its cases pin that LOCAL defaults to the fake and
+never writes to ParishSoft, whatever it reads from.
 """
 
 from dataclasses import replace
@@ -19,8 +21,16 @@ from parishkit.parishsoft_http_worker import (
     LOCAL_SOURCE_BASE_URL,
     validate_request,
 )
+from parishkit.parishsoft_transport import BoundedPublicationSession
 from parishkit.stewardship.backup_drive import DriveFailure
-from parishkit.stewardship.deployment import DeploymentProfile, ServiceRole
+from parishkit.stewardship.deployment import (
+    LOCAL_PUBLIC_ORIGIN,
+    PARISHSOFT_PUBLICATION_VARIABLE,
+    DeploymentProfile,
+    ServiceRole,
+    load_deployment,
+)
+from parishkit.stewardship.local import source_base_url
 
 from .test_integration_candidates import account
 from .test_local_profile import configuration_for
@@ -37,7 +47,7 @@ def mail(profile, monkeypatch, tmp_path):
 
 
 def parishsoft(profile, monkeypatch, tmp_path):
-    """A helper request may reach the real ParishSoft API only outside LOCAL."""
+    """Unless it chose the real API, a LOCAL helper request reaches only the fake."""
     validate_request(
         {
             "method": "POST",
@@ -45,19 +55,60 @@ def parishsoft(profile, monkeypatch, tmp_path):
             "parameters": {},
             "timeout": 10,
             "profile": profile.value,
+            "base_url": source_base_url(profile),
             "api_key": "synthetic-key",
         }
     )
 
 
 def parishsoft_check(profile, monkeypatch, tmp_path):
-    """The provider check's endpoint allowlist names the real API only outside LOCAL."""
+    """Unless LOCAL chose the real API, its provider check names only the fake."""
     from parishkit.stewardship import provider_check_worker as worker
 
     if ("POST", DEFAULT_API_BASE_URL + "/organizations/search") not in (
         worker.endpoints(profile)
     ):
         raise ValueError("The real ParishSoft API is not admitted.")
+
+
+def parishsoft_write(profile, monkeypatch, tmp_path):
+    """A write-started helper sends the contact PUT only outside LOCAL, even to
+    the real API that LOCAL may choose for reads."""
+    validate_request(
+        {
+            "method": "PUT",
+            "url": DEFAULT_API_BASE_URL + "/members/5/contact",
+            "parameters": {},
+            "timeout": 10,
+            "profile": profile.value,
+            "base_url": DEFAULT_API_BASE_URL,
+            "api_key": "synthetic-key",
+        },
+        contact_writes=True,
+    )
+
+
+def parishsoft_publication_session(profile, monkeypatch, tmp_path):
+    """Only outside LOCAL can a ParishSoft publication session be built."""
+    BoundedPublicationSession(
+        before_request=lambda seconds: None,
+        check=lambda: None,
+        profile=profile.value,
+        base_url=DEFAULT_API_BASE_URL,
+    )
+
+
+def parishsoft_publication_setting(profile, monkeypatch, tmp_path):
+    """The census publication switch is admitted only outside LOCAL."""
+    load_deployment(
+        environ={
+            "PARISHKIT_STEWARDSHIP_PROFILE": profile.value,
+            "PARISHKIT_STEWARDSHIP_PUBLIC_ORIGIN": (
+                LOCAL_PUBLIC_ORIGIN if profile is LOCAL else "https://parish.example"
+            ),
+            PARISHSOFT_PUBLICATION_VARIABLE: "1",
+        }
+    )
 
 
 def oauth(profile, monkeypatch, tmp_path):
@@ -174,6 +225,9 @@ CASES = {
     "mail": (mail, ConfigError),
     "parishsoft": (parishsoft, ValueError),
     "parishsoft_check": (parishsoft_check, ValueError),
+    "parishsoft_write": (parishsoft_write, ValueError),
+    "parishsoft_publication_session": (parishsoft_publication_session, TypeError),
+    "parishsoft_publication_setting": (parishsoft_publication_setting, ConfigError),
     "oauth": (oauth, ConfigError),
     "drive_session": (drive_session, DriveFailure),
     "drive_session_without_profile": (drive_session_without_profile, DriveFailure),
@@ -208,10 +262,15 @@ def test_production_passes_the_same_check(name, monkeypatch, tmp_path):
     CASES[name][0](PRODUCTION, monkeypatch, tmp_path)
 
 
-def test_local_parishsoft_reaches_only_the_fake():
-    """The one ParishSoft base LOCAL admits is the fake's."""
+def test_local_parishsoft_defaults_to_the_fake_and_may_choose_the_real_api():
+    """LOCAL reaches the fake by default and the real API only when it chose
+    it (#1399), one base URL at a time; Production can never choose the fake."""
     from parishkit.stewardship import provider_check_worker as worker
 
-    assert ("POST", LOCAL_SOURCE_BASE_URL + "/organizations/search") in (
-        worker.endpoints(LOCAL)
-    )
+    fake = ("POST", LOCAL_SOURCE_BASE_URL + "/organizations/search")
+    real = ("POST", DEFAULT_API_BASE_URL + "/organizations/search")
+    assert fake in worker.endpoints(LOCAL) and real not in worker.endpoints(LOCAL)
+    chosen = worker.endpoints(LOCAL, DEFAULT_API_BASE_URL)
+    assert real in chosen and fake not in chosen
+    with pytest.raises(ValueError):
+        worker.endpoints(PRODUCTION, LOCAL_SOURCE_BASE_URL)

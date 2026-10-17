@@ -22,7 +22,7 @@
 <body{% if admin_chrome %} class="admin-body"{% endif %} data-date-format="{{ date_format|default:'us_long' }}">
   {% block gate_panel %}{% endblock %}
   <a class="skip-link" href="#main" tabindex="0">{% translate "Skip to content" %}</a>
-  {% if local_environment %}<div class="local-environment" role="note" aria-label="{% translate 'Local environment' %}"><strong>{% translate "LOCAL" %}</strong> {% translate "This is the local laptop environment: synthetic data, no real email and no real ParishSoft." %}</div>{% endif %}
+  {% if local_environment %}<div class="local-environment" role="note" aria-label="{% translate 'Local environment' %}"><strong>{% translate "LOCAL" %}</strong> {% if local_real_parishsoft %}{% translate "This is the local laptop environment: real ParishSoft data, read only, and no real email." %}{% else %}{% translate "This is the local laptop environment: synthetic data, no real email and no real ParishSoft." %}{% endif %}</div>{% endif %}
   <header class="site-header">
     {% block branding %}<p class="brand">{% if parish_branding.menu %}<img src="{{ parish_branding.menu }}" alt=""{% if parish_branding.menu_width %} width="{{ parish_branding.menu_width }}" height="{{ parish_branding.menu_height }}"{% endif %}> {% endif %}{% if parish_branding.name %}{{ parish_branding.name }}{% elif admin_chrome.parish_name %}{{ admin_chrome.parish_name }}{% else %}{{ parish_name|default:_("Parish campaign") }}{% endif %}</p>{% endblock %}
     {% if admin_chrome.find_family %}{% include 'stewardship/find-family.html' %}{% endif %}

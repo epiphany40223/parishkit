@@ -22,6 +22,8 @@ from pathlib import Path
 
 import pytest
 
+from parishkit.parishsoft import DEFAULT_API_BASE_URL
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools" / "stewardship-upgrade.sh"
 HOST = ROOT / "tools" / "stewardship-upgrade-host.sh"
@@ -346,6 +348,10 @@ case "$*" in
                 PARISHKIT_STEWARDSHIP_BULK_SEND_BATCH=*) batch=${arg#*=} ;;
                 PARISHKIT_STEWARDSHIP_LOCAL_SMTP_LATENCY_MS=*)
                     latency=', "local_smtp_latency_ms": '"${arg#*=}" ;;
+                PARISHKIT_STEWARDSHIP_PARISHSOFT_BASE_URL=*)
+                    # FAKE_RETARGET_NO_PARISHSOFT: a retarget that lost it.
+                    [ -n "$FAKE_RETARGET_NO_PARISHSOFT" ] ||
+                        latency="$latency"', "parishsoft_base_url": "'"${arg#*=}"'"' ;;
             esac
         done
         echo '{"services": {"web": {"image": "'"$last"'"}}}' >"$FAKE_COMPOSE"
@@ -1280,10 +1286,121 @@ def test_local_mode_refuses_an_unclear_rehearsal_choice(tmp_path, name, value):
 
 def test_production_mode_never_reads_the_rehearsal_choices(tmp_path):
     """Eight arguments: the switch carries over and no latency is rendered."""
-    calls, output, _ = run_host(tmp_path, "upgrade", bulk=False, env=REHEARSAL)
+    env = REHEARSAL | {"PARISHKIT_LOCAL_PARISHSOFT": "real"}
+    calls, output, _ = run_host(tmp_path, "upgrade", bulk=False, env=env)
     retarget = calls[first(calls, " retarget-image ")]
     assert "BULK_FAMILY_SEND" not in retarget and "LATENCY" not in retarget
+    assert "PARISHSOFT" not in retarget and "ParishSoft" not in output
     assert "latency" not in output and f"Upgraded to {TARGET} in" in output
+
+
+# Which ParishSoft pk-local reads (#1399): the fake unless the caller chose
+# the real API, carried over like the latency and dropped from a rollback.
+REAL_PARISHSOFT = "PARISHKIT_STEWARDSHIP_PARISHSOFT_BASE_URL=" + DEFAULT_API_BASE_URL
+
+
+def rendered_real_parishsoft(root):
+    """The running worker document already reads the real ParishSoft API."""
+    path = root / "config" / "services" / "worker.yaml"
+    document = json.loads(path.read_text())
+    document["deployment"]["parishsoft_base_url"] = DEFAULT_API_BASE_URL
+    path.write_text(json.dumps(document))
+
+
+def test_local_mode_renders_the_chosen_parishsoft(tmp_path):
+    """real renders the real API; keep carries it; fake and rollback drop it."""
+    calls, output, _ = run_host(
+        tmp_path / "real",
+        "upgrade",
+        profile="local",
+        env={"PARISHKIT_LOCAL_PARISHSOFT": "real"},
+    )
+    assert REAL_PARISHSOFT in calls[first(calls, " retarget-image ")]
+    assert "reading the real ParishSoft API (never writing)" in output
+    assert "NOT healthy" not in output
+    calls, output, _ = run_host(
+        tmp_path / "keep", "upgrade", profile="local", prepare=rendered_real_parishsoft
+    )
+    assert REAL_PARISHSOFT in calls[first(calls, " retarget-image ")]
+    assert "NOT healthy" not in output
+    for mode, env in (
+        ("upgrade", {"PARISHKIT_LOCAL_PARISHSOFT": "fake"}),
+        ("rollback", {}),
+    ):
+        calls, output, _ = run_host(
+            tmp_path / mode,
+            mode,
+            profile="local",
+            prepare=rendered_real_parishsoft,
+            env=env,
+        )
+        assert "PARISHSOFT" not in calls[first(calls, " retarget-image ")]
+        assert "NOT healthy" not in output
+    assert "not carried into a rollback (it reads the fake)" in output
+    # Unchanged from before the setting: the fake is not rendered at all.
+    calls, _, _ = run_host(tmp_path / "default", "upgrade", profile="local")
+    assert "PARISHSOFT" not in calls[first(calls, " retarget-image ")]
+
+
+def test_local_mode_reports_a_parishsoft_choice_the_retarget_lost(tmp_path):
+    """The post-check names the ParishSoft base URL it did not find rendered."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        profile="local",
+        status=1,
+        env={"PARISHKIT_LOCAL_PARISHSOFT": "real", "FAKE_RETARGET_NO_PARISHSOFT": "1"},
+    )
+    assert "NOT healthy" in output
+    assert (
+        f"worker: ParishSoft base URL is 'the fake', not '{DEFAULT_API_BASE_URL}'"
+        in output
+    )
+
+
+def test_local_mode_warns_about_the_real_api_under_the_fake_clock(tmp_path):
+    """Faked processes check ParishSoft's certificate against a past date."""
+    env = {"PARISHKIT_LOCAL_PARISHSOFT": "real"}
+    _, output, _ = run_host(
+        tmp_path / "fake", "upgrade", profile="local", clock="fake", env=env
+    )
+    assert "WARNING: the real ParishSoft API under the fake clock" in output
+    _, output, _ = run_host(tmp_path / "normal", "upgrade", profile="local", env=env)
+    assert "WARNING" not in output
+
+
+def test_local_mode_refuses_an_unclear_parishsoft_choice(tmp_path):
+    """An unknown choice, or a rendered URL that is not the real API, is
+    refused before anything stops."""
+
+    def other(root):
+        path = root / "config" / "services" / "worker.yaml"
+        document = json.loads(path.read_text())
+        document["deployment"]["parishsoft_base_url"] = "https://other.example"
+        path.write_text(json.dumps(document))
+
+    for name, prepare, env in (
+        ("choice", None, {"PARISHKIT_LOCAL_PARISHSOFT": "production"}),
+        ("rendered", other, {}),
+    ):
+        calls, output, _ = run_host(
+            tmp_path / name,
+            "upgrade",
+            profile="local",
+            status=1,
+            prepare=prepare,
+            env=env,
+        )
+        assert "refusing" in output
+        assert not any(" stop " in call for call in calls)
+
+
+def test_host_half_names_the_real_parishsoft_api():
+    """The host half's copy of the real API's base URL is the package's."""
+    assert (
+        f"parishsoft_api={DEFAULT_API_BASE_URL}\n"
+        in (ROOT / "tools" / "stewardship-upgrade-host.sh").read_text()
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -286,6 +286,11 @@ def error_page(request, response):
         # (accounts.branding_context.local_environment).
         "local_environment": _is_local(),
     }
+    if context["local_environment"]:
+        # The banner's ParishSoft wording too (#1399).
+        from ..accounts.branding_context import local_banner
+
+        context.update(local_banner())
     try:
         content = render_to_string("stewardship/error.html", context, request=request)
     except DatabaseError:

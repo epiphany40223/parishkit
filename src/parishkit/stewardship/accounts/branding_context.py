@@ -6,7 +6,11 @@ from django.db.models import Subquery
 from django.urls import reverse
 
 from parishkit.config import ConfigError
-from parishkit.stewardship.deployment import DeploymentProfile
+from parishkit.parishsoft import DEFAULT_API_BASE_URL
+from parishkit.stewardship.deployment import (
+    DeploymentProfile,
+    recorded_parishsoft_base_url,
+)
 from parishkit.stewardship.web import dates
 
 from .authentication import runtime
@@ -148,7 +152,9 @@ def local_environment(request):
     """Flag the LOCAL deployment (#476) so base.html shows its standing banner.
 
     The banner tells a developer, on every Admin and Family page, that this is
-    the local laptop environment with synthetic data. The flag is set only
+    the local laptop environment, and whether it reads the synthetic parish
+    from the fake ParishSoft or real data from the real API (#1399; see
+    ``local_banner``). The flag is set only
     when the running profile is LOCAL (never for development, test or
     production), and emails are untouched, so what the mail catcher shows is
     exactly what a Family would receive. ``configure_web`` records the
@@ -156,8 +162,22 @@ def local_environment(request):
     """
     value = getattr(settings, "STEWARDSHIP_DEPLOYMENT_PROFILE", None)
     if value is not None and DeploymentProfile(value) is DeploymentProfile.LOCAL:
-        return {"local_environment": True}
+        return local_banner()
     return {}
+
+
+def local_banner():
+    """The LOCAL banner's flags: always ``local_environment``, and
+    ``local_real_parishsoft`` when this deployment reads the real API.
+
+    Called only for a LOCAL process. A misrecorded choice shows the default
+    (fake) wording; such a process cannot read ParishSoft at all.
+    """
+    try:
+        real = recorded_parishsoft_base_url() == DEFAULT_API_BASE_URL
+    except ConfigError:
+        real = False
+    return {"local_environment": True, "local_real_parishsoft": real}
 
 
 def active_date_format():
