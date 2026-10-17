@@ -280,6 +280,30 @@ def test_statistics_panel_draws_reach_and_keeps_the_other_cards_as_tiles():
     }
 
 
+def test_each_unknown_pledge_total_gives_the_reason_for_its_cause():
+    """No giving definition, no full set of last year's pledges and an
+    unknown answer amount each say what is missing, never a promise that a
+    later refresh will fix it (#1540)."""
+    statistics = document().statistics
+    unknown = MoneyAmount(None)
+    statistics = replace(
+        statistics,
+        active=replace(statistics.active, annual_pledge=unknown),
+        comparison_pledge_all=unknown,
+    )
+    reasons = lambda value: {  # noqa: E731 - a tiny local reader
+        tile.key: tile.unknown_reason for tile in statistics_panel(value)["tiles"]
+    }
+    nothing = reasons(replace(statistics, financial=None))
+    assert nothing["annual_pledges"] == nothing["comparison_pledges_all"]
+    assert "no giving definition" in nothing["annual_pledges"]
+    # Any definition will do: only its presence is read here.
+    partial = reasons(replace(statistics, financial=object()))
+    assert "every responding Family" in partial["annual_pledges"]
+    assert "does not hold every pledge" in partial["comparison_pledges_all"]
+    assert "refresh" not in partial["comparison_pledges_all"]
+
+
 def test_xlsx_is_complete_typed_formula_safe_and_keeps_original_request():
     value = replace(
         document().participation, parish_name="=HYPERLINK(1)", campaign_name="+SUM(1)"

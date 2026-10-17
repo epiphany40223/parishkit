@@ -580,8 +580,11 @@ name carry the same count and share, so the chart has no exact-values table
 [#1266](https://github.com/epiphany40223/parishkit/issues/1266)). Without an
 observation nothing is drawn and every card is a tile reading "—", with a
 toggletip saying no ParishSoft data has been loaded yet. A pledge total that
-cannot be added up (an answer whose amount is not known, or a snapshot
-without every comparison pledge) reads "—" the same way, with its own reason.
+cannot be added up reads "—" the same way, with the reason for its cause:
+no giving definition for the campaign, an answer whose amount is not known
+(current annual pledges), or a snapshot that does not hold every pledge for
+last year's period (last year's pledges). No reason promises that a later
+refresh will fix it.
 Applying report options redraws the chart in place, keeping its space until
 it is drawn.
 

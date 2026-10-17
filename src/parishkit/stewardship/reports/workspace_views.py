@@ -287,29 +287,31 @@ def statistics_panel(statistics):
     if statistics.financial_enabled:
         pledges = known_money(active.annual_pledge) if active else None
         everyone = known_money(statistics.comparison_pledge_all)
+        # One reason per cause, so each says what is actually missing.
+        if active is None:
+            annual_reason = everyone_reason = no_data
+        elif statistics.financial is None:
+            annual_reason = everyone_reason = _(
+                "Giving is turned on, but this campaign has no giving "
+                "definition yet, so pledges cannot be totalled."
+            )
+        else:
+            annual_reason = _(
+                "The total is added up only when every responding Family's "
+                "pledge amount is known."
+            )
+            everyone_reason = _(
+                "The ParishSoft data kept for this campaign does not hold "
+                "every pledge for last year's period, so the total is not "
+                "added up."
+            )
         figures += [
-            (
-                "annual_pledges",
-                _("Current annual pledges"),
-                pledges,
-                no_data
-                if active is None
-                else _(
-                    "The total is added up only when every responding Family's "
-                    "pledge amount is known."
-                ),
-            ),
+            ("annual_pledges", _("Current annual pledges"), pledges, annual_reason),
             (
                 "comparison_pledges_all",
                 _("Last year's pledges (all Families)"),
                 everyone,
-                no_data
-                if active is None
-                else _(
-                    "The latest ParishSoft data does not hold every pledge for "
-                    "last year's period, so the total is not added up. It "
-                    "appears after the next complete ParishSoft refresh."
-                ),
+                everyone_reason,
             ),
         ]
     return {
