@@ -594,7 +594,7 @@ def test_a_group_readable_yaml_is_accepted_for_the_runtime_group(host):
     host["yaml"].chmod(0o640)
     # Another uid in the file's own group: the group column decides.
     _as_root_for_other_owner(host)
-    host["env"]["PK_RESTORE_OWNER"] = f"{os.getuid() + 1}:{os.getgid()}"
+    host["env"]["PK_RESTORE_OWNER"] = f"{os.getuid() + 1}:{host['yaml'].stat().st_gid}"
     result, _ = restore(host)
     assert "not readable by the container's user" not in output(result)
 
@@ -603,7 +603,9 @@ def test_an_other_only_yaml_is_refused_for_a_stranger(host):
     """Mode 0640 refuses when the container user is neither owner nor group."""
     host["yaml"].chmod(0o640)
     _as_root_for_other_owner(host)
-    host["env"]["PK_RESTORE_OWNER"] = f"{os.getuid() + 1}:{os.getgid() + 1}"
+    host["env"]["PK_RESTORE_OWNER"] = (
+        f"{os.getuid() + 1}:{host['yaml'].stat().st_gid + 1}"
+    )
     result, calls = restore(host)
     assert result.returncode == 1, output(result)
     assert "not readable by the container's user" in output(result)
