@@ -959,7 +959,10 @@
     if (zone && !zone.value) {
       const missing = form.querySelector("[data-zone-missing]");
       if (missing) missing.hidden = false;
-      form.querySelectorAll('button[type="submit"]').forEach((button) => {
+      // form.elements, not the form's descendants: inside the campaign
+      // wizard New and Edit's button is the action row's Save and go back,
+      // a submit of this form drawn after it (#1404 PR 4b).
+      [...form.elements].filter(isSubmit).forEach((button) => {
         button.disabled = true;
         if (missing?.id) {
           button.setAttribute("aria-describedby", [button.getAttribute("aria-describedby"),
@@ -1568,6 +1571,13 @@
     });
     refusedFields.set(key, marked);
   };
+  // A JSON refusal's same-origin link ({url, label}, such as Outgoing mail
+  // for held send work), or null when it has none.
+  const refusalLink = (text) => {
+    let link = null;
+    try { link = JSON.parse(text)?.refusal?.link; } catch { /* not JSON: no link */ }
+    return link?.url && link.label && sameOrigin(link.url) ? link : null;
+  };
   const showRefusal = (key, control, status, text) => {
     unmarkRefused(key);
     const note = document.createElement("p");
@@ -1575,9 +1585,8 @@
     note.setAttribute("role", "alert");
     note.setAttribute("data-in-place-refusal", "");
     note.textContent = refusalText(status, text);
-    let link = null;
-    try { link = JSON.parse(text)?.refusal?.link; } catch { /* refusalText fell back already */ }
-    if (link?.url && link.label && sameOrigin(link.url)) {
+    const link = refusalLink(text);
+    if (link) {
       const anchor = document.createElement("a");
       anchor.href = link.url;
       anchor.textContent = link.label;
@@ -4608,9 +4617,9 @@
 
   // A campaign wizard step's direct save (#1404 PR 4; UX conventions,
   // "Wizards", rules 4 and 5): a form marked data-direct-save (Campaign
-  // settings, Share options while the wizard applies) is posted by the
-  // action row's Save and continue without a page load and without the
-  // review dialog. The form is inert and aria-busy meanwhile, and the
+  // settings, Share options and the sub-pages that save, while the wizard
+  // applies) is posted by the action row's Save and continue (a sub-page's
+  // Save and go back) without a page load and without the review dialog. The form is inert and aria-busy meanwhile, and the
   // row's reserved status line (#campaign-step-status) says "Saving…".
   // - A refusal for the values (status 400 drawing this same form) marks
   //   the fields and shows the error summary, as a refused Review does
@@ -4619,7 +4628,8 @@
   //   change with schedules, Dates and mail schedules' combined review)
   //   opens it.
   // - Any other refusal (a stale page, held work, setup ended) is said in
-  //   the status line, with nothing saved.
+  //   the status line, with nothing saved, and with the refusal's own link
+  //   when it has one (Outgoing mail for held send work).
   // - A recorded change is followed in place (settleChange), the line
   //   saying it is being applied. Once applied, this page is read again for
   //   its action row's data-next-url (the next step not done yet, which a
@@ -4627,6 +4637,11 @@
   //   status line saying what was saved and when (sessionStorage, as the
   //   review dialog's return does), and, when Financial stewardship was
   //   turned off, that the share options were removed (data-direct-removed).
+  //   A sub-page's Save and go back (Pages and emails' editor, New and Edit
+  //   scheduled email, #1404 PR 4b) opens its step again: its row's
+  //   data-next-url is marked data-next-fixed, since the step's address
+  //   never moves, so this page is not read again first (an email's
+  //   revision page may no longer exist once a new revision is saved).
   // - A change that is not applied, or not yet, says so with a link to its
   //   status, and the page stays. Its request key is spent (a later save
   //   with it would be the same request), so the typed values are kept at
@@ -4639,13 +4654,15 @@
   const saveStep = async (form, submitter) => {
     reviewing.add(form);
     const line = document.getElementById("campaign-step-status");
+    // ``link`` is the change's status page, or a refusal's own link
+    // ({url, label}: Outgoing mail when send work blocks the change).
     const say = (text, link) => {
       if (!line) return;
       line.replaceChildren(text);
       if (link) {
         const anchor = document.createElement("a");
-        anchor.href = link;
-        anchor.textContent = "See the change's status";
+        anchor.href = link.url || link;
+        anchor.textContent = link.label || "See the change's status";
         line.append(" ", anchor);
       }
     };
@@ -4717,7 +4734,7 @@
         showFieldErrors(form, parsed);
         return;
       }
-      finish(refusalText(answer.response.status, answer.text));
+      finish(refusalText(answer.response.status, answer.text), refusalLink(answer.text));
       return;
     }
     say(status.text || "Applying your change…");
@@ -4739,9 +4756,10 @@
     const text = [form.dataset.directSaved, fillIn(
       "Applied at {time}.", {time: clockTime()}), removes && form.dataset.directRemoved]
       .filter(Boolean).join(" ");
-    const fresh = await freshPage(window.location.href);
-    if (!fresh) return;
-    const next = fresh.querySelector("[data-campaign-step-actions]")?.dataset.nextUrl;
+    const row = document.querySelector("[data-campaign-step-actions][data-next-fixed]");
+    const fresh = row ? null : await freshPage(window.location.href);
+    if (!row && !fresh) return;
+    const next = (row || fresh.querySelector("[data-campaign-step-actions]"))?.dataset.nextUrl;
     if (next && sameOrigin(next)) {
       const target = new URL(next, document.baseURI);
       try {
@@ -4752,7 +4770,12 @@
       return;
     }
     // No later step to open (the wizard ended meanwhile): the page is
-    // redrawn in place with what was applied.
+    // redrawn in place with what was applied. A sub-page always names its
+    // step, so it has no fresh copy to redraw from: it is loaded again.
+    if (!fresh) {
+      window.location.reload();
+      return;
+    }
     finish("");
     redrawFrom(fresh);
     if (!showOutcome("campaign-step-outcome", text)) announce(text);
