@@ -1035,9 +1035,11 @@ details.filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div
    width (#1562): each grows from a short basis instead of starting at
    its widest choice. */
 .filter-bar.mail-filters > div { flex: 1 1 7.5rem; min-width: 6.5rem; }
-/* From and Through are wide enough for Chromium's empty "mm/dd/yyyy"
-   placeholder beside its calendar button. */
-.filter-bar.mail-filters > div.short { flex: 0 1 9.25rem; min-width: 9.25rem; }
+/* From and Through are wide enough for the empty "mm/dd/yyyy" placeholder
+   beside the calendar button, with Linux's wider fonts too. They drop the
+   desktop short-field rule's end margin: the bar's gap spaces them, and
+   that margin kept Apply off the row at 1280 px with those fonts. */
+.filter-bar.mail-filters > div.short { flex: 0 1 10rem; min-width: 10rem; margin-inline-end: 0; }
 .filter-bar.mail-filters > div > :is(input, select) { width: 100%; }
 /* Every label sits on one line of the toggletip's height, and the fields
    line up at their tops, so Recipient's label (with its toggletip) and the
