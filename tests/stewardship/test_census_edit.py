@@ -30,7 +30,6 @@ TODAY = date(2054, 10, 6)
         ("first_name", "  Pat ", "Pat"),
         ("gender", "Female", "Female"),
         ("birth_date", "2000-02-29", "2000-02-29"),
-        ("death_date", "2054-10-06", "2054-10-06"),
         ("email", "B@Example.org; a@example.org", "a@example.org, b@example.org"),
         (
             "mobile_phone",
@@ -54,7 +53,6 @@ def test_an_edit_is_read_as_the_family_form_reads_its_answer(field, raw, expecte
         ("email", f"{'a' * 70}@example.org; {'b' * 70}@example.org", "at most 150"),
         ("gender", "male", "Choose one of the displayed options"),
         ("birth_date", "2054-10-07", "no later than today"),
-        ("death_date", "2054-2-1", "no later than today"),
         ("home_phone", "12", "complete phone number"),
     ],
 )
@@ -66,10 +64,11 @@ def test_a_value_publication_would_refuse_is_refused(field, raw, message):
 
 
 @pytest.mark.parametrize(
-    "field", ["prefix", "suffix", "marital_status", "home_address"]
+    "field", ["prefix", "suffix", "marital_status", "home_address", "death_date"]
 )
 def test_a_by_hand_field_takes_no_edit(field):
-    """Only Automatic Member fields may be edited."""
+    """Only Automatic Member fields may be edited; a death date is By hand
+    since the live API test (#1596)."""
     with pytest.raises(ValueError) as refused:
         edited_value(field, "Value", today=TODAY)
     assert not isinstance(refused.value, InvalidEdit)
