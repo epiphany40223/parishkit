@@ -1,0 +1,11 @@
+{% load i18n %}{% comment %}
+  The note in the Census changes dialogs of one row's action (#879):
+  Entered in ParishSoft, Reopen and the decisions' dialog. Included by
+  components/confirm-dialog.html (fields_template) inside the dialog, which
+  sits in its own form, so the note is posted with the row's action. It goes
+  back to empty whenever the dialog opens (data-confirm-reset), so an
+  earlier row's note is never recorded on another. Reopen's note is required
+  (note_required): its Confirm waits for it, saying why in the reserved line
+  below (data-complete-hint), which the dialog's accept_hint names.
+{% endcomment %}<div class="dialog-fields"{% if note_required %} data-missing-hint="{% translate 'Say why you are reopening this change.' %}"{% endif %}><label for="{{ dialog_id }}-note">{% if note_required %}{% translate "Why reopen? (required)" %}{% else %}{% translate "Note (optional)" %}{% endif %}</label><input id="{{ dialog_id }}-note" name="note" maxlength="2000" value=""{% if note_required %} required{% endif %} data-confirm-reset></div>
+{% if note_required %}<p class="help" id="{{ dialog_id }}-hint" data-complete-hint="reserve"></p>{% endif %}

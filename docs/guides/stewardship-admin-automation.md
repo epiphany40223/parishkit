@@ -2207,8 +2207,8 @@ the rows stay on the page and its downloads. It records the page's
 
 ### Recording a census change's outcome
 
-`census resolve` is a Census changes row's **Record outcome**: Entered in
-ParishSoft (`entered`), Ignore (`ignored`) or Reopen (`reopened`). Like the
+`census resolve` is a Census changes row's **Mark entered in ParishSoft**
+(`entered`), **Ignore** (`ignored`) or **Reopen** (`reopened`) icon. Like the
 page's buttons it needs a full-scope session; Administrators and Staff may
 record Entered and Ignore, and only an Administrator may reopen an ignored
 change (Staff get `denied`). It needs no recent sign-in, as on the page.
@@ -2249,8 +2249,8 @@ logs show the page's `census_change_updated` and the command's
 
 ### Reviewing an automatic census change
 
-`census review` is an Automatic row's **Review**: Approve (`approved`),
-Ignore (`ignored`) or Back to To review (`unreviewed`). Only an
+`census review` is an Automatic row's review: **Approve** (`approved`),
+**Ignore** (`ignored`) or **Send back to To review** (`unreviewed`). Only an
 Administrator may review (Staff and Ministry leaders get `denied`, before
 anything is read), with a full-scope session and no recent sign-in, as on
 the page. Every review can be changed again until publication of the change
@@ -2285,7 +2285,7 @@ page's `census_change_updated` and the command's `admin_cmd_census_review`.
 
 ### Editing a value or resolving a conflict
 
-`census edit` is the same Review's **Edit value** (`--value`) and **Clear
+`census edit` is the same row's **Edit value** (`--value`) and **Clear
 edit** (`--clear`): the value publication writes instead of the Family's
 answer, which never changes. `census resolve-conflict` is **Use the
 Family's value anyway** on a Conflict: it approves the change over
@@ -2788,7 +2788,7 @@ why), `reviews`: the decisions `census review` takes on that row now
 and `resolvable`: whether `census edit` and `census resolve-conflict` act
 on it now (true or false, for Administrators only). They are empty or false
 while other campaign work holds the campaign, as the page then offers no
-Record outcome or Review. The file names Families and
+row actions. The file names Families and
 Members with their contact details, so create it private, as above, and
 delete it once used; the wrapper refuses to write it to a terminal.
 

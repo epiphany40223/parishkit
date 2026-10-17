@@ -20,6 +20,7 @@ from parishkit.stewardship.reports.census_change_views import (
     STATUS_LABELS,
     bulk_actions,
     row_controls,
+    row_dialogs,
 )
 from parishkit.stewardship.reports.census_changes import CensusQuery, select, shape
 from parishkit.stewardship.responses.comparison import phone_record
@@ -145,7 +146,7 @@ def components(context, admin):
             carry=list(shown.form_values().items()),
             sorting=SORTING,
         )
-        row_controls(table.rows)
+        row_controls(table.rows, administrator=True, mutable=True)
         return (
             "text/html",
             render_to_string(
@@ -167,6 +168,7 @@ def components(context, admin):
                     "mutable": True,
                     "bulk": bulk,
                     "bulk_actions": bulk_actions(),
+                    "row_dialogs": row_dialogs(True),
                     # A fresh key per drawn page, as the view draws one.
                     "bulk_key": uuid4(),
                     "edit_today": "2054-10-06",
