@@ -112,6 +112,51 @@ def test_family_mail_transport_defaults_to_batched_and_can_fall_back(tmp_path):
         load_deployment(environ={name: "single"})
 
 
+def test_the_export_download_window_defaults_and_survives_rendering(tmp_path):
+    """The point-in-time export window (#1398): 60 minutes unless YAML or the
+    environment says otherwise, and the rendered document keeps a choice."""
+    from parishkit.stewardship.deployment_documents import deployment_document
+    from parishkit.stewardship.runtime_database import profile_settings
+
+    default = load_deployment(environ={})
+    assert default.export_download_window_minutes == 60
+    # The default is not written, so the document is what it was before.
+    assert (
+        "export_download_window_minutes"
+        not in (deployment_document(default)["deployment"])
+    )
+    path = config_file(tmp_path, {"export_download_window_minutes": 30})
+    configuration = load_deployment(path, environ={})
+    assert configuration.export_download_window_minutes == 30
+    assert (
+        profile_settings(configuration)["STEWARDSHIP_EXPORT_DOWNLOAD_WINDOW_MINUTES"]
+        == 30
+    )
+    (tmp_path / "rendered").mkdir()
+    rendered = config_file(
+        tmp_path / "rendered", deployment_document(configuration)["deployment"]
+    )
+    assert load_deployment(rendered, environ={}).export_download_window_minutes == 30
+    name = "PARISHKIT_STEWARDSHIP_EXPORT_DOWNLOAD_WINDOW_MINUTES"
+    assert (
+        load_deployment(path, environ={name: "240"}).export_download_window_minutes
+        == 240
+    )
+    # Empty means unset, as Compose passes an unexported variable.
+    assert (
+        load_deployment(path, environ={name: ""}).export_download_window_minutes == 30
+    )
+
+
+@pytest.mark.parametrize("value", [14, 241, 0, -1, True, 60.5, "sixty", [60]])
+def test_an_export_download_window_out_of_bounds_is_refused(tmp_path, value):
+    """Startup refuses a window under 15 or over 240 minutes: the accepted
+    plaintext storage of export files relies on it staying short."""
+    path = config_file(tmp_path, {"export_download_window_minutes": value})
+    with pytest.raises(ConfigError, match="export_download_window_minutes"):
+        load_deployment(path, environ={})
+
+
 @pytest.mark.parametrize("value", ["single", "", 1, ["batched"], {"a": 1}])
 def test_an_unknown_family_mail_transport_is_rejected(tmp_path, value):
     """Only the two reviewed transports exist; nothing else is guessed."""

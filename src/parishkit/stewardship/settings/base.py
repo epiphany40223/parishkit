@@ -100,6 +100,9 @@ SOCIALACCOUNT_PROVIDERS = {
 # OPS-04 supplies a validated Runtime; missing means unavailable, never a bypass.
 STEWARDSHIP_AUTH_RUNTIME = None
 STEWARDSHIP_FAMILY_RUNTIME = None
+# The point-in-time export window in minutes (#1398; reports.export_window);
+# runtime assembly sets the deployment's own (profile_settings).
+STEWARDSHIP_EXPORT_DOWNLOAD_WINDOW_MINUTES = 60
 # STEWARDSHIP_DEPLOYMENT_PROFILE has no default here: runtime assembly (web
 # and background) records the admitted deployment's profile, and the
 # development and test settings modules name theirs. A role that was not

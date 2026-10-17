@@ -43,6 +43,14 @@ def _create(browser, facts):
     )
 
 
+def _back(facts):
+    """The page's link back: Participation, with the export's own scope."""
+    from parishkit.stewardship.reports.workspace import ReportQuery
+
+    url = ReportQuery(scope=facts.population_scope, timezone="UTC").url()
+    return url.replace("&", "&amp;")
+
+
 def _commands(browser, page):
     """Each command's answer on the export at ``page``: {action: response}."""
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -80,7 +88,6 @@ def test_an_ended_report_export_is_gone_everywhere(
     from parishkit.stewardship.jobs.dispatch import execute_hint
     from parishkit.stewardship.jobs.queues import WorkQueue
     from parishkit.stewardship.reports.export_tasks import export_handler
-    from parishkit.stewardship.reports.workspace import ReportQuery
 
     from ..policy_factory import address
     from .auth_builders import signed_in
@@ -92,9 +99,7 @@ def test_an_ended_report_export_is_gone_everywhere(
     root = tmp_path / "gone-reports"
     root.mkdir(mode=0o700)
     settings.STEWARDSHIP_REPORTS_ROOT = root
-    # The page's link back: Participation, with the export's own scope.
-    back = ReportQuery(scope=facts.population_scope, timezone="UTC").url()
-    back = back.replace("&", "&amp;")
+    back = _back(facts)
 
     # An expired file: its window is over.
     expired_page, expired = _create(admin, facts)
@@ -131,3 +136,140 @@ def test_an_ended_report_export_is_gone_everywhere(
         for action, answer in _commands(staff, page).items():
             assert answer.status_code == 403, action
             assert GONE not in answer.content, action
+
+
+def test_the_window_ends_a_file_and_a_failed_exports_retry(
+    http_scenario,  # noqa: F811
+    settings,
+    tmp_path,
+    monkeypatch,
+):
+    """A file is published for one window (the deployment's setting) and its
+    status page says until when; a shorter setting ends it at once. A failed
+    export offers Retry for one window after its failure, then is the 410
+    page, and the command line's retry is ``not_available`` (#1398)."""
+    from datetime import timedelta
+
+    from parishkit.stewardship.jobs.dispatch import execute_hint
+    from parishkit.stewardship.jobs.queues import WorkQueue
+    from parishkit.stewardship.jobs.storage import _status
+    from parishkit.stewardship.reports import export_services
+    from parishkit.stewardship.reports.export_models import ExportPublication
+    from parishkit.stewardship.reports.export_tasks import export_handler
+
+    from .test_taskrun_postgresql import act
+
+    setup, admin = http_scenario
+    store, _, facts, _ = setup
+    root = tmp_path / "window-reports"
+    root.mkdir(mode=0o700)
+    settings.STEWARDSHIP_REPORTS_ROOT = root
+    page, job = _create(admin, facts)
+    with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
+        assert execute_hint(
+            job.task_id,
+            queue=WorkQueue.GENERAL,
+            worker_id=uuid4(),
+            handlers={"report_export": export_handler(store=store, root=root)},
+        )
+    publication = ExportPublication.objects.get(request=job)
+    # Published for the default 60 minutes, not seven days.
+    lifetime = publication.expires_at - publication.created_at
+    assert timedelta(minutes=59) < lifetime <= timedelta(minutes=61)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read(admin, page)
+    end = publication.expires_at.isoformat()
+    assert response.status_code == 200 and b"Ready to download until" in body
+    assert f'datetime="{end}"'.encode() in body
+    # A grant issued inside the window, then twenty minutes on a 15-minute
+    # setting has ended the file though its record says 60: the page, a new
+    # grant and the issued grant's use are all refused.
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        grant = export_services.issue_download(store, job.requester_id, job.pk)
+    later = publication.created_at + timedelta(minutes=20)
+    monkeypatch.setattr(export_services, "database_now", lambda: later)
+    settings.STEWARDSHIP_EXPORT_DOWNLOAD_WINDOW_MINUTES = 15
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read(admin, page)
+        assert response.status_code == 410 and GONE in body
+        with pytest.raises(export_services.ExportExpired):
+            export_services.issue_download(store, job.requester_id, job.pk)
+        with pytest.raises(export_services.ExportExpired):
+            export_services.consume_download(store, job.requester_id, grant.pk)
+    settings.STEWARDSHIP_EXPORT_DOWNLOAD_WINDOW_MINUTES = 60
+    monkeypatch.undo()
+
+    # A failed export: Retry is offered within the window, gone after it.
+    failed_page, failed = _create(admin, facts)
+    act(act(_status(failed.task), "claim"), "permanent_failure")
+    latest = failed.task.chain_runs.order_by("-retry_sequence").first()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read(admin, failed_page)
+    assert response.status_code == 200 and b"Retry export" in body
+    # It says until when, the end of its Retry window.
+    retry_until = (latest.updated_at + timedelta(minutes=60)).isoformat()
+    assert b"Retry is available until" in body
+    assert f'datetime="{retry_until}"'.encode() in body
+    past = latest.updated_at + timedelta(minutes=61)
+    monkeypatch.setattr(export_services, "database_now", lambda: past)
+    _assert_gone(admin, failed_page, _back(facts))
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(export_services.ExportExpired),
+    ):
+        export_services.retry_export(
+            store, failed.requester_id, failed.pk, request_key=uuid4()
+        )
+
+
+def test_a_latest_data_exports_failed_calculation_ends_too(
+    http_scenario,  # noqa: F811
+    monkeypatch,
+):
+    """A latest-data export whose calculation failed offers Retry for one
+    window; then it is the 410 page and a new Retry is refused, while a
+    recorded key still replays (#1398)."""
+    from datetime import timedelta
+
+    from parishkit.stewardship.jobs.storage import _status
+    from parishkit.stewardship.reports import exact_services, export_services
+    from parishkit.stewardship.reports.exact_models import ExactExportRequest
+
+    from .test_taskrun_postgresql import act
+
+    setup, admin = http_scenario
+    store = setup[0]
+    values = {
+        "population_scope": "current",
+        "format": "csv",
+        "browser_timezone": "UTC",
+        "request_key": str(uuid4()),
+    }
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        page = post(admin, reverse("admin:report_exact_create"), values)["Location"]
+    job = ExactExportRequest.objects.get(request_key=values["request_key"])
+    act(act(_status(job.task), "claim"), "permanent_failure")
+    key = uuid4()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read(admin, page)
+        assert response.status_code == 200 and b"Retry is available until" in body
+        exact_services.retry_exact_export(
+            store, job.requester_id, job.pk, request_key=key
+        )
+    retried = job.task.chain_runs.get(retry_command_id=key)
+    act(act(_status(retried), "claim"), "permanent_failure")
+    retried.refresh_from_db()
+    later = retried.updated_at + timedelta(minutes=61)
+    monkeypatch.setattr(export_services, "database_now", lambda: later)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read(admin, page)
+        assert response.status_code == 410 and GONE in body
+        with pytest.raises(export_services.ExportExpired):
+            exact_services.retry_exact_export(
+                store, job.requester_id, job.pk, request_key=uuid4()
+            )
+        # The recorded key replays its own retry rather than a refusal.
+        replay = exact_services.retry_exact_export(
+            store, job.requester_id, job.pk, request_key=key
+        )
+    assert replay.run_id == retried.pk

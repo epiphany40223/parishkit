@@ -2219,7 +2219,7 @@ later.
 | `state` | `queued`, `running`, `retry_wait` or `abandoned` (still being made; the worker picks an abandoned run up again), `failed`, `succeeded` (made, file not yet published), `ready`, `expired` or `cancelled`, as the page shows |
 | `changes_available` | Whether the page's buttons may act now; false while other work holds the campaign |
 | `can_cancel` | Whether the page offers **Cancel** now |
-| `expires_at` | When a ready file is deleted |
+| `expires_at` | When the export ends ([point-in-time exports](../specs/stewardship/operations/spec.md#point-in-time-exports)): for a ready or expired file, the end of its download window, never later than the file recorded; for a `failed` export, when its Retry window ends; null while it is being made or once cancelled |
 | `file_name`, `content_type`, `size`, `sha256`, `count` | The file: its name, type, size in bytes, SHA-256 and number of rows (null until it is published; an expired export keeps them) |
 
 `export create`, `export cancel` and `export retry` print `created`,
@@ -3201,3 +3201,13 @@ campaign's, or is outside your Ministries, is exit 1 (`not_available`).
   2 `usage`), and `admin_cmd_export_regenerate` is no longer recorded;
   earlier events keep it. Make a new export with `export create` or the
   report's own export command instead.
+- `pk-admin/1` (#1398, the window): a change of meaning, kept on version 1.
+  `export status` `expires_at` is now the end of the export's download
+  window (60 minutes after the file is published by default, the
+  deployment's `export_download_window_minutes`), never later than the
+  file's recorded end, and for a `failed` export (it used to be null) the
+  end of its Retry window: one window after its latest failed run. Once
+  that has passed, `export retry` and `export exact retry` with a new
+  request key are exit 1 (`not_available`, where they used to run);
+  repeating a recorded key still returns its result. Retrying a cancelled
+  export, or a published one, is still `stale_version`.

@@ -596,10 +596,12 @@
   // starts (before any script could have disabled it) came back from an
   // earlier visit and is enabled again, as the server drew it.
   // live-status-v1.js holds a kept preview's button for good once the
-  // status no longer shows what it reviews (data-live-stale-gated, #530).
+  // status no longer shows what it reviews (data-live-stale-gated, #530),
+  // and an export's Download once its window ends (data-download-ended-gated,
+  // #1398).
   const GATE_MARKS = [
     "data-time-gated", "data-acknowledgment-gated", "data-complete-gated", "data-change-gated",
-    "data-live-stale-gated",
+    "data-live-stale-gated", "data-download-ended-gated",
   ];
   const gated = (node) => GATE_MARKS.some((mark) => node.hasAttribute(mark));
   document.querySelectorAll("button[disabled], input[disabled]").forEach((node) => {
