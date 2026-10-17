@@ -470,3 +470,55 @@ def test_setup_limits_follow_the_admin_session_and_are_not_listed():
     for path in folder.glob("setup*.html"):
         text = path.read_text()
         assert "12 hours" not in text and "30 minutes" not in text, path.name
+
+
+SLACK_ON = {"enabled": True, "channel_id": "C0123456789"}
+
+
+@pytest.mark.parametrize(
+    ("credentials", "source", "task_state"),
+    [
+        # Slack's token is stale, the load succeeded.
+        ({"parishsoft": True, "google_workspace": True, "slack": False}, True, None),
+        # The Google Workspace key, an earlier step, is stale.
+        ({"parishsoft": True, "google_workspace": False, "slack": True}, True, None),
+        # No load yet, and the ParishSoft key is missing.
+        ({"google_workspace": True, "slack": True}, False, None),
+        # The load failed.
+        ({"parishsoft": True, "google_workspace": True, "slack": True}, True, "failed"),
+    ],
+)
+def test_the_slack_step_is_linked_from_every_step_once_saved(
+    credentials, source, task_state
+):
+    """Slack notifications (optional) has no prerequisite, so once saved it is
+    a link from every step whatever else is stale or not done (#1499): that
+    is where Slack is turned off. A later ordering change must not lock it."""
+    sections = VALUES | {"branding": {"bundle_id": str(uuid4())}, "slack": SLACK_ON}
+    saved = draft(sections, source=uuid4() if source else None, task_state=task_state)
+    for page in PAGES:
+        wizard = build(saved, page.key, credentials=credentials)
+        step = wizard.step("slack")
+        assert step.state == "done", page.key
+        assert step.url == "/admin/setup/slack", page.key
+
+
+def test_turning_slack_off_drops_its_steps_and_review_needs_no_slack_test():
+    """With Slack off the Slack connection and Test Slack steps are gone, so
+    the save opens Test email when the version bump re-requires it, and
+    Review (then Finish setup) needs no Slack test (#1499)."""
+    sections = VALUES | {"branding": {"bundle_id": str(uuid4())}}
+    credentials = {"parishsoft": True, "google_workspace": True, "slack": True}
+    off = draft(sections, source=uuid4(), reviewed={"preview": 3})
+    off.status.version = 4
+    wizard = build(off, "slack", credentials=credentials)
+    assert not {"slack_credential", "slack_test"} & states(wizard).keys()
+    assert wizard.onward.key == "mail_test"
+    # Every other step done: the save opens Review, which counts once shown
+    # for this version without a Slack test.
+    tested = build(off, "slack", credentials=credentials, tests={"mail_test"})
+    assert tested.onward.key == "preview"
+    off.reviewed = {"preview": 4}
+    reviewed = build(off, "preview", credentials=credentials, tests={"mail_test"})
+    assert states(reviewed)["preview"] == "done"
+    assert states(reviewed)["finish"] == "todo"
