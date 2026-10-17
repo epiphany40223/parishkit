@@ -14,11 +14,12 @@ from parishkit.stewardship.accounts.sessions import (
     require_fresh,
 )
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web.dates import UnknownZone, refuse_zoneless_dates
 
 from .export_services import ExportRequestBound
 from .export_ui import _redirect
 from .export_views import SAFE_FAILURES
-from .financial import FinancialQuery
+from .financial import DATES, FinancialQuery
 from .financial_exports import create_financial_export
 from .financial_views import _error, _principal
 from .read_admission import admit_report_read
@@ -49,10 +50,13 @@ def create(request, campaign_id):
         parameters.pop("csrfmiddlewaretoken", None)
         fields = {"format", "browser_timezone", "request_key"}
         query_fields = set(FinancialQuery.__dataclass_fields__) - {"page"}
-        if (
-            request.GET
-            or set(parameters) != fields | query_fields
-            or any(len(parameters.getlist(key)) != 1 for key in parameters)
+        # A query string is refused first: only the POSTed form's own
+        # fields may earn the reload-the-page zone refusal (#558).
+        if request.GET:
+            raise ValueError("Invalid financial export fields.")
+        refuse_zoneless_dates(parameters, fields | query_fields, DATES)
+        if set(parameters) != fields | query_fields or any(
+            len(parameters.getlist(key)) != 1 for key in parameters
         ):
             raise ValueError("Invalid financial export fields.")
         values = {field: parameters.pop(field)[0] for field in fields}
@@ -72,5 +76,7 @@ def create(request, campaign_id):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):
         return _error(campaign_id, status=503)
+    except UnknownZone:
+        return _error(campaign_id, status=400, zone=True)
     except ValueError:
         return _error(campaign_id, status=400)
