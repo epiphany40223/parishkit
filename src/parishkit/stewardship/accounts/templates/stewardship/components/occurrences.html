@@ -1,0 +1,29 @@
+{% load i18n stewardship %}{% comment %}
+The one schedule preview (#1129; ui-conventions spec, "Schedule previews"):
+every list of when a schedule runs or sends is drawn here, from the context
+occurrence_preview.build returns, passed as preview. It reads only its own
+keys and draws no control besides the day sections.
+
+States: shown (the days and their lines), empty and unavailable (one line,
+preview.message), and shown with the paused notice above. Layouts: grouped
+(one details/summary per day, the summary giving the day and the feature's
+counts, today open; each details carries data-day, and today's data-today,
+so the page script keeps the days whose open state a reader changed from
+the drawn one, matched by date, when it redraws the list, and every other
+day, a new today included, keeps the server's choice) and compact (one
+list, each line naming its day and the day's clock change). A zone-less
+list (grouped false and no day) is one list of full browser-local
+instants.
+
+Each line is its time, then what runs, then a struck line's reason or a
+shifted line's daylight-saving words. A schedule-zone list (item.wall)
+writes the wall time here and marks the instant data-other-zone-time, which
+date-format-v1.js fills with the browser's time when the zones differ;
+otherwise the time is a <time data-local-instant> the same script writes.
+{% endcomment %}{% if preview.state == 'shown' %}{% if preview.paused %}<p class="notice">{{ preview.paused.text }} <a href="{{ preview.paused.url }}">{{ preview.paused.label }}</a></p>
+{% endif %}{% if preview.layout == 'grouped' and preview.grouped %}{% for day in preview.days %}<details class="schedule-day" data-day="{{ day.date.isoformat }}"{% if day.today %} data-today{% endif %}{% if day.open %} open{% endif %}><summary>{% if day.today %}{% translate "Today" %}, {% endif %}{{ day.weekday }}, {{ day.date|parish_date }}{% if day.change == 'forward' %} ({% translate "clocks go forward" %}){% elif day.change == 'back' %} ({% translate "clocks go back" %}){% endif %}{% if day.summary %}: {{ day.summary }}{% endif %}</summary>
+<ul class="schedule-day-times">{% for item in day.items %}{% include 'stewardship/components/occurrence-line.html' %}{% endfor %}</ul></details>
+{% endfor %}{% else %}<ul class="occurrence-list">{% for day in preview.days %}{% for item in day.items %}{% include 'stewardship/components/occurrence-line.html' with named_day=preview.grouped %}{% endfor %}{% endfor %}</ul>
+{% endif %}{% if preview.more %}<p class="help">{{ preview.more }}</p>
+{% endif %}{% if preview.dst_note %}<p class="help">{% translate "When clocks change for daylight saving, a time that happens twice sends once, and a time that is skipped sends right after the change." %}</p>
+{% endif %}{% else %}<p class="help">{{ preview.message }}</p>{% endif %}

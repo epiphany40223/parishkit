@@ -141,6 +141,88 @@ def test_a_change_is_checked_live_and_blocks_save_until_fixed(page, component_or
     assert within_half_a_pixel(box, gap())
 
 
+def answering_a_day_later(page):
+    """Answer the live check as the server would a day after the page was
+    drawn (past midnight), so the seven-day list moves on by one day;
+    return the requests."""
+    from datetime import timedelta
+
+    from .conftest import NOW
+
+    requests = []
+
+    def handle(route):
+        """The server's answer, one day on."""
+        body = route.request.post_data or ""
+        requests.append(body)
+        route.fulfill(
+            status=200,
+            content_type="text/html; charset=utf-8",
+            headers={"Cache-Control": "no-store"},
+            body=check_answer(PRODUCTION, body, NOW + timedelta(days=1)),
+        )
+
+    page.route(f"**{CHECK}", handle)
+    return requests
+
+
+def day_on(page, day):
+    """The listed day section for ``day`` (an ISO date)."""
+    return page.locator(f'[data-schedule-part="preview"] details[data-day="{day}"]')
+
+
+def test_opened_days_stay_open_by_date_when_the_list_moves_on(page, component_origin):
+    """A check that answers a day later (past midnight) shifts the seven-day
+    list by one day: the days the reader opened and closed keep their state
+    by date, not by position, an untouched new today opens as the server
+    draws it, and the redrawn list has its browser times (the shared
+    schedule preview, #1129)."""
+    from playwright.sync_api import expect
+
+    requests = answering_a_day_later(page)
+    page.goto(component_origin + "/refresh-schedule")
+    days = page.locator('[data-schedule-part="preview"] details.schedule-day')
+    first, second, third = (days.nth(i).get_attribute("data-day") for i in range(3))
+    expect(days.nth(0)).to_have_js_property("open", True)
+    # Close today, open the day after tomorrow; tomorrow is left alone.
+    days.nth(0).locator("summary").click()
+    days.nth(2).locator("summary").click()
+    expect(days.nth(0)).to_have_js_property("open", False)
+    expect(days.nth(2)).to_have_js_property("open", True)
+    page.locator('[name="rules-1-at"]').fill("09:00")
+    recorded(page, requests, 1)
+    expect(days.nth(0)).to_have_attribute("data-day", second)
+    # Position would have opened the new third day; the date keeps the
+    # opened day open where it now stands, second. Tomorrow, untouched, is
+    # the new today and opens as drawn.
+    expect(day_on(page, third)).to_have_js_property("open", True)
+    expect(day_on(page, second)).to_have_js_property("open", True)
+    expect(days.nth(2)).to_have_js_property("open", False)
+    expect(day_on(page, first)).to_have_count(0)
+    # The browser (Los Angeles) is not in the schedule's zone: each redrawn
+    # time carries the browser's time again.
+    contains(day_on(page, third), "your time)")
+
+
+def test_an_untouched_list_opens_the_new_today_after_midnight(page, component_origin):
+    """A reader who opens and closes nothing: after a check that answers past
+    midnight, the new today is open and every other day closed, as the
+    server draws them (#1129)."""
+    from playwright.sync_api import expect
+
+    requests = answering_a_day_later(page)
+    page.goto(component_origin + "/refresh-schedule")
+    days = page.locator('[data-schedule-part="preview"] details.schedule-day')
+    second = days.nth(1).get_attribute("data-day")
+    page.locator('[name="rules-1-at"]').fill("09:00")
+    recorded(page, requests, 1)
+    expect(days.nth(0)).to_have_attribute("data-day", second)
+    expect(days.nth(0)).to_have_js_property("open", True)
+    expect(page.locator('[data-schedule-part="preview"] details[open]')).to_have_count(
+        1
+    )
+
+
 def test_a_failed_check_keeps_the_answer_and_leaves_save_available(
     page, component_origin
 ):
