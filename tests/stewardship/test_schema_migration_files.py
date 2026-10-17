@@ -363,6 +363,9 @@ FROZEN = {
     "0110_financial_local_days.sql": (
         "f89490777c7145a1b0213dc2976d4c1c2bc14289fe08926c502667f0ca9cb5d8"
     ),
+    "0116_log_search_indexes.sql": (
+        "9749a393a6c4fa0bf50a232ecffea144ced687880712a505fec1ec74a018ee1b"
+    ),
 }
 
 

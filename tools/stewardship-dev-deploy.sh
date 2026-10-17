@@ -365,6 +365,10 @@ else
     # Say why both commands run: "f" means something would change; anything
     # else is the query's own error, shown so a broken check is noticed.
     echo "    running both: the upgrade check answered: $(printf '%s' "$noop" | head -3)"
+    # The System logs search's indexes (#765) need pg_trgm, which only the
+    # operator superuser may create; an installed one is left alone.
+    "${dc[@]}" exec -T postgres psql -U pk_stewardship_operator -d stewardship -At \
+        -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public" 2>&1 | tail -1
     "${dc[@]}" run --rm -T migration 2>&1 | tail -1
     "${dc[@]}" run --rm -T database-provision database-grants \
         --config "$services/database-provision.yaml" --confirm-deployment "$uuid" 2>&1 | tail -1

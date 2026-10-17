@@ -26,8 +26,10 @@ answers that without touching the deployment:
    operator-supervised session; the report names them.
 
 What it does not compare: owners and privileges (``database-grants`` sets
-them), schemas other than ``public`` (Stewardship has none), extensions,
-and composite and range types (the schema defines none).
+them), schemas other than ``public`` (Stewardship has none), extensions
+(``pg_trgm`` lives in ``public`` since #765; its functions are its own, not
+the schema's, so they are left out too), and composite and range types (the
+schema defines none).
 
 Nothing here changes the deployment, transforms data or decides anything:
 that stays a separate, Administrator-approved step (see the backup runbook).
@@ -91,7 +93,10 @@ MIGRATIONS = "SELECT app::text,name::text FROM public.django_migrations"
 # privileges are not compared: the dump is loaded without them, and
 # ``database-grants`` owns them on the deployment. A function is compared by
 # the SHA-256 of its full definition (which includes SECURITY DEFINER and its
-# settings), so an in-place SQL change to one shows as changed.
+# settings), so an in-place SQL change to one shows as changed. An
+# extension's member functions (pg_depend 'e') are left out: they are the
+# extension's version, not the schema, and an index that uses one is
+# compared under "indexes".
 OBJECTS = {
     "constraints": """
         SELECT c.relname || '.' || k.conname,
@@ -109,6 +114,9 @@ OBJECTS = {
                encode(sha256(convert_to(pg_get_functiondef(p.oid), 'UTF8')), 'hex')
         FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.prokind IN ('f','p')
+          AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                          WHERE d.classid='pg_proc'::regclass AND d.objid=p.oid
+                            AND d.deptype='e')
     """,
     "triggers": """
         SELECT c.relname || '.' || t.tgname,
