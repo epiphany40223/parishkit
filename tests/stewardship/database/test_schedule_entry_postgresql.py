@@ -19,7 +19,11 @@ from uuid import uuid4
 
 import pytest
 
-from parishkit.stewardship.accounts import schedule_entry_views, schedule_views
+from parishkit.stewardship.accounts import (
+    campaign_wizard,
+    schedule_entry_views,
+    schedule_views,
+)
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.campaigns.models import Campaign, ScheduleDefinition
 
@@ -200,8 +204,16 @@ def test_list_offers_new_and_row_actions_without_a_window_panel(auth_service, go
     assert browser.get(f"{LIST}?sort=subject").status_code == 400
 
 
-def test_a_new_reminder_is_reviewed_then_applied_from_the_list(auth_service, google):
-    """Review changes answers the dialog's review; Apply confirms on the list."""
+def test_a_new_reminder_is_reviewed_then_applied_from_the_list(
+    auth_service, google, monkeypatch
+):
+    """Review changes answers the dialog's review; Apply confirms on the list.
+
+    Outside the campaign wizard (``shown`` says so here, as a live campaign
+    would): inside it the page saves directly instead (#1404 PR 4b,
+    test_campaign_subpage_direct_save_postgresql).
+    """
+    monkeypatch.setattr(campaign_wizard, "shown", lambda *_, **__: False)
     store = auth_service.store
     _, emails = setup(store)
     browser, _ = signed_in()

@@ -33,8 +33,16 @@ from parishkit.stewardship.web.refusals import (
     with_default_code,
 )
 
-from . import admin_navigation, schedule_local, setup_help
-from .admin_editing import confirm, error_response, form_action, principal, sign_preview
+from . import admin_navigation, campaign_wizard, schedule_local, setup_help
+from .admin_editing import (
+    confirm,
+    direct_key,
+    error_response,
+    form_action,
+    principal,
+    sign_preview,
+    summary_errors,
+)
 from .artwork_views import artwork_patch
 from .authentication import runtime
 from .campaign_views import _scope, _state
@@ -388,6 +396,7 @@ def _page(
     refusal=None,
     stale=None,
     folded=False,
+    summary=False,
 ):
     """Never insert rejected user HTML into the visual editor without sanitizing it.
 
@@ -397,6 +406,10 @@ def _page(
     stale_markup result, shown as a "re-save recommended" notice (#832).
     ``folded`` says the confirmation email shows a retired receipt closing
     note folded in (#260), which previewing the form unchanged saves.
+    ``summary`` adds the form's error summary above the heading: a refused
+    direct save (#1404 PR 4b) is drawn into the page the reader is on,
+    which shows that summary (ui-v1.js showFieldErrors), while a refused
+    Preview changes is a page load that shows the errors in the form.
     """
     try:
         visual = sanitize_html(form["html"].value() or "")
@@ -430,6 +443,7 @@ def _page(
             # Post to the clean path: a "?start=default" GET must not carry its
             # query into the POST, which accepts no query parameters.
             "post_url": request.path,
+            "errors": summary_errors(form) if summary else [],
         },
         status=status,
     )
@@ -479,6 +493,7 @@ def _preview(
     salt,
     note,
     stale=None,
+    key=None,
 ):
     """Sign sanitized canonical bytes and disclose every affected mail schedule.
 
@@ -486,11 +501,20 @@ def _preview(
     editor showed folded into the body (receipt_note); the same request
     removes it, so the saved email alone carries that text from then on.
     ``stale`` keeps the saved text's re-save notice on a refused preview, so
-    the Admin still sees why the re-save is needed (#832).
+    the Admin still sees why the re-save is needed (#832). ``key`` is a
+    direct save's request key inside the campaign wizard (#1404 PR 4b,
+    ``admin_editing.direct_key``): the preview is signed with it and
+    returned as the signed token, which ``campaign_wizard.save_step``
+    confirms at once, instead of the Review content changes page. A refusal
+    is the page (status 400) either way, with its error summary for a
+    direct save.
     """
     configuration, fingerprint = state[0], state[-1]
+    direct = key is not None
     if not form.is_valid():
-        return _page(request, form, campaign, label, status=400, stale=stale)
+        return _page(
+            request, form, campaign, label, status=400, stale=stale, summary=direct
+        )
     if form.cleaned_data["base_digest"] != configuration.active_configuration.digest:
         raise stale_page()
     base = service.store.active()
@@ -519,13 +543,29 @@ def _preview(
                 status=400,
                 stale=stale,
                 refusal=error.refusal,
+                summary=direct,
             )
         if not patch:
             form.add_error(
                 None, ValidationError("No content has changed.", code="unchanged")
             )
-            return _page(request, form, campaign, label, status=400, stale=stale)
+            return _page(
+                request, form, campaign, label, status=400, stale=stale, summary=direct
+            )
         build_candidate(base, patch, candidate_id=uuid4())
+        if direct:
+            # Saved at once: no Review page to draw, so no samples to render.
+            token = sign_preview(
+                actor=actor,
+                configuration=configuration,
+                patch=patch,
+                salt=salt,
+                snapshot=fingerprint,
+                key=key,
+            )
+            if len(token) > 256_000:
+                raise ValueError("Content preview is too large.")
+            return token
         parish = document_parish(base.document())
         from parishkit.stewardship.jobs.receipt_preview import confirmation_block
 
@@ -572,7 +612,9 @@ def _preview(
                 code="candidate_refused",
             ),
         )
-        return _page(request, form, campaign, label, status=400, stale=stale)
+        return _page(
+            request, form, campaign, label, status=400, stale=stale, summary=direct
+        )
     admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
@@ -612,7 +654,15 @@ def _affected_rows(affected, campaign):
 
 @require_http_methods(["GET", "HEAD", "POST"])
 def content_settings(request, campaign_id, kind=None, slot=None, revision_id=None):
-    """Browse and edit content without installing YAML or accessing a real Family."""
+    """Browse and edit content without installing YAML or accessing a real Family.
+
+    An editor's POST is Preview changes (``preview``, answered with the
+    Review content changes page) or that page's Apply (``confirm``). Inside
+    the campaign wizard the editor posts ``save`` instead (#1404 PR 4b): the
+    same checks and signed preview, recorded at once by
+    ``campaign_wizard.save_step`` once the work transaction has ended, and
+    answered with the change's status, which the page follows.
+    """
     try:
         service = runtime()
         actor = principal(request, service)
@@ -627,6 +677,7 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
         )
         if (request.GET and not start) or request.FILES:
             raise ValueError("Invalid content parameters.")
+        action = None
         if request.method == "POST":
             fields = set(ContentForm.base_fields) - (
                 {"subject"} if kind == "page" else set()
@@ -634,11 +685,20 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
             # Only Family emails carry the campaign banner choice (#248).
             if kind == "email" and slot in BANNER_EMAILS:
                 fields.add("show_banner")
-            action = form_action(request.POST, preview_fields=fields)
+            action = form_action(request.POST, preview_fields=fields, direct=True)
             if kind is None:
                 raise ValueError("The catalog is read-only.")
             if action == "confirm":
                 return confirm(request, service, actor, salt=salt, current_scope=_scope)
+        # A direct save's key; a repeat of it is answered with its first
+        # change's status before the form is checked again (#1486).
+        key = direct_key(request.POST) if action == "save" else None
+        if key is not None and (
+            repeat := campaign_wizard.repeated_save(request, actor, key)
+        ):
+            repeat["Cache-Control"] = "no-store"
+            return repeat
+        saved = None
         with (
             read_transaction()
             if request.method in {"GET", "HEAD"}
@@ -687,6 +747,7 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                         salt,
                         note,
                         stale_markup(shown),
+                        key,
                     )
                     if request.method == "POST"
                     else _page(
@@ -704,6 +765,18 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                         folded=note is not None,
                     )
                 )
+                if isinstance(response, str):
+                    saved, response = response, None
+        if saved is not None:
+            response = campaign_wizard.save_step(
+                request,
+                service,
+                actor,
+                token=saved,
+                salt=salt,
+                current_scope=_scope,
+                campaign_id=campaign_id,
+            )
         # Recheck access after the observation ends, so a GET's read-only
         # snapshot cannot hide a revocation committed while it rendered.
         if not allows(

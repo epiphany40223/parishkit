@@ -2784,7 +2784,9 @@ scheduled email** (`/admin/campaign/schedules/<schedule>/`, opened by a row's
 Edit) are one page: the mail type, send date, send time, day of the week and
 Email to send of one schedule, with the rules above. Its review and Apply follow the
 [review dialog](../ui-conventions/spec.md#review-dialog); once the change is applied the reader returns to
-Dates and mail schedules, whose status line says what was applied. Edit
+Dates and mail schedules, whose status line says what was applied. Inside
+the campaign wizard it saves directly instead, with Save and go back
+([guided steps](#create-the-campaign), #1404 PR 4b). Edit
 opens it filled in
 from the saved schedule, whose mail type is fixed; a schedule that is unknown or
 read-only is refused there too, even from an old link (a GET or a POST).
@@ -3226,9 +3228,11 @@ its guided steps are built
 ([#142](https://github.com/epiphany40223/parishkit/issues/142)), with #1404's
 quick wins ([#1407](https://github.com/epiphany40223/parishkit/pull/1407))
 and Create the campaign drawn as step 1 (#1404 PR 3), and the direct save
-on Campaign settings and Share options (#1404 PR 4).
+on Campaign settings and Share options (#1404 PR 4) and on Pages and emails'
+editor and New and Edit scheduled email (#1404 PR 4b).
 The rest of #1404 is planned, and each part below marked "(planned, #1404
-PR n)" describes the design, not yet the pages: direct saves on Campaign images and the sub-pages (PR 4, its second part); Load
+PR n)" describes the design, not yet the pages: the direct save on Campaign
+images (PR 4c); Load
 ParishSoft data as a step (PR 5); the Pages and emails item states and the
 suggested schedules (PR 6); and Back asking before it discards, with
 Go-live readiness's summary lines (PR 7). Setup ends without a campaign, so
@@ -3468,7 +3472,7 @@ schedules still leads to Dates and mail schedules' combined review. On
 Campaign images, while a chosen image is not uploaded yet, Continue is
 unavailable, with a hint after the row in a line that is always reserved,
 so the page's own Save (with its review dialog, for now) stays the way on,
-until its direct save makes it Save and continue (planned, #1404 PR 4).
+until its direct save makes it Save and continue (planned, #1404 PR 4c).
 Preview and test
 email offers Continue to Go-live readiness only once its test is accepted,
 because the test is the step's purpose; Go-live readiness, the last step,
@@ -3479,10 +3483,32 @@ while there is an invitation to test; until then Back and Continue skip it).
 The pages a step opens are its sub-pages: Campaign settings' content
 history, Pages and emails' editor (with its preview), and Dates and mail
 schedules' New and Edit scheduled email and Campaign calendar. They draw the same stepper with their
-step current, and their action row is **Return to** that step. The stepper is
+step current, and their action row is **Return to** that step. On the
+sub-pages that save (the editor, New and Edit scheduled email) the row also
+holds **Save and go back** (#1404 PR 4b), and the page draws no Save,
+Preview changes or Cancel of its own. It saves directly, as Save and
+continue does on a step (the same request key, checks, status line,
+refusals and kept values; [wizard rule 5](../ui-conventions/spec.md#wizards)),
+and once the change is applied it opens the step again, whose status line
+says what was saved and when ("Welcome page saved. Applied at 3:04 PM.",
+"Scheduled email saved."). It is unavailable until the form holds a
+change, as the page's own button was, named by the reserved hint inside the
+form ("Change the content to save it." on the editor). Where the editor
+offers saving what is shown as it is (a started default text, a re-save
+notice, a folded closing note, a refused save) it stays available, as
+Preview changes does; the server still refuses an unchanged save at the
+form ("No content has changed."). The
+editor's own preview (the visual editor and the plain text drawn from it)
+stays; the Preview changes page with its fictional sample and the schedules
+the new text switches is not shown on a draft, whose schedules have sent
+nothing, and Preview and test email shows the sample. Send work in progress
+that would block a schedule change refuses the save with its reason, and the
+status line links Outgoing mail. The
+Keep as is and go back half of rule 10 waits for the item states (PR 6).
+The stepper is
 an [in-place](../ui-conventions/spec.md#in-place-controls) region: after a
 [review dialog](../ui-conventions/spec.md#review-dialog)'s Apply (Campaign
-images, or a sub-page's editor) the page's redraw from its own address, or an
+images) the page's redraw from its own address, or an
 in-place refresh, shows the new completion without a reload, and a reload
 shows the same. Change status, once a change that completes a step is
 applied, offers Return to that step for a sub-page's change (an email's

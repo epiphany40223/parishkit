@@ -25,6 +25,15 @@ wizard draws it, Financial stewardship on, saving to itself (answered with
 ``APPLIED``) and going on to ``CONTENT``; ``DIRECT_SETTINGS_REFUSED`` is that
 page drawn again with the campaign name's error, which a test answers a save
 with (status 400).
+
+The sub-pages that save directly (#1404 PR 4b): ``EDITOR_DIRECT`` is the
+editor as the wizard draws it, saving to itself (answered with ``APPLIED``)
+and going back to ``CONTENT``; ``EDITOR_DIRECT_REFUSED`` is that editor drawn
+again with its HTML refused for an unknown placeholder, and its summary (a
+test answers a save with it, status 400). ``NEW_DIRECT`` and ``EDIT_DIRECT``
+are New and Edit scheduled email as the wizard draws them, saving to
+themselves (``APPLIED``) and going back to ``SCHEDULES``, Dates and mail
+schedules with its stepper.
 """
 
 from dataclasses import replace
@@ -43,6 +52,7 @@ from parishkit.stewardship.accounts.share_forms import (
     default_share_options,
 )
 
+from . import schedule_list_components as schedule_pages
 from .campaign_settings_components import NOT_APPLIED, VALUES, _form
 
 PATH = "/campaign-stepper"
@@ -59,6 +69,11 @@ DIRECT = "/campaign-stepper-direct"
 DIRECT_RETRY = "/campaign-stepper-direct-retry"
 DIRECT_SETTINGS = "/campaign-stepper-direct-settings"
 DIRECT_SETTINGS_REFUSED = "/campaign-stepper-direct-settings-refused"
+EDITOR_DIRECT = "/campaign-stepper-editor-direct"
+EDITOR_DIRECT_REFUSED = "/campaign-stepper-editor-direct-refused"
+SCHEDULES = "/campaign-stepper-schedules"
+NEW_DIRECT = "/campaign-stepper-new-direct"
+EDIT_DIRECT = "/campaign-stepper-edit-direct"
 # Campaign settings with Financial stewardship on, complete.
 FINANCIAL_VALUES = VALUES | {
     "financial_enabled": True,
@@ -74,6 +89,9 @@ POSTS = {
     DIRECT: (303, APPLIED, ""),
     DIRECT_RETRY: (303, NOT_APPLIED, ""),
     DIRECT_SETTINGS: (303, APPLIED, ""),
+    EDITOR_DIRECT: (303, APPLIED, ""),
+    NEW_DIRECT: (303, APPLIED, ""),
+    EDIT_DIRECT: (303, APPLIED, ""),
     reverse("admin:campaign_step_continue"): (303, CONTENT, ""),
 }
 
@@ -83,23 +101,35 @@ def components(context, admin):
     options = default_share_options()
     renamed = [dict(options[0], label="Renamed option"), *options[1:]]
 
-    def stepper(done, current="share_options", sub=False, direct=False):
+    def stepper(done, current="share_options", sub=False, direct=False, back=None):
         """The stepper on ``current`` with ``done`` completed.
 
         A ``direct`` one goes on to ``CONTENT``, the component Pages and
-        emails, rather than the real address.
+        emails, rather than the real address; a direct sub-page goes back to
+        ``back``, its step's component page.
         """
         wizard = campaign_wizard.build(
             True, current, done=done, mail_test_url=TEST_URL, sub=sub, direct=direct
         )
-        if direct:
+        if direct and sub:
+            steps = tuple(
+                replace(step, url=back) if step.current else step
+                for step in wizard.steps
+            )
+            wizard = replace(wizard, steps=steps)
+        elif direct:
             wizard = replace(wizard, upcoming=replace(wizard.upcoming, url=CONTENT))
         return wizard
 
-    def content(template, values, sub=False):
-        """A Pages and emails page (``sub``: its editor), Share options kept."""
+    def content(template, values, sub=False, direct=False):
+        """A Pages and emails page (``sub``: its editor), Share options kept.
+
+        A ``direct`` editor saves directly and goes back to ``CONTENT``.
+        """
         chrome = admin | {
-            "campaign_wizard": stepper({"settings", "share_options"}, "content", sub)
+            "campaign_wizard": stepper(
+                {"settings", "share_options"}, "content", sub, direct, back=CONTENT
+            )
         }
         return (
             "text/html",
@@ -168,6 +198,58 @@ def components(context, admin):
             ),
         )
 
+    def editor(form, post_url):
+        """The editor's values: its saved welcome page, or ``form``.
+
+        Its change gate holds Save and go back while the saved page is shown
+        (``content_views._page``'s ``change_gate``); a refused save drawn
+        with its posts is saved as it is, so it is not gated.
+        """
+        return {
+            "label": "Welcome page",
+            "visual": "<p>Welcome</p>",
+            "placeholders": ["family_name"],
+            "form": form,
+            "post_url": post_url,
+            "change_gate": not form.is_bound,
+            "errors": summary_errors(form) if form.is_bound else [],
+        }
+
+    welcome = {"base_digest": "a" * 64, "html": "<p>Welcome</p>"}
+    # A placeholder the editor does not support: refused at its field.
+    unknown = ContentForm(
+        welcome
+        | {"html": "<p>Welcome {{ unknown }}</p>", "generate_text": "on", "text": ""},
+        kind="page",
+        slot="welcome",
+    )
+    assert not unknown.is_valid()
+
+    def schedule(values, path, schedule_row=None, current="schedules"):
+        """New or Edit scheduled email inside the wizard, going back to
+        ``SCHEDULES``; or (``current`` None) that list with its stepper."""
+        done = {"settings", "share_options", "content"}
+        chrome = admin | {
+            "campaign_wizard": stepper(
+                done, "schedules", sub=current is not None, direct=True, back=SCHEDULES
+            )
+            if current
+            else stepper(done, "schedules")
+        }
+        owner, emails, rows = schedule_pages._data()
+        if current is None:
+            return schedule_pages._list(
+                values | {"admin_chrome": chrome}, owner, emails, rows
+            )
+        return schedule_pages._entry(
+            values | {"admin_chrome": chrome},
+            owner,
+            emails,
+            rows,
+            schedule_row=rows[1] if schedule_row else None,
+            post_url=path,
+        )
+
     refused = _form(FINANCIAL_VALUES, data=FINANCIAL_VALUES | {"name": ""})
     refused.is_valid()
     applied = SimpleNamespace(state="applied", request_id=REQUEST, failure_code="")
@@ -201,6 +283,24 @@ def components(context, admin):
             },
             sub=True,
         ),
+        EDITOR_DIRECT: content(
+            "content-settings.html",
+            editor(
+                ContentForm(kind="page", slot="welcome", initial=welcome),
+                EDITOR_DIRECT,
+            ),
+            sub=True,
+            direct=True,
+        ),
+        EDITOR_DIRECT_REFUSED: content(
+            "content-settings.html",
+            editor(unknown, EDITOR_DIRECT),
+            sub=True,
+            direct=True,
+        ),
+        SCHEDULES: schedule(context, SCHEDULES, current=None),
+        NEW_DIRECT: schedule(context, NEW_DIRECT),
+        EDIT_DIRECT: schedule(context, EDIT_DIRECT, schedule_row=True),
         REVIEW: (
             "text/html",
             render_to_string(
