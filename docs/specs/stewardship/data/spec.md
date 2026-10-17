@@ -681,12 +681,13 @@ not duplicate calculated daily rows solely for operational history.
 
 Protect the interactive pointer's generation, including a stale generation
 displayed while its replacement builds; every generation/input set pinned by
-a retained export, digest occurrence, or other retained pinned report; building
-or recoverable failed generations and generations needed by queued/retrying
-work; and generations actively read, rendered, or verified. Export-file expiry
-alone does not release a pin whose retained parent metadata still requires
-that generation. Compaction never changes parent retention or discards a pin
-to reclaim space.
+an export that has not ended (one preparing, downloadable, or failed and
+still retryable), a digest occurrence, or other retained pinned report;
+building or recoverable failed generations and generations needed by
+queued/retrying work; and generations actively read, rendered, or verified.
+An export's pins are released when it ends, with its saved capture (see
+[point-in-time exports](../operations/spec.md#point-in-time-exports)).
+Compaction never changes parent retention or discards a pin to reclaim space.
 
 Selecting a generation and acquiring its read/use protection must be atomic
 with respect to compaction, as must adding a durable pin, publishing a pointer,
@@ -2067,9 +2068,10 @@ Live submissions, protected and policy-anchor normalized snapshot history,
 lightweight source manifests, workflow history, email metadata/content, and
 audit events are retained indefinitely by default. Unprotected redundant source
 corpora follow the compaction policy in
-[Source snapshot](#source-snapshot). Operational HTTP caches, temporary export
-files, and transient task payloads have bounded cleanup policies defined by
-operations.
+[Source snapshot](#source-snapshot). Operational HTTP caches, export files
+and their saved captures, and transient task payloads have bounded cleanup
+policies defined by operations (for exports,
+[point-in-time exports](../operations/spec.md#point-in-time-exports)).
 
 The three exceptions are:
 

@@ -947,8 +947,7 @@ the page's mode to `reports/families/<family>/exports/`, which only an
 Administrator may use, as only an Administrator sees the full timeline;
 Staff get no form, and their post is denied. The file can hold the Family's
 live code, so, like the Active parishioner family directory's exports,
-creating or regenerating
-it needs a Google sign-in within five minutes
+creating it needs a Google sign-in within five minutes
 ([#547](https://github.com/epiphany40223/parishkit/issues/547)); a stale
 sign-in gets the step-up page, which returns to the timeline, and nothing is
 made. The form is drawn inside the
@@ -981,12 +980,10 @@ active configuration and a Family of that campaign (with its DUID), with the
 document's keys and value types checked and its size bounded, and sets the
 event count itself. The Family code is never
 captured: the worker decrypts it into the file, under the key-set lock, only
-when the requester may see Family codes. The status page, download,
-retention, Retry, Cancel and Regenerate are the shared lifecycle's; a
-regeneration reuses the capture. A Testing export is bound to the rehearsal
-it was captured in, so once that rehearsal has ended (a new rehearsal, or the
-return to Production) it can no longer be regenerated; export it again
-instead. The request records `export_requested`
+when the requester may see Family codes. The status page, download, Retry,
+Cancel and the short download window are the shared
+[point-in-time](../operations/spec.md#point-in-time-exports) lifecycle's.
+The request records `export_requested`
 with its line count, and the download `export_downloaded`, never a name, code
 or line of text. The command line's
 [`export family-timeline`](../admin-automation/spec.md#reports-and-exports)
@@ -1022,8 +1019,8 @@ compaction has begun on that snapshot by the time the file is rendered,
 every row keeps the captured surname instead, so one file never mixes the
 two forms. The file's "Family names" report detail says which form it uses
 ("Surname, then heads of household", or "Surname only" with the reason). A
-late render (a retry, or regenerating an expired file) can therefore differ
-from an earlier render of the same capture only in that name form.
+late render (a retry) can therefore differ from an earlier render of the same
+capture only in that name form.
 The CSV, XLSX and PDF share one set of columns and carry no internal
 references: no row type or row version column (the Administrator, 2026-10-09,
 and decision B1 on
@@ -1194,14 +1191,13 @@ part of the export's captured selection; they are read when the file is
 rendered, from the captured ParishSoft data while it is still kept.
 ParishSoft data is refreshed often (every 15 minutes under the default
 [refresh schedule](../background-processing/spec.md#refresh-schedule)) and
-superseded data is soon compacted, so a render that comes later (a retry,
-or regenerating an expired
-file) reads the same heads' emails from the current ParishSoft data instead,
+superseded data is soon compacted, so a render that comes later (a retry)
+reads the same heads' emails from the current ParishSoft data instead,
 and the file's report details add "Head emails as of" that data's refresh
 time. CSV files carry no report details, so that note appears only in XLSX
 and PDF files. A head the current data no longer has as a Member at all
-reads "(Not in ParishSoft)" rather than "(no email)". A regenerated or
-retried file therefore has the same Families, names,
+reads "(Not in ParishSoft)" rather than "(no email)". A retried file
+therefore has the same Families, names,
 codes and other columns as the capture, but its head emails may be newer. Only
 when no ParishSoft data is available at all does the render fail, with its
 own failure kind (`directory_head_emails_unavailable`) in the logs; the
@@ -1214,24 +1210,22 @@ for a time zone only for the Family-code list with response columns, whose
 dates are times of actions; the code list without them and the postal mail
 merge use the browser's zone unasked for their capture times
 ([time zone question](../ui-conventions/spec.md#downloaded-files)). The
-export's retained capture keeps only the private contact columns its file
+export's capture keeps only the private contact columns its file
 renders (#388 L6): the address for the mailing-columns file, phones for the
 list filtered to Families no campaign mail can reach, and the envelope number
-for the Family-code file only (#933). The rest are stored empty, and captures
-made before these rules are kept as they were until their exports expire (a
-code-list file from an older capture has a blank Envelope number column). Exports use the standard asynchronous, short-lived, requester-authorized export
+for the Family-code file only (#933). The rest are stored empty. Exports use
+the standard asynchronous, short-lived, requester-authorized export
 pipeline, including its explicitly accepted plaintext storage and owner-only
 permissions under the
-[export retention policy](../operations/spec.md#temporary-retention-and-housekeeping).
-Opening the page needs no fresh sign-in, but queuing an export, or
-regenerating an expired one, needs a Google sign-in within the last five
+[point-in-time export rule](../operations/spec.md#point-in-time-exports).
+Opening the page needs no fresh sign-in, but queuing an export needs a Google
+sign-in within the last five
 minutes, because the file holds every listed Family's code
 ([#547](https://github.com/epiphany40223/parishkit/issues/547)). A stale
 sign-in gets the
 [step-up](../architecture/spec.md#identity-and-session-security), which
-queues nothing and returns to the directory (or the export's status page);
-the filters, being private form state, are applied again. The export panel
-says so before the Administrator or Staff member queues one, when their
+queues nothing and returns to the directory; the filters, being private form
+state, are applied again. The export panel says so before the Administrator or Staff member queues one, when their
 sign-in is already older than that
 ([page help](../ui-conventions/spec.md#page-help)). Interactive report execution and exports are audited at
 report, campaign, actor, filter, and row-count granularity without copying
@@ -1393,8 +1387,8 @@ is queued, the export is refused (409) and nothing is made, so the file
 never holds a later rehearsal than the page showed. The
 [command line](../admin-automation/spec.md#reports-and-exports) has no page,
 so it reads the rehearsal active when it runs. A Testing export is admitted
-for Administrators only (queuing, downloading, retrying and regenerating
-alike) and its columns are the Production file's. Its XLSX and PDF report
+for Administrators only (queuing, downloading and retrying alike) and its
+columns are the Production file's. Its XLSX and PDF report
 details add **Responses shown: Testing rehearsal**; a CSV has no report
 details, so the downloaded file's name says it instead
 (`family_directory-testing.csv`, `postal_outreach-testing.csv`, and the same
@@ -1470,8 +1464,8 @@ active parishioner family directory's contact details do not already show
 Admin and Staff, and Ministry leaders are denied either way. Viewing with
 mailing columns is audited as postal outreach, and its export is a
 `postal_outreach` export request. An export captured before #951 keeps its
-own filters, including a reach other than "By postal mail only", until it
-expires.
+own filters, including a reach other than "By postal mail only", for the rest
+of its [download window](../operations/spec.md#point-in-time-exports).
 
 Detail contains Family DUID, envelope number where present, Family/head names,
 head email addresses, family/member phone numbers, complete primary address, reason, and campaign
@@ -1677,8 +1671,9 @@ render; see
 (`/admin/reports/ministries/joining/`, `/leaving/` and the export form's
 `/admin/reports/ministries/exports/`) answer 404, with no redirect
 ([legacy URLs](../ui-conventions/spec.md#addresses-and-legacy-urls)). Export
-files made from the lists before then stay downloadable until they expire,
-and the host `export ministry` command still writes one Ministry's join or
+files made from the lists before then stay downloadable for the rest of
+their [download window](../operations/spec.md#point-in-time-exports), and the
+host `export ministry` command still writes one Ministry's join or
 leave list.
 
 Neither list nor its export shows a resolved request's **Entered in
@@ -1715,10 +1710,10 @@ The per-Ministry counts have no export
 no parishioner data, and the page already shows them. The page's downloads
 are Export these requests and the
 [follow-up packet](#multi-ministry-follow-up-packet). A request for a summary
-export, including regenerating an expired one made before the removal, is
-refused as an invalid selection; an existing summary file stays downloadable
-until it expires. The page shows the ParishSoft data date but not the data
-load number, an internal counter.
+export is refused as an invalid selection; an existing summary file stays
+downloadable for the rest of its
+[download window](../operations/spec.md#point-in-time-exports). The page shows
+the ParishSoft data date but not the data load number, an internal counter.
 The packet has no date filter. Every leader view/export is audited with
 Ministry scope: a follow-up request page's view records its request's
 `ministry_duid`, and **Export these requests** records the sorted Ministry
@@ -2177,7 +2172,7 @@ figures, so the charts have no exact-values table
 choose more than one share method, so those shares can add up past 100%. The
 summary follows the applied filters in place, and its charts keep their space
 until they are drawn again. Exports are CSV, XLSX, and PDF; queuing
-or regenerating one needs the same fresh sign-in as a
+one needs the same fresh sign-in as a
 [active parishioner family directory](#active-parishioner-family-directory) export, returning to this report. No
 Ministry leader receives aggregate or Family financial detail.
 

@@ -503,7 +503,6 @@ never scrolls to show it (Administrator, pk-local review of
   whose heading takes focus, and lists the state and recipient lines,
   history, forms and bounce panel to replace too. An export's Retry and
   Cancel swap its status panel and hand focus to Refresh status below.
-  Regenerate, whose answer is a new export's page, stays a navigation.
   Preview and test email's Send this test email posts in place too: its
   notices and form are one region and Recent test results another, whose
   heading takes focus. The list updates by itself while a test is on its
@@ -3152,6 +3151,43 @@ must be one of the exceptions above (or the participation chart). The
 Limitations report (formerly Talents and limitations,
 [#970](https://github.com/epiphany40223/parishkit/issues/970)) offers all
 three formats; the guard checks its Members and Families tables in each.
+
+### Point-in-time downloads
+
+**Rule.** A download is a point-in-time copy of what the report shows when
+it is asked for; the portal keeps no copies and no history of earlier
+downloads, and no page lists them. A download made in the background (an
+export) has a status page only for its short life: it says the file is
+being prepared, starts the download once when the file is ready, offers
+Cancel while preparing and Retry after a failed run (until the export
+ends), and says until when the file can be downloaded again, in
+[browser-local time](#dates-and-times): the window's computed end, never a
+later recorded `expires_at`. There is no Regenerate. Once the
+export has ended (its window is over, it was cancelled, or a failed run
+can no longer be retried; see
+[point-in-time exports](../operations/spec.md#point-in-time-exports)), its
+status page and its download answer one fixed page, "This export is no
+longer available. Export it again from _report_.", whose link returns to
+the report the export came from. The page answers 410 Gone, not 404, since
+an open tab or the Back button still lands there. Its checks run in this
+order:
+
+1. the existing owner and capability check, so another user's export or an
+   unknown request id gets the existing denial or 404 and learns nothing of
+   the export or its report;
+2. the [not-current-campaign](#addresses-and-legacy-urls) 410;
+3. this page.
+
+An open status page does not change by itself when the window ends: the
+"until" time already says when, and nothing on the page moves. Its next
+load, Refresh status, Download or Retry answers the fixed page, as the
+in-place controls show any other refusal. The window's length and setting,
+and what is deleted when an export ends, are the
+[point-in-time exports](../operations/spec.md#point-in-time-exports) rule.
+**Why.** The downloads are a point-in-time function: keeping their own
+copies is up to the people who downloaded them (the Administrator,
+2026-10-15). **Precedent.**
+[#1398](https://github.com/epiphany40223/parishkit/issues/1398).
 
 ## Family portal
 

@@ -2672,8 +2672,9 @@ guarded in SQL: only an Administrator, for the current Testing draft, with
 one `{"duid", "name"}` row per reviewed DUID in the review's order; the
 export needs the configure capability to read, as the page does. Migration
 0037 admitted only CSV for this kind; `0049_family_test_names_formats.sql`
-widens that arm of `export_report_known` to CSV, XLSX and PDF. An expired
-file is regenerated from the retained capture, in its original format.
+widens that arm of `export_report_known` to CSV, XLSX and PDF. The file is
+[point-in-time](../operations/spec.md#point-in-time-exports): its capture is
+deleted when the export ends, so nothing regenerates it.
 
 ### Reports and exports
 
@@ -3026,7 +3027,11 @@ The export lifecycle commands work on any report export the Administrator
 may see, through the functions the export pages use
 (`reports.export_services`, and `export_views.prepare_download` for the
 download), so an export requested on a page is followed and fetched from
-the command line and the other way round. `export status` admits passively
+the command line and the other way round. Their files follow the
+[point-in-time](../operations/spec.md#point-in-time-exports) rule's download
+window; `export regenerate`, below, leaves with that rule's command-line
+change ([#1398](https://github.com/epiphany40223/parishkit/issues/1398)).
+`export status` admits passively
 like the status page (any session) and records nothing, as the page
 records nothing. `export create` (the Participation page's form, for the
 generation its `--fact-set` names), `export comparison` (the Campaign
