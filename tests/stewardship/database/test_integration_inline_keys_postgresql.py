@@ -192,7 +192,7 @@ def test_organization_cannot_change_after_the_first_load(
 
     Every refresh must read the organization whose data is loaded, so saving
     another ID (with or without a new key) would stop them all. The page
-    shows the ID read-only, and a posted change is refused: nothing is
+    shows the ID disabled, and a posted change is refused: nothing is
     queued or staged.
     """
     monkeypatch.setattr(
@@ -201,8 +201,8 @@ def test_organization_cannot_change_after_the_first_load(
     )
     page = working["browser"].get(URL)
     field = page.context["form"]["organization_id"]
-    assert field.field.widget.attrs.get("readonly") is True
-    assert b"so its ID can no longer change" in page.content
+    assert field.field.disabled and " disabled" in str(field)
+    assert b"Locked: ParishSoft data for this organization is loaded." in page.content
     if with_key:
         response = save(working, organization_id="54321")
     else:
