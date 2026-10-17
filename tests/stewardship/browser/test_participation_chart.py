@@ -244,6 +244,26 @@ def test_a_date_column_shows_that_dates_figures(page, chart):
     assert chart.bounding_box() == resting
 
 
+def test_printing_hides_the_guide_line_and_tooltip(page, chart):
+    """Printing while the pointer rests on the chart clears the hover guide
+    line (beforeprint) and hides the tooltip (print media) (#1536), so a
+    printed page never shows them."""
+    tooltip = page.locator("#vg-tooltip-element")
+    _wheel_into_view(page, chart)
+    _point_until_shown(
+        page,
+        chart.locator("svg g.mark-group.role-scope > g > path.background").first,
+        tooltip,
+    )
+    eventually(page, f"() => ({GUIDES})().length", 3)
+    page.evaluate("() => window.dispatchEvent(new Event('beforeprint'))")
+    eventually(page, f"() => ({GUIDES})().length", 0)
+    page.emulate_media(media="print")
+    expect(tooltip).to_be_hidden()
+    page.emulate_media(media="screen")
+    page.evaluate("() => window.dispatchEvent(new Event('afterprint'))")
+
+
 # Sets window.tipOpened once vega-tooltip shows its tooltip element, and
 # window.guideShown once a hover guide line shows (#1536).
 TIP_OPENED = """() => {

@@ -289,7 +289,18 @@
         attributeFilter: ["fill", "stroke", "style"] });
     }
   });
+  // The hover guide line and tooltip belong to the pointer resting on a
+  // chart; a page printed meanwhile must not show them (ui-conventions
+  // "Charts"). Vega clears a hover selection on pointerout, so send each
+  // drawn chart one, as a tap elsewhere does (below). Its tooltip is hidden
+  // in print by chart-v1.css.
+  const unhover = () => drawn.forEach((_result, root) => {
+    const svg = root.querySelector("[data-chart-view] svg");
+    if (!svg) return;
+    svg.dispatchEvent(new PointerEvent("pointerout", { bubbles: true }));
+  });
   const toLight = () => {
+    unhover();
     if (swapped) return;
     swapped = [];
     drawn.forEach((_result, root) => lighten(root));

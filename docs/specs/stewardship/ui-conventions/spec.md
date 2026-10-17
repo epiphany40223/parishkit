@@ -361,8 +361,9 @@ invisible full-height hover band), so no one has to find a thin line or a
 small point. The line is one shared colour (the ink colour at half opacity,
 following the colour scheme), appears only while an x value is inspected, is
 drawn over the chart without moving anything, is hidden from assistive
-technology and never appears in a printed page, download or email image.
-Category and bar charts, whose rows or bars react as a whole, have no guide
+technology, is cleared when the page starts to print (so a pointer resting on
+a chart does not leave it in the printout) and never appears in a download or
+email image. Category and bar charts, whose rows or bars react as a whole, have no guide
 line ([#1536](https://github.com/epiphany40223/parishkit/issues/1536)).
 
 ## Admin portal interaction
