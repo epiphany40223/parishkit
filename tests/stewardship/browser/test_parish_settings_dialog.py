@@ -181,12 +181,14 @@ def test_review_waits_for_a_change(page, component_origin):
 def test_a_field_error_is_marked_and_keeps_the_dialog_shut(page, component_origin):
     """A Review refused for a field's value is shown on the form: the field
     is marked with its message, the summary above the heading links to it,
-    the reader's typing stays, and no dialog opens."""
+    the reader's typing stays, and no dialog opens. The browser checks the
+    telephone's format itself (#1577), so the value typed is one it admits
+    and the server refuses (the fixture answers with its refusal)."""
     answer_reviews(page, component_origin, PARISH_REFUSED, 400, address=PARISH)
     page.goto(component_origin + PARISH)
     failures = watch(page)
     phone = page.get_by_label("Parish telephone")
-    phone.fill("123")
+    phone.fill("(212) 555-9876")
     page.get_by_role("button", name=SAVE, exact=True).click()
     summary = page.locator("[data-error-summary]")
     visible(summary)
@@ -195,7 +197,7 @@ def test_a_field_error_is_marked_and_keeps_the_dialog_shut(page, component_origi
     assert not page.locator("dialog[data-review-dialog]").is_visible()
     summary.get_by_role("link", name="Parish telephone: Enter a ten-digit").click()
     assert page.evaluate(FOCUSED) == "id_phone"
-    assert phone.input_value() == "123"
+    assert phone.input_value() == "(212) 555-9876"
     assert page.evaluate(MARKED) == "kept"
     assert not failures
 
