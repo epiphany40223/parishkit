@@ -365,7 +365,7 @@ def test_configured_content_editor_can_reset_to_the_default(auth_service, google
     mine = post(browser, path, values(store, html="<p>Mine</p>"))
     apply(store, post(browser, path, {"action": "confirm", "preview": token(mine)}))
     listing = browser.get(catalog).content.decode()
-    assert "Family welcome</a> — Customized" in listing
+    assert "Family welcome</a> — Edited" in listing
     saved = browser.get(path)
     assert b"Reset to the default text" in saved.content
     assert b"Start from the default text" not in saved.content

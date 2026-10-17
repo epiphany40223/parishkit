@@ -88,7 +88,7 @@ def test_content_list_is_the_pages_list(admin):
     assert pages["welcome"] == {
         "slot": "welcome",
         "name": "Family welcome",
-        "state": "custom",
+        "state": "edited",
         "resave": None,
     }
     assert pages["login_help"]["state"] == "empty"
@@ -103,7 +103,7 @@ def test_content_list_is_the_pages_list(admin):
     assert revisions["Sent"]["used_by"] and not revisions["Sent"]["deletable"]
     assert revisions["Spare"]["used_by"] == [] and revisions["Spare"]["deletable"]
     assert revisions["Spare"]["excerpt"].startswith("Welcome to {{ parish_name }}.")
-    assert revisions["Spare"]["state"] == "custom"
+    assert revisions["Spare"]["state"] == "edited"
     assert revisions["Spare"]["resave"] is None
     confirmation = emails["confirmation"]
     assert confirmation["singleton"] and not confirmation["scheduled"]

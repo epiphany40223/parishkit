@@ -106,7 +106,7 @@ def catalog():
             "slot": "welcome",
             "label": "Family welcome",
             "url": "/admin/campaign/content/page/welcome/",
-            "state": "custom",
+            "state": "edited",
             "resave": StaleMarkup(
                 removed=("an onclick attribute",), lost=(), blocked=False
             ),
@@ -155,7 +155,7 @@ def catalog():
                     "subject": "Thank you",
                     "name": "Thank you",
                     "deletable": False,
-                    "state": "custom",
+                    "state": "edited",
                     "resave": None,
                     "test_url": None,
                     "url": "/admin/campaign/content/email/confirmation/",
@@ -177,7 +177,7 @@ def test_content_list_is_its_golden_projection():
             {
                 "slot": "welcome",
                 "name": "Family welcome",
-                "state": "custom",
+                "state": "edited",
                 "resave": {
                     "removed": ["an onclick attribute"],
                     "lost": [],
@@ -215,7 +215,7 @@ def test_content_list_is_its_golden_projection():
                         "excerpt": "",
                         "used_by": [],
                         "deletable": False,
-                        "state": "custom",
+                        "state": "edited",
                         "resave": None,
                     }
                 ],
@@ -264,7 +264,7 @@ def test_content_show_is_its_golden_projection():
         "slot": "reminder",
         "name": "Reminder",
         "revision_id": REVISION,
-        "state": "custom",
+        "state": "edited",
         "resave": None,
         "from_default": False,
         "content": {
