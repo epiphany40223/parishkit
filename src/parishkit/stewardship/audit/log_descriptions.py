@@ -715,6 +715,10 @@ DESCRIPTIONS = {
     "credential_result_dismissed": _(
         "An Administrator dismissed the result of a key change."
     ),
+    "credential_key_organization_mismatch": _(
+        "A new ParishSoft key was refused: it belongs to a different "
+        "ParishSoft organization."
+    ),
     "family_maintenance_started": _(
         "An Administrator closed the Family portal for maintenance."
     ),

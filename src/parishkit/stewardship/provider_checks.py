@@ -9,7 +9,10 @@ import time
 from contextlib import suppress
 from threading import Event, Thread
 
-from .accounts.credential_errors import CredentialValidationUnavailable
+from .accounts.credential_errors import (
+    CredentialOrganizationMismatch,
+    CredentialValidationUnavailable,
+)
 from .accounts.key_files import MAX_FILE_BYTES
 from .accounts.provider_context import validated_context
 from .deployment import DeploymentProfile
@@ -167,7 +170,10 @@ def check_candidate(target, settings, value, *, seconds, check, profile):
     This internal function has no authorization of its own. The request validator
     below admits the actual target login, closes SQL and reserves a deadline first.
     ``profile`` travels in the request so the environment-free helper admits
-    the local fake's endpoint only for a LOCAL deployment.
+    the local fake's endpoint only for a LOCAL deployment. Returns whether
+    the provider accepted the key; a ParishSoft key for another organization
+    raises ``CredentialOrganizationMismatch`` instead of returning False, so
+    the installer can record which refusal it was (#1495).
     """
     settings = validated_context(target, settings)
     if (
@@ -228,6 +234,8 @@ def check_candidate(target, settings, value, *, seconds, check, profile):
             b"mismatch\n",
         }:
             raise CredentialValidationUnavailable()
+        if output == b"mismatch\n":
+            raise CredentialOrganizationMismatch()
         return output == b"valid\n"
     except ProviderCheckDrainFailure:
         # Drainage already failed fatally. Closing a buffered pipe still owned
@@ -284,7 +292,9 @@ def request_validator(target, *, check, profile):
             return check_candidate(
                 target, settings, value, seconds=seconds, check=check, profile=profile
             )
-        except CredentialValidationUnavailable:
+        except (CredentialValidationUnavailable, CredentialOrganizationMismatch):
+            # A mismatch is the provider's verdict on the key, not a local
+            # failure: it must reach the installer as itself (#1495).
             raise
         except Exception:
             # Local admission, invocation and connection failures are not a
