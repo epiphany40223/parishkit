@@ -5833,9 +5833,14 @@ ParishSoft, and this tick only records that a person did.
 Administrators and Staff, linked from Ministry requests, which is its
 breadcrumb parent) is the list staff work from. It lists the resolved joins
 and leaves with no resolution source that are not yet ticked, or, with
-**Show** set to all, every one of them, to find and clear a mistaken mark,
-and **Ministry** narrows it to one Ministry (a closed DUID value, no schema
-change). Its columns follow the
+**Show** set to All, including entered, every one of them, to find and
+clear a mistaken mark, and **Ministry** narrows it to one Ministry (a closed
+DUID value, no schema change). Show (Not yet entered | All, including
+entered) is a [binary choice](../ui-conventions/spec.md#binary-choices)
+above the Ministry filter, applied at once in place, its links keeping the
+applied Ministry, sort and page size and going back to the first page
+([#1535](https://github.com/epiphany40223/parishkit/issues/1535)); Ministry
+keeps its Apply, which keeps the Show shown. Its columns follow the
 [table column order](../ui-conventions/spec.md#table-column-order): Member,
 Member DUID ("New Member" for a Member added on the form), ParishSoft
 status (blank while ParishSoft lists the Member in that Family; otherwise

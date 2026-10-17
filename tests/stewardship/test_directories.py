@@ -728,12 +728,14 @@ def test_testing_selection_pins_the_active_rehearsal(monkeypatch):
 def test_testing_view_is_labelled_and_leaves_out_production_responses(testing):
     """A Testing view says so and drops Responded, which reads Production.
 
-    The switch itself is drawn only when offered (``can_test``): Staff and
-    an Administrator with no rehearsal get a hidden Production field.
+    The switch itself (a binary choice above the Filters panel, #1535) is
+    drawn only when offered (``can_test``), and the filter form then carries
+    the mode shown as a hidden field, so Apply filters keeps it; Staff and
+    an Administrator with no rehearsal get neither.
     """
     from uuid import UUID
 
-    from parishkit.stewardship.reports.directories import MODES
+    query = DirectoryQuery(mode="testing" if testing else "production")
 
     def page(**context):
         """The directory page with one Family row."""
@@ -743,7 +745,6 @@ def test_testing_view_is_labelled_and_leaves_out_production_responses(testing):
                 "campaign_id": UUID(int=80),
                 "metadata": {"source_generation": 1},
                 "total": 1,
-                "modes": MODES,
                 "table": _table(
                     [
                         {
@@ -754,17 +755,27 @@ def test_testing_view_is_labelled_and_leaves_out_production_responses(testing):
                         }
                     ]
                 ),
-                "query": DirectoryQuery(mode="testing" if testing else "production"),
+                "query": query,
+                "query_fields": query.form_values() | {"mailing": "no"},
+                "report_url": "/families/",
                 "testing_responses": testing,
             }
             | context,
         )
 
     offered = page(can_test=True)
-    assert '<select id="directory-mode" name="mode"' in offered
+    assert '<div class="segmented-choice" id="directory-mode" role="group"' in offered
     assert 'id="directory-mode-tip"' in offered
+    assert '<select id="directory-mode"' not in offered
     selected = "testing" if testing else "production"
-    assert f'<option value="{selected}" selected>' in offered
+    assert (
+        f'<button type="submit" name="mode" value="{selected}" aria-current="page">'
+        in offered
+    )
+    assert offered.count('aria-current="page"') == 1
+    filters = offered.split('id="table-filters"')[1].split("</form>")[0]
+    assert filters.count('name="mode"') == 1
+    assert f'<input type="hidden" name="mode" value="{selected}">' in filters
     hidden = page(can_test=False)
     assert 'id="directory-mode"' not in hidden
     # No hidden stand-in either: an in-place answer drawn after the

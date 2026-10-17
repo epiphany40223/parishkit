@@ -5,11 +5,14 @@ The list is rendered through the view's own sorting at its real address
 in-place GET refresh lands on a served page). Each row's tick posts to the
 request's roster address; the fixture server answers the first row's with
 the real Post/Redirect/Get redirect back to the list (``POSTS``), which then
-no longer shows that row (``TICKED``). The list on All is served at the Show
-filter's own GET address, and the second row's tick there redirects to the
-list still on All (``AFTER_ALL``), with that row now marked. The bulk
-dialog's POST (``BULK_POST``) is answered by each test with a route; the
-dialog then redraws the list from ``BULKED``, without the two newest rows.
+no longer shows that row (``TICKED``). The list on All is served at the
+address its Show segment links to (``show_links``, #1535), and the second
+row's tick there redirects to the list still on All (``AFTER_ALL``), with
+that row now marked. The list with one Ministry applied is served at the
+filter form's own GET (``MINISTRY``), and the list on All for that Ministry
+at the address that page's Show segment links to. The bulk dialog's POST
+(``BULK_POST``) is answered by each test with a route; the dialog then
+redraws the list from ``BULKED``, without the two newest rows.
 ``TWICE`` lists one change twice, resolved near midnight UTC, named by the
 view's own ``row_controls`` so each row's day is the browser's (#558).
 """
@@ -23,14 +26,23 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 
 from parishkit.stewardship.reports.ministry_roster_views import (
-    SHOW,
     SORTING,
     row_controls,
+    show_links,
 )
 from parishkit.stewardship.web.tables import paginate
 
 PATH = reverse("admin:ministry_roster")
 TICKED = PATH + "?ticked=1"
+# The filter form's Apply with Ministry 9: the hidden Show, the Ministry,
+# then the kept size and sort.
+MINISTRY = (
+    PATH
+    + "?"
+    + urlencode(
+        [("show", "todo"), ("ministry", "9"), ("size", "25"), ("sort", "-resolved")]
+    )
+)
 # The list on All after a tick there: the view's redirect keeps show=all.
 AFTER_ALL = PATH + "?show=all&ticked=1"
 # The list after a tick someone else changed first.
@@ -92,7 +104,8 @@ def components(context, admin):
 
     def page(rows, paging, show="todo", changed=False, bulk_key=BULK_KEY, ministry=""):
         """Render the list from ``rows`` with ``paging``'s table choices."""
-        table = paginate(rows, paging, carry=[("show", show)], sorting=SORTING)
+        carry = [("show", show)] + ([("ministry", ministry)] if ministry else [])
+        table = paginate(rows, paging, carry=carry, sorting=SORTING)
         return table, (
             "text/html",
             render_to_string(
@@ -103,7 +116,7 @@ def components(context, admin):
                     "metadata": {"name": "Sample campaign"},
                     "table": replace(table, action=PATH),
                     "show": show,
-                    "show_choices": SHOW.items(),
+                    "show_links": show_links(table, PATH),
                     "ministry": ministry,
                     "ministries": [{"duid": 9, "name": "Food pantry"}],
                     "changed": changed,
@@ -122,6 +135,8 @@ def components(context, admin):
     _, second = page(rows, {"size": "25", "page": "2"})
     _, ticked = page(rows[:-1], {"size": "25"})
     _, everything = page(rows, {"size": "25"}, show="all")
+    one, one_ministry = page(rows, {"size": "25"}, ministry="9")
+    _, one_everything = page(rows, {"size": "25"}, show="all", ministry="9")
     marked = [dict(rows[-2], roster_entered=True, roster_sequence=1), *rows]
     del marked[-2]
     _, after_all = page(marked, {"size": "25"}, show="all")
@@ -138,13 +153,15 @@ def components(context, admin):
     row_controls(twice)
     _, listed_twice = page(twice, {"size": "25"})
     _, twice_ticked = page(twice[1:], {"size": "25"})
-    # The Show filter's own GET: the selects, then its kept size and sort.
-    shown = urlencode([("show", "all"), ("ministry", ""), *first.view_fields])
+    # The Show segment's own GET (show_links): All, the kept sort and size,
+    # the first page.
     return {
         PATH: served,
         f"{PATH}?{first.next_query}": second,
         TICKED: ticked,
-        f"{PATH}?{shown}": everything,
+        show_links(first, PATH)["all"]: everything,
+        MINISTRY: one_ministry,
+        show_links(one, PATH)["all"]: one_everything,
         AFTER_ALL: after_all,
         STALE: stale,
         BULKED: bulked,

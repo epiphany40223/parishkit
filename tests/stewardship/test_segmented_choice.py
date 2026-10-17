@@ -2,9 +2,11 @@
 
 A single choice between two views of an Admin page is a segmented pair
 (components/segmented-choice.html): a labelled group of two in-place links,
-the chosen one aria-current. These tests render the component, check the
-Participation page's Chart population links, and guard against a new
-two-option menu in an Admin template.
+the chosen one aria-current (or, on a private-POST page, two small POST
+forms). These tests render the component, check the Participation page's
+Chart population links and the roster's Show links, and guard against a
+new two-option menu in an Admin template, including the loop-built menus
+the directory and the roster drew before #1535.
 """
 
 import re
@@ -14,14 +16,29 @@ from urllib.parse import parse_qsl, urlsplit
 from django.template.loader import render_to_string
 from django.urls import reverse
 
+from parishkit.stewardship.reports.ministry_roster_views import SORTING, show_links
 from parishkit.stewardship.reports.workspace import ReportQuery
 from parishkit.stewardship.reports.workspace_views import scope_links
+from parishkit.stewardship.web.tables import paginate
 
 TEMPLATES = (
     Path(__file__).parents[2]
     / "src/parishkit/stewardship/accounts/templates/stewardship"
 )
 COMPONENT = "stewardship/components/segmented-choice.html"
+# Pages whose two-option menu was built from a loop, which the written-option
+# guard cannot count (#1535): each draws the shared pair instead, with no
+# menu for that choice, and its view no longer hands the template the
+# choice's options (the context name the loop read).
+CONVERTED = {
+    "directory.html": ("mode", "modes", "reports/directory_views.py"),
+    "ministry-roster.html": (
+        "show",
+        "show_choices",
+        "reports/ministry_roster_views.py",
+    ),
+}
+SOURCE = Path(__file__).parents[2] / "src/parishkit/stewardship"
 # Two-option menus an Admin template may still draw, each with its reason.
 # Keep empty unless a reason is recorded here.
 TWO_OPTION_SELECTS = {}
@@ -71,6 +88,76 @@ def test_the_pair_is_a_labelled_group_of_two_in_place_links():
     assert render("mode-production").count('aria-current="page"') == 1
 
 
+def test_a_post_pair_is_two_small_read_forms():
+    """On a private-POST page each segment is a POST form to the page, a
+    read beside the filter form, carrying the applied filters except the
+    choice itself, which its button sends; the chosen button is
+    aria-current, and the label's help is a toggletip."""
+    html = render_to_string(
+        COMPONENT,
+        {
+            "choice_id": "mode",
+            "region_id": "table",
+            "label": "Responses shown",
+            "tip": "Which responses are shown.",
+            "action": "/families/",
+            "name": "mode",
+            "fields": {"search": "Ex <a>", "mode": "testing", "mailing": "no"},
+            "first_key": "mode-production",
+            "first_value": "production",
+            "first_label": "Production",
+            "second_key": "mode-testing",
+            "second_value": "testing",
+            "second_label": "Testing rehearsal",
+            "chosen": "mode-testing",
+            "filters": True,
+        },
+    )
+    assert "<a " not in html
+    assert 'id="mode-tip"' in html and 'aria-describedby="mode-label"' in html
+    forms = re.findall(r"<form [^>]*>.*?</form>", html, re.S)
+    assert len(forms) == 2
+    for form, key in zip(forms, ("mode-production", "mode-testing"), strict=True):
+        tag = re.match(r"<form [^>]*>", form).group(0)
+        assert tag == (
+            f'<form method="post" action="/families/#table" data-in-place="{key}"'
+            " data-in-place-read data-in-place-filters>"
+        )
+        hidden = re.findall(r'<input type="hidden" name="(\w+)" value="([^"]*)">', form)
+        assert hidden == [("search", "Ex &lt;a&gt;"), ("mailing", "no")]
+    assert re.findall(r"<button type=\"submit\"[^>]*>[^<]*</button>", html) == [
+        '<button type="submit" name="mode" value="production">Production</button>',
+        '<button type="submit" name="mode" value="testing" aria-current="page">'
+        "Testing rehearsal</button>",
+    ]
+
+
+def test_show_links_keep_the_ministry_sort_and_size():
+    """Each Show segment keeps the applied Ministry, sort and page size and
+    goes back to the first page; an empty Ministry is left out."""
+    rows = [{"member_name": f"Member {index}"} for index in range(3)]
+    for ministry, kept in (("9", {"ministry": "9"}), ("", {})):
+        carry = [("show", "all")] + ([("ministry", ministry)] if ministry else [])
+        table = paginate(
+            rows,
+            {"size": "25", "page": "2", "sort": "member"},
+            carry=carry,
+            sorting=SORTING,
+        )
+        links = show_links(table, "/roster/")
+        assert set(links) == {"todo", "all"}
+        for show, link in links.items():
+            address = urlsplit(link)
+            assert address.path == "/roster/"
+            assert dict(parse_qsl(address.query)) == {
+                "show": show,
+                **kept,
+                "sort": "member",
+                "size": "25",
+                "page": "1",
+            }
+
+
 def test_scope_links_keep_the_view_and_return_to_the_first_page():
     """Each Chart population segment keeps the daily table's sort and size
     and an explicit zone, and goes back to the first page."""
@@ -102,9 +189,29 @@ def test_every_pair_is_drawn_by_the_shared_component():
     """The old pill links are gone: each view choice uses the component."""
     for path in sorted(TEMPLATES.rglob("*.html")):
         assert "choice-links" not in path.read_text(), path.name
-    for name in ("participation.html", "response-dashboard.html"):
+    for name in (
+        "participation.html",
+        "response-dashboard.html",
+        "family-timeline.html",
+        *CONVERTED,
+    ):
         assert COMPONENT in (TEMPLATES / name).read_text(), name
-    assert COMPONENT in (TEMPLATES / "family-timeline.html").read_text()
+
+
+def test_converted_loop_menus_stay_gone():
+    """The directory's Responses shown and the roster's Show were menus
+    built from a loop (#1535), which the written-option guard below cannot
+    count, so each page is checked by name: no menu sends that choice, the
+    template no longer reads the choice's options, and the view no longer
+    hands them over. The choice still travels with the filter form, as a
+    hidden field."""
+    for name, (field, options, view) in CONVERTED.items():
+        text = (TEMPLATES / name).read_text()
+        for match in SELECT.finditer(text):
+            assert f'name="{field}"' not in match.group(1), name
+        assert options not in text, name
+        assert f'"{options}"' not in (SOURCE / view).read_text(), view
+        assert f'<input type="hidden" name="{field}"' in text, name
 
 
 def test_no_admin_template_draws_a_two_option_menu():
