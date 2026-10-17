@@ -10,7 +10,7 @@ a tag list. Parish-authored content never gains these attributes.
 import re
 
 from .buttons import EMAIL_TABLE_STYLE, email_button, email_button_styles
-from .design_tokens import CHART_COLORS, COLORS, hex6
+from .design_tokens import CHART_COLORS, COLORS, HEADINGS, hex6, px
 
 # The Admin portal's colours from the shared design tokens (#732), so the
 # report emails look like the portal. Email cannot read the portal's CSS
@@ -19,22 +19,36 @@ INK = hex6(COLORS["ink"])
 MUTED = hex6(COLORS["muted"])
 ACCENT = hex6(COLORS["accent"])  # the primary button's background
 LINK = hex6(COLORS["link"])
+# The rule under a table's column headings, as in the portal's tables.
+RULE = hex6(COLORS["rule-strong"])
+# A report heading is a subsection heading in the portal's type scale.
+HEADING_PX = px(HEADINGS["heading-3"])
 
-# The report chart palette (reports spec, "Chart palette and style").
-BLUE = "#1f6fae"
-ORANGE = "#b8620a"
-# A progress bar's track, shared with the chart engine's progress bars.
-TRACK = CHART_COLORS["chart-track"]
-BAR_COLOURS = {BLUE, ORANGE, TRACK}
+# A bar's fill is the chart engine's bar colour, and its track the chart
+# engine's progress track, so the email bars match the portal's charts.
+BLUE = hex6(CHART_COLORS["chart-blue"])
+TRACK = hex6(CHART_COLORS["chart-track"])
+BAR_COLOURS = {BLUE, TRACK}
 # Cell background colours: the bars, and the primary button's cell.
 CELL_COLOURS = BAR_COLOURS | {ACCENT}
+# The bar fill and the heading rule before they took the tokens (#732). A
+# report compiled before then and retained for delivery or a retry still
+# carries them, so the validators still admit them; nothing compiles them
+# any more. These are frozen history, so they stay literal.
+_RETAINED_BAR_COLOURS = {"#1f6fae"}
+_RETAINED_TH = (
+    "padding:8px 12px 8px 0;font-size:14px;color:#4f5e66;"
+    "border-bottom:2px solid #d0d5dd;"
+)
 
 # The only inline styles a compiled report may carry.
 STYLES = {
     "caption": f"margin:0 0 20px;font-size:14px;color:{MUTED};",
     # The daily digest's as-of line: body text, not a muted caption (#1016).
     "as-of": f"margin:0 0 20px;font-size:16px;color:{INK};",
-    "heading": f"margin:28px 0 12px;font-size:18px;line-height:1.3;color:{INK};",
+    "heading": (
+        f"margin:28px 0 12px;font-size:{HEADING_PX}px;line-height:1.3;color:{INK};"
+    ),
     "rows": "border-collapse:collapse;margin:0 0 8px;",
     "label": f"padding:8px 16px 8px 0;font-size:16px;color:{INK};",
     "bar": "padding:8px 16px 8px 0;",
@@ -46,7 +60,7 @@ STYLES = {
     "table-caption": f"text-align:left;font-size:14px;color:{MUTED};padding:0 0 6px;",
     "th": (
         f"padding:8px 12px 8px 0;font-size:14px;color:{MUTED};"
-        f"border-bottom:2px solid #d0d5dd;"
+        f"border-bottom:2px solid {RULE};"
     ),
     "td": f"padding:7px 12px 7px 0;font-size:15px;color:{INK};"
     f"border-bottom:1px solid {TRACK};",
@@ -80,6 +94,7 @@ _RETAINED_STYLES = {
         "background-color:#115e56;color:#ffffff;font-size:16px;"
         "font-weight:bold;line-height:1.3;text-decoration:none;"
     ),
+    _RETAINED_TH,
 }
 _STYLE_VALUES = frozenset(STYLES.values()) | _BUTTON_STYLES | _RETAINED_STYLES
 # Closed values for the presentational table attributes the bars use.
@@ -111,7 +126,7 @@ def layout_attribute(tag, attribute, value):
     if attribute == "style":
         return value if value in _STYLE_VALUES else None
     if attribute == "bgcolor":
-        return value if value in CELL_COLOURS else None
+        return value if value in CELL_COLOURS | _RETAINED_BAR_COLOURS else None
     if attribute == "width":
         return value if _PERCENT.fullmatch(value) else None
     if attribute in _FIXED:
