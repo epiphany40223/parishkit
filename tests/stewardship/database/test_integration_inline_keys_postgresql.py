@@ -33,7 +33,7 @@ from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.credential_runtime import acknowledge_rotations
 from parishkit.stewardship.deployment import ServiceRole, load_deployment
 
-from ..schedule_rows import rows
+from ..schedule_rows import rows, shown
 from . import campaign_builders
 from .auth_builders import signed_in, stale_sign_in
 from .campaign_builders import change
@@ -101,7 +101,11 @@ def working(request, monkeypatch, tmp_path, google):
 
 
 def save(value, candidate=CANDIDATE, **settings):
-    """Submit the page's own form with a pasted key, as a browser would."""
+    """Submit the page's own form with a pasted key, as a browser would.
+
+    A setting given as None is left out, as a browser leaves out a disabled
+    field (the locked organization ID, #1492).
+    """
     browser, store = value["browser"], value["service"].store
     page = browser.get(URL)
     fields = {
@@ -111,6 +115,7 @@ def save(value, candidate=CANDIDATE, **settings):
         "intent": hidden(page, "intent"),
         "candidate": candidate.decode(),
     } | settings
+    fields = {name: field for name, field in fields.items() if field is not None}
     with identity("pk_stewardship_web"):
         return post(browser, URL, fields)
 
@@ -730,3 +735,28 @@ def _record(value):
     """The applied ParishSoft integration record."""
     document = value["service"].store.active().document()
     return document["sections"]["integrations"][0]
+
+
+def test_a_key_pasted_with_the_schedule_untouched_is_saved(working, monkeypatch):
+    """With data loaded, a key pasted on the page as drawn is saved (#1492).
+
+    The browser posts the schedule rows back untouched and leaves out the
+    disabled organization ID, so the save is neither a key plus a schedule
+    change (``key_with_schedule_change``) nor an organization change: the
+    key's selection changes the key alone.
+    """
+    monkeypatch.setattr(
+        "parishkit.stewardship.accounts.integration_views.loaded_organization",
+        lambda: 12345,
+    )
+    page = shown(working["browser"].get(URL).content.decode())
+    assert int(page["rules-TOTAL_FORMS"]) > 0
+    response = save(working, organization_id=None, **page)
+    assert response.status_code == 302, response.content
+    row = SecretReplacementRequest.objects.get()
+    selection = ConfigurationChangeRequest.objects.get(
+        request_key=selection_key(row.pk)
+    )
+    assert [set(item["values"]) for item in selection.patch] == [
+        {"credential_fingerprint"}
+    ]

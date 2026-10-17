@@ -1091,3 +1091,70 @@ def test_a_pointer_over_the_sidebar_keeps_the_focused_field_in_place(
     has_text(message, "")
     assert height - message.bounding_box()["height"] > 10
     assert within_half_a_pixel(before, tops(page, '[data-row-add="rules"]'))
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/refresh-schedule",
+        "/refresh-schedule-gated",
+        "/refresh-schedule-basic",
+        "/refresh-schedule-loaded",
+    ],
+)
+def test_pasting_a_key_posts_the_shown_schedule_unchanged(page, component_origin, path):
+    """A new key pasted with the schedule untouched posts the schedule as the
+    page showed it, so the save never reads as a key plus a schedule change
+    (``key_with_schedule_change``, #1492). A locked organization ID is not
+    sent at all."""
+    from django.http import QueryDict
+
+    from parishkit.stewardship.accounts.refresh_schedule_forms import ScheduleEditor
+
+    from .refresh_schedule_components import STORED
+
+    stored = STORED.get(path, PRODUCTION)
+    answering(page, stored)
+    posts = []
+
+    def submitted(route):
+        """Record the page's own Save post; let the page's draw through."""
+        if route.request.method != "POST":
+            route.continue_()
+            return
+        posts.append(route.request.post_data or "")
+        route.fulfill(status=204, body="")
+
+    page.route(f"**{path}", submitted)
+    page.goto(component_origin + path)
+    painted(page)
+    page.locator("input[name=candidate]").fill("a-new-parishsoft-key")
+    page.get_by_role("button", name="Save", exact=True).click()
+    recorded(page, posts, 1)
+    data = QueryDict(posts[0])
+    assert data["candidate"] == "a-new-parishsoft-key"
+    assert ("organization_id" in data) is not path.endswith("-loaded")
+    editor = ScheduleEditor(data, stored=stored)
+    assert editor.posted and not editor.changed, editor.document()
+
+
+def test_a_locked_organization_id_is_inactive_with_its_reason(page, component_origin):
+    """Once its data is loaded, the organization ID is a disabled field that
+    still shows the ID, with its one-line reason drawn by the server under
+    the label, so nothing moves when it is clicked (#1492; ui-conventions,
+    No layout shift)."""
+    from playwright.sync_api import expect
+
+    page.goto(component_origin + "/refresh-schedule-loaded")
+    field = page.locator("#id_organization_id")
+    expect(field).to_be_disabled()
+    expect(field).to_have_value("12345")
+    reason = page.get_by_text(
+        "Locked: ParishSoft data for this organization is loaded."
+    )
+    visible(reason)
+    painted(page)
+    before = field.bounding_box(), reason.bounding_box()
+    field.click(force=True)
+    assert page.evaluate("document.activeElement.id") != "id_organization_id"
+    assert (field.bounding_box(), reason.bounding_box()) == before
