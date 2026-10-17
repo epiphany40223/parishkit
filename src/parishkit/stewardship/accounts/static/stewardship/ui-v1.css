@@ -514,6 +514,12 @@ input[data-time-entry=list] { max-width: 24rem; }
 .hint-row-messages > .field-error-line > .field-error-size:empty { display: none; }
 .hint-row-messages:has(> [data-complete-hint]:not([hidden]), > .field-error-line > .field-error-size:not(:empty)) { margin-block: 0 1rem; }
 .hint-row-messages:has(> .field-error-line > .errorlist:not([hidden])) > [data-complete-hint] { visibility: hidden; }
+/* A form whose message line sits apart from its gate's reserved hint row
+   (the Additional information queue's Submitted dates, #1469): the hint,
+   in the server's words, is held hidden while the line shows them, so the
+   form says it once. Both keep their room, so nothing moves either way and
+   an unrefused page lays out as before. */
+.filter-line-hides-hint:has(> .field-error-line > .errorlist:not([hidden])) > [data-complete-hint] { visibility: hidden; }
 /* A reason line that keeps one line's height while empty, so its text
    coming or going never moves what follows (no layout shift; the Restore
    review's held-email rows, #537). */
