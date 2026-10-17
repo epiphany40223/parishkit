@@ -1276,6 +1276,60 @@ def test_start_applies_the_recorded_clock_mode(tmp_path):
     assert "expected fake or normal" in output
 
 
+@pytest.mark.parametrize("mode", ["fake", "normal"])
+def test_the_fake_clock_refuses_a_real_oauth_client_before_starting(tmp_path, mode):
+    """A real Google client cannot run under the fake clock (#1399).
+
+    Every fake-clock Compose selection refuses it before anything starts, so
+    the developer reads why instead of meeting a web that will not start.
+    The sentinel passes, and the normal clock admits a real client.
+    """
+    from parishkit.stewardship.runtime_web import LOCAL_OAUTH_DOCUMENT
+
+    def prepare(client):
+        """An installed deployment holding ``client`` as its OAuth client."""
+
+        def setup(root, etc, snapshots):
+            installed(root, etc, snapshots, mode=mode, completed=True)
+            (root / "config/services/compose.faketime.json").write_text("{}")
+            oauth = root / "credentials" / "google_oauth"
+            oauth.mkdir(parents=True)
+            (oauth / "credential").write_bytes(client)
+
+        return setup
+
+    real = b'{"client_id": "id.apps.googleusercontent.com", "client_secret": "s"}'
+    calls, output, _ = run_vm(
+        tmp_path / "real",
+        "start",
+        status=1 if mode == "fake" else 0,
+        prepare=prepare(real),
+        env={"FAKE_COMPLETED": "t"},
+    )
+    started = any(c.endswith(" up --detach web") for c in calls)
+    if mode == "fake":
+        assert "A real Google OAuth client is installed" in output
+        assert "reinstall the sentinel OAuth client first" in output
+        assert not started
+    else:
+        assert started
+    calls, _, _ = run_vm(
+        tmp_path / "sentinel",
+        "start",
+        prepare=prepare(LOCAL_OAUTH_DOCUMENT),
+        env={"FAKE_COMPLETED": "t"},
+    )
+    assert any(c.endswith(" up --detach web") for c in calls)
+
+
+def test_the_vm_half_names_the_sentinel_oauth_client():
+    """The VM half's copy of the sentinel's client ID is the package's."""
+    from parishkit.stewardship.runtime_web import LOCAL_OAUTH_SENTINEL
+
+    text = (ROOT / "tools" / "stewardship-local-vm.sh").read_text()
+    assert f"OAUTH_SENTINEL_ID={LOCAL_OAUTH_SENTINEL['client_id']}\n" in text
+
+
 def test_sign_in_needs_the_clock_mode_marker_too(tmp_path):
     """A refusal inside the Compose-file selection ends the command; no exec runs."""
     calls, output, _ = run_vm(

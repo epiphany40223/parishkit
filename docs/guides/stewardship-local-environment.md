@@ -40,8 +40,10 @@ under `/opt/parishkit` with real Linux ownership. The image is built inside the
 VM from your checkout, including uncommitted edits to tracked files. The
 application services have the same route out to the Internet as on a
 production host; Caddy, Mailpit and the fake ParishSoft have none. Code
-checks keep mail on Mailpit (`http://localhost:8025`) and Google sign-in on
-a stand-in client, so nothing can email a real person. ParishSoft is a fake
+checks keep mail on Mailpit (`http://localhost:8025`), so nothing can email a
+real person. Admin sign-in is the local test sign-in, with a stand-in OAuth
+client, unless you install a real localhost-only one
+([below](#signing-in-with-google)). ParishSoft is a fake
 service with a synthetic parish unless you choose the real ParishSoft API
 with `deploy --parishsoft real`; pk-local then reads real parish data,
 which stays on the laptop and must never be committed, and it never writes
@@ -543,6 +545,73 @@ case.
   host: `limactl shell parishkit-local -- sudo bash`, then the
   [deployment runbook](stewardship-deployment-runbook.md#commands-and-generated-paths)'s
   `docker compose -f /opt/parishkit/config/services/compose-initial.json -p parishkit-local ...`.
+
+## Signing in with Google
+
+`up` installs a stand-in (sentinel) OAuth client, so pk-local starts with
+only the test sign-in (`sign-in --email E`). To try the real Google sign-in,
+install a Google OAuth client of your own. pk-local signs you in with the
+same code as Production: the Google address must be one of the
+deployment's Admin users, and step-ups work as there. The test sign-in keeps
+working beside it.
+
+1. In a Google Cloud project you use for testing, configure the OAuth
+   consent screen (Internal) first, then create a new OAuth client of type
+   **Web application**. Its only authorized redirect URI is
+   `https://localhost:8443/admin/oauth/callback`. Never use or edit
+   Production's client: it has no localhost redirect URI, so Google refuses
+   it here, and a localhost URI on it would let a laptop take its sign-ins.
+2. Save a file holding only
+   `{"client_id": "...", "client_secret": "..."}` from that client, outside
+   every git checkout, readable only by you, for example
+   `~/.parishkit-local/credentials/google-oauth.json` with the directory at
+   mode 0700 and the file at mode 0600 (`chmod 600`).
+3. Use a deployment on the normal clock (a seeded one, or after
+   `seed --testing`):
+   `limactl shell parishkit-local -- sudo cat /opt/parishkit/run/local/clock/mode`
+   prints `normal`. Google's tokens and certificates cannot be checked against
+   the fake clock's date in the past, so under the fake clock web refuses a
+   real client, and `start`, `seed` and the other commands that start
+   services under the fake clock refuse before they start anything, with
+   "A real Google OAuth client is installed, and this deployment runs under
+   the fake clock …". A `deploy` under the fake clock goes on to web's own
+   refusal, which web's log names. See [Clock mode](#clock-mode).
+4. Install it, streamed into the existing credential file so no other
+   copy is left in the VM (the file keeps its owner and mode 0600), then
+   check it before restarting web:
+
+   ```sh
+   f=~/.parishkit-local/credentials/google-oauth.json
+   limactl shell parishkit-local -- sudo tee \
+       /opt/parishkit/credentials/google_oauth/credential >/dev/null <"$f"
+   limactl shell parishkit-local -- sudo docker exec parishkit-local-web-1 \
+       pk-stewardship smoke --target google_oauth \
+       --config /opt/parishkit/config/services/web.yaml
+   ```
+
+   Writing into the file keeps its inode, so the running web container,
+   which mounts that file, already sees the new content and the check reads
+   it. A valid client prints one JSON line with `"credential": "valid"` and
+   the redirect URI to register. Under the fake clock it exits 2 with
+   `ERROR: A real Google OAuth client needs the normal clock: …`; any other
+   problem with the file exits 2 with the generic
+   `ERROR: smoke check refused or failed; …` line.
+5. Restart web:
+   `limactl shell parishkit-local -- sudo docker restart parishkit-local-web-1`.
+   If web does not come back, its log
+   (`… logs --tail 50 web`, under [Day-to-day](#day-to-day)) names the
+   refusal. The sign-in page now offers **Sign in with Google** above the
+   test sign-in instructions.
+
+To go back, write the sentinel the same way, from a file holding
+`{"client_id": "local-environment-sentinel.invalid", "client_secret": "local-environment-sentinel-not-a-secret"}`,
+and restart web. Put the sentinel back before seeding: the seeder runs under
+the fake clock and refuses a real client. `reseed` and `seed --testing` start
+from the post-setup snapshot, which always holds the sentinel. The client
+secret stays on the laptop, but every `snapshot` copies it, and `reset` or a
+snapshot switch puts back the client that snapshot holds. When you are done,
+delete the snapshots taken with the real client, delete the saved file, and
+delete the test client in Google Cloud.
 
 ## The documented VM run
 
