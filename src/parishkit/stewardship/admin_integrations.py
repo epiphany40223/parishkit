@@ -305,33 +305,48 @@ class SchedulePreview(ReadModel):
     preview: dict | None
 
 
+def _line(item):
+    """One listed time's words as the page shows them, without the browser time.
+
+    ``item`` is one of the shared schedule preview's lines
+    (``occurrence_preview.build``): the wall time, what runs, then a struck
+    time's reason or a shifted time's daylight-saving words.
+    """
+    text = f"{item['wall']} {item['text']}"
+    if item["struck"]:
+        return f"{text} {item['reason']}"
+    return f"{text}: {item['shift_text']}" if item["shift_text"] else text
+
+
 def preview_document(preview):
     """The page's per-day list and summary (``preview_context``) as a document.
 
     The seven-day grid's quarter-hour cells draw the same days as the list,
-    so they are left out; the list's words are the page's.
+    so they are left out; the list's words are the page's. The keys and
+    their shape predate the shared schedule preview (#1129) and are kept:
+    ``counts`` is a day's summary, and ``due_at`` is None for a struck time.
     """
     if preview is None:
         return None
     return {
         "days": [
             {
-                "day": day["day"],
+                "day": day["date"],
                 "weekday": str(day["weekday"]),
                 "today": day["today"],
                 "change": day["change"],
-                "counts": str(day["counts"]),
+                "counts": str(day["summary"]),
                 "times": [
                     {
-                        "text": str(entry["text"]),
+                        "text": _line(entry),
                         "struck": entry["struck"],
                         "kind": entry["kind"],
-                        "due_at": entry["due_at"],
+                        "due_at": None if entry["struck"] else entry["at"],
                     }
-                    for entry in day["times"]
+                    for entry in day["items"]
                 ],
             }
-            for day in preview["days"]
+            for day in preview["list"]["days"]
         ],
         "line": str(preview["line"]),
         "summary": str(preview["summary"]),

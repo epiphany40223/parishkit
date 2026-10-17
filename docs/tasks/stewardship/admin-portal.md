@@ -107,7 +107,7 @@ three-engine browser tests cover these boundaries; see
 Production transitions and live campaign delivery remain with their later
 phase owners, not this preparation package.
 
-ADM-04.07 is post-launch work for #1129. Slice 7a is in progress: a docs-only change that adds the [schedule previews](../../specs/stewardship/ui-conventions/spec.md#schedule-previews) convention (with its traceability entry), the adoption paragraphs in the admin-portal spec's seven-day preview and mail schedule review, the command line's from-now send times in the admin-automation spec, and this item's delivery plan.
+ADM-04.07 is post-launch work for #1129. Slice 7b draws the refresh schedule's seven-day list with the shared `occurrence_preview` component and `components/occurrences.html`, render-identical except the `data-day`, `data-today` and `data-other-zone-time` hooks (`test_refresh_preview_render.py`); slice 7c remains. Slice 7a is a docs-only change that adds the [schedule previews](../../specs/stewardship/ui-conventions/spec.md#schedule-previews) convention (with its traceability entry), the adoption paragraphs in the admin-portal spec's seven-day preview and mail schedule review, the command line's from-now send times in the admin-automation spec, and this item's delivery plan.
 
 ## ADM-05: Production transition and pre-start withdrawal
 

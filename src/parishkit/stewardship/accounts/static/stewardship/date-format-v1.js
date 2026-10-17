@@ -95,12 +95,43 @@
     return instant(date);
   }
 
-  // Rewrite every <time data-local-instant> in scope; data-compact marks
+  // This browser's IANA zone, or "" when Intl cannot say.
+  const browserZone = (() => {
+    try {
+      const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+      return zone === "Etc/Unknown" ? "" : zone;
+    } catch {
+      return "";
+    }
+  })();
+
+  // A schedule-zone list (components/occurrences.html: the refresh
+  // schedule's seven-day list) writes each wall time on the server and marks
+  // its instant <time data-other-zone-time datetime=… data-zone=…
+  // data-text="({time} your time)">. When this browser is in another zone
+  // the words are written with the time in this browser's clock; otherwise
+  // the element stays empty (#1129). The list's wall times are 24-hour
+  // HH:MM, so this time is too, rather than the style's clock, and the two
+  // read alike side by side.
+  function otherZoneTimes(scope) {
+    (scope || document).querySelectorAll("time[data-other-zone-time]").forEach((node) => {
+      const date = new Date(node.dateTime);
+      const other = browserZone && browserZone !== node.dataset.zone;
+      node.textContent = other && Number.isFinite(date.getTime())
+        ? ` ${String(node.dataset.text || "").replace("{time}",
+          `${two(date.getHours())}:${two(date.getMinutes())}`)}`
+        : "";
+    });
+  }
+
+  // Rewrite every <time data-local-instant> in scope (and fill every
+  // data-other-zone-time, above); data-compact marks
   // Admin table cells (ui-conventions#date-format), data-precise adds
   // seconds and the zone name (System logs), data-time-only a recent
   // instant shown as its clock time ("started 10:00 PM"), and data-time-day
   // with it a coming instant that may fall tomorrow (dayTime).
   function localize(scope) {
+    otherZoneTimes(scope);
     (scope || document).querySelectorAll("time[data-local-instant]").forEach((node) => {
       const date = new Date(node.dateTime);
       if (Number.isFinite(date.getTime())) {

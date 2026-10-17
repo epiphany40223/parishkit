@@ -2626,7 +2626,8 @@ its feature spec: the
   (`date-format-v1.js`) writes them as the time alone, since the day
   heading or the line names the day. A schedule-zone list writes the wall
   time on the server and marks the instant `data-other-zone-time`, which
-  the same script fills with the browser's time.
+  the same script fills with the browser's time when the zones differ, in
+  the list's own 24-hour `HH:MM` form so the two times read alike.
 - **Daylight saving** follows the [one rule](#schedules). A day whose
   clocks change in the shown zone says so beside its name ("clocks go
   forward", "clocks go back"). An occurrence whose wall time the change
@@ -2643,6 +2644,8 @@ its feature spec: the
   not disagree. The general sentence ("a time that happens twice sends
   once, and a time that is skipped sends right after the change") is shown
   once, under the list, only when a listed day or occurrence is affected.
+  It speaks of sends, so a list of runs (the refresh list, whose lines
+  already say how each time runs; `verb="runs"` below) does not show it.
 - **More.** When the feature's limit cut a count list short, one line under
   it says so with the limit named ("Only the next 5 sends are shown. Later
   sends follow the same pattern."). A window list names its window in its
@@ -2665,7 +2668,8 @@ its feature spec: the
   `summary`) per day, the summary giving the day and the feature's counts,
   today open; for a list of many occurrences a day, such as the refresh
   schedule. *Compact*: one list, one line per occurrence, each line naming
-  its day; for a few occurrences, such as a mail review. Both layouts take
+  its day and, as a grouped summary does, the day's clock change; for a few
+  occurrences, such as a mail review. Both layouts take
   the same context, so a feature changes layout without changing its
   helper. The server groups by day rather than the page script, which
   could name each line's day from `data-local-day`, because a grouped list
@@ -2675,7 +2679,10 @@ its feature spec: the
 - **In place.** A live preview is redrawn in place as its editor changes
   ([in-place controls](#in-place-controls)), inside a region that keeps its
   place ([no layout shift](#no-layout-shift)), and the days a reader opened
-  stay open, matched by date, not by position. The preview is not a live
+  or closed stay so, matched by date, not by position. Only a day whose
+  open state differs from what the server drew is the reader's choice;
+  every other day keeps the drawn state, so after midnight an untouched
+  list opens its new today. The preview is not a live
   region: the editor's one status line announces a check's result.
 - **Accessibility.** The list is the text equivalent of any picture of the
   same schedule (the refresh grid, the Campaign calendar's month grids),
@@ -2689,7 +2696,10 @@ its feature spec: the
 
 **API.** `occurrence_preview.build(occurrences, *, days=(), shown_zone=None,
 schedule_zone, now, limit=None, more=False, paused=None, layout="compact",
-empty=None, unavailable=None)` returns the include's context.
+empty=None, unavailable=None, verb="sends")` returns the include's context.
+`verb` ("sends" or "runs", the refresh list) picks the words of a shifted
+line and of the more line; a "runs" list leaves out the general
+daylight-saving sentence (`dst_note` is false), which speaks of sends.
 
 - Each occurrence is an `Occurrence(day, at, what, kind, wall=None,
   struck=False, reason=None, shift=None)`. `day` is its local date in the
@@ -2723,17 +2733,22 @@ The context is:
  "more": None | text, "dst_note": bool}
 ```
 
-The include reads only its own keys. A page draws it with
-`{% include 'stewardship/components/occurrences.html' with
-preview=… level=3 %}`, where `level` is the heading level of its title, if
-the feature gives one. `test_occurrences_component.py` renders each state
-and layout, and lists the templates that still draw an occurrence list by
-hand, so no new one is added.
+The include reads only its own keys; each line is drawn by
+`components/occurrence-line.html`, which only the include uses. A page
+draws it with
+`{% include 'stewardship/components/occurrences.html' with preview=… %}`;
+the include draws no title, so a feature that gives the list one draws it
+itself. In the grouped layout each day's `details` carries `data-day` (its
+ISO date) and today's carries `data-today`, which the page script uses to
+keep a reader's open days by date. `test_occurrences_component.py`
+renders each state and layout, and lists the templates that still draw an
+occurrence list by hand, so no new one is added.
 
-**Adoption.** Not yet drawn; the
+**Adoption.** The refresh schedule's seven-day list draws it (ADM-04
+slice 7b); the next
 [ADM-04](../../../plans/stewardship/admin-portal.md#adm-04-campaign-editor-content-schedules-and-previews)
-slices bring it to the refresh schedule's seven-day list and then to the
-mail schedule review. Until each lands, its feature spec's preview stands.
+slice brings it to the mail schedule review. Until that lands, the review's
+feature spec stands.
 
 ## Tables
 

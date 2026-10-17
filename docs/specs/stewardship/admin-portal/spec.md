@@ -2110,9 +2110,9 @@ same preview functions, so the two pages never disagree.
 The list is the shared
 [schedule preview](../ui-conventions/spec.md#schedule-previews), in its
 grouped layout and its window-of-whole-days scope (seven days from
-today, today's earlier times included), once its
+today, today's earlier times included), since its
 [#1129](https://github.com/epiphany40223/parishkit/issues/1129) slice
-lands; until then the page draws it as above. Its days, counts, struck
+(ADM-04 7b). Its days, counts, struck
 times and daylight-saving words stay as described here; what changes is
 that the days a reader opened stay open when a check redraws the list
 (matched by date, so a list that moves on past midnight keeps them), the
