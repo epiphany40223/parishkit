@@ -123,11 +123,10 @@ SERVER_INSTANTS = {
     # Export stamps ("Downloaded …") in the zone the reader chose.
     "reports/census_changes.py": "export in the chosen zone",
     "reports/limitations.py": "export in the chosen zone",
-    # Pending (noted on #558): resolved_on() shows the day a duplicate roster
-    # row was resolved, in the parish zone, to tell two rows apart (the
-    # duplicate-row control labels and the bulk stale refusal). Its export
-    # stamp is in the chosen zone.
-    "reports/ministry_roster_views.py": "#558 roster resolved day",
+    # The roster export stamp is in the chosen zone; resolved_on() names a
+    # stale bulk row's day in the browser zone the dialog posts (the page's
+    # duplicate-row labels are localized by date-format-v1.js, #558).
+    "reports/ministry_roster_views.py": "export in the chosen zone",
 }
 # Form fields whose label, help or errors name a fixed zone, by (form class,
 # field).

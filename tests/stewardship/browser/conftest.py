@@ -999,6 +999,32 @@ def component_origin():
                 ),
             },
         ),
+        (
+            # Preview changes waiting for a change, as the view draws it (#1330).
+            "/content-settings-gated",
+            "content-settings",
+            {
+                "campaign": {
+                    "pk": uuid4(),
+                    "active_configuration": {"name": "Sample campaign"},
+                },
+                "label": "Confirmation email",
+                "visual": "<p>Hello Sample Family</p>",
+                "placeholders": ["family_name", "parish_name"],
+                "change_gate": True,
+                "form": ContentForm(
+                    kind="email",
+                    slot="confirmation",
+                    initial={
+                        "base_digest": "a" * 64,
+                        "subject": "Received",
+                        "html": "<p>Hello Sample Family</p>",
+                        "text": "Hello Sample Family",
+                        "generate_text": True,
+                    },
+                ),
+            },
+        ),
         # A web-only page in the campaign content editor: no plain-text panel
         # (#259).
         (
@@ -2346,6 +2372,21 @@ def component_origin():
                 if kind == "text/html"
                 and isinstance(body, str)
                 and "data-about-page=" in body
+            )
+        ),
+    )
+    # Every fixture page with a change-gated form (#921, #1330), so the
+    # change gate's guard (test_editor_gates.py) checks each one's hidden
+    # fields, including fixtures added later.
+    responses["/change-gate-index"] = (
+        "text/plain",
+        "\n".join(
+            sorted(
+                path
+                for path, (kind, body) in responses.items()
+                if kind == "text/html"
+                and isinstance(body, str)
+                and "data-require-change=" in body
             )
         ),
     )

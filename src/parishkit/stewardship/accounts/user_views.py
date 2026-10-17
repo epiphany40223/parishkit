@@ -162,6 +162,9 @@ class UserForm(AdminForm):
                 "required": True,
                 "aria-describedby": "id_email_error",
                 "data-user-email": True,
+                # Review's complete gate says what it waits for (#1330).
+                "data-empty-hint": MESSAGES["email_required"],
+                "data-missing-hint": MESSAGES["email_invalid"],
             }
         ),
     )
@@ -177,6 +180,7 @@ class UserForm(AdminForm):
                 "required": True,
                 "aria-describedby": "id_name_help id_name_error",
                 "data-user-name": True,
+                "data-missing-hint": MESSAGES["name_required"],
             }
         ),
     )

@@ -9,6 +9,8 @@
 //     is shown at the field, in its reserved error line, marked as the shared
 //     live checks mark a field (data-field-error="client", aria-invalid, the
 //     line in aria-describedby), so ui-v1.js clears it on the next edit;
+//     its words are the field's data-client-error, so the form's complete
+//     gate holds Review with them until then (#1330);
 //   - names: the distinct names of the current ParishSoft Members that list
 //     the address, best first. The first fills in the Name unless the
 //     Administrator has typed one (a Name this script filled is replaced by
@@ -47,15 +49,25 @@
     const ids = (email.getAttribute("aria-describedby") || "").split(/\s+/)
       .filter((id) => id && id !== line.id);
     email.setAttribute("aria-describedby", [...ids, line.id].join(" "));
+    email.dataset.clientError = words;
+    // The gate listens on the form; an event on the form itself is no edit
+    // of the field, so it does not clear the mark just made.
+    form.dispatchEvent(new Event("change"));
   };
   // Say one state of the lookup in the help line, whole in its title too.
   const say = (words) => {
     help.textContent = words;
     help.title = words;
   };
+  // Write the Name, then say so as typing would: a scripted value fires no
+  // event, and the form's complete and change gates must see it (#1330).
+  const write = (value) => {
+    name.value = value;
+    name.dispatchEvent(new Event("input", {bubbles: true}));
+  };
   // Clear the Name only if this script filled it and it is unchanged.
   const unfill = () => {
-    if (filled !== null && name.value === filled) name.value = "";
+    if (filled !== null && name.value === filled) write("");
     filled = null;
   };
   const suggest = (names) => {
@@ -71,7 +83,7 @@
     // Never over a Name the Administrator typed; a Name filled in for an
     // earlier address is replaced.
     if (names.length && (!name.value.trim() || name.value === filled)) {
-      name.value = names[0];
+      write(names[0]);
       filled = names[0];
     }
   };

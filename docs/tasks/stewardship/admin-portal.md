@@ -911,7 +911,29 @@ locked field refused, its leader roles, its end date with
 `campaign_end_date_requested` and its intent, its Ministries with
 `campaign_ministries_requested`, no current campaign, a read-only session
 and Staff denied, an ended session) and the unchanged Campaign settings,
-live end date and live Ministries page suites.
+live end date and live Ministries page suites. Another part adds `campaign
+shares-preview` and `campaign shares-confirm`, Share options' Review and
+Apply, in `parishkit.stewardship.admin_shares`, through the page's own
+target and editability checks, formset, review (moved into
+`option_editing.review_options`, which the page's Review now calls) and
+`admin_editing.confirm_intent`, with no schema change; proven by
+`tests/stewardship/test_admin_shares.py` (the change document's parser,
+the Review post it becomes bound to the page's formset, the catalog
+entries, the described event, the documents' names, the ledger, usage
+errors), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_settings.py`,
+`tests/stewardship/database/test_admin_shares_cli_postgresql.py` (a
+relabel, move, addition and deletion previewed and confirmed with the
+request and event and applied once installed, a repeated confirm, the
+document on standard input with `--campaign`, a command token confirmed on
+the page and a page token by the command, a stale version, no change, a
+saved option left out, an unknown id, a label the page refuses, an unknown
+member, a census-only draft, an unknown campaign, a locked draft, a draft
+background work holds, a live campaign and its stale token, a token for
+another or an unknown campaign, an altered, another page's or another Administrator's token,
+a token reviewed before the options changed, no current campaign, a
+read-only session, an ended session and Staff denied before reading input)
+and the unchanged Share options page suite.
 
 ADM-11.12 lands in parts. The first adds `events list` and `events
 acknowledge`, the Admin home page's security events and critical-problem
@@ -972,6 +994,28 @@ and the default text, the confirmation email, a re-save notice, an unknown
 slot or revision, no current campaign, a held campaign `stale_version`, a
 Staff reader denied, an ended session) and the unchanged content page
 suites.
+
+Another part adds `content preview` and `content confirm`, the email
+tables' Delete and the editors' plain-text preview, in
+`parishkit.stewardship.admin_content`, through the page's own removal
+build (moved into `content_delete_views.review_deletion` and `chosen_ids`,
+which the Delete now calls), its conversion (moved into
+`content_views.plain_text`, which the plain-text preview now calls) and
+`admin_editing.confirm_intent`, with no schema change; proven by
+`tests/stewardship/test_admin_content_changes.py` (catalog flags, the
+described event, usage errors, the choice check, the conversion),
+`tests/stewardship/test_admin_content.py` (the ledger),
+`tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_content_changes_cli_postgresql.py`
+(a preview and confirm of two unused emails recording the request and
+event with the sent email kept once installed, a repeat, a sent email,
+the confirmation email, an unknown or repeated id, a stale version, a
+held campaign, an altered or another page's token, another
+Administrator's token denied, a token built before the settings changed,
+no current campaign, the plain-text preview equal to the page's answer
+with no event and no renewed session, a read-only session and Staff
+denied, an ended session) and the unchanged content page suites.
 
 Another part adds `integration list`, `integration show` and `integration
 status`, the Integrations pages' reads, in
