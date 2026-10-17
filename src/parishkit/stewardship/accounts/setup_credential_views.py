@@ -180,7 +180,12 @@ def setup_credential(request, target):
         context = _context(draft, STEP[target])
         wizard = context["wizard"]
         blocked = prerequisite(wizard, STEP[target])
-        saved = next((item for item in receipts if item.target == target), None)
+        # A scrubbed receipt (a Slack token discarded by turning Slack off,
+        # #1499) is no saved credential.
+        saved = next(
+            (item for item in receipts if item.target == target and not item.scrubbed),
+            None,
+        )
         # Never the secret: only whether one is saved and its public scope. A
         # saved key whose step is not done is stale, unless the step is blocked
         # (``blocked``): the page then shows that reason instead.
