@@ -12,6 +12,7 @@ import json
 import re
 from pathlib import Path
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import pytest
 from django.db import DatabaseError, IntegrityError, connection, transaction
@@ -23,7 +24,8 @@ from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.storage import StaleRecordError
-from parishkit.stewardship.workflows.models import MinistryRosterEntry
+from parishkit.stewardship.web.dates import format_date
+from parishkit.stewardship.workflows.models import MinistryRequest, MinistryRosterEntry
 from parishkit.stewardship.workflows.roster import set_roster_entered
 
 from .auth_builders import signed_in
@@ -613,11 +615,25 @@ def test_staff_bulk_mark_a_gone_members_change_as_a_single_tick_does(
     ) == {"staff@example.org"}
     assert AuditEvent.objects.filter(event_type="ministry_roster_entered").count() == 2
     tick(harness, staff, join, False)
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        stale = post(
-            browser, route, {"bulk_key": str(uuid4()), "request": [f"{join.pk}:2"]}
-        )
-    assert stale.status_code == 409
-    message = json.loads(stale.content)["refusal"]["message"]
-    assert re.search(r"^.+ — .+, resolved \w{3} \d{1,2}, \d{4} changed after", message)
+    resolved = MinistryRequest.objects.get(pk=join.pk).resolved_at
+    # The day is the browser's, from the zone the dialog posts (#558); with
+    # no known zone it is left out rather than guessed.
+    for zone in ("Pacific/Kiritimati", "Pacific/Pago_Pago", "", "Not/AZone"):
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            stale = post(
+                browser,
+                route,
+                {
+                    "bulk_key": str(uuid4()),
+                    "request": [f"{join.pk}:2"],
+                    "zone": zone,
+                },
+            )
+        assert stale.status_code == 409
+        message = json.loads(stale.content)["refusal"]["message"]
+        if zone in ("", "Not/AZone"):
+            assert ", resolved" not in message and "changed after" in message
+            continue
+        day = resolved.astimezone(ZoneInfo(zone)).date()
+        assert f", resolved {format_date(day, compact=True)} changed after" in message
     assert MinistryRosterEntry.objects.filter(request=join).count() == 2
