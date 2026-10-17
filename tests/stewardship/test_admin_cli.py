@@ -221,6 +221,11 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "followup show",
         "followup update",
         "followup bulk",
+        # The roster tick and information follow-up (PR 11b).
+        "followup roster-entered",
+        "followup roster-bulk",
+        "followup information-show",
+        "followup information-update",
     }
     # Past campaigns' archive import (#1018), listed with the reports.
     reports |= {"history list", "history preview", "history confirm", "history remove"}
@@ -874,6 +879,10 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_integration_backup_probe",
         "admin_cmd_integration_dismiss",
         "admin_cmd_integration_key_finish_switching",
+        # The roster tick and information follow-up (PR 11b).
+        "admin_cmd_followup_roster_entered",
+        "admin_cmd_followup_roster_bulk",
+        "admin_cmd_followup_information_update",
     ]
     for event in events:
         assert Action(event) and event in DESCRIPTIONS, event
