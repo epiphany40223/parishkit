@@ -37,7 +37,7 @@ SELECT sum(hashtextextended(entry, 0))::text FROM (
     FROM pg_class WHERE relnamespace = 'public'::regnamespace
   UNION ALL SELECT concat_ws(':', 'a', attrelid, attnum, attname, atttypid,
                              atttypmod, attnotnull, attidentity, attgenerated,
-                             attcollation, attisdropped)
+                             attcollation, attisdropped, attacl)
     FROM pg_attribute WHERE attrelid IN (SELECT oid FROM rel) AND attnum > 0
   UNION ALL SELECT concat_ws(':', 'p', oid, proname, proowner, proacl, prolang,
                              prokind, prosecdef, proleakproof, proisstrict,

@@ -19,6 +19,9 @@ DISABLE = f"ALTER TABLE {TABLE} DISABLE TRIGGER ALL"
 ENABLE = f"ALTER TABLE {TABLE} ENABLE TRIGGER ALL"
 # Installed with EXECUTE for its owner only (PUBLIC revoked).
 FUNCTION = "stewardship_daily_digest_immutable_v1()"
+# A column-level grant, the shape database-grants installs (#1519).
+COLUMN_GRANT = f"GRANT SELECT (report) ON {TABLE} TO PUBLIC"
+COLUMN_REVOKE = f"REVOKE SELECT (report) ON {TABLE} FROM PUBLIC"
 
 
 def run(sql):
@@ -102,6 +105,8 @@ def test_a_revoked_grant_leaves_the_digest_alone():
     guard = started()
     run(f"GRANT EXECUTE ON FUNCTION {FUNCTION} TO PUBLIC")
     run(f"REVOKE EXECUTE ON FUNCTION {FUNCTION} FROM PUBLIC")
+    run(COLUMN_GRANT)
+    run(COLUMN_REVOKE)
     assert catalog_digest(connection) == before
     assert guard.finish(connection) == []
 
@@ -119,6 +124,7 @@ def test_a_revoked_grant_leaves_the_digest_alone():
             f"ALTER TABLE {TABLE} ALTER COLUMN report DROP DEFAULT",
             f"columns: changed {TABLE}.report",
         ),
+        (COLUMN_GRANT, COLUMN_REVOKE, f"columns: changed {TABLE}.report"),
     ],
 )
 def test_a_committed_grant_or_default_change_is_named(change, restore, expected):
@@ -131,6 +137,17 @@ def test_a_committed_grant_or_default_change_is_named(change, restore, expected)
         assert guard.finish(connection) == []
     finally:
         run(restore)
+
+
+def test_a_committed_column_revoke_is_named():
+    """Revoking a column grant the schema already held is reported too (#1519)."""
+    run(COLUMN_GRANT)
+    try:
+        guard = started()
+        run(COLUMN_REVOKE)
+        assert guard.finish(connection) == [f"columns: changed {TABLE}.report"]
+    finally:
+        run(COLUMN_REVOKE)
 
 
 def test_the_failure_names_the_change_and_the_fix():
