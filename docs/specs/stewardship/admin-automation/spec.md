@@ -2540,7 +2540,7 @@ These steps matter again only for the next campaign. The go-live redesign in
 match the [Go live page](../admin-portal/spec.md#go-live-page):
 `go-live readiness` and `go-live preview` as today (the preview runs the DNS
 check and prints the start token); `go-live start --token …` (Start
-go-live); `go-live status --watch` (the Preparing step); `go-live retry`
+go-live); `go-live status --watch` (the Prepare step); `go-live retry`
 (a failed stage's Retry, which retries the same task and changes no data);
 `go-live refresh-again` (Refresh and prepare again, which starts a new
 attempt); `go-live confirm-preview` and `go-live confirm --token …` (Confirm
