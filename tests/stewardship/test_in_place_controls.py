@@ -664,15 +664,22 @@ def test_review_button_hint_follows_it_and_keeps_its_space():
     assert ".unchanged-hint[data-idle] { visibility: hidden; }" in css
 
 
+# A form's opening tag in a template, whose attributes may hold template
+# tags and variables (a "%}" is not the tag's end).
+FORM_TAG = r'<form id="settings-form"(?:[^>{]|\{[^}]*\})*>'
+
+
 def test_share_options_review_in_the_dialog():
     """Share options say "option", not "setting", in the hint after its
     Save button (#921); its form opens the shared review dialog
     (#750) from a region redrawn from the page's address once a change is
     applied, and the page draws no in-place review region."""
     text = (TEMPLATES / "share-settings.html").read_text()
-    form = re.search(r'<form id="settings-form"[^>]*>', text).group(0)
+    form = re.search(FORM_TAG, text).group(0)
     assert 'data-require-change="base_digest"' in form
     assert 'data-review-open="share-review"' in form
+    # Inside the campaign wizard the form saves directly instead (#1404 PR 4).
+    assert "{% if wizard.direct %}data-direct-save" in form
     assert "data-in-place" not in form
     assert 'data-refresh-url="{{ refresh_url }}"' in text
     assert "settings-review" not in text
@@ -728,9 +735,11 @@ def test_campaign_settings_reviews_in_the_dialog_once():
     form opens the shared review dialog (#750), waits for a real change
     (#921), and draws no in-place review region or second form."""
     text = (TEMPLATES / "campaign-settings.html").read_text()
-    forms = re.findall(r"<form\b[^>]*>", text)
+    forms = re.findall(FORM_TAG.replace(' id="settings-form"', r"\b"), text)
     assert len(forms) == 1
     assert 'data-review-open="campaign-review"' in forms[0]
+    # Inside the campaign wizard the form saves directly instead (#1404 PR 4).
+    assert "{% if wizard.direct %}data-direct-save" in forms[0]
     assert 'data-require-change="base_digest"' in forms[0]
     assert "data-in-place" not in forms[0]
     assert text.count("stewardship/components/review-changes-button.html") == 1

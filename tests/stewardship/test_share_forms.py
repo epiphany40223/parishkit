@@ -161,3 +161,18 @@ def test_action_parser_preserves_bounded_preview_and_confirm():
         == "preview"
     )
     assert share_action(QueryDict("action=confirm&preview=opaque")) == "confirm"
+
+
+def test_a_direct_save_posts_the_rows_with_its_request_key():
+    """Inside the campaign wizard Save and continue posts ``save`` (#1404 PR 4).
+
+    It sends the same rows a Review sends, plus the page's request key, and
+    is held to the same bounded fields.
+    """
+    rows = "options-TOTAL_FORMS=1&options-INITIAL_FORMS=1&options-0-label=A"
+    saved = f"action=save&base_digest=x&request_key=k&{rows}"
+    assert share_action(QueryDict(saved)) == "save"
+    with pytest.raises(ValueError):
+        share_action(QueryDict(f"{saved}&options-1-label=B"))
+    with pytest.raises(ValueError):
+        share_action(QueryDict(f"action=preview&request_key=k&{rows}"))

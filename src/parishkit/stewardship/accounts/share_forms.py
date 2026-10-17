@@ -155,7 +155,9 @@ def share_action(parameters):
         "options-MAX_NUM_FORMS",
     }
     total = parameters.get("options-TOTAL_FORMS", "")
-    if parameters.get("action") == "preview" and (
+    # A direct save (#1404 PR 4) posts the same rows as a Review.
+    rows = parameters.get("action") in {"preview", "save"}
+    if rows and (
         not total.isascii()
         or not total.isdecimal()
         or len(total) > 3
@@ -165,7 +167,7 @@ def share_action(parameters):
         raise ValueError("Invalid share option count.")
     fields.update(
         f"options-{index}-{name}"
-        for index in range(int(total) if parameters.get("action") == "preview" else 0)
+        for index in range(int(total) if rows else 0)
         for name in ("id", "label", "free_text", "ORDER", "DELETE")
     )
-    return form_action(parameters, preview_fields=fields)
+    return form_action(parameters, preview_fields=fields, direct=True)
