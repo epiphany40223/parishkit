@@ -71,7 +71,16 @@ def _chosen(parameters):
         len(values) != 1 for name, values in parameters.lists() if name != "revision_id"
     ):
         raise unexpected_fields(parameters, allowed=allowed, multiple={"revision_id"})
-    values = parameters.getlist("revision_id")
+    return chosen_ids(parameters.getlist("revision_id"))
+
+
+def chosen_ids(values):
+    """The chosen revision IDs, at least one and each once, as strings.
+
+    Request-free, so the page's form check and ``pk-admin content preview
+    --delete`` (#463) refuse the same choices with the same words. A value
+    that is not a UUID raises ``ValueError``.
+    """
     if not values:
         raise UserFacingError(
             _("Choose at least one email to delete."),
@@ -112,6 +121,48 @@ def deletion_patch(document, campaign, records, identifiers):
     return patch
 
 
+def review_deletion(service, actor, state, campaign, identifiers):
+    """Build and sign the removal of the chosen emails, as the dialog confirms it.
+
+    Request-free, so the page's Delete and ``pk-admin content preview
+    --delete`` (#463) build the same change. ``state`` is
+    ``campaign_views._state`` read in the caller's work transaction and
+    ``campaign`` its ``content_views._content_campaign``; the caller checks
+    its own base version first. A base that is no longer the applied one
+    raises ``StaleRecordError``; an email that can't be deleted, or a
+    configuration the removal would make invalid, raises the page's
+    ``UserFacingError``. Returns the signed token ``confirm_intent`` takes
+    with ``delete_salt``.
+    """
+    configuration, fingerprint = state[0], state[-1]
+    base = service.store.active()
+    if base is None or base.digest != configuration.active_configuration.digest:
+        raise StaleRecordError("The applied configuration changed.")
+    patch = deletion_patch(
+        base.document(),
+        campaign,
+        _records(configuration, campaign.pk),
+        identifiers,
+    )
+    # The whole-configuration check a review makes, before signing. A
+    # configuration that would no longer validate is the Admin's to fix,
+    # not a server fault, so it is refused in plain words.
+    try:
+        build_candidate(base, patch, candidate_id=uuid4())
+    except ConfigError as error:
+        raise UserFacingError(
+            _("These emails can't be deleted: the settings would be invalid."),
+            fix=_("Nothing was deleted. Reload the page and check the emails."),
+        ) from error
+    return sign_preview(
+        actor=actor,
+        configuration=configuration,
+        patch=patch,
+        salt=delete_salt(campaign.pk),
+        snapshot=fingerprint,
+    )
+
+
 @require_http_methods(["POST"])
 def content_delete(request, campaign_id):
     """Delete the chosen email templates in one change, as the dialog confirmed.
@@ -130,39 +181,14 @@ def content_delete(request, campaign_id):
         listing = reverse("admin:content_catalog")
         with work_transaction():
             state = _state(service)
-            configuration, fingerprint = state[0], state[-1]
+            configuration = state[0]
             campaign = _content_campaign(state, campaign_id)
             if (
                 request.POST.get("base_digest")
                 != configuration.active_configuration.digest
             ):
                 raise stale_page()
-            base = service.store.active()
-            if base is None or base.digest != configuration.active_configuration.digest:
-                raise StaleRecordError("The applied configuration changed.")
-            patch = deletion_patch(
-                base.document(),
-                campaign,
-                _records(configuration, campaign.pk),
-                identifiers,
-            )
-            # The whole-configuration check a review makes, before signing. A
-            # configuration that would no longer validate is the Admin's to
-            # fix, not a server fault, so it is refused in plain words.
-            try:
-                build_candidate(base, patch, candidate_id=uuid4())
-            except ConfigError as error:
-                raise UserFacingError(
-                    _("These emails can't be deleted: the settings would be invalid."),
-                    fix=_("Nothing was deleted. Reload the page and check the emails."),
-                ) from error
-            token = sign_preview(
-                actor=actor,
-                configuration=configuration,
-                patch=patch,
-                salt=delete_salt(campaign_id),
-                snapshot=fingerprint,
-            )
+            token = review_deletion(service, actor, state, campaign, identifiers)
         receipt = confirm_intent(
             request,
             service,

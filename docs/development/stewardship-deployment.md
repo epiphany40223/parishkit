@@ -90,6 +90,7 @@ the CLI exposes the profile, role, origin, and root options initially.
 | `credential_target` | `CREDENTIAL_TARGET` | Required only for `credential-installer` |
 | `mail_consumers` | `MAIL_CONSUMERS` | `2` (default) or `1` mail consumer processes; see [two mail consumers](../guides/stewardship-family-mail-dispatch.md#two-mail-consumers) |
 | `family_mail_transport` | `FAMILY_MAIL_TRANSPORT` | `batched` (default) or `per_message`; see [Family mail dispatch](../guides/stewardship-family-mail-dispatch.md#implementation-checkpoints) |
+| `export_download_window_minutes` | `EXPORT_DOWNLOAD_WINDOW_MINUTES` | `60` (default); integer 15–240. How long a finished export stays downloadable and a failed one retryable; see [point-in-time exports](../specs/stewardship/operations/spec.md#point-in-time-exports). An operational switch, not a provisioning input: `retarget-image` with the variable changes it, and the upgrade script carries the current value over (refusing a value outside 15–240 before anything stops; a rollback renders the default) |
 
 Public origins cannot include user information, paths other than `/`, queries,
 fragments, whitespace, or invalid ports/hosts. Development and test use loopback

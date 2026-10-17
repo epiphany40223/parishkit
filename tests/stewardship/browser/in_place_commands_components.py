@@ -7,7 +7,9 @@ same page (``posts()``), which a route cannot fulfil on every engine. The
 redirect lands on a stand-in for the page once the command has run, at the
 same path with a query, so the answer is still this page to ui-v1.js. One
 Retry and one resolution are refused instead, with the fixed error page each
-view answers a conflict or a stale version with (409).
+view answers a conflict or a stale version with (409). A Cancel ends its
+export, so its redirect lands on the fixed "no longer available" page,
+which the fixture serves with its real 410 (#1398; ``GONE``).
 """
 
 from datetime import timedelta
@@ -71,6 +73,12 @@ REDIRECTS = {
     for action in RESOLUTIONS + ("note_only",)
 }
 
+# The addresses the fixture server answers 410 Gone: an export that has
+# ended, whose status page is the "no longer available" page.
+GONE = frozenset(
+    {_stand_in(EXPORT_QUEUED, "cancelled"), _stand_in(EXACT_QUEUED, "cancelled")}
+)
+
 
 def components(context, admin):
     """Each page as first shown and as its command's answer shows it."""
@@ -112,14 +120,18 @@ def components(context, admin):
         EXPORT_FAILED: export(5191, "failed"),
         _stand_in(EXPORT_FAILED, "retried"): export(5191, "ready"),
         EXPORT_QUEUED: export(5192, "queued"),
-        _stand_in(EXPORT_QUEUED, "cancelled"): export(5192, "cancelled"),
         EXACT_FAILED: export(5193, "failed", exact=True),
         _stand_in(EXACT_FAILED, "retried"): export(
             5193, "succeeded", exact=True, export_id=UUID(int=5196)
         ),
         EXACT_QUEUED: export(5194, "queued", exact=True),
-        _stand_in(EXACT_QUEUED, "cancelled"): export(5194, "cancelled", exact=True),
         EXPORT_REFUSED: export(5195, "failed"),
+    } | {
+        address: render_to_string(
+            "stewardship/report-export-gone.html",
+            page | {"report_url": "/participation", "report_name": "Participation"},
+        )
+        for address in GONE
     }
 
     # The Mail message page as delivery_components draws it, with one Admin

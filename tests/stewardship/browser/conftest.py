@@ -17,7 +17,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from PIL import Image
 
-from parishkit.stewardship.accounts import setup_help
+from parishkit.stewardship.accounts import campaign_wizard, setup_help
 from parishkit.stewardship.accounts import setup_mail_views as mail_views
 from parishkit.stewardship.accounts import (
     setup_notification_views as notification_views,
@@ -27,7 +27,10 @@ from parishkit.stewardship.accounts.backup_key import KeyStatus
 from parishkit.stewardship.accounts.branding_views import LogoUploadForm
 from parishkit.stewardship.accounts.campaign_create_views import any_zone
 from parishkit.stewardship.accounts.campaign_family_test_views import FamilyTestForm
-from parishkit.stewardship.accounts.campaign_forms import CampaignForm
+from parishkit.stewardship.accounts.campaign_forms import (
+    CampaignForm,
+    CampaignSettingsForm,
+)
 from parishkit.stewardship.accounts.campaign_mail_views import CampaignMailForm
 from parishkit.stewardship.accounts.content_forms import ContentForm
 from parishkit.stewardship.accounts.integration_credentials import (
@@ -124,6 +127,7 @@ from .home_steps_components import components as home_steps_components
 from .hosted_file_components import IMAGE_TOKEN
 from .hosted_file_components import POSTS as HOSTED_FILE_POSTS
 from .hosted_file_components import components as hosted_file_components
+from .in_place_commands_components import GONE as IN_PLACE_GONE
 from .in_place_commands_components import components as in_place_commands_components
 from .in_place_commands_components import posts as in_place_commands_posts
 from .in_place_components import FORM as IN_PLACE_FORM
@@ -132,6 +136,10 @@ from .in_place_components import SLOW as IN_PLACE_SLOW
 from .in_place_components import components as in_place_components
 from .information_components import POSTS as INFORMATION_POSTS
 from .information_components import components as information_components
+from .integration_dialog_components import POSTS as INTEGRATION_DIALOG_POSTS
+from .integration_dialog_components import (
+    components as integration_dialog_components,
+)
 from .integration_gate_components import (
     components as integration_gate_components,
 )
@@ -165,6 +173,8 @@ from .settings_components import components as settings_components
 from .setup_back_path_components import components as setup_back_path_components
 from .setup_live_components import POSTS as SETUP_LIVE_POSTS
 from .setup_live_components import components as setup_live_components
+from .setup_order_components import POSTS as SETUP_ORDER_POSTS
+from .setup_order_components import components as setup_order_components
 from .signed_in_components import POSTS as SIGNED_IN_POSTS
 from .signed_in_components import components as signed_in_components
 from .source_form_components import components as source_form_components
@@ -178,6 +188,8 @@ from .user_components import POSTS as USER_POSTS
 from .user_components import components as user_components
 from .weekly_components import components as weekly_components
 
+# The default Ministry leader roles a new campaign starts with (#922).
+LEADER_ROLES = ["Chairperson", "Staff"]
 NOW = datetime(2026, 9, 10, 12, tzinfo=UTC)
 # A scheduled full refresh two hours past due, with none running (#510).
 LATE_REFRESH = FullRefreshStatus(
@@ -764,14 +776,20 @@ def component_origin():
             },
         ),
         (
+            # The Backup encryption key change's review page; the other
+            # integrations review in the review dialog (#750).
             "/integration-preview",
             "integration-preview",
             {
-                "target": "parishsoft",
-                "label": "ParishSoft",
+                "target": "backup_key",
+                "label": "Backup encryption key",
                 "preview": "synthetic-preview",
                 "changes": [
-                    {"label": "Organization ID", "before": "12345", "after": "54321"}
+                    {
+                        "label": "Key fingerprint",
+                        "before": "0123456789abcdef",
+                        "after": "fedcba9876543210",
+                    }
                 ],
             },
         ),
@@ -985,6 +1003,32 @@ def component_origin():
                 "visual": "<p>Hello Sample Family</p>",
                 "placeholders": ["family_name", "parish_name"],
                 # An email keeps the plain-text panel (#259) for component checks.
+                "form": ContentForm(
+                    kind="email",
+                    slot="confirmation",
+                    initial={
+                        "base_digest": "a" * 64,
+                        "subject": "Received",
+                        "html": "<p>Hello Sample Family</p>",
+                        "text": "Hello Sample Family",
+                        "generate_text": True,
+                    },
+                ),
+            },
+        ),
+        (
+            # Preview changes waiting for a change, as the view draws it (#1330).
+            "/content-settings-gated",
+            "content-settings",
+            {
+                "campaign": {
+                    "pk": uuid4(),
+                    "active_configuration": {"name": "Sample campaign"},
+                },
+                "label": "Confirmation email",
+                "visual": "<p>Hello Sample Family</p>",
+                "placeholders": ["family_name", "parish_name"],
+                "change_gate": True,
                 "form": ContentForm(
                     kind="email",
                     slot="confirmation",
@@ -1312,6 +1356,15 @@ def component_origin():
                 "testing_recipient": "testing@example.org",
                 "candidate_digest": "a" * 64,
                 "document": '{"sections": {"campaigns": []}}',
+                # The tests come before Review (#1476), which shows them.
+                "readiness": [
+                    {
+                        "label": "Test email",
+                        "accepted": True,
+                        "url": "/admin/setup/mail-test",
+                    }
+                ],
+                "tests_accepted": True,
                 "samples": [
                     {
                         "label": "Family welcome",
@@ -1515,6 +1568,12 @@ def component_origin():
             {"draft": setup_draft, "form": SetupLogoForm(), "assets": []},
         ),
         (
+            # The setup logo step once a logo is saved: its previews.
+            "/setup-branding-saved",
+            "setup-branding",
+            {"draft": setup_draft, "form": SetupLogoForm(), "assets": [branding_asset]},
+        ),
+        (
             "/setup-credential",
             "setup-credential",
             {
@@ -1587,18 +1646,23 @@ def component_origin():
                 ),
             },
         ),
-        # Create the campaign (#142) with a real parish's long Ministry list.
+        # Create the campaign (#142) with a real parish's long Ministry list,
+        # step 1 of the campaign wizard (#1404 PR 3).
         (
             "/campaign-create-long",
             "campaign-create",
             {
+                "admin_chrome": admin | {"campaign_wizard": campaign_wizard.creation()},
                 "form": any_zone(
-                    CampaignForm(
+                    CampaignSettingsForm(
                         initial={
                             "timezone": "America/New_York",
+                            "ministry_leader_roles": LEADER_ROLES,
                             "base_digest": "a" * 64,
                         },
                         previous={},
+                        leader_choices=[(role, role) for role in LEADER_ROLES],
+                        leader_roles=LEADER_ROLES,
                         # A real parish has hundreds of Ministries, some long-named.
                         ministries=[
                             ("1", "Music ministry"),
@@ -1942,23 +2006,28 @@ def component_origin():
                 ),
             },
         ),
-        # Create the campaign (#142): the first campaign's form.
+        # Create the campaign (#142): the first campaign's form, Campaign
+        # settings' own, on step 1 of the campaign wizard (#1404 PR 3).
         (
             "/campaign-create",
             "campaign-create",
             {
+                "admin_chrome": admin | {"campaign_wizard": campaign_wizard.creation()},
                 "form": any_zone(
                     setup_help.apply(
-                        CampaignForm(
+                        CampaignSettingsForm(
                             initial={
                                 "timezone": "America/New_York",
                                 "census": True,
                                 "additional_information": True,
+                                "ministry_leader_roles": LEADER_ROLES,
                                 "base_digest": "a" * 64,
                             },
                             previous={},
                             ministries=[("4", "Community outreach"), ("5", "Choir")],
                             funds=[("9", "Offertory")],
+                            leader_choices=[(role, role) for role in LEADER_ROLES],
+                            leader_roles=LEADER_ROLES,
                         ),
                         setup_help.ADMIN_CAMPAIGN,
                         replace=True,
@@ -2219,6 +2288,9 @@ def component_origin():
     responses.update(setup_back_path_components(context, admin, NOW, SETUP_LOAD_STATUS))
     responses.update(in_place_commands_components(context, admin))
     responses.update(campaign_test_components(context, admin))
+    responses.update(
+        setup_order_components(context, admin, NOW, SETUP_MAIL_STATUS, setup_draft)
+    )
     responses.update(backup_test_components(context, admin))
     responses.update(family_test_components(context, admin))
     responses.update(upload_defaults_components(context, admin))
@@ -2233,6 +2305,7 @@ def component_origin():
     responses.update(step_up_components(context, admin))
     responses.update(stepper_components(context, admin))
     responses.update(refresh_schedule_components(context, admin, NOW))
+    responses.update(integration_dialog_components(context, admin, NOW))
     # The in-place form page's POST answers (#519, #562): refusals answer
     # with the page the view would render (400 with the summary in the
     # region, 200 with it outside, or a 400 denial page without the region),
@@ -2254,7 +2327,9 @@ def component_origin():
         | LIVE_STATUS_POSTS
         | SETUP_LIVE_POSTS
         | SETTINGS_POSTS
+        | INTEGRATION_DIALOG_POSTS
         | STEPPER_POSTS
+        | SETUP_ORDER_POSTS
         | CAMPAIGN_SETTINGS_POSTS
         | CAMPAIGN_CREATE_POSTS
         | SCHEDULE_LIST_POSTS
@@ -2321,7 +2396,11 @@ def component_origin():
 
     logo = BytesIO()
     Image.new("RGB", (1024, 512), "blue").save(logo, format="PNG")
-    for prefix in ("/branding/", "/admin/parish/logos/assets/"):
+    for prefix in (
+        "/branding/",
+        "/admin/parish/logos/assets/",
+        "/admin/setup/branding/assets/",
+    ):
         responses[f"{prefix}{branding_asset['pk']}.png"] = (
             "image/png",
             logo.getvalue(),
@@ -2348,6 +2427,21 @@ def component_origin():
             )
         ),
     )
+    # Every fixture page with a change-gated form (#921, #1330), so the
+    # change gate's guard (test_editor_gates.py) checks each one's hidden
+    # fields, including fixtures added later.
+    responses["/change-gate-index"] = (
+        "text/plain",
+        "\n".join(
+            sorted(
+                path
+                for path, (kind, body) in responses.items()
+                if kind == "text/html"
+                and isinstance(body, str)
+                and "data-require-change=" in body
+            )
+        ),
+    )
 
     class Handler(BaseHTTPRequestHandler):
         """Suppress raw request logging; unknown routes are intentionally empty."""
@@ -2365,7 +2459,9 @@ def component_origin():
             if path in AUTOMATION_SLOW_GETS | REPORT_SLOW_GETS:
                 time.sleep(1.5)
             kind, body = responses.get(path, ("text/plain", ""))
-            self.send_response(200 if path in responses else 404)
+            # An ended export's status page answers 410 Gone (#1398).
+            status = 410 if path in IN_PLACE_GONE else 200
+            self.send_response(status if path in responses else 404)
             self.send_header(
                 "Content-Type",
                 kind if kind == "image/png" else kind + "; charset=utf-8",

@@ -170,6 +170,10 @@ DESCRIPTIONS = {
         "An automation session confirmed a reviewed removal of a campaign "
         "image, which became a configuration request."
     ),
+    "admin_cmd_content_confirm": _(
+        "An automation session confirmed a built delete of unused campaign "
+        "emails, which became a configuration request."
+    ),
     "admin_cmd_integration_confirm": _(
         "An automation session confirmed a reviewed change to an "
         "integration's settings, or its removal, which became a configuration "
@@ -194,6 +198,10 @@ DESCRIPTIONS = {
     "admin_cmd_campaign_confirm": _(
         "An automation session confirmed a reviewed change to the campaign's "
         "settings, which became a configuration request."
+    ),
+    "admin_cmd_campaign_shares_confirm": _(
+        "An automation session confirmed a reviewed change to the campaign's "
+        "Share options, which became a configuration request."
     ),
     "admin_cmd_users_import_leaders": _(
         "An automation session confirmed a reviewed import of ParishSoft "
@@ -339,7 +347,8 @@ DESCRIPTIONS = {
     ),
     "admin_cmd_export_regenerate": _(
         "An automation session requested an expired report export again, "
-        "as the export's Regenerate button does."
+        "as the export's Regenerate button did before exports became "
+        "point-in-time."
     ),
     "admin_cmd_export_financial": _(
         "An automation session requested a financial report export, as the "

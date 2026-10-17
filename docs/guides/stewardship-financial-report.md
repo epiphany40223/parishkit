@@ -118,7 +118,12 @@ module.
 The campaign is admitted before its filters are judged, so an unknown campaign
 is denied rather than described as a filter problem. Only the requester's own
 filters then produce a 400, on an accessible page that explains the money format
-and links back without echoing any value. A later `ValueError` while shaping
+and links back without echoing any value. The first and latest response dates
+are whole days in the viewer's browser time zone (#558, migration 0110): the
+filter form sends the zone the page script reads, and a date without a known
+zone gets its own 400 line that says to reload the page, never a guess. Filters
+without a zone, from a release before 0110 or a retained export capture, keep
+their campaign-zone days. A later `ValueError` while shaping
 data is a 503 on the same recovery page, because no change of filters could fix
 it; it is a persistent defect that every retry reproduces, so it is recorded as
 an operational failure event before the page is returned, never hidden by it.

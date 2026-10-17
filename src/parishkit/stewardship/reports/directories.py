@@ -368,7 +368,7 @@ def selection_parameters(campaign_id, query, *, postal, mac, rehearsal=None):
     """Bind private exact-code input to an immutable Family ID under key locks.
 
     Persisting this selection never persists a plaintext code or a MAC key
-    version. Regeneration therefore remains stable after ordinary key rotation.
+    version. A retry therefore remains stable after ordinary key rotation.
     Unknown codes retain an explicit empty exact selection, not an unfiltered
     query. A postal (mail-merge) selection always has reach ``mail``; see
     ``DirectoryQuery.postal``. Callers hold the campaign read/work barrier and
@@ -502,7 +502,7 @@ def add_responses(rows):
 # One statement chooses the snapshot to read head contacts from and reads
 # them. It is the captured snapshot while that is still promoted and not
 # compacted; otherwise, only when ``current`` is true, the current promoted
-# snapshot (an export rendered, retried or regenerated after the 15-minute
+# snapshot (an export rendered or retried after the 15-minute
 # refresh compacted its capture's source). Compaction marks a snapshot
 # compacted before deleting any of its memberships, so within this one
 # statement's view the chosen snapshot's memberships are all there; missing

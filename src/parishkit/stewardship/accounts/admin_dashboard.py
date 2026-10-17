@@ -60,8 +60,10 @@ def health_listed(problems, offsite):
     A problem Home also reports in its own notice is shown once, as the
     System health line (#1214). ``problems`` are Home's System health
     problems; ``offsite`` is the off-site line's ``OffsiteStatus`` (or
-    None). The off-site line gives way only while it reports the failure.
-    Viewers without System health get no such map, so every notice stays.
+    None). The off-site line gives way only while it reports the failure,
+    and the invitation to set off-site copies up while ``offsite_missing``
+    (Production) says the same. Viewers without System health get no such
+    map, so every notice stays.
     """
     kinds = {problem.kind for problem in problems}
     return {
@@ -70,6 +72,7 @@ def health_listed(problems, offsite):
         "offsite": "backup_offsite_failed" in kinds
         and offsite is not None
         and offsite.kind == "failed",
+        "offsite_unset": "offsite_missing" in kinds,
     }
 
 

@@ -332,14 +332,22 @@ def test_native_export_creation_status_cancel_and_restricted_download(
             "Location"
         ]
         assert post(browser, export_action(cancelled, "cancel")).status_code == 302
-        _, body = read(browser, cancelled)
-        assert b"cancelled" in body
+        # A cancelled export has ended (#1398): the fixed 410 page.
+        response, body = read(browser, cancelled)
+        assert (
+            response.status_code == 410
+            and b"This export is no longer available." in body
+        )
     from .test_export_cleanup_postgresql import expire_publication
 
     expire_publication(job)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        _, expired = read(browser, status_path)
-        assert b"file has expired" in expired and b"Download export" not in expired
+        response, expired = read(browser, status_path)
+        assert (
+            response.status_code == 410
+            and b"This export is no longer available." in expired
+        )
+        assert b"Download export" not in expired
         gated_path = post(browser, path, values | {"request_key": str(uuid4())})[
             "Location"
         ]

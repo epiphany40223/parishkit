@@ -77,9 +77,5 @@
 {% button type="submit" enabled=export_allowed aria-describedby=export_allowed|yesno:",participation-export-locked" %}{% translate "Queue export with the latest data" %}{% endbutton %}</form>
 {% else %}<p id="participation-exact-export-unavailable">{% translate "The data for a new export is not available right now, so no export can be queued yet." %}</p>
 {% button type="submit" enabled=False aria-describedby="participation-exact-export-unavailable" %}{% translate "Queue export with the latest data" %}{% endbutton %}{% endif %}
-<h3>{% translate "Your recent latest-data exports" %}</h3>
-<ul>{% for job in recent_exact_exports %}<li><a href="{% url 'admin:report_export' job.pk %}">{{ job.format|upper }} — <time datetime="{{ job.created_at|date:'c' }}" data-local-instant>{{ job.created_at|date:'c' }}</time></a></li>{% empty %}<li>{% translate "No latest-data exports yet. Queue one above." %}</li>{% endfor %}</ul>
-<h3>{% translate "Your recent chart exports" %}</h3>
-<ul>{% for job in recent_exports %}<li><a href="{% url 'admin:report_export' job.pk %}">{{ job.format|upper }} — <time datetime="{{ job.created_at|date:'c' }}" data-local-instant>{{ job.created_at|date:'c' }}</time></a></li>{% empty %}<li>{% translate "No chart exports yet. Use Generate export above." %}</li>{% endfor %}</ul>
 </section>
 {% endblock %}

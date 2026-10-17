@@ -97,6 +97,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "content list",
         "content show",
         "content history",
+        "content preview",
+        "content confirm",
         "parish show",
         "parish preview",
         "parish confirm",
@@ -123,6 +125,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "campaign show",
         "campaign preview",
         "campaign confirm",
+        "campaign shares-preview",
+        "campaign shares-confirm",
     }
     tests = {
         "test sample-preview",
@@ -158,7 +162,6 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "export status",
         "export cancel",
         "export retry",
-        "export regenerate",
         "export download",
         "report list",
         "report participation",
@@ -257,8 +260,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
             if name in users
             else 3
         )
-        # Only the chosen-Family send, the code and financial exports, some
-        # regenerations and an integration settings change need a recent
+        # Only the chosen-Family send, the code and financial exports and an
+        # integration settings change need a recent
         # sign-in on their pages.
         assert entry["fresh_gated"] == (
             name
@@ -269,7 +272,6 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "system debug-off",
                 "system refresh-accept",
                 "system debug-allow",
-                "export regenerate",
                 "export financial",
                 "export directory",
                 "export postal",
@@ -619,13 +621,13 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert roster["result_fields"] == census["result_fields"]
     # The export lifecycle: status is any session's passive read with
     # --watch and no view event; every other command needs a full-scope
-    # session. The four changes are keyed (but cancel) and record their
+    # session. The three changes are keyed (but cancel) and record their
     # admin_cmd_* event; the download records the page's own event.
     status = entries["export status"]
     assert status["scope"] == "read_only" and not status["changes_state"]
     assert status["watch"] and status["audit_event"] is None
     assert status["arguments"] == ["EXPORT_ID"]
-    for verb in ("create", "cancel", "retry", "regenerate"):
+    for verb in ("create", "cancel", "retry"):
         entry = entries[f"export {verb}"]
         assert entry["scope"] == "full" and entry["changes_state"], verb
         assert entry["audit_event"] == f"admin_cmd_export_{verb}", verb
@@ -820,11 +822,14 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_portal_maintenance_set",
         # send confirm: Pause and resume mail's Confirm (PR 7b, #463).
         "admin_cmd_send_confirm",
+        "admin_cmd_content_confirm",
         "admin_cmd_files_delete",
         "admin_cmd_files_rename",
         "admin_cmd_parish_confirm",
         "admin_cmd_workgroup_confirm",
         "admin_cmd_campaign_confirm",
+        # campaign shares-confirm: Share options' Apply (PR 10).
+        "admin_cmd_campaign_shares_confirm",
         "admin_cmd_task_retry",
         "admin_cmd_delivery_resolve",
         "admin_cmd_delivery_resend",
@@ -835,7 +840,6 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_export_comparison",
         "admin_cmd_export_cancel",
         "admin_cmd_export_retry",
-        "admin_cmd_export_regenerate",
         "admin_cmd_export_archive",
         "admin_cmd_export_financial",
         "admin_cmd_export_information",

@@ -320,6 +320,26 @@ def expired_preview(link=None):
     )
 
 
+def send_time_passed(link=None):
+    """The refusal when a reviewed send time passed before the confirmation.
+
+    A signed schedule review lives up to ``PREVIEW_MAX_AGE``, so a send time
+    that was ahead at Review can pass before Apply, and that email would
+    then send at once (#1464). Nothing is changed; ``link``, as for
+    ``expired_preview``, leads back to a fresh review.
+    """
+    return UserFacingStale(
+        _(
+            "A send time in this change has passed since it was reviewed, so "
+            "that email would send at once."
+        ),
+        fix=_("Nothing was changed. Choose a later time, then review the changes."),
+        link=link,
+        link_label=_("Review the changes again") if link else None,
+        reason="send_time_passed",
+    )
+
+
 def load_preview(token, *, salt, link=None, max_age=None):
     """Verify a signed preview, turning expiry into the plain stale refusal.
 

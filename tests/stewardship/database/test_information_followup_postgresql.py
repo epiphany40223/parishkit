@@ -19,6 +19,7 @@ from parishkit.stewardship.reports.information import (
     information_history,
     information_page,
 )
+from parishkit.stewardship.reports.information_views import CONFIRM_MESSAGE
 from parishkit.stewardship.reports.weekly_observation import capture_weekly_observation
 from parishkit.stewardship.responses.information import update_information
 from parishkit.stewardship.responses.models import (
@@ -29,6 +30,7 @@ from parishkit.stewardship.source.snapshot_names import snapshot_family_names
 from parishkit.stewardship.storage import StaleRecordError
 
 from .auth_builders import signed_in
+from .test_admin_refusal_log_postgresql import entries as refusals
 from .test_background_grants_postgresql import task_login
 from .test_export_views_postgresql import post
 from .test_report_workspace_postgresql import read
@@ -37,11 +39,11 @@ from .test_weekly_observation_postgresql import respond
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def search(browser, route, values):
+def search(browser, route, values, **extra):
     """Consume native CSRF POST search using the response-owned transport."""
     server, peer = socket.socketpair()
     try:
-        response = post(browser, route, values, **{"gunicorn.socket": server})
+        response = post(browser, route, values, **{"gunicorn.socket": server}, **extra)
         body = (
             b"".join(response.streaming_content)
             if response.streaming
@@ -189,7 +191,10 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
         assert b'value="name_desc"' in body and b'value="newest"' in body
         assert b"search=" not in body
         for invalid in ({"sort": "submitted_at"}, {"size": "250"}, {"size": "5"}):
+            seen = len(refusals())
             assert search(browser, route, invalid)[0].status_code == 400
+            # The error page is not streamed: its one entry, at once.
+            assert len(refusals()) == seen + 1
         # A date the reader can fix at its field draws the queue again
         # (#1332): 400, the values sent in the filters, the error at both
         # dates and in the summary, and the results for no filters.
@@ -200,6 +205,7 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
                 "pk", flat=True
             )
         )
+        seen = len(refusals())
         response, body = search(
             browser,
             route,
@@ -213,6 +219,15 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
         )
         assert response.status_code == 400 and response["Cache-Control"] == "no-store"
         assert response.stewardship_codes == ("invalid",)
+        # The streamed page leaves its durable entry once it closes (#1484),
+        # and System logs lists it.
+        (entry,) = refusals()[seen:]
+        assert entry.actor_id == actor
+        assert entry.context["route"] == "admin:information_queue"
+        assert (entry.context["status"], entry.context["codes"]) == (400, ["invalid"])
+        logs = search(browser, "/admin/system/logs/", {"applied": "yes", "info": "yes"})
+        assert logs[0].status_code == 200
+        assert f'<tr id="log-info-{entry.pk}"'.encode() in logs[1]
         assert b'value="2026-11-05" aria-invalid="true"' in body
         assert b'id="end" type="date" name="end" value="2026-11-01"' in body
         assert body.count(b'aria-invalid="true"') == 2
@@ -273,7 +288,44 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
             ).status_code
             == 409
         )
+        # Completed, then cleared without the confirmation by a request built
+        # by hand (#1332): the item page again, 400 with the invalid code,
+        # showing what was sent (its version too) with the error at the box
+        # and in the summary. Nothing is saved.
         item.refresh_from_db()
+        completed = values | {"request_key": str(uuid4()), "followed_up": "yes"}
+        completed["expected_version"] = str(item.version)
+        assert post(browser, update_path, completed).status_code == 302
+        item.refresh_from_db()
+        assert item.followed_up_at is not None
+        saved = AdditionalInformationRevision.objects.count()
+        cleared = values | {
+            "expected_version": str(item.version),
+            "request_key": str(uuid4()),
+            "notes": "Reopen <this>",
+        }
+        response, body = search(browser, update_path, cleared)
+        assert response.status_code == 400 and response["Cache-Control"] == "no-store"
+        assert response.stewardship_codes == ("invalid",)
+        page = body.decode()
+        assert (
+            '<input type="checkbox" id="information-confirm-clear" name="confirm_clear"'
+            ' value="yes" aria-invalid="true"'
+            ' aria-describedby="information-save_error">'
+        ) in page
+        message = str(CONFIRM_MESSAGE)
+        assert (
+            f'<ul class="errorlist" id="information-save_error"><li>{message}</li>'
+        ) in page
+        assert f'<a href="#information-confirm-clear">{message}</a>' in page
+        assert f'name="expected_version" value="{item.version}"' in page
+        assert 'name="followed_up" value="yes">' in page
+        assert 'name="follow_up_needed" value="yes" checked>' in page
+        assert ">Reopen &lt;this&gt;</textarea>" in page
+        assert 'id="information-item"' in page
+        assert AdditionalInformationRevision.objects.count() == saved
+        item.refresh_from_db()
+        assert item.followed_up_at is not None
         # Direct SQL cannot rewrite history or alter checkboxes without a receipt.
         for statement in (
             "UPDATE stewardship_information_revision SET notes='overwritten'",
@@ -299,11 +351,11 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
                 confirm_clear=False,
                 notes="Orphan",
             )
-    assert AdditionalInformationRevision.objects.count() == 4
+    assert AdditionalInformationRevision.objects.count() == 5
     first.refresh_from_db()
     assert first.notes == "Called the Family" and first.followed_up_at is not None
     events = AuditEvent.objects.filter(event_type="information_updated")
-    assert events.count() == 4
+    assert events.count() == 5
     assert "Called the Family" not in str(
         list(
             AuditContext.objects.filter(event__in=events).values_list(

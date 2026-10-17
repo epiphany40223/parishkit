@@ -29,11 +29,9 @@ from parishkit.stewardship.archive import check
 from parishkit.stewardship.archive.workbook import read_archive
 from parishkit.stewardship.audit.models import AuditContext
 from parishkit.stewardship.campaigns.read_guards import DownloadPool, ReadLimits
-from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.dispatch import execute_hint
 from parishkit.stewardship.jobs.queues import WorkQueue
-from parishkit.stewardship.reports import export_services
 from parishkit.stewardship.reports.archive_exports import (
     BEFORE_DAY_1,
     archive_offer,
@@ -101,7 +99,8 @@ def work(harness, request, root):
 def test_download_queues_renders_and_downloads_the_partial_archive(
     scenario, settings, tmp_path, monkeypatch
 ):
-    """The page's section and form, the worker's file, the audit and regenerate."""
+    """The page's section and form, the worker's file, the audit and a second
+    export of the same day."""
     harness, ready, browser, actor = scenario
     root = tmp_path / "archive-reports"
     root.mkdir(mode=0o700)
@@ -160,23 +159,21 @@ def test_download_queues_renders_and_downloads_the_partial_archive(
             event__event_type="campaign_archive_exported"
         ).values_list("context", flat=True)
     )
-    assert contexts == [{"outcome": "started", "count": 1}]
-    # Regeneration after expiry reuses the pins: the same fact set and day.
-    with work_transaction():
-        now = export_services.database_now()
-    monkeypatch.setattr(
-        export_services, "database_now", lambda: now + timedelta(days=8)
-    )
-    # converted_at is the request time in whole seconds: let one pass, as
-    # the days before a real regeneration (after expiry) always do.
+    assert contexts == [
+        {
+            "outcome": "started",
+            "count": 1,
+            "report": "campaign_archive",
+            "format": "xlsx",
+        }
+    ]
+    # Exporting again the same day (there is no Regenerate, #1398) pins the
+    # same fact set and day. converted_at is the request time in whole
+    # seconds: let one pass.
     time.sleep(1.1)
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+    with day_two(harness), task_login(ServiceRole.WEB, exact=True, reconnect=True):
         again_key = {"request_key": str(uuid4())}
-        response = post(
-            browser,
-            reverse("admin:report_export_regenerate", args=[request.pk]),
-            again_key,
-        )
+        response = post(browser, ROUTE, again_key)
         assert response.status_code == 302, response
     again = ExportRequest.objects.get(request_key=again_key["request_key"])
     assert (again.fact_set_id, again.parameters) == (ready.pk, request.parameters)
@@ -469,8 +466,22 @@ def test_migration_check_refuses_a_missing_part():
             "ADD CONSTRAINT export_report_known"
         )
     )
+    # 0109 (#1398) relaxes the check, since an ended export's discard
+    # clears its fact_set_id, so the block runs on 0084's own declaration.
+    archive = next(
+        line
+        for line in text.splitlines()
+        if line.startswith(
+            "ALTER TABLE public.stewardship_export_request "
+            "ADD CONSTRAINT export_report_known"
+        )
+    )
     with transaction.atomic(), connection.cursor() as cursor:
-        cursor.execute(block)  # The installed schema passes.
+        cursor.execute(
+            "ALTER TABLE stewardship_export_request DROP CONSTRAINT "
+            "export_report_known; " + archive
+        )
+        cursor.execute(block)  # 0084's schema passes.
         for change in (
             "ALTER FUNCTION public.stewardship_campaign_archive_answers_v1"
             "(uuid, timestamp with time zone) SECURITY INVOKER",
@@ -485,6 +496,11 @@ def test_migration_check_refuses_a_missing_part():
                 cursor.execute(change)
                 cursor.execute(block)
         cursor.execute(block)
+        # This module runs with transaction=True, so the outer block would
+        # commit 0084's stricter constraint and leave it for later tests on
+        # the same database: a later discard (0109) could then not clear a
+        # participation or archive export's fact_set_id. Roll it back.
+        transaction.set_rollback(True)
 
 
 def test_the_checked_file_is_read_back(scenario):

@@ -13,6 +13,7 @@ from .followup_components import (
     LEADER,
     NOTHING,
     PACKET_LIMIT,
+    PACKET_REFUSED,
     REQUESTS,
     SEARCHED,
 )
@@ -316,3 +317,87 @@ def test_packet_waits_while_too_many_ministries_are_ticked(page, component_origi
     assert page.locator("#ministry-packet-choices input:checked").count() == 0
     assert queue.is_enabled() and hint.inner_text() == ""
     assert not failures
+
+
+# The packet's top and the row it reserves below Queue, in page
+# coordinates: Queue's offset from the packet's heading, which the error
+# summary above it moves along with everything else when it goes.
+PACKET_PLACES = """() => {
+  const top = (node) => node.getBoundingClientRect().top + scrollY;
+  const heading = document.getElementById("ministry-packet-heading");
+  const queue = heading.closest("section").querySelector("[type=submit]");
+  const row = document.querySelector("#ministry-packet-hint").parentElement;
+  return [top(queue) - top(heading), row.getBoundingClientRect().height];
+}"""
+
+
+def test_refused_packet_is_shown_at_its_boxes(page, component_origin, axe_source):
+    """A packet the server refused for ticking too many (#1332) is drawn
+    again with the offered ticks kept and every box marked, its message
+    once in the reserved hint row, over the gate's hint; the first edit
+    clears the marks, message and summary item, and moves nothing in the
+    packet."""
+    from playwright.sync_api import expect
+
+    from parishkit.stewardship.reports.ministry_export_views import PACKET_MESSAGE
+
+    errors = watch(page)
+    page.goto(component_origin + PACKET_REFUSED)
+    message = str(PACKET_MESSAGE)
+    boxes = page.locator("#ministry-packet-choices input[name=ministries]")
+    assert boxes.count() == 2
+    for index in range(2):
+        box = boxes.nth(index)
+        expect(box).to_be_checked()
+        expect(box).to_have_attribute("aria-invalid", "true")
+        expect(box).to_have_attribute("aria-describedby", "ministry-packet_error")
+    line = page.locator("#ministry-packet_error")
+    expect(line).to_have_text(message)
+    expect(line).to_be_visible()
+    # The gate's own hint (two ticked, more than one) is held under it, so
+    # the reason is shown once at the packet, and once in the summary.
+    hint = page.locator("#ministry-packet-hint")
+    assert hint.evaluate("node => getComputedStyle(node).visibility") == "hidden"
+    packet = page.locator("#ministry-packet-heading").locator("xpath=..")
+    assert packet.inner_text().count(message) == 1
+    summary = page.locator("[data-error-summary]")
+    expect(summary).to_be_focused()
+    queue = page.get_by_role("button", name="Queue follow-up packet")
+    assert queue.is_disabled()
+    # The value no box offers is never echoed, and no link or form carries
+    # the selection.
+    assert "77" not in packet.inner_html()
+    assert page.evaluate("""() => [...document.querySelectorAll(
+        "a[href], form[action]")].every((node) => !/ministries=/.test(
+        node.getAttribute("href") || node.getAttribute("action")))""")
+    page.evaluate(axe_source)
+    assert page.evaluate(AXE) == []
+    summary.get_by_role("link", name=message).click()
+    expect(page.locator("#ministry-packet-12")).to_be_focused()
+    before = page.evaluate(PACKET_PLACES)
+    boxes.nth(0).uncheck()
+    for index in range(2):
+        expect(boxes.nth(index)).not_to_have_attribute("aria-invalid", "true")
+        assert boxes.nth(index).get_attribute("aria-describedby") is None
+    expect(line).to_be_hidden()
+    expect(summary).to_have_count(0)
+    assert queue.is_enabled() and hint.inner_text() == ""
+    assert page.evaluate(PACKET_PLACES) == pytest.approx(before, abs=0.5)
+    assert_clean(page, errors)
+
+
+def test_unrefused_packet_hint_row_is_the_hint_alone(page, component_origin):
+    """With no refusal the row is exactly the gate's hint line and its
+    margins (#1332)."""
+    page.goto(component_origin + PACKET_LIMIT)
+    row, hint = page.evaluate("""() => {
+      const hint = document.getElementById("ministry-packet-hint");
+      const style = getComputedStyle(hint);
+      return [
+        hint.parentElement.getBoundingClientRect().height,
+        hint.getBoundingClientRect().height
+          + parseFloat(style.marginTop) + parseFloat(style.marginBottom),
+      ];
+    }""")
+    assert row == pytest.approx(hint, abs=0.5) and hint > 0
+    assert page.locator("#ministry-packet_error").is_hidden()

@@ -376,6 +376,14 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # ``CLOSURE_OLD_BODIES`` rerun touches only bodies still reading Ministry
 # activity, which 0103's does not, so its body survives the swap and nothing
 # is registered (the database conftest's schema guard checks this, #1489).
+# 0109 (#1398) creates the discard table (in CLOSURE_TABLES) and the window,
+# ended and discard functions, one of them granted to the scheduler
+# (runtime_grants.CLOSURE_FUNCTIONS); ``closure_functions_absent`` makes it
+# whole again once the table is gone. It also replaces the safe context, so
+# ``CLOSURE_REPLACED_ONLY`` puts 0109's back after the reruns above.
+# 0110 (#558) creates nothing: it replaces the baseline financial selection
+# in place, which 0094's rerun (``CLOSURE_REPLACED``) brings back older, so
+# ``CLOSURE_REPLACED`` runs 0110's file after it.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -582,6 +590,21 @@ CLOSURE_CREATED = {
         "stewardship_responses",
         "0008_proposal_review_edit",
     ),
+    # 0109 (#1398) creates the discard table (in CLOSURE_TABLES) and these
+    # functions; all of them go, so its file installs whole again.
+    **dict.fromkeys(
+        (
+            "public.stewardship_export_window_v1()",
+            "public.stewardship_export_ended_v1(uuid)",
+            "public.stewardship_exact_export_ended_v1(uuid)",
+            "public.stewardship_export_capture_cleared_v1(oid,jsonb,jsonb)",
+            "public.stewardship_export_discard_v1(uuid,boolean)",
+            "public.stewardship_exact_export_discard_v1(uuid,boolean)",
+            "public.stewardship_export_discard_batch_v1(integer,boolean)",
+            "public.stewardship_export_discard_due_v1(integer)",
+        ),
+        ("stewardship_reports", "0029_point_in_time_exports"),
+    ),
 }
 
 
@@ -652,6 +675,9 @@ CLOSURE_ALTERED = {
 # 0101 (#528) replaces the task-type maps 0077's file brings back.
 # 0107 (#528, ADM-09.04) replaces the review guard 0096's file brings back
 # with the one that also admits an edited value.
+# 0110 (#558) replaces the baseline financial selection that 0094's file,
+# run again above for the limitations report, puts back without the
+# browser-zone days, so its entry comes after 0094's.
 CLOSURE_REPLACED = {
     "public.stewardship_debug_off_switch_guard_v1()": (
         ("stewardship_jobs", "0031_debug_allow"),
@@ -676,6 +702,10 @@ CLOSURE_REPLACED = {
     "public.stewardship_information_report_v2(uuid,jsonb,integer,uuid,integer)": (
         ("stewardship_reports", "0028_information_status_counts"),
         "'counts',(SELECT jsonb_build_object(",
+    ),
+    "public.stewardship_financial_report_v1(uuid,jsonb,integer,integer)": (
+        ("stewardship_reports", "0030_financial_local_days"),
+        "CASE WHEN zoned THEN",
     ),
     **dict.fromkeys(
         (
@@ -769,13 +799,50 @@ CLOSURE_REPLACED_ONLY = {
         ("stewardship_responses", "0006_proposal_review"),
         "stewardship_proposal_review v",
     ),
+    # 0109 (#1398) widens 0106's safe context with the export report and
+    # format keys; the reruns above bring back 0106's, and 0109's discard
+    # table cannot be made twice, so its replacement statement runs alone.
+    "stewardship_safe_context_v1": (
+        ("stewardship_reports", "0029_point_in_time_exports"),
+        "'report','format']",
+    ),
+    # 0109 also lets each capture trigger, the export history trigger and
+    # the request guard admit the discard; the reruns of the files that made
+    # them (0037, 0063, 0064, 0071, 0084) bring back their earlier bodies.
+    **{
+        name: (("stewardship_reports", "0029_point_in_time_exports"), phrase)
+        for name, phrase in (
+            *(
+                (f"stewardship_{kind}_export_capture_v{version}", "capture_cleared")
+                for kind, version in (
+                    ("directory", 1),
+                    ("financial", 1),
+                    ("information", 2),
+                    ("ministry", 2),
+                    ("family_test_names", 1),
+                    ("timeline", 1),
+                    ("comparison", 1),
+                )
+            ),
+            ("stewardship_export_immutable_v1", "stewardship_export_discard d"),
+            (
+                "stewardship_export_request_guard_v1",
+                "snapshot.document,directory.document",
+            ),
+        )
+    },
 }
 
 
 def _replaced(text, name):
-    """One ``CREATE OR REPLACE FUNCTION`` statement of a frozen file, whole."""
+    """One ``CREATE OR REPLACE FUNCTION`` statement of a frozen file, whole.
+
+    Its body ends at the dollar quote that opened it, plain ``$$`` or a
+    tagged one such as the safe context's ``$_$``.
+    """
     start = text.index(f"CREATE OR REPLACE FUNCTION public.{name}(")
-    return text[start : text.index("$$;", text.index("AS $$", start)) + len("$$;")]
+    quote = re.compile(r"\bAS\s+(\$\w*\$)").search(text, start)
+    return text[start : text.index(quote[1] + ";", quote.end()) + len(quote[1]) + 1]
 
 
 def before_timeline_exports():
@@ -1295,6 +1362,9 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
             **dict.fromkeys(
                 PUBLICATION_WORKER_TABLES, ("pk_stewardship_worker", "INSERT")
             ),
+            # Point-in-time exports' discard record (0109, #1398): only its
+            # owner-run functions write it; fact compaction reads it.
+            "stewardship_export_discard": ("pk_stewardship_worker", "SELECT"),
         }
         for table in CLOSURE_TABLES:
             login, privilege = writers.get(table, ("pk_stewardship_web", "INSERT"))

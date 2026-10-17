@@ -20,6 +20,7 @@ from parishkit.stewardship.reports.ministries import (
     campaign_ids,
     ministry_page,
 )
+from parishkit.stewardship.reports.ministry_export_views import PACKET_MESSAGE
 
 from .. import configuration_factory
 from ..campaign_factory import campaign as campaign_record
@@ -391,13 +392,30 @@ def test_packet_choices_list_every_ministry_in_scope_beyond_the_table(
             "request_key": str(uuid4()),
             "ministries": [str(duid) for duid in range(1, 202)],
         }
-        # A person sees the Admin error page with the reason, the fix and
-        # a way back; a script gets the same refusal as JSON.
-        response = post(browser, route, too_many, HTTP_ACCEPT="text/html")
+        # A person gets Ministry requests drawn again (#1332), the ticks
+        # kept among the offered boxes, every box marked and the reason and
+        # fix at the boxes and in the summary; a value no box offers is never
+        # echoed, and no link carries the selection. A script gets the same
+        # refusal as JSON.
+        response, body = search(browser, route, too_many, HTTP_ACCEPT="text/html")
         assert response.status_code == 400
-        assert b"at most 200 ticked Ministries" in response.content
-        assert b"leave every box unticked" in response.content
-        assert root.encode() in response.content
+        assert response.stewardship_codes == ("invalid",)
+        boxes = packet_boxes(body)
+        body = body.decode()
+        assert boxes.count('name="ministries"') == 1
+        assert (
+            '<input type="checkbox" id="ministry-packet-9" name="ministries"'
+            ' value="9" checked aria-invalid="true"'
+            ' aria-describedby="ministry-packet_error"> Food pantry'
+        ) in boxes
+        message = str(PACKET_MESSAGE)
+        assert "at most 200 ticked Ministries" in message
+        assert (
+            f'<ul class="errorlist" id="ministry-packet_error"><li>{message}</li>'
+        ) in body
+        assert f'<a href="#ministry-packet-9">{message}</a>' in body
+        assert 'value="201"' not in body and "ministries=" not in body
+        assert 'id="followup-table"' in body
         response = post(browser, route, too_many, HTTP_ACCEPT="application/json")
         assert response.status_code == 400
         assert "at most 200" in response.json()["refusal"]["message"]

@@ -83,6 +83,16 @@ def test_continue_waits_while_the_form_holds_a_change(page, component_origin):
             hint.bounding_box()["height"],
         )
 
+    def unmoved():
+        """Whether Continue and its hint sit as before, within a pixel.
+
+        Firefox rounds a box to whole pixels differently as the page above
+        it changes (a 1px step seen in CI), so an exact compare flakes; a
+        moved control moves by at least a line.
+        """
+        pairs = zip(placed(), before, strict=True)
+        return all(abs(now - then) < 1.5 for now, then in pairs)
+
     before = placed()
     field = page.locator("#id_options-0-label")
     saved = field.input_value()
@@ -90,12 +100,12 @@ def test_continue_waits_while_the_form_holds_a_change(page, component_origin):
     greyed(proceed)
     visible(hint)
     assert proceed.get_attribute("aria-describedby") == "campaign-continue-hint"
-    assert placed() == before
+    assert unmoved(), (placed(), before)
     # Undoing the change gives Continue back.
     field.fill(saved)
     available(proceed)
     assert not hint.is_visible() and proceed.get_attribute("aria-describedby") is None
-    assert placed() == before
+    assert unmoved(), (placed(), before)
     assert failures == []
 
 

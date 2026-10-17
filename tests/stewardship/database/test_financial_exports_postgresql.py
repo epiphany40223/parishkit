@@ -21,7 +21,7 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.dispatch import execute_hint
 from parishkit.stewardship.jobs.queues import WorkQueue
-from parishkit.stewardship.reports import export_services, financial_exports
+from parishkit.stewardship.reports import financial_exports
 from parishkit.stewardship.reports.export_models import (
     ExportRequest,
     FinancialExportSnapshot,
@@ -173,7 +173,7 @@ def test_complete_capture_is_the_whole_result_with_proven_money(
 def test_native_financial_exports_use_real_worker_and_guarded_downloads(
     response_service, google, tmp_path, settings, monkeypatch
 ):
-    """One fixture proves three formats, native ownership, regeneration and denial."""
+    """One fixture proves three formats, native ownership and denial."""
     harness = response_service
     financial_source(harness, modules=["financial"], options=map(asdict, OPTIONS))
     harness = activate_response_service(harness)
@@ -298,21 +298,6 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
                     cell = sheet.cell(2, column)
                     assert (cell.data_type, cell.value) == ("n", expected)
                     assert cell.number_format == '"$"#,##0.00'
-    # Regeneration after expiry keeps the retained capture, never a fresh read.
-    with work_transaction():
-        now = export_services.database_now()
-    monkeypatch.setattr(
-        export_services, "database_now", lambda: now + timedelta(days=8)
-    )
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        fields = {"request_key": str(uuid4())}
-        response = post(
-            browser, reverse("admin:report_export_regenerate", args=[first.pk]), fields
-        )
-        assert response.status_code == 302
-        regenerated = ExportRequest.objects.get(request_key=fields["request_key"])
-        assert regenerated.financial_snapshot_id == first.financial_snapshot_id
-        assert regenerated.parameters == first.parameters
     # The fixture's Choir Chairperson never captures money: this campaign does
     # not ask about Ministries (#922), so the Chairperson cannot even sign in,
     # and neither the service nor SQL accepts the portal user.
@@ -370,21 +355,6 @@ def test_financial_export_needs_a_fresh_sign_in(response_service, google):
         created = post(browser, export, fields)
         assert created.status_code == 302
         assert post(browser, export, fields)["Location"] == created["Location"]
-        assert ExportRequest.objects.count() == 1
-        request = ExportRequest.objects.get()
-    # Regenerating a financial export asks for the same fresh sign-in and
-    # returns to the export's status page.
-    stale_sign_in()
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        refused = post(
-            browser,
-            reverse("admin:report_export_regenerate", args=[request.pk]),
-            {"request_key": str(uuid4())},
-            HTTP_ACCEPT="text/html",
-        )
-        assert refused.status_code == 403
-        page = refused.content.decode()
-        assert f'name="next" value="/admin/reports/exports/{request.pk}/"' in page
         assert ExportRequest.objects.count() == 1
 
 

@@ -444,7 +444,11 @@ pk-admin system debug-allow
 `go-live progress` and `system health` prints one document per poll,
 `final` false until the last. It stops with exit 0 once the task has
 finished, once no send is in progress or about to start, once System
-health lists no problem, or once Production preparation is complete,
+health lists no problem except those waiting cannot clear (off-site copies
+not set up, `offsite_missing`, and a requested backup that failed, did not
+finish or was never picked up, `backup_request_failed`: the
+`WAIT_CANNOT_CLEAR` set in `parishkit.stewardship.system_health`), or once
+Production preparation is complete,
 absent or its task has stopped (a failed task waits for the page's retry,
 and `retry_available` says so). It stops with exit 7 and the last state
 after `--timeout` seconds (default and maximum three hours;
@@ -504,8 +508,9 @@ standard input only for that exact argument, so `--changes=-` or
    as the page does, with the same `--campaign` as the preview (or none
    for both). A token from the page's review works here, and a token from
    here works on the page. An expired token, or one the settings or the
-   campaign's sends have overtaken, is exit 1 (`stale_version`): preview
-   again. An altered token, or one for another campaign, is exit 1
+   campaign's sends have overtaken, or one whose previewed send time has
+   since passed (preview again with a later time), is exit 1
+   (`stale_version`): preview again. An altered token, or one for another campaign, is exit 1
    (`invalid`); another Administrator's is exit 1 (`denied`).
 5. The configuration installer then applies the request; follow it with
    `config request show`. Only your own requests are found; any other is
@@ -974,8 +979,48 @@ its `id`, `kind` (`page` or `email`), `slot`, `name` and `subject`. With
 `kind`, `slot`, `name` and `sample`: the page's fictional sample, its
 `subject`, `html` and `text`; without it, `revision` is null. An ID the
 campaign did not retain, a purged campaign, or a campaign whose retained
-configuration is gone is exit 1 (`not_available`). Editing and deleting
-content stay on the page for now.
+configuration is gone is exit 1 (`not_available`). Editing a page's or
+email's text stays on the page for now.
+
+`content preview --delete` and `content confirm` are the email tables'
+**Delete**, split in two as `schedule preview` and `schedule confirm` are
+for a schedule's Delete: the preview builds the deletion of one or more
+unused emails and prints a token; nothing changes until `content
+confirm`. They need a full-scope session and an Administrator. Name each
+email by its `content list` `revisions[].id`, with one `--delete` per
+email; only emails whose `deletable` is true can go.
+
+```sh
+VERSION=$(pk-admin content list | jq -r .result.version)
+pk-admin content preview --delete ID [--delete ID ...] \
+  --expected-version "$VERSION" |
+  jq -r .result.preview.token | pk-admin content confirm --token -
+```
+
+| Field | What it holds |
+| --- | --- |
+| `action` | `delete` |
+| `version`, `campaign_id` | The configuration version the deletion was built against, and the current campaign |
+| `deleting` | Each email being deleted: `id`, `slot` (its mail type) and `subject` |
+| `preview.token` | What `content confirm --token` takes, valid for fifteen minutes |
+| `created`, `request` (`content confirm`) | As `parish confirm` prints them; follow the change with `config request show --watch` |
+
+An email a schedule still sends, the confirmation email, an id the
+campaign does not hold, or the same id twice is exit 1 (`invalid`), with
+the page's explanation at `delete`; nothing is deleted. A version that is
+no longer current, background work holding the campaign, or an expired
+token is exit 1 (`stale_version`): read `content list` again. An altered
+token is exit 1 (`invalid`). `content confirm` records
+`admin_cmd_content_confirm` in System logs with the request; repeating it
+with the same token returns the same request.
+
+`content preview --html HTML` (or `--html -` to read it, untrimmed, from standard
+input) is the editors' live preview: what the server makes of the HTML
+you would save. It reads nothing from the campaign, changes nothing and
+records nothing. It prints `action` (`plain_text`) and `plain_text`:
+`html` (the cleaned HTML), `text` (the plain text "Generate plain text
+from HTML" would save) and `removed` (the markup cleaning drops, in plain
+words). HTML longer than the editor accepts is exit 1 (`invalid`).
 
 ## Campaign images
 
@@ -1162,8 +1207,9 @@ and **Share options**. Like the pages, they need an Administrator; a
 session of any scope may run them, and they record nothing in System
 logs, as opening the pages records nothing. Each prints `version`, the
 applied configuration's version. Changing the parish profile is
-`parish preview` and `parish confirm` (below); changing the other settings
-stays on the pages for now.
+`parish preview` and `parish confirm`, and changing Share options is
+`campaign shares-preview` and `campaign shares-confirm` (both below);
+uploading logos stays on the page for now.
 
 ```sh
 pk-admin parish show
@@ -1224,6 +1270,49 @@ no longer current, or an expired token, is exit 1 (`stale_version`): read
 `parish show` again. `parish confirm` records `admin_cmd_parish_confirm`
 in System logs with the request; repeating it with the same token returns
 the same request.
+
+`campaign shares-preview` and `campaign shares-confirm` are the Share
+options page's **Review** and **Apply**. They need a full-scope session
+and, like the page, change only an unlocked current Testing draft with the
+financial module (`campaign shares` prints `editable`). `--changes` lists
+the whole new list in `options`, in order: a saved option by its `id` with
+its `name` (the label) and `free_text` (`false` when left out), and a new
+option without an `id`. Each saved option the change removes goes in
+`delete`, as the page's Delete box. Every saved option must be in one of
+the two, so leaving one out by mistake is refused rather than deleting it.
+Both commands take `--campaign`, the current campaign unless it names
+another.
+
+```sh
+pk-admin campaign shares > shares.json
+VERSION=$(jq -r .result.version shares.json)
+jq '{options: [.result.options[] | .name |= sub("check"; "cheque")]}' \
+    shares.json > change.json
+pk-admin campaign shares-preview --expected-version "$VERSION" \
+    --changes - < change.json |
+  jq -r .result.preview.token | pk-admin campaign shares-confirm --token -
+```
+
+| Field | What it holds |
+| --- | --- |
+| `version`, `campaign_id` (`campaign shares-preview`) | The version the change was reviewed against, and the campaign |
+| `changes` | The page's review, one line per change: `label` (such as `Added`, `Removed`, `Label` or `Position of …`), `before` (null for an added or removed option) and `after` |
+| `options` | The list the change saves, in order: `id`, `name` and `free_text`; a new option's `id` is the one it will have |
+| `preview.token` | What `campaign shares-confirm --token` takes, valid for fifteen minutes |
+| `created`, `request` (`campaign shares-confirm`) | As `parish confirm` prints them; follow the change with `config request show --watch` |
+
+A label the page refuses is exit 1 (`invalid`) at `options.<n>.name`, `n`
+counting from 0 in your `options`. No change, an `id` the campaign does
+not have or gives twice, or a saved option in neither list is exit 1
+(`invalid`) at `options`. A campaign the page does not edit now (live,
+locked or without the financial module), a version that is no longer
+current, or an expired token is exit 1 (`stale_version`): read `campaign
+shares` again. An altered token, or a token confirmed against another or
+an unknown campaign, is exit 1 (`invalid`). No current campaign, or an
+unknown one for `campaign shares-preview`, is exit 1 (`not_available`).
+`campaign shares-confirm` records `admin_cmd_campaign_shares_confirm` in System logs
+with the request; repeating it with the same token returns the same
+request.
 
 ## Integrations
 
@@ -2189,20 +2278,16 @@ pk-admin exports clean
 - `export status` shows the export as its status page does. With
   `--watch SECONDS` it repeats until the export stops changing (anything
   but queued, running, retry_wait or abandoned).
-- `export cancel`, `export retry` and `export regenerate` are the status
-  page's buttons: cancel an export that is not ready yet, run a failed one
-  again once its cause is fixed, or request an expired one again from the
-  figures it was made from (a new export, with a new `EXPORT_ID`).
-  Regenerating an Active parishioner family directory, mail-merge or
-  financial export needs a
-  recent Google sign-in on the page, so for those `export regenerate` asks
-  at the [confirmation prompt](#confirmations) (or takes `--yes`); the
-  session stands in for the sign-in, and System logs show
-  `automation_fresh_gate` beside it.
+- `export cancel` and `export retry` are the status page's buttons: cancel
+  an export that is not ready yet, or run a failed one again once its
+  cause is fixed. Exports are point-in-time: a ready file can be fetched
+  for a short window, then it is deleted, and an expired export cannot be
+  made again; create a new one from current data instead (see
+  [point-in-time exports](../specs/stewardship/operations/spec.md#point-in-time-exports)).
 - `export fetch` saves a ready export's file on the host (see below).
 - `exports clean` deletes every fetched file.
 
-`export create`, `export retry` and `export regenerate` take
+`export create` and `export retry` take
 `--request-key`, as [task retries](#task-retries) do: pass your own UUID,
 or the command makes one and writes it to standard error before it acts.
 Repeating a command with the same key, or cancelling an export already
@@ -2213,7 +2298,7 @@ read the export with `export status`, or repeat the command with the key.
 While other work holds the export's campaign (a source refresh being
 promoted, for example), the status page turns its buttons off, and
 `export status` shows `changes_available` false. Then `export create`,
-`export cancel`, `export retry` and `export regenerate` are exit 1
+`export cancel` and `export retry` are exit 1
 (`denied`). That refusal is temporary, not a permissions problem: try again
 later.
 
@@ -2223,20 +2308,19 @@ later.
 | `state` | `queued`, `running`, `retry_wait` or `abandoned` (still being made; the worker picks an abandoned run up again), `failed`, `succeeded` (made, file not yet published), `ready`, `expired` or `cancelled`, as the page shows |
 | `changes_available` | Whether the page's buttons may act now; false while other work holds the campaign |
 | `can_cancel` | Whether the page offers **Cancel** now |
-| `expires_at` | When a ready file is deleted |
+| `expires_at` | When the export ends ([point-in-time exports](../specs/stewardship/operations/spec.md#point-in-time-exports)): for a ready or expired file, the end of its download window, never later than the file recorded; for a `failed` export, when its Retry window ends; null while it is being made or once cancelled |
 | `file_name`, `content_type`, `size`, `sha256`, `count` | The file: its name, type, size in bytes, SHA-256 and number of rows (null until it is published; an expired export keeps them) |
 
-`export create`, `export cancel`, `export retry` and `export regenerate`
-print `created`, `request_key` (none for a cancel) and `export`, the
-export's `export status` fields afterwards (for `export regenerate`, the
-new export's). An unknown export or `--fact-set`, figures that are not
+`export create`, `export cancel` and `export retry` print `created`,
+`request_key` (none for a cancel) and `export`, the export's
+`export status` fields afterwards. An unknown export or `--fact-set`, figures that are not
 ready, or a file that has expired is exit 1 (`not_available`). Cancelling a
-ready export, retrying one that has not failed, or regenerating one that has
-not expired is exit 1 (`stale_version`): read it again. A key already used
+ready export or retrying one that has not failed is exit 1
+(`stale_version`): read it again. A key already used
 for a different export is exit 1 (`invalid`). System logs show the page's
 events (`export_requested`, `export_cancelled`, `export_downloaded`) and,
-for each change, `admin_cmd_export_create`, `admin_cmd_export_cancel`,
-`admin_cmd_export_retry` or `admin_cmd_export_regenerate`, attributed to
+for each change, `admin_cmd_export_create`, `admin_cmd_export_cancel` or
+`admin_cmd_export_retry`, attributed to
 the approving Administrator with the automation session as its subject.
 
 ### Family-level exports
@@ -2283,8 +2367,10 @@ pk-admin export fetch EXPORT_ID
   or `frequency=monthly` for the financial export, `disposition=all` or
   `needed=yes` for the information export, and `activity=active` (or,
   with `--ministry`, `state=unresolved`) for the Ministry export. Dates
-  (`start=` and `end=` on the information and Ministry exports) are days in
-  a time zone, so `zone=` is required with them, for example
+  (`start=` and `end=` on the information and Ministry exports, and
+  `first_start=`, `first_end=`, `latest_start=` and `latest_end=` on the
+  financial export) are days in a time zone, so `zone=` is required with
+  them, for example
   `--filter start=2026-11-01 --filter zone=America/New_York`. A filter
   the page would refuse is exit 1 (`invalid`), and so are `page` and
   `size`, which the page's export form never sends. A search is refused:
@@ -2377,7 +2463,7 @@ PDF file (a CSV is the timeline table alone). Like the page's full view, it is
 for Administrators. Because the file holds the Family's code, the page asks
 for a recent Google sign-in, so the command asks at the
 [confirmation prompt](#confirmations) (or takes `--yes`), and System logs
-show `automation_fresh_gate` beside it; regenerating one asks the same.
+show `automation_fresh_gate` beside it.
 
 ```sh
 pk-admin export family-timeline FAMILY_RECORD_ID --format pdf \
@@ -2388,8 +2474,7 @@ pk-admin export family-timeline FAMILY_RECORD_ID --mode testing \
 
 `FAMILY_RECORD_ID` is the id in the Family's timeline page address,
 `/admin/reports/families/FAMILY_RECORD_ID/`. `--mode testing` is
-the page's Testing rehearsal view; such an export cannot be regenerated once
-that rehearsal has ended, so export it again instead. It takes `--request-key` like the other
+the page's Testing rehearsal view. It takes `--request-key` like the other
 exports. A Family that is not in the current campaign is exit 1
 (`not_available`).
 
@@ -2577,7 +2662,7 @@ any partial one) and prints how many it removed.
 
 `export fetch` refuses an export that is not ready (exit 1) and says what
 to do: follow a running one with `export status --watch`, retry a failed
-one, regenerate an expired one, or create a new one for a cancelled one.
+one, or create a new one for an expired or cancelled one.
 Underneath, `export download EXPORT_ID
 --stream` writes the file's bytes to standard output and its document
 (`id`, `file_name`, `content_type`, `size`, `sha256`, `count`) to standard
@@ -3202,3 +3287,34 @@ campaign's, or is outside your Ministries, is exit 1 (`not_available`).
   prompting; `census_change_updated` and `admin_cmd_census_edit` or
   `admin_cmd_census_resolve_conflict`). `export census --format jsonl`
   records gain `editable` and `resolvable`.
+- `pk-admin/1` (#463 PR 10): additive. `campaign shares-preview --changes
+  JSON|- --expected-version VERSION [--campaign ID]` and `campaign
+  shares-confirm --token TOKEN|- [--campaign ID]`, Share options' Review
+  and Apply (full scope, Administrators only; the confirm records
+  `admin_cmd_campaign_shares_confirm`).
+- `pk-admin/1` (#463): additive. `content preview --delete ID [--delete
+  ID ...] --expected-version VERSION` and `content confirm --token
+  TOKEN|-`, the Pages and emails email tables' Delete (full scope,
+  Administrators only, neither fresh-gated nor prompting; `content
+  confirm` records `admin_cmd_content_confirm`), and `content preview
+  --html HTML|-`, the content editors' live plain-text preview (no event).
+- `pk-admin/1` (#1398): a removal, kept on version 1. Exports are
+  point-in-time, so `export regenerate` is gone (an unknown command, exit
+  2 `usage`), and `admin_cmd_export_regenerate` is no longer recorded;
+  earlier events keep it. Make a new export with `export create` or the
+  report's own export command instead.
+- `pk-admin/1` (#1398, the window): a change of meaning, kept on version 1.
+  `export status` `expires_at` is now the end of the export's download
+  window (60 minutes after the file is published by default, the
+  deployment's `export_download_window_minutes`), never later than the
+  file's recorded end, and for a `failed` export (it used to be null) the
+  end of its Retry window: one window after its latest failed run. Once
+  that has passed, `export retry` and `export exact retry` with a new
+  request key are exit 1 (`not_available`, where they used to run);
+  repeating a recorded key still returns its result. Retrying a cancelled
+  export, or a published one, is still `stale_version`.
+- `pk-admin/1` (#558, migration 0110): a change of meaning, kept on
+  version 1. The financial export's response dates (`first_start=`,
+  `first_end=`, `latest_start=`, `latest_end=`) are now days in the time
+  zone `--filter zone=…` names, as on the page; a date without it is exit 1
+  (`invalid`). Its only readers are Administrator-run assistants.

@@ -57,24 +57,12 @@ CALENDAR_INPUTS = {
     ("repeat-rule.html", "repeat-until"): "Repeat range day",
 }
 # Date controls that still filter instants by a campaign-zone day, waiting
-# for their own #558 slice. Remove an entry when its page moves.
-PENDING_INPUTS = {
-    # "First/Latest response date (campaign timezone)": the day filters are
-    # inside frozen SQL (financial_reports.sql), so moving them needs a
-    # migration, like the Additional information and Ministry reports (#1047).
-    ("financial-report.html", "first-start"): "#558 financial filters",
-    ("financial-report.html", "first-end"): "#558 financial filters",
-    ("financial-report.html", "latest-start"): "#558 financial filters",
-    ("financial-report.html", "latest-end"): "#558 financial filters",
-}
+# for their own #558 slice. Remove an entry when its page moves. Empty since
+# the Financial stewardship response dates moved (migration 0110).
+PENDING_INPUTS = {}
 # Labels and legends that still name a fixed zone, by template: the
 # PENDING_INPUTS fieldsets' legends.
-PENDING_LABELS = {
-    "financial-report.html": [
-        "First response date (campaign timezone)",
-        "Latest response date (campaign timezone)",
-    ],
-}
+PENDING_LABELS = {}
 # Form date fields, by (form class, field): a pure calendar date (never
 # shifted, ui-conventions "A pure date with no time stays a calendar date"),
 # or a date read with the browser zone the form posts.
@@ -123,11 +111,10 @@ SERVER_INSTANTS = {
     # Export stamps ("Downloaded …") in the zone the reader chose.
     "reports/census_changes.py": "export in the chosen zone",
     "reports/limitations.py": "export in the chosen zone",
-    # Pending (noted on #558): resolved_on() shows the day a duplicate roster
-    # row was resolved, in the parish zone, to tell two rows apart (the
-    # duplicate-row control labels and the bulk stale refusal). Its export
-    # stamp is in the chosen zone.
-    "reports/ministry_roster_views.py": "#558 roster resolved day",
+    # The roster export stamp is in the chosen zone; resolved_on() names a
+    # stale bulk row's day in the browser zone the dialog posts (the page's
+    # duplicate-row labels are localized by date-format-v1.js, #558).
+    "reports/ministry_roster_views.py": "export in the chosen zone",
 }
 # Form fields whose label, help or errors name a fixed zone, by (form class,
 # field).

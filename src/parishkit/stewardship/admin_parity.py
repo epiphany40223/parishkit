@@ -161,7 +161,10 @@ LEDGER = {
         "the browser Campaign setup stepper's own progress; the command line "
         "has no stepper"
     ),
-    "share_settings": command("campaign shares", owed="PR 10"),
+    # The page's read, Review and Apply (#463).
+    "share_settings": command(
+        "campaign shares", "campaign shares-preview", "campaign shares-confirm"
+    ),
     # The page's read, Review and Apply (#750), all on the page itself.
     "reminder_workgroup": command(
         "workgroup show", "workgroup preview", "workgroup confirm"
@@ -170,12 +173,13 @@ LEDGER = {
     # The editor as it opens; its Review and Apply are still owed.
     "content_edit": command("content show", owed="PR 10"),
     "content_revision": command("content show", owed="PR 10"),
-    "content_delete": pending("PR 10", "content preview", "content confirm"),
+    # The email tables' Delete, as a preview and a confirm (#879).
+    "content_delete": command("content preview", "content confirm"),
     "content_history": command("content history"),
     "content_history_revision": command("content history"),
-    # The editor's live preview of typed HTML: ``content preview`` will
-    # print the proposed change's cleaned HTML and generated plain text.
-    "content_plain_text": pending("PR 10", "content preview"),
+    # The editors' live preview of typed HTML: ``content preview --html``
+    # prints its cleaned HTML, generated plain text and removed markup.
+    "content_plain_text": command("content preview"),
     "parish_settings": command("parish show", "parish preview", "parish confirm"),
     # A read-only catalog since #1267, so nothing is owed.
     "ministries": command("ministries list"),
@@ -194,6 +198,9 @@ LEDGER = {
     "artwork_settings": command(
         "artwork show", "artwork remove-preview", "artwork remove"
     ),
+    # Applying logos is owed with the uploads: staged logos belong to the
+    # sign-in that uploaded them, and each pk-admin run is its own sign-in,
+    # so a command cannot apply logos staged in the browser (#463).
     "branding_settings": command("branding show", owed="PR 10"),
     "hosted_file_upload": permanent(UPLOAD),
     "artwork_upload": permanent(UPLOAD),
@@ -317,7 +324,6 @@ LEDGER = {
     "report_export": command("export status", "export exact status"),
     "report_export_cancel": command("export cancel", "export exact cancel"),
     "report_export_retry": command("export retry", "export exact retry"),
-    "report_export_regenerate": command("export regenerate"),
     "report_export_download": command("export download"),
     "report_exact_create": command("export exact create"),
     # The digests (PR 8d): the retained reports an emailed digest links to,
