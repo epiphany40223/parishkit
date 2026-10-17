@@ -143,7 +143,9 @@ def test_a_matching_change_is_marked_at_the_check_and_survives_the_run(world):  
     _, run = world.confirm(plan_row)
     assert world.execute(run.run_id) and state(run) == "succeeded"
     ((_, written),) = world.gateway.writes
-    assert (written["firstName"], written["lastName"]) == ("Requested", "Example")
+    # The PUT is a partial update (#1600): the body holds only the written
+    # change, never the matching one or any field as read.
+    assert written == {"firstName": "Requested"}
     assert now(world.first)[0] == "published"
     assert now(last) == ("resolved_upstream", "approved", last.version + 1)
     # The mark is final: the derived guard keeps resolved_upstream immutable.

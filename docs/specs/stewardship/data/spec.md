@@ -2046,23 +2046,29 @@ current authorization/filter snapshot.
    ([Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft)).
 5. If any field on an entity is a three-way conflict, block all writes to that
    entity and return it for re-review.
-6. Merge approved values into the freshly fetched full payload, leaving
-   unapproved fields at their current upstream values. Only `approved`
-   decisions are planned. An approved proposal that reconciliation already
-   holds in `conflict` counts as a conflict until it is re-reviewed. Both
-   contact PUTs are partial updates (see the
-   [handling registry](#proposed-changes)): a field left out of the body is
-   left unchanged, so a write cannot clear a field that was not read.
-   Today's planner still builds the whole record as read plus the approved
-   writes, and blocks an entity whose read lacks any request-schema field.
-   Because the API refuses `""`, a whole-record body can be refused, so
-   publication must not be switched on until the planner sends only the
-   changed fields
-   ([#1600](https://github.com/epiphany40223/parishkit/issues/1600)).
-   As defence in depth for the [handling registry](#proposed-changes), a
-   change the registry no longer marks API-writable, or whose value to write
-   is blank, is reported *By hand* and never planned, whatever its stored
-   handling says.
+6. Build each entity's PUT body from its approved changes only: each
+   approved, Automatic change with a non-blank value to write, under the
+   provider's field name. Fields that are unchanged, not approved, by hand
+   or not read are never sent, so ParishSoft keeps their current values.
+   Both v2 contact PUTs are partial updates (see the
+   [handling registry](#proposed-changes)), so a field left out of the body
+   is left unchanged, and the API cannot clear a value (`null` is ignored
+   and `""` is refused with HTTP 400), so a blank value is reported *By
+   hand* and never planned
+   ([#528](https://github.com/epiphany40223/parishkit/issues/528),
+   [#1600](https://github.com/epiphany40223/parishkit/issues/1600)). As
+   defence in depth for the [handling registry](#proposed-changes), a change
+   the registry no longer marks API-writable is reported *By hand* and never
+   planned too, whatever its stored handling says. Only
+   `approved` decisions are planned. An approved proposal that
+   reconciliation already holds in `conflict` counts as a conflict until it
+   is re-reviewed, and one whose field the fresh read lacks cannot be
+   checked, which blocks its entity; a read that lacks only other fields
+   does not. The plan also records the record expected after the PUT: the
+   fresh read with the written fields applied, each under the field it is
+   read back from. A Member contact read uses the request's names; the
+   Family PUT's `primaryPhone` reads back as `familyHomePhone`, so Family
+   fields need an explicit read-back map before any is planned.
 7. Persist the plan with the recorded source version and source-payload digests,
    present counts and conflicts, and require fresh Google authentication and
    final confirmation before queueing writes. The plan also records each
@@ -2075,13 +2081,14 @@ revalidates its fencing token, confirms the system is still in Production mode
 (a switch to Testing after confirmation stops every remaining write; the
 database also refuses to queue an entity's changes outside Production mode,
 though no guard can refuse the PUT itself),
-fetches the uncached full payload, and repeats
+fetches the uncached contact record, and repeats
 canonical merge/conflict evaluation against the confirmed plan digest. Any
 difference invalidates that entity without writing and returns it for
 confirmation; a conditional-write primitive is used when ParishSoft exposes
 one. Publication then groups fields by entity and uses idempotent v2 `PUT`
 operations with bounded shared retries. Each entity is verified by an uncached
-read after write. Success marks its fields published/resolved; failure records a
+read after write, which must equal the plan's expected record, so the fields
+the PUT left out are checked as well as the written ones. Success marks its fields published/resolved; failure records a
 sanitized error and leaves the entity retryable without replaying successful
 entities. An entity's written proposals are `queued` from just before its PUT
 until its outcome: `published` when verified, or, when the entity is
@@ -2090,7 +2097,7 @@ run leaves without a published or invalidated outcome, and any left by a
 crashed run once its plan's execution window has passed, is closed, so a
 new preflight can plan it and it never blocks a later confirmation. One whose
 changes the plan queued (its PUT may have landed) is read back first and
-recorded published when ParishSoft holds the planned payload; any other is
+recorded published when ParishSoft holds the planned record; any other is
 invalidated. A crash after a PUT is recovered by the next run's read, without
 a second PUT. If the system switches to Testing mode or the
 `parishsoft_publication` setting goes off after such a crash, the next run

@@ -90,11 +90,19 @@ class FakeGateway:
         self.closed = True
 
     def write_member_contact(self, member_id, payload, *, timeout):
-        """Store the full payload, as the contact PUT replaces the record."""
+        """Apply a partial update, as the live v2 contact PUT does (#528).
+
+        Fields left out are kept and ``null`` is ignored; ``""`` is refused
+        (HTTP 400, so ``write_rejected``) and changes nothing.
+        """
         self.writes.append((member_id, dict(payload)))
         if self.write_errors:
             raise ContactGatewayError(self.write_errors.pop(0))
-        self.records[member_id] = dict(payload)
+        if "" in payload.values():
+            raise ContactGatewayError("write_rejected")
+        self.records[member_id].update(
+            {key: value for key, value in payload.items() if value is not None}
+        )
         if self.crash_after_write:
             raise Crash
 
@@ -201,18 +209,23 @@ def proposal(row):
 
 
 def test_publish_writes_verifies_and_marks_published(confirmed):
-    """One PUT of the planned full payload, verified by a fresh read, records
+    """One PUT of only the changed field, verified by a fresh read, records
     published and moves the change pending -> queued -> published; the lease
     is released and the audit holds a word and a count only."""
     state = confirmed
     before = state.first.version
+    original = dict(state.gateway.records[state.first.entity_key])
     result = run(state)
     assert (result.published, result.invalidated, result.failed_attempts) == (1, 0, 0)
     (written,) = state.gateway.writes
-    assert written == (state.first.entity_key, state.planned)
-    assert written[1]["firstName"] == encode_member_value(
-        "first_name", state.first.submitted_value
-    )
+    # Exactly the one changed field: nothing as read, no blank echoes (#1600).
+    changed = encode_member_value("first_name", state.first.submitted_value)
+    assert written == (state.first.entity_key, {"firstName": changed})
+    assert written[1] == state.planned
+    # Every field the PUT left out is still what was read.
+    assert state.gateway.records[state.first.entity_key] == original | {
+        "firstName": changed
+    }
     # Read before the PUT, then once more to verify it.
     assert state.gateway.reads == [state.first.entity_key] * 2
     assert results(state.entity) == [("published", "")]

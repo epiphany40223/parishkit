@@ -6,7 +6,8 @@ with ParishSoft's v2 ``PUT /api/v2/members/{id}/contact``. It talks to a
 ``ContactGateway``: ``read_member_contact`` returns the record keyed by the
 request schema's fields (``publication.MEMBER_CONTACT_FIELDS``), leaving out
 any field the read lacks, or None when the Member is not there;
-``write_member_contact`` sends one full payload. Both raise
+``write_member_contact`` sends one PUT body holding only the fields to
+write (the PUT is a partial update, #528/#1600). Both raise
 ``ContactGatewayError`` with a fixed word, never provider text.
 
 CI uses an in-memory fake only. ``ParishSoftContactGateway`` is the real
@@ -66,7 +67,7 @@ class ContactGateway(Protocol):
         """One Member's uncached contact record, or None when not found."""
 
     def write_member_contact(self, member_id, payload, *, timeout):
-        """Replace one Member's contact record with ``payload``."""
+        """Write the fields in ``payload``; ParishSoft leaves every other one."""
 
 
 def _member_id(value):
