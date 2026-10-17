@@ -440,3 +440,63 @@ def test_turning_slack_off_says_what_it_discards_and_retests():
     assert "entered here" not in top
     help_text = str(SetupSlackForm().fields["enabled"].help_text)
     assert "Turning Slack off discards any Slack token entered" in help_text
+
+
+@pytest.mark.parametrize(
+    ("tests", "expected"), [(frozenset(), "mail_test"), ({"mail_test"}, "finish")]
+)
+@pytest.mark.parametrize("method", ["get", "head"])
+def test_test_slack_while_slack_is_off_opens_the_next_step_needing_work(
+    monkeypatch, method, tests, expected
+):
+    """Back or an old tab on Test Slack after Slack was turned off opens the
+    step Continue setup opens (#1505), without compiling the preview: Test
+    email while its test must be sent again, else the next one not done."""
+    from django.test import RequestFactory
+
+    from parishkit.stewardship.accounts import setup_notification_views as views
+
+    sections = VALUES | {
+        "branding": {"bundle_id": str(uuid4())},
+        "slack": {"enabled": False, "channel_id": ""},
+    }
+    reviewed = {"preview": 3} if tests else {}
+    setup_draft = draft(sections, source=uuid4(), reviewed=reviewed)
+    credentials = {"parishsoft": True, "google_workspace": True}
+    monkeypatch.setattr(views, "runtime", object)
+    monkeypatch.setattr(views, "view_draft", lambda request, service: setup_draft)
+    monkeypatch.setattr(
+        views,
+        "wizard_for",
+        lambda found: build(found, credentials=credentials, tests=tests),
+    )
+    monkeypatch.setattr(views, "_checked", lambda request, service, response: response)
+    monkeypatch.setattr(views, "prepare_preview", pytest.fail)
+    request = getattr(RequestFactory(), method)("/admin/setup/slack-test")
+    response = views.setup_notification(request)
+    assert response.status_code == 302
+    assert response["Location"] == build(setup_draft).step(expected).href
+
+
+def test_a_slack_test_post_while_slack_is_off_is_still_refused(monkeypatch):
+    """Only a GET or HEAD is redirected; a POST still reaches the refusal, so
+    no Slack test is queued while Slack is off (#1505)."""
+    from types import SimpleNamespace
+
+    from django.test import RequestFactory
+
+    from parishkit.stewardship.accounts import setup_notification_views as views
+
+    setup_draft = draft({"slack": {"enabled": False, "channel_id": ""}})
+    monkeypatch.setattr(views, "runtime", object)
+    monkeypatch.setattr(views, "view_draft", pytest.fail)
+    monkeypatch.setattr(
+        views,
+        "prepare_preview",
+        lambda request, service: SimpleNamespace(draft=setup_draft),
+    )
+    monkeypatch.setattr(views, "request_notification", pytest.fail)
+    response = views.setup_notification(
+        RequestFactory().post("/admin/setup/slack-test", {})
+    )
+    assert response.status_code == 400
