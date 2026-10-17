@@ -9,6 +9,8 @@ views act on them:
   this one added or changed, or one reminder per repeat date) and reviews it
   in the shared review dialog (UX conventions, "Review dialog", #750), whose
   Apply confirms on Dates and mail schedules and returns there.
+  Inside the campaign wizard the page saves directly instead, with its
+  action row's Save and go back (#1404 PR 4b, ``campaign_wizard.save_step``).
   The page shows and takes send times in the browser's time zone, which the
   page script posts as ``zone``; ``schedule_local`` converts them to and
   from the campaign-local values a schedule keeps (#558).
@@ -72,12 +74,19 @@ from parishkit.stewardship.web.refusals import (
     UserFacingDenied,
     UserFacingError,
     UserFacingMissing,
+    UserFacingStale,
     unexpected_fields,
     with_default_code,
 )
 
-from . import admin_navigation, schedule_email, schedule_local
-from .admin_editing import confirm_intent, error_response, form_action, principal
+from . import admin_navigation, campaign_wizard, schedule_email, schedule_local
+from .admin_editing import (
+    confirm_intent,
+    direct_key,
+    error_response,
+    form_action,
+    principal,
+)
 from .authentication import runtime
 from .campaign_mail import admits_test_mail
 from .content_forms import sample_banner, sample_render
@@ -209,6 +218,15 @@ UNCHANGED = _(
 # editor refuses a preview this large too (content_views._preview).
 PREVIEW_LIMIT = 256_000
 TOO_LARGE = _("This email is too large to save. Shorten it, then try again.")
+# Why a direct save (#1404 PR 4b) saved nothing while send work blocks the
+# change: the review dialog shows the same count with no Apply.
+BLOCKED = _(
+    "Email from these schedules is being sent right now, or has an uncertain "
+    "result, so nothing was saved."
+)
+BLOCKED_FIX = _(
+    "Wait for it to finish, or resolve it on Outgoing mail, then save again."
+)
 
 
 class RepeatRule(AdminForm):
@@ -423,6 +441,7 @@ def review(
     content=(),
     series=(),
     series_changes=(),
+    key=None,
 ):
     """Bind a change document to the review's forms and build the review.
 
@@ -436,7 +455,8 @@ def review(
     ``schedule_email.copy``); the forms offer them as saved emails, so an
     entry may send one. ``series`` and ``series_changes`` are
     ``build_preview``'s reminder series to remember and series operations
-    (#469).
+    (#469). ``key`` signs the review with a direct save's request key
+    (#1404 PR 4b, ``admin_editing.direct_key``).
     """
     # The schedule commands' own binding, so the page and the command line
     # cannot read the same change differently.
@@ -475,6 +495,7 @@ def review(
         content=content,
         series=series,
         series_changes=series_changes,
+        request_key=key,
     )
     return context, window, schedules, identifiers
 
@@ -1037,6 +1058,12 @@ def _entry(request, campaign_id, schedule_id=None):
     reminder, "this and following" or "the whole series" (``SeriesScope``)
     plans the series edit instead (``_series_edit``); the send date is not
     posted then, so the date the page showed stands in for it.
+
+    Inside the campaign wizard the page posts ``save`` instead (#1404 PR 4b):
+    the same review, signed with the save's request key and recorded at once
+    by ``campaign_wizard.save_step`` once the work transaction has ended,
+    answered with the change's status, which the page follows; send work
+    that blocks the change refuses it (``BLOCKED``).
     """
     service = runtime()
     actor = principal(request, service)
@@ -1044,18 +1071,28 @@ def _entry(request, campaign_id, schedule_id=None):
     if request.FILES:
         raise unexpected_fields(request.FILES, allowed=())
     new = schedule_id is None
-    # The page posts only a preview; its review confirms on the list.
-    if (
-        request.method == "POST"
-        and form_action(
+    # The page posts a preview, whose review confirms on the list, or inside
+    # the campaign wizard a direct save.
+    action = (
+        form_action(
             request.POST,
             preview_fields=_fields(new),
             multiple_fields=REPEAT_MULTIPLE if new else frozenset(),
+            direct=True,
         )
-        != "preview"
-    ):
+        if request.method == "POST"
+        else None
+    )
+    if action == "confirm":
         # No sources: an unknown action value, not an unexpected field.
         raise unexpected_fields()
+    key = direct_key(request.POST) if action == "save" else None
+    # A repeat of a direct save is answered with its first change's status
+    # before the form is checked again (#1486).
+    if key is not None and (
+        answered := campaign_wizard.repeated_save(request, actor, key)
+    ):
+        return answered
     posted = request.POST if request.method == "POST" else None
     now = timezone.now()
     with work_transaction() if posted is not None else read_transaction():
@@ -1241,6 +1278,7 @@ def _entry(request, campaign_id, schedule_id=None):
             content=[added] if added else (),
             series=series,
             series_changes=series_changes,
+            key=key,
         )
         if reviewed is None and str(NO_CHANGES) in _messages(window.non_field_errors()):
             # Only Edit can post its schedule as saved. Its change gate keeps
@@ -1272,23 +1310,47 @@ def _entry(request, campaign_id, schedule_id=None):
             if len(reviewed["preview"] or "") > PREVIEW_LIMIT:
                 schedule_email.refuse(email, TOO_LARGE, "too_large")
                 return _entry_page(request, context, status=400)
-            reviewed = reviewed | {"email": _sample(service, campaign, added)}
-        reviewed = reviewed | {
-            "series_notes": _series_notes(reviewed) if notes is None else notes
-        }
-        # The review dialog's fragment, never a page: its Apply confirms on
-        # Dates and mail schedules (the form's dialog names it), and the
-        # dialog then returns there. A New schedule that sends once, with no
-        # email of its own, would only repeat the form: a confirmation.
-        return render(
-            request,
-            "stewardship/schedule-review.html",
-            reviewed
-            | {
-                "new": new,
-                "confirmation": new and added is None and _sends_once(reviewed, repeat),
-            },
-        )
+            if key is None:
+                reviewed = reviewed | {"email": _sample(service, campaign, added)}
+        if key is None:
+            reviewed = reviewed | {
+                "series_notes": _series_notes(reviewed) if notes is None else notes
+            }
+            # The review dialog's fragment, never a page: its Apply confirms
+            # on Dates and mail schedules (the form's dialog names it), and
+            # the dialog then returns there. A New schedule that sends once,
+            # with no email of its own, would only repeat the form: a
+            # confirmation.
+            return render(
+                request,
+                "stewardship/schedule-review.html",
+                reviewed
+                | {
+                    "new": new,
+                    "confirmation": new
+                    and added is None
+                    and _sends_once(reviewed, repeat),
+                },
+            )
+        if not reviewed["preview"]:
+            # Send work blocks the change: the dialog would offer no Apply.
+            raise UserFacingStale(
+                BLOCKED,
+                fix=BLOCKED_FIX,
+                link=reverse("admin:deliveries"),
+                link_label=_("Outgoing mail"),
+                reason="send_work_blocks",
+            )
+    # A direct save, recorded now that the work transaction has ended.
+    return campaign_wizard.save_step(
+        request,
+        service,
+        actor,
+        token=reviewed["preview"],
+        salt=preview_salt(campaign_id),
+        current_scope=lambda service: confirm_scope(service, campaign_id, page=True),
+        campaign_id=campaign_id,
+    )
 
 
 def _with_shown_date(posted, schedule, campaign_zone, now):

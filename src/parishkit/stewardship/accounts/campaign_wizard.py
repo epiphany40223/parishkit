@@ -33,8 +33,11 @@ On Campaign settings and Share options (``DIRECT_STEPS``) the same primary
 becomes **Save and continue** once the page's form holds a change (#1404
 PR 4): the form posts its ``save`` action, which ``save_step`` records
 directly, with no review dialog, while the stepper still applies; the page
-follows the change and then opens the next step not done yet. Outside the
-wizard those pages keep their own Save and review dialog.
+follows the change and then opens the next step not done yet. The
+sub-pages that save (Pages and emails' editor, New and Edit scheduled email;
+``DIRECT_SUBPAGES``, #1404 PR 4b) save the same way with **Save and go
+back**, and then open their step again. Outside the wizard those pages keep
+their own Save and review dialog (or Preview changes page).
 """
 
 from dataclasses import dataclass
@@ -85,6 +88,12 @@ _WINDOW_VALUES = frozenset({"timezone", "start_date", "end_date"})
 # (#1404 PR 4), and that form's id on each of them.
 DIRECT_STEPS = frozenset({"settings", "share_options"})
 DIRECT_FORM = "settings-form"
+# The sub-pages whose form the action row's Save and go back saves directly
+# (#1404 PR 4b), by URL name, and that form's id by their step.
+DIRECT_SUBPAGES = frozenset(
+    {"content_edit", "content_revision", "schedule_new", "schedule_edit"}
+)
+SUBPAGE_FORMS = {"content": "content-form", "schedules": "schedule-entry-form"}
 
 
 @dataclass(frozen=True)
@@ -101,7 +110,8 @@ class CampaignWizard(Wizard):
     ``creating`` marks step 1 before the campaign exists (``creation``):
     Create the campaign draws its own action row inside its form, so the
     shared row draws nothing. ``direct`` marks a step page whose form the
-    primary saves directly (``DIRECT_STEPS``), with ``save_key``, the
+    primary saves directly (``DIRECT_STEPS``), or a sub-page whose form Save
+    and go back saves directly (``DIRECT_SUBPAGES``), with ``save_key``, the
     request key that form posts.
     """
 
@@ -116,8 +126,14 @@ class CampaignWizard(Wizard):
 
     @property
     def direct_form(self):
-        """The id of the form a direct save posts (``DIRECT_FORM``), or None."""
-        return DIRECT_FORM if self.direct else None
+        """The id of the form a direct save posts, or None.
+
+        ``DIRECT_FORM`` on a step page; a sub-page's form by its step
+        (``SUBPAGE_FORMS``).
+        """
+        if not self.direct:
+            return None
+        return SUBPAGE_FORMS[self.current.key] if self.sub else DIRECT_FORM
 
     @property
     def reviewable(self):
@@ -508,7 +524,7 @@ def for_request(match, campaign, configuration):
         sub=sub,
         no_schedules=no_schedules,
         load=_load_state(campaign),
-        direct=not sub and current in DIRECT_STEPS,
+        direct=name in DIRECT_SUBPAGES if sub else current in DIRECT_STEPS,
     )
 
 
