@@ -465,9 +465,11 @@ def test_the_applied_schedule_is_the_pages_preview():
     assert preview["summary"] == view.preview["summary"]
     assert preview["freshness"] == view.preview["freshness"]
     first = preview["days"][0]
-    assert first["counts"] == view.preview["days"][0]["counts"]
+    shown = view.preview["list"]["days"][0]
+    assert first["counts"] == shown["summary"]
+    # Each line's words as the page draws them: the wall time, then what runs.
     assert [entry["text"] for entry in first["times"]] == [
-        entry["text"] for entry in view.preview["days"][0]["times"]
+        f"{entry['wall']} {entry['text']}" for entry in shown["items"]
     ]
     assert "cells" not in first
     assert set(members(result)) <= PREVIEW_ALLOWED, set(members(result))

@@ -157,28 +157,20 @@
   };
 
   // The browser's own zone, when it is not the schedule's (the current
-  // campaign's, else the parish's): say so once and add each preview time
-  // in the browser's clock.
+  // campaign's, else the parish's): say so once. Each preview time in the
+  // browser's clock is the shared schedule preview's data-other-zone-time,
+  // which date-format-v1.js fills (#1129).
   const scheduleZone = root.dataset.scheduleZone;
   const browserZone = (() => {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch { return ""; }
   })();
   const otherZone = browserZone && browserZone !== "Etc/Unknown" && browserZone !== scheduleZone;
-  const browserClock = otherZone ? new Intl.DateTimeFormat("en-GB",
-    {hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: browserZone}) : null;
-  const browserTimes = (scope) => {
-    if (!browserClock) return;
-    scope.querySelectorAll("[data-browser-time]").forEach((node) => {
-      node.textContent = ` ${words("browserTimeText", {time: browserClock.format(new Date(node.dataset.browserTime))})}`;
-    });
-  };
   // Drawn as the page loads, before anything is pointed at or focused, so
   // not through steady (below).
   if (otherZone) {
     const note = root.querySelector("[data-browser-zone-note]");
     note.textContent = words("browserZoneText", {zone: browserZone});
     note.hidden = false;
-    browserTimes(part("preview"));
   }
 
   // A row's problems belong to its controls: each is described by the row's
@@ -421,14 +413,21 @@
     if (line && fresh && "basicNeed" in line.dataset) checkedLine = fresh.innerHTML;
     else if (line && fresh && line.textContent.trim() !== fresh.textContent.trim()) line.innerHTML = fresh.innerHTML;
     replaceIfChanged(part("summary"), check.querySelector('[data-schedule-part="summary"]'));
-    // The days a reader opened stay open.
+    // The days a reader opened (or closed) stay so, matched by date
+    // (data-day), not position, so a list that moves on past midnight keeps
+    // them. Only a day whose open state differs from what the server drew
+    // (today open, marked data-today; the rest closed) is the reader's
+    // choice; every other day keeps the server's, so after midnight an
+    // untouched list opens its new today.
     const preview = part("preview");
-    const opened = [...preview.querySelectorAll("details")].map((day) => day.open);
+    const opened = new Map([...preview.querySelectorAll("details[data-day]")]
+      .filter((day) => day.open !== day.hasAttribute("data-today"))
+      .map((day) => [day.dataset.day, day.open]));
     replaceIfChanged(preview, check.querySelector('[data-schedule-part="preview"]'));
-    preview.querySelectorAll("details").forEach((day, index) => {
-      if (index < opened.length) day.open = opened[index];
+    preview.querySelectorAll("details[data-day]").forEach((day) => {
+      if (opened.has(day.dataset.day)) day.open = opened.get(day.dataset.day);
     });
-    browserTimes(preview);
+    if (window.ParishDates) window.ParishDates.localize(preview);
     SCOPES.forEach((scope) => rowList(scope).forEach((row, index) => {
       const messages = row.querySelector("[data-row-messages]");
       const answerRow = check.querySelector(`[data-check-row="${scope}-${index}"]`);
