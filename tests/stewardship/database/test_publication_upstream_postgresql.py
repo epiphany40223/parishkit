@@ -68,6 +68,19 @@ def install(text):
         cursor.execute(text)
 
 
+def live(name):
+    """The installed definition of ``public.name()``, as one statement.
+
+    A later migration (0113, #1547) replaces 0112's confirmation guard, so a
+    test that runs 0112's file puts this back, not 0112's body.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT pg_get_functiondef(%s::regprocedure)", [f"public.{name}()"]
+        )
+        return cursor.fetchone()[0] + ";"
+
+
 def matching(first):
     """Add an approved last-name change the fake ParishSoft already holds.
 
@@ -274,6 +287,7 @@ def test_the_old_guards_refuse_what_0112_admits(world):  # noqa: F811
     plan holding a marked change cannot be confirmed; 0112's file, run
     again, admits both."""
     last = matching(world.first)
+    installed = [live(DERIVED), live(CONFIRMATION)]
     try:
         install(earlier(DERIVED))
         task = world.preflight()
@@ -286,7 +300,8 @@ def test_the_old_guards_refuse_what_0112_admits(world):  # noqa: F811
         with pytest.raises(DatabaseError, match="changed since preflight"):
             world.confirm(plan_row)
     finally:
-        install(FROZEN.read_text("utf-8"))
+        for statement in installed:
+            install(statement)
     world.confirm(plan_row)
 
 
