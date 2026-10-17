@@ -7,7 +7,8 @@ inventory" and "Rules for new Admin actions"):
 - ``command``: the commands that cover the route, all in the catalog now;
   ``owed`` names the pull request that adds the rest of a partly covered
   route (``go_live`` reads today, its preview and confirmation come in PR 12);
-- ``pending``: the pull request that will add its commands, which it names;
+- ``pending``: the pull request that will add its commands, which it names
+  (an ADM-11 pull request, or a feature's own later slice, "#528 slice 4");
 - ``permanent``: web-only by nature, with the reason;
 - ``deferred``: waiting on a decision, which it names.
 
@@ -278,6 +279,11 @@ LEDGER = {
         "census review",
         "census edit",
         "census resolve-conflict",
+    ),
+    # Publish to ParishSoft (#528, ADM-09): its check and plan come to the
+    # command line in the page's own fourth slice.
+    "census_publication": pending(
+        "#528 slice 4", "census publish-check", "census publish-plan"
     ),
     "information_queue": command("report information"),
     # One Family's submission and its follow-up history: read with the

@@ -99,6 +99,10 @@ SOCIALACCOUNT_PROVIDERS = {
 }
 # OPS-04 supplies a validated Runtime; missing means unavailable, never a bypass.
 STEWARDSHIP_AUTH_RUNTIME = None
+# The deployment's parishsoft_publication setting (#528, BG-09), which the
+# web runtime records: off unless that runtime admitted it on, so Publish to
+# ParishSoft stays inert in tests, development and any unassembled role.
+STEWARDSHIP_PARISHSOFT_PUBLICATION = False
 STEWARDSHIP_FAMILY_RUNTIME = None
 # STEWARDSHIP_DEPLOYMENT_PROFILE has no default here: runtime assembly (web
 # and background) records the admitted deployment's profile, and the

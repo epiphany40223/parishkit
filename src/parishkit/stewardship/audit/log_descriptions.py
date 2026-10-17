@@ -867,6 +867,10 @@ DESCRIPTIONS = {
         "A census change publication task stopped without writing ParishSoft "
         "because what it needed had changed or was missing."
     ),
+    "census_publication_viewed": _(
+        "Someone opened Publish to ParishSoft, which shows the latest check "
+        "of approved census changes against ParishSoft."
+    ),
     "response_dashboard_viewed": _("Someone opened the response dashboard."),
     "response_submitted_list_viewed": _(
         "Someone opened the list of Families that submitted."

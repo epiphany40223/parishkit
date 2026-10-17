@@ -97,6 +97,7 @@ TEMPLATES = {
     "financial_report": "financial-report.html",
     "limitations_report": "limitations-report.html",
     "census_changes": "census-changes.html",
+    "census_publication": "census-publication.html",
     "response_dashboard": "response-dashboard.html",
     "information_queue": "information.html",
     "information_item": "information.html",

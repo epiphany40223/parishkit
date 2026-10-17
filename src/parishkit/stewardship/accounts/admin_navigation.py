@@ -211,6 +211,8 @@ PAGES = {
     "financial_report": Page("reports", _("Financial stewardship")),
     "limitations_report": Page("reports", _("Limitations")),
     "census_changes": Page("reports", _("Census changes")),
+    # Not a menu entry: Census changes links to it (#528, ADM-09).
+    "census_publication": Page("reports", _("Publish to ParishSoft"), "census_changes"),
     "response_dashboard": Page("reports", _("Response dashboard")),
     "information_queue": Page("reports", _("Additional information")),
     "information_item": Page("reports", _("Information request"), "information_queue"),
