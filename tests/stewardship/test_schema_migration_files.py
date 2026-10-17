@@ -372,6 +372,9 @@ FROZEN = {
     "0113_census_handling_registry.sql": (
         "a6c031014875eea7c98aa66a488e9f38e417ad8c3dbf38992622590e852cda1c"
     ),
+    "0115_sent_mail_recipients.sql": (
+        "357da6e19bb0607ab28f6fc039cddbcaff8bfe318a244606fcf13226cc679a7a"
+    ),
 }
 
 
