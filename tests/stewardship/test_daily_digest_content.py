@@ -510,18 +510,21 @@ def test_each_header_fact_appears_once():
     assert visible(result.html).lstrip().startswith(opening)
     assert result.text.startswith(opening)
     # Prominent (#1016): body size and colour, not the muted caption style;
-    # the dashboard link is right-aligned on the same line and never wraps.
+    # the dashboard link is right-aligned on the same line, in a 30%-wide
+    # cell that may wrap.
     assert result.html.startswith(
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
         f'border="0" style="{STYLES["track"]}"><tbody><tr>'
         f'<td style="{STYLES["opening"]}">{opening}'
     )
     assert (
-        f'<td align="right" style="{STYLES["opening-link"]}"><a href="{DASHBOARD}" '
+        f'<td width="30%" align="right" style="{STYLES["opening-link"]}">'
+        f'<a href="{DASHBOARD}" '
         f'style="{STYLES["link"]}" rel="noopener noreferrer">'
         "Open the Response dashboard</a></td></tr></tbody></table>"
     ) in result.html
-    assert "white-space:nowrap" in STYLES["opening-link"]
+    assert "white-space" not in STYLES["opening-link"]
+    assert "vertical-align:top" in STYLES["opening-link"]
     assert "font-size:16px" in STYLES["opening"] and "#1b2a31" in STYLES["opening"]
     assert result.subject == "Daily campaign digest — November 2, 2026"
 

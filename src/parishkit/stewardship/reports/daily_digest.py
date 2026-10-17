@@ -539,12 +539,13 @@ def _render_daily_digest(document, *, public_origin, charts=True):
     # Prominent (#1016): body size and colour, not the muted caption style.
     # The dashboard link sits right-aligned on the same line (#1532), in a
     # two-cell presentation table: floats and flexbox are unreliable in
-    # Outlook and Gmail. The link cell does not wrap; the sentence does.
+    # Outlook and Gmail. The link cell is 30% wide, top-aligned and wraps into
+    # short lines, so the sentence keeps most of a phone's width.
     html = (
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
         f'border="0"{_style("track")}><tbody><tr>'
         f"<td{_style('opening')}>{plain(opening)}</td>"
-        f'<td align="right"{_style("opening-link")}>'
+        f'<td width="30%" align="right"{_style("opening-link")}>'
         f'<a href="{escape(url, quote=True)}"{_style("link")} '
         f'rel="noopener noreferrer">{plain(DASHBOARD_LABEL)}</a></td>'
         "</tr></tbody></table>"

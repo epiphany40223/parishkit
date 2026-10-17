@@ -51,7 +51,7 @@ STYLES = {
     # The daily digest's opening line, body text rather than a muted caption
     # (#1016), and the Response dashboard link beside it (#1532).
     "opening": f"padding:0 16px 20px 0;font-size:16px;color:{INK};",
-    "opening-link": "padding:0 0 20px;font-size:16px;white-space:nowrap;",
+    "opening-link": "padding:0 0 20px;font-size:16px;vertical-align:top;",
     "heading": (
         f"margin:28px 0 12px;font-size:{HEADING_PX}px;line-height:1.3;color:{INK};"
     ),
