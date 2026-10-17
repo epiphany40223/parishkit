@@ -128,41 +128,15 @@ class ServiceStatusReporter:
         operations specification lists). Any other failure is logged once
         until a write succeeds again.
         """
-        from math import ceil
-
-        from .jobs.broker import sql_timeout_kind
-
-        kind = sql_timeout_kind(error)
-        if kind not in {"statement_timeout", "lock_timeout"}:
-            if not self.failing:
-                emit_failure(
-                    error, event=Event.SERVICE_STATUS_FAILED, level=logging.WARNING
-                )
-            self.failing = True
+        if record_limit(
+            error, elapsed, process_log_only=self.service in PROCESS_LOG_ONLY
+        ):
             return
-        limit = STATEMENT_SECONDS if kind == "statement_timeout" else LOCK_SECONDS
-        elapsed = max(1, ceil(elapsed))
-        if self.service in PROCESS_LOG_ONLY:
-            from .observability import emit
-
-            emit(
-                Event.TASK_TIMED_OUT,
-                level=logging.WARNING,
-                timeout=kind,
-                limit_seconds=limit,
-                elapsed_seconds=elapsed,
+        if not self.failing:
+            emit_failure(
+                error, event=Event.SERVICE_STATUS_FAILED, level=logging.WARNING
             )
-            return
-        from .audit.timeouts import record_timeout
-
-        record_timeout(
-            Event.TASK_TIMED_OUT,
-            what=kind,
-            level="WARNING",
-            limit_seconds=limit,
-            elapsed_seconds=elapsed,
-            bind_task=False,
-        )
+        self.failing = True
 
     def _write(self, connection):
         """Refresh this process's row, inserting it when there is none.
@@ -197,6 +171,57 @@ class ServiceStatusReporter:
                     seconds,
                 ],
             )
+
+
+def record_limit(
+    error,
+    elapsed,
+    *,
+    statement_seconds=STATEMENT_SECONDS,
+    lock_seconds=LOCK_SECONDS,
+    process_log_only=False,
+):
+    """Record a short write that its own SQL limit stopped; return whether one did.
+
+    A statement or lock timeout is recorded through the timeout log as a
+    WARNING ``task_timed_out`` with the limit (``statement_timeout`` or
+    ``lock_timeout``), its seconds and the time the write took (at least
+    one second), naming no task (#287). ``process_log_only`` is for a login
+    with no operational-log grant (the installers): the entry then goes to
+    the process log only. Any other error is left to the caller. Shared by
+    the service status record and the mail halt records (``jobs.mail_halt``).
+    """
+    from math import ceil
+
+    from .jobs.broker import sql_timeout_kind
+
+    kind = sql_timeout_kind(error)
+    if kind not in {"statement_timeout", "lock_timeout"}:
+        return False
+    limit = statement_seconds if kind == "statement_timeout" else lock_seconds
+    elapsed = max(1, ceil(elapsed))
+    if process_log_only:
+        from .observability import emit
+
+        emit(
+            Event.TASK_TIMED_OUT,
+            level=logging.WARNING,
+            timeout=kind,
+            limit_seconds=limit,
+            elapsed_seconds=elapsed,
+        )
+        return True
+    from .audit.timeouts import record_timeout
+
+    record_timeout(
+        Event.TASK_TIMED_OUT,
+        what=kind,
+        level="WARNING",
+        limit_seconds=limit,
+        elapsed_seconds=elapsed,
+        bind_task=False,
+    )
+    return True
 
 
 def prune_service_status():
