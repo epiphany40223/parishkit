@@ -692,6 +692,25 @@ def test_participation_chart_is_panels_on_one_date_axis():
         hover = panel["layer"][-1]
         assert hover["mark"] == {"type": "bar", "opacity": 0, "aria": False}
         assert hover["encoding"]["tooltip"] == {"field": "tip"}
+    # Each column selects its date (one selection per panel, since a chart
+    # names each once), and under it every panel's guide line follows any of
+    # them, so one line crosses all the panels (#1536).
+    names = ["hover0", "hover1", "hover2"]
+    for panel, name in zip(panels, names, strict=True):
+        guide, hover = panel["layer"][-2:]
+        assert hover["params"] == [chart_specs.hover_param("tick", name)]
+        assert hover["params"][0]["select"]["fields"] == ["tick"]
+        assert guide["mark"] == {"type": "rule", "color": COLORS["ink"], "aria": False}
+        # On the panel's own date axis, which it inherits.
+        assert guide["encoding"] == {
+            "opacity": {
+                "condition": {
+                    "test": {"or": [{"param": n, "empty": False} for n in names]},
+                    "value": 0.5,
+                },
+                "value": 0,
+            }
+        }
     assert json.loads(json.dumps(spec)) == spec
 
 
@@ -879,6 +898,94 @@ def test_every_page_chart_compiles_without_warnings(capfd):
     for document in (documents[0], finals):
         stepped = document.spec | {"height": {"step": 36}}
         assert any("fit-y" in line for line in page_warnings(stepped, capfd))
+
+
+def chart_views(spec):
+    """Every view of a chart: the spec itself, its panels and their layers."""
+    yield spec
+    for part in (*spec.get("vconcat", ()), *spec.get("layer", ())):
+        yield from chart_views(part)
+
+
+def hover_guides(spec):
+    """The chart's hover guide lines: rules shown only while a selection is set."""
+    return [
+        view
+        for view in chart_views(spec)
+        if view.get("mark", {}).get("type") == "rule"
+        and "condition" in view.get("encoding", {}).get("opacity", {})
+    ]
+
+
+# The one date chart without a guide line: the Response dashboard's activity
+# chart, which #1537 retires (reports spec, "Response activity over time").
+GUIDELESS = {"response-activity"}
+
+
+def test_every_date_chart_with_tooltips_has_the_hover_guide():
+    """A chart on a date, time or campaign-day axis that shows tooltips draws
+    the shared hover guide line in each panel, driven by its own hover
+    bands' selections (ui-conventions, "Charts"; #1536), so a new chart
+    cannot leave it out. A category chart (a nominal or ordinal y axis: rows
+    of bars that react as a whole) has none."""
+    guided = set()
+    for document in page_charts():
+        spec = document.spec
+        views = list(chart_views(spec))
+        assert any("tooltip" in view.get("encoding", {}) for view in views)
+        # Keyed on y, not x: a participation chart's x is an ordinal date
+        # band, so only a category chart's y axis tells the two apart.
+        categories = {
+            view["encoding"]["y"].get("type")
+            for view in views
+            if isinstance(view.get("encoding", {}).get("y"), dict)
+        } & {"nominal", "ordinal"}
+        if categories or document.key in GUIDELESS:
+            assert hover_guides(spec) == [], document.key
+            continue
+        guided.add(document.key)
+        params = {param["name"] for view in views for param in view.get("params", ())}
+        for panel in spec.get("vconcat", [spec]):
+            (guide,) = hover_guides(panel)
+            assert guide["mark"]["color"] == chart_specs.GUIDE, document.key
+            assert guide["mark"]["aria"] is False
+            condition = guide["encoding"]["opacity"]["condition"]
+            tests = condition.get("test", {}).get("or", [condition])
+            assert {test["param"] for test in tests} <= params, document.key
+            assert all(test["empty"] is False for test in tests)
+    assert guided == {
+        "daily-participation",
+        "comparison-families",
+        "comparison-percent",
+        "comparison-pledged",
+    }
+
+
+def test_hover_guide_shows_only_while_hovered():
+    """The guide is a rule in the shared colour at half opacity while its
+    selection is set and invisible otherwise, so a print or an image never
+    shows it; given rows, it draws from them."""
+    x = {"field": "day", "type": "quantitative"}
+    assert chart_specs.hover_guide(x, data=[{"day": 1}]) == {
+        "data": {"values": [{"day": 1}]},
+        "mark": {"type": "rule", "color": COLORS["ink"], "aria": False},
+        "encoding": {
+            "x": x,
+            "opacity": {
+                "condition": {"param": "hover", "empty": False, "value": 0.5},
+                "value": 0,
+            },
+        },
+    }
+    assert chart_specs.hovered(1, ("a", "b")) == {
+        "condition": {
+            "test": {
+                "or": [{"param": "a", "empty": False}, {"param": "b", "empty": False}]
+            },
+            "value": 1,
+        },
+        "value": 0,
+    }
 
 
 def empty_activity_charts():
