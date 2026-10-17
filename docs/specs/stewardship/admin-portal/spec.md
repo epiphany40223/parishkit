@@ -3068,6 +3068,27 @@ email, or is no longer listed, or if the page is out of date. The
 confirmation email has no schedules and stays a single entry, with Edit
 only.
 
+The editor of one page or email (a table's Edit, or a Family page's link)
+stays a full page with its visual editor, HTML source and plain-text panel.
+Its **Preview changes** reviews in the shared
+[review dialog](../ui-conventions/spec.md#review-dialog)
+([#750](https://github.com/epiphany40223/parishkit/issues/750)), a full
+review: a fictional sample of the current and proposed content (subject,
+the page or email as Families see it, and its plain-text version, with
+placeholders filled in with sample values and disallowed markup removed),
+and the schedules the new text switches at once. Apply records the change;
+once it is applied the dialog closes and the reader returns to Pages and
+emails, whose status line says what was applied and when ("Family welcome
+changed. Applied at 3:04 PM."), as New and Edit scheduled email return to
+their table: saving an email makes a new revision, so the editor's own
+address would no longer name the current text. Preview changes waits for a
+change ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)).
+A refusal of the values (a placeholder, a hosted file, a required link) stays
+on the form, with an HTML source error also shown at the visual editor; a
+stale page, an expired or out-of-date preview, or removing an email a
+schedule now sends is refused in the dialog. Inside the Campaign setup
+stepper the editor saves directly instead (below).
+
 ### Create the campaign
 
 System setup ends without a campaign
@@ -3361,7 +3382,7 @@ notice, a folded closing note, a refused save) it stays available, as
 Preview changes does; the server still refuses an unchanged save at the
 form ("No content has changed."). The
 editor's own preview (the visual editor and the plain text drawn from it)
-stays; the Preview changes page with its fictional sample and the schedules
+stays; the Preview changes review with its fictional sample and the schedules
 the new text switches is not shown on a draft, whose schedules have sent
 nothing, and Preview and test email shows the sample. Send work in progress
 that would block a schedule change refuses the save with its reason, and the

@@ -1422,6 +1422,7 @@ in-place preview of the counts.
 
 Current state, to be converted: Users' New user, Edit user and Import
 Ministry leaders, New and Edit scheduled email,
+[Pages and emails' editor](../admin-portal/spec.md#default-content),
 [Campaign settings](../admin-portal/spec.md#campaign-settings-page) (#1119),
 Share options, Campaign images, Parish logos, Parish settings, Create the
 campaign and No-reminders WorkGroup use the dialog; Create the campaign, New
@@ -1429,7 +1430,8 @@ user and No-reminders WorkGroup are confirmations under #1356, and so are a
 one-time New scheduled email, Import selected with nobody skipped and
 Campaign images' Remove this image. Edit user, Share options, a small
 Campaign settings change and Parish settings are compact reviews under the
-same issue. The
+same issue; the Pages and emails editor's Preview changes keeps its full
+review (the fictional sample) and returns to Pages and emails. The
 [integration settings pages](../admin-portal/spec.md#parish-and-integration-configuration)
 use the dialog too (#750): an ordinary settings edit is a compact review, a
 refresh schedule change keeps its full review, and setting up Off-site
@@ -1495,6 +1497,15 @@ A Share options row ticked Delete greys its label, free-text box and order
 in place (`data-enabled-when` on the row's own Delete box), so the rows below
 never move; a redrawn form shows a deleted row's saved values, still greyed,
 and unticking Delete gives them back (#563).
+
+In the Pages and emails editor, ticking "Remove this selected content" greys
+the email subject, the HTML source, "Generate plain text from HTML" and the
+plain text in place (`data-enabled-when` on the Remove box), and the visual
+editor and its formatting buttons stop accepting edits, so nothing moves and
+none of the text is sent; the subject is required only while the box is
+unticked, and the server reads it the same way. The campaign banner box
+stays available, so a removal never changes the banner choice by leaving it
+out (#563, #750).
 
 ### Basic and Advanced modes
 

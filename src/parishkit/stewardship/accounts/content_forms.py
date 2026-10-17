@@ -208,6 +208,34 @@ class ContentForm(AdminForm):
                 "its own code and link. Generated plain text writes each link as "
                 "“label: URL”. Never put the code or link in the subject."
             )
+        if "clear" in self.fields:
+            self._removal_fields(available=not clear_unavailable)
+
+    def _removal_fields(self, *, available):
+        """Grey the content's fields while "Remove" is ticked (#563, #750).
+
+        While the box is ticked a removal is all the form asks for, so the
+        subject, the HTML source, the generated-text box and the plain text
+        are greyed in place and not sent (``data-enabled-when``; the visual
+        editor follows the HTML source, ui-v1.js), and the subject is
+        required only while the box is unticked, as the browser reads the
+        greyed field. The banner box is left alone: an unsent box would read
+        as unticked and change the banner choice. A drawn-unavailable box
+        needs no marks; a tick posted anyway still lifts the requirement so
+        the server's own refusal of the removal is what answers.
+        """
+        if available:
+            for name in ("subject", "html", "generate_text", "text"):
+                if name in self.fields:
+                    self.fields[name].widget.attrs["data-enabled-when"] = "clear!=on"
+        if (
+            self.is_bound
+            and "subject" in self.fields
+            and self.fields["clear"].widget.value_from_datadict(
+                self.data, self.files, self.add_prefix("clear")
+            )
+        ):
+            self.fields["subject"].required = False
 
     def _part_field(self, part, generated):
         """The field a problem in one part of the content is shown at (#563).
