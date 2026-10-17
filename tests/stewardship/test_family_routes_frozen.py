@@ -72,6 +72,6 @@ def test_oauth_and_namespaces_are_frozen():
 
 def test_admin_sign_in_and_sign_out_are_frozen():
     """Sign-in and sign-out stay where sessions, error pages and scripts send
-    people (NAV-13 may add a trailing slash later, with redirects)."""
+    people (they keep their addresses: NAV-13 was dropped, #522)."""
     assert reverse("admin:login") == "/admin/login"
     assert reverse("admin:logout") == "/admin/logout"
