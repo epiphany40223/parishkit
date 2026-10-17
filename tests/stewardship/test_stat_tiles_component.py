@@ -43,9 +43,6 @@ STILL_HAND_DRAWN = {
     # Participation's statistics move onto the component next in this
     # slice.
     "participation.html",
-    # The Response dashboard's stage tiles move onto the component next in
-    # this slice.
-    "response-dashboard.html",
 }
 
 

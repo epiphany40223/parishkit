@@ -706,8 +706,9 @@ only.
 
 `/admin/reports/responses/` shows the funnel of the current campaign at the
 database's current instant, labelled **Counted at**. Data comes first: a
-tile per [funnel stage](#funnel-stages) with its count, its share compared
-with Invited and a [share bar](../ui-conventions/spec.md#charts) drawing that
+[stat tile](../ui-conventions/spec.md#stat-tiles)
+per [funnel stage](#funnel-stages) with its count, its share compared
+with Invited and a [share bar](../ui-conventions/spec.md#stat-tiles) drawing that
 share ([#720](https://github.com/epiphany40223/parishkit/issues/720)), the
 three figures reported beside the funnel, then the funnel
 chart and the [activity chart](#response-activity-over-time) with its send
