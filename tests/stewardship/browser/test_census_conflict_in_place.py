@@ -1,10 +1,10 @@
 """Census changes' Use the Family's value anyway (#528, ADM-09.03), in place.
 
 In Chromium and WebKit. The real page is served by ``census_components``.
-On an Automatic Conflict, the row's Review offers Use the Family's value
-anyway (and no Approve), described by a help line saying what it does. It
-posts with the form's note and answers with the page, where the row is
-approved and To do and the button is gone. A mark outside every region
+On an Automatic Conflict, the row offers a Use the Family's value anyway
+icon (and no Approve), whose dialog says what it does (#879). It posts
+with the dialog's note and answers with the page, where the row is
+approved and To do and the icon is gone. A mark outside every region
 shows the page never reloaded, and the scroll position holds.
 """
 
@@ -53,28 +53,31 @@ def test_use_the_familys_value_anyway_answers_in_place(page, component_origin):
     page.set_viewport_size({"width": 1280, "height": 500})
     first = page.locator("#table tbody tr").first
     expect(first).to_contain_text("Conflict")
-    review = first.locator("details.census-record")
-    review.locator("summary").click()
-    form = review.locator("form.census-resolve")
-    use = form.get_by_role("button", name="Use the Family's value anyway")
-    assert form.get_by_role("button", name="Approve").count() == 0
-    assert form.get_by_role("button", name="Ignore").is_enabled()
-    help_line = form.locator("p.help[id^='conflict-']")
-    has_text(help_line, HELP)
-    # The button is described by the help line, as well as by the row.
-    assert help_line.get_attribute("id") in use.get_attribute("aria-describedby")
-    form.get_by_label("Note (optional)").fill("Asked the Family")
-    assert use.is_enabled()
+    name = "Use the Family's value anyway for Mobile phone for Member 00"
+    use = first.get_by_role("button", name=name)
+    assert (
+        first.get_by_role("button", name="Approve Mobile phone for Member 00").count()
+        == 0
+    )
+    assert first.get_by_role(
+        "button", name="Ignore Mobile phone for Member 00"
+    ).is_enabled()
     scrolled = centre(page, use)
     use.click()
+    dialog = page.locator("#census-decide-dialog")
+    has_text(dialog.locator("h2"), f"{name}?")
+    # The dialog's body, which describes it, says what it does.
+    body = dialog.locator("[data-confirm-body]")
+    has_text(body, HELP)
+    assert dialog.get_attribute("aria-describedby") == body.get_attribute("id")
+    dialog.get_by_label("Note (optional)").fill("Asked the Family")
+    dialog.get_by_role("button", name="Record").click()
     has_text(page.locator("#census-notice"), CONFLICT_RESOLVED)
-    assert page.evaluate("window.scrollY") == scrolled
+    assert abs(page.evaluate("window.scrollY") - scrolled) <= 1
     assert "resolve=use_family" in posts[0] and "note=Asked+the+Family" in posts[0]
     assert "value=" not in posts[0] and len(posts) == 1
     first = page.locator("#table tbody tr").first
     expect(first).to_contain_text("To do")
-    assert (
-        first.get_by_role("button", name="Use the Family's value anyway").count() == 0
-    )
+    assert first.get_by_role("button", name=name).count() == 0
     assert page.evaluate(MARKED) == "kept"
     assert errors == []

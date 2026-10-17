@@ -1,8 +1,9 @@
-"""Census changes pages and sorts in place (#528), in Chromium.
+"""Census changes pages, sorts and acts in place (#528, #879).
 
-The real page is served by ``census_components``; each POST from a heading
-or the navigator is answered with the fixture page its body asks for. A mark
-outside every region shows the page never reloaded.
+In Chromium and WebKit. The real page is served by ``census_components``;
+each POST from a heading or the navigator is answered with the fixture page
+its body asks for. A mark outside every region shows the page never
+reloaded.
 """
 
 import pytest
@@ -19,7 +20,9 @@ from .census_components import (
 from .test_table_sorting import MARK, MARKED, fulfil_post_with, sort_heading
 from .waits import has_attribute, has_text
 
-pytestmark = pytest.mark.parametrize("browser_engine", ["chromium"], indirect=True)
+pytestmark = pytest.mark.parametrize(
+    "browser_engine", ["chromium", "webkit"], indirect=True
+)
 
 ROWS = "#table tbody th[scope=row]"
 
@@ -52,9 +55,19 @@ def test_census_changes_page_and_sort_in_place(page, component_origin):
     assert "status" not in page.url and page.url.endswith("/census-changes")
 
 
+ROW = "Mobile phone for Member 00"
+
+
+def focus_row(page):
+    """The id of the table row holding the focused control, if any."""
+    return page.evaluate("document.activeElement?.closest('tr')?.id || null")
+
+
 def test_a_resolution_is_recorded_in_place(page, component_origin):
-    """A row's Entered in ParishSoft posts its note with the page's filters
-    and the answer refreshes the page in place, with its notice."""
+    """A row's Mark entered icon asks in the page's dialog, naming the row,
+    posts the dialog's note with the row's fields and the page's filters, and
+    the answer redraws the page in place with its notice; focus returns to
+    the row (#879)."""
     page.goto(component_origin + PATH)
     page.evaluate(MARK)
     posts = []
@@ -65,18 +78,20 @@ def test_a_resolution_is_recorded_in_place(page, component_origin):
         return "/census-changes-resolved"
 
     fulfil_post_with(page, "**" + PATH, component_origin, choose)
-    record = page.locator("details.census-record").first
-    # The form stays folded away, keeping the row short, until it is opened.
-    assert not record.locator("form.census-resolve").is_visible()
-    record.locator("summary").click()
-    form = record.locator("form.census-resolve")
-    form.get_by_label("Note (optional)").fill("Typed it in")
-    form.get_by_role("button", name="Entered in ParishSoft").click()
-    # It cannot be undone, so it asks first, naming the row.
-    dialog = page.locator("#census-enter-confirm")
+    row = page.locator("#table tbody tr").first
+    mark = row.get_by_role("button", name=f"Mark {ROW} entered in ParishSoft")
+    assert mark.get_attribute("title") == f"Mark {ROW} entered in ParishSoft"
+    # No disclosure hides the actions any more.
+    assert row.locator("details").count() == 0
+    mark.click()
+    # It cannot be undone, so the dialog says so, naming the row.
+    dialog = page.locator("#census-enter-dialog")
+    has_text(dialog.locator("h2"), f"Mark {ROW} entered in ParishSoft?")
     has_text(
-        dialog.locator("h2"), "Mark Mobile phone for Member 00 entered in ParishSoft?"
+        dialog.locator("p.notice"),
+        "This cannot be undone. A mistake is corrected in ParishSoft itself.",
     )
+    dialog.get_by_label("Note (optional)").fill("Typed it in")
     dialog.get_by_role("button", name="Entered in ParishSoft").click()
     has_text(page.locator("#census-notice"), RESOLVED)
     # The page's own notice is what is announced, never a fixed "Saved."
@@ -84,8 +99,11 @@ def test_a_resolution_is_recorded_in_place(page, component_origin):
         page.get_by_role("status").filter(has_text="marked entered in ParishSoft"),
         RESOLVED,
     )
+    assert not dialog.is_visible()
+    assert focus_row(page) == "change-0"
     sent = posts[-1]
     assert "resolve=entered" in sent and "note=Typed+it+in" in sent
+    assert "proposal=0" in sent and "version=1" in sent
     assert "status=open" in sent and "request_key=" in sent
     assert page.evaluate(MARKED) == "kept"
 
@@ -98,9 +116,11 @@ def test_a_stale_resolution_is_announced_as_such(page, component_origin):
     fulfil_post_with(
         page, "**" + PATH, component_origin, lambda request: "/census-changes-stale"
     )
-    record = page.locator("details.census-record").first
-    record.locator("summary").click()
-    record.get_by_role("button", name="Ignore").click()
+    row = page.locator("#table tbody tr").first
+    row.get_by_role("button", name=f"Ignore {ROW}").click()
+    dialog = page.locator("#census-decide-dialog")
+    has_text(dialog.locator("h2"), f"Ignore {ROW}?")
+    dialog.get_by_role("button", name="Record").click()
     has_text(page.locator("#census-notice"), STALE)
     announced = page.get_by_role("status").filter(has_text="updated by someone else")
     has_text(announced, STALE)
@@ -110,18 +130,17 @@ def test_a_stale_resolution_is_announced_as_such(page, component_origin):
 
 def test_cancelling_the_confirmation_sends_nothing(page, component_origin):
     """Cancel in the confirmation dialog posts nothing and returns focus to
-    the row's Entered in ParishSoft button."""
+    the row's Mark entered icon."""
     page.goto(component_origin + PATH)
     posts = []
     page.on(
         "request",
         lambda request: posts.append(request) if request.method == "POST" else None,
     )
-    record = page.locator("details.census-record").first
-    record.locator("summary").click()
-    button = record.get_by_role("button", name="Entered in ParishSoft")
+    row = page.locator("#table tbody tr").first
+    button = row.get_by_role("button", name=f"Mark {ROW} entered in ParishSoft")
     button.click()
-    dialog = page.locator("#census-enter-confirm")
+    dialog = page.locator("#census-enter-dialog")
     dialog.get_by_role("button", name="Cancel").click()
     assert not dialog.is_visible()
     assert button.evaluate("node => node === document.activeElement")
@@ -129,10 +148,11 @@ def test_cancelling_the_confirmation_sends_nothing(page, component_origin):
 
 
 def test_an_administrators_review_is_recorded_in_place(page, component_origin):
-    """An Automatic row's Review (#528, ADM-09) folds away like Record
-    outcome, posts Approve with its note and the page's filters without
-    asking first (it is reversible), and the answer refreshes the page in
-    place with its notice announced."""
+    """An Automatic row's actions (#528, ADM-09) are same-size icons: Edit
+    value, Approve and Ignore while it is To review. Approve asks in the
+    decisions' dialog, which holds the note and posts it with the row's
+    fields and the page's filters, and the answer redraws the page in place
+    with its notice announced (#879)."""
     page.goto(component_origin + AUTOMATIC)
     page.evaluate(MARK)
     posts = []
@@ -143,22 +163,31 @@ def test_an_administrators_review_is_recorded_in_place(page, component_origin):
         return "/census-changes-approved"
 
     fulfil_post_with(page, "**" + AUTOMATIC, component_origin, choose)
-    review = page.locator("details.census-record").first
-    assert review.locator("summary").inner_text() == "Review"
-    assert not review.locator("form.census-resolve").is_visible()
-    review.locator("summary").click()
-    form = review.locator("form.census-resolve")
-    # To review: Approve or Ignore, never the tick a By-hand row has.
-    assert form.get_by_role("button", name="Entered in ParishSoft").count() == 0
-    assert form.get_by_role("button", name="Back to To review").count() == 0
-    form.get_by_label("Note (optional)").fill("Checked")
-    form.get_by_role("button", name="Approve").click()
+    row = page.locator("#table tbody tr").first
+    icons = row.locator("td.table-actions button")
+    assert [icons.nth(index).get_attribute("aria-label") for index in range(3)] == [
+        f"Edit value of {ROW}",
+        f"Approve {ROW}",
+        f"Ignore {ROW}",
+    ]
+    # To review: never the tick a By-hand row has, nor Back to To review.
+    assert icons.count() == 3
+    sizes = [icons.nth(index).bounding_box() for index in range(3)]
+    for box in sizes[1:]:
+        assert abs(box["width"] - sizes[0]["width"]) <= 1
+        assert abs(box["height"] - sizes[0]["height"]) <= 1
+    row.get_by_role("button", name=f"Approve {ROW}").click()
+    dialog = page.locator("#census-decide-dialog")
+    has_text(dialog.locator("h2"), f"Approve {ROW}?")
+    dialog.get_by_label("Note (optional)").fill("Checked")
+    dialog.get_by_role("button", name="Record").click()
     has_text(page.locator("#census-notice"), APPROVED)
     has_text(page.get_by_role("status").filter(has_text="approved."), APPROVED)
-    assert not page.locator("#census-enter-confirm").is_visible()
+    assert not dialog.is_visible()
     sent = posts[-1]
     assert "resolve=approve" in sent and "note=Checked" in sent
     assert "status=open" in sent and "request_key=" in sent
+    assert sent.count("note=") == 1
     assert page.evaluate(MARKED) == "kept"
 
 
