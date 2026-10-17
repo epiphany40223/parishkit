@@ -89,7 +89,7 @@ def test_testing_draft_steps_by_role():
     ]
     assert admin[3].url == reverse("admin:campaign_mail", args=[revision])
     staff = home_steps.next_steps("testing", "staff", menu())
-    assert labels(staff) == ["Response dashboard", "Participation"]
+    assert labels(staff) == ["Response dashboard"]
     leader = home_steps.next_steps("testing", "ministry_leader", menu())
     assert labels(leader) == ["Ministry requests"]
 
@@ -155,7 +155,7 @@ def test_greyed_queue_shows_no_count():
 def test_closed_and_activating_steps():
     """The closed row offers the reports; activation, its progress and mail."""
     assert labels(home_steps.next_steps("closed", "administrator", menu())) == [
-        "Participation",
+        "Response dashboard",
         "Emailed reports",
     ]
     assert labels(home_steps.next_steps("activating", "administrator", menu())) == [

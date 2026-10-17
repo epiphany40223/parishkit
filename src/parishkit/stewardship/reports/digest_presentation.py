@@ -97,7 +97,7 @@ def chart_layout(chart):
 def participation_table_context(chart):
     """The exact daily table's rows and headings, as every page shows them.
 
-    The live Participation page needs only these: its chart is drawn in the
+    The live Response dashboard needs only these: its chart is drawn in the
     browser (#720), so it has no image to hit-test.
     """
     rows = [

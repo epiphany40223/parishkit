@@ -1,15 +1,18 @@
-"""The response dashboard draws its charts under the CSP, accessibly (#477)."""
+"""The Response dashboard draws its charts under the CSP, accessibly (#477, #1537)."""
 
 import re
+from urllib.parse import urlencode
 
 import pytest
 from django.urls import reverse
 
-from .response_dashboard_components import PATH
+from ..test_directories import RESPONSE_LIST_PRESETS
+from .report_components import REAL
 from .test_charts import assert_clean, watch
-from .waits import eventually, has_text
+from .waits import eventually, has_text, visible
 
 DIRECTORY = reverse("admin:family_directory")
+ZONE = "timezone=America%2FLos_Angeles"
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -29,33 +32,37 @@ AXE = """async () => (await axe.run(document, {
 }))"""
 
 
-def test_dashboard_renders_tiles_and_both_charts_cleanly(
-    page, component_origin, axe_source
-):
-    """Tiles first, then both charts drawn with no policy violation or error.
+def test_dashboard_renders_tiles_and_charts_cleanly(page, component_origin, axe_source):
+    """Families by stage, then the funnel, the statistics and the daily
+    chart, all drawn with no policy violation or error (#1537).
 
-    The activity line drops to zero in the quiet hours between busy ones, the
-    page fits a phone-width window, and axe finds nothing to report.
+    The page fits a phone-width window, and axe finds nothing to report.
     """
     from playwright.sync_api import expect
 
     errors = watch(page)
     page.goto(component_origin + "/response-dashboard")
-    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(2)
-    assert page.locator(".stat-tile").count() == 5
-    assert page.locator(".stat-value").all_inner_texts() == ["5", "6", "4", "3", "3"]
-    # The tiles come before the charts in reading order.
-    tiles = page.locator(".stat-tiles").bounding_box()
+    # The funnel, the statistics' progress bars and the daily chart.
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(3)
+    stages = page.locator("#response-stages")
+    assert stages.locator(".stat-tile").count() == 5
+    assert stages.locator(".stat-value").all_inner_texts() == ["5", "6", "4", "3", "3"]
+    # The tiles come before the funnel, and the funnel before the statistics.
+    tiles = stages.locator(".stat-tiles").bounding_box()
     funnel = page.locator("[data-chart='response-funnel-spec']").bounding_box()
-    assert tiles["y"] < funnel["y"]
-    # Four hours, one point per series each: the two quiet hours are zeros.
-    activity = page.locator("[data-chart='response-activity-spec']")
-    assert activity.locator("svg g.mark-symbol.role-mark path").count() == 12
+    statistics = page.locator("#participation-statistics").bounding_box()
+    assert tiles["y"] < funnel["y"] < statistics["y"]
+    # No activity chart, no Also counted figures, no lists of Families, and
+    # the funnel has no exact-values table (#1537).
+    assert page.locator("[data-chart='response-activity-spec']").count() == 0
+    main = page.locator("main").inner_text()
+    assert "Also counted" not in main and "Lists of Families" not in main
+    assert page.locator("#response-funnel .chart-table").count() == 0
     assert_clean(page, errors)
     page.set_viewport_size({"width": 390, "height": 844})
     eventually(
         page,
-        "document.querySelector(\"[data-chart='response-activity-spec'] svg\")"
+        "document.querySelector(\"[data-chart='response-funnel-spec'] svg\")"
         ".getBoundingClientRect().width < 390",
     )
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
@@ -70,7 +77,9 @@ def test_testing_view_without_a_rehearsal_is_accessible(
     """The empty Testing view says why it is empty and marks the mode chosen."""
     errors = watch(page)
     page.goto(component_origin + "/response-dashboard-testing")
-    assert "no Testing responses to show" in page.locator("main").inner_text()
+    main = page.locator("main").inner_text()
+    assert "no Testing responses to show" in main
+    assert "count Production responses only" in main
     current = page.get_by_role("group", name="Responses shown").locator(
         "a[aria-current=page]"
     )
@@ -81,102 +90,106 @@ def test_testing_view_without_a_rehearsal_is_accessible(
     assert page.evaluate(AXE) == []
 
 
-@pytest.mark.parametrize(
-    ("path", "rules"),
-    [("/response-dashboard-empty", 0), ("/response-dashboard-empty-sends", 2)],
-)
-def test_empty_campaign_renders_cleanly(
-    page, component_origin, axe_source, path, rules
+def test_testing_view_shows_the_rehearsal_funnel_only(
+    page, component_origin, axe_source
 ):
-    """Nothing invited or followed yet: zero tiles, a plain sentence, two charts.
-
-    Both charts still draw (the activity chart with only its send markers,
-    when there are any) with no policy violation, and axe is clean.
-    """
+    """During a rehearsal, Families by stage and the funnel show it; the
+    Production-only panels are left out, with one line saying why (#1537)."""
     from playwright.sync_api import expect
 
     errors = watch(page)
-    page.goto(component_origin + path)
-    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(2)
-    assert page.locator(".stat-value").all_inner_texts() == ["0"] * 5
-    main = page.locator("main").inner_text()
-    assert "No invitations have been delivered yet." in main
-    assert "compared with invited" not in main
-    assert "No link follows, form opens or submissions yet." in main
-    activity = page.locator("[data-chart='response-activity-spec']")
-    assert activity.locator("svg g.mark-rule.role-mark line").count() == rules
+    page.goto(component_origin + "/response-dashboard-rehearsal")
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
+    assert page.locator("#response-stages .stat-tile").count() == 5
+    visible(page.get_by_text("never counted in Production"))
+    visible(page.locator("#production-only"))
+    for gone in ("#participation-statistics", "#participation-chart", "#export-format"):
+        assert page.locator(gone).count() == 0
+    assert page.get_by_role("group", name="Chart population").count() == 0
     assert_clean(page, errors)
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
 
 
-def test_switches_refresh_the_dashboard_in_place(page, component_origin):
-    """Grain and mode change the page without a reload or a jump.
+def test_empty_campaign_renders_cleanly(page, component_origin, axe_source):
+    """Nothing invited or followed yet: zero tiles, a plain sentence, and the
+    funnel still drawn, with no policy violation; axe is clean."""
+    from playwright.sync_api import expect
+
+    errors = watch(page)
+    page.goto(component_origin + "/response-dashboard-empty")
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(3)
+    assert page.locator("#response-stages .stat-value").all_inner_texts() == ["0"] * 5
+    main = page.locator("#response-stages").inner_text()
+    assert "No invitations have been delivered yet." in main
+    assert "compared with invited" not in main
+    assert_clean(page, errors)
+    page.evaluate(axe_source)
+    assert page.evaluate(AXE) == []
+
+
+def test_mode_choice_refreshes_the_dashboard_in_place(page, component_origin):
+    """Testing rehearsal and Production change the page without a reload or
+    a jump (#519, #1537).
 
     The page's own marker survives (no navigation), the scroll position is
-    kept, the chart is drawn again at the other grain, the address follows
-    the choice (and the region's fragment), keyboard focus stays on the
-    chosen switch, and the live region names the view now shown (#519).
+    kept, the address follows the choice (and the region's fragment),
+    keyboard focus stays on the chosen segment, and the live region names
+    the view now shown. The Testing view leaves out the Production panels.
     """
     from playwright.sync_api import expect
 
     errors = watch(page)
     page.set_viewport_size({"width": 1000, "height": 700})
-    page.goto(component_origin + PATH)
-    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(2)
+    page.goto(component_origin + REAL + "?" + ZONE)
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(3)
     eventually(page, FITTED)
     page.evaluate("window.__dashboardMarker = 1")
-    day = page.locator('[data-in-place="grain-day"]')
-    day.scroll_into_view_if_needed()
-    page.evaluate("window.scrollBy(0, 100)")
+    testing = page.locator('[data-in-place="mode-testing"]')
+    testing.scroll_into_view_if_needed()
     before = page.evaluate("window.scrollY")
-    assert before > 0
-    day.focus()
+    testing.focus()
     page.keyboard.press("Enter")
-    page.wait_for_url("**?grain=day#response-dashboard")
-    heading = page.locator("#activity-heading")
-    expect(heading).to_have_text("Response activity by day")
-    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(2)
-    eventually(page, FITTED)
+    page.wait_for_url("**mode=testing*#response-dashboard")
+    expect(page.locator("#production-only")).to_be_visible()
+    expect(page.locator("#participation-statistics")).to_have_count(0)
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
     assert page.evaluate("window.__dashboardMarker") == 1
     assert abs(page.evaluate("window.scrollY") - before) < 2
-    assert page.evaluate("document.activeElement.dataset.inPlace") == "grain-day"
-    has_text(page.get_by_role("status").filter(has_text="By day"), "By day")
-    assert (
-        page.locator('[data-in-place="grain-day"]').get_attribute("aria-current")
-        == "page"
-    )
-    # The redrawn chart is the daily one: one day, three points.
-    activity = page.locator("[data-chart='response-activity-spec']")
-    assert activity.locator("svg g.mark-symbol.role-mark path").count() == 3
-    assert_clean(page, errors)
-    # The mode switch works the same way; the empty Testing view replaces it.
-    page.locator('[data-in-place="mode-testing"]').click()
-    page.wait_for_url("**mode=testing*#response-dashboard")
-    expect(page.locator("main")).to_contain_text("no Testing responses to show")
-    assert page.evaluate("window.__dashboardMarker") == 1
     assert page.evaluate("document.activeElement.dataset.inPlace") == "mode-testing"
-    assert page.locator("[data-chart]").count() == 0
+    has_text(
+        page.get_by_role("status").filter(has_text="Testing rehearsal"),
+        "Testing rehearsal",
+    )
+    assert testing.get_attribute("aria-current") == "page"
+    assert_clean(page, errors)
+    # Production again: the statistics, chart and export come back.
+    page.locator('[data-in-place="mode-production"]').click()
+    expect(page.locator("#participation-statistics")).to_have_count(1)
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(3)
+    assert "mode=" not in page.url
+    assert page.evaluate("window.__dashboardMarker") == 1
+    assert page.evaluate("document.activeElement.dataset.inPlace") == "mode-production"
     assert_clean(page, errors)
 
 
 @pytest.mark.parametrize(
-    ("title", "response", "check", "columns"),
+    ("preset", "response", "check", "columns"),
     [
-        ("Families that submitted", "submitted", "any", ["Submissions"]),
+        ("submitted", "submitted", "any", ["Submissions"]),
         (
-            "Invited Families that never opened the form",
+            "not-opened",
             "never-opened",
             "any",
             ["Invitation delivered", "Link followed"],
         ),
-        ("ParishSoft data to check", "any", "anything", ["What to check"]),
+        ("data-quality", "any", "anything", ["What to check"]),
     ],
 )
-def test_lists_of_families_open_the_directory_presets(
-    page, component_origin, title, response, check, columns
+def test_list_presets_open_the_directory_with_their_choices(
+    page, component_origin, preset, response, check, columns
 ):
-    """A Production list link opens the directory with that list's choices.
+    """A saved list link opens the directory with that list's choices.
 
     The link carries only closed presets (#933); the directory shows them
     chosen, with the list's columns, and a further filter change posts
@@ -188,8 +201,8 @@ def test_lists_of_families_open_the_directory_presets(
     from playwright.sync_api import expect
 
     errors = watch(page)
-    page.goto(component_origin + PATH)
-    page.get_by_role("link", name=title, exact=True).click()
+    query = urlencode(RESPONSE_LIST_PRESETS[preset])
+    page.goto(component_origin + DIRECTORY + "?" + query)
     expect(page.get_by_label("Response", exact=True)).to_have_value(response)
     assert page.get_by_label("ParishSoft data to check").input_value() == check
     assert page.get_by_label("Include response columns").is_checked() is (
@@ -200,8 +213,8 @@ def test_lists_of_families_open_the_directory_presets(
         for text in page.locator("table thead th").all_inner_texts()
     ]
     assert all(column in headings for column in columns), headings
-    preset = page.url
-    assert "?" in preset
+    preset_url = page.url
+    assert "?" in preset_url
     answer = page.request.get(component_origin + "/family-directory").text()
     page.route(
         "**/families/",
@@ -211,12 +224,12 @@ def test_lists_of_families_open_the_directory_presets(
         page.get_by_role("button", name="Apply filters").click()
     assert f"response={response}" in sent.value.post_data
     assert "?" not in sent.value.url
-    expect(page).to_have_url(preset.partition("?")[0])
+    expect(page).to_have_url(preset_url.partition("?")[0])
     assert_clean(page, errors)
 
 
 def test_testing_links_open_the_directory_testing_switch(page, component_origin):
-    """A Testing dashboard link opens the directory in Testing rehearsal (#933).
+    """A Testing list link opens the directory in Testing rehearsal (#933).
 
     The directory shows the Responses shown switch set to Testing rehearsal,
     says so in a notice and leaves out the Production-only Responded column.
@@ -227,8 +240,8 @@ def test_testing_links_open_the_directory_testing_switch(page, component_origin)
     from playwright.sync_api import expect
 
     errors = watch(page)
-    page.goto(component_origin + "/response-dashboard-rehearsal")
-    page.get_by_role("link", name="Families that submitted", exact=True).click()
+    query = urlencode(RESPONSE_LIST_PRESETS["submitted"] | {"mode": "testing"})
+    page.goto(component_origin + DIRECTORY + "?" + query)
     expect(page).to_have_url(re.compile(r"[?&]mode=testing$"))
     switch = page.get_by_label("Responses shown", exact=True)
     expect(switch).to_have_value("testing")
@@ -295,7 +308,8 @@ def test_switch_sends_mode_once_after_the_rehearsal_ends(page, component_origin)
 
 # Each stage tile's share bar, with the tile's and the bar's boxes, read from
 # the page itself so no assertion depends on content above the tiles.
-TILE_BARS = """() => [...document.querySelectorAll('.stat-tile')].map(tile => {
+TILE_BARS = """() => [...document.querySelectorAll('#response-stages .stat-tile')]
+  .map(tile => {
   const bar = tile.querySelector('.stat-bar progress');
   const t = tile.getBoundingClientRect(), b = bar.getBoundingClientRect();
   return {value: bar.value, max: bar.max,

@@ -369,7 +369,7 @@ def test_a_census_backed_campaign_is_navigable_without_naming_the_campaign(
         allocated(family_mail)
         browser = _sign_in(family_mail.service.store, google, role)
         reached = _check(browser, f"census {role}")
-    assert {"participation", "family_directory", "family_timeline"} <= reached
+    assert {"response_dashboard", "family_directory", "family_timeline"} <= reached
 
 
 @pytest.mark.parametrize("role", ROLES)
@@ -378,7 +378,8 @@ def test_no_current_campaign_is_navigable(auth_service, google, media, role):  #
     and every page that opens is still reached and has a way back."""
     browser = _sign_in(auth_service.store, google, role)
     reached = _check(browser, f"no campaign {role}")
-    assert "index" in reached and not {"campaign_settings", "participation"} & reached
+    assert "index" in reached
+    assert not {"campaign_settings", "response_dashboard"} & reached
 
 
 def test_a_ministry_leader_reaches_their_ministry_pages(auth_service, google, media):  # noqa: F811

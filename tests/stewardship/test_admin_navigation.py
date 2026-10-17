@@ -206,14 +206,16 @@ def test_non_admin_and_unknown_routes_yield_no_trail():
 def test_exact_page_entry_is_marked_as_the_current_page():
     """On a sidebar entry's own page, its link is aria-current="page"."""
     match = SimpleNamespace(
-        url_name="participation", namespace="admin", kwargs={"campaign_id": uuid4()}
+        url_name="response_dashboard",
+        namespace="admin",
+        kwargs={"campaign_id": uuid4()},
     )
     sections, _ = navigation.build(match, _items())
     marked = [
         item for section in sections for item in section["items"] if item["current"]
     ]
     assert [(item["label"], item["current"]) for item in marked] == [
-        (navigation.PAGES["participation"].label, "page")
+        (navigation.PAGES["response_dashboard"].label, "page")
     ]
 
 
@@ -568,7 +570,6 @@ ROLES = ("administrator", "staff", "ministry_leader")
 # Which entries each role sees, whatever the mode or campaign state.
 REPORTS = [
     "response_dashboard",
-    "participation",
     "campaign_comparison",
     "financial_report",
     "limitations_report",
@@ -600,7 +601,6 @@ SPEC_ORDER = [
     "presence",
     # Responses and reports
     "response_dashboard",
-    "participation",
     "campaign_comparison",
     "financial_report",
     "limitations_report",
@@ -684,7 +684,6 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
         "family_email_progress",
         "family_email_sends",
         "response_dashboard",
-        "participation",
         "campaign_comparison",
         "financial_report",
         "limitations_report",
@@ -771,7 +770,6 @@ def test_available_campaign_entries_link_the_current_campaign():
     assert urls["production_progress"] == reverse("admin:production_progress")
     # The Response dashboard has its own entry (#522).
     assert urls["response_dashboard"] == reverse("admin:response_dashboard")
-    assert urls["participation"] == reverse("admin:participation")
     assert urls["deliveries"] == reverse("admin:deliveries")
 
 
@@ -1160,15 +1158,15 @@ def test_a_trail_links_only_pages_the_viewer_may_open(role):
                 assert gate in offered, (role, name, ancestor)
 
 
-def test_a_ministry_leaders_export_names_participation_without_a_link():
-    """A Ministry leader may open their export, but not the Participation report."""
+def test_a_ministry_leaders_export_names_the_dashboard_without_a_link():
+    """A Ministry leader may open their export, but not the Response dashboard."""
     campaign = CAMPAIGNS["active"]
     for role, linked in (("ministry_leader", False), ("staff", True)):
         items = _menu(role, campaign, "production")
         # Every export, a latest-data one included, shares one page (NAV-12).
         match = _match("report_export", request_id=uuid4())
         _, trail = navigation.build(match, items)
-        assert trail[-2]["label"] == navigation.PAGES["participation"].label
+        assert trail[-2]["label"] == navigation.PAGES["response_dashboard"].label
         assert (trail[-2]["url"] == reverse("admin:reports")) is linked
 
 

@@ -862,7 +862,7 @@ def ministry_followup(totals):
     )
 
 
-# The Participation page's daily chart (#720 slice 2c): each panel's plot
+# The Response dashboard's daily chart (#720 slice 2c): each panel's plot
 # height in CSS pixels, and the fixed width of every panel's value-axis
 # column (tick labels and title), so the stacked plots line up on the shared
 # date axis whatever their tick labels' widths ("$1.6M" against "12").
@@ -1010,7 +1010,7 @@ def participation_panel(
 
 
 def participation_chart(document):
-    """The Participation page's daily chart, drawn by the chart engine (#720).
+    """The Response dashboard's daily chart, drawn by the chart engine (#720).
 
     It is the same design as the static drawing the exports and the daily
     email keep (``charts._draw``): stacked panels on one shared date axis,

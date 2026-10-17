@@ -78,18 +78,18 @@ def test_scope_links_keep_the_view_and_return_to_the_first_page():
         scope="historical",
         timezone="America/Chicago",
         page=3,
-        sort="date_desc",
+        sort="date_asc",
         size="100",
     )
     links = scope_links(query)
     assert set(links) == {"historical", "current"}
     for scope, link in links.items():
         address = urlsplit(link)
-        assert address.path == reverse("admin:participation")
+        assert address.path == reverse("admin:response_dashboard")
         assert dict(parse_qsl(address.query)) == {
             "scope": scope,
             "page": "1",
-            "sort": "date_desc",
+            "sort": "date_asc",
             "size": "100",
             "timezone": "America/Chicago",
         }
@@ -102,8 +102,7 @@ def test_every_pair_is_drawn_by_the_shared_component():
     """The old pill links are gone: each view choice uses the component."""
     for path in sorted(TEMPLATES.rglob("*.html")):
         assert "choice-links" not in path.read_text(), path.name
-    for name in ("participation.html", "response-dashboard.html"):
-        assert COMPONENT in (TEMPLATES / name).read_text(), name
+    assert (TEMPLATES / "response-dashboard.html").read_text().count(COMPONENT) == 2
     assert COMPONENT in (TEMPLATES / "family-timeline.html").read_text()
 
 

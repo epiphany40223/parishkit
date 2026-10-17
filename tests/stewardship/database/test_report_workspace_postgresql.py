@@ -60,7 +60,7 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
     campaign_id = setup[2].campaign_id
     pointer(setup[2])
     before = SystemConfiguration.objects.get().current_campaign_id
-    path = reverse("admin:participation")
+    path = reverse("admin:response_dashboard")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         redirected = browser.get(reverse("admin:reports") + "?scope=historical")
         assert redirected.status_code == 302
@@ -74,7 +74,8 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
         assert response["Cache-Control"] == "no-store"
         assert b"Updating" in html
         assert b"Current active population statistics" in html
-        assert b"ParishSoft data load" in html
+        # One time line, "Data as of"; no Technical details (#1537).
+        assert b"Data as of" in html and b"ParishSoft data load" not in html
         assert b"Historical as of day" in html
         assert str(setup[2].pk).encode() in html
         # The daily chart is drawn in the browser from its embedded spec
@@ -144,12 +145,13 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
 
     # Use a smaller page budget to exercise actual pagination with this small
     # source fixture. Selection, ordering, rows and URL construction stay real.
-    # A 2-row page size is added to the accepted sizes for this test only.
+    # A 2-row page size is added to the daily table's accepted sizes for
+    # this test only.
     from parishkit.stewardship.reports import workspace
-    from parishkit.stewardship.web import tables
 
-    monkeypatch.setattr(tables, "PAGE_SIZES", (2, *tables.PAGE_SIZES))
-    monkeypatch.setattr(workspace, "PAGE_SIZES", (2, *tables.PAGE_SIZES))
+    sizes = (2, *workspace.DAILY_SIZES)
+    monkeypatch.setattr(workspace, "DAILY_SIZES", sizes)
+    monkeypatch.setattr(workspace_views, "DAILY_SIZES", sizes)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         options = "?sort=date_desc&inactive=yes&size=2"
         # A bookmark from before #728 removed the inactive subtotal still
@@ -394,7 +396,7 @@ def test_staff_report_access_then_ministry_role_and_revocation(http_scenario, go
     )
     google[0]["email"] = "reader@example.org"
     browser, _ = signed_in()
-    path = reverse("admin:participation")
+    path = reverse("admin:response_dashboard")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, _ = read(browser, path)
         assert response.status_code == 200

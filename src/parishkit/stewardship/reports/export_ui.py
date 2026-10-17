@@ -213,7 +213,7 @@ def _origin(job):
         if presets:
             report_url += "?" + urlencode(presets)
     else:
-        source = "participation"
+        source = "response_dashboard"
         report_url = ReportQuery(
             scope=job.parameters["population_scope"],
             timezone=job.browser_timezone,

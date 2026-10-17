@@ -92,7 +92,6 @@ TEMPLATES = {
     "background": "background.html",
     "background_task_page": "background-task.html",
     "logs": "logs.html",
-    "participation": "participation.html",
     "campaign_comparison": "campaign-comparison.html",
     "financial_report": "financial-report.html",
     "limitations_report": "limitations-report.html",

@@ -271,7 +271,6 @@ SLASHLESS_EXPECTED = {
     # Responses and reports pages without their trailing slash (NAV-11).
     "/admin/reports": "/admin/reports/",
     "/admin/reports/responses": "/admin/reports/responses/",
-    "/admin/reports/participation": "/admin/reports/participation/",
     "/admin/reports/comparison": "/admin/reports/comparison/",
     "/admin/reports/financial": "/admin/reports/financial/",
     "/admin/reports/limitations": "/admin/reports/limitations/",
@@ -334,6 +333,12 @@ OLD_ADDRESSES = (
     f"/admin/reports/{T}/participation/export",
     f"/admin/reports/{T}/families/",
     f"/admin/reports/{T}/families/{T}/",
+    # Participation, merged into the Response dashboard (#1537), and its
+    # export actions.
+    "/admin/reports/participation/",
+    "/admin/reports/participation",
+    "/admin/reports/participation/exports/",
+    "/admin/reports/participation/exact-exports/",
     f"/admin/reports/{T}/ministries/follow-up/{T}/update",
     # Campaign images' separate review pages: reviews happen on the page
     # itself now (#750).

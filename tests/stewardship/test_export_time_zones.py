@@ -21,7 +21,6 @@ from django.test import RequestFactory
 import parishkit.stewardship.accounts as accounts
 from parishkit.stewardship.reports import (
     directory_export_views,
-    exact_ui,
     export_ui,
     ministry_export_views,
 )
@@ -48,8 +47,7 @@ ASKS = {
     ("ministry-roster.html", "admin:ministry_roster_export"): True,
     ("family-timeline.html", "export.url"): True,
     ("ministry-packet.html", "admin:ministry_packet"): False,
-    ("participation.html", "admin:report_export_create"): False,
-    ("participation.html", "admin:report_exact_create"): False,
+    ("response-dashboard.html", "admin:report_export_create"): False,
     # Campaign days and dates, no action times (#1161).
     ("campaign-comparison.html", "admin:campaign_comparison_export"): False,
 }
@@ -92,9 +90,9 @@ def test_a_form_asks_for_a_zone_only_with_action_times(form):
         )
 
 
-def test_the_participation_page_asks_for_no_zone():
-    """Its report options carry the zone the page was drawn in (#1535)."""
-    page = (TEMPLATES / "participation.html").read_text()
+def test_the_response_dashboard_asks_for_no_zone():
+    """Its region carries the zone the page was drawn in (#1535, #1537)."""
+    page = (TEMPLATES / "response-dashboard.html").read_text()
     assert not ZONE_MENU.search(page)
     assert re.search(
         r'data-report-options data-report-zone="\{\{ query\.timezone \}\}"', page
@@ -231,7 +229,6 @@ def test_a_directory_with_response_columns_asks_for_its_zone(monkeypatch):
     "module, service, field",
     [
         (export_ui, "create_export", ("fact_set_id", str(uuid4()))),
-        (exact_ui, "create_exact_export", ("population_scope", "historical")),
     ],
 )
 @pytest.mark.parametrize(

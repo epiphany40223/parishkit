@@ -10,7 +10,7 @@
 <p>{% translate "Entered by Staff says Yes when a Staff member entered this current pledge for the Family through Open form, and No when the Family submitted it. An earlier response that Staff entered and the Family later replaced shows No. It never names the Staff member." %}</p>{% endaboutpage %}
 {% if metadata.giving_through %}<p>{% blocktranslate with start=metadata.comparison_start|parish_date end=metadata.comparison_end|parish_date through=metadata.giving_through|parish_date %}ParishSoft pledges and contributions cover the comparison period {{ start }} — {{ end }}, with contributions through {{ through }}.{% endblocktranslate %}</p>
 {% else %}<p class="notice">{% translate "ParishSoft pledges and contributions are unavailable: the latest giving data read from ParishSoft is not confirmed complete for this campaign's comparison period. Unavailable does not mean zero. A later full ParishSoft refresh may fill it in." %}</p>{% endif %}
-<p><a href="{% url 'admin:participation' %}">{% translate "Participation" %}</a></p>
+<p><a href="{% url 'admin:response_dashboard' %}">{% translate "Response dashboard" %}</a></p>
 {# The summary follows the applied filters in place (data-table-sync): headline tiles, then the frequency and share-method charts (#720), each bar labelled with its count and share, the same values in its tooltip (#1266). #}
 <div id="financial-summary" data-table-sync><h2>{% translate "Summary of matching pledges" %}</h2>
 <ul class="stat-tiles">

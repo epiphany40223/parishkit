@@ -1,9 +1,10 @@
-"""The participation report's options apply in place (#519 PR 5).
+"""The Response dashboard's Chart population applies in place (#519 PR 5).
 
-The report is served at its real address (report_components.REAL), where
-its Chart population links (a binary choice, #1535) lead, with the answers
-for the choices these tests make. Each test sets a mark outside every
-region, which only a full page load could lose, as test_in_place.py does.
+The Response dashboard (#1537) is served at its real address
+(report_components.REAL), where its Chart population links (a binary
+choice, #1535) lead, with the answers for the choices these tests make.
+Each test sets a mark outside every region, which only a full page load
+could lose, as test_in_place.py does.
 """
 
 import pytest
@@ -57,7 +58,7 @@ EXPORT_TOP = (
 
 
 def zones(page):
-    """The zone each export form carries."""
+    """The zone the export form carries (the page has one, #1537)."""
     return page.locator("input[name=browser_timezone]").evaluate_all(
         "nodes => nodes.map(node => node.value)"
     )
@@ -65,7 +66,7 @@ def zones(page):
 
 def test_options_apply_in_place(page, component_origin):
     """Choosing Current population (a binary choice, #1535) sends one GET
-    and swaps the statistics, chart and export panels: no reload, no Apply
+    and swaps the dashboard's region: no reload, no Apply
     button, the reader's place kept, focus on the segment just chosen, the
     view announced, the address replaced, the chosen segment marked, the
     pair not moved or resized, and the fresh daily chart drawn."""
@@ -98,13 +99,11 @@ def test_options_apply_in_place(page, component_origin):
     )
     expect(choice.locator("a[aria-current=page]")).to_have_text("Current population")
     assert page.evaluate(PAIR_LAYOUT) == pytest.approx(layout, abs=1)
+    # The default sort (newest first) is left out of the address (#1534).
     assert page.url == (
-        component_origin
-        + REAL
-        + f"?scope=current&page=1&sort=date_asc&{ZONE}#participation-statistics"
+        component_origin + REAL + f"?scope=current&page=1&{ZONE}#response-dashboard"
     )
     assert len(gets) == 1
-    assert page.locator("input[name=population_scope]").input_value() == "current"
     # The swapped-in daily chart is drawn by chart-v1.js (#720).
     expect(
         page.locator("#participation-chart [data-chart-state=rendered]")
@@ -141,22 +140,23 @@ def test_options_redraw_the_progress_chart_in_place(page, component_origin):
 
 
 def test_daily_table_refreshes_every_panel(page, component_origin):
-    """Sorting the daily table refreshes the statistics and export panels from
-    the same answer, as every region on the page is refreshed."""
+    """Sorting the daily table refreshes the statistics and the Chart
+    population from the same answer, as the whole region is refreshed."""
     page.goto(component_origin + REAL + "?" + ZONE)
     page.evaluate(MARK)
     body = page.request.get(
-        component_origin + REAL + f"?scope=current&page=1&sort=date_asc&{ZONE}"
+        component_origin + REAL + f"?scope=current&page=1&{ZONE}"
     ).text()
     page.route(
-        lambda url: "sort=date_desc" in url,
+        lambda url: "sort=" in url,
         lambda route: route.fulfill(
             status=200, content_type="text/html; charset=utf-8", body=body
         ),
     )
     page.locator("#table a.sort-link").first.click()
     visible(page.locator("#participation-statistics .stat-value", has_text=REFRESHED))
-    assert page.locator("input[name=population_scope]").input_value() == "current"
+    choice = page.get_by_role("group", name="Chart population")
+    expect(choice.locator("a[aria-current=page]")).to_have_text("Current population")
     assert page.evaluate(MARKED) == "kept"
 
 
@@ -179,7 +179,7 @@ def test_browser_zone_is_applied_in_place_once(page, component_origin):
     )
     page.goto(component_origin + REAL)
     expect(page).to_have_url(component_origin + REAL + "?" + ZONE)
-    assert zones(page) == ["America/Los_Angeles"] * 2
+    assert zones(page) == ["America/Los_Angeles"]
     assert documents == [component_origin + REAL]
     assert fetches == [component_origin + REAL + "?" + ZONE]
     assert page.evaluate("document.activeElement === document.body")
@@ -197,11 +197,11 @@ def test_browser_zone_is_applied_in_place_once(page, component_origin):
 def test_browser_zone_keeps_the_address_and_its_fragment(page, component_origin):
     """Applying the zone keeps the address's other parameters (the daily
     table's sort) and its fragment."""
-    page.goto(component_origin + REAL + "?sort=date_desc#participation-chart")
+    page.goto(component_origin + REAL + "?sort=date_asc#participation-chart")
     expect(page).to_have_url(
-        component_origin + REAL + f"?sort=date_desc&{ZONE}#participation-chart"
+        component_origin + REAL + f"?sort=date_asc&{ZONE}#participation-chart"
     )
-    assert zones(page) == ["America/Los_Angeles"] * 2
+    assert zones(page) == ["America/Los_Angeles"]
 
 
 def test_browser_zone_falls_back_without_a_jump(page, component_origin):
@@ -222,7 +222,7 @@ def test_browser_zone_falls_back_without_a_jump(page, component_origin):
     page.goto(component_origin + REAL)
     expect(page).to_have_url(component_origin + REAL + "?" + ZONE)
     assert failed == [component_origin + REAL + "?" + ZONE]
-    assert zones(page) == ["America/Los_Angeles"] * 2
+    assert zones(page) == ["America/Los_Angeles"]
 
 
 def test_a_link_followed_before_the_zone_applies_gets_it_too(page, component_origin):
@@ -249,4 +249,4 @@ def test_a_link_followed_before_the_zone_applies_gets_it_too(page, component_ori
     expect(page.locator("input[name=browser_timezone]").first).to_have_value(
         "America/Los_Angeles"
     )
-    assert zones(page) == ["America/Los_Angeles"] * 2
+    assert zones(page) == ["America/Los_Angeles"]

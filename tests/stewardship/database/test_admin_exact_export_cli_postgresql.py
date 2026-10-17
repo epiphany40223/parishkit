@@ -2,16 +2,15 @@
 
 Process admission is replaced by the test's own Django assembly; everything
 after it is the real command line on the restricted web login, through the
-Participation page's own exact-export services, with the real workers
-calculating and rendering. A request made by the command is the page's: the
-page's form with the same key returns it, and its retry, cancel, handoff and
-file are the page's.
+latest-data export's services, with the real workers calculating and
+rendering. Since #1537 no page offers the request, so the command is the
+only way to make one; its retry, cancel, handoff and file are the shared
+export page's.
 """
 
 from uuid import UUID, uuid4
 
 import pytest
-from django.urls import reverse
 
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
@@ -28,7 +27,6 @@ from parishkit.stewardship.reports.export_tasks import export_handler
 from .test_admin_export_cli_postgresql import download, read_only_session
 from .test_admin_report_cli_postgresql import cli  # noqa: F401
 from .test_background_grants_postgresql import task_login
-from .test_export_views_postgresql import post
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
 from .test_report_workspace_postgresql import http_scenario  # noqa: F401
 from .test_taskrun_postgresql import act
@@ -79,21 +77,10 @@ def test_an_exact_export_from_request_to_file(
         event__event_type="admin_cmd_export_exact_create"
     ).context
     assert (context["report"], context["format"]) == ("participation", job.format)
-    # The same key from the command or the page's form is the same request.
+    # The same key again is the same request (the page's form is gone,
+    # #1537: the command is the only way to request one).
     code, document = run(*create)
     assert code == 0 and document["result"]["created"] is False
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response = post(
-            browser,
-            reverse("admin:report_exact_create"),
-            {
-                "population_scope": "current",
-                "format": "csv",
-                "browser_timezone": "UTC",
-                "request_key": str(key),
-            },
-        )
-    assert response.status_code == 302 and str(job.pk) in response["Location"]
     assert ExactExportRequest.objects.count() == 1
     assert (
         count("export_requested") == 1 and count("admin_cmd_export_exact_create") == 1

@@ -83,7 +83,7 @@ def sign_in(store, google, role):
                 "Response dashboard",
             ],
         ),
-        ("staff", ["Response dashboard", "Participation"]),
+        ("staff", ["Response dashboard"]),
         # Ministry requests carries the follow-up queue's open count (#1133).
         ("ministry_leader", ["Ministry requests — 0 open"]),
     ],

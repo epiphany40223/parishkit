@@ -25,6 +25,7 @@ import html
 import json
 import re
 from datetime import timedelta
+from urllib.parse import urlencode
 from uuid import uuid4
 
 import pytest
@@ -53,12 +54,13 @@ from parishkit.stewardship.reports.export_models import (
     ExportRequest,
 )
 from parishkit.stewardship.reports.export_services import retry_export
-from parishkit.stewardship.reports.response_dashboard import list_counts
+from parishkit.stewardship.reports.response_dashboard import list_counts, read_metrics
 from parishkit.stewardship.reports.response_metrics import MODES
 from parishkit.stewardship.source.leases import release_source
 from parishkit.stewardship.source.snapshots import promote_snapshot
 
 from ..policy_factory import address
+from ..test_directories import RESPONSE_LIST_PRESETS
 from . import test_response_metrics_postgresql as metrics_tests
 from .auth_builders import signed_in
 from .campaign_builders import campaign_clock, change, complete_empty_catchup
@@ -329,7 +331,7 @@ def test_directory_response_filters_follow_the_dashboard_rows(
     assert legacy_duids(harness, "no") == [1, 12, 13]
     assert page(harness)["metadata"]["counted_at"] is None
     assert page(harness)["total"] == 5
-    dashboard_links_open_the_directory(harness, google)
+    list_links_open_the_directory(harness, google)
 
     # The response columns carry the funnel instants and sort both ways,
     # missing values last; the default order is still by name.
@@ -471,21 +473,22 @@ def test_directory_response_filters_follow_the_dashboard_rows(
     assert page(harness, response="not-invited")["total"] == 0
 
 
-def dashboard_links_open_the_directory(harness, google):
-    """The dashboard's Production list links open matching directory pages.
+def list_links_open_the_directory(harness, google):
+    """Each list's Production link preset opens a matching directory page.
 
-    Each "Lists of Families" link is a directory link preset in a GET (#933),
+    Each list of Families is a directory link preset in a GET (#933; the
+    Response dashboard's Lists of Families panel linked them until #1537),
     for an Administrator and for Staff, and the page it opens counts the
-    Families the dashboard says it does; the data-check link (no count on
-    the dashboard) lists the two problems. Each page's data-page-address is
-    its own link. A preset with a value outside its vocabulary, repeated,
-    or with search text is still refused; a valid sort of a column the link
-    does not show opens the page in name order.
+    Families the funnel's list does (``report responses``' lengths); the
+    data-check link (no length there) lists the two problems. Each page's
+    data-page-address is its own link. A preset with a value outside its
+    vocabulary, repeated, or with search text is still refused; a valid sort
+    of a column the link does not show opens the page in name order.
     """
     directory = reverse("admin:family_directory")
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        links = follow_dashboard_links(browser)
+        links = follow_list_links(browser, harness.campaign.pk)
         for refused in (
             "?response=maybe",
             "?response=submitted&search=x",
@@ -506,16 +509,32 @@ def dashboard_links_open_the_directory(harness, google):
     browser, login = signed_in()
     assert login.status_code == 302
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        assert follow_dashboard_links(browser) == links
+        assert follow_list_links(browser, harness.campaign.pk) == links
 
 
-def follow_dashboard_links(browser):
-    """Follow each dashboard list link; return the (link, count) pairs."""
+def list_links(campaign_id, mode="production"):
+    """Each list's directory link (escaped, as a page draws it) and length.
+
+    The lengths are the funnel lists' (``list_counts``, as ``report
+    responses`` prints them); the data-quality list has none. A Testing
+    link adds ``mode=testing`` to the preset.
+    """
     directory = reverse("admin:family_directory")
-    dashboard = read_page(browser, reverse("admin:response_dashboard"))[1]
-    panel = dashboard.decode().split('id="lists-heading"')[1]
-    panel = panel.split("</section>")[0]
-    links = re.findall(r'<li><a href="([^"]+)">[^<]*</a>(?:: (\d+))?', panel)
+    counts = list_counts(read_metrics(campaign_id, mode).families)
+    extra = {"mode": mode} if mode != "production" else {}
+    return [
+        (
+            html.escape(directory + "?" + urlencode(preset | extra)),
+            str(counts[key]) if key in counts else "",
+        )
+        for key, preset in RESPONSE_LIST_PRESETS.items()
+    ]
+
+
+def follow_list_links(browser, campaign_id):
+    """Follow each list's Production link; return the (link, count) pairs."""
+    directory = reverse("admin:family_directory")
+    links = list_links(campaign_id)
     assert [count for _, count in links] == ["2", "1", "2", "1", ""]
     for href, count in links:
         assert html.unescape(href).startswith(directory + "?")
@@ -533,8 +552,8 @@ def test_directory_testing_switch_reads_the_rehearsal(
 ):
     """The directory's Testing switch reads one rehearsal, never both (#933).
 
-    During the rehearsal the Testing dashboard's list links open the
-    directory with ``mode=testing`` and the counts shown; the page is
+    During the rehearsal each list's Testing link opens the directory with
+    ``mode=testing`` and the list's length; the page is
     labelled, leaves out the Production-only Responded column, keeps the
     mode in its address, offers the switch and audits the mode. An export
     queued in Testing pins the rehearsal epoch and records the mode.
@@ -554,12 +573,9 @@ def test_directory_testing_switch_reads_the_rehearsal(
     assert page(harness, response="submitted")["total"] == 0
 
     directory = reverse("admin:family_directory")
-    dashboard = reverse("admin:response_dashboard") + "?mode=testing"
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        body = read_page(browser, dashboard)[1].decode()
-        panel = body.split('id="lists-heading"')[1].split("</section>")[0]
-        links = re.findall(r'<li><a href="([^"]+)">[^<]*</a>(?:: (\d+))?', panel)
+        links = list_links(harness.campaign.pk, "testing")
         assert len(links) == 5
         for href, count in links:
             href = html.unescape(href)

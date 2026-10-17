@@ -140,11 +140,12 @@ def test_participation_responses_information_and_the_list(http_scenario, cli):  
         "report ministry": False,
     }
 
-    # Participation: the generation the page shows, whose fact set id is
-    # what ``export create --fact-set`` takes, and the page's events.
+    # The Response dashboard's participation read (#1537): the generation
+    # the page shows, whose fact set id is what ``export create --fact-set``
+    # takes, and the page's events.
     parity(
         "participation_viewed",
-        lambda: read(browser, f"{root}/participation/"),
+        lambda: read(browser, f"{root}/responses/"),
         lambda: run("report", "participation"),
     )
     code, document = run("report", "participation")
@@ -253,7 +254,7 @@ def test_participation_responses_information_and_the_list(http_scenario, cli):  
             "participation_viewed",
         ),
         (
-            (response_dashboard, "dashboard_context", unshaped),
+            (response_dashboard, "read_metrics", unshaped),
             ("report", "responses"),
             "response_dashboard_viewed",
         ),

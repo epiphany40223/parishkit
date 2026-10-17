@@ -12,23 +12,20 @@ from django.urls import reverse
 
 from parishkit.stewardship.jobs.queue_wait import QueueWait
 from parishkit.stewardship.reports.chart_specs import participation_chart
-from parishkit.stewardship.reports.digest_presentation import (
-    participation_table_context,
-)
 from parishkit.stewardship.reports.money import MoneyAmount
 from parishkit.stewardship.reports.participation import ParticipationDay
 from parishkit.stewardship.reports.workspace import ReportQuery
 from parishkit.stewardship.reports.workspace_views import (
-    daily_table,
     scope_links,
     statistics_panel,
 )
 
 from ..test_daily_digest_content import document
+from ..test_response_dashboard import page_context
 from .automation_components import canonical
 
-# The participation report's real address (its options' form posts there).
-REAL = reverse("admin:participation")
+# The Response dashboard's real address (#1537), where its choices lead.
+REAL = reverse("admin:response_dashboard")
 
 
 # Answered after a pause (see the server in conftest.py): applying this
@@ -71,43 +68,20 @@ def options(query):
     return urlsplit(scope_links(query)[query.scope]).query
 
 
-def viewing(query):
-    """The page context a participation page drawn for ``query`` carries."""
-    return {"query": query, "scope_links": scope_links(query)}
+def viewing(query, **changes):
+    """The Response dashboard's context drawn for ``query`` (#1537), its
+    daily chart updating, with ``changes`` applied."""
+    shaped = page_context(query)
+    if query.mode == "production":
+        shaped["selection"] = SimpleNamespace(updating=True, expected=True)
+    return shaped | changes
 
 
 def components(context, admin):
     """The production reporting templates over the digest test document's values."""
     value = document()
     chart = value.participation
-    campaign = SimpleNamespace(
-        pk=chart.campaign_id,
-        active_configuration=SimpleNamespace(name=chart.campaign_name),
-        state="active",
-    )
-    page = {
-        **participation_table_context(chart),
-        "campaign": campaign,
-        "campaigns": [
-            {"id": campaign.pk, "name": chart.campaign_name, "url": "/participation"}
-        ],
-        **viewing(ReportQuery(timezone="America/Los_Angeles")),
-        "selection": SimpleNamespace(updating=True, expected=True),
-        "statistics": value.statistics,
-        **statistics_panel(value.statistics),
-        "timezones": ["UTC", "America/Los_Angeles"],
-        "export_key": UUID(int=10),
-        "exact_key": UUID(int=11),
-        "exact_row_count": len(chart.days),
-        "export_allowed": True,
-        "row_count": len(chart.days),
-        **daily_table(
-            chart,
-            participation_table_context(chart),
-            ReportQuery(timezone="America/Los_Angeles"),
-        ),
-        "daily_chart": participation_chart(chart),
-    }
+    page = viewing(ReportQuery(timezone="America/Los_Angeles"))
     job = SimpleNamespace(
         pk=UUID(int=20),
         format="xlsx",
@@ -118,11 +92,11 @@ def components(context, admin):
         browser_timezone="America/Los_Angeles",
     )
     pages = {
-        "/participation": ("participation", page),
+        "/participation": ("response-dashboard", page),
         # No ParishSoft data yet (#1540): every statistics tile reads "—"
         # with its reason, and no progress chart is drawn.
         "/participation-unknown": (
-            "participation",
+            "response-dashboard",
             page
             | statistics_panel(
                 replace(
@@ -133,7 +107,7 @@ def components(context, admin):
             ),
         ),
         "/participation-long": (
-            "participation",
+            "response-dashboard",
             page | {"daily_chart": participation_chart(long_campaign(chart))},
         ),
         "/report-export": (
@@ -228,10 +202,7 @@ def components(context, admin):
     # the zone's application ask for, served under their query's pairs in
     # any order (the fixture server's canonical lookup).
     implicit = ReportQuery(timezone_explicit=False)
-    fallback = page | {
-        **viewing(implicit),
-        **daily_table(chart, participation_table_context(chart), implicit),
-    }
+    fallback = viewing(implicit)
     los_angeles = ReportQuery(timezone="America/Los_Angeles")
     current = ReportQuery(scope="current", timezone="America/Los_Angeles")
     # The current-population answer's statistics differ from the first page's,
@@ -242,21 +213,22 @@ def components(context, admin):
         comparison_pledge_all=MoneyAmount(98265700),
         active=replace(value.statistics.active, responses=450),
     )
-    pages[REAL + "?timezone=UTC"] = ("participation", page | viewing(ReportQuery()))
-    for query in ("", "?sort=date_desc", "?scope=historical"):
-        pages[REAL + query] = ("participation", fallback)
+    pages[REAL + "?timezone=UTC"] = ("response-dashboard", viewing(ReportQuery()))
+    for query in ("", "?sort=date_asc", "?scope=historical"):
+        pages[REAL + query] = ("response-dashboard", fallback)
         zoned = (query + "&" if query else "?") + "timezone=America%2FLos_Angeles"
-        pages[canonical(REAL + zoned)] = ("participation", page)
-    pages[canonical(REAL + "?" + options(los_angeles))] = ("participation", page)
+        pages[canonical(REAL + zoned)] = ("response-dashboard", page)
+    pages[canonical(REAL + "?" + options(los_angeles))] = ("response-dashboard", page)
     pages[canonical(REAL + "?" + options(current))] = (
-        "participation",
-        page
-        | {
-            **viewing(current),
-            **statistics_panel(refreshed),
-            **daily_table(chart, participation_table_context(chart), current),
-        },
+        "response-dashboard",
+        viewing(current, **statistics_panel(refreshed)),
     )
+    # The Testing rehearsal view the mode choice leads to, and Production
+    # again from it (#1537).
+    testing = ReportQuery(timezone="America/Los_Angeles", mode="testing")
+    for query in (testing, los_angeles):
+        address = urlsplit(query.url(page=1)).query
+        pages[canonical(REAL + "?" + address)] = ("response-dashboard", viewing(query))
     return {
         path: (
             "text/html",

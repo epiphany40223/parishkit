@@ -44,7 +44,7 @@ NEXT_STEP = re.compile(r"[.:;!?]\s+\S")
 ALLOWED = {
     # Pages deferred until the pull requests changing them merge (#227).
     "directory.html": {"No matching Families."},
-    "participation.html": {"No campaign dates to show."},
+    "response-dashboard.html": {"No campaign dates to show."},
     # The shared chart's exact-values table; the page around each chart
     # says what it covers.
     "components/chart.html": {"Nothing to show yet."},

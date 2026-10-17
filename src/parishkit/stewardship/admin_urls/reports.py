@@ -5,9 +5,11 @@ so each route hands its unchanged view the current campaign's id
 (``current_campaign``). A report's form actions and downloads sit under it
 as nouns: an export is posted to the report's ``exports/`` collection, a
 follow-up is saved to its request's ``record/``, and the header's Find a
-Family box posts to ``families/search/``. ``/admin/reports/`` keeps its old
-meaning (Participation, or Ministry requests for a viewer who may not open
-Participation) instead of the group's first entry.
+Family box posts to ``families/search/``. ``/admin/reports/`` keeps its own
+meaning (the Response dashboard, or Ministry requests for a viewer who may
+not open it) instead of the group's first entry. The Response dashboard
+absorbed Participation (#1537); ``reports/participation/`` and its export
+actions are gone, with no redirect (#864).
 
 Records are addressed by their own id, which already names their campaign
 (NAV-12): every export, report or latest-data, shares one page at
@@ -27,7 +29,6 @@ from ..reports import (
     directory_export_views,
     directory_views,
     emailed_views,
-    exact_ui,
     export_pages,
     export_ui,
     family_timeline_views,
@@ -40,7 +41,6 @@ from ..reports import (
     ministry_followup_exports,
     ministry_followup_views,
     ministry_roster_views,
-    response_dashboard,
     weekly_manual_views,
     weekly_views,
     workspace_views,
@@ -55,17 +55,11 @@ def _page(route, view, name, *extra):
 
 patterns = [
     path("reports/", workspace_views.index, name="reports"),
-    _page("reports/responses/", response_dashboard.dashboard, "response_dashboard"),
-    _page("reports/participation/", workspace_views.participation, "participation"),
+    _page("reports/responses/", workspace_views.dashboard, "response_dashboard"),
     _page(
-        "reports/participation/exports/",
+        "reports/responses/exports/",
         export_ui.create,
         "report_export_create",
-    ),
-    _page(
-        "reports/participation/exact-exports/",
-        exact_ui.create,
-        "report_exact_create",
     ),
     # Past campaigns compared with the current one (#1018).
     _page("reports/comparison/", comparison_views.report, "campaign_comparison"),

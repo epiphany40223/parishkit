@@ -14,7 +14,7 @@
 <p class="help">{% translate "This usually takes a few seconds, and this page updates by itself. The file always uses the data as it was when you requested it." %}</p>{% endif %}
 {% if can_cancel %}<form method="post" action="{% url 'admin:report_export_cancel' job.pk %}#export-status" data-in-place="export-cancel" data-in-place-fallback="refresh" data-in-place-message="{% translate 'Export cancel requested.' %}">{% csrf_token %}{% button type="submit" variant="secondary" enabled=mutable aria-describedby=mutable|yesno:",export-locked" %}{% translate "Cancel export" %}{% endbutton %}</form>{% endif %}
 </section></div>
-<p><a href="{% url 'admin:report_export' job.pk %}#export-status" data-in-place="refresh" data-in-place-message="{% translate 'Status refreshed.' %}">{% translate "Refresh status" %}</a> · <a href="{{ report_url }}">{% translate "Return to Participation" %}</a></p>
+<p><a href="{% url 'admin:report_export' job.pk %}#export-status" data-in-place="refresh" data-in-place-message="{% translate 'Status refreshed.' %}">{% translate "Refresh status" %}</a> · <a href="{{ report_url }}">{% translate "Return to Response dashboard" %}</a></p>
 <dl><dt>{% translate "Format" %}</dt><dd>{{ job.format|upper }}</dd>
 <dt>{% translate "Population" %}</dt><dd>{% if job.population_scope == 'historical' %}{% translate "Historical as of day" %}{% else %}{% translate "Current population" %}{% endif %}</dd>
 <dt>{% translate "ParishSoft data as of" %}</dt><dd><time datetime="{{ source.promoted_at|date:'c' }}" data-local-instant>{{ source.promoted_at|date:'c' }}</time></dd>
