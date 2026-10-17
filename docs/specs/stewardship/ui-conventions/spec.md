@@ -273,6 +273,17 @@ A not-found error a view reports itself keeps its own, more specific title and
 message. Every other unknown address, including static assets, images, hosted
 files and health probes, keeps the plain not-found response.
 
+Dragging is only a pointer convenience. Every drag has a single-pointer,
+keyboard-operable equivalent that does the same thing, such as a **Move…**
+action with a date field (WCAG 2.2 SC 2.5.7). A drop never applies a change by
+itself: it fills in the same review the equivalent opens, and only Apply
+changes anything ([review dialog](#review-dialog)). Drag uses pointer events
+with a few-pixel threshold, so a click still follows a link, is offered on
+fine pointers only (touch uses the equivalent), and Escape cancels it. The
+first user is the planned
+[Campaign calendar editing](../admin-portal/spec.md#editing-from-the-calendar)
+([#1521](https://github.com/epiphany40223/parishkit/issues/1521)).
+
 Client validation improves feedback but never replaces server validation.
 Browser-local timezone conversion uses UTC ISO timestamps supplied by the
 server. The Admin portal [requires
