@@ -202,8 +202,18 @@ def test_financial_columns_lead_with_family_and_name_the_parishsoft_year(
     assert all(
         text.startswith(name) for text, name in zip(shown, expected, strict=True)
     ), shown
-    lines = head.locator("th").nth(5).locator(".stack-line").all_inner_texts()
-    assert [line.strip() for line in lines] == ["Pledged i", "Contributed i"]
+    # Each line's own name, then its "i" tip. Read the name from its text
+    # node, not innerText: the "i" can wrap under the name, and Linux WebKit
+    # then drops the space between them ("Pledgedi") where other engines
+    # keep it.
+    lines = head.locator("th").nth(5).locator(".stack-line")
+    names = lines.evaluate_all("ls => ls.map((l) => l.firstChild.textContent.trim())")
+    assert names == ["Pledged", "Contributed"]
+    tips = [
+        line.get_by_role("button", name="More information", exact=True).count()
+        for line in lines.all()
+    ]
+    assert tips == [1, 1]
     # The downloads keep First response and Entered by Staff (#1544).
     download = headings("2025-07-01", "2026-06-30")
     assert download[-2:] == ("First response", "Entered by Staff")
