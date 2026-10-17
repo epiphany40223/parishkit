@@ -25,6 +25,7 @@ from parishkit.stewardship import (
     admin_integration_keys,
     admin_roster_tick,
     admin_tests,
+    mail_halt_clear,
     system_health,
 )
 from parishkit.stewardship.accounts import family_maintenance
@@ -37,6 +38,8 @@ ROLE_FIRST = {
     "system debug-off": None,
     "system refresh-accept": None,
     "system debug-allow": None,
+    # Clear the halt's confirmation (ADM-13 PR 4a): before the token is read.
+    "system mail-clear": None,
     "config request cancel": None,
     "test sample": None,
     "test families": None,
@@ -91,6 +94,7 @@ LATER = (
     (system_health, "debug_off_preview_lines"),
     (system_health, "debug_allow_preview_lines"),
     (system_health, "accept_prompt_lines"),
+    (mail_halt_clear, "clear_prompt_lines"),
     (admin_tests, "unknown_outcome"),
     (admin_tests, "families_count"),
     (admin_digests, "acknowledgement"),

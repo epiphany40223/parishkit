@@ -113,7 +113,8 @@ class DeliveryCircuit:
     caller a pause is not the first since the last healthy result, so it can
     be reported quietly. ``systemic_stops`` keeps a
     SYSTEMIC fault (a configuration or credential problem that waiting cannot
-    fix) stopped until restart even then. The durable record of both is the
+    fix) stopped until restart, or until an Administrator clears the halt
+    (``lift``, ADM-13 PR 4a), even then. The durable record of both is the
     provider evidence: the stored outcomes that halt the circuit also raise
     the CRITICAL ``mail_provider_failed`` incident (schema/mail_health.sql), and
     the first healthy outcome after the cooldown resolves it
@@ -176,6 +177,11 @@ class DeliveryCircuit:
         self.counted_at = None
         self.counted = 0
         self.capped = False
+        # The current halt's (identity, kind, monotonic start), shared with
+        # the other consumer through the marker (ADM-13 PR 4a), and the
+        # identity jobs.mail_halt last recorded in the database.
+        self.halt = None
+        self.recorded = None
 
     def daily_sends(self):
         """The deployment's last-24-hour recipient count, from PostgreSQL.
@@ -256,28 +262,106 @@ class DeliveryCircuit:
             stopped = False
         if not stopped:
             return
+        halt = _marker_halt(self.shared_stop)
         with self.lock:
             newly = not self.stopped
             self.stopped = True
             self.halted.set()
+            if newly:
+                # The other consumer's halt identity; None while its marker
+                # is still being written (current_halt reads it again).
+                self.halt = halt
         if newly:
             LOG.critical(
                 "Another mail consumer stopped Family mail after a configuration "
-                "or credential fault; this one stops too until the mail worker "
-                "restarts."
+                "or credential fault; this one stops too until an Administrator "
+                "clears the halt or the mail worker restarts."
             )
 
-    def _share_stop(self):
-        """Tell the container's other mail consumers about a SYSTEMIC stop."""
-        if self.shared_stop is None:
-            return
-        try:
-            from parishkit.stewardship.installer_health import mark_stopped
+    def _share_stop(self, kind):
+        """Start a halt of ``kind`` and tell the container's other consumers.
 
-            mark_stopped(self.shared_stop)
-        except Exception as error:
-            # The other consumer then stops on its own SYSTEMIC outcome.
-            emit_failure(error)
+        The halt gets a new identity, written into the stop marker only if
+        no marker exists yet; when the other consumer's marker is already
+        there, this one takes on its halt instead, so both share one halt
+        (ADM-13 PR 4a).
+        """
+        from .mail_halt import halt_marker, read_marker
+
+        halt = (uuid4(), kind, monotonic())
+        if self.shared_stop is not None:
+            try:
+                from parishkit.stewardship.installer_health import claim_stop
+
+                held = claim_stop(self.shared_stop, halt_marker(*halt))
+                halt = None if held is None else read_marker(held)
+            except Exception as error:
+                # The other consumer then stops on its own SYSTEMIC outcome;
+                # this one keeps its own identity.
+                emit_failure(error)
+        with self.lock:
+            if self.stopped and self.halt is None:
+                self.halt = halt
+
+    def current_halt(self):
+        """This consumer's halt ``(identity, kind, monotonic start)``, or None.
+
+        A halt taken from the other consumer's marker before its contents
+        were written has no identity yet; the marker is read again here.
+        """
+        with self.lock:
+            if not self.stopped:
+                return None
+            if self.halt is not None:
+                return self.halt
+        halt = _marker_halt(self.shared_stop)
+        with self.lock:
+            if self.stopped and self.halt is None:
+                self.halt = halt
+            return self.halt if self.stopped else None
+
+    def lift(self, halt_id):
+        """Lift the halt ``halt_id`` an Administrator cleared; return whether it was.
+
+        Only the current halt is lifted: a consumer that is not halted, or
+        holds a newer halt, ignores the clear. The marker is removed only
+        while it still names this halt (the other consumer's probe may
+        already have halted again under a new identity), in one step
+        (``installer_health.release_stop``). Like the end of an outage
+        cooldown, this consumer then admits one probe email (one per
+        consumer, so up to two per container):
+        an outage result pauses again at once, and a SYSTEMIC one halts
+        again under a new identity.
+        """
+        with self.lock:
+            if not self.stopped or self.halt is None or self.halt[0] != halt_id:
+                return False
+            self.stopped = False
+            self.halted.clear()
+            self.halt = None
+            self.failures = 2
+            self.probe_after = 0.0
+        if self.shared_stop is not None:
+            from parishkit.stewardship.installer_health import release_stop
+
+            from .mail_halt import read_marker
+
+            def owns(value):
+                """Whether the marker's contents name the cleared halt."""
+                held = read_marker(value)
+                return held is not None and held[0] == halt_id
+
+            # Check and removal are one step (release_stop): a marker the
+            # other consumer created meanwhile for a new halt stays.
+            try:
+                release_stop(self.shared_stop, owns)
+            except OSError as error:
+                emit_failure(error)
+        LOG.warning(
+            "An Administrator cleared the Family mail halt; this consumer sends "
+            "one message as a probe, and resumes sending if it succeeds."
+        )
+        return True
 
     def hold(self, seconds):
         """Hold new sends for ``seconds`` after a Gmail sending limit.
@@ -302,7 +386,8 @@ class DeliveryCircuit:
         """This sender's state and seconds until it ends, for its status record.
 
         One of ``service_status_models.SENDER_STATES``: halted (a SYSTEMIC
-        stop, here or in the other consumer, that only a restart lifts),
+        stop, here or in the other consumer, that only a restart or an
+        Administrator's clear lifts),
         paused after an outage (until its cooldown ends), held at Gmail's
         sending limit (until the hold ends), waiting for the daily limit, or
         running. The seconds are ``None`` when the end is not known. Display
@@ -328,8 +413,13 @@ class DeliveryCircuit:
                 return "daily_limit", None
             return "running", None
 
-    def observe(self, health):
-        """Return true when a shared failure newly stops this sending run."""
+    def observe(self, health, *, uncertain=False):
+        """Return true when a shared failure newly stops this sending run.
+
+        ``uncertain`` says the outcome is delivery_unknown (the fault came
+        once DATA was sent), which a SYSTEMIC stop records as its halt's
+        kind (ADM-13 PR 4a).
+        """
         with self.lock:
             if health is ProviderHealth.UNOBSERVED:
                 return False
@@ -360,8 +450,20 @@ class DeliveryCircuit:
             else:
                 return False
         if shared:
-            self._share_stop()
+            self._share_stop("after_data" if uncertain else "before_data")
         return newly_halted
+
+
+def _marker_halt(path):
+    """The halt the stop marker at ``path`` names, or None."""
+    if path is None:
+        return None
+    from parishkit.stewardship.installer_health import read_stop
+
+    from .mail_halt import read_marker
+
+    value = read_stop(path)
+    return None if value is None else read_marker(value)
 
 
 def preparation_attempts(status):
@@ -911,11 +1013,14 @@ def observe_outcome(circuit, result):
     outage pauses sending, a configuration refusal stops it, and a
     mailbox-wide sending limit holds every Family send.
     """
-    if circuit.observe(result.health):
+    if circuit.observe(
+        result.health, uncertain=result.status is FamilyDeliveryStatus.UNKNOWN
+    ):
         if circuit.stopped:
             LOG.critical(
                 "Family mail provider refused this configuration; further sending "
-                "is stopped until the mail worker restarts."
+                "is stopped until an Administrator clears the halt or the mail "
+                "worker restarts."
             )
         else:
             # Only the first pause of an outage is CRITICAL; later pauses, until

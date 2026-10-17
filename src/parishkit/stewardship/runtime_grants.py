@@ -146,6 +146,12 @@ WEB_READ_TABLES = frozenset(
         # name and DUID from the snapshot; the page shows only the examples
         # stewardship_source_drop_example_attempt_v1() still allows.
         "stewardship_source_drop_example",
+        # Clear the halt (ADM-13 PR 4a): the current halt (its identity, kind
+        # and start), the clear signals and the mailbox checks, with who
+        # asked and when; no message, address, host or credential.
+        "stewardship_mail_halt",
+        "stewardship_mail_halt_clear",
+        "stewardship_mailbox_check",
     ]
 )
 
@@ -185,6 +191,13 @@ WEB_INSERT_TABLES = frozenset(
         # its counts exactly as recorded, while no other acceptance is live.
         # No login may update or delete one.
         "stewardship_source_drop_acceptance",
+        # Clear the halt (ADM-13 PR 4a): each guard (0114) admits only an
+        # enabled Administrator with a live session (no recent sign-in,
+        # #1547); the clear's also repeats every check the preview makes,
+        # and a mailbox check only while none is live. No login may update
+        # or delete a clear; only mail dispatch settles a check.
+        "stewardship_mail_halt_clear",
+        "stewardship_mailbox_check",
         "stewardship_source_refresh_request",
         "stewardship_source_refresh_command",
         "stewardship_chair_seed_intent",
@@ -521,6 +534,19 @@ CLOSURE_FUNCTIONS = {
 # Family timeline export's capture (0063, #463) follows 0062, and the
 # Campaign comparison export's capture (0071, #1018) follows 0070.
 _ARCHIVES = ("stewardship_reports", "0014_campaign_archives")
+# Clear the halt's three tables (0114, #530).
+MAIL_HALT_TABLES = (
+    "stewardship_mail_halt",
+    "stewardship_mail_halt_clear",
+    "stewardship_mailbox_check",
+)
+# What mail dispatch may change on a mailbox check (ADM-13 PR 4a): its claim
+# and outcome; the guard in schema/migrations/0114_mail_halt_clear.sql
+# decides which moves are valid.
+MAILBOX_CHECK_COLUMNS = frozenset({"state", "claimed_at", "finished_at"})
+# What mail dispatch reads of the service status records to see a halted
+# consumer (ADM-13 PR 4a): no version, process start, target or log level.
+MAIL_HALT_STATUS_COLUMNS = frozenset({"service", "sender_state", "reported_at"})
 CLOSURE_TABLES = {
     **dict.fromkeys((ARCHIVE_TABLE, *CHILD_TABLES), _ARCHIVES),
     "stewardship_proposal_resolution": (
@@ -559,6 +585,9 @@ CLOSURE_TABLES = {
     # A refused large change's example Families (0085, #530), which the
     # worker records and deletes and web reads.
     "stewardship_source_drop_example": ("stewardship_source", "0009_drop_examples"),
+    # Clear the halt's halt records, clear signals and mailbox checks (0114,
+    # #530), which mail dispatch and web write and read.
+    **dict.fromkeys(MAIL_HALT_TABLES, ("stewardship_jobs", "0033_mail_halt_clear")),
     # Publication plans and outcomes (0087, #528), which the worker writes
     # and web reads and confirms.
     **dict.fromkeys(
@@ -808,6 +837,17 @@ def runtime_grants(role, *, target=None):
             "SELECT", set()
         ).update({"id", "campaign_id", "mode", "obligation_key", "occurrence_id"})
         add_service_status_writer_grants(tables, columns)
+        # Clear the halt (ADM-13 PR 4a): a halted consumer records its halt
+        # and reads the clear signal for it; the main process claims and
+        # settles a mailbox check. Its guards (0114) admit nothing else.
+        tables["stewardship_mail_halt"] = {"SELECT", "INSERT"}
+        tables["stewardship_mail_halt_clear"] = {"SELECT"}
+        tables["stewardship_mailbox_check"] = {"SELECT"}
+        columns["stewardship_mailbox_check"] = {"UPDATE": set(MAILBOX_CHECK_COLUMNS)}
+        # The main process claims a check also while a mail-dispatch status
+        # record says Halted (a halt the other process holds with no
+        # marker): it reads only which service, its sender state and when.
+        columns["stewardship_service_status"]["SELECT"].update(MAIL_HALT_STATUS_COLUMNS)
         return tables, columns
     if role in {ServiceRole.WORKER, ServiceRole.SCHEDULER}:
         from .jobs.grants import task_runtime_grants
