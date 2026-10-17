@@ -54,6 +54,7 @@ when it lands.
   [Review, Apply and Change status](#review-apply-and-change-status),
   [review dialog](#review-dialog),
   [conditional fields](#conditional-fields),
+  [binary choices](#binary-choices),
   [Basic and Advanced modes](#basic-and-advanced-modes),
   [single-campaign interim](#single-campaign-interim),
   [addresses and legacy URLs](#addresses-and-legacy-urls),
@@ -415,7 +416,10 @@ never scrolls to show it (Administrator, pk-local review of
   control (not one a base or included template draws); a template test
   refuses an in-place control whose fragment names no region there.
 - **Controls.** A link that shows another view of the page (`a[data-in-place]`:
-  the [response dashboard](../reports/spec.md#response-dashboard)'s mode and
+  each segment of a [binary choice](#binary-choices), such as the
+  [participation report](../reports/spec.md#campaign-statistics)'s Chart
+  population, which refreshes its statistics, chart and export panels; the
+  [response dashboard](../reports/spec.md#response-dashboard)'s mode and
   grain, the
   [Family timeline](../reports/spec.md#family-timeline)'s mode and When sort,
   "Refresh current work" on "Background work", "Refresh list" on
@@ -433,9 +437,7 @@ never scrolls to show it (Administrator, pk-local review of
   event; Clear verified refusal on a
   [refused address](../admin-portal/spec.md#refused-addresses); Dismiss on an
   integration's finished key change; the
-  [participation report](../reports/spec.md#campaign-statistics)'s Apply
-  report options, which refreshes its statistics, chart and export panels;
-  the [Campaign comparison](../campaign-history/spec.md#page-layout)'s
+  [Campaign comparison](../campaign-history/spec.md#page-layout)'s
   Compare on day, which refreshes everything below it)
   names its region by its
   URL's fragment. A POST form saves a change unless it is marked
@@ -1532,6 +1534,62 @@ in place (`data-enabled-when` on the row's own Delete box), so the rows below
 never move; a redrawn form shows a deleted row's saved values, still greyed,
 and unticking Delete gives them back (#563).
 
+### Binary choices
+
+**Rule.** A single choice between exactly two mutually exclusive ways an
+Admin page behaves or what it shows (two views of the same page) is a
+**segmented pair**: a short visible label and two equal segments, the
+chosen one filled. Choosing a segment applies it at once, in place; there
+is no Apply button. It is never a two-option select, a pair of radio
+buttons with an Apply button, a checkbox or a toggle switch. **Why.** One
+choice should take one action, and every such choice should look and work
+the same, so a reader learns it once; a switch reads as on and off, while
+these are two named views. **Shared code.**
+`components/segmented-choice.html` (the pair, its label and its two links)
+and the shared segmented style in `ui-v1.css`, which the
+[Basic and Advanced modes](#basic-and-advanced-modes) toggle uses too;
+`test_segmented_choice.py` (the template and the guard below) and the
+browser tests of each page that draws one. **Precedent.**
+[#1535](https://github.com/epiphany40223/parishkit/issues/1535)
+(Administrator, 2026-10-17), from the Response dashboard's Production |
+Testing rehearsal.
+
+- **Where.** The Participation page's Chart population (Historical as of
+  day | Current population), the Response dashboard's Responses shown
+  (Production | Testing rehearsal) and Activity grouped by (By hour | By
+  day), and the Family timeline's Records shown (Production | Testing
+  rehearsal). The family directory's Responses shown and the roster
+  changes' Show are still menus in their filter forms; their conversion is
+  tracked in #1535.
+- **Links.** Each segment is a link to the page's own address with that
+  choice (`a[data-in-place]`, marked `aria-current="page"` when chosen), so
+  each view has a real address that a reload or bookmark keeps. The link
+  carries the page's other view state (a table's sort and page size, the
+  browser's time zone), and the pair is redrawn with every in-place answer
+  (`data-table-sync` or inside a region), so its links always match the
+  page shown.
+- **In place.** Choosing a segment refreshes the page's regions without a
+  reload or a scroll jump ([in-place controls](#in-place-controls)); the
+  address is replaced, focus stays on the segment just chosen, and the view
+  now shown is announced by its segment's text ("Current population").
+- **Look.** Both segments keep one size and weight and the pair keeps its
+  place, so choosing one changes only colours
+  ([no layout shift](#no-layout-shift)). The chosen segment is filled in the
+  accent colour; the focus ring sits inside the segment, drawn in the paper
+  colour on the chosen one, as on Basic and Advanced.
+- **Accessibility.** The pair is a group (`role="group"`) named by its
+  visible label; Tab reaches each segment and Enter follows it, and a
+  screen reader names the chosen one as the current page.
+- **Not this pattern.** A binary filter among several applied together
+  (the Census changes' Include history box stays in its form), tri-state
+  filters (Any, Yes or No), export options sent with an action ("Include
+  mailing columns" for an export), stored settings saved through Review and
+  Apply (a checkbox there is a setting, not a view), and choices of three
+  or more (Appearance).
+- **Guard.** A template test refuses an Admin template's `<select>` with
+  exactly two written options, unless it is listed as an exception with
+  its reason. A menu built from a loop is checked in review.
+
 ### Basic and Advanced modes
 
 **Rule.** A settings editor whose full form is much harder than what most
@@ -1555,8 +1613,10 @@ adopters #1122 (the
 and #1062 (Parish logos), then the scheduling editors of #1129.
 
 - **Where and how it looks.** The toggle sits at the top of the editor,
-  above both modes, so switching never moves it. It is a segmented pair
-  with a short visible label ("Mode") and exactly two segments, **Basic**
+  above both modes, so switching never moves it. It is a segmented pair,
+  drawn as every [binary choice](#binary-choices) is but with radios and
+  this section's own behaviour; it has a short visible label ("Mode") and
+  exactly two segments, **Basic**
   and **Advanced**, never "Simple" (Administrator decision, 2026-10-12). It is
   never a checkbox, a link to another page or a second settings page. The
   chosen segment is filled; both segments keep one size and weight, so
@@ -2955,9 +3015,10 @@ table, including none. A response the
 server refuses (a malformed filter's 400, a denial, an unavailable report) is
 shown as returned; a POST is never sent twice, since each report read is
 audited. While a request is in flight, repeating the same submission is
-ignored. The participation report's options reshape its statistics, chart and
-exports rather than one table, so its options form is an
-[in-place control](#in-place-controls) of all three panels instead. When
+ignored. The participation report's Chart population reshapes its
+statistics, chart and exports rather than one table, so it is a
+[binary choice](#binary-choices) whose links refresh all three panels
+instead. When
 the fetch fails or returns another page (a sign-in), the ordinary page load happens and its fragment lands on the table rather than at
 the top. The link preparation history keeps only the fragment and always
 loads in full. A table region is one kind of region that

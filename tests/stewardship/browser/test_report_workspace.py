@@ -145,7 +145,10 @@ def test_report_and_export_pages_offer_their_actions(page, component_origin):
     """Scope, exact values and each export state's action are on the page."""
     page.goto(component_origin + "/participation")
     assert "$3,234.56" in page.locator("[data-table-region] table").inner_text()
-    visible(page.get_by_role("button", name="Apply report options"))
+    # The Chart population is a binary choice with no Apply button (#1535).
+    choice = page.get_by_role("group", name="Chart population")
+    visible(choice.get_by_role("link", name="Current population"))
+    assert page.get_by_role("button", name="Apply report options").count() == 0
     visible(page.get_by_role("button", name="Generate export"))
     visible(page.get_by_role("button", name="Queue export with the latest data"))
     page.goto(component_origin + "/report-export")
