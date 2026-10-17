@@ -13,13 +13,13 @@ pages and the command line cannot drift:
   changes (by default the latest for TARGET): only its id, its state,
   whether it is still running and whether the page offers Finish switching.
 - ``integration key finish-switching-preview TARGET`` admits as the page
-  does (recording activity, so it needs a full-scope session), stands in
-  for the page's recent sign-in with the live session, and prints the
+  does (recording activity, so it needs a full-scope session), passes the
+  page's privileged check with the live session, and prints the
   page's review of the switch, with ``preview.token``, the same signed
   binding the page embeds. It changes nothing and records no event.
 - ``integration key finish-switching TARGET --token TOKEN`` takes that
   token (or one the page signed) and records the configuration request
-  exactly as the page's confirm button does, with the fresh gate under the
+  exactly as the page's confirm button does, with the privileged check under the
   work lock, ``admin_cmd_integration_key_finish_switching`` and, as it
   selects a new integration key, a ``policy_change`` notice.
 - ``integration key replace TARGET`` is a settings page's **Save** with a
@@ -186,7 +186,7 @@ def _finish_request(target):
 def preview_finish(caller, service, target):
     """``integration key finish-switching-preview``: the page's review.
 
-    Admits as the page's GET does, passes its recent sign-in with the live
+    Admits as the page's GET does, passes its privileged check with the live
     full-scope session, then in one read snapshot checks that the settings
     page offers Finish switching (its line is ``unselected``; otherwise
     ``not_available``), runs the page's ``_selection`` (a key no longer
@@ -206,19 +206,19 @@ def preview_finish(caller, service, target):
     from .accounts.integration_views import key_summary
     from .accounts.policy import Capability
     from .accounts.request_patch import build_candidate, credential_request_schema
-    from .accounts.sessions import require_fresh
+    from .accounts.sessions import sign_in_instant
     from .campaigns.work_locks import read_transaction
     from .storage import StaleRecordError
 
     actor = _admit_change(caller, service)
 
     def step():
-        """Pass the fresh gate, then review in one snapshot."""
+        """Pass the privileged check, then review in one snapshot."""
         # As ``integration preview``: the session's FOR SHARE lock needs a
         # writable transaction, so the gate is passed just before the
         # read-only snapshot. A preview records no notice.
         with transaction.atomic():
-            require_fresh(caller)
+            sign_in_instant(caller)
         with read_transaction():
             configuration = editable_configuration(service)
             try:
@@ -334,8 +334,8 @@ def confirm_finish(caller, service, target, *, token, context):
     Admits as the page does, then ``confirm_intent`` checks the token with
     the page's salt for ``target``'s latest key change (expired or out of
     date is ``stale_version``, altered or another one's ``invalid``, another
-    Administrator's ``denied``), passes the fresh gate again under the work
-    lock (``fresh``), repeats the page's ``_selection`` as the current scope
+    Administrator's ``denied``), passes the privileged check again under the
+    work lock (``privileged``), repeats the page's ``_selection`` as the current scope
     with the page's frozen-base request schema, and records the request with
     ``admin_cmd_integration_key_finish_switching`` and the ``policy_change``
     notice in its own durable transaction. A changed loaded ParishSoft
@@ -411,8 +411,8 @@ def confirm_finish(caller, service, target, *, token, context):
             current_scope=scope,
             request_schema=request_schema,
             attach=attach,
-            # The page asks for a recent sign-in again under the work lock.
-            fresh=True,
+            # The page's privileged check again, under the work lock.
+            privileged=True,
         )
     except signing.BadSignature:
         raise ValueError("The preview token is not valid.") from None
@@ -572,26 +572,26 @@ def _bind(service, actor, configuration, target, fields, expected_version, key):
 def review_replacement(caller, service, target, *, expected_version, fields, key):
     """Check a key replacement as the page's Save would, before the prompt.
 
-    Admits as the page's post does (recording activity), passes the page's
-    recent sign-in with the live full-scope session without recording it
-    (nothing is done yet), and binds the page's forms in one read snapshot
-    (``_bind``). Rechecks access afterwards. Changes nothing; holds no
-    transaction when it returns, as the prompt waits for a person.
+    Admits as the page's post does (recording activity), checks the live
+    full-scope session without recording it (nothing is done yet), and binds
+    the page's forms in one read snapshot (``_bind``). Rechecks access
+    afterwards. Changes nothing; holds no transaction when it returns, as
+    the prompt waits for a person.
     """
     from django.db import transaction
 
     from .accounts.admin_editing import editable_configuration
     from .accounts.integration_forms import LABELS
     from .accounts.policy import Capability
-    from .accounts.sessions import require_fresh
+    from .accounts.sessions import sign_in_instant
     from .campaigns.work_locks import read_transaction
 
     actor = _admit_change(caller, service)
 
     def step():
-        """Pass the fresh gate unrecorded, then bind in one snapshot."""
+        """Check the session unrecorded, then bind in one snapshot."""
         with transaction.atomic():
-            require_fresh(caller, record=False)
+            sign_in_instant(caller, record=False)
         with read_transaction():
             configuration = editable_configuration(service)
             setup, _, _, changes = _bind(
@@ -643,7 +643,7 @@ def replace_key(caller, service, target, *, expected_version, fields, key, conte
     configuration of this moment (``_bind``), verifies the signed intent as
     the page does (``key_intent``) and stages through the page's own
     ``stage_key``: sealed for the target's installer, staged under the SQL
-    intake guard (which records the fresh gate's event and notice), then
+    intake guard (which records the privileged command's event and notice), then
     the selection request, with ``admin_cmd_integration_key_replace`` and a
     ``policy_change`` notice in its durable transaction. If the selection
     cannot be recorded the staged key is cancelled, as on the page. A key

@@ -87,9 +87,9 @@ class PortalSession(MutableRecord):
     keep only this record's opaque UUID, never the Django session key.
 
     ``authenticated_at`` is the latest verified Google authentication for this
-    session. Step-up reauthentication by the same signed-in Admin advances it
-    in place, so session-bound work such as the setup draft survives; it never
-    moves backwards, and the SQL guard also refuses a future instant.
+    session, set when the session is issued (a new sign-in issues a new
+    session, #1547). It never moves backwards, and the SQL guard also refuses
+    a future instant.
     """
 
     # The absolute deadline is fixed at issue; the SQL guard also refuses an

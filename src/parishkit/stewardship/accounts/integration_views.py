@@ -22,10 +22,8 @@ from parishkit.stewardship.source.refresh_status import (
 )
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.error_pages import page_request
 from parishkit.stewardship.web.refusals import (
     UserFacingError,
-    annotate,
     unexpected_fields,
     with_default_code,
 )
@@ -61,7 +59,7 @@ from .request_admission import historical_record_id
 from .request_patch import OPTIONAL_INTEGRATIONS, build_candidate
 from .secret_models import SECRET_PENDING
 from .secret_requests import SecretRequestConflict, secret_request_status
-from .sessions import FreshAuthenticationRequired, authenticated_admin, require_fresh
+from .sessions import authenticated_admin
 
 SALT = "stewardship-integration-settings-v1"
 CREDENTIAL_SALT = "stewardship-integration-credential-v1"
@@ -261,8 +259,6 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
         except IntegrationUnavailable:
             # Settings stay editable while the key installer is unavailable.
             unavailable = True
-    # The step-up hint is always shown (a sign-in can age while the page is
-    # open), so the page no longer needs to know whether this one is fresh.
     # The settings form is the first step of edit, review, apply (#196).
     admin_navigation.place(request, flow="change", step="edit")
     page_url = reverse("admin:integration_settings", args=[target])
@@ -536,12 +532,7 @@ def _refused_key(configuration, request, target, message=None, *, code=None):
 
 
 def _save(request, service, configuration, actor, target):
-    """Replace the key (and any changed settings) from the settings page.
-
-    Fresh Google authentication is checked before the key is read, so a
-    stale session gets the step-up page instead of a sealed request.
-    """
-    require_fresh(request)
+    """Replace the key (and any changed settings) from the settings page."""
     form = _form(target, request.POST, stored=_optional(configuration, target))
     credential = InlineCredentialForm(target, request.POST)
     if not (form.is_valid() and credential.is_valid()):
@@ -867,27 +858,6 @@ def _remove(request, service, configuration, actor, target):
     )
 
 
-def _step_up_refusal(request, target, error):
-    """A stale sign-in's refusal of a review or Apply, for the review dialog.
-
-    Status 403 with the shared step-up notice (``integration-review.html``,
-    marked data-review-refusal), whose Confirm with Google returns to the
-    settings page (#547, #750). Nothing was reviewed or queued. The refusal
-    log records the error's reason, as ``error_response`` would.
-    """
-    response = render(
-        request,
-        "stewardship/integration-review.html",
-        {"refused": True, "target": target},
-        status=403,
-    )
-    # The answer carries its own explanation; keep it as rendered.
-    response.stewardship_safe_error = True
-    # The closed code error_response would give it, for the refusal log.
-    response.stewardship_codes = ("denied",)
-    return annotate(response, error)
-
-
 # A private key pasted by mistake into the backup key field must not reach an
 # error report either.
 @sensitive_post_parameters("candidate", "public_key", "intent", "code")
@@ -914,7 +884,6 @@ def integration_settings(request, target=None):
             filters(request.GET, allowed=set())
             response = backup_key_page(request, service, actor)
         elif request.method == "POST" and request.POST.get("action") == "remove":
-            require_fresh(request)
             response = _remove(request, service, configuration, actor, target)
         elif (
             request.method == "POST"
@@ -923,12 +892,6 @@ def integration_settings(request, target=None):
         ):
             response = _test_access(request, configuration, actor)
         elif request.method == "POST":
-            # Changing where mail, backups, alerts or ParishSoft reads go, or
-            # removing an integration, needs a Google sign-in within five
-            # minutes (#547). It is asked before the review page as well as
-            # at Confirm, so a stale sign-in is caught before the change is
-            # reviewed; the step-up returns to this settings page.
-            require_fresh(request)
             _optional(configuration, target)
             fields = set(IntegrationForm(target).fields)
             if target == "parishsoft":
@@ -955,8 +918,7 @@ def integration_settings(request, target=None):
                             editable_configuration(service),
                             None,
                         ),
-                        # Checked again under the work lock (#547).
-                        fresh=True,
+                        privileged=True,
                     )
                 )
         else:
@@ -969,19 +931,6 @@ def integration_settings(request, target=None):
         # A reused page carrying a different key: correctable input, not an
         # outage. The key itself is never echoed.
         return error_response(ValueError("Credential intake identity has changed."))
-    except FreshAuthenticationRequired as error:
-        # The review dialog's Save, Remove and Apply (#750) are a script's
-        # requests: their step-up is drawn in the dialog. A page's own post
-        # (Save with a new key, which submits natively) gets the step-up page,
-        # and the backup encryption key's steps keep their own.
-        if (
-            request.method == "POST"
-            and target in LABELS
-            and target != "backup_key"
-            and not page_request(request)
-        ):
-            return _step_up_refusal(request, target, error)
-        return error_response(error)
     except ERRORS as error:
         return error_response(error)
 

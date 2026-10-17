@@ -90,8 +90,9 @@ LEDGER = {
     "session_renew": permanent(SESSION_CHROME),
     "maintenance": permanent("the status page the access gate shows"),
     "held_emails": permanent(
-        "held-email decisions need a fresh Google sign-in in the browser, "
-        "which the decision guard checks (migration 0017)"
+        "held-email decisions stay in the browser: the exemption predates "
+        "#1547, and the decision guard (migrations 0017 and 0113) now binds "
+        "only a live session of the deciding Administrator"
     ),
     # The human side of the automation interface (the specification's action
     # inventory): approving, listing and revoking sessions, and acknowledging
@@ -305,15 +306,15 @@ LEDGER = {
     ),
     # The header's Find a Family box (#561) runs the directory's search.
     "find_family": permanent(NAME_SEARCH),
-    # Creating a financial export is fresh-gated (#547): the command calls
-    # the caller-aware require_fresh, as the page's view does.
+    # Creating a financial export is privileged (#547): the command calls
+    # the caller-aware sign_in_instant, as the page's view does.
     "financial_export": command("export financial"),
     # The page's download, through the page's own writer.
     "limitations_export": command("export limitations"),
     # The page's download, and JSON Lines with each change's id and version.
     "census_changes_export": command("export census"),
     "information_export": command("export information"),
-    # Both directory exports are fresh-gated (#547), as above.
+    # Both directory exports are privileged (#547), as above.
     "family_directory_export": command("export directory", "export postal"),
     # The export lifecycle (PR 8b): the status page and its buttons, and the
     # Participation page's export form. The download's grant is issued and
@@ -349,8 +350,8 @@ LEDGER = {
     # (in Testing) Allow debug logging again post to the page; ``system
     # backup-now``, ``system refresh-accept-preview`` with ``system
     # refresh-accept``, ``system debug-off`` and ``system debug-allow`` are
-    # their commands (each row's guard admits a full-scope automation session
-    # as the fresh sign-in), and ``system health`` shows their progress.
+    # their commands (each row's guard binds the command session as it does a
+    # browser session), and ``system health`` shows their progress.
     "system_health": command(
         "system health",
         "system backup-now",

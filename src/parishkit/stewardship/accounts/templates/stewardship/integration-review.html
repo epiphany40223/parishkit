@@ -19,12 +19,7 @@ old value"):
   schedule's differences in words, never its stored settings.
 - "setup": Off-site backups set up by its folder, a confirmation.
 - "remove": Remove Slack or Turn off off-site copies, a confirmation.
-
-``refused`` instead draws a stale sign-in's refusal (status 403), marked
-data-review-refusal so the dialog shows it as drawn: the shared step-up
-notice, whose Confirm with Google returns to the settings page.
-{% endcomment %}{% if refused %}<div data-review-refusal>{% url 'admin:integration_settings' target as here %}{% translate "saving or removing settings here" as step_up_action %}{% translate "Nothing was changed." as step_up_outcome %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action outcome=step_up_outcome next=here %}</div>
-{% elif kind == "schedule" %}{% blocktranslate asvar done %}{{ label }} settings changed.{% endblocktranslate %}<div data-review-answer data-review-done="{{ done }}">
+{% endcomment %}{% if kind == "schedule" %}{% blocktranslate asvar done %}{{ label }} settings changed.{% endblocktranslate %}<div data-review-answer data-review-done="{{ done }}">
 {% if changes %}{% include 'stewardship/components/compact-review.html' with changes=changes summary_id="integration-review-lines" %}{% endif %}
 <section aria-labelledby="schedule-changes-heading"><h3 id="schedule-changes-heading">{% translate "Refresh schedule changes" %}</h3>
 <ul>{% for item in schedule_changes %}<li>{{ item }}</li>{% endfor %}</ul>

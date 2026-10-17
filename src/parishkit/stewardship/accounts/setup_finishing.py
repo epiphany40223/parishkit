@@ -12,14 +12,9 @@ It is pure, so every state mapping is unit tested without a database.
 
 import hashlib
 import json
-from datetime import timedelta
 
 from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
-
-# The installer copies the original sign-in instant into each credential
-# request, and SQL admits that request only within five minutes of it.
-FRESH_SIGN_IN = timedelta(minutes=5)
 
 TARGET_LABELS = {
     "parishsoft": _("Install the ParishSoft credential"),
@@ -147,21 +142,13 @@ def finishing(status, *, completed=False):
 
     ``status`` is ``finalization_status`` output; ``completed`` says the
     system is configured. The overall state is "completed", "failed",
-    "operator" (waiting on the server operator) or "working". ``reauthenticate``
-    is set when a credential cannot start because the original sign-in is older
-    than the five minutes its installation request requires; signing in again
-    in the same session refreshes that instant and keeps the setup.
+    "operator" (waiting on the server operator) or "working". A credential's
+    installation request records the original sign-in instant, of any age
+    (#1547).
     """
     installs = {item["target"]: item for item in status["credentials"]}
     targets = list(dict.fromkeys([*status["targets"], *installs]))
     rows = [_credential(target, installs.get(target)) for target in targets]
-    stale_sign_in = status["server_now"] - status["authenticated_at"] > FRESH_SIGN_IN
-    reauthenticate = (
-        not completed
-        and status["attempt"].state == "frozen"
-        and stale_sign_in
-        and any(target not in installs for target in targets)
-    )
     credentials_done = all(row["state"] == "done" for row in rows)
 
     checkpoint = status["checkpoint"]
@@ -262,17 +249,16 @@ def finishing(status, *, completed=False):
     return {
         "steps": rows,
         "overall": overall,
-        "reauthenticate": reauthenticate,
         "elapsed": elapsed,
-        "signature": signature(rows, overall, reauthenticate),
+        "signature": signature(rows, overall),
     }
 
 
-def signature(rows, overall, reauthenticate):
+def signature(rows, overall):
     """A short digest of what the page shows; polling reloads when it changes."""
     shown = [
         [row["key"], row["state"], row.get("count"), str(row.get("progress", ""))]
         for row in rows
     ]
-    payload = json.dumps([shown, overall, reauthenticate], sort_keys=True)
+    payload = json.dumps([shown, overall], sort_keys=True)
     return hashlib.sha256(payload.encode()).hexdigest()[:16]

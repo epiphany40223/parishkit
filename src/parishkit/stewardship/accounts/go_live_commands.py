@@ -27,7 +27,7 @@ from parishkit.stewardship.web.refusals import load_preview, return_link
 
 from .admin_editing import editable_configuration, principal
 from .go_live_inputs import collect_inputs
-from .sessions import database_now, require_fresh
+from .sessions import database_now, sign_in_instant
 
 SALT = "stewardship-go-live-cleanup-preview-v1"
 PREVIEW_SECONDS = 300
@@ -88,12 +88,11 @@ def _load(request, preview_token):
 def start_cleanup(request, service, campaign_id, *, preview_token, acknowledge):
     """Recheck one exact preview; retry returns its original durable receipt.
 
-    Starting cleanup needs a Google sign-in within the last five minutes
-    (#547), checked as soon as the session is admitted. The acknowledgement
-    records that fresh instant as ``reauthenticated_at``; the SQL guard
+    The acknowledgement records the admitted session's sign-in instant as
+    ``reauthenticated_at`` (a sign-in of any age, #1547); the SQL guard
     requires it to equal the live session's ``authenticated_at``, which is
-    exactly what ``require_fresh`` returns. The later activation owner
-    independently requires fresh Google authentication and typed intent.
+    exactly what ``sign_in_instant`` returns. The later activation owner
+    independently requires typed intent.
     """
     if (
         acknowledge is not True
@@ -112,7 +111,7 @@ def start_cleanup(request, service, campaign_id, *, preview_token, acknowledge):
         # Waiting for another operation's lock must not extend the DNS proof.
         _load(request, preview_token)
         actor = principal(request, service)
-        reauthenticated_at = require_fresh(request)
+        reauthenticated_at = sign_in_instant(request)
         if binding["actor"] != str(actor.identity) or binding["campaign"] != str(
             campaign_id
         ):

@@ -17,12 +17,7 @@ from .handoff_discovery import public_handoff
 from .integration_candidates import slack_candidate, workspace_info
 from .metrics_credentials import credential_receipt
 from .provider_context import validated_context, workspace_scope
-from .sessions import (
-    SETUP_FRESH_SECONDS,
-    authenticated_admin,
-    database_now,
-    require_fresh,
-)
+from .sessions import authenticated_admin, database_now
 from .setup_drafts import _owned
 from .setup_models import SetupAttempt, SetupDraftSection
 from .setup_policy import SetupState
@@ -130,7 +125,7 @@ def stage_credential(
     expected_version,
     organization_id=None,
 ):
-    """Seal in memory after fresh original-login admission and exact-version checks.
+    """Seal in memory after original-login admission and exact-version checks.
 
     Replacing a candidate is allowed only while collecting; the same target row
     and attempt both advance versions. A running source load freezes this
@@ -145,8 +140,6 @@ def stage_credential(
     with work_transaction():
         actor, attempt = _owned(request, service, attempt_id)
         check_version(attempt, expected_version)
-        # The setup window (#1402); SQL enforces the same 60 minutes.
-        require_fresh(request, within=SETUP_FRESH_SECONDS)
         if (
             attempt.state != SetupState.COLLECTING
             or _expiry(attempt, database_now()) is not None

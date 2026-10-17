@@ -123,7 +123,7 @@ def stage_secret_request(
 ):
     """Record a trusted, already sealed staging reference with exact retry identity.
 
-    ARC-04/ARC-06 own fresh authentication and may choose a shorter staging TTL;
+    ARC-04/ARC-06 own authentication and may choose a shorter staging TTL;
     this storage layer enforces ordering and a hard 24-hour lifetime ceiling.
     An identical retry returns the original state, including after expiry/cleanup.
     A server-selected lifetime starts at first intake, never at form rendering;

@@ -80,7 +80,5 @@
   {% else %}<p>{% translate "None of your sessions ended in the last 30 days." %}</p>{% endif %}
 </section>
 {% endif %}</div>
-{% if fresh %}<p>{% button variant="primary" href=approval_url %}{% translate "Approve a session" %}{% endbutton %}</p>
-{% else %}<div class="panel">{% translate "the approval page" as approval_label %}{% translate "approving a session" as step_up_action %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action next=approval_url next_label=approval_label id="approve-unavailable" %}
-<p>{% button type="button" disabled aria-describedby="approve-unavailable" %}{% translate "Approve a session" %}{% endbutton %}</p></div>{% endif %}
+<p>{% button variant="primary" href=approval_url %}{% translate "Approve a session" %}{% endbutton %}</p>
 {% endblock %}

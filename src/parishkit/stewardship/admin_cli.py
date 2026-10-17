@@ -226,6 +226,9 @@ class CommandSpec:
     result_fields: tuple
     pr: int
     options: tuple = ()
+    # A privileged command: it needs a full-scope automation session and is
+    # reported with the automation_fresh_gate event and notice. The name is
+    # historical: no sign-in age is checked any more (#1547).
     fresh_gated: bool = False
     prompts: bool = False
     request_key: bool = False
@@ -834,7 +837,7 @@ def send_resolve_preview(args, preamble, runtime, context):
 def send_confirm(args, preamble, runtime, context):
     """Confirm a reviewed pause, resume or resolution, as the page's Confirm.
 
-    The page needs a recent sign-in, so this always prompts (``--yes``
+    The confirmation is privileged, so this always prompts (``--yes``
     answers it) with the preview's action, reason, counts and caution,
     after checking the Administrator role and then the token's signature,
     and before any transaction.
@@ -1428,7 +1431,7 @@ def integration_preview(args, preamble, runtime, context):
 def integration_confirm(args, preamble, runtime, context):
     """Apply a reviewed integration settings change (PR 10).
 
-    The page's Apply needs a recent sign-in (#547), so this always prompts,
+    The page's Apply is privileged (#547), so this always prompts,
     naming the integration and the settings the review changes (never their
     values), after checking the Administrator role and then the token's
     signature, and before any transaction.
@@ -1500,7 +1503,7 @@ def integration_key_finish_switching_preview(args, preamble, runtime, context):
 def integration_key_finish_switching(args, preamble, runtime, context):
     """Finish switching an integration to its new key (PR 10).
 
-    The page needs a recent sign-in (#547), so this always prompts, naming
+    The switch is privileged (#547), so this always prompts, naming
     the integration and the settings the switch also changes (never their
     values), after checking the Administrator role and then the token's
     signature, and before any transaction.
@@ -1634,7 +1637,7 @@ def integration_backup_key_preview(args, preamble, runtime, context):
 def integration_backup_key_confirm(args, preamble, runtime, context):
     """Confirm a reviewed backup encryption key change (PR 10).
 
-    The page's Confirm needs a recent sign-in, so this always prompts,
+    The page's Confirm is a privileged action, so this always prompts,
     naming the old and new fingerprints as the page's review shows them,
     after checking the Administrator role and the token (signature, expiry,
     owner and settings version), and before any transaction.
@@ -1953,13 +1956,13 @@ def history_remove(args, preamble, runtime, context):
 def system_backup_now(args, preamble, runtime, context):
     """Take a backup now, as System health's button does (ADM-13 PR 3b).
 
-    The page needs a recent sign-in, so this always prompts, with the
+    The request is privileged, so this always prompts, with the
     page's preview (the last backup and its size, off-site copies,
     retention, a send in progress), before any transaction; a request
     already live or a restore under review is refused before the prompt.
     ``--request-key`` names the request, so a repeat returns the first.
-    The session stands in for the page's recent sign-in, as the request's
-    guard admits.
+    The request's guard binds the command session as it does a browser
+    session.
     """
     from .system_health import backup_now, backup_preview_lines
 
@@ -1986,8 +1989,8 @@ def system_debug_off(args, preamble, runtime, context):
     (the services with debug logging on, what stays in the logs, and that
     only the server operator clears the switch), before any transaction;
     a switch already set is refused before the prompt. ``--request-key``
-    names the switch, so a repeat returns the first. The session stands in
-    for the page's recent sign-in, as the switch's guard admits.
+    names the switch, so a repeat returns the first. The switch's guard
+    binds the command session as it does a browser session.
     """
     from .system_health import debug_off, debug_off_preview_lines
 
@@ -2024,8 +2027,8 @@ def system_refresh_accept(args, preamble, runtime, context):
     It always prompts with the counts that fell too far and the page's tick
     box ("I checked this in ParishSoft, and the change is real") before any
     transaction, after checking the token. The token's key names the
-    acceptance, so a repeat returns the first. The session stands in for
-    the page's recent sign-in, as the acceptance's guard admits.
+    acceptance, so a repeat returns the first. The acceptance's guard binds
+    the command session as it does a browser session.
     """
     from .admin_changes import TOKEN_LIMIT
     from .system_health import accept_prompt_lines, refresh_accept
@@ -2046,8 +2049,8 @@ def system_debug_allow(args, preamble, runtime, context):
     Production, or while no switch is set, it is refused before the prompt.
     ``--switch`` names the switch to clear (by default the one set now), so
     a repeat naming a switch this Administrator already cleared returns it.
-    The session stands in for the page's recent sign-in, as the switch's
-    guard admits.
+    The switch's guard binds the command session as it does a browser
+    session.
     """
     from .system_health import debug_allow, debug_allow_preview_lines
 
@@ -2064,7 +2067,7 @@ def portal_maintenance_set(args, preamble, runtime, context):
     """Close or reopen the Family portal, as its page's buttons do (PR 7a).
 
     The note is read and checked with the page's own rules first, so a bad
-    one is refused before the prompt. The page needs a recent sign-in, so
+    one is refused before the prompt. The change is privileged, so
     this always prompts, with the page's notices, before any transaction.
     """
     from .accounts.family_maintenance import MESSAGE_LIMIT, clean_message
@@ -2175,7 +2178,7 @@ def export_archive(args, preamble, runtime, context):
     """Request the campaign archive workbook, as Past campaigns does (#1018).
 
     It holds each Family's giving, so, like ``export financial``, it is a
-    fresh-gated action: the command asks at the confirmation prompt (or
+    privileged action: the command asks at the confirmation prompt (or
     takes ``--yes``) before a request key is made or any transaction opens.
     """
     from .admin_family_exports import export_archive as request
@@ -2201,10 +2204,10 @@ def export_archive(args, preamble, runtime, context):
 def export_financial(args, preamble, runtime, context):
     """Request a financial report export, as its export form does (PR 8e).
 
-    Creating one is a fresh-gated action (#547), so the command asks at the
+    Creating one is a privileged action (#547), so the command asks at the
     confirmation prompt (or takes ``--yes``) before a request key is made or
-    any transaction opens; the session then stands in for the page's recent
-    sign-in (``admin_family_exports.export_financial``).
+    any transaction opens; the export then needs the live full-scope session
+    (``admin_family_exports.export_financial``).
     """
     from .accounts.policy import Capability
     from .admin_family_exports import export_financial as request
@@ -2282,7 +2285,7 @@ def export_ministry_packet(args, preamble, runtime, context):
 def export_directory(args, preamble, runtime, context):
     """Request a Family-code directory export, as its form does (PR 8f).
 
-    Fresh-gated (#547), so it asks at the confirmation prompt first, as
+    Privileged (#547), so it asks at the confirmation prompt first, as
     ``export financial`` does.
     """
     from .accounts.policy import Capability
@@ -2318,7 +2321,7 @@ def export_postal(args, preamble, runtime, context):
     ``--filter reach=`` asking for any other list (``email`` or
     ``neither``) is a usage error rather than silently replaced.
 
-    Fresh-gated (#547), so it asks at the confirmation prompt first, as
+    Privileged (#547), so it asks at the confirmation prompt first, as
     ``export financial`` does.
     """
     from .accounts.policy import Capability
@@ -2400,7 +2403,7 @@ def export_exact_retry(args, preamble, runtime, context):
 def export_family_timeline(args, preamble, runtime, context):
     """Request one Family's timeline export, as its page's form does (PR 8g).
 
-    The file can hold the Family's live code, so it is fresh-gated (#547)
+    The file can hold the Family's live code, so it is privileged (#547)
     and asks at the confirmation prompt first, as ``export directory`` does.
     """
     from .accounts.policy import Capability
@@ -4782,7 +4785,7 @@ def _read_specs():
             audit_event="system_health_viewed",
             watch=True,
         ),
-        # Take a backup now (ADM-13 PR 3b): keyed, fresh-gated, prompting.
+        # Take a backup now (ADM-13 PR 3b): keyed, privileged, prompting.
         CommandSpec(
             "system backup-now",
             "Ask the server to take a backup now, as System health does.",
@@ -4796,7 +4799,7 @@ def _read_specs():
             prompts=True,
             request_key=True,
         ),
-        # Turn off debug logging (ADM-13 PR 6b): keyed, fresh-gated, prompting.
+        # Turn off debug logging (ADM-13 PR 6b): keyed, privileged, prompting.
         CommandSpec(
             "system debug-off",
             "Turn off debug logging in every service, as System health does.",
@@ -4811,7 +4814,7 @@ def _read_specs():
             request_key=True,
         ),
         # Accept this change once (ADM-13 PR 5b): the page's preview, then
-        # its confirmation with the preview's token, fresh-gated, prompting
+        # its confirmation with the preview's token, privileged, prompting
         # with the page's tick box. The preview changes nothing and records
         # nothing, as the page's preview step records nothing.
         CommandSpec(
@@ -4839,7 +4842,7 @@ def _read_specs():
             prompts=True,
         ),
         # Allow debug logging again (ADM-13 PR 6c): Testing only, keyed by
-        # the switch it clears, fresh-gated, prompting.
+        # the switch it clears, privileged, prompting.
         CommandSpec(
             "system debug-allow",
             "Clear the debug-off switch in Testing, as System health does.",
@@ -5208,7 +5211,7 @@ def _send_control_specs():
 
     The previews record activity as the page's preview posts do, so they
     need a full-scope session, and record no event. ``send confirm`` is
-    fresh-gated on the page, so it always prompts.
+    privileged, so it always prompts.
     """
     from .admin_delivery_control import ControlConfirm, ControlPreview
 
@@ -5317,9 +5320,8 @@ def _file_specs():
         # The email tables' Delete, split into a preview and a confirm as
         # schedule preview / schedule confirm split a schedule's Delete,
         # and the editors' plain-text preview. Full scope, as the Delete
-        # post records activity; no recent sign-in on the page, so neither
-        # is fresh-gated, and the reviewed token stands in for the dialog,
-        # so neither prompts.
+        # post records activity; neither is privileged, and the reviewed
+        # token stands in for the dialog, so neither prompts.
         CommandSpec(
             "content preview",
             "Build a delete of unused emails, or preview HTML as plain text.",
@@ -5353,8 +5355,8 @@ def _file_specs():
             10,
             audit_event=None,
         ),
-        # The page's row actions: no recent sign-in on the page, so neither
-        # is fresh-gated; a deletion cannot be undone, so it prompts.
+        # The page's row actions: neither is privileged; a deletion cannot
+        # be undone, so it prompts.
         CommandSpec(
             "files delete",
             "Delete unused hosted files; their links stop working.",
@@ -5387,8 +5389,8 @@ def _settings_specs():
     pages' GETs record nothing. The parish profile's Review and Apply are
     ``parish preview`` and ``parish confirm`` (``admin_parish``), as ``users
     preview`` and ``users confirm``: full scope, as the page's posts record
-    activity; neither is fresh-gated nor prompts, as the page asks for no
-    recent sign-in and its Apply is the reviewed token. The other pages'
+    activity; neither is privileged nor prompts, as its Apply is the
+    reviewed token. The other pages'
     changes come later in PR 10.
     """
     from .admin_parish import ParishConfirm, ParishPreview
@@ -5461,8 +5463,8 @@ def _workgroup_specs():
     nothing, as the page's GET records nothing. The page's Review and Apply
     are ``workgroup preview`` and ``workgroup confirm``, as ``parish
     preview`` and ``parish confirm``: full scope, as the page's posts record
-    activity; neither is fresh-gated nor prompts, as the page asks for no
-    recent sign-in and its Apply is the reviewed token.
+    activity; neither is privileged nor prompts, as its Apply is the
+    reviewed token.
     """
     from .admin_workgroup import WorkGroupConfirm, WorkGroupPreview, WorkGroupShow
 
@@ -5509,8 +5511,8 @@ def _campaign_specs():
     nothing, as the page's GET records nothing. The page's Review and Apply
     are ``campaign preview`` and ``campaign confirm``, as ``parish
     preview`` and ``parish confirm``: full scope, as the page's posts record
-    activity; neither is fresh-gated nor prompts, as the page asks for no
-    recent sign-in and its Apply is the reviewed token.
+    activity; neither is privileged nor prompts, as its Apply is the
+    reviewed token.
     """
     from .admin_campaign import CampaignConfirm, CampaignPreview, CampaignShow
 
@@ -5557,8 +5559,8 @@ def _artwork_specs():
     nothing, as the page's GET records nothing. Remove this image and its
     Apply are ``artwork remove-preview`` and ``artwork remove``, as ``parish
     preview`` and ``parish confirm``: full scope, as the page's requests
-    record activity; neither is fresh-gated nor prompts, as the page asks
-    for no recent sign-in and its Apply is the reviewed token.
+    record activity; neither is privileged nor prompts, as its Apply is the
+    reviewed token.
     """
     from .admin_artwork import ArtworkRemove, ArtworkRemovePreview, ArtworkShow
 
@@ -5608,24 +5610,23 @@ def _integration_specs():
     check, which records nothing either. A settings page's Save and Remove
     are ``integration preview`` and ``integration confirm``
     (``admin_integration_changes``), as ``parish preview`` and ``parish
-    confirm``: full scope, as the page's posts record activity. The page
-    asks for a recent sign-in (#547), so ``integration confirm`` is
-    fresh-gated and prompts; the preview records nothing.
-    ``integration backup-probe`` (Test access) and ``integration dismiss``
-    (a key change line's Dismiss) are full scope and neither fresh-gated
-    nor prompting, as those pages ask for neither
+    confirm``: full scope, as the page's posts record activity.
+    ``integration confirm`` is privileged (#547) and prompts; the preview
+    records nothing. ``integration backup-probe`` (Test access) and
+    ``integration dismiss`` (a key change line's Dismiss) are full scope and
+    neither privileged nor prompting, as those pages ask for no confirmation
     (``admin_integration_actions``). A key change's status page and Finish
     switching are ``integration key status`` (any session, records nothing)
     and ``integration key finish-switching-preview`` and
     ``integration key finish-switching`` (``admin_integration_keys``), the
-    confirmation fresh-gated and prompting, as ``integration confirm``.
+    confirmation privileged and prompting, as ``integration confirm``.
     ``integration key replace`` is a settings page's Save with a new key
-    (full scope, fresh-gated and prompting); the host wrapper sends the key
+    (full scope, privileged and prompting); the host wrapper sends the key
     after the preamble, never as an argument. ``integration backup-key
     challenge``, ``preview`` and ``confirm`` are the Backup encryption key
     page's steps (``admin_backup_key``): full scope; the first two record
     nothing and take the public key or the proof code from the wrapper
-    after the preamble; the confirmation is fresh-gated and prompting.
+    after the preamble; the confirmation is privileged and prompting.
     """
     from .admin_backup_key import (
         BackupKeyChallenge,
@@ -6518,8 +6519,7 @@ def _events_specs():
 
     ``events list`` is a passive read any session may run; Home records no
     event. ``events acknowledge`` is the pages' Acknowledge, which asks for
-    no recent sign-in and no confirmation, so it is neither fresh-gated nor
-    prompting.
+    no confirmation, so it is neither privileged nor prompting.
     """
     from .admin_events import EventsAcknowledgement, EventsList
 
@@ -6840,8 +6840,7 @@ def _followup_specs():
     ``followup list`` and ``followup show`` are passive reads any session
     may run; they record the page's ``ministry_followup_viewed``. ``followup
     update`` asks nothing, as the page's Save does not; ``followup bulk``
-    asks, as the queue's bulk dialog does. Neither change is fresh-gated,
-    as the page asks for no recent sign-in.
+    asks, as the queue's bulk dialog does. Neither change is privileged.
     """
     from .admin_followup import FollowupBulk, FollowupList, FollowupShow, FollowupUpdate
 
@@ -6967,8 +6966,8 @@ def _share_specs():
     """Share options' Review and Apply (PR 10, ``admin_shares``).
 
     As ``campaign preview`` and ``campaign confirm``: full scope, as the
-    page's posts record activity; neither is fresh-gated nor prompts, as
-    the page asks for no recent sign-in and its Apply is the reviewed token.
+    page's posts record activity; neither is privileged nor prompts, as
+    its Apply is the reviewed token.
     """
     from .admin_shares import SharesConfirm, SharesPreview
 
@@ -7209,8 +7208,7 @@ def _followup_more_specs():
     ``followup information-show`` is a passive read any session may run; it
     records the page's ``information_viewed``. The changes need a full-scope
     session; only ``followup roster-bulk`` asks, as Roster changes to
-    enter's dialog does. None is fresh-gated, as the pages ask for no
-    recent sign-in.
+    enter's dialog does. None is privileged.
     """
     from .admin_information import InformationShow, InformationUpdate
     from .admin_roster_tick import RosterBulk, RosterEntered
@@ -7341,8 +7339,8 @@ def _followup_export_specs():
     """The follow-up queue's download (ADM-11 PR 11c, ``admin_followup_export``).
 
     Full scope, as every export and as the download's post records
-    activity; neither prompting nor fresh-gated, as the page asks for no
-    recent sign-in. It records only the page's ``ministry_followup_exported``.
+    activity; neither prompting nor privileged, as the page's download is
+    not. It records only the page's ``ministry_followup_exported``.
     """
     from .admin_followup_export import FollowupExport
 
@@ -8079,7 +8077,8 @@ def admit_session(spec, preamble, runtime, stderr, context):
         close_command_session(caller.portal_session)
         raise PermissionError("This command needs a full-scope session.")
     if spec.changes_state:
-        # A fresh gate this command passes names it in the dashboard notice.
+        # A privileged check this command passes names it in the dashboard
+        # notice.
         caller.command_type = command_event_type(spec.name)
     warn_if_expiring(caller.automation_session, database_now(), stderr)
     return caller

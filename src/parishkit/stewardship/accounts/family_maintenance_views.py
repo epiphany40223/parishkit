@@ -1,8 +1,8 @@
 """The Admin page that closes and reopens the Family portal (see family_maintenance).
 
 Reading the page needs a current Administrator. Changing the switch is a POST
-with a CSRF token that also needs a fresh Google sign-in, like other
-privileged commands, and is recorded in the audit log.
+with a CSRF token, a privileged action like others, and is recorded in the
+audit log.
 """
 
 from django.core import signing
@@ -21,17 +21,14 @@ from .authentication import runtime
 from .limiting import LimiterUnavailable
 from .policy_models import PortalUser
 from .runtime_models import SystemConfiguration
-from .sessions import freshness, require_fresh
 from .setup_views import _closed
 
 
 def _page(request, *, message="", error=None):
     """Render the switch, with the reader's message and its error at the field.
 
-    ``fresh`` shows each change control unavailable, named by the sign-in
-    step it waits for, rather than refused after submit (#563); the POST
-    still calls ``require_fresh``. A refused message comes back in its field
-    with the server's reason beside it (400), not on an error page.
+    A refused message comes back in its field with the server's reason
+    beside it (400), not on an error page.
     """
     state = family_maintenance.current_state(cached=False)
     campaign = SystemConfiguration.objects.values_list(
@@ -52,7 +49,6 @@ def _page(request, *, message="", error=None):
             "delivery_url": reverse("admin:delivery_control")
             if campaign_id and mode == "production"
             else None,
-            "fresh": freshness(request)[0],
             "message": message,
             "message_error": error,
         },
@@ -85,7 +81,6 @@ def family_portal(request):
                     family_maintenance.clean_message(message)
                 except ValueError as error:
                     return _page(request, message=message, error=str(error))
-            require_fresh(request)
             family_maintenance.set_closed(
                 actor,
                 closed=action == "close",

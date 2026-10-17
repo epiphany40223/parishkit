@@ -49,10 +49,10 @@ Delete, plus the editors' live plain-text preview
   event in the request's own durable transaction. A repeat returns the
   original request and records nothing.
 
-Neither is fresh-gated or prompts: the page asks for no recent sign-in, and
-the reviewed token stands in for the page's confirmation dialog, as for
-``schedule confirm``. Each checks the role first (#1341), before any input
-is read. The editor's own Review and Apply are still owed.
+Neither is privileged or prompts: the reviewed token stands in for the page's
+confirmation dialog, as for ``schedule confirm``. Each checks the role first
+(#1341), before any input is read. The editor's own Review and Apply are still
+owed.
 """
 
 from dataclasses import dataclass

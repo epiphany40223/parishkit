@@ -31,8 +31,8 @@ this image** and its review dialog's **Apply** (#750), as ``parish preview`` and
   ``admin_cmd_artwork_remove`` event in the request's own durable
   transaction. A repeat returns the original request and records nothing.
 
-Neither is fresh-gated or prompts, as the page asks for no recent sign-in
-and shows no confirmation dialog: the reviewed token is the confirmation,
+Neither is privileged or prompts, as the page shows no confirmation
+dialog: the reviewed token is the confirmation,
 and a removal deletes nothing (the image stays in the activated
 configurations' history; a new upload fills the slot again).
 """

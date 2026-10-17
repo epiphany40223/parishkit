@@ -11,7 +11,6 @@ from django.utils.translation import gettext as _
 from django.utils.translation import ngettext
 
 from parishkit.stewardship.accounts import admin_navigation
-from parishkit.stewardship.accounts.sessions import SETUP_FRESH_SECONDS, freshness
 from parishkit.stewardship.campaigns import single_campaign
 from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAME
 from parishkit.stewardship.source.source_status import source_status_label
@@ -39,30 +38,6 @@ def reminder_workgroup_name():
     Templates take it from its one source, so renaming it is one line.
     """
     return _(REMINDER_WORKGROUP_NAME)
-
-
-@register.simple_tag(takes_context=True)
-def fresh_sign_in(context, setup=False):
-    """Whether a step-up gated action would be admitted now (#1159).
-
-    ``{% fresh_sign_in as fresh %}`` lets a page show its "needs a sign-in
-    from the last five minutes" explanation only when the reader would be
-    asked to confirm, without each view computing it. It reuses the views'
-    own ``freshness`` check, so every page answers the same way. A context
-    without a request or a signed-in session is not fresh, so the hint shows.
-    ``setup=True`` applies the setup credential steps' one-hour window
-    (``SETUP_FRESH_SECONDS``, #1402) instead of five minutes.
-    It is presentation only: each gated command still calls ``require_fresh``,
-    and a sign-in that ages after the page is drawn gets that step-up answer,
-    which explains itself.
-    """
-    request = getattr(context, "request", None)
-    # The window is written inline so test_admin_caller's AST check can
-    # see that only the setup window is ever passed.
-    return (
-        request is not None
-        and freshness(request, SETUP_FRESH_SECONDS if setup else None)[0]
-    )
 
 
 @register.simple_tag
