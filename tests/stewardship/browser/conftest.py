@@ -153,6 +153,8 @@ from .not_found_components import components as not_found_components
 from .past_campaign_components import POSTS as PAST_CAMPAIGN_POSTS
 from .past_campaign_components import components as past_campaign_components
 from .pause_components import components as pause_components
+from .publication_components import POSTS as PUBLICATION_POSTS
+from .publication_components import components as publication_components
 from .refresh_schedule_components import components as refresh_schedule_components
 from .reminder_workgroup_components import POSTS as WORKGROUP_POSTS
 from .reminder_workgroup_components import components as workgroup_components
@@ -2276,6 +2278,7 @@ def component_origin():
     responses.update(branding_components(context, admin))
     responses.update(limitations_components(context, admin))
     responses.update(census_components(context, admin))
+    responses.update(publication_components(context, admin))
     responses.update(comparison_components(context, admin))
     responses.update(past_campaign_components(context, admin))
     responses.update(workgroup_components(context, admin))
@@ -2322,6 +2325,7 @@ def component_origin():
         | SIGNED_IN_POSTS
         | FOLLOWUP_POSTS
         | ROSTER_POSTS
+        | PUBLICATION_POSTS
         | INFORMATION_POSTS
         | FIND_FAMILY_POSTS
         | SECURITY_POSTS

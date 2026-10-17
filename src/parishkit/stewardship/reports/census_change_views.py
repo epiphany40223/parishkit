@@ -67,6 +67,7 @@ from parishkit.stewardship.web.refusals import Refusal, with_status_code
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
+from . import census_publication
 from .census_changes import (
     KINDS,
     LABELS,
@@ -859,6 +860,10 @@ def report(request, campaign_id):
                     )
                 ).isoformat(),
                 "mutable": mutable,
+                # Publish to ParishSoft's link (#528, ADM-09), the
+                # Administrator's: unavailable, with its reason, while the
+                # deployment's parishsoft_publication setting is off.
+                "publication_on": census_publication.enabled(),
                 # Bulk review is the Administrator's, on rows a review is
                 # offered for, while the page shows no more rows than one
                 # bulk review covers (All rows can show more); one key per
