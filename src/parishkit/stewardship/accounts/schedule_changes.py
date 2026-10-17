@@ -149,6 +149,7 @@ def build_preview(
     campaign_values=None,
     series=(),
     series_changes=(),
+    request_key=None,
 ):
     """Validate the complete candidate, including each stranded or reordered mailing.
 
@@ -178,6 +179,9 @@ def build_preview(
     operations on existing series records (a series cut short or deleted).
     The review lists updated and removed series as ``series_changes``.
     Delivery never reads a series, so no series operation changes a send.
+    ``request_key`` signs the preview with a direct save's request key
+    (#1404 PR 4b, ``admin_editing.direct_key``); a review shown in a dialog
+    takes a fresh one.
     """
     configuration = state[0]
     digest = configuration.active_configuration.digest
@@ -348,5 +352,6 @@ def build_preview(
                 campaign.active_configuration.values["timezone"],
                 window.values()["timezone"],
             ),
+            key=request_key,
         ),
     }

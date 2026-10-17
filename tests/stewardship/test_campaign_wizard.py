@@ -335,6 +335,44 @@ def test_action_row_saves_a_direct_step_in_the_same_place():
         assert "campaign-step-status" not in html
 
 
+@pytest.mark.parametrize(
+    ("step", "form", "back"),
+    [
+        ("content", "content-form", "Return to Pages and emails"),
+        ("schedules", "schedule-entry-form", "Return to Dates and mail schedules"),
+    ],
+)
+def test_action_row_saves_a_sub_page_and_goes_back(step, form, back):
+    """A sub-page that saves holds Return to <step> and Save and go back.
+
+    Save and go back (#1404 PR 4b) submits the page's own form, and the
+    step an applied save opens is the parent step, named as it is
+    (data-next-fixed: its address never moves). A sub-page without
+    ``direct`` keeps Return to <step> only.
+    """
+    stepper = wizard.build(
+        True, step, done={"settings"}, mail_test_url=None, sub=True, direct=True
+    )
+    assert stepper.direct_form == form and stepper.save_key is not None
+    html = actions(stepper)
+    assert back in html and "Continue to" not in html
+    assert f'data-next-url="{stepper.current.url}" data-next-fixed' in html
+    assert re.search(
+        rf'<div class="campaign-step-primary" data-campaign-primary><button '
+        rf'type="submit" form="{form}" [^>]*data-campaign-save[^>]*>Save and go '
+        rf"back</button></div>",
+        html,
+    )
+    assert "data-step-inactive" not in html
+    assert 'id="campaign-step-status" role="status"' in html
+    plain = actions(
+        wizard.build(True, step, done={"settings"}, mail_test_url=None, sub=True)
+    )
+    assert back in plain
+    assert "data-campaign-save" not in plain and "data-next-url" not in plain
+    assert "campaign-step-status" not in plain
+
+
 def test_dates_with_no_schedules_continue_without_them():
     """Dates and mail schedules can be continued with no schedules (#1404)."""
     stepper = wizard.build(
@@ -423,8 +461,10 @@ def test_load_notice_offers_the_load_until_families_exist():
 def test_sub_pages_draw_their_steps_stepper(monkeypatch, name, step, sub):
     """Each sub-page draws the stepper with its step current (#1404).
 
-    Only Campaign settings' own page (and Share options') saves directly
-    (#1404 PR 4); its content history, a sub-page, does not.
+    Campaign settings' own page (and Share options') saves directly (#1404
+    PR 4), and so do the sub-pages that save: Pages and emails' editor and
+    New and Edit scheduled email (PR 4b), each with its own form. Content
+    history and the Campaign calendar, which save nothing, do not.
     """
     monkeypatch.setattr(wizard, "invitation_revision", lambda *_: None)
     monkeypatch.setattr(wizard, "completed", lambda *_: {"settings"})
@@ -442,7 +482,16 @@ def test_sub_pages_draw_their_steps_stepper(monkeypatch, name, step, sub):
         assert stepper is None
         return
     assert stepper.current.key == step and stepper.sub is sub
-    assert stepper.direct is (name == "campaign_settings")
+    forms = {
+        "campaign_settings": "settings-form",
+        "content_edit": "content-form",
+        "content_revision": "content-form",
+        "schedule_new": "schedule-entry-form",
+        "schedule_edit": "schedule-entry-form",
+    }
+    assert stepper.direct is (name in forms)
+    assert stepper.direct_form == forms.get(name)
+    assert (stepper.save_key is not None) is stepper.direct
 
 
 def test_status_offers_the_next_step_once_applied():
