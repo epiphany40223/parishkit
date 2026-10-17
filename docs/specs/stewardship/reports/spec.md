@@ -527,7 +527,8 @@ The UI defaults to Historical as of day and offers a clearly labeled scope
 toggle. Changing scope updates every series together. On the Participation
 page, pointing at or tapping anywhere in a date's column, in any panel, shows
 that date's tooltip, and a faint guide line crosses every panel at that date
-([hover guide line](../ui-conventions/spec.md#charts)): the tooltip has the local date as its heading, then "First submissions",
+([hover guide line](../ui-conventions/spec.md#charts)). The tooltip has the
+local date as its heading, then "First submissions",
 "Families that have responded" (out of the scoped population, with
 percentage) and, when financial is enabled, "Effective annual pledges", with no
 explanatory text. A keyboard or screen-reader user gets every date's figures
