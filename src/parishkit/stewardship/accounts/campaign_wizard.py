@@ -581,17 +581,42 @@ def current():
     return current_wizard(_system())
 
 
-def record_review(store, actor_id, step):
-    """Record ``step`` kept as is; return the step Continue opens next.
+def stale_item():
+    """The refusal of Keep as is for an item Pages and emails no longer lists.
+
+    The editor was drawn for a saved text that has since been saved again
+    or removed (another tab, another Administrator), so the mark would name
+    text nobody reviewed (#1404 PR 6b).
+    """
+    from parishkit.stewardship.web.refusals import UserFacingStale
+
+    return UserFacingStale(
+        _(
+            "That page or email has changed since this page was opened, so "
+            "it was not marked."
+        ),
+        fix=_("Return to Pages and emails, then open it again."),
+        reason="stale_page",
+    )
+
+
+def record_review(store, actor_id, step, item=""):
+    """Record ``step`` (or one of its items) kept as is; return where to go.
 
     The Administrator pressed Continue to <next step> on an unchanged step
-    page (#1404). Under the shared work order it rechecks the Administrator
-    and that the stepper still applies (a Testing draft, no go-live), then
-    stores one ``CampaignSetupReview`` with its
+    page (#1404), or Keep as is and go back in Pages and emails' editor
+    (``item``, a ``campaign_wizard_models.item_key``; #1404 PR 6b). Under
+    the shared work order it rechecks the Administrator and that the
+    stepper still applies (a Testing draft, no go-live), and that an
+    ``item`` is one the Pages and emails list shows now (``stale_item``
+    otherwise), then stores one ``CampaignSetupReview`` with its
     ``campaign_setup_step_reviewed`` audit event, which SQL requires
-    (schema/migrations/0105_campaign_setup_review.sql). A step already kept
-    as is records nothing again. Raises PermissionError or ValueError when
-    it may not record; nothing is changed then.
+    (schema/migrations/0105_campaign_setup_review.sql). A step or item
+    already kept as is records nothing again. It returns the step Continue
+    opens next, or for an item its own step (Pages and emails), which the
+    editor returns to. An item mark never completes the step: only the
+    list's own Continue does. Raises PermissionError, ValueError or
+    ``stale_item`` when it may not record; nothing is changed then.
     """
     from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
     from parishkit.stewardship.audit.services import record_action
@@ -601,6 +626,8 @@ def record_review(store, actor_id, step):
 
     if step not in REVIEW_STEPS:
         raise ValueError("Unknown Campaign setup step.")
+    if item and step != "content":
+        raise ValueError("Only Pages and emails items are kept one by one.")
     with work_transaction():
         if not allows(current_principal(store, actor_id), Capability.CONFIGURE):
             raise PermissionError("Campaign setup is unavailable.")
@@ -610,12 +637,17 @@ def record_review(store, actor_id, step):
         campaign = configuration.current_campaign
         if step == "share_options" and not _financial(campaign):
             raise ValueError("Share options do not apply to this campaign.")
+        if item:
+            from .content_views import catalog_items
+
+            if item not in catalog_items(configuration, campaign):
+                raise stale_item()
         kept = CampaignSetupReview.objects.filter(
-            campaign_id=campaign.pk, step=step, item=""
+            campaign_id=campaign.pk, step=step, item=item
         )
         if not kept.exists():
             review = CampaignSetupReview.objects.create(
-                campaign=campaign, step=step, actor_id=actor_id
+                campaign=campaign, step=step, item=item, actor_id=actor_id
             )
             record_action(
                 Action.CAMPAIGN_SETUP_STEP_REVIEWED,
@@ -627,12 +659,13 @@ def record_review(store, actor_id, step):
                 context={"outcome": Outcome.SUCCEEDED},
             )
         revision = invitation_revision(configuration, campaign.pk)
-        return build(
+        wizard = build(
             _financial(campaign),
             step,
             done=completed(campaign, revision),
             mail_test_url=_test_url(revision),
-        ).upcoming
+        )
+        return wizard.current if item else wizard.upcoming
 
 
 def setup_ended():
