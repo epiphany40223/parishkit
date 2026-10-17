@@ -324,7 +324,7 @@ def _open_tiles(page):
     return opened
 
 
-@pytest.mark.parametrize("named", ["source-form", "backups", "mail"])
+@pytest.mark.parametrize("named", ["source-form", "source", "backups", "mail"])
 def test_an_anchor_opens_only_its_tile(page, component_origin, named):
     """An address naming a tile opens exactly that tile: on the troubled
     page every Error and Warning tile that would start open stays closed,

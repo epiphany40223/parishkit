@@ -378,6 +378,21 @@ def test_home_problem_lines_cost_no_query_whatever_is_open(
     assert "2 system problems need attention" in home
     assert "No backup has finished yet." in home
     assert troubled == healthy
+    # The shared backup kinds (#1214, slice 1) ride on the same statement:
+    # a backup sealed to another key than the configured one and a request
+    # the server never picked up cost nothing more either. Setting a key
+    # also raises a security event, which Home's own notice reads, so the
+    # count is compared from there.
+    configure_backup_key(auth_service.store)
+    keyed = count()
+    backup_run(fingerprint="e" * 16)
+    unpicked_request()
+    more = count()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        home = browser.get("/admin/").content.decode()
+    assert 'data-problem="backup_key_mismatch"' in home
+    assert 'data-problem="backup_request_failed"' in home
+    assert more == keyed
 
 
 def test_several_stopped_services_are_one_line_on_home_and_the_page(
@@ -401,3 +416,203 @@ def test_several_stopped_services_are_one_line_on_home_and_the_page(
             "than "
             "three minutes"
         ) in body
+
+
+def configure_backup_key(store):
+    """Apply a configuration that sets a new backup key; its fingerprint.
+
+    The activation records the ``backup_key_replaced`` security event whose
+    time ``key_mismatch`` compares backups with.
+    """
+    from parishkit.stewardship import backup_sealing
+
+    _, public = backup_sealing.generate_keypair()
+    change(
+        store,
+        store.active(),
+        uuid4(),
+        [
+            {
+                "operation": "add",
+                "section": "integrations",
+                "id": str(uuid4()),
+                "values": {
+                    "kind": "backup_key",
+                    "settings": {"public_key": public.strip()},
+                    "credential_fingerprint": None,
+                },
+            }
+        ],
+    )
+    return backup_sealing.parse_public_key(public.strip()).fingerprint
+
+
+def backup_run(*, fingerprint, age=timedelta()):
+    """Record one backup sealed to ``fingerprint`` that started and finished
+    ``age`` ago (a key set before then is the one it read as it started)."""
+    from parishkit.stewardship.jobs.backup_models import BackupRun
+
+    from .test_backup_postgresql import FACTS, now
+
+    instant = now() - age
+    with transaction.atomic():
+        return BackupRun.objects.create(
+            **{
+                **FACTS,
+                "started_at": instant,
+                "completed_at": instant,
+                "recipient_fingerprint": fingerprint,
+            }
+        )
+
+
+def unpicked_request():
+    """A Take a backup now request that has waited an hour, as the owner."""
+    raw(
+        "INSERT INTO stewardship_backup_request (id,created_at,actor_id,"
+        "session_id,authenticated_at,state) VALUES (%s,now()-interval '1 hour',"
+        "%s,%s,now()-interval '1 hour','waiting')",
+        [uuid4(), uuid4(), uuid4()],
+    )
+
+
+def listed(body):
+    """The problem kinds a body lists, in order."""
+    import re
+
+    return re.findall(r'data-problem="([a-z_]+)"', body)
+
+
+def test_the_shared_backup_problems_on_home_and_the_page(auth_service, google):
+    """A key mismatch counts only for a backup started after the configured
+    key was set, and stands in for the changed-key incident; a request that
+    was never picked up is listed too, on Home and the page alike."""
+    running_services()
+    configured = configure_backup_key(auth_service.store)
+    # Before the key was set: the ordinary day after a key change.
+    backup_run(fingerprint="d" * 16, age=timedelta(days=1))
+    OperationalIncident.objects.create(
+        kind="backup_key_changed",
+        signal_level="WARNING",
+        suppression_seconds=900,
+        escalation_seconds=900,
+    )
+    browser, _ = signed_in()
+
+    def bodies():
+        """Home's and the page's bodies, under the web login."""
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            home = browser.get("/admin/")
+            page = browser.get(PAGE)
+        assert (home.status_code, page.status_code) == (200, 200)
+        return home.content.decode(), page.content.decode()
+
+    for body in bodies():
+        assert "backup_key_changed" in listed(body)
+        assert "backup_key_mismatch" not in listed(body)
+    # Sealed to another key after it was set: one warning, not two.
+    backup_run(fingerprint="e" * 16)
+    unpicked_request()
+    home, page = bodies()
+    for body in (home, page):
+        kinds = listed(body)
+        assert "backup_key_changed" not in kinds, kinds
+        assert "backup_key_mismatch" in kinds and "backup_request_failed" in kinds
+        assert "The server did not pick up the backup requested at" in body
+    assert 'href="/admin/system/health/#health-backups"' in home
+    # Sealed to the configured key: no mismatch.
+    backup_run(fingerprint=configured)
+    home, page = bodies()
+    assert "backup_key_mismatch" not in listed(home) + listed(page)
+
+
+def test_home_lists_an_unreadable_backup_key_while_the_page_is_unavailable(
+    auth_service, google, monkeypatch
+):
+    """Home falls back to a warning line; the page keeps its 503.
+
+    Only System health's own reading of the key fails here: the applied
+    configuration is still valid, as a damaged key record would not be.
+    """
+    from parishkit.config import ConfigError
+
+    running_services()
+    configure_backup_key(auth_service.store)
+
+    def unreadable(_configuration):
+        """The configured key cannot be read."""
+        raise ConfigError("The configured backup key cannot be read.")
+
+    browser, _ = signed_in()
+    monkeypatch.setattr(system_health, "configured_fingerprint", unreadable)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        home = browser.get("/admin/")
+        page = browser.get(PAGE)
+    assert home.status_code == 200
+    assert page.status_code == 503
+    body = home.content.decode()
+    assert listed(body) == ["backup_key_unchecked"]
+    assert "The backup key could not be checked" in body
+    assert "#health-backups" not in body
+
+
+def test_a_backup_running_across_a_key_change_is_no_mismatch(auth_service, google):
+    """A backup that started before the key changed and finished after it is
+    sealed, correctly, to the old key: no mismatch, and the changed-key
+    incident stays the one warning."""
+    from parishkit.stewardship.jobs.backup_models import BackupRun
+
+    from .test_backup_postgresql import FACTS
+
+    running_services()
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT statement_timestamp()")
+        (before,) = cursor.fetchone()
+    configure_backup_key(auth_service.store)
+    with transaction.atomic():
+        BackupRun.objects.create(
+            **{
+                **FACTS,
+                "started_at": before - timedelta(minutes=5),
+                "completed_at": before + timedelta(minutes=30),
+                "recipient_fingerprint": "e" * 16,
+            }
+        )
+    OperationalIncident.objects.create(
+        kind="backup_key_changed",
+        signal_level="WARNING",
+        suppression_seconds=900,
+        escalation_seconds=900,
+    )
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        home = browser.get("/admin/")
+        page = browser.get(PAGE)
+    assert (home.status_code, page.status_code) == (200, 200)
+    for body in (home.content.decode(), page.content.decode()):
+        kinds = listed(body)
+        assert "backup_key_mismatch" not in kinds and "backup_key_changed" in kinds
+
+
+def test_home_in_production_lists_off_site_copies_not_set_up(auth_service, google):
+    """In Production with no off-site copies, Home's line replaces its own
+    invitation to set them up; the line keeps the setup link."""
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+
+    from .auth_builders import unguarded
+
+    running_services()
+    browser, _ = signed_in()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        testing = browser.get("/admin/").content.decode()
+    assert "offsite_missing" not in listed(testing)
+    assert "Encrypted copies of every backup" in testing
+    with unguarded():
+        SystemConfiguration.objects.update(mode="production")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response = browser.get("/admin/")
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "offsite_missing" in listed(body)
+    assert "Encrypted copies of every backup" not in body
+    assert body.count("Set up off-site backups") == 1

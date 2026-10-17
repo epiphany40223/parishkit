@@ -6,9 +6,11 @@ once; a critical-problems banner group whose problem is current links that
 problem's tile. Checked at phone and desktop widths with axe.
 """
 
+import re
+
 import pytest
 
-from .home_steps_components import HEALTH_PATH
+from .home_steps_components import HEALTH_PATH, SHARED_PATH
 from .test_family_response import expect
 from .test_home_next_steps import AXE
 
@@ -61,4 +63,46 @@ def test_home_lines_and_banner_link_their_tiles(
     ).to_have_attribute("href", "/admin/system/health/#health-source")
     task = banner.locator("li").filter(has_text="Background task failed")
     expect(task.get_by_role("link")).to_have_count(0)
+    assert errors == []
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_home_lists_the_shared_kinds(page, component_origin, axe_source, width):
+    """The former page notices are Home lines too (#1214, slice 1): an
+    unknown WorkGroup is an error while Reminders are scheduled; an
+    unreadable backup key links no tile; off-site copies not set up replace
+    Home's invitation to set them up."""
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + SHARED_PATH)
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    page.evaluate(axe_source)
+    assert page.evaluate(AXE) == []
+    lines = page.locator("[data-home-health] [data-problem]")
+    expect(lines).to_have_count(4)
+    for index, (kind, word, linked) in enumerate(
+        [
+            ("workgroup_missing", "Error", "ParishSoft refresh"),
+            ("backup_key_unchecked", "Warning", None),
+            ("backup_request_failed", "Warning", "Backups"),
+            ("offsite_missing", "Warning", "Backups"),
+        ]
+    ):
+        line = lines.nth(index)
+        expect(line).to_have_attribute("data-problem", kind)
+        expect(line.locator(".status-word")).to_have_text(word)
+        tile = line.get_by_role("link", name=re.compile("in System health"))
+        if linked is None:
+            expect(tile).to_have_count(0)
+        else:
+            expect(tile).to_have_text(f"See {linked} in System health")
+    expect(lines.nth(0)).to_contain_text("Reminders are still scheduled")
+    expect(lines.nth(0)).to_contain_text("“Do not remind”")
+    expect(
+        lines.nth(3).get_by_role("link", name="Set up off-site backups")
+    ).to_be_visible()
+    # Said once: the line, not Home's own invitation.
+    expect(page.get_by_role("link", name="Set up off-site backups")).to_have_count(1)
+    assert "Encrypted copies of every backup" not in page.locator("main").inner_text()
     assert errors == []
