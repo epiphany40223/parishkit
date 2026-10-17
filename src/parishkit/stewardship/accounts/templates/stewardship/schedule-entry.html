@@ -47,12 +47,23 @@ then lists the series it keeps or changes.
 <form method="post" action="{{ post_url }}" id="schedule-entry-form" data-schedule-entry data-review-open="schedule-review" data-require-change="base_digest"{% if local_from %} data-schedule-local="{{ local_from }}"{% endif %}>{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="zone" value="" data-browser-zone>
 <p class="help" data-browser-zone-note hidden>{% translate "Enter the date and time in this computer's time zone:" %} <span data-browser-zone-name></span>.</p>
 <p class="notice notice-error" id="schedule-zone-missing" data-zone-missing hidden>{% translate "Your browser didn't report a time zone, so this send time can't be read. Check your computer's time zone setting, then reload this page." %}</p>
+<div data-editor-modes="schedule-entry">{% comment %}
+Basic and Advanced (#1129; UX conventions, "Basic and Advanced modes",
+additive editors): the toggle sits above the schedule's fields, which both
+modes show. Advanced adds New's Repeat (schedule-repeat-entry.html) and
+"Edit this schedule's email" (schedule-email.html), each an Advanced panel
+where it is drawn. Basic is the page with both off; ui-v1.js's
+"schedule-entry" adapter asks before Advanced → Basic while either is
+ticked, and Switch to Basic unticks them. The view works out the opening
+mode (schedule_entry_views.editor_mode); it is never saved.
+{% endcomment %}{% translate "Your custom schedule has no basic equivalent." as no_basic_title %}{% if new %}{% translate "Basic can't show a repeat or this schedule's own email. If you switch, Repeat and Edit this schedule's email are turned off, so neither is reviewed. Nothing changes until you review and apply." as no_basic_body %}{% else %}{% translate "Basic can't show this schedule's own email. If you switch, Edit this schedule's email is turned off, so it is not reviewed. Nothing changes until you review and apply." as no_basic_body %}{% endif %}{% include "stewardship/components/editor-mode.html" with mode_id="schedule-mode" mode=editor_mode no_basic_title=no_basic_title no_basic_body=no_basic_body %}
 {% if new %}{% translate "Scheduled email" as legend %}{% else %}{% firstof entry.schedule_label _("Scheduled email") as legend %}{% endif %}
 {% include 'stewardship/schedule-row.html' with form=entry legend=legend number=0 %}
 {% include 'stewardship/schedule-email.html' %}
 {% if repeat %}<p class="repeat-summary" role="status" data-repeat-summary hidden></p><div data-repeat-posted></div>{% endif %}
 <p>{% button type="submit" autocomplete="off" %}{% if new %}{% translate "Add the scheduled email" %}{% else %}{% translate "Review changes" %}{% endif %}{% endbutton %} <a href="{{ list_url }}">{% translate "Cancel" %}</a> <span class="help unchanged-hint" data-unchanged-hint data-idle>{% if new %}{% translate "Fill in the scheduled email to add it." %}{% else %}{% translate "Change the date, time, email or comparison to review it." %}{% endif %}</span></p>
 {% if repeat %}<div data-repeat-dates></div>{% endif %}
+</div>
 </form>
 {% if new %}{% translate "Review new scheduled email" as review_title %}{% else %}{% translate "Review scheduled email change" as review_title %}{% endif %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="schedule-review" title=review_title apply_url=apply_url return_url=list_url outcome_id="schedules-outcome" fallback="schedule-entry-form" %}
 {% endblock %}
