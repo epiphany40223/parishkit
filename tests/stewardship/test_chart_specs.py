@@ -933,6 +933,8 @@ def test_every_date_chart_with_tooltips_has_the_hover_guide():
         spec = document.spec
         views = list(chart_views(spec))
         assert any("tooltip" in view.get("encoding", {}) for view in views)
+        # Keyed on y, not x: a participation chart's x is an ordinal date
+        # band, so only a category chart's y axis tells the two apart.
         categories = {
             view["encoding"]["y"].get("type")
             for view in views
