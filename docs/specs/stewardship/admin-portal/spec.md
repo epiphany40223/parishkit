@@ -3601,10 +3601,11 @@ Create the campaign drawn as step 1 (#1404 PR 3), Load ParishSoft data as
 step 2 (#1404 PR 5), and the direct save
 on Campaign settings and Share options (#1404 PR 4), on Pages and emails'
 editor and New and Edit scheduled email (#1404 PR 4b) and on Campaign images
-(#1404 PR 4c), and the Pages and emails item states (#1404 PR 6b).
+(#1404 PR 4c), the Pages and emails item states (#1404 PR 6b), and Dates and
+mail schedules' suggested schedules (#1404 PR 6a).
 The rest of #1404 is planned, and each part below marked "(planned, #1404
-PR n)" describes the design, not yet the pages: the
-suggested schedules (PR 6); and Back asking before it discards, with
+PR n)" describes the design, not yet the pages: Back asking before it
+discards, with
 Go live's summary lines (PR 7). Setup ends without a campaign, so
 a newly set-up deployment reaches the page; a deployment set up before #142
 already has its campaign and never does.
@@ -3872,21 +3873,43 @@ live.
   Continue is always available and accepts every item not yet edited as is;
   the per-item marks are optional and never complete the step, and Go-live
   readiness still flags content that must be saved again.
-- **Dates and mail schedules** (suggested schedules planned, #1404 PR 6).
+- **Dates and mail schedules** (#1404 PR 6a).
   With no schedule saved, the page proposes a starting set under "Suggested
-  schedules", drawn as the list draws saved schedules and marked "Not saved
-  yet": the initial invitation on the campaign's start date at 9:00 AM in the
-  campaign's time zone, one reminder seven days before its end date at
-  9:00 AM (the Daily report and Weekly report are offered as report emails,
+  schedules", after the (empty) Scheduled emails table, drawn as the table
+  draws saved schedules and marked "Not saved yet": the initial invitation on
+  the campaign's start date at 9:00 AM in the campaign's time zone, one
+  reminder seven days before its end date at 9:00 AM, and the Weekly Admin
+  digest every Monday at 8:00 AM (there is no configured default, so this is
+  the default; #1404, 2026-10-17; once
+  [report emails](../report-emails/spec.md) replace the digests, the
+  Daily report and Weekly report are offered instead, as
   [starting points](../report-emails/spec.md#campaign-wizard-starting-points));
   like every schedule, they are shown in the browser's time
-  ([dates and times](../ui-conventions/spec.md#dates-and-times)). Its primary is
-  **Add these schedules and continue**; **Continue without schedules for
-  now** (a link) keeps the step as is, and Go live then still asks
-  for exactly one initial invitation schedule. The schedules are proposed,
+  ([dates and times](../ui-conventions/spec.md#dates-and-times)). Each sends
+  the first saved email of its mail type. A mail type with no saved email is
+  left out, and so is the reminder when its day would not fall after the
+  start date (a campaign of eight days or fewer); without an initial
+  invitation email, or once the initial invitation's send time has passed,
+  nothing is proposed, since adding it would send at once with no review
+  dialog to say so. Its primary is
+  **Add these schedules and continue**, with **Continue without schedules
+  for now** as the secondary before it, which keeps the step as is; Go live
+  then still asks for exactly one initial invitation schedule. Add
+  these schedules and continue saves directly, as Save and continue does
+  (below), but posts only the page's version and request key: the server
+  works the same set out again from the campaign's saved values, so what is
+  added is what the page listed for that version, reviewed as New scheduled
+  email reviews a schedule. A schedule saved meanwhile, the initial
+  invitation's email removed or its send time passed refuses it ("The
+  suggested schedules no longer apply, so nothing was saved."; asked before
+  the page's version, so it is the answer even though saving a schedule
+  also made the page stale), as do any other stale page and setup that
+  ended.
+  Once applied, the next step not done yet opens, its status line saying
+  "Suggested schedules added." and when. The schedules are proposed,
   never created silently at creation, because they depend on dates the
-  Administrator may still change. New and Edit scheduled email and the
-  Campaign calendar are its sub-pages.
+  Administrator may still change. Outside the stepper nothing is proposed.
+  New and Edit scheduled email and the Campaign calendar are its sub-pages.
 - **Preview and test email.** Its primary is the page's own test until
   that test is accepted (its Continue, below).
 - **Go live.** The last step: its segment opens the
@@ -3907,7 +3930,8 @@ one action row: **Back** (secondary, the previous step) and one primary
 control. On Campaign settings, Share options, Pages and emails, Dates and
 mail schedules and Campaign images it is **Continue to** the next step not
 done yet (on Dates and mail schedules with no schedule saved, **Continue
-without schedules for now**; Go live still lists the missing
+without schedules for now**, the secondary while suggested schedules are
+proposed; Go live still lists the missing
 initial invitation schedule): it records the step kept as is and opens that
 step. On Campaign settings and Share options, once the form holds a change,
 the same control is **Save and continue** (#1404 PR 4): the two share one
