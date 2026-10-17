@@ -19,7 +19,6 @@ from parishkit.parishsoft import ParishSoftConfig
 from parishkit.parishsoft_source import CoherentParishSoftClient
 from parishkit.stewardship.accounts.configuration_models import Parish
 from parishkit.stewardship.jobs.phases import TaskPhase
-from parishkit.stewardship.local import source_base_url
 from parishkit.stewardship.observability import Event, emit
 from parishkit.stewardship.storage import StorageInvariantError
 
@@ -53,7 +52,7 @@ from .snapshots import (
     stage_entities,
     validate_snapshot,
 )
-from .transport import runtime_profile, source_session
+from .transport import source_session
 from .windows import RefreshWindow
 from .workgroups import (
     EVIDENCE_KEY,
@@ -423,7 +422,7 @@ def load_and_stage_attempt(execution, claim, credential, *, unchanged=None):
                 credential.api_key,
                 Path("."),
                 cache_enabled=False,
-                api_base_url=source_base_url(runtime_profile()),
+                api_base_url=session.base_url,
             ),
             organization_id=attempt.request.organization_id,
             session=session,

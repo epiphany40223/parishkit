@@ -19,16 +19,20 @@ from unittest.mock import Mock
 import pytest
 
 from parishkit.config import ConfigError
+from parishkit.parishsoft import DEFAULT_API_BASE_URL as REAL
+from parishkit.parishsoft_http_worker import LOCAL_SOURCE_BASE_URL
 from parishkit.stewardship import deployment as deployment_module
 from parishkit.stewardship import runtime_process, services
 from parishkit.stewardship.cli import main
 from parishkit.stewardship.deployment import (
     LOCAL_PUBLIC_ORIGIN,
+    PARISHSOFT_BASE_URL_VARIABLE,
     DeploymentProfile,
     ServiceRole,
     load_deployment,
 )
 from parishkit.stewardship.deployment_documents import deployment_document
+from parishkit.stewardship.local import source_base_url
 from parishkit.stewardship.runtime_ingress import (
     production_hostname,
     render_caddy,
@@ -760,3 +764,82 @@ def test_schema_sql_has_no_deployment_profile_branch():
     assert {"guards.sql", "functions.sql"} <= {path.name for path in files}
     for path in files:
         assert pattern.search(path.read_text()) is None, path.name
+
+
+# The ParishSoft base URL setting (#1399): the real API or, only in LOCAL,
+# the fake; unset is the profile's default and renders nothing.
+def base_url_environ(profile, value=None):
+    """A loader environment for one profile, naming a base URL when given."""
+    origin = {
+        DeploymentProfile.PRODUCTION: "https://parish.example",
+        DeploymentProfile.LOCAL: LOCAL_PUBLIC_ORIGIN,
+    }.get(profile, "http://localhost:8000")
+    environ = {
+        "PARISHKIT_STEWARDSHIP_PROFILE": profile.value,
+        "PARISHKIT_STEWARDSHIP_PUBLIC_ORIGIN": origin,
+    }
+    if value is not None:
+        environ[PARISHSOFT_BASE_URL_VARIABLE] = value
+    return environ
+
+
+@pytest.mark.parametrize("profile", PROFILES)
+def test_unset_parishsoft_base_url_renders_exactly_what_it_did_before(profile):
+    """No profile renders the setting by default, nor when it names its default."""
+    from parishkit.stewardship.runtime_database import profile_settings
+
+    default = LOCAL_SOURCE_BASE_URL if profile is DeploymentProfile.LOCAL else REAL
+    for value in (None, "", default):
+        configuration = load_deployment(environ=base_url_environ(profile, value))
+        assert configuration.parishsoft_base_url is None
+        assert (
+            "parishsoft_base_url"
+            not in deployment_document(configuration)["deployment"]
+        )
+        assert "STEWARDSHIP_PARISHSOFT_BASE_URL" not in profile_settings(configuration)
+        assert source_base_url(profile, configuration.parishsoft_base_url) == default
+
+
+def test_local_may_choose_the_real_parishsoft_api(tmp_path):
+    """LOCAL records the real API as a switch: in the service documents and
+    the recorded settings, never in the provisioning record."""
+    from parishkit.stewardship.runtime_database import profile_settings
+
+    local = DeploymentProfile.LOCAL
+    configuration = load_deployment(environ=base_url_environ(local, REAL))
+    assert configuration.parishsoft_base_url == REAL
+    document = deployment_document(configuration)
+    assert document["deployment"]["parishsoft_base_url"] == REAL
+    assert (
+        "parishsoft_base_url"
+        not in deployment_document(configuration, switches=False)["deployment"]
+    )
+    reloaded = load_deployment(document=document, environ={})
+    assert reloaded.parishsoft_base_url == REAL
+    assert profile_settings(configuration)["STEWARDSHIP_PARISHSOFT_BASE_URL"] == REAL
+    path = config_file(tmp_path, {"profile": "local", "parishsoft_base_url": REAL})
+    assert load_deployment(path, environ={}).parishsoft_base_url == REAL
+    # The environment wins over the YAML, as for every other setting.
+    chosen = load_deployment(
+        path, environ={PARISHSOFT_BASE_URL_VARIABLE: LOCAL_SOURCE_BASE_URL}
+    )
+    assert chosen.parishsoft_base_url is None
+
+
+@pytest.mark.parametrize("profile", PROFILES)
+@pytest.mark.parametrize(
+    "value",
+    [
+        "https://other.example/api/v2",
+        REAL + "/",
+        "http://fake-parishsoft:8081/api/v2",
+        LOCAL_SOURCE_BASE_URL,
+    ],
+)
+def test_parishsoft_base_url_admits_only_its_two_values(profile, value):
+    """Anything else is refused, and the fake is refused outside LOCAL."""
+    if profile is DeploymentProfile.LOCAL and value == LOCAL_SOURCE_BASE_URL:
+        assert load_deployment(environ=base_url_environ(profile, value))
+        return
+    with pytest.raises(ConfigError, match="parishsoft_base_url"):
+        load_deployment(environ=base_url_environ(profile, value))
