@@ -2432,8 +2432,9 @@ one line at laptop width
 the [table fit](../ui-conventions/spec.md#table-fit-and-row-height) rules):
 Family, Family DUID (still its own sortable column, as the
 [column order](../ui-conventions/spec.md#table-column-order) requires),
-Annual pledge, "Frequency and installment" ("Monthly · $102.88", the
-frequency alone when there is no installment), Share methods, the two
+Annual pledge, Installment (a compact "$102.88/mo", with /wk, /qtr or /yr
+for the other frequencies and the unit spoken in full to a screen reader; the
+frequency alone, or why there is none, when there is no installment), Share methods, the two
 ParishSoft aggregates as "Pledged" and "Contributed" under one "ParishSoft"
 heading, and Latest response. Each chosen share method is a small chip with
 its label; a method with Other text has a toggletip beside its chip that

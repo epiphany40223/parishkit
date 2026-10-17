@@ -57,6 +57,7 @@ def components(context, admin):
         installment=MoneyAmount(10288),
         frequency="monthly",
         frequency_label=FREQUENCY_LABELS["monthly"],
+        frequency_short="mo",
         shares=[
             dict(label="Online <giving>", text=""),
             dict(label="Another way", text="Stock <gift>"),
@@ -73,6 +74,7 @@ def components(context, admin):
         installment=MoneyAmount(None),
         frequency="",
         frequency_label=FREQUENCY_LABELS["none"],
+        frequency_short="",
         shares=[],
         source_pledge=MoneyAmount(None),
         source_contributions=MoneyAmount(None),

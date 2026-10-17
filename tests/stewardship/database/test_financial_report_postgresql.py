@@ -678,14 +678,14 @@ def test_native_page_filters_privately_and_denies_leaders(
             "Family",
             "Family DUID",
             "Annual pledge",
-            "Frequency and installment",
+            "Installment",
             "Share methods",
             "ParishSoft",
             "Latest response",
             "Pledged",
             "Contributed",
         ]
-        assert head.count(b'scope="col"') == len(shown) - 1
+        assert head.count(b'scope="col"') == len(shown)
         assert b"First response" not in head and b"Entered by Staff" not in head
         places = [head.index(b">" + heading.encode()) for heading in shown]
         assert places == sorted(places)

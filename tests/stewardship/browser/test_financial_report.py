@@ -54,8 +54,9 @@ def test_financial_mobile_keyboard_and_accessibility(
     # (#1544), not a column of its own.
     assert page.get_by_role("columnheader", name="Entered by Staff").count() == 0
     assert page.get_by_text("Entered by Staff", exact=True).count() == 1
-    # Frequency and installment share one cell (#1544).
-    assert page.get_by_role("cell", name="Monthly · $102.88", exact=True).count() == 1
+    # The installment shows its unit short and its frequency in full to a
+    # screen reader (#1544).
+    assert page.get_by_role("cell", name="$102.88 monthly", exact=True).count() == 1
     assert page.locator("[data-summary=annual-total]").inner_text() == "$62,959.50"
     assert page.get_by_text("contributions through June 30, 2026", exact=False).count()
     # The share filter offers escaped labels and keeps the current choice.
@@ -192,7 +193,7 @@ def test_financial_columns_lead_with_family_and_name_the_parishsoft_year(
             "Family",
             "Family DUID",
             "Annual pledge",
-            "Frequency and installment",
+            "Installment",
             "Share methods",
             "ParishSoft (2025–2026)",
             "Latest response",
@@ -227,7 +228,8 @@ WRAPPED = """() => {
         for (const cell of row.children) {
             const range = document.createRange();
             range.selectNodeContents(cell);
-            const rects = [...range.getClientRects()].filter((r) => r.width);
+            // Not a 1px screen-reader span.
+            const rects = [...range.getClientRects()].filter((r) => r.width > 1);
             const top = Math.max(...rects.map((r) => r.top));
             const bottom = Math.min(...rects.map((r) => r.bottom));
             if (rects.length && top >= bottom) wrapped.push(cell.innerText);
