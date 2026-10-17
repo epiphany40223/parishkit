@@ -25,6 +25,17 @@ from parishkit.stewardship.audit.log_views import FIELD_IDS as LOG_IDS
 from parishkit.stewardship.audit.log_views import FIELD_LINES as LOG_LINES
 from parishkit.stewardship.audit.log_views import field_ids, refusal_sizes
 from parishkit.stewardship.reports import information_views, ministry_export_views
+from parishkit.stewardship.reports.directories import (
+    CODE_MESSAGE,
+    DIRECTORY_SORTING,
+    DirectoryQuery,
+)
+from parishkit.stewardship.reports.directory_views import (
+    FIELD_IDS as DIRECTORY_IDS,
+)
+from parishkit.stewardship.reports.directory_views import (
+    FIELD_LINES as DIRECTORY_LINES,
+)
 from parishkit.stewardship.reports.financial import (
     DATES,
     FIELD_MESSAGES,
@@ -62,6 +73,7 @@ from parishkit.stewardship.web.filter_errors import (
     line_sizes,
     refused,
 )
+from parishkit.stewardship.web.tables import report_table
 
 TEMPLATE = (
     Path(__file__).parents[2]
@@ -742,3 +754,138 @@ def test_confirm_message_is_the_page_hint_and_the_box_is_marked():
     assert (
         '<div class="hint-row-messages"><p class="help" id="information-save-hint"'
     ) in INFORMATION
+
+
+DIRECTORY = (
+    Path(__file__).parents[2]
+    / "src/parishkit/stewardship/accounts/templates/stewardship/directory.html"
+).read_text()
+
+
+@pytest.mark.parametrize("code", ["ABC", "ABCD-EFG1", "ÀBCDEFGH", "A" * 129])
+def test_directory_code_rule_names_its_field(code):
+    """A malformed Exact Family code is refused at its field, with the query
+    as sent (its closed choices all accepted) and the field hint's words."""
+    with pytest.raises(FilterError) as caught:
+        DirectoryQuery.parse(
+            {
+                "exact_code": code,
+                "search": "Example",
+                "sort": "duid_desc",
+                "phone": "yes",
+            }
+        )
+    error = caught.value
+    assert error.fields == ("exact_code",) and error.message == CODE_MESSAGE
+    assert error.query.exact_code == code and error.query.search == "Example"
+    assert error.query.sort == "duid_desc" and error.query.phone == "yes"
+    # Still a ValueError: the export and pk-admin refuse it as before.
+    assert isinstance(error, ValueError)
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"exact_code": "ABC", "sort": "random"},
+        {"exact_code": "ABC", "phone": "maybe"},
+        {"exact_code": "ABC", "extra": "x"},
+        {"exact_code": "ABC", "search": "x" * 201},
+        {"exact_code": "ABC", "page": "0"},
+    ],
+)
+def test_directory_structural_refusals_keep_the_error_page(values):
+    """A refusal no field can show stays a plain ValueError, even with a
+    malformed code beside it: the structural rules are checked first."""
+    with pytest.raises(ValueError) as caught:
+        DirectoryQuery.parse(values)
+    assert not isinstance(caught.value, FilterError)
+
+
+def test_directory_message_is_the_hint_and_the_field_is_wired():
+    """The server's words are the code field's hint; the field carries the
+    mark tag and the gate's hint row draws the one message line."""
+    assert set(DIRECTORY_IDS) == set(DIRECTORY_LINES) == {"exact_code"}
+    tag = re.search(r'<input id="exact-code" [^>]*>', DIRECTORY).group(0)
+    assert f"data-missing-hint=\"{{% translate '{CODE_MESSAGE}' %}}\"" in tag
+    assert '{% filter_mark filter_error "exact_code" %}' in tag
+    assert "aria-describedby" not in tag
+    assert DIRECTORY.count('{% filter_line filter_error "directory-filters" ') == 1
+    assert (
+        '<div class="hint-row-messages"><p class="help" id="directory-filter-hint"'
+        ' data-complete-hint="reserve"></p>{% filter_line filter_error'
+        ' "directory-filters" filter_sizes %}</div></form>'
+    ) in DIRECTORY
+
+
+def directory_html(**context):
+    """The directory page for an empty selection, with ``context`` added."""
+    return render_to_string(
+        "stewardship/directory.html",
+        {
+            "campaign_id": UUID(int=80),
+            "metadata": {"source_generation": 1},
+            "total": 0,
+            "table": report_table(
+                [],
+                number=1,
+                size=50,
+                total=0,
+                carry=(),
+                sorting=DIRECTORY_SORTING,
+                sort="name",
+                action="/admin/directory/",
+                sizes=(50,),
+            ),
+            "query": DirectoryQuery(),
+            "query_fields": DirectoryQuery().form_values(),
+        }
+        | context,
+    )
+
+
+def test_refused_directory_shows_what_was_sent_with_the_mark():
+    """The form shows the filters sent; the results' fields, none.
+
+    The code field is marked and described by the hint row's message line,
+    which is sized to it; the panel counts only the mailing-columns choice
+    kept, and the
+    export carries none of the values sent.
+    """
+    sent = DirectoryQuery(search="Adams", exact_code='AB"<x', phone="yes")
+    error = FilterError("exact_code", CODE_MESSAGE, sent)
+    html = directory_html(
+        **error_context(error, DIRECTORY_IDS, DIRECTORY_LINES),
+        filter_query=sent,
+        mailing=True,
+        filter_sizes={"directory-filters": CODE_MESSAGE},
+    )
+    form = html[html.index('<form id="table-filters"') : html.index("</form>")]
+    assert 'value="Adams"' in form and 'value="AB&quot;&lt;x"' in form
+    assert '<option value="yes" selected>' in form
+    assert 'name="mailing" value="yes" checked' in form
+    tag = re.search(r'<input id="exact-code" [^>]*>', form).group(0)
+    assert 'aria-invalid="true" aria-describedby="directory-filters_error"' in tag
+    message = str(CODE_MESSAGE)
+    assert (
+        f'<span class="field-error-size" aria-hidden="true">{message}</span>'
+        f'<ul class="errorlist" id="directory-filters_error"><li>{message}</li></ul>'
+    ) in form
+    assert f'<a href="#exact-code">{message}</a>' in html
+    # Only the mailing-columns choice, kept, is counted.
+    assert ">1 applied<" in html and "data-filter-panel open" in html
+    export = html[html.index('<form id="table-export"') :]
+    assert "Adams" not in export and "AB&quot;" not in export
+
+
+def test_unrefused_directory_draws_no_mark_and_an_empty_line():
+    """An ordinary page has no mark and a hidden line that takes no room."""
+    html = directory_html(query=DirectoryQuery(exact_code="ABCDEFGH"), mailing=True)
+    tag = re.search(r'<input id="exact-code" [^>]*>', html).group(0)
+    assert 'value="ABCDEFGH"' in tag
+    assert "aria-invalid" not in tag and "aria-describedby" not in tag
+    assert 'name="mailing" value="yes" checked' in html
+    assert (
+        '<div class="field-error-line"><span class="field-error-size"'
+        ' aria-hidden="true"></span><ul class="errorlist" id="directory-filters_error"'
+        " hidden><li></li></ul></div></div></form>"
+    ) in html
