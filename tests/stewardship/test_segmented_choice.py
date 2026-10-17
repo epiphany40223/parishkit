@@ -25,6 +25,9 @@ COMPONENT = "stewardship/components/segmented-choice.html"
 # Two-option menus an Admin template may still draw, each with its reason.
 # Keep empty unless a reason is recorded here.
 TWO_OPTION_SELECTS = {}
+# A Family portal page extends the portal base directly; Admin pages extend
+# admin-base. The rule covers Admin pages only.
+FAMILY_PAGE = re.compile(r"\{%\s*extends\s+['\"]stewardship/base\.html['\"]")
 # A <select> and its body, and an <option> tag inside it.
 SELECT = re.compile(r"<select\b([^>]*)>(.*?)</select>", re.S)
 OPTION = re.compile(r"<option\b")
@@ -107,10 +110,14 @@ def test_every_pair_is_drawn_by_the_shared_component():
 def test_no_admin_template_draws_a_two_option_menu():
     """A choice between two views is a binary choice, never a two-option
     <select> (#1535). Only menus whose options are written out can be
-    counted; a menu built from a loop or a tag is checked in review."""
+    counted; a menu built from a loop or a tag is checked in review. Family
+    portal pages (which extend the portal base) are outside the rule."""
     found = []
     for path in sorted(TEMPLATES.rglob("*.html")):
-        for match in SELECT.finditer(path.read_text()):
+        text = path.read_text()
+        if FAMILY_PAGE.search(text):
+            continue
+        for match in SELECT.finditer(text):
             body = match.group(2)
             if re.search(r"\{%\s*(?:for|include|export_format_options)\b", body):
                 continue
