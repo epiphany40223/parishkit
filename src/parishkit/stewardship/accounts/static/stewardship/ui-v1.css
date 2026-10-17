@@ -922,13 +922,14 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 .stage-boxes > .stage-failed { border-color: var(--error-border); background: var(--error-bg); font-weight: 600; }
 .stage-status { font-size: .925rem; font-variant-numeric: tabular-nums; }
 .stage-boxes li p { margin: .25rem 0 0; font-size: .925rem; }
-/* Load ParishSoft data's button (source-refresh.html, #1404 PR 5): each
-   state also holds the longest label, hidden, in the same grid cell, so
-   the in-place answer that swaps the label keeps the button's width and
-   the pointer stays on it (no layout shift). */
-.load-step-button { display: inline-grid; place-items: center; }
-.load-step-button > span { grid-area: 1 / 1; }
-.load-step-button > [data-label-reserve] { visibility: hidden; }
+/* Load ParishSoft data (campaign-load-status.html, #1404 PR 5): the line
+   after the stage boxes (records checked, or the Family count) is reserved
+   in every state, so its text coming and going moves nothing below it. */
+.campaign-load-count { min-height: 1lh; }
+/* Its summary line keeps room for its longest wording (failed, with See
+   what went wrong) on a phone, where each state's wording wraps
+   differently, so the boxes below never move when the state changes. */
+@media (max-width: 40rem) { .campaign-load-summary { min-height: 3lh; } }
 .button-large { font-size: 1.1rem; padding: .8rem 1.75rem; }
 .spinner { display: inline-block; width: 1em; height: 1em; margin-inline-end: .35em; vertical-align: -.15em; border: 2px solid var(--accent); border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
 /* An export panel collapsed below a report's filters. */

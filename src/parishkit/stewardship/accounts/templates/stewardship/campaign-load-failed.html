@@ -1,10 +1,10 @@
 {% load i18n %}{% comment %}
 Why the campaign has no Families yet after a load was started (#1404 PR 5):
 the newest ParishSoft refresh since the campaign was created failed or was
-cancelled (campaign_wizard._load_state, wizard.load "failed"). Shared by the
-Campaign setup stepper's notice on every other step (campaign-stepper.html)
-which draws Try again after it, and by Load ParishSoft data itself
-(source-refresh.html), which draws it after Try again so that clearing it
-moves nothing under the pointer. The cause is not stored in words; the run's
-Background task shows its history and points to System logs.
+cancelled (campaign_wizard._load_state, wizard.load "failed"). The Campaign
+setup stepper's notice on every other step (campaign-stepper.html) draws it,
+with Try again after it; Load ParishSoft data itself says the same in its
+own status region (campaign-load-status.html). The cause is not stored in
+words; the run's Background task shows its history and points to System
+logs.
 {% endcomment %}<p role="status" data-campaign-load-failed><strong>{% translate "The campaign's ParishSoft data did not load." %}</strong> {% translate "The last ParishSoft refresh did not finish." %}{% if wizard.load_task %} <a href="{% url 'admin:background_task_page' wizard.load_task %}">{% translate "See what went wrong" %}</a>{% endif %}</p>

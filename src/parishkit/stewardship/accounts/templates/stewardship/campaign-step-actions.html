@@ -16,9 +16,10 @@ secondary and first, and one primary control, last.
   invitation's current revision is accepted, a plain link; before that the
   test is the step's purpose, so there is no Continue.
 - Load ParishSoft data (#1404 PR 5): Continue to <next step>, a plain link,
-  once a load is under way or the campaign has its Families; before that
-  the page's own Load the campaign's ParishSoft data (or Try again) is the
-  step's primary, and its in-place answer redraws this row.
+  once the campaign has its Families (the data is loaded); before that the
+  page's own Load the campaign's ParishSoft data (or Try again) is the
+  step's primary, and while the load runs there is none. The in-place
+  re-read once the load ends redraws this row.
 - Go-live readiness, the last step: Back only; the go-live flow follows.
 - A sub-page of a step (``wizard.sub``): Return to <step> only.
 - Create the campaign, step 1 before the campaign exists
@@ -34,7 +35,7 @@ turned on or off adds or removes Share options).
 {% if wizard.sub %}{% blocktranslate trimmed asvar back_label with label=current.label %}Return to {{ label }}{% endblocktranslate %}{% button href=current.url variant="secondary" data-campaign-step-back %}{{ back_label }}{% endbutton %}
 {% else %}{% if wizard.previous.url %}{% button href=wizard.previous.url variant="secondary" data-campaign-step-back %}{% translate "Back" %}<span class="setup-sr-only">: {{ wizard.previous.label }}</span>{% endbutton %}{% endif %}
 {% if upcoming.url %}{% if wizard.reviewable %}<form method="post" action="{% url 'admin:campaign_step_continue' %}" data-campaign-continue>{% csrf_token %}<input type="hidden" name="step" value="{{ current.key }}">{% button type="submit" %}{% if current.key == 'schedules' and wizard.no_schedules %}{% translate "Continue without schedules for now" %}{% else %}{% blocktranslate trimmed with label=upcoming.label %}Continue to {{ label }}{% endblocktranslate %}{% endif %}{% endbutton %}</form>
-{% elif current.key == 'mail_test' and current.state == 'done' or current.key == 'load' and wizard.load != 'offer' and wizard.load != 'failed' %}{% blocktranslate trimmed asvar continue_label with label=upcoming.label %}Continue to {{ label }}{% endblocktranslate %}{% button href=upcoming.url data-campaign-continue %}{{ continue_label }}{% endbutton %}{% endif %}{% endif %}{% endif %}
+{% elif current.key == 'mail_test' and current.state == 'done' or current.key == 'load' and not wizard.load %}{% blocktranslate trimmed asvar continue_label with label=upcoming.label %}Continue to {{ label }}{% endblocktranslate %}{% button href=upcoming.url data-campaign-continue %}{{ continue_label }}{% endbutton %}{% endif %}{% endif %}{% endif %}
 </div>{% if wizard.reviewable and upcoming.url and not wizard.sub %}
 <p class="help unchanged-hint" id="campaign-continue-hint" data-continue-hint data-idle>{% translate "Review and apply your changes, or undo them, to continue." %}</p>{% endif %}
 {% endwith %}{% endif %}{% endwith %}

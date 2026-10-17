@@ -12,6 +12,10 @@ from .stepper_components import (
     EDITOR,
     LOAD,
     LOAD_FAILED,
+    LOAD_STATUS,
+    LOAD_STATUS_DONE,
+    LOAD_STATUS_RUNNING,
+    LOADED,
     LOADING,
     PATH,
     REVIEW,
@@ -19,7 +23,7 @@ from .stepper_components import (
 from .test_artwork_dialog import png, slot
 from .test_components import axe_violations, shown_step_list
 from .test_in_place import MARK, MARKED
-from .waits import available, greyed, has_text, hidden, visible
+from .waits import available, greyed, has_attribute, has_text, hidden, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -198,48 +202,145 @@ def test_continue_waits_while_an_image_is_chosen_but_not_uploaded(
     assert failures == []
 
 
+# The regular Refresh from ParishSoft page's queue wording (D2.1), which
+# the step never shows.
+QUEUE = "No second refresh starts beside it"
+
+
+def contains(locator, text):
+    """Assert that ``locator`` comes to contain ``text``, waiting."""
+    from playwright.sync_api import expect
+
+    expect(locator).to_contain_text(text)
+
+
+def stage_states(page):
+    """Each of the step's stage boxes as (stage key, state), in order."""
+    boxes = page.locator("#refresh-run [data-load-stage]")
+    return [
+        (
+            boxes.nth(i).get_attribute("data-load-stage"),
+            boxes.nth(i).get_attribute("data-stage-state"),
+        )
+        for i in range(boxes.count())
+    ]
+
+
+def assert_no_refresh_wording(page):
+    """The step shows no Refresh now and none of the refresh queue wording."""
+    assert page.get_by_role("button", name="Refresh now").count() == 0
+    assert page.get_by_text(QUEUE, exact=False).count() == 0
+
+
 @pytest.mark.parametrize("width", [320, 1280])
-def test_load_step_offers_the_load_then_continue_in_place(
+def test_load_step_loads_then_continues_in_place(
     page, component_origin, axe_source, width
 ):
-    """Load ParishSoft data's primary is the load, then Continue (#1404 PR 5).
+    """Load ParishSoft data shows one state at a time, in place (#1404 PR 5).
 
-    Before a load the page's own button is the one primary and the action
-    row has Back only. Requesting the load answers in place: the action row
-    gains Continue to Share options and the page's button becomes a
-    secondary Refresh now in the same place and at the same width, so the
-    pointer stays on it, with no reload.
+    Not loaded: every stage box waiting and the load button, Back only.
+    Loading (its in-place answer): the boxes follow the run's polled status,
+    with no button and no Continue. When the run ends, the page is re-read
+    in place: every box done, the Family count, and Continue, with no
+    reload, no Refresh now, and the summary line and boxes in the same place.
     """
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
     page.set_viewport_size({"width": width, "height": 900})
-    page.goto(answer_load(page, component_origin, LOAD))
+    page.goto(answer_load(page, component_origin, LOAD, LOADED))
     page.evaluate(MARK)
     stepper = page.locator("#campaign-stepper")
     assert "Step 2 of 8: Load ParishSoft data" in stepper.inner_text()
-    visible(page.locator("[data-campaign-load-intro]"))
     assert page.locator("[data-campaign-load]").count() == 0
+    region = page.locator("#refresh-run")
+    summary = region.locator("[data-campaign-load-summary]")
+    assert (
+        summary.inner_text()
+        == "This campaign's ParishSoft data hasn't been loaded yet."
+    )
+    assert [state for _key, state in stage_states(page)] == ["waiting"] * 4
+    boxes = region.get_by_role("list", name="Parts of the load")
+    # Each box's state is in its text, so in its name as a list item.
+    first = boxes.get_by_role("listitem").first
+    assert first.evaluate("node => node.textContent") == (
+        "Download from ParishSoft: Not started"
+    )
     row = page.locator("[data-campaign-step-actions]")
     back = row.locator("[data-campaign-step-back]")
     assert back.get_attribute("href") == reverse("admin:campaign_settings")
     assert row.get_by_role("link", name="Continue to Share options").count() == 0
+    assert_no_refresh_wording(page)
     start = page.get_by_role("button", name="Load the campaign's ParishSoft data")
     visible(start)
     assert "secondary" not in (start.get_attribute("class") or "")
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
+    polls = answer_polls(page, component_origin)
     start.scroll_into_view_if_needed()
-    before = start.bounding_box()
+    above = summary.bounding_box()
     start.click()
+    has_text(summary, "Loading the campaign's ParishSoft data…")
+    assert region.get_by_role("button").count() == 0
+    assert row.get_by_role("link", name="Continue to Share options").count() == 0
+    assert_no_refresh_wording(page)
+    assert_same_box(above, summary.bounding_box())
+    first_box = region.locator("[data-load-stage]").first.bounding_box()
+    # The poll moves the boxes on in place: Download done, Save in progress.
+    has_attribute(
+        region.locator('[data-load-stage="staging"]'), "data-stage-state", "active"
+    )
+    assert stage_states(page)[:2] == [("fetching", "done"), ("staging", "active")]
+    has_text(
+        region.locator("[data-campaign-load-count]"), "1,000 of 4,000 records checked"
+    )
+    assert axe_violations(page, axe_source) == []
+    polls.finish()
+    # The run ends: every box done, then the page re-read in place brings
+    # the Family count and Continue.
     proceed = row.get_by_role("link", name="Continue to Share options")
     visible(proceed)
     assert proceed.get_attribute("href") == reverse("admin:share_settings")
-    refresh = page.get_by_role("button", name="Refresh now")
-    visible(refresh)
-    assert "secondary" in refresh.get_attribute("class")
-    assert_same_box(before, refresh.bounding_box())
+    has_text(summary, "The campaign's ParishSoft data is loaded.")
+    count = region.locator("[data-campaign-load-count]")
+    contains(count, "1,234 Families, as of")
+    assert "UTC" not in count.inner_text()
+    assert [state for _key, state in stage_states(page)] == ["done"] * 4
+    assert region.get_by_role("button").count() == 0
+    assert_no_refresh_wording(page)
+    assert "Step 2 of 8: Load ParishSoft data" in stepper.inner_text()
+    assert_same_box(above, summary.bounding_box())
+    assert_same_box(first_box, region.locator("[data-load-stage]").first.bounding_box())
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert page.evaluate(MARKED) == "kept"
+    assert len(polls) >= 2
     assert failures == []
+
+
+class Polls(list):
+    """The step's status polls answered; ``finish`` ends the run."""
+
+    done = False
+
+    def finish(self):
+        """From the next poll on, answer that the run has finished."""
+        self.done = True
+
+
+def answer_polls(page, origin):
+    """Answer the step's status polls: running until ``finish``, then done.
+
+    Returns the ``Polls`` answered.
+    """
+    polls = Polls()
+
+    def answer(route):
+        """Serve the running status until the test finishes the run."""
+        polls.append(route.request.url)
+        shown = LOAD_STATUS_DONE if polls.done else LOAD_STATUS_RUNNING
+        route.fulfill(response=route.fetch(url=origin + shown, method="GET"))
+
+    page.route(lambda url: url.split("?")[0] == origin + LOAD_STATUS, answer)
+    return polls
 
 
 def assert_same_box(before, after):
@@ -248,53 +349,62 @@ def assert_same_box(before, after):
         assert abs(before[key] - after[key]) <= 1, (key, before, after)
 
 
-def answer_load(page, origin, first):
+def answer_load(page, origin, first, reread=None):
     """Serve the step at the real refresh address; return that address.
 
-    A load answers ``first`` and the form's in-place POST answers
+    The page's load answers ``first``; the form's in-place POST answers
     ``LOADING``, as the server would after recording the load (redirecting
-    back to this same address): the page and its answer must share an
-    address for the answer to be swapped in place.
+    back to this same address), and a later in-place re-read (once the run
+    ends) answers ``reread``. The page and its answers must share an address
+    for them to be swapped in place.
     """
     address = origin + reverse("admin:source_refresh")
 
     def answer(route):
-        """Serve ``first`` for a load and ``LOADING`` for the POST."""
-        shown = LOADING if route.request.method == "POST" else first
+        """Serve ``first`` for a load, ``LOADING`` for the POST, else ``reread``."""
+        if route.request.method == "POST":
+            shown = LOADING
+        elif route.request.resource_type == "document" or reread is None:
+            shown = first
+        else:
+            shown = reread
         route.fulfill(response=route.fetch(url=origin + shown, method="GET"))
 
     page.route(lambda url: url.split("#")[0] == address, answer)
     return address
 
 
-def test_failed_load_says_so_and_try_again_clears_it(page, component_origin):
+def test_failed_load_says_so_and_try_again_loads_again(page, component_origin):
     """After a failed load the step says so, with Try again (#1404 PR 5).
 
-    The notice is in the run's region after the button, so Try again's
-    in-place answer clears it, showing the load under way and Continue, with
-    no reload and without moving the button under the pointer.
+    The stage the run stopped in is marked failed, in words; See what went
+    wrong opens its Background task; Try again's in-place answer shows the
+    load under way, with no button and no Continue, and no reload.
     """
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
     page.goto(answer_load(page, component_origin, LOAD_FAILED))
     page.evaluate(MARK)
-    notice = page.locator("[data-campaign-load-failed]")
-    visible(notice)
-    assert "The campaign's ParishSoft data did not load." in notice.inner_text()
-    link = notice.get_by_role("link", name="See what went wrong")
+    region = page.locator("#refresh-run")
+    summary = region.locator("[data-campaign-load-summary]")
+    assert "The campaign's ParishSoft data did not load." in summary.inner_text()
+    link = summary.get_by_role("link", name="See what went wrong")
     assert link.get_attribute("href") == reverse(
         "admin:background_task_page", args=[UUID(int=1404)]
     )
+    assert stage_states(page)[:2] == [("fetching", "done"), ("staging", "failed")]
+    assert "Failed" in region.locator('[data-load-stage="staging"]').inner_text()
     row = page.locator("[data-campaign-step-actions]")
     assert row.get_by_role("link", name="Continue to Share options").count() == 0
-    again = page.get_by_role("button", name="Try again")
+    assert_no_refresh_wording(page)
+    again = region.get_by_role("button", name="Try again")
     again.scroll_into_view_if_needed()
-    before = again.bounding_box()
+    above = summary.bounding_box()
     again.click()
-    visible(row.get_by_role("link", name="Continue to Share options"))
-    hidden(notice)
-    refresh = page.get_by_role("button", name="Refresh now")
-    assert_same_box(before, refresh.bounding_box())
-    assert page.locator("[data-campaign-load-failed]").count() == 0
+    has_text(summary, "Loading the campaign's ParishSoft data…")
+    assert region.get_by_role("button").count() == 0
+    assert row.get_by_role("link", name="Continue to Share options").count() == 0
+    assert [state for _key, state in stage_states(page)] == ["waiting"] * 4
+    assert_same_box(above, summary.bounding_box())
     assert page.evaluate(MARKED) == "kept"
     assert failures == []

@@ -16,13 +16,18 @@ emails.
 
 ``LOAD`` is step 2, Load ParishSoft data (#1404 PR 5): Refresh from
 ParishSoft with the stepper current on it and no load started yet;
-``LOAD_FAILED`` is the same after a failed load (Try again), and
-``LOADING`` is either one's in-place answer once a load is requested, whose
-action row offers Continue to Share options. Its form posts to the real
-refresh address, which another component already answers, so the test
-answers that POST with ``LOADING`` itself.
+``LOAD_FAILED`` is the same after a failed load (Try again), ``LOADING``
+is either one's in-place answer once a load is requested (no button, no
+Continue), and ``LOADED`` the page once the load has brought the
+campaign's Families, whose action row offers Continue to Share options.
+While loading, the step polls ``LOAD_RUN``'s passive status
+(``LOAD_STATUS`` with ?view=load), answered by ``LOAD_STATUS_RUNNING`` and
+then ``LOAD_STATUS_DONE``. Its form posts to the real refresh address,
+which another component already answers, so the test answers that POST
+(and the in-place re-read once the run ends) itself.
 """
 
+from datetime import timedelta
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
@@ -36,6 +41,8 @@ from parishkit.stewardship.accounts.share_forms import (
     ShareOptions,
     default_share_options,
 )
+from parishkit.stewardship.source.data_age import Connection
+from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 
 PATH = "/campaign-stepper"
 REVIEW = "/campaign-stepper-review"
@@ -50,6 +57,11 @@ EDITOR = "/campaign-stepper-editor"
 LOAD = "/campaign-stepper-load"
 LOAD_FAILED = "/campaign-stepper-load-failed"
 LOADING = "/campaign-stepper-loading"
+LOADED = "/campaign-stepper-loaded"
+LOAD_RUN = UUID(int=1405)
+LOAD_STATUS = reverse("admin:background_task_status", args=[LOAD_RUN])
+LOAD_STATUS_RUNNING = "/campaign-stepper-load-status-running"
+LOAD_STATUS_DONE = "/campaign-stepper-load-status-done"
 POSTS = {
     PATH: (303, APPLIED, ""),
     reverse("admin:campaign_step_continue"): (303, CONTENT, ""),
@@ -109,16 +121,24 @@ def components(context, admin):
             ),
         )
 
+    now = context["server_now"]
+
     def load(state):
-        """Load ParishSoft data with the campaign's data ``state`` (PR 5)."""
+        """Load ParishSoft data with the campaign's data ``state`` (PR 5):
+        offer, loading (the run just queued), failed (in Save the downloaded
+        records) or None, loaded with 1,234 Families."""
+        task = {"failed": UUID(int=1404), "loading": LOAD_RUN}.get(state)
+        progress = {"failed": ("staging", 10, 40), "loading": ("unspecified", 0, 0)}
         chrome = admin | {
             "campaign_wizard": campaign_wizard.build(
                 True,
                 "load",
-                done={"settings"},
+                done={"settings"} | (set() if state else {"load"}),
                 mail_test_url=TEST_URL,
                 load=state,
-                load_task=UUID(int=1404) if state == "failed" else None,
+                load_task=task,
+                load_progress=progress.get(state),
+                families=None if state else 1234,
             )
         }
         return (
@@ -131,7 +151,30 @@ def components(context, admin):
                     "pending": {"running": False, "waiting": False},
                     "request_key": uuid4(),
                     "lateness_minutes": 30,
+                    "full_refresh": FullRefreshStatus(
+                        now,
+                        None,
+                        False,
+                        full_started_at=now - timedelta(minutes=1),
+                        data_as_of=now - timedelta(minutes=1),
+                        connection=Connection("working", now),
+                    ),
                 },
+            ),
+        )
+
+    def load_status(state, phase):
+        """The step's polled status for its run in ``state`` at ``phase``."""
+        task = {
+            "id": str(LOAD_RUN),
+            "state": state,
+            "progress": {"phase": phase, "current": 1000, "total": 4000},
+        }
+        return (
+            "text/html",
+            render_to_string(
+                "stewardship/campaign-load-status.html",
+                campaign_wizard.load_status(task),
             ),
         )
 
@@ -140,6 +183,9 @@ def components(context, admin):
         LOAD: load("offer"),
         LOAD_FAILED: load("failed"),
         LOADING: load("loading"),
+        LOADED: load(None),
+        LOAD_STATUS_RUNNING: load_status("running", "staging"),
+        LOAD_STATUS_DONE: load_status("succeeded", "promoting"),
         PATH: share({"settings"}),
         CONTENT: content(
             "content-catalog.html",

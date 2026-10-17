@@ -3248,30 +3248,52 @@ live.
   ([Campaign settings page](#campaign-settings-page)); on a draft those
   schedules have sent nothing.
 - **Load ParishSoft data** (#1404 PR 5). It opens Refresh from
-  ParishSoft in wizard mode, whose one-line hint says "This adds the
-  campaign's Families, Family codes and giving. You can continue while it
-  runs." and whose About panel starts "A full refresh adds the campaign's
-  Families, Family codes and giving. It usually takes a few minutes. You can
-  go on to the next steps while it runs; Go-live readiness waits for it."
-  ([page help](../ui-conventions/spec.md#page-help)). Its
-  primary is the page's own button, **Load the campaign's ParishSoft
-  data**, while no load is under way; it acts
-  [in place](../ui-conventions/spec.md#in-place-controls), as Refresh now
-  does, so the load's progress shows below it, and its answer also redraws
-  the action row, which then offers **Continue to** the next step not done
-  yet, a link, while the load runs and after it. The page's button is then
-  a secondary Refresh now. A failed load (as above) is named in the run's
-  region, after the button, with its Background task link, and the button
-  reads **Try again**, never the plain offer again, so it never looks as if
-  no load was started; Try again's answer replaces the notice. The button
-  keeps the width of its longest label in every state, the notice sits
-  after it, and the run's region keeps its height (`data-keep-height`), so
-  pressing it moves nothing under the pointer
-  ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). The step draws no load
-  notice above the page, since the page is the load. The scheduled full
-  refresh stays the fallback. The load is started by that button, never
-  automatically at creation. Outside the stepper Refresh from ParishSoft is
-  unchanged ([manual ParishSoft refresh](#manual-parishsoft-refresh)).
+  ParishSoft in wizard mode, which shows exactly one state of the
+  campaign's ParishSoft data, chosen on the server, with no Refresh now and
+  none of the page's queue wording, since the step is the campaign's load,
+  not a refresh to repeat (Administrator, 2026-10-17). Below its summary
+  line, the full refresh's major stages are
+  [stage boxes](../ui-conventions/spec.md#stage-boxes), left to right:
+  Download from ParishSoft, Save the downloaded records, Check the new data
+  and Make the new data current, the phases the refresh's worker reports,
+  each marked not started, in progress, done or failed in words.
+  - *Not loaded* (no load under way since the campaign was created): "This
+    campaign's ParishSoft data hasn't been loaded yet.", every stage not
+    started, and the primary **Load the campaign's ParishSoft data**.
+  - *Loading* (the newest refresh since the campaign was created is
+    queued, running or waiting to retry): "Loading the campaign's
+    ParishSoft data…", the stages following the run, with the records
+    checked on the line after them, and no button at all, not even
+    Continue. The region polls the run's passive status read (which never
+    renews idle time) and is updated in place; once the run ends, the page
+    re-reads itself in place, so the stepper, the action row and this
+    region show the next state with no reload.
+  - *Loaded* (the campaign has its Families, the step's completion): "The
+    campaign's ParishSoft data is loaded.", every stage done, the line after
+    them giving the campaign's Family count and the data's age ("as of",
+    in the browser's time zone), and the action row's primary **Continue
+    to** the next step not done yet, a link.
+  - *Failed* (as above): "The campaign's ParishSoft data did not load.",
+    with **See what went wrong**, which opens the run's Background task,
+    the stage the run stopped in marked failed, and the primary **Try
+    again**, never the plain offer again, so it never looks as if no load
+    was started.
+
+  The button acts [in place](../ui-conventions/spec.md#in-place-controls),
+  and its answer also redraws the action row. Every state draws the same
+  summary line, boxes and reserved line after them, the summary line keeps
+  room for its longest wording on a phone, and the region keeps its height
+  (`data-keep-height`), so a change of state moves nothing
+  ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). The About
+  panel says what the load reads, that the page updates by itself while it
+  runs and may be left, what Try again does, and that the scheduled
+  refreshes keep the data up to date afterwards
+  ([page help](../ui-conventions/spec.md#page-help)). The step draws no
+  load notice above the page, since the page is the load. The scheduled
+  full refresh stays the fallback. The load is started by that button,
+  never automatically at creation. Outside the stepper Refresh from
+  ParishSoft is unchanged
+  ([manual ParishSoft refresh](#manual-parishsoft-refresh)).
 - **Share options** and **Campaign images.** The existing pages in wizard
   mode. Removing an image keeps its confirmation, because it discards a file
   ([wizard rule 5](../ui-conventions/spec.md#wizards)).
@@ -3325,8 +3347,8 @@ image not uploaded yet), Continue is unavailable, with
 a hint after the row in a line that is always reserved, so the page's own
 Save (with its review dialog, for now) stays the way on, until a
 direct save makes it Save and continue (planned, #1404 PR 4). Load
-ParishSoft data offers Continue only once a load is under way or the
-campaign has its Families (above). Preview and test
+ParishSoft data offers Continue only once the campaign has its Families
+(above). Preview and test
 email offers Continue to Go-live readiness only once its test is accepted,
 because the test is the step's purpose; Go-live readiness, the last step,
 has Back only. Back and Continue never save, discard or submit the page's
@@ -5150,9 +5172,10 @@ page for the history and technical details. When the run ends, the page
 re-reads itself in place, so the data age above and the request key are
 fresh. The breadcrumb is the way back; the page has no Cancel link.
 While the current campaign is a Testing draft being prepared, the page is
-also step 2 of the campaign wizard, Load ParishSoft data, with its own
-wording of the button
-([Create the campaign](#create-the-campaign), the steps page by page).
+also step 2 of the campaign wizard, Load ParishSoft data, which shows
+the campaign's load in one state instead of this page's panels and
+Refresh now ([Create the campaign](#create-the-campaign), the steps page
+by page).
 
 The refresh page and the "Run a full refresh now" button say that a full
 refresh re-reads everything (including Ministry rosters and giving) and usually

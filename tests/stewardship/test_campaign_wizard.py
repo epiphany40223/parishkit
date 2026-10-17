@@ -7,6 +7,7 @@ or its Continue was pressed with nothing changed (#1404), and its Back and
 Continue never save anything on the page.
 """
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -398,7 +399,7 @@ def test_sub_pages_draw_their_steps_stepper(monkeypatch, name, step, sub):
     """Each sub-page draws the stepper with its step current (#1404)."""
     monkeypatch.setattr(wizard, "invitation_revision", lambda *_: None)
     monkeypatch.setattr(wizard, "completed", lambda *_: {"settings"})
-    monkeypatch.setattr(wizard, "_load_state", lambda *_: (None, None))
+    monkeypatch.setattr(wizard, "_load_state", lambda *_: (None, None, None))
     monkeypatch.setattr(
         "parishkit.stewardship.accounts.schedule_reads.campaign_schedules",
         lambda *_: [{}],
@@ -554,17 +555,19 @@ def test_only_create_the_campaign_draws_the_stepper_before_a_campaign(
     [
         ("offer", set(), False),
         ("failed", set(), False),
-        ("loading", set(), True),
+        ("loading", set(), False),
         (None, {"load"}, True),
     ],
 )
-def test_load_step_continues_once_a_load_is_under_way(load, done, continues):
-    """Load ParishSoft data's primary is the load, then Continue (#1404 PR 5).
+def test_load_step_continues_once_the_data_is_loaded(load, done, continues):
+    """Load ParishSoft data offers Continue only once loaded (#1404 PR 5).
 
-    Until a load is under way the page's own button is the step's primary,
-    so the row has Back only; once one runs, or the campaign has its
-    Families, the row offers Continue to the next step, a plain link: the
-    step stores no review.
+    Before a load the page's own button is the step's primary, and while
+    the load runs there is no primary at all (Administrator, 2026-10-17:
+    "We're loading the data... ok, now it's done, and we can continue"), so
+    the row has Back only; once the campaign has its Families the row
+    offers Continue to the next step, a plain link: the step stores no
+    review.
     """
     html = actions(
         wizard.build(
@@ -622,4 +625,141 @@ def test_the_load_step_draws_no_load_notice(load):
 
 def test_families_complete_the_load_step():
     """The step is completed by the Families, so nothing else is read (PR 5)."""
-    assert wizard._load_state(SimpleNamespace(), {"settings", "load"}) == (None, None)
+    assert wizard._load_state(SimpleNamespace(), {"settings", "load"}) == (
+        None,
+        None,
+        None,
+    )
+
+
+def states(boxes):
+    """Each stage box's (key, state), in order."""
+    return [(box["key"], box["state"]) for box in boxes]
+
+
+KEYS = ["fetching", "staging", "validating", "promoting"]
+
+
+@pytest.mark.parametrize(
+    ("load", "phase", "expected"),
+    [
+        ("offer", None, ["waiting"] * 4),
+        ("loading", "unspecified", ["waiting"] * 4),
+        ("loading", "fetching", ["active", "waiting", "waiting", "waiting"]),
+        ("loading", "validating", ["done", "done", "active", "waiting"]),
+        ("loaded", None, ["done"] * 4),
+        ("failed", "staging", ["done", "failed", "waiting", "waiting"]),
+        ("failed", "unspecified", ["failed", "waiting", "waiting", "waiting"]),
+    ],
+)
+def test_load_stages_follow_the_refresh_phases(load, phase, expected):
+    """One box per refresh phase the worker reports, in order (#1404 PR 5).
+
+    Not loaded: every stage waiting; loading: the stages before the run's
+    phase done and its own in progress; loaded: every stage done; failed:
+    the stage it stopped in failed. Each box words its state.
+    """
+    boxes = wizard.load_stages(load, phase)
+    assert states(boxes) == list(zip(KEYS, expected, strict=True))
+    words = {"done": "Done", "active": "In progress", "waiting": "Not started"}
+    words["failed"] = "Failed"
+    assert [str(box["status"]) for box in boxes] == [words[x] for x in expected]
+
+
+def test_the_loading_stepper_carries_the_run_to_its_stage_boxes():
+    """The stepper's facts draw the step's one state and its boxes."""
+    task = uuid4()
+    stepper = wizard.build(
+        True,
+        "load",
+        done={"settings"},
+        mail_test_url=None,
+        load="loading",
+        load_task=task,
+        load_progress=("staging", 10, 40),
+    )
+    assert stepper.load_view == "loading" and stepper.load_task == task
+    assert states(stepper.load_stages)[:2] == [
+        ("fetching", "done"),
+        ("staging", "active"),
+    ]
+    loaded = wizard.build(
+        True, "load", done={"settings", "load"}, mail_test_url=None, families=12
+    )
+    assert loaded.load_view == "loaded" and loaded.families == 12
+    assert {box["state"] for box in loaded.load_stages} == {"done"}
+
+
+def load_region(**values):
+    """Load ParishSoft data's status region, drawn from ``values``."""
+    return render_to_string("stewardship/campaign-load-status.html", values)
+
+
+def test_load_status_region_draws_one_state_each():
+    """Each state's line, its boxes, and polling only while loading (PR 5)."""
+    task = uuid4()
+    status_url = reverse("admin:background_task_status", args=[task])
+    offer = load_region(load="offer", stages=wizard.load_stages("offer", None))
+    assert "This campaign's ParishSoft data hasn't been loaded yet." in offer
+    assert "data-live-pending" not in offer and "data-live-url" not in offer
+    assert offer.count('data-stage-state="waiting"') == 4
+    loading = load_region(
+        load="loading",
+        load_task=task,
+        stages=wizard.load_stages("loading", "fetching"),
+        progress=("fetching", 1000, 4000),
+    )
+    assert "Loading the campaign's ParishSoft data…" in loading
+    assert f'data-live-url="{status_url}?view=load"' in loading
+    assert "data-live-pending" in loading and "1,000 of 4,000 records checked" in (
+        loading
+    )
+    assert "Download from ParishSoft: In progress." in loading
+    assert "data-live-follow" not in loading
+    failed = load_region(
+        load="failed", load_task=task, stages=wizard.load_stages("failed", "staging")
+    )
+    assert "did not load." in failed and "See what went wrong" in failed
+    assert reverse("admin:background_task_page", args=[task]) in failed
+    assert "data-live-pending" not in failed
+    loaded = load_region(
+        load="loaded",
+        stages=wizard.load_stages("loaded", None),
+        families=1234,
+        as_of=datetime(2026, 10, 17, 12, 0, tzinfo=UTC),
+    )
+    assert "is loaded." in loaded and "1,234 Families, as of" in loaded
+    assert 'datetime="2026-10-17T12:00:00+00:00" data-local-instant' in loaded
+    assert loaded.count('data-stage-state="done"') == 4
+    # A poll's settled answer follows up by re-reading the page in place.
+    polled = load_region(**wizard.load_status(task_values("succeeded", task)))
+    assert "data-live-follow" in polled and 'href="#refresh-run"' in polled
+    assert "is loaded." in polled and "data-live-pending" not in polled
+
+
+def task_values(state, task, phase="promoting"):
+    """A refresh run as the Background task read names it."""
+    return {
+        "id": str(task),
+        "state": state,
+        "progress": {"phase": phase, "current": 4000, "total": 4000},
+    }
+
+
+@pytest.mark.parametrize(
+    ("state", "load"),
+    [
+        ("queued", "loading"),
+        ("running", "loading"),
+        ("retry_wait", "loading"),
+        ("succeeded", "loaded"),
+        ("failed", "failed"),
+        ("cancelled", "failed"),
+    ],
+)
+def test_load_status_reads_the_run_state(state, load):
+    """The status fragment names the step's state from the run alone."""
+    task = uuid4()
+    status = wizard.load_status(task_values(state, task, "staging"))
+    assert status["load"] == load and status["load_task"] == str(task)
+    assert status["polled"] is True

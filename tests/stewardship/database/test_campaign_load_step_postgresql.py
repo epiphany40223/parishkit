@@ -2,9 +2,11 @@
 
 Real Google sessions, the restricted web role and the real refresh page:
 while the current campaign is a Testing draft, Refresh from ParishSoft is
-the stepper's Load ParishSoft data. Its own button is the step's primary
-until a load is under way, then the action row offers Continue; a failed
-load says so on this step and every other one, with Try again; the
+the stepper's Load ParishSoft data, which shows exactly one state: not
+loaded (the load button), loading (the refresh's stage boxes following the
+run, no button and no Continue), loaded (the Family count and Continue) or
+failed (See what went wrong and Try again), with no Refresh now and no
+queue wording; a failed load says so on every other step too; the
 campaign's Families complete the step; outside the stepper the page is
 unchanged.
 """
@@ -15,6 +17,7 @@ from uuid import uuid4
 
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 
 from parishkit.stewardship.campaigns.family_identity import FamilyStatus
 from parishkit.stewardship.campaigns.lifecycle import Action
@@ -31,9 +34,12 @@ from .test_share_views_postgresql import setup
 
 pytestmark = pytest.mark.django_db(transaction=True)
 URL = reverse("admin:source_refresh")
-INTRO = "This adds the campaign's Families, Family codes and giving."
-# The step's own button before any load, its label in a span of its own.
-OFFER = "data-campaign-load-start><span>Load the campaign's ParishSoft data</span>"
+NOT_LOADED = "This campaign's ParishSoft data hasn't been loaded yet."
+LOADING = "Loading the campaign's ParishSoft data…"
+# The step's own button before any load.
+OFFER = "data-campaign-load-start>Load the campaign's ParishSoft data</button>"
+# The regular page's wording, never drawn on the step.
+QUEUE = "No second refresh starts beside it"
 
 
 def web():
@@ -70,8 +76,13 @@ def refresh_run(state, **fields):
     return task
 
 
-def test_load_step_offers_the_load_then_continue(auth_service, google):
-    """The step's primary is the load until it runs, then Continue (PR 5)."""
+def state(html):
+    """The step's one state, as its status region names it."""
+    return re.search(r'data-campaign-load-state="([a-z]+)"', html).group(1)
+
+
+def test_load_step_shows_one_state_at_a_time(auth_service, google):
+    """Not loaded, then loading with no button, then loaded (PR 5, D2.1)."""
     row, _, _ = setup(auth_service.store)
     browser, _ = signed_in()
     html = page(browser)
@@ -79,36 +90,63 @@ def test_load_step_offers_the_load_then_continue(auth_service, google):
     assert "Step 2 of 8:" in region
     assert "<strong>Load ParishSoft data</strong>" in region
     assert status_of(region, "Load ParishSoft data") == "Current step — Not done yet"
-    assert INTRO in html
-    # The page's own form is the primary, in place, and its answer also
-    # redraws the action row; the step draws no load notice of its own.
+    # Not loaded: the line, every stage box waiting, and the load button,
+    # which acts in place and also redraws the action row.
+    assert state(html) == "offer" and NOT_LOADED in html
+    assert html.count('data-stage-state="waiting"') == 4
     assert OFFER in html
     assert 'data-in-place-only="campaign-step-actions"' in html
+    assert "Refresh now" not in html and QUEUE not in html
+    # The step draws no load notice of its own above the page.
     assert "data-campaign-load " not in html and "data-campaign-load>" not in html
     row_html = actions(html)
     assert f'href="{reverse("admin:campaign_settings")}"' in row_html
     assert "Continue" not in row_html
-    # Once a load is under way, Continue to the next step; Refresh now is
-    # secondary, since Continue is the step's one primary.
-    refresh_run("queued")
-    html = page(browser)
-    row_html = actions(html)
-    assert "Continue to Share options" in row_html
-    assert f'href="{reverse("admin:share_settings")}"' in row_html
-    assert "data-campaign-load-start" not in html
-    assert re.search(
-        r'<button type="submit" class="[^"]*secondary[^"]*"[^>]*>'
-        r"<span>Refresh now</span>",
-        html,
+    # Loading: the boxes follow the run, polled through its passive status
+    # (?view=load); no button at all, and no Continue until it is loaded.
+    claimed = timezone.now()
+    task = refresh_run(
+        "running",
+        phase="staging",
+        progress_current=10,
+        progress_total=40,
+        # A claimed run, as the worker leaves it (task_claim_shape).
+        attempt=1,
+        fence=1,
+        worker_id=uuid4(),
+        heartbeat_at=claimed,
+        lease_expires_at=claimed + timedelta(minutes=5),
     )
+    html = page(browser)
+    assert state(html) == "loading" and LOADING in html
+    status = reverse("admin:background_task_status", args=[task]) + "?view=load"
+    assert f'data-live-url="{status}"' in html and "data-live-pending" in html
+    assert 'data-load-stage="fetching" data-stage-state="done"' in html
+    assert 'data-load-stage="staging" data-stage-state="active"' in html
+    assert (
+        "data-campaign-load-start" not in html
+        and "<button"
+        not in (
+            html[html.index('id="refresh-run"') :].split('id="campaign-step-actions"')[
+                0
+            ]
+        )
+    )
+    assert "Refresh now" not in html and QUEUE not in html
+    assert "Continue" not in actions(html)
+    # The poll draws the same region from the run alone.
+    polled = page(browser, status)
+    assert state(polled) == "loading" and "data-live-pending" in polled
+    assert 'data-load-stage="staging" data-stage-state="active"' in polled
     # Every other step says the data is loading.
     content = page(browser, reverse("admin:content_catalog"))
     assert "ParishSoft data is loading; Go-live readiness waits for it." in content
     # Outside the stepper (the campaign is no longer a draft) the page is
-    # the ordinary Refresh from ParishSoft.
+    # the ordinary Refresh from ParishSoft, with Refresh now and its wording.
     command(row, uuid4(), Action.ACTIVATE)
     html = page(browser)
-    assert stepper(html.encode()) is None and INTRO not in html
+    assert stepper(html.encode()) is None and NOT_LOADED not in html
+    assert "data-campaign-load-state" not in html and ">Refresh now<" in html
     assert "data-in-place-only " in html or "data-in-place-only data-in" in html
 
 
@@ -121,7 +159,9 @@ def test_failed_load_says_so_and_offers_try_again(auth_service, google):
     html = page(browser)
     assert "The campaign's ParishSoft data did not load." in html
     assert task_link in html
-    assert "data-campaign-load-start><span>Try again</span>" in html
+    assert state(html) == "failed" and ">See what went wrong<" in html
+    assert "data-campaign-load-start>Try again</button>" in html
+    assert 'data-stage-state="failed"' in html and "Refresh now" not in html
     assert "Continue" not in actions(html)
     content = page(browser, reverse("admin:content_catalog"))
     assert "The campaign's ParishSoft data did not load." in content
@@ -134,7 +174,8 @@ def test_failed_load_says_so_and_offers_try_again(auth_service, google):
     )
     refresh_run("queued")
     html = page(browser)
-    assert "did not load" not in html and "Continue to Share options" in actions(html)
+    assert "did not load" not in html and state(html) == "loading"
+    assert "Continue" not in actions(html)
 
 
 def test_families_complete_the_load_step(auth_service, google):
@@ -149,6 +190,19 @@ def test_families_complete_the_load_step(auth_service, google):
     assert status_of(region, "Load ParishSoft data") == "Current step — Completed"
     assert "2 of 8 steps completed" in region
     assert "did not load" not in html and "data-campaign-load-start" not in html
+    # Loaded: every box done, the Family count, and Continue.
+    assert state(html) == "loaded" and html.count('data-stage-state="done"') == 4
+    assert "The campaign's ParishSoft data is loaded." in html
+    assert re.search(r"data-campaign-load-count>1 Family[,.]", html)
+    assert (
+        "Refresh now" not in html
+        and "<button"
+        not in (
+            html[html.index('id="refresh-run"') :].split('id="campaign-step-actions"')[
+                0
+            ]
+        )
+    )
     assert "Continue to Share options" in actions(html)
     # Every other step drops the load notice, and Home goes on past it.
     assert "data-campaign-load" not in page(browser, reverse("admin:content_catalog"))
