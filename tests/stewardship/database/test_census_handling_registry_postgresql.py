@@ -157,6 +157,89 @@ def test_the_correction_re_marks_only_open_rows(response_service):
     assert len(corrected_events()) == 1
 
 
+# Entity keys no fixture row uses, so seeded rows never collide with the
+# submission's own proposals.
+SEEDED_MEMBER = "00000000-0000-4000-8000-000000000118"
+SEEDED_FAMILY = "00000000-0000-4000-8000-000000000119"
+
+
+def seed(base, **values):
+    """Store a pre-0113 Automatic row shaped like ``base`` with every trigger
+    off, overriding ``values``, and return it."""
+    fields = {
+        field.attname: getattr(base, field.attname)
+        for field in ProposedChange._meta.concrete_fields
+        if field.attname not in ("id", "updated_at")
+    }
+    row = ProposedChange(**(fields | {"handling": "api"} | values))
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL session_replication_role = replica")
+        ProposedChange.objects.bulk_create([row])
+    return ProposedChange.objects.get(pk=row.pk)
+
+
+def test_the_correction_keeps_review_state_and_skips_queued_and_failed(
+    response_service,
+):
+    """An approved, edited conflict death date and Member answers that remove a
+    value are re-marked By hand with their decision, edit and execution kept;
+    failed and queued rows of affected kinds are left exactly as they were."""
+    harness = response_service
+    start(harness)
+    harness = activate_response_service(harness)
+    submit_live(harness)
+    base = ProposedChange.objects.get(field="first_name")
+    common = {"entity_kind": "member", "entity_key": SEEDED_MEMBER}
+    death = seed(
+        base,
+        **common,
+        field="death_date",
+        submitted_value="2026-01-01",
+        decision="approved",
+        admin_value_set=True,
+        admin_value="2026-01-02",
+        execution="conflict",
+    )
+    blanked = seed(base, **common, field="nickname", submitted_value="")
+    unknown = seed(base, **common, field="birth_date", submitted_value=None)
+    failed = seed(base, **common, field="email", submitted_value="", execution="failed")
+    queued = seed(
+        base,
+        entity_kind="family",
+        entity_key=SEEDED_FAMILY,
+        field="home_address",
+        decision="approved",
+        execution="queued",
+    )
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(correction())
+    for row in (death, blanked, unknown):
+        after = ProposedChange.objects.get(pk=row.pk)
+        assert (after.handling, after.version) == ("manual", row.version + 1)
+        assert (
+            after.decision,
+            after.admin_value_set,
+            after.admin_value,
+            after.execution,
+            after.submitted_value,
+        ) == (
+            row.decision,
+            row.admin_value_set,
+            row.admin_value,
+            row.execution,
+            row.submitted_value,
+        )
+    assert ProposedChange.objects.get(pk=death.pk).execution == "conflict"
+    for row in (failed, queued):
+        after = ProposedChange.objects.get(pk=row.pk)
+        assert (after.handling, after.version, after.execution) == (
+            "api",
+            row.version,
+            row.execution,
+        )
+    assert corrected_events() == [{"outcome": "changed", "count": 3}]
+
+
 def test_the_correction_keeps_writable_open_changes_automatic(response_service):
     """An open Automatic rename is not touched, nor audited."""
     harness = response_service

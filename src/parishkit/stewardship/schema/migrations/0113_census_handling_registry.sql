@@ -463,11 +463,13 @@ END
 $correct$;
 
 -- The UPDATE queued the deferred successor check for each row, and a table
--- with pending trigger events cannot be altered: run those checks now, then
--- enable the guard again and give the check back its initial deferral.
-SET CONSTRAINTS public.stewardship_proposal_successor IMMEDIATE;
+-- with pending trigger events cannot be altered: run every pending check now
+-- (ALL, so a deferred trigger added to the table later cannot block the
+-- ENABLE), then enable the guard again. Every deferrable constraint in this
+-- schema is INITIALLY DEFERRED, so ALL DEFERRED restores the initial state.
+SET CONSTRAINTS ALL IMMEDIATE;
 ALTER TABLE public.stewardship_proposed_change ENABLE TRIGGER stewardship_proposed_change_guard;
-SET CONSTRAINTS public.stewardship_proposal_successor DEFERRED;
+SET CONSTRAINTS ALL DEFERRED;
 
 DO $check$
 BEGIN
