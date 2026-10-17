@@ -97,9 +97,13 @@ def check_answer(stored, body, now):
 
 
 def components(context, admin, now):
-    """The settings page for each sample stored schedule."""
+    """The settings page for each sample stored schedule.
+
+    ``/refresh-schedule-gated`` is Production's schedule with Save waiting
+    for a change too, as the view draws it (#1330).
+    """
     responses = {}
-    for path, stored in STORED.items():
+    for path, stored in (STORED | {"/refresh-schedule-gated": PRODUCTION}).items():
         form = IntegrationForm(
             "parishsoft",
             initial=stored | {"base_digest": "a" * 64},
@@ -121,6 +125,7 @@ def components(context, admin, now):
                     ),
                     "refresh_key": uuid4(),
                     "form": form,
+                    "change_gate": path.endswith("-gated"),
                 }
                 | _schedule(form.schedule, now),
             ),

@@ -570,6 +570,9 @@ def _page(
             "end_check": None if live_at is None else end_check_words(),
             # A live campaign's open Ministry list says what a change does.
             "live_ministries": not editable and "ministry_duids" in open_fields,
+            # Review waits while the Ministries and another setting both
+            # changed, in the words the server refuses that with (#1330).
+            "ministries_alone": MINISTRIES_ALONE,
             "family_test_url": chosen_family_test_url(configuration, campaign),
             # Review posts here, and the review dialog's Apply too.
             "page_url": request.path,

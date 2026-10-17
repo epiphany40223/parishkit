@@ -173,7 +173,9 @@ def test_preview_refusals(admin):
     code, document, _ = preview(
         admin, secret, {"website": "https://example.org/parish?tab=1"}
     )
-    assert code == 1 and refused(document, "invalid") == ["parish"]
+    # The page's form refuses the website at its field (#1330), so the
+    # refusal names the field, as the other field errors do.
+    assert code == 1 and refused(document, "invalid") == ["parish.website"]
     code, document, _ = preview(admin, secret, {"logo": "x"})
     assert code == 1 and refused(document, "invalid") == ["parish.logo"]
     # Only the giving link may be null, and the date format never blank: the

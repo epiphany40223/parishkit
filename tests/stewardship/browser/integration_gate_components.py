@@ -3,7 +3,9 @@
 Slack not set up (its token required), off-site backups before Google
 Workspace mail is set up (Test access unavailable with why) and both steps of
 a backup key change, each with the real templates and forms. Share options is
-served by conftest's own /share-settings page.
+served by conftest's own /share-settings page. Set-up Slack and off-site
+backups, with Save waiting for a change, and Slack not set up while its key
+can't be stored, are #1330's.
 """
 
 from django.template.loader import render_to_string
@@ -42,6 +44,53 @@ def components(context, admin):
                 "configured": False,
                 "workspace_configured": False,
                 "form": IntegrationForm("backup", **form),
+            },
+        ),
+        # Slack set up: Save waits for a change (#1330); the key is optional.
+        "/slack-set-up": (
+            "integration-settings",
+            {
+                "target": "slack",
+                "label": "Slack notifications",
+                "configured": True,
+                "change_gate": True,
+                "form": IntegrationForm(
+                    "slack",
+                    initial={"base_digest": "a" * 64, "channel_id": "C0123456789"},
+                ),
+                "credential": InlineCredentialForm(
+                    "slack", initial={"intent": "synthetic-intent"}
+                ),
+            },
+        ),
+        # Slack not set up while its key can't be stored: Save is unavailable.
+        "/slack-key-unavailable": (
+            "integration-settings",
+            {
+                "target": "slack",
+                "label": "Slack notifications",
+                "configured": False,
+                "change_gate": True,
+                "credential_unavailable": True,
+                "form": IntegrationForm("slack", **form),
+            },
+        ),
+        # Off-site backups set up: Save waits for a change, Test access never.
+        "/backup-set-up": (
+            "integration-settings",
+            {
+                "target": "backup",
+                "label": "Off-site backups (Google Drive)",
+                "configured": True,
+                "workspace_configured": True,
+                "change_gate": True,
+                "form": IntegrationForm(
+                    "backup",
+                    initial={
+                        "base_digest": "a" * 64,
+                        "target": "https://drive.google.com/drive/folders/" + "a" * 20,
+                    },
+                ),
             },
         ),
         # The first step of a key change, with nothing pasted yet.
