@@ -1043,10 +1043,12 @@
   // - a shared table's sort headings, navigator links and forms, and the
   //   page's filter form (form#table-filters, #484), unless that form is
   //   itself a form[data-in-place] because its options reshape far more of
-  //   the page than a table (the participation report's options, which
-  //   refresh its statistics, chart and export panels, #519);
+  //   the page than a table;
   // - a[data-in-place]: a link that shows another view of this page (the
-  //   response dashboard's mode and grain, a list's Refresh). Its value, if
+  //   response dashboard's mode and grain, a list's Refresh, and the
+  //   participation report's Chart population pair, #1535, whose links sit
+  //   in a data-table-sync node so each refresh redraws them with the
+  //   current sort, size and zone). Its value, if
   //   any, is a stable key that finds the link again in the fresh page, for
   //   focus and to announce the view now shown ("By day");
   // - form[data-in-place]: a form whose answer is this page again, such as a

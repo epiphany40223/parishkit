@@ -387,10 +387,6 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
    (above 3:1), so a 10% bar reads as a tenth of a bar, not a short line. */
 .stat-bar progress { display: block; background: var(--track); border: 1px solid var(--control-border); }
 .stat-bar progress::-webkit-progress-bar { background: var(--track); }
-/* A small set of links choosing one view of a page; the current one is marked. */
-.choice-links { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: .75rem; }
-.choice-links a { padding: .3rem .9rem; border: 1px solid var(--accent); border-radius: 999px; }
-.choice-links a[aria-current=page] { background: var(--accent); color: var(--paper); font-weight: 650; text-decoration: none; }
 
 /* Key/value lists become two columns once there is room for them. */
 dt { font-weight: 600; }
@@ -1422,23 +1418,27 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .compact-review li + li { margin-top: 0.25rem; }
 .compact-review-field { font-weight: 600; }
 .review-outcome { min-height: 1.6em; margin: .5rem 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* The Basic / Advanced mode toggle (#1121, components/editor-mode.html): a
-   segmented pair of radios with a visible label, at the top of the editor.
-   Both segments are always bold and fixed in size, so choosing one changes
-   only colours and never moves anything (no layout shift). The radio itself
-   covers its segment, invisible, so the native radio group keeps its
-   keyboard behaviour (arrow keys) and its accessible name. */
-fieldset.editor-mode { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin-block: 0 1rem; padding: 0; border: 0; border-radius: 0; background: none; }
+/* The one segmented-pair look (ui-conventions spec, "Binary choices",
+   #1535): a visible label and two segments, the chosen one filled. A binary
+   choice (components/segmented-choice.html) draws its segments as links,
+   the chosen one aria-current="page"; the Basic / Advanced mode toggle
+   (#1121, components/editor-mode.html) draws them as radios, each covering
+   its segment, invisible, so the native radio group keeps its keyboard
+   behaviour (arrow keys) and its accessible name. Both segments are always
+   bold and fixed in size, so choosing one changes only colours and never
+   moves anything (no layout shift). */
+fieldset.editor-mode, .segmented-choice { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin-block: 0 1rem; }
+fieldset.editor-mode { padding: 0; border: 0; border-radius: 0; background: none; }
 fieldset.editor-mode > legend { float: none; width: auto; margin: 0; padding: 0; font-size: 1rem; }
-.editor-mode-options { display: inline-flex; border: var(--button-border-width) solid var(--accent); border-radius: var(--radius-small); overflow: hidden; }
-.editor-mode-options label:has(> input[type=radio]) { display: inline-flex; align-items: center; min-height: var(--button-min-height); margin: 0; padding: .5rem 1.25rem; color: var(--accent); font-weight: 650; }
-.editor-mode-options label + label { border-inline-start: var(--button-border-width) solid var(--accent); }
+.editor-mode-options, .segmented-choice-options { display: inline-flex; border: var(--button-border-width) solid var(--accent); border-radius: var(--radius-small); overflow: hidden; }
+.editor-mode-options label:has(> input[type=radio]), .segmented-choice-options a { display: inline-flex; align-items: center; min-height: var(--button-min-height); margin: 0; padding: .5rem 1.25rem; color: var(--accent); font-weight: 650; text-decoration: none; }
+.editor-mode-options label + label, .segmented-choice-options a + a { border-inline-start: var(--button-border-width) solid var(--accent); }
 .editor-mode-options label:has(> input[type=radio]) > input { inset: 0; width: 100%; height: 100%; opacity: 0; }
-.editor-mode-options label:has(> input:checked) { background: var(--accent); color: var(--paper); }
-.editor-mode-options label:has(> input:focus-visible) { outline: 3px solid var(--focus); outline-offset: -6px; }
-/* The ring sits inside the segment, so on the checked (accent) segment it
+.editor-mode-options label:has(> input:checked), .segmented-choice-options a[aria-current=page] { background: var(--accent); color: var(--paper); }
+.editor-mode-options label:has(> input:focus-visible), .segmented-choice-options a:focus-visible { outline: 3px solid var(--focus); outline-offset: -6px; }
+/* The ring sits inside the segment, so on the chosen (accent) segment it
    is drawn in --paper, which keeps 3:1 on --accent in both schemes (#1264). */
-.editor-mode-options label:has(> input:checked:focus-visible) { outline-color: var(--paper); }
+.editor-mode-options label:has(> input:checked:focus-visible), .segmented-choice-options a[aria-current=page]:focus-visible { outline-color: var(--paper); }
 /* The Basic panel is a <fieldset> so one disabled attribute keeps its
    controls unsent while Advanced is shown; it draws no box of its own. */
 fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0; background: none; }

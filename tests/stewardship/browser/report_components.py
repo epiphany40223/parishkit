@@ -4,7 +4,7 @@ from dataclasses import replace
 from datetime import timedelta
 from decimal import Decimal
 from types import SimpleNamespace
-from urllib.parse import urlencode
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from django.template.loader import render_to_string
@@ -18,7 +18,11 @@ from parishkit.stewardship.reports.digest_presentation import (
 from parishkit.stewardship.reports.money import MoneyAmount
 from parishkit.stewardship.reports.participation import ParticipationDay
 from parishkit.stewardship.reports.workspace import ReportQuery
-from parishkit.stewardship.reports.workspace_views import daily_table, statistics_panel
+from parishkit.stewardship.reports.workspace_views import (
+    daily_table,
+    scope_links,
+    statistics_panel,
+)
 
 from ..test_daily_digest_content import document
 from .automation_components import canonical
@@ -62,10 +66,14 @@ def long_campaign(chart):
 
 
 def options(query):
-    """The query string Apply report options sends for ``query``."""
-    fields = {"scope": query.scope, "timezone": query.timezone}
-    fields |= {"size": query.size, "sort": query.sort}
-    return urlencode(fields)
+    """The query string the Chart population segment for ``query``'s scope
+    follows (#1535), from a page drawn for ``query``."""
+    return urlsplit(scope_links(query)[query.scope]).query
+
+
+def viewing(query):
+    """The page context a participation page drawn for ``query`` carries."""
+    return {"query": query, "scope_links": scope_links(query)}
 
 
 def components(context, admin):
@@ -83,7 +91,7 @@ def components(context, admin):
         "campaigns": [
             {"id": campaign.pk, "name": chart.campaign_name, "url": "/participation"}
         ],
-        "query": ReportQuery(timezone="America/Los_Angeles"),
+        **viewing(ReportQuery(timezone="America/Los_Angeles")),
         "selection": SimpleNamespace(updating=True, expected=True),
         "statistics": value.statistics,
         **statistics_panel(value.statistics),
@@ -208,7 +216,7 @@ def components(context, admin):
     # any order (the fixture server's canonical lookup).
     implicit = ReportQuery(timezone_explicit=False)
     fallback = page | {
-        "query": implicit,
+        **viewing(implicit),
         **daily_table(chart, participation_table_context(chart), implicit),
     }
     los_angeles = ReportQuery(timezone="America/Los_Angeles")
@@ -221,7 +229,7 @@ def components(context, admin):
         comparison_pledge_all=MoneyAmount(98265700),
         active=replace(value.statistics.active, responses=450),
     )
-    pages[REAL + "?timezone=UTC"] = ("participation", page | {"query": ReportQuery()})
+    pages[REAL + "?timezone=UTC"] = ("participation", page | viewing(ReportQuery()))
     for query in ("", "?sort=date_desc", "?scope=historical"):
         pages[REAL + query] = ("participation", fallback)
         zoned = (query + "&" if query else "?") + "timezone=America%2FLos_Angeles"
@@ -231,7 +239,7 @@ def components(context, admin):
         "participation",
         page
         | {
-            "query": current,
+            **viewing(current),
             **statistics_panel(refreshed),
             **daily_table(chart, participation_table_context(chart), current),
         },
