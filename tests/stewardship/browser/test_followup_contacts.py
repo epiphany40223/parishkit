@@ -3,7 +3,8 @@
 The request page shows its Member's contact details, which the retired
 Members joining and leaving lists used to show; the queue's Export these
 requests posts the applied queue view, privately, and follows an in-place
-Apply without losing the reader's format and time zone.
+Apply without losing the reader's format and time zone. It is a closed
+export disclosure (#227), so each check opens it first.
 """
 
 import pytest
@@ -24,6 +25,16 @@ def contact_value(page, label):
     """The text of one Contact details entry, by its term."""
     section = page.locator("#followup-contact")
     return section.locator(f"dt:text-is('{label}') + dd").inner_text()
+
+
+def open_export(page):
+    """Open the queue's closed Export these requests disclosure (#227),
+    checking that it starts closed with its form hidden."""
+    summary = page.get_by_text("Export these requests (CSV, XLSX or PDF)", exact=True)
+    visible(summary)
+    assert not page.get_by_label("Export format").is_visible()
+    summary.click()
+    visible(page.get_by_label("Export format"))
 
 
 @pytest.mark.parametrize("width", [320, 1280])
@@ -60,7 +71,7 @@ def test_export_these_requests_posts_the_applied_view(page, component_origin):
     """The file's form carries the queue's filters and search in its POST
     body, never in the address; this browser's zone is offered first."""
     page.goto(component_origin + "/followup-queue")
-    visible(page.get_by_role("heading", name="Export these requests"))
+    open_export(page)
     zone = page.evaluate("Intl.DateTimeFormat().resolvedOptions().timeZone")
     timezone = page.get_by_label("Export timezone")
     if zone != "UTC":
@@ -84,6 +95,7 @@ def test_export_follows_an_in_place_apply(page, component_origin):
     """An in-place Apply updates the file's filters and count; the reader's
     chosen format stays, and nothing on the page moves to a new address."""
     page.goto(component_origin + "/followup-queue")
+    open_export(page)
     page.get_by_label("Export format").select_option("pdf")
     form = page.locator("#table-export")
     assert form.locator("input[name=search]").input_value() == "Example"
@@ -109,6 +121,7 @@ def test_pdf_is_unavailable_above_its_limit(page, component_origin):
     """With more requests than one PDF may hold, PDF cannot be chosen and
     the export line says why; CSV and XLSX still can (#1157)."""
     page.goto(component_origin + "/followup-over")
+    open_export(page)
     menu = page.get_by_label("Export format")
     assert menu.locator("option[value=pdf]").is_disabled()
     assert not menu.locator("option[value=xlsx]").is_disabled()

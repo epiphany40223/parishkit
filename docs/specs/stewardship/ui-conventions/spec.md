@@ -2035,9 +2035,12 @@ A panel's summary says how many are applied
 Apply while the panel and its form keep their elements. A report's export form
 is likewise a closed disclosure (for example, "Export complete results (CSV,
 XLSX or PDF)"). The Family directory,
-Additional information, Financial stewardship, Limitations and Census
-changes follow this (#227); System logs, Ministry follow-up and the
-remaining report pages are still to convert.
+Additional information, Financial stewardship, Limitations, Census
+changes and Ministry requests follow this (#227). Ministry requests keeps its
+compact filter bar rather than a Filters panel: its By Ministry counts apply
+a Ministry and request into the filters in place, and a closed panel would
+hide what the link just applied. System logs and the remaining report pages
+are still to convert.
 An edit form's short fields (a status, an outcome,
 a date and a time) likewise share a row on desktop (`.field-row` in
 `ui-v1.css`), top-aligned so a time's reading line fits under its box, while
