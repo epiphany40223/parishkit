@@ -1,11 +1,21 @@
 """The Campaign setup stepper's layout, action row and accessibility (#142, #1404)."""
 
+from uuid import UUID
+
 import pytest
 from django.urls import reverse
 
 from .artwork_components import STEP as ARTWORK_STEP
 from .review_helpers import answer_reviews
-from .stepper_components import CONTENT, EDITOR, PATH, REVIEW
+from .stepper_components import (
+    CONTENT,
+    EDITOR,
+    LOAD,
+    LOAD_FAILED,
+    LOADING,
+    PATH,
+    REVIEW,
+)
 from .test_artwork_dialog import png, slot
 from .test_components import axe_violations, shown_step_list
 from .test_in_place import MARK, MARKED
@@ -30,8 +40,8 @@ def test_campaign_stepper_says_whats_next_and_ends_with_its_action_row(
     page.goto(component_origin + PATH)
     stepper = page.locator("#campaign-stepper")
     text = stepper.inner_text()
-    assert "Step 2 of 7: Share options" in text
-    assert "1 of 7 steps completed" in text
+    assert "Step 3 of 8: Share options" in text
+    assert "1 of 8 steps completed" in text
     assert stepper.locator("[data-campaign-step-next]").inner_text() == (
         "Next: Pages and emails"
     )
@@ -46,7 +56,7 @@ def test_campaign_stepper_says_whats_next_and_ends_with_its_action_row(
     # The action row at the bottom: Back, and Continue in a form of its own.
     row = page.locator("[data-campaign-step-actions]")
     back = row.locator("[data-campaign-step-back]")
-    assert back.get_attribute("href") == reverse("admin:campaign_settings")
+    assert back.get_attribute("href") == reverse("admin:source_refresh")
     proceed = row.get_by_role("button", name="Continue to Pages and emails")
     visible(proceed)
     assert proceed.is_enabled()
@@ -125,7 +135,7 @@ def test_apply_in_the_review_dialog_marks_the_step_in_place(page, component_orig
     dialog = page.get_by_role("dialog", name="Save the share options?")
     dialog.get_by_role("button", name="Apply").click()
     hidden(dialog)
-    has_text(stepper.locator(".setup-stepper-count"), "2 of 7 steps completed")
+    has_text(stepper.locator(".setup-stepper-count"), "2 of 8 steps completed")
     assert stepper.locator("[data-campaign-step-next]").inner_text() == (
         "Next: Pages and emails"
     )
@@ -147,10 +157,10 @@ def test_continue_opens_the_next_step_and_a_sub_page_returns_to_it(
     page.get_by_role("button", name="Continue to Pages and emails").click()
     page.wait_for_url(component_origin + CONTENT)
     stepper = page.locator("#campaign-stepper")
-    assert "Step 3 of 7: Pages and emails" in stepper.inner_text()
-    assert "2 of 7 steps completed" in stepper.inner_text()
+    assert "Step 4 of 8: Pages and emails" in stepper.inner_text()
+    assert "2 of 8 steps completed" in stepper.inner_text()
     page.goto(component_origin + EDITOR)
-    assert "Step 3 of 7: Pages and emails" in stepper.inner_text()
+    assert "Step 4 of 8: Pages and emails" in stepper.inner_text()
     row = page.locator("[data-campaign-step-actions]")
     assert row.get_by_role("button").count() == 0
     back = row.get_by_role("link", name="Return to Pages and emails")
@@ -185,4 +195,106 @@ def test_continue_waits_while_an_image_is_chosen_but_not_uploaded(
     field.set_input_files([])
     available(proceed)
     assert not hint.is_visible()
+    assert failures == []
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_load_step_offers_the_load_then_continue_in_place(
+    page, component_origin, axe_source, width
+):
+    """Load ParishSoft data's primary is the load, then Continue (#1404 PR 5).
+
+    Before a load the page's own button is the one primary and the action
+    row has Back only. Requesting the load answers in place: the action row
+    gains Continue to Share options and the page's button becomes a
+    secondary Refresh now in the same place and at the same width, so the
+    pointer stays on it, with no reload.
+    """
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(answer_load(page, component_origin, LOAD))
+    page.evaluate(MARK)
+    stepper = page.locator("#campaign-stepper")
+    assert "Step 2 of 8: Load ParishSoft data" in stepper.inner_text()
+    visible(page.locator("[data-campaign-load-intro]"))
+    assert page.locator("[data-campaign-load]").count() == 0
+    row = page.locator("[data-campaign-step-actions]")
+    back = row.locator("[data-campaign-step-back]")
+    assert back.get_attribute("href") == reverse("admin:campaign_settings")
+    assert row.get_by_role("link", name="Continue to Share options").count() == 0
+    start = page.get_by_role("button", name="Load the campaign's ParishSoft data")
+    visible(start)
+    assert "secondary" not in (start.get_attribute("class") or "")
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
+    start.scroll_into_view_if_needed()
+    before = start.bounding_box()
+    start.click()
+    proceed = row.get_by_role("link", name="Continue to Share options")
+    visible(proceed)
+    assert proceed.get_attribute("href") == reverse("admin:share_settings")
+    refresh = page.get_by_role("button", name="Refresh now")
+    visible(refresh)
+    assert "secondary" in refresh.get_attribute("class")
+    assert_same_box(before, refresh.bounding_box())
+    assert page.evaluate(MARKED) == "kept"
+    assert failures == []
+
+
+def assert_same_box(before, after):
+    """Assert a control kept its place and size, to within 1 px (#736)."""
+    for key in ("x", "y", "width", "height"):
+        assert abs(before[key] - after[key]) <= 1, (key, before, after)
+
+
+def answer_load(page, origin, first):
+    """Serve the step at the real refresh address; return that address.
+
+    A load answers ``first`` and the form's in-place POST answers
+    ``LOADING``, as the server would after recording the load (redirecting
+    back to this same address): the page and its answer must share an
+    address for the answer to be swapped in place.
+    """
+    address = origin + reverse("admin:source_refresh")
+
+    def answer(route):
+        """Serve ``first`` for a load and ``LOADING`` for the POST."""
+        shown = LOADING if route.request.method == "POST" else first
+        route.fulfill(response=route.fetch(url=origin + shown, method="GET"))
+
+    page.route(lambda url: url.split("#")[0] == address, answer)
+    return address
+
+
+def test_failed_load_says_so_and_try_again_clears_it(page, component_origin):
+    """After a failed load the step says so, with Try again (#1404 PR 5).
+
+    The notice is in the run's region after the button, so Try again's
+    in-place answer clears it, showing the load under way and Continue, with
+    no reload and without moving the button under the pointer.
+    """
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.goto(answer_load(page, component_origin, LOAD_FAILED))
+    page.evaluate(MARK)
+    notice = page.locator("[data-campaign-load-failed]")
+    visible(notice)
+    assert "The campaign's ParishSoft data did not load." in notice.inner_text()
+    link = notice.get_by_role("link", name="See what went wrong")
+    assert link.get_attribute("href") == reverse(
+        "admin:background_task_page", args=[UUID(int=1404)]
+    )
+    row = page.locator("[data-campaign-step-actions]")
+    assert row.get_by_role("link", name="Continue to Share options").count() == 0
+    again = page.get_by_role("button", name="Try again")
+    again.scroll_into_view_if_needed()
+    before = again.bounding_box()
+    again.click()
+    visible(row.get_by_role("link", name="Continue to Share options"))
+    hidden(notice)
+    refresh = page.get_by_role("button", name="Refresh now")
+    assert_same_box(before, refresh.bounding_box())
+    assert page.locator("[data-campaign-load-failed]").count() == 0
+    assert page.evaluate(MARKED) == "kept"
     assert failures == []

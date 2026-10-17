@@ -3083,11 +3083,11 @@ Campaign settings, so no question is asked twice.
 Status: the page (its admission, first page and what follows confirming) and
 its guided steps are built
 ([#142](https://github.com/epiphany40223/parishkit/issues/142)), with #1404's
-quick wins ([#1407](https://github.com/epiphany40223/parishkit/pull/1407))
-and Create the campaign drawn as step 1 (#1404 PR 3).
+quick wins ([#1407](https://github.com/epiphany40223/parishkit/pull/1407)),
+Create the campaign drawn as step 1 (#1404 PR 3) and Load ParishSoft data
+as step 2 (#1404 PR 5).
 The rest of #1404 is planned, and each part below marked "(planned, #1404
-PR n)" describes the design, not yet the pages: direct saves on draft steps and sub-pages (PR 4); Load
-ParishSoft data as a step (PR 5); the Pages and emails item states and the
+PR n)" describes the design, not yet the pages: direct saves on draft steps and sub-pages (PR 4); the Pages and emails item states and the
 suggested schedules (PR 6); and Back asking before it discards, with
 Go-live readiness's summary lines (PR 7). Setup ends without a campaign, so
 a newly set-up deployment reaches the page; a deployment set up before #142
@@ -3168,17 +3168,24 @@ Testing mode and every earlier campaign is archived or purged, the rule every
 new draft follows, so of two creation requests confirmed at once one applies
 and the other fails. Once the request is applied, the dialog does not stay on
 the change's status: it opens the next Campaign setup step that is not done
-yet ([#1404](https://github.com/epiphany40223/parishkit/issues/1404)), Share
-options with Financial stewardship and Pages and emails without it, whose
-status line says the campaign was created and when; once Load ParishSoft
-data is a step (planned, #1404 PR 5), that next step is Load ParishSoft
-data, and step 1 is never opened again after creation. A reload of the address
+yet ([#1404](https://github.com/epiphany40223/parishkit/issues/1404)), which
+for a new campaign is always step 2, Load ParishSoft data, whose status
+line says the campaign was created and when; step 1 is never opened again
+after creation. A reload of the address
 naming the request, and Change status, still offer
 **Load the campaign's ParishSoft data**, which requests a full ParishSoft
-refresh and opens that refresh's progress page. Every Campaign setup step and
-sub-page also offers it, at its top, until the campaign has its Families;
+refresh and opens that refresh's progress page. Every other Campaign setup
+step and sub-page also offers it, at its top, until the campaign has its
+Families;
 pressed there, it returns to that step, which then says "ParishSoft data is
-loading; Go-live readiness waits for it." while the refresh is under way. The refresh can only be
+loading; Go-live readiness waits for it." while the refresh is under way.
+After a failed load (the newest ParishSoft refresh requested since the
+campaign was created failed or was cancelled, and the campaign has no
+Families) that notice says "The campaign's ParishSoft data did not load. The
+last ParishSoft refresh did not finish.", links the run's Background task ("See
+what went wrong"; the cause is in System logs, as that page says) and its
+button reads **Try again**, so a failed load never looks as if none was
+started. The refresh can only be
 requested after activation, because a refresh reads the current campaign when
 it is requested. The offer disappears once the campaign has its Families. It
 reads the campaign's giving window and creates the campaign's Families and
@@ -3198,12 +3205,12 @@ look, drawn by the same template for its
 the [wizard rules](../ui-conventions/spec.md#wizards): Campaign
 settings (its basics, Ministries and funds, one form since
 [#1119](https://github.com/epiphany40223/parishkit/issues/1119); Create the
-campaign before the campaign exists), Load ParishSoft data (planned, #1404
-PR 5), Share
+campaign before the campaign exists), Load ParishSoft data, Share
 options (shown only when the campaign's modules use it), Pages and emails,
 Dates and mail schedules, Campaign images, Preview and test email (for the
 initial invitation's current revision), and Go-live readiness. Each step is
-named after the page it opens and is that existing page, not a separate
+named after the page it opens (except Load ParishSoft data, which opens
+Refresh from ParishSoft) and is that existing page, not a separate
 staging page, so every save is that page's ordinary review, confirm and
 apply. Only those pages and their sub-pages draw the stepper; Preview and test
 email draws it only for the revision its step opens. Campaign settings counts
@@ -3224,8 +3231,8 @@ stored ([`CampaignSetupReview`](../data/spec.md#campaign)), and a later change
 elsewhere never undoes it. Preview and test email counts as completed once a
 test of the invitation's current revision was accepted, and Load ParishSoft
 data once the campaign has its Families (a Family campaign record exists,
-the read the load offer already uses), so it needs no stored review
-(planned, #1404 PR 5). Defaults
+the read the load offer already uses), so it needs no stored review and
+no schema change (#1404 PR 5). Defaults
 (the default text and share options that Create the campaign adds) never
 complete a step by themselves, and Go-live readiness completes only by going
 live.
@@ -3238,16 +3245,31 @@ live.
   schedules, still leads to Dates and mail schedules' combined review
   ([Campaign settings page](#campaign-settings-page)); on a draft those
   schedules have sent nothing.
-- **Load ParishSoft data** (planned, #1404 PR 5). It opens Refresh from
-  ParishSoft in wizard mode, saying "A full refresh adds the campaign's
+- **Load ParishSoft data** (#1404 PR 5). It opens Refresh from
+  ParishSoft in wizard mode, whose one-line hint says "This adds the
+  campaign's Families, Family codes and giving. You can continue while it
+  runs." and whose About panel starts "A full refresh adds the campaign's
   Families, Family codes and giving. It usually takes a few minutes. You can
-  go on to the next steps while it runs; Go-live readiness waits for it." Its
-  primary is **Load the campaign's ParishSoft data**; once the load is
-  requested, its progress shows in place and the primary becomes Continue to
-  the next step while the load runs. A failed load shows its reason and
-  **Try again**, never the plain offer again, so it never looks as if no load
-  was started. The scheduled full refresh stays the fallback. The load is
-  started by that button, never automatically at creation.
+  go on to the next steps while it runs; Go-live readiness waits for it."
+  ([page help](../ui-conventions/spec.md#page-help)). Its
+  primary is the page's own button, **Load the campaign's ParishSoft
+  data**, while no load is under way; it acts
+  [in place](../ui-conventions/spec.md#in-place-controls), as Refresh now
+  does, so the load's progress shows below it, and its answer also redraws
+  the action row, which then offers **Continue to** the next step not done
+  yet, a link, while the load runs and after it. The page's button is then
+  a secondary Refresh now. A failed load (as above) is named in the run's
+  region, after the button, with its Background task link, and the button
+  reads **Try again**, never the plain offer again, so it never looks as if
+  no load was started; Try again's answer replaces the notice. The button
+  keeps the width of its longest label in every state, the notice sits
+  after it, and the run's region keeps its height (`data-keep-height`), so
+  pressing it moves nothing under the pointer
+  ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). The step draws no load
+  notice above the page, since the page is the load. The scheduled full
+  refresh stays the fallback. The load is started by that button, never
+  automatically at creation. Outside the stepper Refresh from ParishSoft is
+  unchanged ([manual ParishSoft refresh](#manual-parishsoft-refresh)).
 - **Share options** and **Campaign images.** The existing pages in wizard
   mode. Removing an image keeps its confirmation, because it discards a file
   ([wizard rule 5](../ui-conventions/spec.md#wizards)).
@@ -3300,7 +3322,9 @@ step. While a form on the page holds a change (on Campaign images, a chosen
 image not uploaded yet), Continue is unavailable, with
 a hint after the row in a line that is always reserved, so the page's own
 Save (with its review dialog, for now) stays the way on, until a
-direct save makes it Save and continue (planned, #1404 PR 4). Preview and test
+direct save makes it Save and continue (planned, #1404 PR 4). Load
+ParishSoft data offers Continue only once a load is under way or the
+campaign has its Families (above). Preview and test
 email offers Continue to Go-live readiness only once its test is accepted,
 because the test is the step's purpose; Go-live readiness, the last step,
 has Back only. Back and Continue never save, discard or submit the page's
@@ -5123,6 +5147,10 @@ through the task's passive status read, with a link to that Background task
 page for the history and technical details. When the run ends, the page
 re-reads itself in place, so the data age above and the request key are
 fresh. The breadcrumb is the way back; the page has no Cancel link.
+While the current campaign is a Testing draft being prepared, the page is
+also step 2 of the campaign wizard, Load ParishSoft data, with its own
+wording of the button
+([Create the campaign](#create-the-campaign), the steps page by page).
 
 The refresh page and the "Run a full refresh now" button say that a full
 refresh re-reads everything (including Ministry rosters and giving) and usually

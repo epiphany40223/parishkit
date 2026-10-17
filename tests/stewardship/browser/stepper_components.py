@@ -13,6 +13,14 @@ Continue (#1404) posts to its real address, answered with a redirect to
 ``CONTENT``, Pages and emails with that step current;
 ``EDITOR`` is its editor, a sub-page whose action row is Return to Pages and
 emails.
+
+``LOAD`` is step 2, Load ParishSoft data (#1404 PR 5): Refresh from
+ParishSoft with the stepper current on it and no load started yet;
+``LOAD_FAILED`` is the same after a failed load (Try again), and
+``LOADING`` is either one's in-place answer once a load is requested, whose
+action row offers Continue to Share options. Its form posts to the real
+refresh address, which another component already answers, so the test
+answers that POST with ``LOADING`` itself.
 """
 
 from types import SimpleNamespace
@@ -39,6 +47,9 @@ TEST_URL = "/admin/campaign/content/test/00000000-0000-0000-0000-000000001522/"
 # from the menu to a page of their own.
 CONTENT = "/campaign-stepper-content"
 EDITOR = "/campaign-stepper-editor"
+LOAD = "/campaign-stepper-load"
+LOAD_FAILED = "/campaign-stepper-load-failed"
+LOADING = "/campaign-stepper-loading"
 POSTS = {
     PATH: (303, APPLIED, ""),
     reverse("admin:campaign_step_continue"): (303, CONTENT, ""),
@@ -98,8 +109,37 @@ def components(context, admin):
             ),
         )
 
+    def load(state):
+        """Load ParishSoft data with the campaign's data ``state`` (PR 5)."""
+        chrome = admin | {
+            "campaign_wizard": campaign_wizard.build(
+                True,
+                "load",
+                done={"settings"},
+                mail_test_url=TEST_URL,
+                load=state,
+                load_task=UUID(int=1404) if state == "failed" else None,
+            )
+        }
+        return (
+            "text/html",
+            render_to_string(
+                "stewardship/source-refresh.html",
+                context
+                | {
+                    "admin_chrome": chrome,
+                    "pending": {"running": False, "waiting": False},
+                    "request_key": uuid4(),
+                    "lateness_minutes": 30,
+                },
+            ),
+        )
+
     applied = SimpleNamespace(state="applied", request_id=REQUEST, failure_code="")
     return {
+        LOAD: load("offer"),
+        LOAD_FAILED: load("failed"),
+        LOADING: load("loading"),
         PATH: share({"settings"}),
         CONTENT: content(
             "content-catalog.html",

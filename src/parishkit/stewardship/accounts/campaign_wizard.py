@@ -9,7 +9,8 @@ Back and Next to the neighbouring pages. It grants nothing: each page still
 performs every access, state and prerequisite check of its own.
 
 Completion is read from what was applied, plus one stored fact. Campaign
-settings is completed when the campaign is created. Share options, Pages
+settings is completed when the campaign is created. Load ParishSoft data is
+completed once the campaign has its Families (#1404 PR 5). Share options, Pages
 and emails, Dates and mail schedules and Campaign images are completed once
 a change confirmed on that page has been applied since the campaign was
 created, which ``step_keys`` recognizes from each applied request's patch
@@ -43,21 +44,29 @@ from .setup_wizard import Step, Wizard
 
 @dataclass(frozen=True)
 class Page:
-    """One step: its key and the Admin URL name of the page it opens."""
+    """One step: its key, the Admin URL name of the page it opens, and a name.
+
+    ``name`` is the step's own name where it differs from the page's: Load
+    ParishSoft data opens Refresh from ParishSoft (#1404 PR 5).
+    """
 
     key: str
     route: str
+    name: object = None
 
     @property
     def label(self):
-        """The page's own name, as the menu and its heading use it."""
-        return NAMES[self.route].label
+        """The step's name: its own, else the page's, as the menu uses it."""
+        return self.name or NAMES[self.route].label
 
 
 # The order a campaign is prepared in. Ministries and funds are part of
 # Campaign settings' one form (#1119), so they are not a step of their own.
 PAGES = (
     Page("settings", "campaign_settings"),
+    # The campaign's Families, Family codes and giving come from a full
+    # ParishSoft refresh, requested from this step once the campaign exists.
+    Page("load", "source_refresh", _("Load ParishSoft data")),
     Page("share_options", "share_settings"),
     Page("content", "content_catalog"),
     Page("schedules", "schedule_settings"),
@@ -86,7 +95,9 @@ class CampaignWizard(Wizard):
     marks Dates and mail schedules with no schedule saved, whose Continue
     says it goes on without one. ``load`` is the campaign's ParishSoft
     data while it has no Families: "offer" (with ``refresh_key``, the
-    button's request key) or "loading" once a refresh is under way.
+    button's request key), "loading" once a refresh is under way, or
+    "failed" when the newest refresh did not finish (``load_task`` is its
+    Background task), whose button then reads Try again.
     ``creating`` marks step 1 before the campaign exists (``creation``):
     Create the campaign draws its own action row inside its form, so the
     shared row draws nothing.
@@ -97,6 +108,7 @@ class CampaignWizard(Wizard):
     no_schedules: bool = False
     load: str | None = None
     refresh_key: object = None
+    load_task: object = None
     creating: bool = False
 
     @property
@@ -178,6 +190,7 @@ def build(
     sub=False,
     no_schedules=False,
     load=None,
+    load_task=None,
 ):
     """Derive the stepper for the page ``current`` (a step key) as a ``Wizard``.
 
@@ -188,8 +201,8 @@ def build(
     invitation's current revision, or None when there is none to test. Every
     other step is always a link: Back and Continue never save or discard
     anything on the page, and each page keeps its own prerequisites.
-    ``sub``, ``no_schedules`` and ``load`` are carried through
-    (``CampaignWizard``).
+    ``sub``, ``no_schedules``, ``load`` and ``load_task`` are carried
+    through (``CampaignWizard``).
     """
     pages = [page for page in PAGES if page.key != "share_options" or financial]
     steps = []
@@ -239,7 +252,8 @@ def build(
         sub=sub,
         no_schedules=no_schedules,
         load=load,
-        refresh_key=uuid4() if load == "offer" else None,
+        refresh_key=uuid4() if load in {"offer", "failed"} else None,
+        load_task=load_task,
     )
 
 
@@ -368,13 +382,18 @@ def completed(campaign, revision):
     ``revision`` is the invitation's current revision (or None). Applied
     changes since the campaign's creation, and the steps kept as is
     (``CampaignSetupReview``, the whole step only), complete the page
-    steps; an accepted test of ``revision`` completes Preview and test
-    email. A stored review is never undone by a later change.
+    steps; the campaign's Families complete Load ParishSoft data, and an
+    accepted test of ``revision`` completes Preview and test email. A
+    stored review is never undone by a later change.
     It reads every patch applied since the creation: only the step pages,
     an applied step change's status and an Administrator's Home call it,
     while a Testing draft is being prepared, whose history is a few dozen
     changes, in a constant number of queries.
     """
+    from django.db.models import CharField, Value
+
+    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+
     from .campaign_mail_models import CampaignMailTest
     from .runtime_models import ConfigurationActivation
 
@@ -384,10 +403,19 @@ def completed(campaign, revision):
     ).values_list("request__patch", flat=True)
     for patch in patches:
         done |= step_keys(patch, campaign.pk)
+    # The steps kept as is, and "load" once the campaign has a Family (one
+    # row is enough), in one UNION statement: Home's query budget is fixed.
+    loaded = (
+        FamilyCampaign.objects.filter(campaign_id=campaign.pk)
+        .annotate(step=Value("load", output_field=CharField()))
+        .order_by()
+        .values_list("step", flat=True)[:1]
+    )
     done |= set(
         CampaignSetupReview.objects.filter(campaign_id=campaign.pk, item="")
+        .order_by()
         .values_list("step", flat=True)
-        .distinct()
+        .union(loaded)
     )
     if (
         revision is not None
@@ -428,25 +456,41 @@ SUBPAGES = {
 _SAME_PAGE = {"artwork_upload": "images"}
 
 
-def _load_state(campaign):
-    """The campaign's ParishSoft data while it has no Families, or None.
+# A refresh run that ended without loading anything: the load "failed".
+_UNFINISHED = frozenset({"failed", "cancelled"})
 
-    "loading" while a ParishSoft refresh is under way (requested and not
-    finished), else "offer": the step pages then show Load the campaign's
-    ParishSoft data at the top (#1404). Two small indexed queries, and only
-    the first once the campaign has its Families.
+
+def _load_state(campaign, done):
+    """The campaign's ParishSoft data while it has no Families: (state, task).
+
+    ``done`` holds the completed step keys (``completed``), whose "load"
+    says the campaign has its Families; then it is (None, None) and nothing
+    more is read. Otherwise one small query reads the newest ParishSoft
+    refresh requested since the campaign was created (an earlier one could
+    not load it): "loading" while it is under way (requested and not
+    finished), "failed" with its Background task id when it failed or was
+    cancelled, so the step says so and offers Try again rather than looking
+    as if no load was started (#1404 PR 5), else "offer". The step pages
+    show it at the top, and Load ParishSoft data words its own button by it.
     """
-    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
     from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
     from parishkit.stewardship.source.requests import TASK_TYPE
 
-    if FamilyCampaign.objects.filter(campaign_id=campaign.pk).exists():
-        return None
-    if TaskRun.objects.filter(
-        task_type=TASK_TYPE, state__in=NONTERMINAL_STATES
-    ).exists():
-        return "loading"
-    return "offer"
+    if "load" in done:
+        return None, None
+    newest = (
+        TaskRun.objects.filter(task_type=TASK_TYPE, created_at__gte=campaign.created_at)
+        .order_by("-created_at", "-pk")
+        .values_list("pk", "state")
+        .first()
+    )
+    if newest is None:
+        return "offer", None
+    if newest[1] in NONTERMINAL_STATES:
+        return "loading", None
+    if newest[1] in _UNFINISHED:
+        return "failed", newest[0]
+    return "offer", None
 
 
 def for_request(match, campaign, configuration):
@@ -476,14 +520,17 @@ def for_request(match, campaign, configuration):
         from .schedule_reads import campaign_schedules
 
         no_schedules = not campaign_schedules(configuration, campaign.pk)
+    done = completed(campaign, revision)
+    load, load_task = _load_state(campaign, done)
     return build(
         financial,
         current,
-        done=completed(campaign, revision),
+        done=done,
         mail_test_url=_test_url(revision),
         sub=sub,
         no_schedules=no_schedules,
-        load=_load_state(campaign),
+        load=load,
+        load_task=load_task,
     )
 
 
