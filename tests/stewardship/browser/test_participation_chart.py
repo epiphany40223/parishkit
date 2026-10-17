@@ -190,16 +190,24 @@ def _point_until_shown(page, plot, tooltip, *, attempts=10):
 
 # The hover guide lines Vega shows (#1536): each shown rule's horizontal
 # centre and its top and bottom, relative to its panel's plot box, rounded.
+# The plot box is the background's geometry (getBBox) mapped to the window
+# (getScreenCTM), not its getBoundingClientRect: Firefox pads that with a
+# generous allowance for the outline's stroke (5 px each side here), where
+# Chromium and WebKit do not.
 GUIDES = """() => [...document.querySelectorAll(
   "#participation-chart svg g.mark-rule.role-mark line"
 )].filter((line) => line.getAttribute("opacity") !== "0").map((line) => {
   const box = line.getBoundingClientRect();
-  const plot = line.closest("g.mark-group.role-scope > g")
-    .querySelector("path.background").getBoundingClientRect();
+  const background = line.closest("g.mark-group.role-scope > g")
+    .querySelector("path.background");
+  const shape = background.getBBox();
+  const matrix = background.getScreenCTM();
+  const top = matrix.f + matrix.d * shape.y;
+  const bottom = top + matrix.d * shape.height;
   return [
     Math.round(box.left + box.width / 2),
-    Math.round(box.top - plot.top),
-    Math.round(plot.bottom - box.bottom),
+    Math.round(box.top - top),
+    Math.round(bottom - box.bottom),
   ];
 })"""
 
