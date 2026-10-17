@@ -725,10 +725,13 @@ never scrolls to show it (Administrator, pk-local review of
   never move the form or the status line. The form has an id, so a file
   chosen while it is redrawn is said not to be kept.
 - **Review dialog: Parish settings (#750).** Parish settings reviews in the
-  [review dialog](#review-dialog), titled "Review Parish settings": each
-  changed setting with its current and proposed value, and a new
-  timezone's note. Its form is an in-place region, redrawn after Apply at
-  the applied version, with the status line under it. A field's refusal
+  [review dialog](#review-dialog) as a compact review (#1356): its button
+  reads **Save** and the dialog, "Save the Parish settings?", lists one
+  "Setting: old → new" line per changed setting (every Parish setting is
+  short, so no change keeps a full review), with a new timezone's note; an
+  unset online giving address reads "Not set". Its form is an in-place
+  region, redrawn after Apply at the applied version, with the status line
+  under it. A field's refusal
   (the Parish website's included) stays on the form; a stale page or an
   out-of-date preview is refused in the dialog, and the form is not
   redrawn, so it is refused again until the page is reloaded.
@@ -889,8 +892,17 @@ kept, and after an applied change a redrawn form compares with its new
 defaults. A control marked `data-change-ignore` is no change: one that only
 shows other fields (Edit scheduled email's "Edit this schedule's email",
 whose fields count instead), and plain text generated from the HTML, which is
-not sent. The hint
-keeps its space while hidden, so it never moves the page.
+not sent. A row a page script adds or removes counts, and a hidden field
+counts only when it is marked as carrying a setting
+(`data-change-setting`): a saved row's identity, or a saved setting the page
+shows only as words, such as ParishSoft's stored quick updates, whose
+removal is a change (#1334 review). Every other hidden field is no change:
+the version and security tokens, a formset's row counts, a one-time request
+key or signed intent, the browser's time zone, a table's filters, size and
+sort (so a form redrawn with the table at other view settings still waits),
+and the fields a script writes from the visible controls it follows. A form
+redrawn at the same version takes its hidden settings from the new drawing.
+The hint keeps its space while hidden, so it never moves the page.
 The server still refuses an unchanged Review ("No settings have changed."),
 only as a safeguard for requests that bypass the page script: no page draws
 a "nothing has changed" state ([review dialog](#review-dialog)).
@@ -935,6 +947,31 @@ as leniently as the server reads it), and a refusal of either, or of a
 missing Slack token or a new ParishSoft key sent with a refresh schedule
 change, is shown at that field rather than as a notice or an error page
 (#563).
+
+The settings editors follow the same gates (#1330). Save on every
+integration settings page, ParishSoft's included, waits for a change, and a
+pasted key counts as one; Off-site backups' Test access, which can test the
+saved folder, never waits for one (`data-change-exempt`), and a folder link
+that isn't a Drive folder is refused at its field, as Save refuses it. While
+an integration that isn't set up yet can't store its key, its Save is shown
+unavailable, named by the notice that says why. The Pages and emails editor's
+Preview changes waits for a change, except while the page offers saving what
+it shows as it is (the default text filled in, a saved text that needs
+re-saving, a confirmation email with a retired receipt closing note folded
+in, a refused Preview drawn again). On Campaign settings the Ministry
+leader roles need one ticked while Ministry stewardship is on, and on a live
+campaign Save waits while the Ministries and another setting both changed
+(`data-change-alone`), with the server's own words. The automation
+approval's user code and New and Edit user's Email and Name are checked in
+the browser, with their refusals at the field, and Continue, Add the user
+or Save waits for them (a Name the Email lookup fills in or clears counts
+as an entry).
+The Parish website carries a pattern too: on Parish settings, which has no
+complete gate, the browser marks a website with a user name, query or
+fragment at the field when it is left, and the server's refusal is shown
+there; Save still waits only for a change. An integration page drawn
+again after a refused Save shows what was posted, so its Save does not
+wait for a change then.
 
 The same holds for the rest of the Admin portal (#563, the audit's last
 slice): Start Testing cleanup on Go-live readiness and Confirm Production
@@ -1040,11 +1077,22 @@ size is chosen, and the form is not sent until a smaller file is chosen; a
 form marked `data-max-total-bytes` refuses files that together exceed it
 the same way. The message shows where the server's errors for that field
 go, in a reserved line that keeps its height once the error clears and is
-announced to screen readers (`file-size-field.html`). A field that a
+announced to screen readers (`file-size-field.html`; Off-site backups'
+folder link keeps the same line, so Test access refused there in place
+moves nothing, #1334 review). A field that a
 choice hides drops its refusal, and shows it again if it reappears with
 the same file. The reverse proxy refuses an oversized request before the
 page could explain it, so this check is what keeps such a refusal on the
 form. First use: Parish logos (#1062).
+
+An in-place form refused with a typed JSON answer shows the refusal as one
+line after its buttons ([in-place controls](#in-place-controls)). When the
+answer's errors name a field of that form (`FieldError` field identifiers),
+that field is marked the same way: `aria-invalid="true"` and described by
+the line. Like any server-only error, the mark and the line clear on the
+field's first edit (`ui-v1.js` `showRefusal`; first used by Census changes'
+Edit value,
+[#528](https://github.com/epiphany40223/parishkit/issues/528)).
 
 A mark clears as soon as its error does, without waiting for Save (#592). An
 error the browser checks clears once the value is valid. One only the
@@ -1178,7 +1226,7 @@ the campaign wizard in #1404 PR 4).
   that would move the pane's controls. The line clears on the form's next
   edit or accepted Review (#1410).
 - **Opening the dialog.** An accepted Review opens the dialog. Its title
-  names the change ("Review Parish settings") and labels the dialog
+  names the change ("Review campaign settings") and labels the dialog
   (`aria-labelledby`); focus moves to that title, never to Apply, so the
   reader hears what is being reviewed before reaching the buttons. Its body
   shows the review the feature specification describes: a full review (the
@@ -1330,10 +1378,11 @@ Share options, Campaign images, Parish logos, Parish settings, Create the
 campaign and No-reminders WorkGroup use the dialog; Create the campaign, New
 user and No-reminders WorkGroup are confirmations under #1356, and so are a
 one-time New scheduled email, Import selected with nobody skipped and
-Campaign images' Remove this image. Edit user, Share options and a small
-Campaign settings change are compact reviews under #1356; Parish settings
-becomes one under #1356 later, and an Integration settings edit when #750
-reaches it. The in-place review panel of #532 is retired
+Campaign images' Remove this image. Edit user, Share options, a small
+Campaign settings change and Parish settings are compact reviews under the
+same issue, and an Integration settings edit becomes one when #750 reaches
+it.
+The in-place review panel of #532 is retired
 ([#1429](https://github.com/epiphany40223/parishkit/issues/1429),
 [in-place controls](#in-place-controls)); the other editors use separate
 Review and Change status pages.
@@ -2029,14 +2078,20 @@ The portal and the emails share one visual style
   fallback; only the vendored chart tooltip rules are exempt. The setup
   wizard's Back and Continue buttons take the shared button shape. Email
   components read the same module and inline the values, because mail
-  programs cannot load the stylesheet.
+  programs cannot load the stylesheet. So does the maintenance page shown
+  while the site is updating, which loads no stylesheet: it inlines the
+  light page, panel, ink and muted colours, the panel's corners and shadow,
+  and the sans font stack.
 - **Buttons:** templates draw every button, and every link styled as one,
   with the `{% button %}` tag. Its variants are primary (the default),
   secondary, large and link. It renders the stylesheet's classes and keeps
   each attribute in the order the template gives it, so in-place controls
   keep their `data-` attributes. A guard test counts raw button markup in
   every template against a list of reviewed exceptions that may only
-  shrink.
+  shrink. A button is secondary only when it is drawn so (the secondary
+  variant, or the `button-secondary` class on a button a script builds),
+  never because of where it sits or what attributes it carries, and a test
+  holds the stylesheet's secondary rule to that class alone.
 - **Email buttons:** `email_button()` renders the same primary and
   secondary buttons for email: a one-cell table with inline styles from the
   tokens, `bgcolor`, and Outlook padding. The label is real text, so the
@@ -2339,8 +2394,15 @@ learned once. **Shared code.**
 - `campaigns/recurrence.py`: repeat rules. Its cases
   (`tests/stewardship/fixtures/recurrence_cases.json`) also pin the page
   script's `ParishRecurrence`.
+- `components/repeat-rule.html`: the one repeat rule's controls (how often,
+  the days, the monthly choices, From and Until), with its choices from
+  New scheduled email's `RepeatRule` form.
 - `campaigns/intervals.resolve_local`: the daylight-saving rule.
 - `ParishEditorMode`: the Basic and Advanced modes.
+- `components/zone-note.html`: the note that names the browser's zone
+  beside typed dates and times, hidden until the page script knows the
+  zone. `test_zone_note_component.py` lists the pages that still write it
+  by hand.
 
 **Precedent.** [#1129](https://github.com/epiphany40223/parishkit/issues/1129)
 (Administrator, 2026-10-12).
@@ -2371,7 +2433,8 @@ learned once. **Shared code.**
   when there is no campaign. The page converts a typed time through the
   schedule's next occurrence, as
   [New and Edit scheduled email](../admin-portal/spec.md#new-and-edit-scheduled-email)
-  does. A note beside the fields names the zone the times are typed in. The
+  does. The shared zone note beside the fields names the zone the times
+  are typed in. The
   [ParishSoft refresh schedule](../admin-portal/spec.md#parishsoft-refresh-schedule-settings)
   is the recorded exception: its times are typed and shown in its schedule
   zone (decision 18).
@@ -2405,10 +2468,16 @@ learned once. **Shared code.**
 
 **Adoption.** The ParishSoft refresh schedule follows all of these rules
 except the browser-zone entry, which is its recorded exception
-([#1122](https://github.com/epiphany40223/parishkit/issues/1122)). Later
+([#1122](https://github.com/epiphany40223/parishkit/issues/1122)), so its
+note names its schedule zone instead. The date-change review draws the
+shared zone note, as do System logs and Ministry requests; New and Edit
+scheduled email follows once its open changes land. The two mail
+repeat panels, New scheduled email's Repeat and the date-change review's
+Repeat a reminder, draw one repeat rule, so they offer the same choices in
+the same order and one page script expands both. Later
 [#1129](https://github.com/epiphany40223/parishkit/issues/1129) slices bring
-the shared zone note, preview and Basic and Advanced modes to the mail
-schedule editors, reminder repeats and digests. Until each change lands, an
+the shared preview and Basic and Advanced modes to the mail schedule
+editors, reminder repeats and digests. Until each change lands, an
 editor keeps the behavior its feature spec describes.
 
 ## Tables

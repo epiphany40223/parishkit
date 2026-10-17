@@ -187,10 +187,12 @@ def _answer(step):
 def _step(request, principal, state):
     """Run one posted step; returns what the region shows next."""
     action = request.POST.get("action", "")
-    if action not in _FIELDS or set(request.POST) - _FIELDS[action] - {
-        "csrfmiddlewaretoken"
-    }:
+    if action not in _FIELDS:
+        # No sources: an unknown action value, not an unexpected field.
         raise unexpected_fields()
+    allowed = _FIELDS[action] | {"csrfmiddlewaretoken"}
+    if set(request.POST) - allowed:
+        raise unexpected_fields(request.POST, allowed=allowed)
     actor = principal.identity
     if action == "cancel":
         return {}
@@ -317,10 +319,12 @@ def held_emails(request):
 def _held_step(request, actor, state):
     """Run one posted Held emails step; returns what the region shows next."""
     action = request.POST.get("action", "")
-    if action not in _HELD_FIELDS or set(request.POST) - _HELD_FIELDS[action] - {
-        "csrfmiddlewaretoken"
-    }:
+    if action not in _HELD_FIELDS:
+        # No sources: an unknown action value, not an unexpected field.
         raise unexpected_fields()
+    allowed = _HELD_FIELDS[action] | {"csrfmiddlewaretoken"}
+    if set(request.POST) - allowed:
+        raise unexpected_fields(request.POST, allowed=allowed)
     if action == "cancel":
         return {}
     # A decision needs a fresh sign-in first, so the step-up comes before

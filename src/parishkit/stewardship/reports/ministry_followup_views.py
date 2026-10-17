@@ -743,6 +743,8 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None, packe
             # security middleware keeps it rather than a generic 400 text.
             response.status_code = 400
             response.stewardship_safe_error = True
+            # The refusal log's codes for this refusal (#1444).
+            with_status_code(response, refusal.code)
         elif handed_off and packet is not None:
             # Known before the response was made, so its status and code
             # are set before any byte is sent.

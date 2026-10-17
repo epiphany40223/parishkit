@@ -60,6 +60,8 @@ def components(context, admin):
     by_name_table, ascending = page(by_name[::-1], "name")
     return {
         PATH: served,
+        # No Family has Testing responses left (#227 empty state).
+        "/go-live-families-none": page([], "duid")[1],
         f"{PATH}?{first.heading_query('name')}": ascending,
         f"{PATH}?{by_name_table.heading_query('name')}": descending,
     }

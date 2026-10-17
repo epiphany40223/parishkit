@@ -121,3 +121,25 @@ def _no_leaked_background_threads():
         pytest.fail(
             f"Test left background thread(s) running: {', '.join(sorted(leaked))}."
         )
+
+
+REFUSAL_LOG = "parishkit.stewardship.web.refusal_log"
+
+
+@pytest.fixture(autouse=True)
+def _refusal_log_strict():
+    """Fail a test whose Admin answer the refusal log could say nothing about.
+
+    Under the strict test settings, ``web.refusal_log`` notes such a refusal
+    instead of raising, which would leave the request's database connection
+    unusable for every later test (#1444); this hook fails the test that
+    made it, once the test is over. The module is only read when imported.
+    """
+    module = sys.modules.get(REFUSAL_LOG)
+    if module is not None:
+        module.take_strict_violations()
+    yield
+    module = sys.modules.get(REFUSAL_LOG)
+    found = module.take_strict_violations() if module is not None else []
+    if found:
+        pytest.fail("Refusal log, strict: " + " ".join(found))

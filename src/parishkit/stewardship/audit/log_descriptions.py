@@ -170,6 +170,10 @@ DESCRIPTIONS = {
         "An automation session confirmed a reviewed removal of a campaign "
         "image, which became a configuration request."
     ),
+    "admin_cmd_content_confirm": _(
+        "An automation session confirmed a built delete of unused campaign "
+        "emails, which became a configuration request."
+    ),
     "admin_cmd_integration_confirm": _(
         "An automation session confirmed a reviewed change to an "
         "integration's settings, or its removal, which became a configuration "
@@ -195,6 +199,10 @@ DESCRIPTIONS = {
         "An automation session confirmed a reviewed change to the campaign's "
         "settings, which became a configuration request."
     ),
+    "admin_cmd_campaign_shares_confirm": _(
+        "An automation session confirmed a reviewed change to the campaign's "
+        "Share options, which became a configuration request."
+    ),
     "admin_cmd_users_import_leaders": _(
         "An automation session confirmed a reviewed import of ParishSoft "
         "Ministry leaders as users, which became a configuration request."
@@ -212,6 +220,10 @@ DESCRIPTIONS = {
         "after the Administrator accepted the duplicate risk, as the email's "
         "page does."
     ),
+    "admin_cmd_send_confirm": _(
+        "An automation session confirmed a reviewed pause, resume or "
+        "resolution of held email, as the Pause and resume mail page does."
+    ),
     "admin_cmd_delivery_resolve": _(
         "An automation session resolved an outgoing email, as the email's "
         "page does: a note, external evidence or a retry."
@@ -225,6 +237,24 @@ DESCRIPTIONS = {
         "An automation session reviewed an automatic census change "
         "(approved, ignored or sent back to To review), as the Census "
         "changes page's Review does."
+    ),
+    "admin_cmd_followup_update": _(
+        "An automation session recorded follow-up on a Ministry request, as "
+        "the request's Save on Ministry requests does."
+    ),
+    "admin_cmd_followup_bulk": _(
+        "An automation session resolved several Ministry requests with one "
+        "outcome, as the Ministry requests queue's bulk outcome does."
+    ),
+    "admin_cmd_census_edit": _(
+        "An automation session edited the value publication writes for an "
+        "automatic census change, or cleared that edit, as the Census "
+        "changes page's Edit value does."
+    ),
+    "admin_cmd_census_resolve_conflict": _(
+        "An automation session approved an automatic census change over "
+        "ParishSoft's current value, as the Census changes page's Use the "
+        "Family's value anyway does."
     ),
     "admin_cmd_refresh_start": _(
         "An automation session asked for a full ParishSoft refresh, as the "

@@ -2181,7 +2181,7 @@
   function editControl(parent, label, target) {
     // Rebuild from tab memory, then focus the requested section. Never navigate
     // away from or mutate a final submission whose outcome is still pending.
-    node("button", "Edit " + label, parent, {type: "button", "data-review-edit": ""}).addEventListener("click", () => {
+    node("button", "Edit " + label, parent, {type: "button", class: "button-secondary", "data-review-edit": ""}).addEventListener("click", () => {
       if (busy || finished) return;
       edit(target);
       pushPage({familyPage: currentPage}, "");

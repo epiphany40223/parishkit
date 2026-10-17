@@ -52,6 +52,7 @@ from parishkit.stewardship.web.refusals import (
     annotate,
     gone_response,
     mark_recorded,
+    with_reason,
 )
 from parishkit.stewardship.web.security import login_denial
 
@@ -145,8 +146,11 @@ def denial(*, status=403, retry=None, admin=True):
     response.stewardship_safe_error = True
     if retry:
         response["Retry-After"] = str(min(3600, max(1, int(retry))))
-    # The exception being handled, if any, names the refusal in its log.
-    return annotate(response, error) if error is not None else response
+    # The exception being handled, if any, names the refusal in its log;
+    # without one this is an access check's own refusal (#1444).
+    if error is not None:
+        return annotate(response, error)
+    return with_reason(response, "denied")
 
 
 def ip_counter(limiter, source, *, initiation=False):

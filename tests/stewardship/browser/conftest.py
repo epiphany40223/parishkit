@@ -162,6 +162,7 @@ from .send_history_components import components as send_history_components
 from .send_progress_components import components as send_progress_components
 from .settings_components import POSTS as SETTINGS_POSTS
 from .settings_components import components as settings_components
+from .setup_back_path_components import components as setup_back_path_components
 from .setup_live_components import POSTS as SETUP_LIVE_POSTS
 from .setup_live_components import components as setup_live_components
 from .signed_in_components import POSTS as SIGNED_IN_POSTS
@@ -984,6 +985,32 @@ def component_origin():
                 "visual": "<p>Hello Sample Family</p>",
                 "placeholders": ["family_name", "parish_name"],
                 # An email keeps the plain-text panel (#259) for component checks.
+                "form": ContentForm(
+                    kind="email",
+                    slot="confirmation",
+                    initial={
+                        "base_digest": "a" * 64,
+                        "subject": "Received",
+                        "html": "<p>Hello Sample Family</p>",
+                        "text": "Hello Sample Family",
+                        "generate_text": True,
+                    },
+                ),
+            },
+        ),
+        (
+            # Preview changes waiting for a change, as the view draws it (#1330).
+            "/content-settings-gated",
+            "content-settings",
+            {
+                "campaign": {
+                    "pk": uuid4(),
+                    "active_configuration": {"name": "Sample campaign"},
+                },
+                "label": "Confirmation email",
+                "visual": "<p>Hello Sample Family</p>",
+                "placeholders": ["family_name", "parish_name"],
+                "change_gate": True,
                 "form": ContentForm(
                     kind="email",
                     slot="confirmation",
@@ -2215,6 +2242,7 @@ def component_origin():
     responses.update(
         setup_live_components(context, admin, NOW, SETUP_MAIL_STATUS, setup_draft)
     )
+    responses.update(setup_back_path_components(context, admin, NOW, SETUP_LOAD_STATUS))
     responses.update(in_place_commands_components(context, admin))
     responses.update(campaign_test_components(context, admin))
     responses.update(backup_test_components(context, admin))
@@ -2343,6 +2371,21 @@ def component_origin():
                 if kind == "text/html"
                 and isinstance(body, str)
                 and "data-about-page=" in body
+            )
+        ),
+    )
+    # Every fixture page with a change-gated form (#921, #1330), so the
+    # change gate's guard (test_editor_gates.py) checks each one's hidden
+    # fields, including fixtures added later.
+    responses["/change-gate-index"] = (
+        "text/plain",
+        "\n".join(
+            sorted(
+                path
+                for path, (kind, body) in responses.items()
+                if kind == "text/html"
+                and isinstance(body, str)
+                and "data-require-change=" in body
             )
         ),
     )

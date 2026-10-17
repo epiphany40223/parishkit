@@ -1863,7 +1863,7 @@ then:
 - **Recorded by**, **Recorded at** and **Note**: the latest *Entered in
   ParishSoft*, *Ignore* or *Reopen* on the row
   ([manual census resolution](#manual-census-resolution)), or *Approve*,
-  *Ignore* or *Back to To review* on an Automatic row
+  *Ignore*, *Back to To review*, *Save value* or *Clear edit* on an Automatic row
   ([automatic census review](#automatic-census-review)): the person's
   sign-in address, the time in the parish's compact date format and
   browser-local time, and the note they left. Blank until someone records
@@ -1987,8 +1987,9 @@ with an optional note
 Each is offered only while it would change the decision, and only while the
 change is open: *pending*, *conflict* or *failed*, never while it is
 *queued* for publication or once it has a final outcome. A *Conflict* row
-may be ignored or sent back, but not approved, since publication blocks an
-approved conflict until it is resolved. A review can be changed again until
+may be ignored or sent back, but not approved directly, since publication
+blocks an approved conflict until it is resolved (Use the Family's value
+anyway, below). A review can be changed again until
 publication of the change starts, and each one changes the proposal's
 version, so a publication plan that included it no longer matches. Staff
 see Automatic rows but never review them.
@@ -1999,11 +2000,76 @@ buttons the row allows. A review is reversible, so none asks first. The form
 posts with the page's filters and table choices, and the answer is the same
 page, refreshed in place, with the notice naming the row; a row someone else
 changed first is left as it is, and the notice says so. While other campaign
-work holds the campaign, no Review is offered. An Administrator's edited
-value, conflict resolution
-([ADM-09](../../../plans/stewardship/admin-portal.md#adm-09-census-review-and-parishsoft-publication-ui))
-come later. On the command line, `pk-admin census review` records the same
-review through the same service
+work holds the campaign, no Review is offered. On the command line,
+`pk-admin census review` records the same review through the same service
+([admin automation](../admin-automation/spec.md#reports-and-exports)).
+
+A *Conflict* means ParishSoft changed after the Family answered: *ParishSoft
+now* differs from what they saw. Besides Ignore (keep ParishSoft's value),
+the row's *Review* offers **Use the Family's value anyway**
+([#528](https://github.com/epiphany40223/parishkit/issues/528), ADM-09.03),
+worded **Use the edited value anyway** while an Edit value is set. It
+approves the change over ParishSoft's current value: the review records that
+value, and the ParishSoft snapshot it came from, as the *accepted base*,
+and the change becomes *pending* (*To do*). Publication then merges against
+the accepted base instead of the Family's baseline
+([data workflow](../data/spec.md#review-and-publication)), so it writes the
+Family's answer (or the edited value) only while ParishSoft still has the
+value the Administrator saw. The Family's baseline is never changed. A help
+line above the button, which describes it, says this, and the button shares
+the Review form's optional note. It is offered only to an Administrator, on
+an Automatic *Conflict* whose ParishSoft value is known (a change ParishSoft
+could not be read for waits for a refresh), whatever its decision. It asks
+nothing, since it can be undone: a later **Back to To review** or **Ignore**
+(one by one or in bulk) puts the change back to *Conflict*, and the accepted
+base no longer counts, so no later Approve, one by one or in bulk, can
+publish over ParishSoft's value until Use the Family's value anyway is
+chosen again. A later Edit value keeps the resolution. The answer is the
+page, refreshed in place, with the notice ("… approved over ParishSoft's
+current value."). If a refresh brings a new ParishSoft value first, the
+accepted base no longer counts either: an open change's approval goes back
+to *To review* and the change is compared with the Family's baseline again
+(a change already queued for publication keeps its approval, and its
+publication then meets a conflict). A Family's later same answer does not
+carry the accepted base, so its approval goes back to *To review* too. It is
+per change only, never part of bulk review. On the command line it is
+`pk-admin census resolve-conflict`, through the same service
+([admin automation](../admin-automation/spec.md#reports-and-exports)).
+
+The same *Review* disclosure has **Edit value**
+([#528](https://github.com/epiphany40223/parishkit/issues/528), ADM-09.04):
+the value publication writes instead of the Family's answer. The Family's
+answer is never changed and stays in its column, with the edit in *Edited
+value* beside it. The field starts with the value publication would write
+now (the edit, else the Family's answer): a date field no later than the
+campaign's today for a birth or death date, the census choices for Gender,
+and otherwise text no longer than ParishSoft's request schema takes for the
+field (First name 30 characters, Email address 150, a phone 25). **Save
+value** is unavailable until the value differs from the one shown, with its
+reason in a reserved line ([prerequisite
+gates](../ui-conventions/spec.md#prerequisite-gates)); **Clear edit**
+appears only while an edit is set. Each takes an optional note and, being
+reversible, asks nothing; the answer is the page, refreshed in place, with
+the notice naming the row. The value is read as the Family form reads its
+own answer (a phone must be a whole number, email addresses are checked and
+joined, a required name cannot be blank) and must fit ParishSoft's request
+schema as publication will send it; Gender is held to its census choices
+only, since its ParishSoft encoding is not settled yet. Save value is also
+unavailable, with its reason, while the browser can tell the value is not
+allowed (blank, too long, or a date after today). A value the server refuses
+answers in place after the form with the reason, and the field is marked in
+error until it is edited
+([field errors](../ui-conventions/spec.md#field-errors-and-live-checks));
+nothing is recorded. A blank value is refused: Ignore leaves ParishSoft as it
+is. A value equal to
+the Family's answer clears the edit, so Edited value never repeats it.
+Edit value is offered on the rows Review is (Automatic, open, an
+Administrator's, while no other campaign work holds the campaign), a
+Conflict included. It keeps the decision, so an approved change stays
+approved, whoever edits it; its new version means a publication plan that
+included the change must be confirmed again, with the edited value in view.
+It is per change only, never part of bulk review. On the command line it
+is `pk-admin census edit`, through the same service
 ([admin automation](../admin-automation/spec.md#reports-and-exports)).
 
 An Administrator may also give several Automatic changes one decision at
@@ -2035,7 +2101,15 @@ may change an Automatic proposal's decision only with such a row, and the
 row's own guard checks again that the actor is a current Administrator, the
 campaign admits changes, the version is current, the change is Automatic and
 open, and the decision changes. The row records the whole resulting review
-state, so the later edited value needs only a wider guard for the row.
+state. Forward migration 0107 widens that guard for Edit value: a review
+row is exactly one of a decision (the edit fields stay) and an edit (the
+decision stays). It also adds an edit guard on the proposal: the web role
+may change the edit fields only as a review row at the current version
+records them, whatever else it updates. An edit's value must have its field's shape (a
+phone record for a phone, text otherwise, at most 1,024 bytes), must not be
+blank and must differ from the Family's answer, as the census compares
+values; clearing needs an edit to be set. The value's full rules stay in the
+service.
 
 ## Financial stewardship detail
 

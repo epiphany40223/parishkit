@@ -235,7 +235,15 @@ unknown-delivery acknowledgement come from the server. No page offers a
 manual check or asks for a reload, and a page restored from the browser's
 history checks again by itself: a settled test page re-reads its panel in
 place on `pageshow`, so Continue never outlives a change to an earlier
-step's settings. A status read the server refuses (signed
+step's settings. Load parish data re-reads its panel in place, and the
+Loading parish data page reads its settled status region once more, whenever
+the page is shown again (its tab shown, or `pageshow`); each also re-reads
+the step bar in place. So neither says the parish data is loaded, nor shows
+its step as completed, after the load was discarded from another tab
+([#1353](https://github.com/epiphany40223/parishkit/issues/1353)). That
+re-check of a settled status never retries and never adds a line under the
+status: a failed read (setup finished meanwhile, say) stops it quietly and
+leaves the page as it was. A status read the server refuses (signed
 out, no longer allowed, or a bad request such as Slack being off) stops the
 watching instead of being retried.
 
@@ -357,6 +365,19 @@ shows as loaded. Each discard is audited as
 staging is never used again: finalization and campaign staging bind only to
 the current load. It is disposed of with the attempt's other source staging
 when setup ends, and the time zone the load fixed can change again.
+The progress page of a load that failed for good names the most common cause
+(a wrong key or organization ID) and links to ParishSoft connection and to
+Load parish data, whose Load again starts a new load; Back goes to ParishSoft
+connection. Only a load that ended with the setup attempt itself (expired)
+still says to cancel setup and start again. A discarded load's progress page
+stays readable, passively only (it is never renewed), and says the load is no
+longer used, with a link to Load parish data and no Continue; a bound load
+that succeeded but is no longer valid is shown the same way. While a
+still-valid load exists, the ParishSoft connection page says that saving a
+different key or organization ID discards the loaded data and that keeping
+the saved key keeps it. The page says so in a static line in its saved-key
+notice, so nothing moves as the key is typed
+([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
 
 The two-hour watchdog is an intentional hard, non-extendable fail-safe. A normal
 complete ParishSoft load is expected to take several minutes (about ten for a
@@ -1420,8 +1441,11 @@ and fail-closed mismatch recovery are defined by the
 [configuration architecture](../architecture/spec.md#configuration-and-secrets).
 Every editor in this section reviews and applies through the
 [review dialog](../ui-conventions/spec.md#review-dialog), Parish settings
-included: its Review opens the dialog with each changed setting, Apply
-follows the change there, and the form is redrawn at the applied version.
+included: its **Save** opens the dialog, "Save the Parish settings?", with
+a [compact review](../ui-conventions/spec.md#review-dialog) (#1356), one
+"Setting: old → new" line per changed setting and a new timezone's note;
+Apply follows the change there, and the form is redrawn at the applied
+version.
 Parish settings' address takes no query.
 
 Outgoing email settings (the setup mail step and the post-setup outgoing
@@ -5613,7 +5637,13 @@ bar's only action is Mark entered in ParishSoft, and clearing stays per row.
 The dialog posts to `roster/marks/`, which records each chosen tick exactly
 as a single tick is recorded (its own entry and audit event), all in one
 transaction or none; a change someone else ticked or cleared first refuses
-the whole request, naming that change in the dialog.
+the whole request, naming that change in the dialog. A change listed twice
+(the Family answered again and both requests were resolved) names each row,
+in its box, its tick and that refusal, with the day it was resolved in the
+browser's time zone
+([#558](https://github.com/epiphany40223/parishkit/issues/558)); the dialog
+posts the browser's zone for the refusal, which leaves the day out rather
+than guess when no known zone came.
 
 Its CSV, XLSX and PDF downloads carry the page's columns, without the tick
 ([downloaded files](../ui-conventions/spec.md#downloaded-files)), for every
@@ -7894,9 +7924,11 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   `admin_cmd_users_import_leaders`), and the operator's one-time conversion
   of sign-in rules into users, `operator_users_upgraded`), the command
   line's parish profile changes (`admin_cmd_parish_confirm`) and Campaign
-  image removals (`admin_cmd_artwork_remove`), No-reminders WorkGroup changes
+  image removals (`admin_cmd_artwork_remove`), email template deletions
+  (`admin_cmd_content_confirm`), No-reminders WorkGroup changes
   (`admin_cmd_workgroup_confirm`), Campaign settings changes
-  (`admin_cmd_campaign_confirm`), integration settings
+  (`admin_cmd_campaign_confirm`), Share options changes
+  (`admin_cmd_campaign_shares_confirm`), integration settings
   changes and removals (`admin_cmd_integration_confirm`), the command line's backup folder checks (`admin_cmd_integration_backup_probe`) and key change dismissals (`admin_cmd_integration_dismiss`), Finish switching to a new key (`admin_cmd_integration_key_finish_switching`), hosted files (`hosted_file_*`), stored key
   replacements
   (`secret_replacement_requested`, `secret_request_*`,

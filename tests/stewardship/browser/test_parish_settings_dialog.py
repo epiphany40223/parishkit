@@ -1,13 +1,14 @@
 """Parish settings reviewed and applied in the shared review dialog (#750).
 
-Review changes waits for a real change (#921); Review opens the dialog with
-each changed setting's current and proposed value and a new timezone's
-note; once Apply is applied, the dialog closes, the form's region is
-redrawn in place at the applied version, and the status line under the
-form says what was applied, with no reload and no jump to the top. A
-field's error stays on the form; any other refusal shows in the dialog and
-never redraws the form. Pages and POST answers are ``settings_components``'
-(``PARISH`` and the names after it); a route answers each Review POST.
+Save waits for a real change (#921); Save opens the dialog with a compact
+review (#1356), one "Setting: old → new" line per changed setting that
+describes the dialog, and a new timezone's note; once Apply is applied,
+the dialog closes, the form's region is redrawn in place at the applied
+version, and the status line under the form says what was applied, with
+no reload and no jump to the top. A field's error stays on the form; any
+other refusal shows in the dialog and never redraws the form. Pages and
+POST answers are ``settings_components``' (``PARISH`` and the names after
+it); a route answers each Review POST.
 """
 
 import json
@@ -15,7 +16,8 @@ import re
 
 import pytest
 
-from .review_helpers import RESTORE, answer_reviews, expect_review
+from .review_helpers import RESTORE, answer_reviews
+from .review_helpers import expect_review as expect_gate
 from .settings_components import PARISH, PARISH_REFUSED, PARISH_REVIEW
 from .test_in_place import MARK, MARKED, count_requests
 from .waits import eventually, has_attribute, hidden, same_place, visible
@@ -24,6 +26,9 @@ pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
 FOCUSED = "document.activeElement && document.activeElement.id"
+# The form's Save (its Review, #1356) and the line saying why it waits.
+SAVE = "Save"
+SAVE_HINT = "Change a setting to save it."
 APPLIED_LINE = re.compile(
     r"^Parish settings changed\. Applied at \d{1,2}:\d{2}\s?[AP]M\.$"
 )
@@ -33,6 +38,11 @@ PLACE = """(id) => {
     const box = document.getElementById(id).getBoundingClientRect();
     return [box.left + window.scrollX, box.top + window.scrollY];
 }"""
+
+
+def expect_review(page, *, enabled):
+    """Save is available (or unavailable, with its hint) as ``enabled``."""
+    expect_gate(page, enabled=enabled, hint=SAVE_HINT, name=SAVE)
 
 
 def watch(page):
@@ -45,7 +55,7 @@ def watch(page):
 
 def dialog_of(page):
     """The review dialog, once it is open."""
-    dialog = page.get_by_role("dialog", name="Review Parish settings")
+    dialog = page.get_by_role("dialog", name="Save the Parish settings?")
     visible(dialog)
     return dialog
 
@@ -74,11 +84,14 @@ def refuse_with(page, origin, action, status, message, fix):
 
 
 def test_a_change_is_reviewed_and_applied_in_the_dialog(page, component_origin):
-    """Review opens the dialog on its title with each change and the
-    timezone note; Apply closes it, redraws the form in place at the applied
-    version, says what was applied in the status line and leaves Review
-    waiting for the next change. Nothing reloads, the form and the status
-    line do not move, and Apply is posted once."""
+    """Save opens the dialog on its title with a compact review of each
+    change, which describes the dialog, and the timezone note; Apply closes
+    it, redraws the form in place at the applied version, says what was
+    applied in the status line and leaves Save waiting for the next change.
+    Nothing reloads, the form and the status line do not move, and Apply is
+    posted once."""
+    from playwright.sync_api import expect
+
     reviews = answer_reviews(page, component_origin, PARISH_REVIEW, address=PARISH)
     page.goto(component_origin + PARISH)
     failures = watch(page)
@@ -87,11 +100,22 @@ def test_a_change_is_reviewed_and_applied_in_the_dialog(page, component_origin):
     page.get_by_label("Parish name").fill("Renamed Parish")
     page.get_by_label("Parish timezone").select_option("America/Chicago")
     expect_review(page, enabled=True)
-    page.get_by_role("button", name="Review changes").click()
+    page.get_by_role("button", name=SAVE, exact=True).click()
     dialog = dialog_of(page)
     assert page.evaluate(FOCUSED) == "parish-review-title"
-    visible(dialog.get_by_role("heading", name="Parish name"))
-    visible(dialog.get_by_role("heading", name="Parish timezone"))
+    # A compact review (#1356): one line per changed setting, describing
+    # the dialog, with no heading or table of its own.
+    lines = dialog.locator("#parish-review-summary li")
+    assert lines.count() == 2
+    text = lines.nth(0).inner_text()
+    assert text.startswith("Parish name: Sample Parish") and "→" in text
+    assert text.endswith(" Renamed Parish")
+    assert dialog.get_by_role("heading").count() == 1
+    assert dialog.locator("table").count() == 0
+    assert dialog.get_attribute("aria-describedby") == "parish-review-summary"
+    expect(dialog).to_have_accessible_description(
+        re.compile(r"^Parish name: Sample Parish ?, becomes Renamed Parish")
+    )
     assert "This timezone change is prospective." in dialog.inner_text()
     assert "Renamed Parish" in dialog.inner_text()
     assert len(reviews) == 1 and "name=Renamed+Parish" in reviews[0]
@@ -118,7 +142,7 @@ def test_a_change_is_reviewed_and_applied_in_the_dialog(page, component_origin):
 
 
 def test_review_waits_for_a_change(page, component_origin):
-    """Review changes is unavailable until the form differs from the saved
+    """Save is unavailable until the form differs from the saved
     settings, available after an edit, unavailable again once the edit is
     undone, and checked again when a page restored from history is shown
     with values that came back without events (#921). Its hint keeps its
@@ -163,7 +187,7 @@ def test_a_field_error_is_marked_and_keeps_the_dialog_shut(page, component_origi
     failures = watch(page)
     phone = page.get_by_label("Parish telephone")
     phone.fill("123")
-    page.get_by_role("button", name="Review changes").click()
+    page.get_by_role("button", name=SAVE, exact=True).click()
     summary = page.locator("[data-error-summary]")
     visible(summary)
     has_attribute(phone, "aria-invalid", "true")
@@ -190,7 +214,7 @@ def test_a_stale_page_is_refused_in_the_dialog(page, component_origin):
     )
     page.goto(component_origin + PARISH)
     page.get_by_label("Parish name").fill("Renamed Parish")
-    page.get_by_role("button", name="Review changes").click()
+    page.get_by_role("button", name=SAVE, exact=True).click()
     dialog = dialog_of(page)
     error = dialog.locator("[data-confirm-error]")
     visible(error)
@@ -220,7 +244,7 @@ def test_a_refused_apply_shows_in_the_dialog_without_a_redraw(page, component_or
     page.goto(component_origin + PARISH)
     failures = watch(page)
     page.get_by_label("Parish name").fill("Renamed Parish")
-    page.get_by_role("button", name="Review changes").click()
+    page.get_by_role("button", name=SAVE, exact=True).click()
     dialog = dialog_of(page)
     form = page.locator("#settings-form").element_handle()
     dialog.get_by_role("button", name="Apply").click()

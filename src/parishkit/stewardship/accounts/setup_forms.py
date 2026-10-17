@@ -6,7 +6,7 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
-from parishkit.stewardship.schema_primitives import canonical_timezone, typed
+from parishkit.stewardship.schema_primitives import canonical_timezone
 from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.refusals import UserFacingError
 from parishkit.stewardship.web.sender_name_field import SenderNameField
@@ -47,18 +47,6 @@ class SetupParishForm(ParishForm):
         """
         value = self.cleaned_data["timezone"]
         return value if self.fields["timezone"].disabled else canonical_timezone(value)
-
-    def clean_website(self):
-        """Reject credential-bearing or parameterized URLs before temporary storage."""
-        value = self.cleaned_data["website"]
-        try:
-            typed(value, "url")
-        except ConfigError:
-            raise forms.ValidationError(
-                _("Use a website URL without credentials, query or fragment."),
-                code="invalid_url",
-            ) from None
-        return value
 
 
 class IdentityLines(forms.CharField):

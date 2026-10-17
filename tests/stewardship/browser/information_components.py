@@ -239,6 +239,16 @@ def components(context, admin):
             },
         ),
         "/information-item": ("information", values | {"item": item}),
+        # A request no Staff member has saved yet (#227 empty state).
+        "/information-item-new": (
+            "information",
+            values | {"item": item, "history": []},
+        ),
+        # A history page past its end, as a bookmarked ?page= can ask for.
+        "/information-item-past-end": (
+            "information",
+            values | {"item": item, "history": [], "previous_history": 1},
+        ),
         # A Save the server refused for clearing the completed follow-up
         # without its confirmation (#1332): the item drawn again with what
         # was sent, the box marked and the message in the Save hint row.

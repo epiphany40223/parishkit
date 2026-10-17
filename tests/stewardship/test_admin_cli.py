@@ -83,6 +83,13 @@ def test_the_catalog_lists_every_command_with_its_flags():
     }
     refresh = {"refresh start", "refresh status"}
     portal = {"portal maintenance show", "portal maintenance set", "send controls"}
+    # Pause and resume mail's controls (PR 7b, #463).
+    portal |= {
+        "send pause-preview",
+        "send resume-preview",
+        "send resolve-preview",
+        "send confirm",
+    }
     configuration = {
         "files list",
         "files delete",
@@ -90,6 +97,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "content list",
         "content show",
         "content history",
+        "content preview",
+        "content confirm",
         "parish show",
         "parish preview",
         "parish confirm",
@@ -116,6 +125,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "campaign show",
         "campaign preview",
         "campaign confirm",
+        "campaign shares-preview",
+        "campaign shares-confirm",
     }
     tests = {
         "test sample-preview",
@@ -167,6 +178,9 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "census resolve",
         # An Automatic row's Review (#528, ADM-09).
         "census review",
+        # Its Edit value and Use the Family's value anyway (#1434).
+        "census edit",
+        "census resolve-conflict",
         "export census",
         "export limitations",
         "export roster",
@@ -203,6 +217,11 @@ def test_the_catalog_lists_every_command_with_its_flags():
         # Home's acknowledgements, with the users and follow-up of PR 11.
         "events list",
         "events acknowledge",
+        # The Ministry follow-up queue (PR 11a).
+        "followup list",
+        "followup show",
+        "followup update",
+        "followup bulk",
     }
     # Past campaigns' archive import (#1018), listed with the reports.
     reports |= {"history list", "history preview", "history confirm", "history remove"}
@@ -262,6 +281,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "export archive",
                 "integration confirm",
                 "integration key finish-switching",
+                "send confirm",
             }
         ), name
         # A prompting command, and only one, takes --yes. Other branches add
@@ -751,6 +771,32 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert options["--decision"]["required"]
     assert options["--expected-version"]["required"]
     assert not options["--note"]["required"]
+    # census edit and census resolve-conflict (#1434): keyed and versioned,
+    # full scope, neither fresh-gated nor prompting, as census review.
+    edit = entries["census edit"]
+    conflict = entries["census resolve-conflict"]
+    for entry, event in (
+        (edit, "admin_cmd_census_edit"),
+        (conflict, "admin_cmd_census_resolve_conflict"),
+    ):
+        assert entry["scope"] == "full" and entry["changes_state"]
+        assert entry["request_key"] and entry["expected_version"]
+        assert not entry["prompts"] and not entry["fresh_gated"]
+        assert entry["audit_event"] == event
+        assert entry["arguments"] == ["PROPOSAL_ID"]
+        options = {option["name"]: option for option in entry["options"]}
+        assert options["--expected-version"]["required"]
+        assert not options["--note"]["required"]
+    assert edit["result_fields"] == [
+        "created",
+        "unchanged",
+        "request_key",
+        "review",
+        "proposal",
+    ]
+    assert conflict["result_fields"] == review["result_fields"]
+    options = {option["name"]: option for option in edit["options"]}
+    assert {"--value", "--clear"} <= set(options)
 
 
 def test_every_state_change_has_a_registered_described_event():
@@ -776,11 +822,16 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_export_family_test_names",
         "admin_cmd_test_families",
         "admin_cmd_portal_maintenance_set",
+        # send confirm: Pause and resume mail's Confirm (PR 7b, #463).
+        "admin_cmd_send_confirm",
+        "admin_cmd_content_confirm",
         "admin_cmd_files_delete",
         "admin_cmd_files_rename",
         "admin_cmd_parish_confirm",
         "admin_cmd_workgroup_confirm",
         "admin_cmd_campaign_confirm",
+        # campaign shares-confirm: Share options' Apply (PR 10).
+        "admin_cmd_campaign_shares_confirm",
         "admin_cmd_task_retry",
         "admin_cmd_delivery_resolve",
         "admin_cmd_delivery_resend",
@@ -808,9 +859,16 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_census_resolve",
         # census review: an Automatic row's Review (#528, ADM-09).
         "admin_cmd_census_review",
+        # census edit and census resolve-conflict: its Edit value and Use
+        # the Family's value anyway (#1434).
+        "admin_cmd_census_edit",
+        "admin_cmd_census_resolve_conflict",
         "admin_cmd_users_confirm",
         "admin_cmd_users_import_leaders",
         "admin_cmd_events_acknowledge",
+        # The Ministry follow-up queue's Save and bulk outcome (PR 11a).
+        "admin_cmd_followup_update",
+        "admin_cmd_followup_bulk",
         "admin_cmd_history_preview",
         "admin_cmd_history_confirm",
         "admin_cmd_history_remove",

@@ -4,6 +4,7 @@ from django.db.models import F
 
 from parishkit.stewardship.campaigns.work_locks import require_work_order
 
+from .accepted_base import has_active_base
 from .capabilities import capability
 from .census import HOUSEHOLD_FIELDS
 from .comparison import ValueKind, canonical_value
@@ -90,6 +91,13 @@ def derive_proposals(submission, validated):
                 field.kind, field.source, PriorChange(baseline, submitted)
             )
             carry_decision = same_intent
+            decision = old.decision if carry_decision else "unreviewed"
+            if carry_decision and decision == "approved" and has_active_base(old):
+                # The Administrator approved it over a ParishSoft value they
+                # accepted (#528, ADM-09.03). That base belongs to the old
+                # row and is not carried, so neither is the approval: the
+                # new row is compared with the Family's baseline again.
+                decision = "unreviewed"
             new = ProposedChange.objects.create(
                 submission=submission,
                 entity_kind=field.entity,
@@ -102,7 +110,7 @@ def derive_proposals(submission, validated):
                 current_value=field.source.value,
                 current_source_id=validated.validation_snapshot_id,
                 handling=capability(field.entity, field.field).handling.value,
-                decision=old.decision if carry_decision else "unreviewed",
+                decision=decision,
                 admin_value_set=old.admin_value_set if carry_decision else False,
                 admin_value=old.admin_value if carry_decision else None,
                 execution="conflict"

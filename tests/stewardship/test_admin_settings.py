@@ -231,18 +231,23 @@ def test_the_catalog_entries(name, model, options):
 
 
 def test_the_ledger_covers_the_pages():
-    """Each page is covered by its read; its changes are still owed.
+    """Each page is covered by its read; Parish logos' changes are owed.
 
-    Parish settings' changes are covered too (``test_admin_parish``), and
+    Parish settings' changes are covered too (``test_admin_parish``),
+    Share options' by its Review and Apply (``test_admin_shares``), and
     Ministries changes nothing since #1267, so nothing is owed for it.
     """
-    for route, name, owed in (
-        ("ministries", "ministries list", None),
-        ("branding_settings", "branding show", "PR 10"),
-        ("share_settings", "campaign shares", "PR 10"),
+    for route, names, owed in (
+        ("ministries", ("ministries list",), None),
+        ("branding_settings", ("branding show",), "PR 10"),
+        (
+            "share_settings",
+            ("campaign shares", "campaign shares-preview", "campaign shares-confirm"),
+            None,
+        ),
     ):
         assert LEDGER[route].kind == "command"
-        assert LEDGER[route].detail == (name,)
+        assert LEDGER[route].detail == names
         assert LEDGER[route].owed == owed
 
 

@@ -47,7 +47,8 @@ controls`` (PR 7b, in ``admin_delivery_control``), ``report
 source-form`` (in ``admin_source_form``), ``report data-to-fix`` (in
 ``admin_data_to_fix``), ``files list``, ``files
 delete`` and ``files rename`` (PR 10, in ``admin_hosted_files``),
-``content list``, ``content show`` and ``content history`` (PR 10, in
+``content list``, ``content show``, ``content history``, ``content preview``
+and ``content confirm`` (PR 10, in
 ``admin_content``), ``integration list``, ``integration show``, ``integration status``
 and ``integration schedule-preview`` (PR 10, in ``admin_integrations``),
 ``parish show``, ``ministries list``, ``branding show`` and ``campaign
@@ -72,6 +73,10 @@ the Roster changes to enter list, whose download is ``export roster`` (in
 in ``admin_workgroup``) read and change the No-reminders WorkGroup.
 ``campaign show``, ``campaign preview`` and ``campaign confirm`` (PR 10, in
 ``admin_campaign``) read and change Campaign settings.
+``campaign shares-preview`` and ``campaign shares-confirm`` (PR 10, in
+``admin_shares``) change a campaign's Share options.
+``followup list``, ``followup show``, ``followup update`` and ``followup
+bulk`` (PR 11a, in ``admin_followup``) read and record Ministry follow-up.
 """
 
 import argparse
@@ -768,6 +773,77 @@ def send_controls(args, preamble, runtime, context):
     return read_controls(context["caller"], runtime)
 
 
+# --- Pause and resume mail's controls (PR 7b, #463) ---------------------------
+
+
+def _send_reason(args, context):
+    """The ``--reason`` text, or for ``-`` standard input (bounded in bytes)."""
+    from .accounts.delivery_control_commands import REASON_LIMIT
+
+    # Up to four UTF-8 bytes a character; the page counts characters.
+    return _input(args.reason, context, REASON_LIMIT * 4)
+
+
+def send_pause_preview(args, preamble, runtime, context):
+    """Review pausing live Family email, as the page's Preview pause."""
+    from .admin_delivery_control import preview_control
+
+    return preview_control(
+        context["caller"], runtime, "pause", reason=_send_reason(args, context)
+    )
+
+
+def send_resume_preview(args, preamble, runtime, context):
+    """Review resuming live Family email, as the page's Preview resume."""
+    from .admin_delivery_control import preview_control
+
+    return preview_control(
+        context["caller"], runtime, "resume", reason=_send_reason(args, context)
+    )
+
+
+def send_resolve_preview(args, preamble, runtime, context):
+    """Review resolving a closed campaign's held messages, as the page's form.
+
+    As the form: Release and Cancel take at least one message type, Clear
+    takes none. The page's own preview checks the rest.
+    """
+    from .admin_delivery_control import preview_control
+
+    types = sorted(set(args.type or ()))
+    if (args.decision == "clear") == bool(types):
+        raise UsageError("--type goes with release or cancel, and only with them.")
+    return preview_control(
+        context["caller"],
+        runtime,
+        "resolve",
+        reason=_send_reason(args, context),
+        decision=args.decision,
+        types=types,
+    )
+
+
+def send_confirm(args, preamble, runtime, context):
+    """Confirm a reviewed pause, resume or resolution, as the page's Confirm.
+
+    The page needs a recent sign-in, so this always prompts (``--yes``
+    answers it) with the preview's action, reason, counts and caution,
+    after checking the Administrator role and then the token's signature,
+    and before any transaction.
+    """
+    from .admin_changes import TOKEN_LIMIT
+    from .admin_delivery_control import confirm_control, confirm_prompt_lines
+
+    # The role first (#1339): Staff is denied before any read or prompt.
+    _role_first(context, runtime)
+    token = _input(args.token, context, TOKEN_LIMIT)
+    confirm(context, confirm_prompt_lines(token))
+    return confirm_control(context["caller"], runtime, token=token, context=context)
+
+
+# --- end of Pause and resume mail's controls ----------------------------------
+
+
 def system_health(args, preamble, runtime, context):
     """The System health page's problems and panels (ADM-13)."""
     from .admin_reads import read_system_health
@@ -848,12 +924,14 @@ def confirm(context, summary, *, typed="yes"):
     emit(Event.TASK_STARTED, confirmation="prompt")
 
 
-def _input(value, context, limit):
+def _input(value, context, limit, *, strip=True):
     """An option's value, or for ``-`` the rest of standard input.
 
     The preamble was already read; the wrapper forwards what follows it only
     for a ``-`` input. More than ``limit`` bytes, or text that is not UTF-8,
-    is invalid input (exit 1), never echoed.
+    is invalid input (exit 1), never echoed. Surrounding whitespace is
+    trimmed unless ``strip`` is false, for input whose every character
+    counts (``content preview --html -``, which must answer as the page).
     """
     if value != "-":
         return value
@@ -861,9 +939,10 @@ def _input(value, context, limit):
     if len(raw) > limit:
         raise ValueError("The input is too long.")
     try:
-        return raw.decode("utf-8").strip()
+        text = raw.decode("utf-8")
     except UnicodeDecodeError:
         raise ValueError("The input is not UTF-8.") from None
+    return text.strip() if strip else text
 
 
 def _role_first(context, runtime, capability=None):
@@ -1209,6 +1288,54 @@ def content_show(args, preamble, runtime, context):
         args.slot,
         args.revision,
         args.default,
+    )
+
+
+def content_preview(args, preamble, runtime, context):
+    """Build a Pages and emails Delete, or preview typed HTML's plain text (PR 10).
+
+    ``--delete`` (repeatable) needs ``--expected-version`` and ``--html``
+    takes none (``main`` checks both before admission). The role is
+    checked first (#1341), before any input is read.
+    """
+    from .admin_content import (
+        admit_preview,
+        plain_text_preview,
+        preview_deletion,
+    )
+    from .web.content import MAX_TEXT_BYTES
+
+    delete = args.delete is not None
+    actor = admit_preview(context["caller"], runtime, delete=delete)
+    if not delete:
+        # Unstripped: the page converts the posted HTML exactly as typed.
+        return plain_text_preview(
+            _input(args.html, context, MAX_TEXT_BYTES, strip=False)
+        )
+    return preview_deletion(
+        context["caller"],
+        runtime,
+        actor,
+        args.delete,
+        expected_version=args.expected_version,
+    )
+
+
+def content_confirm(args, preamble, runtime, context):
+    """Confirm a built Pages and emails Delete as a configuration request (PR 10).
+
+    The role is checked first (#1341), before the token is read.
+    """
+    from .admin_changes import TOKEN_LIMIT, _admit_change
+    from .admin_content import confirm_content
+
+    actor = _admit_change(context["caller"], runtime)
+    return confirm_content(
+        context["caller"],
+        runtime,
+        actor,
+        token=_input(args.token, context, TOKEN_LIMIT),
+        context=context,
     )
 
 
@@ -2463,6 +2590,88 @@ def census_review(args, preamble, runtime, context):
     )
 
 
+# The longest edited value ``census_review.edit_census_change`` reads, in
+# characters; standard input is bounded by its UTF-8 bytes.
+MAX_EDIT = 1000
+TOO_LONG_EDIT = f"Enter text of at most {MAX_EDIT:,} characters."
+
+
+def census_edit(args, preamble, runtime, context):
+    """Edit the value publication writes, or clear the edit (#1434, ADM-09.04).
+
+    ``--value`` (or ``-`` for standard input) is Edit value's Save value and
+    ``--clear`` its Clear edit. Without ``--request-key`` a new key is made
+    and written to standard error before anything is done. An edit keeps
+    the decision and can be changed again until publication of the change
+    starts, so, as on the page, it asks nothing.
+    """
+    from .accounts.policy import Capability
+    from .admin_census import edit_census
+    from .admin_changes import InvalidChange
+    from .responses.census_resolution import MAX_NOTE
+
+    # Standard input carries one input only.
+    if args.value == "-" and args.note == "-":
+        raise UsageError("Only one input may be read from standard input.")
+    # The role first (#1341): an Administrator's, so Staff are denied before
+    # any input or lookup.
+    _role_first(context, runtime, Capability.PUBLISH_CENSUS)
+
+    key = _request_key(args, context)
+    note = _input(args.note, context, MAX_NOTE * 4).strip()
+    # The service reads the value as the Family form reads its own answer,
+    # which trims it; standard input is trimmed already (``_input``).
+    value = None
+    if not args.clear:
+        try:
+            value = _input(args.value, context, MAX_EDIT * 4)
+        except ValueError:
+            value = None
+        # Longer than the service reads (or not UTF-8 text) is refused here,
+        # with a fixed reason for the field, as the service's own reasons.
+        if value is None or len(value) > MAX_EDIT:
+            raise InvalidChange(
+                [{"field": "value", "code": "invalid", "message": TOO_LONG_EDIT}]
+            )
+    return edit_census(
+        context["caller"],
+        runtime,
+        args.proposal_id,
+        value=value,
+        expected_version=args.expected_version,
+        note=note,
+        request_key=key,
+        context=context,
+    )
+
+
+def census_resolve_conflict(args, preamble, runtime, context):
+    """Use the Family's value anyway on a census Conflict (#1434, ADM-09.03).
+
+    Without ``--request-key`` a new key is made and written to standard
+    error before anything is done. ``census review --decision
+    ignored|unreviewed`` undoes it, so, as on the page, it asks nothing.
+    """
+    from .accounts.policy import Capability
+    from .admin_census import resolve_conflict
+    from .responses.census_resolution import MAX_NOTE
+
+    # The role first (#1341), as census review.
+    _role_first(context, runtime, Capability.PUBLISH_CENSUS)
+
+    key = _request_key(args, context)
+    note = _input(args.note, context, MAX_NOTE * 4).strip()
+    return resolve_conflict(
+        context["caller"],
+        runtime,
+        args.proposal_id,
+        expected_version=args.expected_version,
+        note=note,
+        request_key=key,
+        context=context,
+    )
+
+
 def report_source_form(args, preamble, runtime, context):
     """Families the form cannot open, by DUID only (#774)."""
     from .admin_source_form import read_source_form
@@ -3010,6 +3219,46 @@ def _portal_maintenance_set_options(parser):
     )
 
 
+# --- Options of Pause and resume mail's controls (PR 7b, #463) ----------------
+
+
+def _send_reason_options(parser):
+    """The page's reason, which every pause, resume and resolution asks for."""
+    parser.add_argument(
+        "--reason",
+        required=True,
+        help="why (at most 1,024 characters; the page shows it), or - to read "
+        "it from standard input",
+    )
+
+
+def _send_resolve_options(parser):
+    """Options of ``send resolve-preview``: the decision and message types."""
+    from .admin_delivery_control import RESOLVE_DECISIONS, RESOLVE_TYPES
+
+    parser.add_argument("--decision", required=True, choices=RESOLVE_DECISIONS)
+    parser.add_argument(
+        "--type",
+        action="append",
+        choices=RESOLVE_TYPES,
+        help="a held message type to release or cancel (repeatable); none "
+        "with --decision clear",
+    )
+
+
+def _send_confirm_options(parser):
+    """Options of ``send confirm``: the reviewed preview's token."""
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from send pause-preview, resume-preview or "
+        "resolve-preview, or - for standard input (needs --yes)",
+    )
+
+
+# --- end of the options of Pause and resume mail's controls -------------------
+
+
 def _history_year(value):
     """A campaign archive's pledge year: four digits, 2000 to 2100."""
     if not (len(value) == 4 and value.isdecimal() and 2000 <= int(value) <= 2100):
@@ -3188,6 +3437,36 @@ def _integration_key_finish_options(parser):
         required=True,
         help="preview.token from integration key finish-switching-preview, or - "
         "for standard input (needs --yes)",
+    )
+
+
+def _content_preview_options(parser):
+    """Options of ``content preview``: the emails to delete, or HTML to preview."""
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument(
+        "--delete",
+        action="append",
+        type=_uuid,
+        metavar="ID",
+        help="an email to delete, by its content list revision id (repeatable)",
+    )
+    mode.add_argument(
+        "--html",
+        help="HTML to preview as the editor's plain text, or - for standard input",
+    )
+    parser.add_argument(
+        "--expected-version",
+        type=_digest,
+        help="the version content list printed (with --delete)",
+    )
+
+
+def _content_confirm_options(parser):
+    """Options of ``content confirm``: the preview's token."""
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from content preview, or - for standard input",
     )
 
 
@@ -3847,6 +4126,39 @@ def _census_review_options(parser):
         help="an optional note, or - to read it from standard input",
     )
     _request_key_option(parser)
+
+
+def _census_change_options(parser):
+    """A census change, its version and an optional note, as review takes."""
+    parser.add_argument("proposal_id", type=_uuid, metavar="PROPOSAL_ID")
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_version,
+        help="the change's version, as export census --format jsonl prints it",
+    )
+    parser.add_argument(
+        "--note",
+        default="",
+        help="an optional note, or - to read it from standard input",
+    )
+    _request_key_option(parser)
+
+
+def _census_edit_options(parser):
+    """Options of ``census edit``: Edit value's Save value or Clear edit."""
+    _census_change_options(parser)
+    edit = parser.add_mutually_exclusive_group(required=True)
+    edit.add_argument(
+        "--value",
+        help="the value to publish instead of the Family's answer, or - to "
+        "read it from standard input",
+    )
+    edit.add_argument(
+        "--clear",
+        action="store_true",
+        help="clear the edit, so publication writes the Family's answer",
+    )
 
 
 def _snapshot_option(parser):
@@ -4714,7 +5026,71 @@ def _portal_specs():
             7,
             audit_event=None,
         ),
+        # --- Pause and resume mail's controls (PR 7b, #463) ---
+        *_send_control_specs(),
     )
+
+
+def _send_control_specs():
+    """Pause and resume mail's previews and confirmation (PR 7b, #463).
+
+    The previews record activity as the page's preview posts do, so they
+    need a full-scope session, and record no event. ``send confirm`` is
+    fresh-gated on the page, so it always prompts.
+    """
+    from .admin_delivery_control import ControlConfirm, ControlPreview
+
+    preview = ControlPreview.field_names()
+    return (
+        CommandSpec(
+            "send pause-preview",
+            "Review pausing live Family email.",
+            send_pause_preview,
+            "full",
+            False,
+            preview,
+            7,
+            options=(_send_reason_options,),
+            audit_event=None,
+        ),
+        CommandSpec(
+            "send resume-preview",
+            "Review resuming live Family email.",
+            send_resume_preview,
+            "full",
+            False,
+            preview,
+            7,
+            options=(_send_reason_options,),
+            audit_event=None,
+        ),
+        CommandSpec(
+            "send resolve-preview",
+            "Review resolving a closed campaign's held messages.",
+            send_resolve_preview,
+            "full",
+            False,
+            preview,
+            7,
+            options=(_send_resolve_options, _send_reason_options),
+            audit_event=None,
+        ),
+        CommandSpec(
+            "send confirm",
+            "Confirm a reviewed pause, resume or held-message resolution.",
+            send_confirm,
+            "full",
+            True,
+            ControlConfirm.field_names(),
+            7,
+            options=(_send_confirm_options,),
+            fresh_gated=True,
+            prompts=True,
+        ),
+    )
+
+
+# --- end of Pause and resume mail's controls ----------------------------------
 
 
 def _file_specs():
@@ -4724,7 +5100,13 @@ def _file_specs():
     editor and Content history pages' reads; like ``files list``, any session runs
     them and they record nothing, as the pages' GETs record nothing.
     """
-    from .admin_content import ContentHistory, ContentList, ContentShow
+    from .admin_content import (
+        ContentConfirm,
+        ContentHistory,
+        ContentList,
+        ContentPreview,
+        ContentShow,
+    )
     from .admin_hosted_files import FileDeletion, FileRename, HostedFileLibrary
 
     return (
@@ -4759,6 +5141,34 @@ def _file_specs():
             10,
             options=(_content_history_options,),
             audit_event=None,
+        ),
+        # The email tables' Delete, split into a preview and a confirm as
+        # schedule preview / schedule confirm split a schedule's Delete,
+        # and the editors' plain-text preview. Full scope, as the Delete
+        # post records activity; no recent sign-in on the page, so neither
+        # is fresh-gated, and the reviewed token stands in for the dialog,
+        # so neither prompts.
+        CommandSpec(
+            "content preview",
+            "Build a delete of unused emails, or preview HTML as plain text.",
+            content_preview,
+            "full",
+            False,
+            ContentPreview.field_names(),
+            10,
+            options=(_content_preview_options,),
+            expected_version=True,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "content confirm",
+            "Confirm a built delete of unused emails.",
+            content_confirm,
+            "full",
+            True,
+            ContentConfirm.field_names(),
+            10,
+            options=(_content_confirm_options,),
         ),
         # The page's GET records no event.
         CommandSpec(
@@ -5246,7 +5656,7 @@ def _report_specs():
     (``admin_digests``) and PR 8e the Family-level exports
     (``admin_family_exports``).
     """
-    from .admin_census import CensusReport, CensusResolve, CensusReview
+    from .admin_census import CensusEdit, CensusReport, CensusResolve, CensusReview
     from .admin_census_export import CensusExport
     from .admin_data_to_fix import DataToFixReport
     from .admin_digests import DailyDigest, DigestList, WeeklyDigest, WeeklyRequest
@@ -5755,6 +6165,35 @@ def _report_specs():
             request_key=True,
             expected_version=True,
         ),
+        # An Automatic row's Edit value and Clear edit (#1434, ADM-09.04):
+        # the page's service, keyed; reversible, so it asks nothing.
+        CommandSpec(
+            "census edit",
+            "Edit the value an automatic census change publishes, or clear it.",
+            census_edit,
+            "full",
+            True,
+            CensusEdit.field_names(),
+            8,
+            options=(_census_edit_options,),
+            request_key=True,
+            expected_version=True,
+        ),
+        # An Automatic Conflict's Use the Family's value anyway (#1434,
+        # ADM-09.03): the page's service, keyed; census review undoes it, so
+        # it asks nothing.
+        CommandSpec(
+            "census resolve-conflict",
+            "Approve an automatic census conflict over ParishSoft's value.",
+            census_resolve_conflict,
+            "full",
+            True,
+            CensusReview.field_names(),
+            8,
+            options=(_census_change_options,),
+            request_key=True,
+            expected_version=True,
+        ),
         # System health's Families the form cannot open (#774): counts and
         # DUIDs only, Administrators only, as the page.
         CommandSpec(
@@ -5886,6 +6325,460 @@ def _events_specs():
     )
 
 
+# ---------------------------------------------- Ministry follow-up (PR 11a)
+#
+# ``followup list``, ``followup show``, ``followup update`` and ``followup
+# bulk`` (#463, in ``admin_followup``): the Ministry requests follow-up
+# queue, a request's page and Save, and the queue's bulk outcome.
+
+# The queue's choices (``reports.ministry_followup``), spelled out because
+# the parser is built before Django is set up; a test keeps them equal.
+FOLLOWUP_STATES = (
+    "unresolved",
+    "any",
+    "new",
+    "in_progress",
+    "resolved",
+    "closed_no_response",
+    "not_in_parishsoft",
+)
+FOLLOWUP_OUTCOMES = (
+    "any",
+    "joined",
+    "leave_confirmed",
+    "declined",
+    "other",
+    "no_response",
+)
+# What a Save may set (``workflows.models.STAFF_STATES``), the outcomes a
+# Resolved request records (less the retired ``duplicate``), and the
+# contact channels (``CONTACT_CHANNELS``).
+FOLLOWUP_SAVE_STATES = ("new", "in_progress", "resolved", "closed_no_response")
+FOLLOWUP_RESOLVED = ("joined", "leave_confirmed", "declined", "other")
+FOLLOWUP_CHANNELS = ("email", "phone", "in_person", "other")
+# The queue's bulk outcome buttons, by the page's posted "kind:outcome"
+# value (``workflows.followup.BULK_ACTIONS``).
+FOLLOWUP_BULK = (
+    "join:joined",
+    "join:declined",
+    "leave:leave_confirmed",
+    "leave:declined",
+)
+# The longest notes the page takes (``workflows.followup.MAX_NOTES``), in
+# UTF-8 bytes at most four per character.
+FOLLOWUP_NOTES_LIMIT = 5000 * 4
+# The longest contact notes (``MAX_CONTACT_NOTES``), likewise in bytes.
+FOLLOWUP_CONTACT_NOTES_LIMIT = 2000 * 4
+
+
+def _positive(value):
+    """A page number: a positive integer; anything else is a usage error."""
+    if not value.isdecimal() or not 1 <= int(value) <= 2**31 - 1:
+        raise argparse.ArgumentTypeError("not a page number")
+    return int(value)
+
+
+def _chosen_request(value):
+    """``--request ID:VERSION``: a request and the version its row showed."""
+    identity, separator, version = value.partition(":")
+    if not separator:
+        raise argparse.ArgumentTypeError("not ID:VERSION")
+    try:
+        return _uuid(identity), _version(version)
+    except argparse.ArgumentTypeError:
+        raise argparse.ArgumentTypeError("not ID:VERSION") from None
+
+
+def followup_list(args, preamble, runtime, context):
+    """One page of the Ministry follow-up queue, without Members (#463)."""
+    from .admin_followup import read_followup_list
+
+    return read_followup_list(
+        context["caller"],
+        runtime,
+        {
+            "ministry": args.ministry,
+            "action": args.action,
+            "state": args.state,
+            "outcome": args.outcome,
+            "sort": args.sort,
+            "page": args.page,
+            "size": args.size,
+        },
+    )
+
+
+def followup_show(args, preamble, runtime, context):
+    """One Ministry request and its follow-up history, without notes (#463)."""
+    from .admin_followup import read_followup_show
+
+    return read_followup_show(
+        context["caller"], runtime, args.request_id, history_page=args.page or 1
+    )
+
+
+def _followup_contact(args, context, *, stdin_free=True):
+    """The contact attempt's options, refused when they would have no effect.
+
+    The page sends a contact attempt's instant and notes only with a
+    channel; on the command line an instant or notes without
+    ``--contact-channel`` would be silently dropped, so it is a usage error,
+    as other options that go only with another are. ``--contact-notes -``
+    reads standard input, when no other option already does.
+    """
+    if args.contact_channel is None and (
+        args.contact_at is not None or args.contact_notes is not None
+    ):
+        raise UsageError("--contact-at and --contact-notes go with --contact-channel.")
+    if args.contact_notes == "-" and not stdin_free:
+        raise UsageError("Only one input may be read from standard input.")
+    if args.contact_notes is None:
+        return None
+    return _input(args.contact_notes, context, FOLLOWUP_CONTACT_NOTES_LIMIT)
+
+
+def followup_update(args, preamble, runtime, context):
+    """Record follow-up on one Ministry request, as its Save does (#463).
+
+    Without ``--request-key`` a new key is made and written to standard
+    error before anything is done, so a run that crashes can be repeated
+    with it. The page's Save asks nothing, so neither does this. An
+    ``--outcome`` goes only with ``--state resolved``, as the page shows
+    the outcome only then.
+    """
+    from .admin_followup import update_followup
+
+    if args.outcome is not None and args.state != "resolved":
+        raise UsageError("--outcome goes with --state resolved.")
+    key = _request_key(args, context)
+    notes = None
+    if args.notes is not None:
+        notes = _input(args.notes, context, FOLLOWUP_NOTES_LIMIT)
+    contact_notes = _followup_contact(args, context, stdin_free=args.notes != "-")
+    return update_followup(
+        context["caller"],
+        runtime,
+        args.request_id,
+        expected_version=args.expected_version,
+        request_key=key,
+        state=args.state,
+        outcome=args.outcome,
+        notes=notes,
+        channel=args.contact_channel,
+        contact_at=args.contact_at,
+        contact_notes=contact_notes,
+        context=context,
+    )
+
+
+def followup_bulk(args, preamble, runtime, context):
+    """Resolve several Ministry requests with one outcome (#463, #1131).
+
+    The queue's bulk outcome asks in its confirmation dialog, and resolving
+    a request closes it, so this asks first (or takes ``--yes``), after
+    refusing a choice too long to record. Without ``--request-key`` a new
+    key is made and written to standard error before anything is done.
+    """
+    from . import admin_followup
+    from .reports.ministries import outcome_label
+
+    # The role first (#1341): the page's own admission, which admits Staff,
+    # Administrators and a leader of any Ministry, before any input or
+    # prompt; each chosen request is checked against the leader's scope.
+    admin_followup.admit_followup(context["caller"], runtime)
+
+    key = _request_key(args, context)
+    contact_notes = _followup_contact(args, context)
+    versions = dict(args.request)
+    if len(versions) != len(args.request):
+        raise ValueError("A request was chosen twice.")
+    # Refused before the prompt: nothing is asked about a choice the page
+    # could not record.
+    admin_followup.check_lengths(contact_notes=contact_notes, requests=versions)
+    kind, _, outcome = args.outcome.partition(":")
+    # The page's dialog words: the outcome's label for this kind of request.
+    confirm(
+        context,
+        (
+            f"Mark {len(versions)} Ministry request(s) as "
+            f"{outcome_label(outcome, kind)}. Each request is resolved, with "
+            "its own entry in its follow-up history.",
+            "A resolved request leaves the open queue and cannot be edited again.",
+        ),
+    )
+    return admin_followup.bulk_followup(
+        context["caller"],
+        runtime,
+        versions,
+        action=kind,
+        outcome=outcome,
+        request_key=key,
+        channel=args.contact_channel,
+        contact_at=args.contact_at,
+        contact_notes=contact_notes,
+        context=context,
+    )
+
+
+def _followup_list_options(parser):
+    """Options of ``followup list``: the queue's filters, without its search."""
+    parser.add_argument("--ministry", metavar="DUID", help="one Ministry, by DUID")
+    parser.add_argument("--action", choices=("any", "join", "leave"))
+    parser.add_argument(
+        "--state",
+        choices=FOLLOWUP_STATES,
+        help="default unresolved (New or In progress)",
+    )
+    parser.add_argument("--outcome", choices=FOLLOWUP_OUTCOMES)
+    parser.add_argument(
+        "--sort",
+        choices=("newest", "name", "ministry"),
+        help="default newest; name sorts by the Member, who is not printed",
+    )
+    parser.add_argument("--page", type=_positive, help="page number (default 1)")
+    parser.add_argument(
+        "--size", choices=("25", "50", "100", "250"), help="rows per page (default 50)"
+    )
+
+
+def _followup_show_options(parser):
+    """Options of ``followup show``: the request and its history page."""
+    parser.add_argument("request_id", type=_uuid, metavar="REQUEST_ID")
+    parser.add_argument(
+        "--page", type=_positive, help="the history's page number (default 1)"
+    )
+
+
+def _followup_contact_options(parser, *, prompts=False):
+    """A follow-up's optional contact attempt, as the page's form takes it.
+
+    ``prompts`` marks a prompting command, whose ``-`` input needs --yes.
+    """
+    parser.add_argument("--contact-channel", choices=FOLLOWUP_CHANNELS)
+    parser.add_argument(
+        "--contact-at",
+        metavar="INSTANT",
+        help="with --contact-channel: when, as an ISO 8601 instant with its offset",
+    )
+    parser.add_argument(
+        "--contact-notes",
+        help="with --contact-channel: optional notes on the contact attempt, "
+        "or - to read them from standard input" + (" (needs --yes)" if prompts else ""),
+    )
+
+
+def _followup_update_options(parser):
+    """Options of ``followup update``: a request page's form."""
+    parser.add_argument("request_id", type=_uuid, metavar="REQUEST_ID")
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_version,
+        help="the request's version, as followup show prints it",
+    )
+    parser.add_argument("--state", required=True, choices=FOLLOWUP_SAVE_STATES)
+    parser.add_argument(
+        "--outcome",
+        choices=FOLLOWUP_RESOLVED,
+        help="with --state resolved: the outcome (other needs --notes)",
+    )
+    parser.add_argument(
+        "--notes",
+        help="the request's notes, replacing them (default: kept), or - to "
+        "read them from standard input",
+    )
+    _followup_contact_options(parser)
+    _request_key_option(parser)
+
+
+def _followup_bulk_options(parser):
+    """Options of ``followup bulk``: the queue's bulk outcome dialog."""
+    parser.add_argument(
+        "--outcome",
+        required=True,
+        choices=FOLLOWUP_BULK,
+        help="the request kind and outcome, as the queue's buttons post them",
+    )
+    parser.add_argument(
+        "--request",
+        required=True,
+        action="append",
+        type=_chosen_request,
+        metavar="ID:VERSION",
+        help="a chosen request and its version, as followup list prints them "
+        "(repeat for each, up to 250)",
+    )
+    _followup_contact_options(parser, prompts=True)
+    _request_key_option(parser)
+
+
+def _followup_specs():
+    """The Ministry follow-up commands (ADM-11 PR 11a, ``admin_followup``).
+
+    ``followup list`` and ``followup show`` are passive reads any session
+    may run; they record the page's ``ministry_followup_viewed``. ``followup
+    update`` asks nothing, as the page's Save does not; ``followup bulk``
+    asks, as the queue's bulk dialog does. Neither change is fresh-gated,
+    as the page asks for no recent sign-in.
+    """
+    from .admin_followup import FollowupBulk, FollowupList, FollowupShow, FollowupUpdate
+
+    return (
+        CommandSpec(
+            "followup list",
+            "List a page of the Ministry follow-up queue, without Members.",
+            followup_list,
+            "read_only",
+            False,
+            FollowupList.field_names(),
+            11,
+            options=(_followup_list_options,),
+            audit_event="ministry_followup_viewed",
+        ),
+        CommandSpec(
+            "followup show",
+            "Show one Ministry request and its follow-up history.",
+            followup_show,
+            "read_only",
+            False,
+            FollowupShow.field_names(),
+            11,
+            options=(_followup_show_options,),
+            audit_event="ministry_followup_viewed",
+        ),
+        CommandSpec(
+            "followup update",
+            "Record follow-up on one Ministry request, as its Save does.",
+            followup_update,
+            "full",
+            True,
+            FollowupUpdate.field_names(),
+            11,
+            options=(_followup_update_options,),
+            request_key=True,
+            expected_version=True,
+        ),
+        CommandSpec(
+            "followup bulk",
+            "Resolve several Ministry requests with one outcome.",
+            followup_bulk,
+            "full",
+            True,
+            FollowupBulk.field_names(),
+            11,
+            options=(_followup_bulk_options,),
+            prompts=True,
+            request_key=True,
+            expected_version=True,
+        ),
+    )
+
+
+# ------------------------------------------ end of Ministry follow-up block
+
+
+# ---------------------------------------------------- Share options (PR 10)
+#
+# ``campaign shares-preview`` and ``campaign shares-confirm`` (#463, in
+# ``admin_shares``): Share options' Review and Apply. ``campaign shares``
+# (in ``_settings_specs``) is the page's read.
+
+
+def campaign_shares_preview(args, preamble, runtime, context):
+    """Review a change to a campaign's Share options (PR 10)."""
+    from .admin_shares import CHANGES_LIMIT, preview_shares
+
+    # The role first (#1341): denied before any input is read.
+    _role_first(context, runtime)
+    return preview_shares(
+        context["caller"],
+        runtime,
+        args.campaign,
+        expected_version=args.expected_version,
+        changes=_input(args.changes, context, CHANGES_LIMIT),
+    )
+
+
+def campaign_shares_confirm(args, preamble, runtime, context):
+    """Confirm a reviewed Share options change as a request (PR 10)."""
+    from .admin_changes import TOKEN_LIMIT
+    from .admin_shares import confirm_shares
+
+    # The role first (#1341): denied before any input is read.
+    _role_first(context, runtime)
+    return confirm_shares(
+        context["caller"],
+        runtime,
+        args.campaign,
+        token=_input(args.token, context, TOKEN_LIMIT),
+        context=context,
+    )
+
+
+def _shares_preview_options(parser):
+    """Options of ``campaign shares-preview``: the campaign, version and change."""
+    _schedule_options(parser)
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_digest,
+        help="the version campaign shares printed",
+    )
+    parser.add_argument(
+        "--changes",
+        required=True,
+        help="the change document as JSON, or - to read it from standard input",
+    )
+
+
+def _shares_confirm_options(parser):
+    """Options of ``campaign shares-confirm``: the campaign and the token."""
+    _schedule_options(parser)
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from campaign shares-preview, or - for standard input",
+    )
+
+
+def _share_specs():
+    """Share options' Review and Apply (PR 10, ``admin_shares``).
+
+    As ``campaign preview`` and ``campaign confirm``: full scope, as the
+    page's posts record activity; neither is fresh-gated nor prompts, as
+    the page asks for no recent sign-in and its Apply is the reviewed token.
+    """
+    from .admin_shares import SharesConfirm, SharesPreview
+
+    return (
+        CommandSpec(
+            "campaign shares-preview",
+            "Review a change to a campaign's Share options.",
+            campaign_shares_preview,
+            "full",
+            False,
+            SharesPreview.field_names(),
+            10,
+            options=(_shares_preview_options,),
+            expected_version=True,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "campaign shares-confirm",
+            "Confirm a reviewed change to a campaign's Share options.",
+            campaign_shares_confirm,
+            "full",
+            True,
+            SharesConfirm.field_names(),
+            10,
+            options=(_shares_confirm_options,),
+        ),
+    )
+
+
+# ------------------------------------------------- end of Share options block
+
+
 COMMANDS = (
     COMMANDS
     + _read_specs()
@@ -5897,10 +6790,12 @@ COMMANDS = (
     + _settings_specs()
     + _workgroup_specs()
     + _campaign_specs()
+    + _share_specs()
     + _operation_specs()
     + _report_specs()
     + _users_specs()
     + _events_specs()
+    + _followup_specs()
     + _history_specs()
     + _artwork_specs()
     + _integration_specs()
@@ -6649,6 +7544,12 @@ def main(argv=None, *, stdin=None, stdout=None, stderr=None):
             raise UsageError("A command is required.")
         if args.command_name == "login wait" and not 1 <= args.timeout <= 600:
             raise UsageError("The timeout is 1 to 600 seconds.")
+        if args.command_name == "content preview" and (
+            (args.delete is None) != (args.expected_version is None)
+        ):
+            # The Delete is built against a version; the plain-text preview
+            # reads no configuration, so it takes none.
+            raise UsageError("--expected-version goes with --delete, and only there.")
         if hasattr(args, "watch"):
             # --timeout belongs to --watch; alone it would silently do nothing.
             if args.watch is None:

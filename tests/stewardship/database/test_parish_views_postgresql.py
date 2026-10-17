@@ -227,8 +227,9 @@ def digest(response):
 def test_review_opens_the_dialog_and_apply_follows_change_status(auth_service, google):
     """Review answers the review dialog's fragment, never a page (#750).
 
-    It keeps the review's exact content (each change, before and after, and
-    the timezone note) and the signed preview; Apply answers with Change
+    It keeps the review's exact content (a compact review, #1356: one
+    "Setting: old → new" line per change, and the timezone note) and the
+    signed preview; Apply answers with Change
     status, which the dialog follows. The page draws the dialog, its status
     line and the form's region, redrawn from the page's own address, and
     takes no query: there are no legacy in-place addresses.
@@ -247,6 +248,8 @@ def test_review_opens_the_dialog_and_apply_follows_change_status(auth_service, g
     assert "data-review-answer" in shown and "data-review-preview" in shown
     assert 'id="settings-form"' not in shown and "settings-review" not in shown
     assert "Renamed Parish" in shown and "America/Los_Angeles" in shown
+    assert '<ul class="compact-review" id="parish-review-summary">' in shown
+    assert shown.count("<li>") == 2 and "Proposed:" not in shown
     assert "This timezone change is prospective." in shown
     response = post(browser, {"action": "confirm", "preview": token(review)})
     request_id = requested(response)
@@ -299,6 +302,22 @@ def test_refusals_are_for_the_dialog_or_the_field(auth_service, google):
     assert expired.json()["refusal"]["message"] == "This preview is out of date."
     assert digest(browser.get(URL)) == store.active().digest
     assert ConfigurationChangeRequest.objects.count() == requests
+
+
+def test_a_refused_website_is_shown_at_its_field(auth_service, google):
+    """A website with a query or a user name is refused at the field, with
+    the summary linking to it, not as a notice above the form (#1330)."""
+    store = auth_service.store
+    browser, _ = signed_in()
+    for website in ("https://example.org/?a=1", "https://user@example.org/"):
+        refused = post(browser, fields(store, website=website))
+        assert refused.status_code == 400
+        html = refused.content.decode()
+        (field,) = re.findall(r'<input[^>]*name="website"[^>]*>', html)
+        assert 'aria-invalid="true"' in field and "id_website_error" in field
+        assert '<a href="#id_website">Parish website: Use a website URL' in html
+        assert "Website URLs cannot include" not in html
+    assert not ConfigurationChangeRequest.objects.exists()
 
 
 def test_a_stored_alias_is_kept_and_a_new_zone_is_stored_canonically(
