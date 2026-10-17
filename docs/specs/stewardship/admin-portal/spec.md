@@ -2696,12 +2696,22 @@ opens it filled in
 from the saved schedule, whose mail type is fixed; a schedule that is unknown or
 read-only is refused there too, even from an old link (a GET or a POST).
 The editor follows the shared
-[schedules](../ui-conventions/spec.md#schedules) rules. Planned
-([#1129](https://github.com/epiphany40223/parishkit/issues/1129)):
-the schedule editors here, including reminder repeats and the Admin digests,
-adopt the
-[Basic and Advanced modes](../ui-conventions/spec.md#basic-and-advanced-modes)
-convention.
+[schedules](../ui-conventions/spec.md#schedules) rules, and is an
+[additive editor](../ui-conventions/spec.md#basic-and-advanced-modes)
+([#1129](https://github.com/epiphany40223/parishkit/issues/1129)): the
+Basic and Advanced toggle sits under the zone note, above the schedule's
+fields. Both modes show the mail type, send date, send time, day of the
+week, Email to send, "Include Compared with past campaigns" and, on Edit of
+a series' reminder, its "Part of" line and Change scope, which decides what
+the Edit changes. Advanced adds New's **Repeat** and **Edit this schedule's
+email**, each where it is drawn below. Switching to Basic while either is
+ticked asks first ("Your custom schedule has no basic equivalent."; on Edit,
+which has no Repeat, the text names only the schedule's own email), and
+Switch to Basic unticks both. Choosing a mail type other than Reminder
+unticks Repeat, which only a Reminder has. The page opens in Basic, or in Advanced when
+it is drawn with either ticked or answers a post sent from Advanced.
+Switching modes is not a change, so the button and its hint are as below.
+The date-change review's editors have no modes yet.
 
 The send date, time and day of the week are shown and typed in the browser's
 time zone, like every Admin time ([#558](https://github.com/epiphany40223/parishkit/issues/558),
@@ -2768,7 +2778,7 @@ confirms on Dates and mail schedules, including series edits and the
 date-change review.
 **Cancel** on the page returns to the list without saving.
 
-New and Edit both offer **Edit this schedule's email**, a checkbox under Email
+In Advanced, New and Edit both offer **Edit this schedule's email**, a checkbox under Email
 to send ([#446](https://github.com/epiphany40223/parishkit/issues/446)). Ticking it
 shows, below it, the email's subject, HTML source and plain text with
 "Generate plain text from HTML", filled in from the chosen email, and **Reset to
@@ -2856,7 +2866,7 @@ is refused for one. A send that gets no answer is not repeated, and the line
 says to check the Testing mailbox first. The command line has no
 counterpart: `test sample` tests a saved email.
 
-On New, choosing Reminder offers a **Repeat** checkbox
+In Advanced on New, choosing Reminder offers a **Repeat** checkbox
 ([#469](https://github.com/epiphany40223/parishkit/issues/469)); other mail
 types do not repeat (one Initial invitation; the digests repeat by themselves).
 Checking it replaces the send date with the repeat fields: how often (every day;

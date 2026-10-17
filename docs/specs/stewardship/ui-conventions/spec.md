@@ -1605,6 +1605,30 @@ and #1062 (Parish logos), then the scheduling editors of #1129.
   dialog it returns to the toggle's chosen segment. The focus ring is drawn
   on the chosen or focused segment and keeps the
   [theme's contrast](#accessibility-and-client-behavior).
+- **Additive editors.** An editor whose common case is already a few plain
+  fields, with less common tools that add to them, has no presets: Basic
+  shows those fields, and Advanced shows the same fields with the extra
+  tools. The fields both modes use stay outside the panels; each tool sits
+  where it applies, in an Advanced panel of its own (an editor may have
+  several). A Basic configuration is one with every Advanced tool off, so
+  the rules above narrow to these:
+  - Basic → Advanced writes nothing, and Advanced → Basic switches at once
+    while every Advanced tool is off. There is no Basic choice to make
+    before Review.
+  - Advanced → Basic with a tool in use asks in the same dialog ("Your
+    custom schedule has no basic equivalent."). The dialog's text names
+    only the Advanced tools in use that Switch to Basic will turn off,
+    not the editor's other tools. **Switch to Basic** turns each tool off,
+    as unticking it would, so the hidden panels post nothing and Basic
+    needs no exception to [conditional fields](#conditional-fields). A tool
+    that hides when another choice changes (Repeat, when the mail type is
+    no longer Reminder) is turned off then, and is not a tool in use.
+  - The mode is not stored with the setting: the page opens in Basic, or in
+    Advanced when it is drawn with a tool in use or answers a post sent
+    from Advanced (a refused Review, the browser restoring the page).
+  - First use: [New and Edit scheduled
+    email](../admin-portal/spec.md#new-and-edit-scheduled-email)
+    ([#1129](https://github.com/epiphany40223/parishkit/issues/1129)).
 
 A setting that can't change in the page's present state (rather than one
 that does not apply to the choices made) stays where it is, disabled, with
@@ -2499,8 +2523,11 @@ learned once. **Shared code.**
 - **Basic and Advanced.** An editor whose full rule set is much harder than
   the common case follows [Basic and Advanced modes](#basic-and-advanced-modes):
   Basic has a few presets, and Advanced has the rules, the exceptions, and
-  "Edit as text" where the editor has it. An editor of one or two plain
-  fields, such as the campaign dates, has no modes.
+  "Edit as text" where the editor has it. An editor of a few plain fields
+  with less common tools, such as New and Edit scheduled email (Repeat and
+  the schedule's own email), is an
+  [additive editor](#basic-and-advanced-modes). An editor of one or two
+  plain fields, such as the campaign dates, has no modes.
 - **Times of day** are [time entry](#time-entry) fields. No schedule editor
   draws its own reading or uses a native time control.
 - **Days of the week** use one picker that lists Monday to Sunday with the
@@ -2558,9 +2585,10 @@ shared zone note, as do System logs and Ministry requests; New and Edit
 scheduled email follows once its open changes land. The two mail
 repeat panels, New scheduled email's Repeat and the date-change review's
 Repeat a reminder, draw one repeat rule, so they offer the same choices in
-the same order and one page script expands both. Later
+the same order and one page script expands both. New and Edit scheduled
+email have the Basic and Advanced modes as an additive editor. Later
 [#1129](https://github.com/epiphany40223/parishkit/issues/1129) slices bring
-the shared preview and Basic and Advanced modes to the mail schedule
+the shared preview and Basic and Advanced modes to the date-change review's
 editors, reminder repeats and digests. Until each change lands, an
 editor keeps the behavior its feature spec describes.
 
