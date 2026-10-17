@@ -5515,9 +5515,9 @@ recorded theirs; never names or contact values.
 Below the queue table, **Export these requests**, a closed export
 disclosure (its summary "Export these requests (CSV, XLSX or PDF)", per the
 [report filters and export rule](../ui-conventions/spec.md#page-help)),
-downloads the queue's applied view (its filters, search and sort; every page of it, not just the
-one shown) as CSV, XLSX or PDF (Administrator decision, 2026-10-12, option
-(a) on #1157), replacing the retired Members joining and leaving exports.
+downloads the queue's applied view (its filters, search and sort; every
+page of it, not just the one shown) as CSV, XLSX or PDF (Administrator
+decision, 2026-10-12, option (a) on #1157), replacing the retired Members joining and leaving exports.
 A request whose Member is no longer active in ParishSoft is not in the file
 (Administrator decision, 2026-10-13): the rows are the queue's own default
 selection, which leaves such requests out once open

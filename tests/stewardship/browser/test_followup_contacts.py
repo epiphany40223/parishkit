@@ -117,6 +117,29 @@ def test_export_follows_an_in_place_apply(page, component_origin):
     assert "51" in page.locator("#followup-export-count").inner_text()
 
 
+def test_closed_export_follows_an_in_place_apply(page, component_origin):
+    """With the Export disclosure closed, an in-place Apply still updates the
+    form's hidden filters and the count, and the disclosure stays closed."""
+    page.goto(component_origin + "/followup-queue")
+    panel = page.locator("details.export-panel")
+    assert panel.get_attribute("open") is None
+    fulfil_post_with(
+        page,
+        "**" + reverse("admin:ministry_report"),
+        component_origin,
+        lambda request: "/followup-all",
+    )
+    page.get_by_label("Search Member or Ministry name").fill("")
+    page.get_by_role("button", name="Apply filters").click()
+    eventually(
+        page, "document.querySelector('#table-export input[name=search]').value", ""
+    )
+    assert page.locator("#table-export input[name=ministry]").input_value() == ""
+    # The count is hidden while closed, so read its text, not its rendering.
+    assert "51" in page.locator("#followup-export-count").text_content()
+    assert panel.get_attribute("open") is None
+
+
 def test_pdf_is_unavailable_above_its_limit(page, component_origin):
     """With more requests than one PDF may hold, PDF cannot be chosen and
     the export line says why; CSV and XLSX still can (#1157)."""
