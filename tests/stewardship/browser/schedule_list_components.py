@@ -506,6 +506,15 @@ def _review(owner, changes, *, new=True, blocking=0, series_notes=()):
     )
 
 
+def _side(values, campaign):
+    """One side of a reviewed change, as the page's review describes it.
+
+    Its sends are listed from ``NOW`` and grouped by the browser's days in
+    the zone the test browser runs in, which the page posts (#1129).
+    """
+    return describe(values, campaign, now=NOW, zone="America/Los_Angeles")
+
+
 def _dates_review(owner, first):
     """The date-change review's fragment: the new end date and a re-planned
     reminder."""
@@ -517,8 +526,8 @@ def _dates_review(owner, first):
                 {
                     "label": "Reminder",
                     "operation": "update",
-                    "before": describe(first["values"], owner["values"]),
-                    "after": describe(first["values"], owner["values"]),
+                    "before": _side(first["values"], owner["values"]),
+                    "after": _side(first["values"], owner["values"]),
                     "impact": {"cancellable": 3, "occurrences": 1},
                 }
             ],
@@ -538,7 +547,7 @@ def _added(owner, values):
         "label": "Reminder",
         "operation": "add",
         "before": None,
-        "after": describe(values, owner["values"]),
+        "after": _side(values, owner["values"]),
         "impact": {},
     }
 
@@ -698,10 +707,8 @@ def components(context, admin):
             {
                 "label": "Reminder",
                 "operation": "update",
-                "before": describe(first["values"], owner["values"]),
-                "after": describe(
-                    first["values"] | {"time": "13:30:00"}, owner["values"]
-                ),
+                "before": _side(first["values"], owner["values"]),
+                "after": _side(first["values"] | {"time": "13:30:00"}, owner["values"]),
                 "impact": {"cancellable": 3, "occurrences": 1, "outboxes": 3},
             }
         ],
@@ -739,8 +746,8 @@ def components(context, admin):
             {
                 "label": "Reminder",
                 "operation": "update",
-                "before": describe(first["values"], owner["values"]),
-                "after": describe(first["values"], owner["values"]),
+                "before": _side(first["values"], owner["values"]),
+                "after": _side(first["values"], owner["values"]),
                 "impact": {"blocking": 2},
             }
         ],

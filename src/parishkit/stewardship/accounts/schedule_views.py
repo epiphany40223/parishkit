@@ -211,6 +211,8 @@ def _preview(
         schedules,
         base_digest=request.POST.get("base_digest"),
         salt=salt,
+        # Each side's send times are grouped by the browser's days (#1129).
+        zone=request.POST.get("zone"),
     )
     if context is None and str(NO_CHANGES) in map(str, window.non_field_errors()):
         raise UserFacingError(UNCHANGED, fix=_("Nothing was changed."))
