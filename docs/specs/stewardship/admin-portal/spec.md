@@ -1651,6 +1651,26 @@ a new key, in plain language: every refresh must read the organization whose
 data is loaded, and a refresh for another organization is refused as a tenant
 mismatch.
 
+An integration's settings are saved through the
+[review dialog](../ui-conventions/spec.md#review-dialog) (#750). An ordinary edit
+is a compact review ("Save the Outgoing email addresses settings?", one line
+per changed setting, old → new); a refresh schedule change keeps its full
+review, the changes in words and when the new schedule takes effect; and
+setting up Off-site backups by its folder ("Turn on off-site copies?"),
+Remove Slack ("Remove Slack?") and Turn off off-site copies are
+confirmations of one sentence. The dialog shows public settings only: never
+a key, a key's fingerprint or the key field's signed request. Save with a
+new key pasted is not reviewed: it submits as before, the key is checked
+with the provider and its install is followed on the page (the recorded
+exception). A sign-in that is not recent at Review or Apply is refused in
+the dialog with the shared step-up notice, whose Confirm with Google returns
+to the settings page; nothing is queued. Once applied, the settings form is
+redrawn at the applied version, with the status line under it saying what
+was applied. The step-up, the fresh sign-in checked again under the work
+lock, the signed preview, the configuration request and its audit are
+unchanged, and `pk-admin integration preview` and `integration confirm`
+still share the page's review.
+
 Page text describes what the Admin sees happen, never the machinery: no
 configuration files, installers, fingerprints or preview lifetimes. Signed
 previews still expire, as [preview lifetimes](#preview-lifetimes) describes.
@@ -2027,7 +2047,8 @@ and removes rows, writes the Basic choices and reads times through the shared
   (`refresh_rules.stored_settings`) and checks them; nothing posted can set
   the stored lists directly. A request without the editor's rows keeps the
   stored schedule, and a new key is never saved together with a schedule
-  change. The review before applying lists, in words,
+  change. The review before applying, in the
+  [review dialog](../ui-conventions/spec.md#review-dialog) (#750), lists, in words,
   the full times added and removed (and the quick times, while a stored
   quick rule is removed or kept), the switch if it changed, and
   each difference that
