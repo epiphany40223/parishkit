@@ -2347,6 +2347,49 @@ def test_a_failed_refresh_stays_in_the_tile_while_parishsoft_is_not_answering():
     assert f"/admin/system/background/{task}/" in failed
 
 
+def test_an_organization_mismatch_is_never_said_as_could_not_be_reached():
+    """A refresh refused because the key sees another organization reached
+    ParishSoft: System health names the mismatch, not "ParishSoft could not
+    be reached", though its refreshes fail (#1492). Without the mismatch, a
+    failing connection is still "could not be reached"."""
+    failed_at = NOW.replace(hour=2)
+    refresh = FullRefreshStatus(
+        NOW - timedelta(days=1),
+        failed_at,
+        False,
+        failed_task_id=uuid4(),
+        connection=Connection("failing", failed_at),
+    )
+
+    def kinds(incidents):
+        """The listed problem kinds for these open incidents."""
+        found = find_problems(
+            mode="production",
+            processes=(),
+            missing=(),
+            schema_current=True,
+            incidents=incidents,
+            refresh=refresh,
+            backup_at=NOW,
+        )
+        return [problem.kind for problem in found]
+
+    assert kinds({"source_tenant_mismatch": NOW}) == [
+        "source_failed",
+        "source_tenant_mismatch",
+    ]
+    words = [
+        Problem(kind, at=NOW).summary for kind in kinds({"source_tenant_mismatch": NOW})
+    ]
+    assert "ParishSoft organization does not match" in words
+    assert "ParishSoft could not be reached" not in words
+    assert kinds({}) == ["source_failing"]
+    # A real outage after the key is fixed opens the provider-failure incident
+    # while the mismatch one still waits for a good refresh: said as before.
+    outage = kinds({"source_tenant_mismatch": NOW, "source_refresh_failed": NOW})
+    assert "source_failing" in outage
+
+
 # ------------------------------ the Backups and Debug logging tiles (slice 5)
 
 

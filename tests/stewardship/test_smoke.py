@@ -8,6 +8,8 @@ import requests
 
 from parishkit.config import ConfigError
 from parishkit.parishsoft import ParishSoftAPIError
+from parishkit.parishsoft_source import SourceOrganizationMismatch
+from parishkit.retry import RetryError
 from parishkit.stewardship import provider_check_worker, smoke
 from parishkit.stewardship.accounts.credential_errors import (
     CredentialValidationUnavailable,
@@ -88,6 +90,33 @@ def test_parishsoft_check_maps_the_installer_outcome(tmp_path, monkeypatch, verd
     assert seen == [(b"key-bytes", {"organization_id": 42})]
     with pytest.raises(ConfigError):
         smoke.check_parishsoft(configuration, organization_id=0)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        SourceOrganizationMismatch("PRIVATE"),
+        RetryError("PRIVATE", SourceOrganizationMismatch("PRIVATE")),
+    ],
+)
+def test_a_key_for_another_organization_is_a_mismatch(tmp_path, monkeypatch, error):
+    """A ParishSoft key that sees another organization is "mismatch" (#1492):
+    permanent, never "unavailable", in the smoke check and the installer
+    alike; nothing private reaches the result."""
+    configuration = consumer(tmp_path, ServiceRole.WORKER, parishsoft=b"key\n")
+    monkeypatch.setattr(provider_check_worker, "_parishsoft", raising(error))
+    assert smoke.check_parishsoft(configuration, organization_id=7) == {
+        "credential": "mismatch"
+    }
+    # Any other exhausted retry is still an outage.
+    monkeypatch.setattr(
+        provider_check_worker,
+        "_parishsoft",
+        raising(RetryError("PRIVATE", requests.Timeout("slow"))),
+    )
+    assert smoke.check_parishsoft(configuration, organization_id=7) == {
+        "credential": "unavailable"
+    }
 
 
 @pytest.mark.parametrize("error, expected", REAL_FAILURES)
