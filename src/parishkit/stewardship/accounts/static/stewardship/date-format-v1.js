@@ -112,6 +112,25 @@
           });
       }
     });
+    // A control whose name carries an instant's day (Roster changes to
+    // enter names a change listed twice "…, resolved Oct 5, 2054") cannot
+    // hold a <time>: its name is attribute text. The server writes the UTC
+    // instant into those attributes and into data-local-day, and it is
+    // replaced here with the compact day in this browser's time zone (#558).
+    // Once replaced the instant is gone, so running again changes nothing.
+    // Only the attributes listed below are rewritten: a new user of
+    // data-local-day that puts the instant in another attribute must add
+    // that attribute to the list.
+    (scope || document).querySelectorAll("[data-local-day]").forEach((node) => {
+      const stamp = node.dataset.localDay;
+      const date = new Date(stamp);
+      if (!stamp || !Number.isFinite(date.getTime())) return;
+      const day = fields(date.getFullYear(), date.getMonth() + 1, date.getDate(), true);
+      ["aria-label", "title", "data-confirm-name"].forEach((name) => {
+        const text = node.getAttribute(name);
+        if (text && text.includes(stamp)) node.setAttribute(name, text.split(stamp).join(day));
+      });
+    });
   }
 
   // A Date's clock time alone, in this browser's time zone ("Applied at

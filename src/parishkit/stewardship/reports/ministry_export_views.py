@@ -20,6 +20,8 @@ from parishkit.stewardship.web.contracts import (
     validation_response,
 )
 from parishkit.stewardship.web.dates import parish_zone, unasked_zone
+from parishkit.stewardship.web.error_pages import page_request
+from parishkit.stewardship.web.filter_errors import FilterError
 from parishkit.stewardship.web.refusals import Refusal
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.security import private_response
@@ -28,6 +30,7 @@ from .export_services import ExportRequestBound
 from .export_ui import _redirect
 from .export_views import SAFE_FAILURES
 from .ministry_exports import MAX_PACKET_MINISTRIES, create_ministry_export
+from .ministry_followup_views import queue_response
 from .ministry_views import _principal
 
 # Same meaning as the shared export-request-bound.html notice on the HTML pages.
@@ -49,8 +52,22 @@ TOO_MANY_FIX = _(
 )
 
 
+# The same refusal at the packet's boxes (#1332): the reason and the fix in
+# one message, as the field and the error summary show it.
+PACKET_MESSAGE = format_lazy("{} {}", TOO_MANY, TOO_MANY_FIX)
+
+
 class TooManyMinistries(ValueError):
-    """A packet selection ticks more Ministries than one packet may hold."""
+    """A packet selection ticks more Ministries than one packet may hold.
+
+    ``chosen`` is the submitted selection, unchecked, so the page drawn
+    again can keep the ticks it offers (it ticks only its own choices).
+    """
+
+    def __init__(self, chosen):
+        """Keep the submitted selection for the page drawn again."""
+        super().__init__("Too many Ministries for one packet.")
+        self.chosen = tuple(chosen)
 
 
 def packet_selection(parameters):
@@ -72,7 +89,7 @@ def packet_selection(parameters):
     if not chosen:
         return None
     if len(chosen) > MAX_PACKET_MINISTRIES:
-        raise TooManyMinistries("Too many Ministries for one packet.")
+        raise TooManyMinistries(chosen)
     if any(
         len(value) > 10
         or not value.isascii()
@@ -121,10 +138,16 @@ def create_packet(request, campaign_id):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):
         return report_unavailable()
-    except TooManyMinistries:
+    except TooManyMinistries as error:
         # Ticking past the limit is an ordinary choice, not a malformed
-        # form, so the refusal says what to do instead: a typed refusal,
-        # shown to a person as the Admin error page with a way back.
+        # form, so the refusal says what to do instead. The packet's gate
+        # holds Queue past the limit, so only a request built by hand (or
+        # a browser whose gate did not run) gets here. A person gets
+        # Ministry requests drawn again with the error at the boxes
+        # (#1332); a script gets the typed refusal as JSON.
+        if campaign_id is not None and page_request(request):
+            refusal = FilterError("ministries", PACKET_MESSAGE, error.chosen)
+            return queue_response(request, campaign_id, packet=refusal)
         return validation_response(
             [FieldError(ErrorCode.INVALID, "ministries")],
             refusal=Refusal(

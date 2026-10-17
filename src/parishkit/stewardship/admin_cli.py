@@ -47,7 +47,8 @@ controls`` (PR 7b, in ``admin_delivery_control``), ``report
 source-form`` (in ``admin_source_form``), ``report data-to-fix`` (in
 ``admin_data_to_fix``), ``files list``, ``files
 delete`` and ``files rename`` (PR 10, in ``admin_hosted_files``),
-``content list``, ``content show`` and ``content history`` (PR 10, in
+``content list``, ``content show``, ``content history``, ``content preview``
+and ``content confirm`` (PR 10, in
 ``admin_content``), ``integration list``, ``integration show``, ``integration status``
 and ``integration schedule-preview`` (PR 10, in ``admin_integrations``),
 ``parish show``, ``ministries list``, ``branding show`` and ``campaign
@@ -72,6 +73,8 @@ the Roster changes to enter list, whose download is ``export roster`` (in
 in ``admin_workgroup``) read and change the No-reminders WorkGroup.
 ``campaign show``, ``campaign preview`` and ``campaign confirm`` (PR 10, in
 ``admin_campaign``) read and change Campaign settings.
+``campaign shares-preview`` and ``campaign shares-confirm`` (PR 10, in
+``admin_shares``) change a campaign's Share options.
 ``followup list``, ``followup show``, ``followup update`` and ``followup
 bulk`` (PR 11a, in ``admin_followup``) read and record Ministry follow-up.
 """
@@ -921,12 +924,14 @@ def confirm(context, summary, *, typed="yes"):
     emit(Event.TASK_STARTED, confirmation="prompt")
 
 
-def _input(value, context, limit):
+def _input(value, context, limit, *, strip=True):
     """An option's value, or for ``-`` the rest of standard input.
 
     The preamble was already read; the wrapper forwards what follows it only
     for a ``-`` input. More than ``limit`` bytes, or text that is not UTF-8,
-    is invalid input (exit 1), never echoed.
+    is invalid input (exit 1), never echoed. Surrounding whitespace is
+    trimmed unless ``strip`` is false, for input whose every character
+    counts (``content preview --html -``, which must answer as the page).
     """
     if value != "-":
         return value
@@ -934,9 +939,10 @@ def _input(value, context, limit):
     if len(raw) > limit:
         raise ValueError("The input is too long.")
     try:
-        return raw.decode("utf-8").strip()
+        text = raw.decode("utf-8")
     except UnicodeDecodeError:
         raise ValueError("The input is not UTF-8.") from None
+    return text.strip() if strip else text
 
 
 def _role_first(context, runtime, capability=None):
@@ -1282,6 +1288,54 @@ def content_show(args, preamble, runtime, context):
         args.slot,
         args.revision,
         args.default,
+    )
+
+
+def content_preview(args, preamble, runtime, context):
+    """Build a Pages and emails Delete, or preview typed HTML's plain text (PR 10).
+
+    ``--delete`` (repeatable) needs ``--expected-version`` and ``--html``
+    takes none (``main`` checks both before admission). The role is
+    checked first (#1341), before any input is read.
+    """
+    from .admin_content import (
+        admit_preview,
+        plain_text_preview,
+        preview_deletion,
+    )
+    from .web.content import MAX_TEXT_BYTES
+
+    delete = args.delete is not None
+    actor = admit_preview(context["caller"], runtime, delete=delete)
+    if not delete:
+        # Unstripped: the page converts the posted HTML exactly as typed.
+        return plain_text_preview(
+            _input(args.html, context, MAX_TEXT_BYTES, strip=False)
+        )
+    return preview_deletion(
+        context["caller"],
+        runtime,
+        actor,
+        args.delete,
+        expected_version=args.expected_version,
+    )
+
+
+def content_confirm(args, preamble, runtime, context):
+    """Confirm a built Pages and emails Delete as a configuration request (PR 10).
+
+    The role is checked first (#1341), before the token is read.
+    """
+    from .admin_changes import TOKEN_LIMIT, _admit_change
+    from .admin_content import confirm_content
+
+    actor = _admit_change(context["caller"], runtime)
+    return confirm_content(
+        context["caller"],
+        runtime,
+        actor,
+        token=_input(args.token, context, TOKEN_LIMIT),
+        context=context,
     )
 
 
@@ -3359,6 +3413,36 @@ def _integration_key_finish_options(parser):
     )
 
 
+def _content_preview_options(parser):
+    """Options of ``content preview``: the emails to delete, or HTML to preview."""
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument(
+        "--delete",
+        action="append",
+        type=_uuid,
+        metavar="ID",
+        help="an email to delete, by its content list revision id (repeatable)",
+    )
+    mode.add_argument(
+        "--html",
+        help="HTML to preview as the editor's plain text, or - for standard input",
+    )
+    parser.add_argument(
+        "--expected-version",
+        type=_digest,
+        help="the version content list printed (with --delete)",
+    )
+
+
+def _content_confirm_options(parser):
+    """Options of ``content confirm``: the preview's token."""
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from content preview, or - for standard input",
+    )
+
+
 def _content_history_options(parser):
     """Options of ``content history``: one retained revision's sample."""
     parser.add_argument(
@@ -4989,7 +5073,13 @@ def _file_specs():
     editor and Content history pages' reads; like ``files list``, any session runs
     them and they record nothing, as the pages' GETs record nothing.
     """
-    from .admin_content import ContentHistory, ContentList, ContentShow
+    from .admin_content import (
+        ContentConfirm,
+        ContentHistory,
+        ContentList,
+        ContentPreview,
+        ContentShow,
+    )
     from .admin_hosted_files import FileDeletion, FileRename, HostedFileLibrary
 
     return (
@@ -5024,6 +5114,34 @@ def _file_specs():
             10,
             options=(_content_history_options,),
             audit_event=None,
+        ),
+        # The email tables' Delete, split into a preview and a confirm as
+        # schedule preview / schedule confirm split a schedule's Delete,
+        # and the editors' plain-text preview. Full scope, as the Delete
+        # post records activity; no recent sign-in on the page, so neither
+        # is fresh-gated, and the reviewed token stands in for the dialog,
+        # so neither prompts.
+        CommandSpec(
+            "content preview",
+            "Build a delete of unused emails, or preview HTML as plain text.",
+            content_preview,
+            "full",
+            False,
+            ContentPreview.field_names(),
+            10,
+            options=(_content_preview_options,),
+            expected_version=True,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "content confirm",
+            "Confirm a built delete of unused emails.",
+            content_confirm,
+            "full",
+            True,
+            ContentConfirm.field_names(),
+            10,
+            options=(_content_confirm_options,),
         ),
         # The page's GET records no event.
         CommandSpec(
@@ -6519,6 +6637,108 @@ def _followup_specs():
 # ------------------------------------------ end of Ministry follow-up block
 
 
+# ---------------------------------------------------- Share options (PR 10)
+#
+# ``campaign shares-preview`` and ``campaign shares-confirm`` (#463, in
+# ``admin_shares``): Share options' Review and Apply. ``campaign shares``
+# (in ``_settings_specs``) is the page's read.
+
+
+def campaign_shares_preview(args, preamble, runtime, context):
+    """Review a change to a campaign's Share options (PR 10)."""
+    from .admin_shares import CHANGES_LIMIT, preview_shares
+
+    # The role first (#1341): denied before any input is read.
+    _role_first(context, runtime)
+    return preview_shares(
+        context["caller"],
+        runtime,
+        args.campaign,
+        expected_version=args.expected_version,
+        changes=_input(args.changes, context, CHANGES_LIMIT),
+    )
+
+
+def campaign_shares_confirm(args, preamble, runtime, context):
+    """Confirm a reviewed Share options change as a request (PR 10)."""
+    from .admin_changes import TOKEN_LIMIT
+    from .admin_shares import confirm_shares
+
+    # The role first (#1341): denied before any input is read.
+    _role_first(context, runtime)
+    return confirm_shares(
+        context["caller"],
+        runtime,
+        args.campaign,
+        token=_input(args.token, context, TOKEN_LIMIT),
+        context=context,
+    )
+
+
+def _shares_preview_options(parser):
+    """Options of ``campaign shares-preview``: the campaign, version and change."""
+    _schedule_options(parser)
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_digest,
+        help="the version campaign shares printed",
+    )
+    parser.add_argument(
+        "--changes",
+        required=True,
+        help="the change document as JSON, or - to read it from standard input",
+    )
+
+
+def _shares_confirm_options(parser):
+    """Options of ``campaign shares-confirm``: the campaign and the token."""
+    _schedule_options(parser)
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from campaign shares-preview, or - for standard input",
+    )
+
+
+def _share_specs():
+    """Share options' Review and Apply (PR 10, ``admin_shares``).
+
+    As ``campaign preview`` and ``campaign confirm``: full scope, as the
+    page's posts record activity; neither is fresh-gated nor prompts, as
+    the page asks for no recent sign-in and its Apply is the reviewed token.
+    """
+    from .admin_shares import SharesConfirm, SharesPreview
+
+    return (
+        CommandSpec(
+            "campaign shares-preview",
+            "Review a change to a campaign's Share options.",
+            campaign_shares_preview,
+            "full",
+            False,
+            SharesPreview.field_names(),
+            10,
+            options=(_shares_preview_options,),
+            expected_version=True,
+            audit_event=None,
+        ),
+        CommandSpec(
+            "campaign shares-confirm",
+            "Confirm a reviewed change to a campaign's Share options.",
+            campaign_shares_confirm,
+            "full",
+            True,
+            SharesConfirm.field_names(),
+            10,
+            options=(_shares_confirm_options,),
+        ),
+    )
+
+
+# ------------------------------------------------- end of Share options block
+
+
 COMMANDS = (
     COMMANDS
     + _read_specs()
@@ -6530,6 +6750,7 @@ COMMANDS = (
     + _settings_specs()
     + _workgroup_specs()
     + _campaign_specs()
+    + _share_specs()
     + _operation_specs()
     + _report_specs()
     + _users_specs()
@@ -7283,6 +7504,12 @@ def main(argv=None, *, stdin=None, stdout=None, stderr=None):
             raise UsageError("A command is required.")
         if args.command_name == "login wait" and not 1 <= args.timeout <= 600:
             raise UsageError("The timeout is 1 to 600 seconds.")
+        if args.command_name == "content preview" and (
+            (args.delete is None) != (args.expected_version is None)
+        ):
+            # The Delete is built against a version; the plain-text preview
+            # reads no configuration, so it takes none.
+            raise UsageError("--expected-version goes with --delete, and only there.")
         if hasattr(args, "watch"):
             # --timeout belongs to --watch; alone it would silently do nothing.
             if args.watch is None:

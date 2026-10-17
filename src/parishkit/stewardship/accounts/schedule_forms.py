@@ -414,7 +414,10 @@ class ScheduleForm(AdminForm):
     inapplicable value on that field in words that say what to do.
     """
 
-    id = forms.UUIDField(required=False, widget=forms.HiddenInput)
+    # A saved schedule's identity: the change gate counts it (ui-v1.js formState).
+    id = forms.UUIDField(
+        required=False, widget=forms.HiddenInput(attrs={"data-change-setting": True})
+    )
     # The send moment a browser-local page drew a saved row from (#558),
     # posted back so a digest drawn on one side of a daylight-saving change
     # and posted on the other still reads as unchanged (schedule_local.instant

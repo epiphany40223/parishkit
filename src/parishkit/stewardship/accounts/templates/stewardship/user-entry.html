@@ -30,7 +30,10 @@ is cut short with an ellipsis and shown whole in its title (and read whole
 through the Name's aria-describedby), so the Role choices below never move
 under the pointer (#736).
 On Edit, Save is available only once the Name or role differs from the
-saved user (data-require-change, #921), with the reason after it.
+saved user (data-require-change, #921), with the reason after it. On both,
+Add the user or Save waits for an Email (New) and a Name, and while the
+Email check has marked the address (data-require-complete, #1330), with the
+reason in the line reserved under the buttons.
 On Edit, the lower roles are unavailable for the reader's own user (an
 Administrator never demotes themselves, Administrator decision 2026-10-11)
 and for the only Administrator, with the reason in the line under the roles,
@@ -40,7 +43,7 @@ Sign-in activity button (#953), posting the identity, never in an address.
 <h1>{% if new %}{% translate "New user" %}{% else %}{% translate "Edit user" %}{% endif %}</h1>
 {% aboutpage "user-entry" %}<p>{% translate "A user is one email address with a Name and one role. The person signs in with the account of that address. The Name is a label for this portal; it is not tied to a ParishSoft Member." %}</p>
 <p>{% if new %}{% translate "Nothing takes effect until you confirm the new user and the status says Applied. Then you return to Users. Making someone an Administrator also tells every other Administrator." %}{% else %}{% translate "Save asks you to confirm each change, from its old value to its new one; nothing takes effect until you apply it and the status says Applied. Then you return to Users. Making someone an Administrator also tells every other Administrator." %}{% endif %}</p>{% endaboutpage %}
-<form method="post" action="{{ post_url }}" class="user-entry" id="user-entry-form" data-review-open="user-review"{% if not new %} data-require-change="base_digest"{% endif %}{% if new %} data-user-entry data-names-url="{{ names_url }}" data-names-none="{% translate 'No ParishSoft Member lists this address.' %}" data-names-found="{% translate 'Suggested from ParishSoft: {names}' %}" data-names-waiting="{% translate 'Looking up ParishSoft names for this address…' %}" data-names-failed="{% translate "Couldn't look up ParishSoft names. Enter the Name yourself." %}"{% endif %}>{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}">
+<form method="post" action="{{ post_url }}" class="user-entry" id="user-entry-form" data-review-open="user-review" data-require-complete{% if not new %} data-require-change="base_digest"{% endif %}{% if new %} data-user-entry data-names-url="{{ names_url }}" data-names-none="{% translate 'No ParishSoft Member lists this address.' %}" data-names-found="{% translate 'Suggested from ParishSoft: {names}' %}" data-names-waiting="{% translate 'Looking up ParishSoft names for this address…' %}" data-names-failed="{% translate "Couldn't look up ParishSoft names. Enter the Name yourself." %}"{% endif %}>{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}">
 {{ form.non_field_errors }}
 <div class="field">{% if new %}<label for="{{ form.email.auto_id }}">{{ form.email.label }}</label>
 {{ form.email }}
@@ -58,7 +61,8 @@ Sign-in activity button (#953), posting the identity, never in an address.
 <p class="help" id="{{ form.role.auto_id }}_{{ forloop.counter0 }}_help">{{ role.help }}</p></div>{% endfor %}
 <p class="help" id="user-roles-reason">{{ locked_reason }}</p>
 <div class="field-error-line" role="status"><ul class="errorlist" id="{{ form.role.auto_id }}_error"{% if not form.role.errors %} hidden{% endif %}>{% for error in form.role.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></fieldset>
-<p>{% if new %}{% button type="submit" %}{% translate "Add the user" %}{% endbutton %}{% else %}{% button type="submit" autocomplete="off" %}{% translate "Save" %}{% endbutton %}{% endif %} <a href="{{ list_url }}">{% translate "Cancel" %}</a>{% if not new %} <span class="help unchanged-hint" data-unchanged-hint data-idle>{% translate "Change the Name or role to save it." %}</span>{% endif %}</p>
+<p>{% if new %}{% button type="submit" autocomplete="off" aria-describedby="user-complete-hint" %}{% translate "Add the user" %}{% endbutton %}{% else %}{% button type="submit" autocomplete="off" aria-describedby="user-complete-hint" %}{% translate "Save" %}{% endbutton %}{% endif %} <a href="{{ list_url }}">{% translate "Cancel" %}</a>{% if not new %} <span class="help unchanged-hint" data-unchanged-hint data-idle>{% translate "Change the Name or role to save it." %}</span>{% endif %}</p>
+<p class="help" id="user-complete-hint" data-complete-hint="reserve"></p>
 </form>
 {% if new %}{% translate "Add this user?" as review_title %}{% else %}{% translate "Save this user change?" as review_title %}{% endif %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="user-review" title=review_title apply_url=apply_url return_url=list_url outcome_id="users-outcome" fallback="user-entry-form" describedby="user-review-summary" %}
 {% if identities %}<section class="panel" id="user-sign-in-activity" tabindex="-1" aria-labelledby="user-sign-in-activity-title">
