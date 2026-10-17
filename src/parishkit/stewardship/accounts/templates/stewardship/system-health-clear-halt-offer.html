@@ -1,0 +1,14 @@
+{% load i18n stewardship %}{% comment %}
+  Clear the halt with no step result (ADM-13 PR 4b): the section with its
+  intro and button, drawn only while a mail sender is halted (the
+  conditional-fields rule), so it appears and goes in the same poll as the
+  Mail tile's halted problem (both targets are data-live-mirror-hold).
+  Shared by the #clear-halt region and the copy the polled status region
+  carries (template[data-live-mirror="clear-halt-offer"]). No recent sign-in
+  is needed (#1547), so there is no step-up form.
+{% endcomment %}{% if clear_halt %}<section class="panel" aria-labelledby="clear-halt-heading">
+<h3 id="clear-halt-heading">{% translate "Clear the halt" %}</h3>
+{% translate "Clearing first checks that the mailbox still signs in, and needs every email that may have arrived settled. Then both mail senders start again with one email as a probe: if the fault is still there, the probe meets it and sending halts again. Nothing is resent, and failed emails stay failed until they are retried on Outgoing mail. Restarting the mail sender on the server still clears a halt too." as clear_tip %}
+<p><span id="clear-halt-intro">{% translate "Once the fault that stopped sending is fixed, start the mail senders again without the server." %}</span> {% include "stewardship/components/toggletip.html" with tip_id="clear-halt-intro-tip" tip_label_id="clear-halt-intro" tip_text=clear_tip %}</p>
+{% include 'stewardship/system-health-clear-halt-button.html' %}</section>
+{% endif %}
