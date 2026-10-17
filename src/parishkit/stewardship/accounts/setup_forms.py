@@ -8,10 +8,12 @@ from django.utils.translation import gettext_lazy as _
 from parishkit.config import ConfigError
 from parishkit.stewardship.schema_primitives import canonical_timezone
 from parishkit.stewardship.web.admin_forms import AdminForm
+from parishkit.stewardship.web.field_rules import RuleField
 from parishkit.stewardship.web.refusals import UserFacingError
 from parishkit.stewardship.web.sender_name_field import SenderNameField
 
 from . import setup_help
+from .integration_forms import SLACK_CHANNEL
 from .parish_views import ParishForm
 from .policy_schema import normalized_email
 from .timezone_field import browser_default
@@ -115,9 +117,10 @@ class SetupSlackForm(AdminForm):
     """An optional notification target must be explicitly enabled or left empty."""
 
     enabled = forms.BooleanField(label=_("Enable Slack notifications"), required=False)
-    channel_id = forms.RegexField(
+    # Checked in the browser by the same rule as the server's (#1577).
+    channel_id = RuleField(
+        SLACK_CHANNEL,
         label=_("Slack channel ID"),
-        regex=r"^[CG][A-Z0-9]{1,63}$",
         max_length=64,
         required=False,
     )
@@ -136,7 +139,9 @@ class SetupSlackForm(AdminForm):
             {
                 "data-show-when": f"{self.add_prefix('enabled')}=on",
                 "data-required-when-shown": "",
-                "data-missing-hint": _(
+                # An empty channel says what to do; a malformed one, the
+                # rule's own words (data-missing-hint).
+                "data-empty-hint": _(
                     "Enter the Slack channel ID, or untick Enable Slack notifications."
                 ),
             }

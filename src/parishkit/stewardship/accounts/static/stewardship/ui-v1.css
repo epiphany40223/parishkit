@@ -1586,3 +1586,12 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
 .user-roles .choice { margin-block: .5rem; }
 .user-roles .choice label { display: inline; font-weight: 600; }
 .user-roles .choice .help { margin: .1rem 0 0 1.75rem; }
+/* A field with a shared format rule (web/field_rules.py, #1577) is marked
+   as the Admin leaves it, often by clicking the next field: its error
+   border keeps the field's size, as invalid schedule row controls do (the
+   second pixel is a shadow), so the click never lands on moved content. */
+input[data-field-rule][aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
+input[data-field-rule][aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+@media (forced-colors: active) {
+  input[data-field-rule][aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
+}

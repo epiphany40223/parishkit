@@ -1064,6 +1064,27 @@ The server stays the authority: it checks every save, and its refusal is
 shown at the field as above, even when the browser would have allowed the
 value (a wrong computer clock, for example).
 
+A format rule both sides check is written once, as a shared format rule
+(`web/field_rules.py`, `FieldRule`): a regular expression with its
+plain-language refusal and error code. The server matches the whole value
+against it and refuses in those words; the field carries the same
+expression as its `pattern`, the same words as `data-missing-hint` (and
+`data-empty-hint` for an empty required field) and `data-field-rule`. A
+rule admits nothing the field's own server check refuses (a URL rule follows
+the server's URL validator), and shares that check's error code, so a field
+has one code; so the browser never admits what the server refuses, nor
+words a refusal differently. A ruled field keeps a reserved error line
+(`file-size-field.html`): when the Admin leaves it invalid, the page script
+shows the rule's words there, and they go once the value is valid; the line
+keeps its height, so nothing moves. Its form uses the complete-before-submit
+gate ([prerequisite gates](#prerequisite-gates)), so Save, Review or Save
+and continue waits, with the same words as its reason, while any field is
+invalid. Each rule has accepted and refused examples in one shared table
+(`tests/stewardship/fixtures/field_rule_cases.json`), run through the
+server's form field and through every browser engine. A server rule the
+browser does not check yet is a gap
+([#1577](https://github.com/epiphany40223/parishkit/issues/1577)).
+
 A report's filters follow the same rule (#1332). A filter the server
 refuses at one field (a request built by hand, or a browser whose check did
 not run) draws the report again, answered 400: the filters show the values

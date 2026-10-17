@@ -115,7 +115,7 @@ def test_slack_channel_is_shown_and_required_only_while_enabled():
     attrs = FORMS["slack"]().fields["channel_id"].widget.attrs
     assert attrs["data-show-when"] == "enabled=on"
     assert attrs["data-required-when-shown"] == ""
-    assert str(attrs["data-missing-hint"]).startswith("Enter the Slack channel ID")
+    assert str(attrs["data-empty-hint"]).startswith("Enter the Slack channel ID")
     # Hidden, the field is disabled and not sent: Slack off clears it.
     assert FORMS["slack"]({"enabled": ""}).is_valid()
     assert not FORMS["slack"]({"enabled": "on"}).is_valid()
