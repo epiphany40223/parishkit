@@ -63,7 +63,8 @@ when it lands.
 - Admin page layout: [page help](#page-help),
   [button labels](#button-labels), [shared visual style](#shared-visual-style),
   [colour scheme](#colour-scheme),
-  [status indicators](#status-indicators), [time entry](#time-entry),
+  [status indicators](#status-indicators), [stat tiles](#stat-tiles),
+  [time entry](#time-entry),
   [schedules](#schedules), [schedule previews](#schedule-previews).
 - Tables: [Admin tables](#admin-tables),
   [empty tables and lists](#empty-tables-and-lists),
@@ -346,11 +347,8 @@ A chart's caption never repeats figures its table, legend or drawn values
 already show; it keeps only what they don't, such as a scope note, and the
 chart keeps its accessible name and description
 ([chart engine](../reports/spec.md#chart-engine)).
-A stat tile that states a share may also draw it as a **share bar**: a plain
-progress bar at the tile's foot, so the bars of a row of tiles line up. Its
-exact figures are always printed in the tile, so it has no tooltip, and it is
-hidden from assistive technology, which reads the text instead
-([#720](https://github.com/epiphany40223/parishkit/issues/720)).
+A stat tile that states a share may also draw it as a
+[share bar](#stat-tiles).
 
 ## Admin portal interaction
 
@@ -2361,6 +2359,69 @@ warning and error marks are now cut out, so they take the status border
 colours, which are dark enough for that. **Precedent.** #601 (log level icons), #1214 (the
 [System health dashboard](../admin-portal/spec.md#health-dashboard), its
 first user).
+
+### Stat tiles
+
+**Rule.** A page's headline figures (a few counts, money totals or shares
+that sum up the page) are **stat tiles**, all drawn by one component: the
+server helper `parishkit.stewardship.web.stat_tiles` and the template
+`components/stat-tiles.html`. Each tile has a short label, one big value
+and up to two short explanation lines. A long list of figures, or facts
+that are not numbers (file names, dates, yes or no), stays a key/value
+list (`<dl>`). A state (Working, Warning, Error) is a
+[status indicator](#status-indicators), not a stat tile.
+**Why.** The same card had been drawn by hand in several templates, with
+different markup, three ways of formatting numbers, three ways of showing
+a missing value (the word "Unavailable", "—", or a misleading zero) and
+two ways of reading to a screen reader. **Precedent.**
+[#1540](https://github.com/epiphany40223/parishkit/issues/1540)
+(Administrator, 2026-10-17), built like the
+[schedule previews](#schedule-previews) component.
+
+- **Look.** A row of flat cards (`--paper-soft` background, `--border`
+  edge, `--radius-small` corners) that wraps on narrow screens: the label
+  above the value, the value large and in tabular figures, the
+  explanation lines below in the muted text colour. Every colour and
+  radius comes from the [design tokens](#shared-visual-style), so the
+  [colour scheme](#colour-scheme) applies.
+- **Numbers.** The helper formats every value from its type, following
+  [numbers and money](#numbers-and-money): a count is grouped, money is
+  USD with cents and a share is a percentage. Templates never format a
+  tile's value. A tile that states a share prints the count and what it
+  is compared with as well as the percentage.
+- **Unknown values.** A value that is not known reads "—" with a
+  [toggletip](#accessibility-and-client-behavior) saying why, in plain
+  language. It never reads zero, and never a word such as "Unavailable" in
+  the value's place. The helper refuses an unknown value without a reason.
+- **Words.** The label is short plain language naming what is counted.
+  An explanation line says what the value is compared with or what it
+  leaves out; it never repeats a figure another tile or the page already
+  shows, as for [chart captions](#charts). A tile has no heading of its
+  own: the label is not a heading, and the row is named by its panel's
+  heading.
+- **Trend.** Where a comparison exists, a tile may end with one trend
+  line, written in words with an arrow ("↑ 12.5% more"), never colour
+  alone.
+- **Share bar.** A tile that states a share may also draw it as a plain
+  progress bar at the tile's foot, so the bars of a row of tiles line up.
+  Its exact figures are always printed in the tile, so it has no tooltip,
+  and it is hidden from assistive technology, which reads the text instead
+  ([#720](https://github.com/epiphany40223/parishkit/issues/720)).
+- **Reading order.** The row is a list with an accessible name. Each tile
+  reads its label, then its value, then its explanation, in that order;
+  no visible text is hidden from assistive technology, and nothing uses a
+  mouse-only `title` tooltip.
+- **Times.** A time in a tile is shown in the browser's time zone, with no
+  "UTC" label ([dates and times](#dates-and-times)).
+- **No layout shift.** The tiles of a row stretch to one height. An
+  in-place update replaces their contents and keeps the row's tiles, so
+  nothing below moves ([no layout shift](#no-layout-shift)).
+- **Shared code.** The helper's `tile()` builds each tile and the include
+  draws a row of them. A guard test fails when a template outside
+  `components/` draws stat-tile markup by hand; the templates not yet
+  moved onto the component are listed in it, each with why, and the list
+  may only shrink. Email and PDF reports cannot load the stylesheet and
+  keep their own layouts.
 
 ### Time entry
 
