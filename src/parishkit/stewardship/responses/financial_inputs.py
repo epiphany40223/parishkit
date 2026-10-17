@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from uuid import UUID
 
+from parishkit.stewardship.campaigns.configuration import without_short_labels
 from parishkit.stewardship.reports.money import MoneyAmount, source_total
 from parishkit.stewardship.source.cursors import SCHEMA, _parse
 from parishkit.stewardship.source.windows import (
@@ -94,8 +95,13 @@ def financial_definition(configuration, *, campaign_id):
         # The pledge is labeled by the period it is for, not by the campaign's
         # Stewardship year label, so the label matches its start date (#1923).
         year = period_years(window.periods[0].start, window.periods[0].end)
+        # A short label (#1569) is Admin-only wording, never part of the
+        # Family's form definition, so it is left out exactly as the digest
+        # leaves it out; any other unexpected key, or an option that is not
+        # an object, still refuses (TypeError).
         options = tuple(
-            ShareOption(**value) for value in configuration["share_options"]
+            ShareOption(**value)
+            for value in without_short_labels(configuration["share_options"])
         )
         return FinancialDefinition(window, year, options, campaign_year(configuration))
     except (KeyError, TypeError, ValueError, OverflowError):

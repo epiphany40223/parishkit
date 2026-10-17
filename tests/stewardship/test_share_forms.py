@@ -176,3 +176,58 @@ def test_a_direct_save_posts_the_rows_with_its_request_key():
         share_action(QueryDict(f"{saved}&options-1-label=B"))
     with pytest.raises(ValueError):
         share_action(QueryDict(f"action=preview&request_key=k&{rows}"))
+
+
+def test_default_short_labels_fit_and_are_distinct():
+    """Every default option has a short label within the limit (#1569)."""
+    from parishkit.stewardship.campaigns.configuration import SHORT_LABEL_LIMIT
+
+    shorts = [row["short_label"] for row in default_share_options()]
+    assert all(1 <= len(short) <= SHORT_LABEL_LIMIT for short in shorts)
+    assert len({short.casefold() for short in shorts}) == len(shorts)
+
+
+def test_a_blank_short_label_is_not_stored():
+    """A blank short label leaves the key out, as before short labels."""
+    form = form_for([], data_for([], extra={"label": "By check", "short_label": " "}))
+    assert form.is_valid(), form.errors
+    assert form.values()[0].keys() == {"id", "label", "free_text"}
+
+
+def test_a_repeated_short_label_is_refused_at_its_field():
+    """Two kept options cannot share a short label, even in another case; a
+    deleted option's no longer counts."""
+    previous = default_share_options()[:2]
+    data = data_for(previous) | {"options-1-short_label": "BANK check"}
+    form = form_for(previous, data)
+    assert not form.is_valid()
+    assert form.forms[0].errors == {}
+    assert [error.code for error in form.forms[1].errors.as_data()["short_label"]] == [
+        "duplicate_short_label"
+    ]
+    deleted = form_for(previous, data | {"options-0-DELETE": "on"})
+    assert deleted.is_valid(), deleted.errors
+    assert [row["short_label"] for row in deleted.values()] == ["BANK check"]
+
+
+@pytest.mark.parametrize(
+    ("short", "code"),
+    [("A" * 13, "max_length"), ("{{ year }}", "invalid_short_label")],
+)
+def test_a_long_or_templated_short_label_is_refused(short, code):
+    """At most 12 characters of plain text, refused with a closed code."""
+    form = form_for([], data_for([], extra={"label": "Gift", "short_label": short}))
+    assert not form.is_valid()
+    assert [error.code for error in form.forms[0].errors.as_data()["short_label"]] == [
+        code
+    ]
+
+
+def test_the_short_label_greys_with_its_rows_delete_box():
+    """The short label is disabled in place while Delete is ticked (#563)."""
+    previous = default_share_options()[:1]
+    form = form_for(previous)
+    field = form.forms[0].fields["short_label"]
+    assert field.widget.attrs["data-enabled-when"] == "options-0-DELETE!=on"
+    deleted = form_for(previous, data_for(previous) | {"options-0-DELETE": "on"})
+    assert deleted.forms[0].fields["short_label"].disabled

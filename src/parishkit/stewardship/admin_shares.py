@@ -31,16 +31,17 @@ The change document (default, pending Administrator confirmation) names
 the whole new list and every saved option it deletes::
 
     {"options": [{"id": "<saved id>", "name": "Online giving",
-                  "free_text": false},
+                  "short_name": "Online", "free_text": false},
                  {"name": "A new option", "free_text": true}],
      "delete": ["<saved id>"]}
 
 ``options`` is the kept and new options in their new order (a new option
-has no ``id``; ``name`` is the page's label; ``free_text`` defaults to
-false) and ``delete`` the saved options removed, as the page's Delete
-boxes. Every saved option must be in exactly one of the two, the page's own
-rule ("Every saved option must be retained or explicitly deleted."), so
-leaving one out never deletes it.
+has no ``id``; ``name`` is the page's label; ``short_name`` its optional
+short label, blank by default; ``free_text`` defaults to false) and
+``delete`` the saved options removed, as the page's Delete boxes. Every
+saved option must be in exactly one of the two, the page's own rule
+("Every saved option must be retained or explicitly deleted."), so leaving
+one out never deletes it.
 """
 
 import json
@@ -63,7 +64,7 @@ CHANGES_LIMIT = 512_000
 # The page's own bound on posted rows (``share_forms.share_action`` and the
 # formset's ``absolute_max``).
 MAX_ROWS = 101
-OPTION_KEYS = frozenset({"id", "name", "free_text"})
+OPTION_KEYS = frozenset({"id", "name", "short_name", "free_text"})
 
 
 @dataclass(frozen=True)
@@ -73,9 +74,10 @@ class SharesPreview(ReadModel):
     ``changes`` is the page's compact review, one line per change
     (``label``, ``before``, ``after``; ``before`` is null for an added or
     removed option). ``options`` is the list the change saves, in order,
-    each option's ``id``, ``name`` and ``free_text``; a new option's id is
-    the one the change gives it. ``preview.token`` is the signed binding
-    ``campaign shares-confirm`` takes, valid for fifteen minutes.
+    each option's ``id``, ``name``, ``short_name`` (empty when unset) and
+    ``free_text``; a new option's id is the one the change gives it.
+    ``preview.token`` is the signed binding ``campaign shares-confirm``
+    takes, valid for fifteen minutes.
     """
 
     version: str
@@ -158,6 +160,10 @@ def parse_changes(text):
             problems.append(
                 _shape("Give the option's label as a string.", f"{at}.name")
             )
+        if not isinstance(option.get("short_name", ""), str):
+            problems.append(
+                _shape("Give the option's short label as a string.", f"{at}.short_name")
+            )
         if not isinstance(option.get("free_text", False), bool):
             problems.append(_shape("Give true or false.", f"{at}.free_text"))
         if "id" in option:
@@ -190,6 +196,7 @@ def formset_data(previous, options, delete, expected_version):
         {
             "id": option.get("id", ""),
             "label": option["name"],
+            "short_label": option.get("short_name", ""),
             "free_text": option.get("free_text", False),
             "ORDER": str(position),
         }
@@ -201,6 +208,7 @@ def formset_data(previous, options, delete, expected_version):
             {
                 "id": identifier,
                 "label": row.get("label", ""),
+                "short_label": row.get("short_label", ""),
                 "free_text": row.get("free_text", False),
                 "DELETE": True,
             }
@@ -235,7 +243,9 @@ def field_errors(formset, count):
     ]
     for index, form in enumerate(formset.forms[:count]):
         for name, messages in form.errors.get_json_data().items():
-            shown = {"label": "name", "__all__": None}.get(name, name)
+            shown = {"label": "name", "short_label": "short_name", "__all__": None}.get(
+                name, name
+            )
             field = f"options.{index}" + (f".{shown}" if shown else "")
             problems += [
                 _problem(field, item, f"options-{shown or 'row'}") for item in messages
@@ -336,6 +346,7 @@ def preview_shares(caller, service, campaign_id, *, expected_version, changes):
                 {
                     "id": option["id"],
                     "name": option["label"],
+                    "short_name": option.get("short_label", ""),
                     "free_text": option["free_text"],
                 }
                 for option in review["options"]

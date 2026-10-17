@@ -171,6 +171,14 @@ def test_unrelated_financial_definition_settings_do_not_invalidate():
     values["email_schedule"] = "later"
     values["content_versions"]["census"] = CHECK
     assert definition_digest(values) == before
+    # A short label is Admin-only wording (#1569): setting or changing one
+    # never makes an open Family form stale.
+    values["share_options"] = [asdict(OPTIONS[0])]
+    before = definition_digest(values)
+    values["share_options"][0]["short_label"] = "Check"
+    assert definition_digest(values) == before
+    values["share_options"][0]["short_label"] = "By check"
+    assert definition_digest(values) == before
 
 
 @pytest.mark.parametrize("label", [None, "Custom campaign year"])
@@ -224,3 +232,17 @@ def test_campaign_year_matches_admin_preview_pages_and_share_labels(monkeypatch,
     labels = option_labels(config.options[0], config, parish_name=parish["name"])
     assert set(labels.values()) == {preview["text"]}
     assert preview["text"].startswith((label or "2055") + ": January 1, 2055")
+
+
+def test_the_family_definition_leaves_out_the_short_label():
+    """A short label (#1569) never reaches the Family form's options; any
+    other unexpected key still makes the definition unavailable."""
+    from parishkit.stewardship.responses.financial_inputs import InvalidFinancialSource
+
+    values = configuration() | {
+        "share_options": [asdict(OPTIONS[0]) | {"short_label": "Check"}]
+    }
+    assert financial_definition(values, campaign_id=CAMPAIGN).options == (OPTIONS[0],)
+    values["share_options"][0]["note"] = "x"
+    with pytest.raises(InvalidFinancialSource):
+        financial_definition(values, campaign_id=CAMPAIGN)

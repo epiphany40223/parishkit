@@ -258,3 +258,35 @@ def test_a_refused_apply_shows_in_the_dialog(page, component_origin):
     assert page.locator(DIGEST).input_value() == "a" * 64
     assert page.evaluate(MARKED) == "kept"
     assert not failures
+
+
+def test_the_short_label_is_offered_and_greys_with_delete(page, component_origin):
+    """Each option has a Short label field (#1569) with its help, limited to
+    12 characters; changing it makes Save available, and ticking the row's
+    Delete greys it in place without moving anything below."""
+    from playwright.sync_api import expect
+
+    page.goto(component_origin + SHARE)
+    failures = watch(page)
+    short = page.locator("#id_options-0-short_label")
+    assert short.input_value() == "Bank check"
+    assert short.get_attribute("maxlength") == "12"
+    expect(short).to_have_accessible_name(re.compile(r"^Short label"))
+    expect(short).to_have_accessible_description(
+        re.compile(r"Families still see the full label\.")
+    )
+    expect_review(page, enabled=False, hint=OPTION_HINT, name="Save")
+    short.fill("Check")
+    expect_review(page, enabled=True, hint=OPTION_HINT, name="Save")
+    short.fill("Bank check")
+    expect_review(page, enabled=False, hint=OPTION_HINT, name="Save")
+    places = [page.evaluate(PLACE, id) for id in ("settings-form", "share-outcome")]
+    page.locator("#id_options-0-DELETE").check()
+    expect(short).to_be_disabled()
+    page.locator("#id_options-0-DELETE").uncheck()
+    expect(short).to_be_enabled()
+    assert same_place(
+        [page.evaluate(PLACE, id) for id in ("settings-form", "share-outcome")],
+        places,
+    )
+    assert not failures

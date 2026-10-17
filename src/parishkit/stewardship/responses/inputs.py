@@ -118,6 +118,23 @@ class CensusInputs:
         )
 
 
+def _family_options(options):
+    """The share options as the Family form sees them, for the digest.
+
+    A short label (#1569) is Admin-only wording, so it is left out: changing
+    it must not make an open Family form stale. An option without one hashes
+    exactly as before short labels existed.
+    """
+    if type(options) is not list:
+        return options
+    return [
+        {key: value for key, value in option.items() if key != "short_label"}
+        if type(option) is dict
+        else option
+        for option in options
+    ]
+
+
 def definition_digest(configuration):
     """Project relevant validated campaign configuration, excluding email schedules.
 
@@ -146,7 +163,7 @@ def definition_digest(configuration):
             "financial": {
                 "periods": configuration.get("financial"),
                 "year_label": configuration.get("year_label"),
-                "options": configuration.get("share_options"),
+                "options": _family_options(configuration.get("share_options")),
                 "max_pledge_cents": MAX_PLEDGE_CENTS,
                 "share_text_limit": SHARE_TEXT_LIMIT,
                 "frequencies": FREQUENCIES,

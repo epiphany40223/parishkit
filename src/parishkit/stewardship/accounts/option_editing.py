@@ -136,10 +136,11 @@ def option_changes(before, after):
 
     Each line is {label, before, after} for components/compact-review.html.
     The review marks only what changed, never both whole lists: an option
-    added or removed, a relabelled option, a changed free-text response and
-    an option the reader moved, with its old and new position. Options that
-    only shift because another was added, removed or moved have no line.
-    Lines follow the new order, then the removed options in their old one.
+    added or removed, a relabelled option, a changed short label (#1569), a
+    changed free-text response and an option the reader moved, with its old
+    and new position. Options that only shift because another was added,
+    removed or moved have no line. Lines follow the new order, then the
+    removed options in their old one.
     """
     old = {option["id"]: (index, option) for index, option in enumerate(before)}
     kept = [option for option in after if option["id"] in old]
@@ -158,19 +159,41 @@ def option_changes(before, after):
         """Whether an option has a free-text response, in words."""
         return str(_("Yes") if free_text else _("No"))
 
+    def short(option):
+        """An option's short label (#1569), or "Not set" when it has none."""
+        return option.get("short_label") or str(_("Not set"))
+
     lines = []
     for position, option in enumerate(after, start=1):
+        named = {"label": option["label"]}
         if option["id"] not in old:
             lines.append({"label": _("Added"), "before": None, "after": shown(option)})
+            # An added option's short label is its own line, so the Added
+            # line reads as before when it has none.
+            if option.get("short_label"):
+                lines.append(
+                    {
+                        "label": _("Short label for “%(label)s”") % named,
+                        "before": short({}),
+                        "after": short(option),
+                    }
+                )
             continue
         index, previous = old[option["id"]]
-        named = {"label": option["label"]}
         if previous["label"] != option["label"]:
             lines.append(
                 {
                     "label": _("Label"),
                     "before": previous["label"],
                     "after": option["label"],
+                }
+            )
+        if previous.get("short_label", "") != option.get("short_label", ""):
+            lines.append(
+                {
+                    "label": _("Short label for “%(label)s”") % named,
+                    "before": short(previous),
+                    "after": short(option),
                 }
             )
         if previous["free_text"] != option["free_text"]:

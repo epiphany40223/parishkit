@@ -61,6 +61,8 @@ FINANCIAL_SORTING = Sorting(
 MONEY = re.compile(r"(0|[1-9][0-9]{0,8})(\.[0-9]{2})?")
 # A share method is a stable option identity in canonical lowercase form.
 SHARE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+# A chosen method the configuration no longer offers.
+UNAVAILABLE_SHARE = "Unavailable share method"
 FREQUENCY_LABELS = {
     "weekly": "Weekly",
     "monthly": "Monthly",
@@ -234,6 +236,30 @@ def giving_proof(campaign):
     return {"snapshot": str(snapshot_id), "configuration": str(configuration.pk)}
 
 
+def share_wording(values, *, campaign_id, parish_name):
+    """Each option's ``(label, short label)`` in one configuration, in order.
+
+    The label is worded exactly as the Family form worded it (see
+    ``share_labels``). The short label is the Admin's own compact name for
+    the method (#1569), plain text, or the label when none is set: Admin
+    tables, filters and charts show it, exports and the Family portal never.
+    """
+    try:
+        definition = financial_definition(values, campaign_id=campaign_id)
+    except InvalidFinancialSource:
+        return {}
+    # The definition is the Family form's and carries no short labels; they
+    # are read from the same validated configuration.
+    shorts = {
+        option["id"]: option.get("short_label") for option in values["share_options"]
+    }
+    wording = {}
+    for option in definition.options:
+        label = option_labels(option, definition, parish_name=parish_name)["none"]
+        wording[option.id] = (label, shorts.get(option.id) or label)
+    return wording
+
+
 def share_labels(values, *, campaign_id, parish_name):
     """Word one configuration's options exactly as its Family form did.
 
@@ -241,13 +267,11 @@ def share_labels(values, *, campaign_id, parish_name):
     report has no single household to address, so it uses that form's variant for
     a household with no listed Member. The browser never evaluates a template.
     """
-    try:
-        definition = financial_definition(values, campaign_id=campaign_id)
-    except InvalidFinancialSource:
-        return {}
     return {
-        option.id: option_labels(option, definition, parish_name=parish_name)["none"]
-        for option in definition.options
+        key: label
+        for key, (label, _short) in share_wording(
+            values, campaign_id=campaign_id, parish_name=parish_name
+        ).items()
     }
 
 
@@ -349,13 +373,14 @@ def shape_result(result, *, campaign_id, parish_name, configuration):
     from its immutable capture. Both pass through here, so money, wording and
     ordering cannot mean different things in the two places.
     """
-    current = share_labels(
+    wording = share_wording(
         configuration, campaign_id=campaign_id, parish_name=parish_name
     )
+    current = {key: label for key, (label, _short) in wording.items()}
     # Labels are versioned with the configuration each Family actually saw, so a
     # later edit of the year label or an option never rewords a retained answer.
     seen = {
-        key: share_labels(values, campaign_id=campaign_id, parish_name=parish_name)
+        key: share_wording(values, campaign_id=campaign_id, parish_name=parish_name)
         for key, values in seen_configurations(
             campaign_id, {row["configuration_id"] for row in result["rows"]}
         ).items()
@@ -376,8 +401,14 @@ def shape_result(result, *, campaign_id, parish_name, configuration):
             else FREQUENCY_LABELS[row["frequency"] or "none"]
         )
         labels = seen.get(row.pop("configuration_id"), {})
+        # ``label`` is the full wording (exports, tips); ``short`` the
+        # compact name the page's cell shows (#1569).
+        unavailable = (UNAVAILABLE_SHARE, UNAVAILABLE_SHARE)
         row["shares"] = [
-            {"label": labels.get(key, "Unavailable share method"), "text": text}
+            dict(
+                zip(("label", "short"), labels.get(key, unavailable), strict=True),
+                text=text,
+            )
             for key, text in in_offered_order(row["shares"], labels)
         ]
         row["source_pledge"] = parse_money(row.pop("pledge_total"))
@@ -409,9 +440,7 @@ def shape_result(result, *, campaign_id, parish_name, configuration):
     retired = sum(
         count for key, count in summary["shares"].items() if key not in current
     )
-    summary["shares"] = offered + (
-        [("Unavailable share method", retired)] if retired else []
-    )
+    summary["shares"] = offered + ([(UNAVAILABLE_SHARE, retired)] if retired else [])
     metadata = result["metadata"]
     metadata["source_as_of"] = datetime.fromisoformat(metadata["source_as_of"])
     metadata["giving_through"] = (
@@ -419,6 +448,7 @@ def shape_result(result, *, campaign_id, parish_name, configuration):
         if metadata["giving_through"]
         else None
     )
-    # The filter offers the current options in that same configured order.
-    result["share_choices"] = list(current.items())
+    # The filter offers the current options in that same configured order,
+    # by their short labels, as the share-method chart names them (#1569).
+    result["share_choices"] = [(key, short) for key, (_label, short) in wording.items()]
     return result

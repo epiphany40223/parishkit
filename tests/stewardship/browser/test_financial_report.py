@@ -49,6 +49,8 @@ def test_financial_mobile_keyboard_and_accessibility(
     assert page.get_by_text("Example <Family>", exact=False).count() == 1
     # Other text is in its method's tip (#1544), still escaped.
     assert page.get_by_text("Another way: Stock <gift>", exact=True).count() == 1
+    # The chip names a method by its short label where it has one (#1569).
+    assert page.locator(".status-badge", has_text="Online").count() == 1
     assert page.get_by_role("cell", name="$1,234.50", exact=True).count() == 1
     # Entered by Staff (#794) is the Latest response cell's Staff chip
     # (#1544), not a column of its own.

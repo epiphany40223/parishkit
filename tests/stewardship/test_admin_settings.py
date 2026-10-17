@@ -21,6 +21,7 @@ from .test_admin_reads import FORBIDDEN, members
 CAMPAIGN = UUID("00000000-0000-4000-8000-000000000081")
 SNAPSHOT = UUID("00000000-0000-4000-8000-000000000082")
 OPTION = "00000000-0000-4000-8000-000000000083"
+OTHER_OPTION = "00000000-0000-4000-8000-000000000084"
 VERSION = "b" * 64
 # Each command's member names at any depth: exactly what it may print.
 # ``phone`` is the parish's public telephone and ``duid`` a Ministry's, never
@@ -64,6 +65,7 @@ ALLOWED = {
         "options",
         "id",
         "name",
+        "short_name",
         "free_text",
     },
 }
@@ -139,8 +141,19 @@ def test_ministries_list_is_its_golden_projection():
 
 
 def test_campaign_shares_is_its_golden_projection():
-    """The options in order, the label as ``name``; editable needs financial."""
-    options = [{"id": OPTION, "label": "Prayer", "free_text": False}]
+    """The options in order, the label as ``name``; editable needs financial.
+
+    A short label (#1569) is ``short_name``, empty when the option has none.
+    """
+    options = [
+        {"id": OPTION, "label": "Prayer", "free_text": False},
+        {
+            "id": OTHER_OPTION,
+            "label": "A gift",
+            "free_text": True,
+            "short_label": "Gift",
+        },
+    ]
 
     def campaign(modules):
         """A stand-in campaign with these modules and options."""
@@ -159,7 +172,15 @@ def test_campaign_shares_is_its_golden_projection():
         "campaign_id": str(CAMPAIGN),
         "editable": True,
         "financial": True,
-        "options": [{"id": OPTION, "name": "Prayer", "free_text": False}],
+        "options": [
+            {"id": OPTION, "name": "Prayer", "short_name": "", "free_text": False},
+            {
+                "id": OTHER_OPTION,
+                "name": "A gift",
+                "short_name": "Gift",
+                "free_text": True,
+            },
+        ],
     }
     check_members("campaign shares", result)
     # The page edits Share options only with the financial module.

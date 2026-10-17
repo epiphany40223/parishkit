@@ -172,7 +172,12 @@ def test_campaign_shares_of_a_draft_then_a_live_campaign(admin):
         "editable": True,
         "financial": True,
         "options": [
-            {"id": item["id"], "name": item["label"], "free_text": item["free_text"]}
+            {
+                "id": item["id"],
+                "name": item["label"],
+                "short_name": item.get("short_label", ""),
+                "free_text": item["free_text"],
+            }
             for item in options
         ],
     }

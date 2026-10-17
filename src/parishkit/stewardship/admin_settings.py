@@ -79,8 +79,8 @@ class CampaignShares(ReadModel):
     ``editable`` is the page's own check (an unlocked current Testing draft
     that background work does not hold, with the financial module);
     ``financial`` whether the campaign has the financial module; ``options``
-    each option's ``id``, ``name`` (the page's label) and ``free_text``, in
-    order.
+    each option's ``id``, ``name`` (the page's label), ``short_name`` (its
+    short label, empty when unset, #1569) and ``free_text``, in order.
     """
 
     version: str
@@ -131,6 +131,7 @@ def shares_model(configuration, campaign, editable):
             {
                 "id": option["id"],
                 "name": option["label"],
+                "short_name": option.get("short_label", ""),
                 "free_text": option["free_text"],
             }
             for option in EDITOR.current(campaign)

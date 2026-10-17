@@ -114,6 +114,7 @@ def test_the_parser_refuses_a_document_of_another_shape(text):
         ({"options": [{"free_text": True}]}, "options.0.name"),
         ({"options": [{"name": 7}]}, "options.0.name"),
         ({"options": [{"name": "Gift", "free_text": "yes"}]}, "options.0.free_text"),
+        ({"options": [{"name": "Gift", "short_name": 7}]}, "options.0.short_name"),
         ({"options": [{"name": "Gift", "id": "nope"}]}, "options.0.id"),
         ({"options": [{"name": "Gift", "id": 7}]}, "options.0.id"),
         ({"options": [], "delete": ["nope"]}, "delete"),
@@ -148,7 +149,12 @@ def _bound(previous, document):
 def _kept(previous):
     """The document that keeps every saved option as it is."""
     return [
-        {"id": row["id"], "name": row["label"], "free_text": row["free_text"]}
+        {
+            "id": row["id"],
+            "name": row["label"],
+            "short_name": row.get("short_label", ""),
+            "free_text": row["free_text"],
+        }
         for row in previous
     ]
 
@@ -221,6 +227,41 @@ def test_a_refused_label_is_a_problem_at_its_options_name():
     problems = admin_shares.field_errors(formset, count)
     assert [problem["field"] for problem in problems] == ["options.1.name"]
     assert "placeholders" in problems[0]["message"]
+
+
+@pytest.mark.parametrize(
+    ("short", "words"),
+    [
+        # Another option's short label in another case (#1569).
+        ("bank CHECK", "Another option already has this short label."),
+        ("Much too long a name", "at most 12 characters"),
+        ("{{ year }}", "plain text"),
+    ],
+)
+def test_a_refused_short_label_is_a_problem_at_its_short_name(short, words):
+    """The page's short label checks name the option's ``short_name``."""
+    previous = default_share_options()[:2]
+    kept = _kept(previous)
+    formset, count = _bound(
+        previous, {"options": [kept[0], kept[1] | {"short_name": short}]}
+    )
+    assert not formset.is_valid()
+    problems = admin_shares.field_errors(formset, count)
+    assert [problem["field"] for problem in problems] == ["options.1.short_name"]
+    assert words in problems[0]["message"]
+
+
+def test_the_preview_options_carry_the_short_label():
+    """A kept option's short label survives the round trip; leaving it out
+    clears it, as an empty page field does."""
+    previous = default_share_options()[:2]
+    kept = _kept(previous)
+    del kept[1]["short_name"]
+    formset, _count = _bound(previous, {"options": kept})
+    assert formset.is_valid(), formset.errors
+    values = formset.values()
+    assert values[0]["short_label"] == "Bank check"
+    assert "short_label" not in values[1]
 
 
 @pytest.mark.parametrize(

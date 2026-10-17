@@ -293,6 +293,38 @@ def test_schedule_identity_and_option_uniqueness():
             )
 
 
+def test_share_option_short_labels_are_bounded_plain_and_distinct():
+    """A share option may carry a short label (#1569): stored only when set,
+    plain visible text of at most 12 characters, distinct ignoring case.
+    A talent option never carries one."""
+
+    def options(*shorts):
+        """One share option per short label; None leaves the key out."""
+        return [
+            {"id": str(uuid4()), "label": f"Give {index}", "free_text": False}
+            | ({} if short is None else {"short_label": short})
+            for index, short in enumerate(shorts)
+        ]
+
+    def values(**changes):
+        """A financial campaign's values with these changes."""
+        return campaign(modules=["financial"], **changes)["values"]
+
+    campaign_values(values(share_options=options("Check", None, "Online gift")))
+    for refused in (
+        options(""),
+        options(" Check"),
+        options("A" * 13),
+        options("{{ year }}"),
+        options("Check", "CHECK"),
+        options("Tab\there"),
+    ):
+        with pytest.raises(ConfigError):
+            campaign_values(values(share_options=refused))
+    with pytest.raises(ConfigError):
+        campaign_values(values(talent_options=options("Check")))
+
+
 @pytest.mark.parametrize("slot", ["ministry", "financial", "additional"])
 def test_disabled_content_slot_is_rejected(slot):
     """Disabled feature content is a stray module-dependent value, not hidden state."""

@@ -57,7 +57,12 @@ def draft(admin):
 def kept(previous):
     """The change document's options keeping every saved one as it is."""
     return [
-        {"id": row["id"], "name": row["label"], "free_text": row["free_text"]}
+        {
+            "id": row["id"],
+            "name": row["label"],
+            "short_name": row.get("short_label", ""),
+            "free_text": row["free_text"],
+        }
         for row in previous
     ]
 
@@ -176,12 +181,14 @@ def test_preview_and_confirm_as_the_page(admin, draft):
     request_id = confirmed["result"]["request"]["request_id"]
     assert events() == 1
     install(admin, confirmed)
+    # A short label is stored only when set (#1569).
     assert saved(row) == [
         {
             "id": option["id"],
             "label": option["name"],
             "free_text": option["free_text"],
         }
+        | ({"short_label": option["short_name"]} if option["short_name"] else {})
         for option in result["options"]
     ]
     code, again, _ = confirm(admin, secret, signed)

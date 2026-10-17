@@ -288,9 +288,18 @@ def test_rows_are_shaped_with_exact_installments_and_honest_absence(monkeypatch)
     assert row["frequency_label"] == "Monthly"
     assert row["shares"] == [
         # Worded as that Family saw it, before the year label was later edited.
-        {"label": f"Another way in Jubilee, {PERIOD}", "text": "Stock"},
+        # Without a short label the page's cell shows the full label (#1569).
+        {
+            "label": f"Another way in Jubilee, {PERIOD}",
+            "short": f"Another way in Jubilee, {PERIOD}",
+            "text": "Stock",
+        },
         # An option absent from the configuration the Family saw is never guessed.
-        {"label": "Unavailable share method", "text": "Old text"},
+        {
+            "label": "Unavailable share method",
+            "short": "Unavailable share method",
+            "text": "Old text",
+        },
     ]
     assert row["source_pledge"].display == "$1,200.00"
     assert not row["source_contributions"].available
@@ -469,3 +478,41 @@ def test_a_get_draws_the_view_its_address_names(rf):
     assert dict(posted) == {"search": ["Name"]}
     with pytest.raises(ValueError):
         _parameters(rf.post("/?amount=zero", {"search": "Name"}))
+
+
+def test_short_labels_name_methods_on_the_page_but_never_in_exports(monkeypatch):
+    """A short label (#1569) names a method in the page's cell, its filter and
+    its chart; the full label stays beside it for the exports and summary."""
+    from parishkit.stewardship.reports.chart_specs import financial_charts
+
+    shortened = CONFIGURATION | {
+        "share_options": [OPTIONS[0] | {"short_label": "Online"}, OPTIONS[1]]
+    }
+    substitute(monkeypatch, (json.dumps(result(shares={ONLINE: "", OTHER: "x"})),))
+    monkeypatch.setattr(
+        financial,
+        "seen_configurations",
+        lambda campaign_id, identifiers: dict.fromkeys(identifiers, shortened),
+    )
+    shaped = page(configuration=shortened)
+    full = "This household will give online to Sample Parish"
+    assert shaped["rows"][0]["shares"] == [
+        {"label": full, "short": "Online", "text": ""},
+        # No short label: the full label in both places.
+        {
+            "label": f"Another way in 2055, {PERIOD}",
+            "short": f"Another way in 2055, {PERIOD}",
+            "text": "x",
+        },
+    ]
+    assert shaped["share_choices"] == [
+        (ONLINE, "Online"),
+        (OTHER, f"Another way in 2055, {PERIOD}"),
+    ]
+    # The exports' summary keeps the full wording.
+    assert shaped["summary"]["shares"][0] == (f"Another way in 2055, {PERIOD}", 1)
+    _frequency, shares = financial_charts(shaped["summary"], shaped["share_choices"])
+    assert [row[0] for row in shares.table.rows][:2] == [
+        "Online",
+        f"Another way in 2055, {PERIOD}",
+    ]
