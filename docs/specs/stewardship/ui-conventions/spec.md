@@ -888,6 +888,19 @@ the [in-place controls](#in-place-controls); no other mechanism.
   are tried again once a minute later and, if that read fails too, wait for
   the next ParishSoft data
   ([admin portal](../admin-portal/spec.md#parishsoft-ministry-leaders-without-a-user)).
+- **Controls that background work holds.** A setting or button that
+  background work holds is shown unavailable with its reason, and the
+  reason never tells the reader to reload. The page follows that work
+  through a passive, unaudited status read and, once the work ends, brings
+  the held controls in by itself. A form page re-reads its own address
+  once, quietly, in place and passively (the hidden `a[data-reread]`
+  follow-up link above), so the re-read waits while the reader is editing
+  and never replaces a field being edited. A page whose own view is
+  audited takes the fresh controls from the status read instead, so it
+  records no view. Examples: [Campaign
+  settings](../admin-portal/spec.md#campaign-settings-page) and Home's
+  [Create the campaign](../admin-portal/spec.md#create-the-campaign)
+  ([#1619](https://github.com/epiphany40223/parishkit/issues/1619)).
 - **Pace.** While background work is pending a status region reads fast
   (2 s backing off to 10 s, or the fixed pace the page asks for). A page
   whose state changes without the reader's own action re-reads every 30

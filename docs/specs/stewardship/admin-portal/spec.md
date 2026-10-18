@@ -2812,6 +2812,23 @@ every campaign state. There is no second, read-only copy of the settings.
   alone holds says it can change once that work finishes. A disabled
   setting is not sent, and the server keeps its saved value whatever is
   posted, so a locked setting never changes through this page.
+- **Held settings open by themselves.** While background work or going
+  live holds any of the page's settings, no reason tells the reader to
+  reload. The page follows that hold through the passive, unaudited
+  campaign work status (`campaign_work_status`, which says only whether
+  campaign work still holds changes), polled as a pending status region
+  is. Once the hold ends the page re-reads its own address once, quietly,
+  in place and passively ([controls that background work
+  holds](../ui-conventions/spec.md#pages-that-update-themselves),
+  [#1619](https://github.com/epiphany40223/parishkit/issues/1619)), so the
+  freed settings, their tips and Save's hint are drawn again from the
+  server. The re-read waits while the reader is editing an open setting
+  (a live campaign's leader roles) and never replaces it; that read
+  never extends the sign-in and records nothing. A browser reload draws
+  the page with the current hold, still followed while it lasts. A Review
+  refused because a setting became locked after the page was drawn says
+  that setting's reason and to reload the page, since that page was drawn
+  before the hold and does not follow it.
 - **One Save.** The page has exactly one **Save** (its Review),
   unavailable until the form holds a real change, with its hint after it
   ([review dialog](../ui-conventions/spec.md#review-dialog)); with nothing
@@ -3622,7 +3639,14 @@ or a direct request cannot bypass them. Home shows what it already knows:
 before any ParishSoft data is loaded, Create the campaign is shown unavailable
 with the reason that ParishSoft data must be loaded first (Refresh now is
 beside it); while campaign work or a Testing cleanup holds it, it is shown
-unavailable with that reason; otherwise it is offered. Once a campaign row
+unavailable with that reason; otherwise it is offered. While it is held,
+Home follows the hold through the passive, unaudited campaign work status,
+which answers with the panel's fresh contents: once the hold ends, Create
+the campaign is offered there by itself, with no reload (Home's own view is
+audited, so Home is not re-read; [controls that background work
+holds](../ui-conventions/spec.md#pages-that-update-themselves),
+[#1619](https://github.com/epiphany40223/parishkit/issues/1619)). Should a
+campaign exist by then, the panel says so instead. Once a campaign row
 exists, in Production mode, or during a restore review, Home keeps its
 no-campaign text instead.
 
