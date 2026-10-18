@@ -4045,6 +4045,10 @@
         return;
       }
       confirming = null;
+      // A key's confirmation names the key's last four characters: they
+      // go with the dialog however it closes (Apply, Cancel, Escape), so
+      // the key stays only in its field and Apply's one request (#1568).
+      if (state?.review?.key) dialog.querySelector("[data-review-body]")?.replaceChildren();
       if (!state || state.done) return;
       const back = state.opener.isConnected ? state.opener
         : document.getElementById(dialog.dataset.confirmFallback || "");

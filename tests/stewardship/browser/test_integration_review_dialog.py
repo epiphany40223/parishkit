@@ -209,6 +209,7 @@ def test_a_pasted_key_is_confirmed_and_installed_in_place(page, component_origin
     naming the key by its last four characters only; the Review never
     carries the key, and Cancel keeps it in its field. Apply posts the page's
     own form once, key included, without a page load; the dialog closes,
+    its body emptied (after Cancel too, so the last four do not linger),
     the status line says the key is being installed, and once the check
     finishes the status line and editor are redrawn in place (no reload, no
     scroll), Key updated, with the key gone from the page (#1568)."""
@@ -235,6 +236,8 @@ def test_a_pasted_key_is_confirmed_and_installed_in_place(page, component_origin
     assert "candidate" not in reviews[0][0] and "SYNTHETIC" not in reviews[0][0]
     dialog.get_by_role("button", name="Cancel").click()
     hidden(dialog)
+    review_body = page.locator("#integration-review [data-review-body]")
+    assert review_body.evaluate("node => node.textContent") == ""
     assert token.input_value() == SECRET and applies == []
     save.click()
     dialog = dialog_of(page, "Replace the Slack bot token?")
@@ -246,6 +249,7 @@ def test_a_pasted_key_is_confirmed_and_installed_in_place(page, component_origin
     body, navigated = applies[0]
     assert not navigated and f"candidate={SECRET}" in body
     visible(page.get_by_text("Key updated."))
+    assert review_body.evaluate("node => node.textContent") == ""
     assert page.locator("input[name=candidate]").count() == 1
     assert page.locator("input[name=candidate]").input_value() == ""
     assert SECRET not in page.content()
