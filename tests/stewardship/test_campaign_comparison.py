@@ -13,12 +13,15 @@ from uuid import uuid4
 import pytest
 
 from parishkit.stewardship.archive.workbook import BAND_EDGES
-from parishkit.stewardship.reports import comparison_reads
+from parishkit.stewardship.reports import comparison_reads, comparison_views
 from parishkit.stewardship.reports.comparison import (
     FEWER_THAN,
     METRICS,
+    NO_ACTIVE_FAMILIES,
     NO_FAMILY_ROWS,
+    NO_FIGURE_YET,
     NO_LAST_YEAR,
+    NO_PRIOR_RESPONDERS,
     OLDER_BANDS,
     OTHER_ID_SYSTEM,
     Band,
@@ -566,3 +569,67 @@ def test_a_refused_day_names_the_days_that_can_be_chosen():
     early = replace(built, day=None, report_date=None, latest_day=None)
     (error,) = page_context(early, principal, refused=True)["errors"]
     assert error["field_id"] is None
+
+
+# ------------------------------------------------- every "—" has a reason
+
+
+def current_with(found, **changes):
+    """``found`` with its current campaign's fields replaced."""
+    return replace(found, current=replace(found.current, **changes))
+
+
+def test_a_day_without_figures_explains_every_dash_renewal_included():
+    """No figures for the day and a DUID-only last year (no renewal reason,
+    no renewal found): every tile reads "—" with a reason (#1637)."""
+    found = current_with(
+        comparison([year(2054, day(3, 30))]), at_day=None, renewal=Renewal()
+    )
+    shown = {tile["key"]: tile for tile in tiles(found)}
+    assert {key: tile["value"] for key, tile in shown.items()} == dict.fromkeys(
+        ("families", "percent", "pledged", "average", "renewal"), "—"
+    )
+    assert {tile["reason"] for tile in shown.values()} == {NO_FIGURE_YET}
+    comparison_views.headline_tiles(tiles(found))
+
+
+def test_no_responders_last_year_explains_the_renewal_dash():
+    """Last year had no responders, so there is no renewal share."""
+    found = current_with(comparison([year(2054, day(3, 0))]), renewal=Renewal(0, 0))
+    (renewal,) = [tile for tile in tiles(found) if tile["key"] == "renewal"]
+    assert (renewal["value"], renewal["reason"]) == ("—", NO_PRIOR_RESPONDERS)
+    comparison_views.headline_tiles(tiles(found))
+
+
+def test_no_active_families_explains_the_percent_dash():
+    """A share of no active Families is a value that still reads "—"."""
+    found = current_with(comparison([]), at_day=day(3, 0, active=0))
+    (percent,) = [tile for tile in tiles(found) if tile["key"] == "percent"]
+    assert (percent["value"], percent["reason"]) == ("—", NO_ACTIVE_FAMILIES)
+    comparison_views.headline_tiles(tiles(found))
+
+
+def test_headline_tiles_never_raise_for_any_missing_or_zero_figure():
+    """Every mix of unknown and zero figures, for this year and last, draws
+    tiles: a "—" always has a reason and a figure never has one."""
+    days = (
+        None,
+        day(3, 0, active=0),
+        day(3, 0, pledging=0, pledged="0"),
+        day(3, 5, pledging=None, pledged=None),
+        day(3, 5, pledging=2, pledged="100"),
+    )
+    renewals = (Renewal(), Renewal(reason=NO_LAST_YEAR), Renewal(0, 0), Renewal(3, 6))
+    for financial in (True, False):
+        for at_day in days:
+            for renewal in renewals:
+                for last_day in days:
+                    imported = [year(2054, last_day, end=last_day or day(3, 1))]
+                    found = replace(
+                        current_with(
+                            comparison(imported), at_day=at_day, renewal=renewal
+                        ),
+                        financial=financial,
+                    )
+                    for figure in comparison_views.headline_tiles(tiles(found)):
+                        assert (figure.text == "—") == bool(figure.unknown_reason)

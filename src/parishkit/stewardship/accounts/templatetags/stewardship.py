@@ -42,6 +42,24 @@ def stat_tiles_row(labelledby="", label="", tiles_id=""):
     return {"name": format_html('{}="{}"', attribute, value), "prefix": prefix}
 
 
+# The direction arrows a comparison line starts its change with ("↑ 12.5%
+# more"); the words after them already say the direction.
+ARROWS = re.compile("([↑↓→])")
+
+
+@register.filter
+def arrows_hidden(text):
+    """``text`` escaped, with each direction arrow hidden from screen readers.
+
+    Stat tile lines such as "Last year on day 3: 30 (↑ 33.3% more)" carry
+    the direction in words too, so a screen reader announcing "up arrow"
+    only repeats it (#1637). The arrow stays visible.
+    """
+    return mark_safe(
+        ARROWS.sub(r'<span aria-hidden="true">\1</span>', str(conditional_escape(text)))
+    )
+
+
 @register.simple_tag
 def reminder_workgroup_name():
     """The displayed name of the campaign's reminder exclusion setting (#1061).

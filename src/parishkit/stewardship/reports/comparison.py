@@ -52,6 +52,9 @@ OTHER_ID_SYSTEM = (
 )
 NO_PREVIOUS_YEAR = "The year before it is not imported."
 FINANCIAL_OFF = "This campaign does not include Financial stewardship."
+NO_PRIOR_RESPONDERS = "No Families responded last year, so none can renew."
+NO_ACTIVE_FAMILIES = "No Families were active on this day, so there is no share."
+NO_FIGURE_YET = "No figure is available for this day yet."
 OLDER_BANDS = (
     "Imported with an older pledge band set; import the year again to compare "
     "its bands."
@@ -406,9 +409,10 @@ def tiles(comparison, *, outside=False):
             lines.append(
                 f"{label}: {text}" + (f" ({difference})" if difference else "")
             )
-        reason = None
-        if value is None:
-            reason = _reason(metric, current, comparison)
+        # A "—" always carries its reason (the stat tile requires one). The
+        # text, not the value, decides: a share of no Families is a value
+        # that still reads "—" (#1637).
+        reason = _reason(metric, current, comparison) if shown == "—" else None
         median = None
         if not outside and metric.key == "average" and current.distribution is not None:
             quartiles = current.distribution.quartiles
@@ -428,12 +432,23 @@ def tiles(comparison, *, outside=False):
 
 
 def _reason(metric, current, comparison):
-    """Why the current campaign's ``metric`` is "—"."""
+    """Why the current campaign's ``metric`` is "—"; always plain text.
+
+    The specific cause when one is known (no comparable last year, no
+    responders last year, no active Families on the day), else that the
+    day has no figure yet.
+    """
+    at = current.at_day
     if metric.key == "renewal":
-        return current.renewal.reason
-    if metric.financial and not comparison.financial:
+        if current.renewal.reason:
+            return current.renewal.reason
+        if current.renewal.renewed is not None and not current.renewal.base:
+            return NO_PRIOR_RESPONDERS
+    elif metric.financial and not comparison.financial:
         return FINANCIAL_OFF
-    return "No figure is available for this day yet."
+    elif metric.key == "percent" and at is not None and not at.active:
+        return NO_ACTIVE_FAMILIES
+    return NO_FIGURE_YET
 
 
 def table_rows(comparison):

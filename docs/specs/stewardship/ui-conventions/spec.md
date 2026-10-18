@@ -2527,7 +2527,8 @@ two ways of reading to a screen reader. **Precedent.**
   heading.
 - **Trend.** Where a comparison exists, a tile may end with one trend
   line, written in words with an arrow ("↑ 12.5% more"), never colour
-  alone.
+  alone. The arrow is hidden from assistive technology, because the words
+  already say the direction.
 - **Share bar.** A tile that states a share may also draw it as a plain
   progress bar at the tile's foot, so the bars of a row of tiles line up.
   Its exact figures are always printed in the tile, so it has no tooltip,

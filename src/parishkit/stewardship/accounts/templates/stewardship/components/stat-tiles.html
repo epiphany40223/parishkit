@@ -8,9 +8,11 @@
   Each tile reads its label, value and explanation in DOM order; an unknown
   value is "—" with a toggletip giving its reason. The share bar is hidden
   from assistive technology because the tile's text states the share.
+  A line's direction arrows are hidden from it too: its words say the
+  direction.
   A row with neither name raises an error (it would be an unnamed list). Each
   tile's toggletip id is "stat-<prefix>-<key>-tip", the prefix being
   tiles_id, else tiles_labelledby, else the slug of tiles_label, so two rows
   on one page never collide as long as their names differ; pass a distinct
   tiles_id otherwise.
-{% endcomment %}{% stat_tiles_row tiles_labelledby tiles_label tiles_id as row %}<ul class="stat-tiles" {{ row.name }}>{% for tile in tiles %}<li class="stat-tile" data-stat="{{ tile.key }}"><span class="stat-label">{{ tile.label }}</span> <span class="stat-value">{{ tile.text }}{% if tile.unknown_reason %} {% include "stewardship/components/toggletip.html" with tip_id="stat-"|add:row.prefix|add:"-"|add:tile.key|add:"-tip" tip_label_id="stat-"|add:row.prefix|add:"-"|add:tile.key|add:"-tip" tip_text=tile.unknown_reason %}{% endif %}</span>{% for line in tile.details %} <span class="stat-detail">{{ line }}</span>{% endfor %}{% if tile.trend %} <span class="stat-detail stat-trend">{{ tile.trend }}</span>{% endif %}{% if tile.bar %}<span class="stat-bar" aria-hidden="true"><progress value="{{ tile.bar.0 }}" max="{{ tile.bar.1 }}"></progress></span>{% endif %}</li>{% endfor %}</ul>
+{% endcomment %}{% stat_tiles_row tiles_labelledby tiles_label tiles_id as row %}<ul class="stat-tiles" {{ row.name }}>{% for tile in tiles %}<li class="stat-tile" data-stat="{{ tile.key }}"><span class="stat-label">{{ tile.label }}</span> <span class="stat-value">{{ tile.text }}{% if tile.unknown_reason %} {% include "stewardship/components/toggletip.html" with tip_id="stat-"|add:row.prefix|add:"-"|add:tile.key|add:"-tip" tip_label_id="stat-"|add:row.prefix|add:"-"|add:tile.key|add:"-tip" tip_text=tile.unknown_reason %}{% endif %}</span>{% for line in tile.details %} <span class="stat-detail">{{ line|arrows_hidden }}</span>{% endfor %}{% if tile.trend %} <span class="stat-detail stat-trend">{{ tile.trend|arrows_hidden }}</span>{% endif %}{% if tile.bar %}<span class="stat-bar" aria-hidden="true"><progress value="{{ tile.bar.0 }}" max="{{ tile.bar.1 }}"></progress></span>{% endif %}</li>{% endfor %}</ul>
