@@ -8,9 +8,11 @@ performs no network operations.
 The registry follows the live v2 write test of 2026-10-17 (#528, #1596): both
 contact PUTs are partial updates, no value can be cleared (``null`` is
 ignored and ``""`` refused), setting ``dateOfDeath`` leaves the Member
-Active, and Family address blocks cannot be read back. So a death date, a
-Family address and any answer that removes a value are worked by hand
-(``proposal_handling``). The SQL proposal guard derives the same handling
+Active, and Family address blocks cannot be read back. The live gender test
+of the same day (#1603) found that a one-character ``gender`` PUT is
+accepted but never changes the Member's ``sex`` in any read. So a gender, a
+death date, a Family address and any answer that removes a value are worked
+by hand (``proposal_handling``). The SQL proposal guard derives the same handling
 (``stewardship_response_derived_guard_v1``); keep the two in step.
 """
 
@@ -66,7 +68,6 @@ MEMBER_CAPABILITIES = MappingProxyType(
                 ("maiden_name", "maidenName"),
                 ("birth_date", "dateOfBirth"),
                 ("language", "language"),
-                ("gender", "gender"),
                 ("email", "emailAddress"),
                 ("home_phone", "homePhone"),
                 ("mobile_phone", "cellPhone"),
@@ -75,6 +76,10 @@ MEMBER_CAPABILITIES = MappingProxyType(
         },
         "prefix": _MANUAL,
         "suffix": _MANUAL,
+        # The v2 Member PUT accepts a one-character gender (HTTP 200) but the
+        # write never changes the Member in any read (#1603), so gender is
+        # entered by hand, never published.
+        "gender": _MANUAL,
         "marital_status": _MANUAL,
         # Writing dateOfDeath leaves the Member Active in ParishSoft, so the
         # date is entered by hand with the deceased status, never published.

@@ -175,9 +175,8 @@ def _civil_date(raw, today):
 def edit_limit(field):
     """The most characters ParishSoft's request schema takes for ``field``.
 
-    None for a date or a field publication never writes. Gender's limit (one
-    character) is not used: its provider encoding is still unsettled
-    (``publication``), so a gender edit is held to the census choices only.
+    None for a date, a field with closed choices (held to its choices) or a
+    field publication never writes, such as gender (By hand, #1603).
     """
     definition = FIELDS.get(field)
     known = capability("member", field) if definition else None

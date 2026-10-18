@@ -142,6 +142,7 @@
 !src/parishkit/stewardship/schema/migrations/0115_mail_halt_clear.sql
 !src/parishkit/stewardship/schema/migrations/0116_sent_mail_recipients.sql
 !src/parishkit/stewardship/schema/migrations/0117_log_search_indexes.sql
+!src/parishkit/stewardship/schema/migrations/0114_gender_by_hand.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

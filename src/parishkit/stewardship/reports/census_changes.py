@@ -425,8 +425,9 @@ def edit_control(row):
     The field starts with the value publication would write now: the
     Administrator's edit when there is one, else the Family's answer, in
     the form the Family form shows it (a phone's display). A date is a date
-    field, Gender its census choices, and anything else text no longer than
-    ParishSoft takes (``census_review.edit_limit``).
+    field, a field with closed choices those choices (no such field is
+    Automatic since gender became By hand, #1603), and anything else text no
+    longer than ParishSoft takes (``census_review.edit_limit``).
     """
     definition = FIELDS[row["field"]]
     value = row["admin_value"] if row["admin_value_set"] else row["submitted_value"]

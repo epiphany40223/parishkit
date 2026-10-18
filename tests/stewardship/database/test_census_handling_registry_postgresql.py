@@ -57,6 +57,16 @@ def check():
     return text[text.index("DO $check$") :]
 
 
+def installed(name):
+    """The installed definition of ``public.name()``, as one statement, so a
+    test that puts an older body back restores whatever is current."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT pg_get_functiondef(%s::regprocedure)", [f"public.{name}()"]
+        )
+        return cursor.fetchone()[0] + ";"
+
+
 def corrected_events():
     """The census_handling_corrected events' counts, oldest first."""
     events = AuditEvent.objects.filter(event_type="census_handling_corrected")
@@ -308,9 +318,8 @@ def test_the_old_guard_refused_the_corrected_handling(response_service):
         ),
         "stewardship_response_derived_guard_v1",
     )
-    current = _replaced(
-        FROZEN.read_text(encoding="utf-8"), "stewardship_response_derived_guard_v1"
-    )
+    # The installed body, not 0113's: a later file (0114, #1603) replaces it.
+    current = installed("stewardship_response_derived_guard_v1")
     with connection.cursor() as cursor:
         cursor.execute(old)
     try:

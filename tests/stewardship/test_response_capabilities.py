@@ -56,6 +56,7 @@ def test_api_routes_match_captured_public_contact_shapes():
         ("family", "share_methods", Handling.REPORT_ONLY),
         ("member", "prefix", Handling.MANUAL),
         ("member", "suffix", Handling.MANUAL),
+        ("member", "gender", Handling.MANUAL),
         ("member", "marital_status", Handling.MANUAL),
         ("member", "moved_household", Handling.MANUAL),
         ("member", "deceased_status", Handling.MANUAL),
@@ -74,7 +75,8 @@ def test_api_routes_match_captured_public_contact_shapes():
 def test_specified_semantic_routes(entity, field, handling):
     """The live API test's registry (#1596): a death date, which leaves the
     Member Active in ParishSoft, and Family addresses, which cannot be read
-    back, are By hand; roster requests are not writes."""
+    back, are By hand, and so is gender, whose PUT never changes the Member
+    (#1603); roster requests are not writes."""
     assert capability(entity, field).handling is handling
 
 
@@ -123,6 +125,7 @@ def test_registry_cannot_be_mutated_by_a_caller():
         ),
         # Already manual whatever the value.
         ("death_date", "2026-01-02", Handling.MANUAL),
+        ("gender", "Female", Handling.MANUAL),
         ("prefix", "", Handling.MANUAL),
     ],
 )
