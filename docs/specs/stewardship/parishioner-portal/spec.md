@@ -39,7 +39,7 @@ date-gating rule above; every other resulting state shows its ordinary no-
 campaign, before-start, or ended page.
 
 Staff can also open the Family form for a Family through
-[Open form](../reports/spec.md#family-timeline), which posts a single-use
+[Open form](../reports/spec.md#open-form), which posts a single-use
 hand-off to `/family/assisted` and signs that tab in as the Family.
 
 Manual credential generation, canonicalization, and generic denial follow the

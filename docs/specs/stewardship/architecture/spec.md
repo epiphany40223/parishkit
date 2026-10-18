@@ -16,7 +16,7 @@ their Redis-named transport/URL scheme because that is the protocol adapter's
 name. PostgreSQL, not Valkey, remains authoritative for schedules, outbox
 messages, job state, every Admin and Family session, and application data.
 Valkey holds only broker, cache, and rate-limiter state, plus the single-use,
-one-minute [Open form](../reports/spec.md#family-timeline) hand-off; its
+one-minute [Open form](../reports/spec.md#open-form) hand-off; its
 restart or eviction never invalidates an authenticated session (a lost
 hand-off only means choosing Open form again).
 Valkey is selected for its BSD-3-Clause licensing and Redis-protocol
@@ -262,7 +262,7 @@ only active/lookup-only keys and cannot authenticate using a reservation.
 ## Identity and session security
 
 Staff entering a response for a Family sign in to the Family form through
-the [Open form](../reports/spec.md#family-timeline) hand-off at
+the [Open form](../reports/spec.md#open-form) hand-off at
 `/family/assisted`, never with an Admin session in the Family namespace.
 
 Administration authentication uses Google through django-allauth with OAuth
@@ -480,7 +480,7 @@ unchanged and keep Django's own storage.
 
 ## Family credential security
 
-[Open form](../reports/spec.md#family-timeline)'s hand-off at
+[Open form](../reports/spec.md#open-form)'s hand-off at
 `/family/assisted` signs in through the ordinary code sign-in below; it
 creates, replaces and cancels no code or link.
 

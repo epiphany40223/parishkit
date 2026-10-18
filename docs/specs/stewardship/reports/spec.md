@@ -154,7 +154,7 @@ scope; like its picture it states no request or capture time. The
 PDF is a summary (headline tiles, then full-width day-by-day charts that
 flow onto following pages) followed by its table, whose type is set
 smaller (`pdf_design.Table` scale) so its fifteen columns of figures fit. The
-[Family timeline](#timeline-export)'s PDF is an infographic sheet
+[Timeline export](#timeline-export)'s PDF is an infographic sheet
 (`reports/timeline_pdf.py`): under the title, every page names the Family,
 its DUID, envelope number and mode. Page one shows one card per Summary line
 in the page's order and words, the Family code's card set apart in the
@@ -656,7 +656,7 @@ daily report, which dropped its chart in
 `pk-admin report responses` reports the activity series, and the
 directory's [Response filters](#response-filters) list the Families behind
 the counts; the
-[Family timeline](#family-timeline) shows what happened with one Family; and
+[Timeline](#timeline) shows what happened with one Family; and
 a Production [daily digest](../background-processing/spec.md#daily-campaign-digest)
 states the funnel at the end of its report day, and a Production
 [weekly report](../background-processing/spec.md#weekly-additional-information-digest)
@@ -871,9 +871,9 @@ the old addresses are not redirected or aliased: they are 404.
 
 The `submitted` and `more-than-once` lists' **Entered by Staff** column (how
 many of a Family's submissions Staff entered through
-[Open form](#family-timeline)) is intentionally dropped with them: the
+[Open form](#open-form)) is intentionally dropped with them: the
 directory marks a Family "(entered by Staff)" only when Staff entered its
-current response, and the Family timeline shows each response Staff entered.
+current response, and the Family's [Timeline](#timeline) shows each response Staff entered.
 
 Their audit event types (`response_<list>_list_viewed` and
 `response_<list>_list_exported`) and closed context values (`report_mode`,
@@ -884,35 +884,50 @@ the `report_sort` column tokens,
 audit vocabulary and in System logs' wording, so earlier entries still
 validate and read; nothing records them now.
 
-### Family timeline
+### Timeline
 
 **Access:** Administrators see the full timeline; Staff see the summary only
 (`CAMPAIGN_REPORT`; the Administrator's decision of 2026-10-04 on
-[#523](https://github.com/epiphany40223/parishkit/issues/523)). The
-Testing view is Administrator only.
+[#523](https://github.com/epiphany40223/parishkit/issues/523)). Ministry
+leaders have no access.
 
-`/admin/reports/families/<family>/` (**Family timeline**) answers "what
-happened with this Family?" and "did you get my response?" for one Family of
-the current campaign. `<family>` is the Family's campaign record id, an
-opaque random identifier like a Mail message's; the Family's name, DUID,
-envelope number and code never enter the URL, and the browser title leaves the
-name out so browser history does not keep it. The Family's name opens the page from each
-[active parishioner family directory](#active-parishioner-family-directory) row (in the directory's mode), and from each match in the header's
-Find a Family box (see
-[Admin navigation](../admin-portal/spec.md#admin-navigation)). Its breadcrumb
-parent is the active parishioner family directory. The page reads the Family's records at the
-database's current instant (**Counted at**).
+`/admin/reports/families/<family>/` (**Timeline**) answers "what happened
+with this Family?" and "did you get my response?" for one Family of the
+current campaign. It replaced the Family timeline page
+([#1570](https://github.com/epiphany40223/parishkit/issues/1570)) at the same
+address, so nothing is redirected or aliased
+([#864](https://github.com/epiphany40223/parishkit/issues/864)); the name
+"Family timeline" is retired from the page, its navigation and its help.
+People's own timelines (Administrators, Staff and Ministry leaders, who may
+also be ParishSoft Family members) are planned on the same page design in a
+later slice of #1570; until then the page has only the Family subject.
 
-Data comes first: the heading, then the Family's name (the directory's
-surname-and-heads name from the latest ParishSoft data, or the shared
+`<family>` is the Family's campaign record id, an opaque random identifier
+like a Mail message's; the Family's name, DUID, envelope number and code never
+enter the URL. The heading is "Family name — timeline", but the browser
+title is "Timeline" alone, so browser history does not keep the name. Every
+Admin table that names a Family links the name to this page through one
+shared helper (the `{% family_link %}` template tag), drawn only for roles
+that may open the page: so far the
+[active parishioner family directory](#active-parishioner-family-directory)
+(each row), the header's Find a Family box (each match; see
+[Admin navigation](../admin-portal/spec.md#admin-navigation)) and the
+[Financial stewardship](#financial-stewardship-detail) Family table; #1570's next
+slice moves every other Admin table that names a Family onto the helper. Its
+breadcrumb parent is the active parishioner family directory. The page reads
+the Family's records at the database's current instant (**Counted at**).
+
+Data comes first: the heading with the Family's name (the directory's
+surname-and-heads name from the latest ParishSoft data; "Timeline" alone when
+that data no longer has the Family, whose line then starts with the shared
 [Not in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
-badge when that data no longer has the Family), DUID and envelope number,
-then a summary that
-both roles see:
+badge), a line with its DUID and envelope number and a link to the
+directory, a line with the campaign's name and Counted at, then a summary
+that both roles see:
 
 - **Submitted:** Yes, with the first submission's time and, after more than
   one, how many and the latest, noting any that Staff entered for the Family
-  through Open form; or "Not yet".
+  through [Open form](#open-form); or "Not yet".
 - **Last email:** the last email sent to the Family (Invitation, Reminder N,
   Submission receipt or a chosen-Family test email), planned last among those
   not cancelled (a cancelled email was never sent), with its time and outcome
@@ -947,117 +962,154 @@ Administrators also see whether campaign email can reach the Family (or why
 not), the furthest form step reached and when the Family was last seen on the
 form (live values of the
 [Family engagement record](../data/spec.md#family-engagement)), and the
-**Timeline**: a [shared Admin table](../ui-conventions/spec.md#admin-tables)
-with one row per event and the columns When, What happened and Details. It
+timeline table described next.
+
+**Records shown.** The page shows Production records only: there is no
+Production or Testing control (the Administrator's decision on #1570), and a
+`mode` in the address is refused as an invalid filter (400). Testing
+rehearsal results per Family stay on Go-live readiness's Testing
+submissions. Emails, submissions, form opens and the engagement record carry
+their mode. A sign-in is the durable `family_login` audit event, which
+carries no mode, so it is shown only when the system was in Production at
+that instant (from the runtime mode transitions); a sign-out or session end
+belongs to the Family session its sign-in started, so it is shown exactly
+when that sign-in is.
+
+**Timeline table.** A [shared Admin table](../ui-conventions/spec.md#admin-tables)
+with one row per line and the columns When, What happened and Details. It
 is newest first (the Administrator's decision on #590); When is its one sort
 heading, which reverses the order in place, and rows at the same instant keep
-the order the Family took them in. A Family has few events, so the table
-shows them all, with no paging or row navigator. Rows are each Family email
-with its outcome (including Not sent (cancelled)), linked to its Mail message page; the invitation skipped because
-the Family had already responded (the [funnel's](#funnel-stages) skip), which
-stands in for that invitation's cancelled email, so the one planned email is
-listed once; likewise each reminder not sent because the Family is in the
-campaign's [No-reminders WorkGroup](../background-processing/spec.md#family-invitations-and-reminders)
-(#861); each sign-in, labelled as possibly a mail scanner checking the
-link, except one Staff started through [Open form](#family-timeline), which
-reads "Staff opened the form" and never names who
-([#795](https://github.com/epiphany40223/parishkit/issues/795)); each form
-open; getting past the first step and the furthest step
-reached; and each submission, noting when Staff entered it for the Family
-and when no receipt was sent because the Family had no email address. Staff
-get none of these, and the server does not read them for a Staff view.
+the order the Family took them in. A Family has few lines, so the table
+shows them all, with no paging or row navigator. Its lines are:
 
-**Open form** lets Staff fill in the form for a Family over the phone
-([#529](https://github.com/epiphany40223/parishkit/issues/529)). It is a
-CSRF-protected POST, from this page or the directory, for roles that may see
-Family codes; it is refused, with one plain page that gives no reason, unless
-the system is in Production and the Family is in the current campaign with a
-code. A signed-in Admin's refusal is audited as a denied `family_form_opened`
-(the Admin and the Family asked for, no reason). The POST carries the
-address of the page it was clicked on as `next`, and Back from the new tab
-returns there: only the Active parishioner family directory (with its
-query, so its filters,
-sort and page survive) or this Family's own timeline is accepted; anything
-else, including another host, falls back to the timeline, so `next` is never
-an open redirect. It stores a single-use hand-off in Valkey for one minute, keyed by the
-SHA-256 of a fresh 256-bit secret and bound to the signed-in Admin and their
-session, records a `family_form_opened` audit event (the Admin, the Family's
-opaque record id, the campaign; never the code or the secret), and opens a
-new tab that posts the secret straight to the Family form. The secret and the
-code never appear in a URL, log or audit. The Family form takes the hand-off
-with one atomic read-and-delete, so it cannot be replayed to start a session
-later, checks that the Admin's session is still live and that the Admin may
-still see Family codes, and then signs the tab in as the Family through the
-ordinary code sign-in, recording `family_assisted_login` (the Admin and the
-new Family session). Every refusal shows the same page, and a used or
-expired hand-off counts against the browser's address like a wrong code. A
-response submitted in that session records the Admin in its `entered_by_id`
-(frozen migration 0065). The Admin's session and role are checked only when the
-hand-off is redeemed: if they end later while the Family tab is open, the
-Family session continues until its own timeout, like any Family session, and a
-response submitted in it is still marked as entered by Staff. Pages and lists
-say only "Entered by Staff", never who: who opened the form is in the System
-logs. The receipt email is the ordinary one. No Family code or link is created,
-replaced or cancelled, so emailed codes and links keep working.
+- each Family email with its outcome (including Not sent (cancelled)),
+  linked to its Mail message page;
+- the invitation skipped because the Family had already responded (the
+  [funnel's](#funnel-stages) skip), which stands in for that invitation's
+  cancelled email, so the one planned email is listed once; likewise each
+  reminder not sent because the Family is in the campaign's
+  [No-reminders WorkGroup](../background-processing/spec.md#family-invitations-and-reminders)
+  (#861);
+- each sign-in, labelled as possibly a mail scanner checking the link,
+  except one Staff started through [Open form](#open-form), which reads
+  "Staff opened the form" and never names who
+  ([#795](https://github.com/epiphany40223/parishkit/issues/795));
+- each **Signed out** (the Family chose Sign out, `family_logout`) and
+  **Session ended** (the system ended the Family's form session, for
+  example when the mode or the campaign changed, `family_session_ended`);
+  a session that simply timed out records neither;
+- each form open, getting past the first step and the furthest step
+  reached;
+- each submission, noting when Staff entered it for the Family and when no
+  receipt was sent because the Family had no email address.
 
-As on the [directory](#active-parishioner-family-directory), the URL carries only closed
-choices: the timeline's `sort` (and the `size=all` its heading carries), and
-`mode`, Production by default or the campaign's active Testing rehearsal for
-Administrators. Both are
-[in-place controls](../ui-conventions/spec.md#in-place-controls) of the page's
-one table region, and switching mode keeps the order chosen. Emails,
-submissions, form opens and the engagement record carry their mode (a Testing
-record also its rehearsal epoch; a Testing receipt is found through the
-submission it answers). A sign-in is the durable `family_login` audit event,
-which carries no mode, so each is counted in the mode the system was in at
-that instant (from the runtime mode transitions), and a Testing view keeps
-only those within the rehearsal epoch's lifetime. With no active rehearsal
-the Testing view says there is nothing to show. Every time is shown in the
-browser's time zone.
+Staff get none of these, and the server does not read them for a Staff view.
 
-Each view admits the report read, reads the Family under the campaign read
-guard with the role recheck (a Family of another campaign is refused like a
-missing one), decrypts the code under the credential key-set lock as the
-directory does, sends `Cache-Control: no-store` and records one
-`family_timeline_viewed` audit event whose subject is the Family's opaque
-campaign record id, with the campaign and the outcome and no name, DUID, code
-or shown value, as a Mail message view names its message. A Family that is
-not found in the campaign (an unknown id, or another campaign's Family) is
-refused without an audit row, as a Mail message that is not found is, so no
-row pairs a campaign with a Family that is not in it. Recording which
-Family was viewed lets a later review see who looked at whom, and a view left
-unrecorded could never be filled in; the Administrator confirmed it on
-2026-10-05 ([#477](https://github.com/epiphany40223/parishkit/issues/477)),
-with the page's name, its URL and its place under the active parishioner family directory. The
-subject
-is a soft reference with no foreign key, so, like other report access audit,
-the event is outside the purge inventory (see
+**Filters.** One compact filter bar above the table (it wraps on a phone)
+narrows the lines; it is an
+[in-place control](../ui-conventions/spec.md#in-place-controls) of the
+page's one table region, and the Summary is not filtered. Its choices are
+closed values in the address (`kind`, `start`, `end` and the browser's
+`zone`), so a reload or bookmark keeps them, and the When sort keeps them
+too:
+
+- **Kind:** All (the default), Family form activity (form opens, progress
+  and submissions), Emails (every email line and the not-sent lines), or
+  Sign-ins and sign-outs (sign-ins, Staff opened the form, Signed out and
+  Session ended). A person's timeline will add Admin actions and Role
+  changes; a Family's shows only the kinds it can have
+  ([conditional fields](../ui-conventions/spec.md#conditional-fields)).
+- **From** and **Through:** whole days in the browser's time zone, as on
+  System logs, placed as UTC bounds on the server (so a daylight-saving day
+  is 23 or 25 hours); either may be blank. A From after Through, or a day
+  without the browser's zone, is refused (400).
+
+With every line filtered out, the table says so and names the way back
+(choose All and clear the days). Every time is shown in the browser's time
+zone.
+
+**Audit and reads.** Each view admits the report read, reads the Family
+under the campaign read guard with the role recheck (a Family of another
+campaign is refused like a missing one), decrypts the code under the
+credential key-set lock as the directory does, sends `Cache-Control:
+no-store` and records one `family_timeline_viewed` audit event ("Someone
+opened a Family's timeline") whose subject is the Family's opaque campaign
+record id, with the campaign and the outcome and no name, DUID, code,
+filter or shown value, as a Mail message view names its message. A Family
+that is not found in the campaign (an unknown id, or another campaign's
+Family) is refused without an audit row, as a Mail message that is not found
+is, so no row pairs a campaign with a Family that is not in it. Recording
+which Family was viewed lets a later review see who looked at whom, and a
+view left unrecorded could never be filled in; the Administrator confirmed
+it on 2026-10-05 ([#477](https://github.com/epiphany40223/parishkit/issues/477)).
+The subject is a soft reference with no foreign key, so, like other report
+access audit, the event is outside the purge inventory (see
 [audit records](../data/spec.md#job-outbox-audit-and-purge-records)). The
 reads are a handful of small statements and none runs per row: the emails,
 form opens and submissions through their Family indexes, the skips through
-the campaign's invitation schedules, and the sign-ins through the audit's
-event-type and time index, which scans the campaign's sign-in events rather
-than one Family's.
+the campaign's invitation schedules, and the sign-ins, sign-outs and session
+ends in one read through the audit's event-type and time index, which scans
+the campaign's Family session events rather than one Family's. The filters
+narrow the lines in memory, so they add no statement.
+
+#### Open form
+
+**Open form** lets Staff fill in the form for a Family over the phone
+([#529](https://github.com/epiphany40223/parishkit/issues/529)). It is a
+CSRF-protected POST, from the [timeline](#timeline) or the directory, for
+roles that may see Family codes; it is refused, with one plain page that
+gives no reason, unless the system is in Production and the Family is in the
+current campaign with a code. A signed-in Admin's refusal is audited as a
+denied `family_form_opened` (the Admin and the Family asked for, no reason).
+The POST carries the address of the page it was clicked on as `next`, and
+Back from the new tab returns there: only the Active parishioner family
+directory (with its query, so its filters, sort and page survive) or this
+Family's own timeline is accepted; anything else, including another host,
+falls back to the timeline, so `next` is never an open redirect. It stores a
+single-use hand-off in Valkey for one minute, keyed by the SHA-256 of a fresh
+256-bit secret and bound to the signed-in Admin and their session, records a
+`family_form_opened` audit event (the Admin, the Family's opaque record id,
+the campaign; never the code or the secret), and opens a new tab that posts
+the secret straight to the Family form. The secret and the code never appear
+in a URL, log or audit. The Family form takes the hand-off with one atomic
+read-and-delete, so it cannot be replayed to start a session later, checks
+that the Admin's session is still live and that the Admin may still see
+Family codes, and then signs the tab in as the Family through the ordinary
+code sign-in, recording `family_assisted_login` (the Admin and the new
+Family session). Every refusal shows the same page, and a used or expired
+hand-off counts against the browser's address like a wrong code. A response
+submitted in that session records the Admin in its `entered_by_id` (frozen
+migration 0065). The Admin's session and role are checked only when the
+hand-off is redeemed: if they end later while the Family tab is open, the
+Family session continues until its own timeout, like any Family session, and
+a response submitted in it is still marked as entered by Staff. Pages and
+lists say only "Entered by Staff", never who: who opened the form is in the
+System logs. The receipt email is the ordinary one. No Family code or link is
+created, replaced or cancelled, so emailed codes and links keep working.
 
 #### Timeline export
 
 The Administrator's full view offers **Export this timeline** (CSV, XLSX or
 PDF, with the export time zone), the shared export lifecycle's
-`family_timeline` kind (ADM-11 PR 8g, frozen migration 0063). Its form posts
-the page's mode to `reports/families/<family>/exports/`, which only an
-Administrator may use, as only an Administrator sees the full timeline;
-Staff get no form, and their post is denied. The file can hold the Family's
-live code, so creating it is audited like the Active parishioner family
-directory's exports. The form is drawn inside the
-page's table region, so an in-place mode switch draws it again with the mode
-it posts, and with no Testing rehearsal it is absent. The request captures
-what the page shows, through the page's own reads, inside the campaign's
-export lock: the Family's name, DUID, envelope number, email reach and the
-Reminder WorkGroup holding it now (the page's Reminders line), the mode, the
-page's Summary (submitted and when, the last email, the furthest step and the
-last time the Family was seen) and every timeline line with its time, words
-and detail, into an immutable `stewardship_timeline_export_snapshot`. The
-file follows its page
+`family_timeline` kind (ADM-11 PR 8g, frozen migration 0063, unchanged by
+#1570). Its form posts to `reports/families/<family>/exports/`, which only
+an Administrator may use, as only an Administrator sees the full timeline;
+Staff get no form, and their post is denied. The form carries the format,
+the export time zone and a one-time request key, and nothing else; the
+export is always of Production records (the capture's `mode` is
+`production`), and old Testing exports keep their status pages, whose
+breadcrumb opens the timeline. The file holds every line of the timeline,
+whatever the page's Kind and day filters show, and keeps the title "Family
+timeline", since it is always about one Family. The file can hold the
+Family's live code, so creating it is audited like the Active parishioner
+family directory's exports. The request captures what the page shows,
+through the page's own reads, inside the campaign's export lock: the
+Family's name, DUID, envelope number, email reach and the Reminder WorkGroup
+holding it now (the page's Reminders line), the mode, the page's Summary
+(submitted and when, the last email, the furthest step and the last time the
+Family was seen) and every timeline line with its time, words and detail,
+into an immutable `stewardship_timeline_export_snapshot`. The file follows
+its page
 ([Downloaded files](../ui-conventions/spec.md#downloaded-files)): its table
 is the page's Timeline table, When, What happened and Details, with the lines
 oldest first; the Family's identity line and the Summary panel are its report
@@ -1069,23 +1121,24 @@ ParishSoft status detail right after it reads
 [Not in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft),
 which the PDF's line under the title shows in place of the name, as the
 page's heading shows its badge. As for every shared export, the CSV is the
-table alone; the XLSX's Report information sheet and the PDF's summary cards carry the rest,
-including the code. The PDF is an infographic sheet
-([File design](#file-design)). The page builds its timeline in
-Python, so the web supplies that document; the capture trigger admits it only
-from the web login, for a current Administrator, an admitted campaign, the
-active configuration and a Family of that campaign (with its DUID), with the
+table alone; the XLSX's Report information sheet and the PDF's summary cards
+carry the rest, including the code. The PDF is an infographic sheet
+([File design](#file-design)); its Sign-ins and form opens kind counts the
+sign-out and session-end lines too. The page builds its timeline in Python,
+so the web supplies that document; the capture trigger admits it only from
+the web login, for a current Administrator, an admitted campaign, the active
+configuration and a Family of that campaign (with its DUID), with the
 document's keys and value types checked and its size bounded, and sets the
-event count itself. The Family code is never
-captured: the worker decrypts it into the file, under the key-set lock, only
-when the requester may see Family codes. The status page, download, Retry,
-Cancel and the short download window are the shared
+event count itself. The Family code is never captured: the worker decrypts it
+into the file, under the key-set lock, only when the requester may see
+Family codes. The status page, download, Retry, Cancel and the short
+download window are the shared
 [point-in-time](../operations/spec.md#point-in-time-exports) lifecycle's.
-The request records `export_requested`
-with its line count, and the download `export_downloaded`, never a name, code
-or line of text. The command line's
+The request records `export_requested` with its line count, and the download
+`export_downloaded`, never a name, code or line of text. The command line's
 [`export family-timeline`](../admin-automation/spec.md#reports-and-exports)
-requests the same export.
+requests the same export; its `--mode testing` is refused with a plain
+error, since the page no longer offers Testing records (#1570).
 
 ## Additional information
 
@@ -1191,7 +1244,7 @@ the page's About help covers code privacy. Each row has the Family's name,
 Family DUID (in its own column, headed "Family DUID"), envelope number,
 manual code, current email eligibility/deliverability, and whether the Family
 has a current live response (Responded, noting when that response is one
-Staff entered through [Open form](#family-timeline)). The columns follow the shared order,
+Staff entered through [Open form](#open-form)). The columns follow the shared order,
 most relevant column first
 ([#932](https://github.com/epiphany40223/parishkit/issues/932)). The
 directory is a Family table, so Family (the row header) leads, then Family
@@ -2584,7 +2637,7 @@ page does. The exports also name each Family as the page does, from the
 snapshot their capture was read from, choosing the name form once per file
 as the [Additional information](#additional-information) exports do.
 Entered by Staff says Yes when Staff entered the Family's current response
-through [Open form](#family-timeline) (#529), and No when the Family
+through [Open form](#open-form) (#529), and No when the Family
 submitted it, so an earlier response Staff entered and the Family later
 replaced shows No; it names no Staff member, and the page's help says so.
 On the page the same marker is the Latest response cell's Staff chip.
