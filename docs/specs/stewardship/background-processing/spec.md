@@ -2321,8 +2321,10 @@ sets (the Administrator chooses it; there is no preset time), send:
   retry still carries its "Submitted more than once" row. The section
   has no charts: the Administrator removed its Response funnel and Response
   activity charts
-  ([#1370](https://github.com/epiphany40223/parishkit/issues/1370)), which the
-  [Response dashboard](../reports/spec.md#response-dashboard) still draws. A
+  ([#1370](https://github.com/epiphany40223/parishkit/issues/1370)). The
+  [Response dashboard](../reports/spec.md#response-dashboard) no longer
+  draws them either: its stage tiles give the funnel's counts, shares and
+  bars ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)). A
   digest compiled before that removal keeps its retained chart images, so a
   retry of it still sends them, but its saved page no longer draws them. The
   compiling worker counts the funnel and the page counts it again from the

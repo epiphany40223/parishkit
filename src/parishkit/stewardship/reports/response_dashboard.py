@@ -4,11 +4,12 @@ The Response dashboard (``reports/responses/``, ``workspace_views.dashboard``,
 #1537) shows the response funnel (``response_metrics``) as it stands at the
 database's current instant: its Summary panel's Families by stage row is a
 stat tile per stage with its share of Invited. The tiles give every count,
-share and bar, so the page draws no funnel chart; the emailed daily report
-keeps its image (``chart_specs.funnel_chart``). The page reads the metrics
-once; the tiles are a pure function of that one result. ``report responses`` (the
-command line) reads the same metrics, with the activity buckets at a grain
-and each list's length, which the page no longer shows.
+share and bar, so the page draws no funnel chart; nor does the emailed
+daily report (#1370), so no funnel chart is drawn anywhere. The page reads
+the metrics once; the tiles are a pure function of that one result.
+``report responses`` (the command line) reads the same metrics, with the
+activity buckets at a grain and each list's length, which the page no
+longer shows.
 
 Production is the default for everyone. Testing responses are shown only in
 explicit Admin testing views (``docs/specs/stewardship/reports/spec.md``), so

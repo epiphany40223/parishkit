@@ -1,4 +1,4 @@
-"""The Response dashboard (#1537): the funnel, the statistics and the daily chart.
+"""The Response dashboard (#1537): its Summary tiles and the daily chart.
 
 One page (``reports/responses/``, the current campaign) shows, top to
 bottom, one Summary panel of stat tiles (the current active population
