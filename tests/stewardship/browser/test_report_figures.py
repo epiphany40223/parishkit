@@ -168,3 +168,60 @@ def test_campaign_comparison_shows_its_newest_figures_by_itself(page, component_
     has_value(page.get_by_label("Year", exact=True), chosen)
     assert page.evaluate(MARKED) == "kept"
     assert page_reads[0][1] == "passive"
+
+
+def test_failed_follow_up_reads_back_off_to_the_status(page, component_origin):
+    """A follow-up read that keeps failing (503) is audited each time, so it
+    is retried a bounded number of times: twice more 5 s apart, then the
+    page says it is not current and goes back to the passive status, read
+    after 30 s and then every 60 s, and re-reads the page only when that
+    status still says newer figures are ready."""
+    opened(page, component_origin, DASHBOARD)
+    reads = statuses(page, component_origin, FIGURES_NEWER)
+    page_reads = []
+
+    def unavailable(route):
+        """Answer the page's own re-reads 503; let the page load through."""
+        if route.request.resource_type == "document":
+            route.continue_()
+            return
+        page_reads.append(route.request.url)
+        route.fulfill(status=503, body="Unavailable")
+
+    page.route(
+        lambda url: url.split("#")[0] == component_origin + DASHBOARD,
+        unavailable,
+    )
+
+    def quiet():
+        """Let any read a timer just sent reach its route, so an extra
+        read would show up in the counts asserted next."""
+        page.wait_for_timeout(300)
+
+    problem = page.locator("[data-reread-problem]")
+    page.clock.fast_forward(2500)
+    recorded(page, reads, 1)
+    recorded(page, page_reads, 1)
+    page.clock.fast_forward(5000)
+    recorded(page, page_reads, 2)
+    page.clock.fast_forward(5000)
+    recorded(page, page_reads, 3)
+    visible(problem)
+    assert problem.inner_text() == "Couldn't check for updates — retrying."
+    # Back on the passive status: nothing is read for 30 s.
+    page.clock.fast_forward(25000)
+    quiet()
+    assert (len(reads), len(page_reads)) == (1, 3)
+    page.clock.fast_forward(6000)
+    recorded(page, reads, 2)
+    recorded(page, page_reads, 4)
+    # Then every 60 s, the line kept through the status's redraw.
+    page.clock.fast_forward(50000)
+    quiet()
+    assert (len(reads), len(page_reads)) == (2, 4)
+    visible(problem)
+    page.clock.fast_forward(11000)
+    recorded(page, reads, 3)
+    recorded(page, page_reads, 5)
+    visible(problem)
+    assert page.evaluate(MARKED) == "kept"

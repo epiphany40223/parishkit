@@ -31,7 +31,9 @@
 // report's figures status, #1586) is handed to ui-v1.js instead, with a
 // parishkit:reread event: it re-reads the page's own address once,
 // passively, so a view that is audited and would renew the sign-in (such as
-// Participation) never keeps an idle sign-in alive.
+// the Response dashboard) never keeps an idle sign-in alive. After repeated
+// failed re-reads ui-v1.js hands the region back, pending again at a slow pace,
+// with a parishkit:live-watch event, and it is watched from its first delay.
 //
 // A region that follows a steadily changing count (such as Family email
 // progress) may set data-live-interval="<ms>" to poll at that fixed pace
@@ -801,16 +803,19 @@
         check();
       }
     }, { signal });
-    // Check again at once: a stopped watcher hands over to a fresh one.
-    restarts.set(region, () => {
+    // Check again at once (``now``), or watch from the region's first
+    // delay: a stopped watcher hands over to a fresh one. Only a check at
+    // once disturbs a watcher that is still running.
+    restarts.set(region, (now = true) => {
       if (gone()) return;
       if (!stopped) {
+        if (!now) return;
         window.clearTimeout(timer);
         check();
         return;
       }
       problem.remove();
-      watch(region, true);
+      watch(region, now);
     });
     if (now) check();
     else schedule();
@@ -838,6 +843,16 @@
       .forEach((region) => { if (!watched.has(region)) watch(region, true, true); });
   };
   window.addEventListener("pageshow", (event) => { if (event.persisted) recheckShown(); });
+  // ui-v1.js hands a report's figures status back after its follow-up
+  // reads failed (#1586): the region, marked pending again with a slow
+  // data-live-interval, is watched from its first delay.
+  document.addEventListener("parishkit:live-watch", (event) => {
+    const region = event.target;
+    if (!(region instanceof Element) || !region.matches("[data-live-status]")) return;
+    const restart = restarts.get(region);
+    if (restart) restart(false);
+    else if (!watched.has(region)) watch(region);
+  });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") recheckShown();
   });

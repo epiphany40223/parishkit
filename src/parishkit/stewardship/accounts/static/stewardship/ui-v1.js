@@ -2933,11 +2933,18 @@
   // are ready its hidden a[data-reread] follow-up link sends a
   // parishkit:reread event.
   // The page's own address is then re-read once in the same way (waiting
-  // while the reader is busy, retrying a failed read every REREAD_MIN_MS
-  // and saying so after three, stopping at a refusal); the fresh status
-  // region is watched anew.
+  // while the reader is busy, stopping at a refusal); the fresh status
+  // region is watched anew. That read is audited, so a failed one is
+  // retried only a bounded number of times: twice more, REREAD_MIN_MS
+  // apart, and then, saying so, the status region is handed back to the
+  // passive status poll (parishkit:live-watch) at FOLLOW_BACKOFF_MS, so
+  // the page is read again only when the status still says newer figures
+  // are ready. The next read that works clears the count.
   const REREAD_MIN_MS = 5000;
   const REREAD_FAILURES = 3;
+  // The status poll's pace after the third failed follow-up read, then
+  // after each later one.
+  const FOLLOW_BACKOFF_MS = [30000, 60000];
   // Said when a read is refused, and when reads keep failing and will be
   // tried again; live-status-v1.js says the same (#1647).
   const UPDATES_REFUSED = "Couldn't check for updates. Reload the page or sign in again.";
@@ -2950,9 +2957,12 @@
   const rereadLink = () => document.querySelector("a[data-reread-every][data-in-place][href]");
   const rereadProblem = (link, text) => {
     // Say ``text`` on the line right after ``link`` (created on first
-    // use), or hide the line when ``text`` is empty.
+    // use), or hide the line when ``text`` is empty. A figures status's
+    // follow-up link puts the line after its status region instead, so a
+    // status poll that redraws the region keeps the line (see handBack).
+    link = link?.closest("[data-live-status]") || link;
     if (!link) return;
-    let line = link.nextElementSibling?.matches("[data-reread-problem]") ? link.nextElementSibling : null;
+    let line = link.parentElement?.querySelector(":scope > [data-reread-problem]") || null;
     if (!line && !text) return;
     if (!line) {
       line = document.createElement("p");
@@ -3069,7 +3079,23 @@
   // or a read is refused.
   let follow = null;
   let followTimer = 0;
+  // Follow-up reads failed in a row, across follow-ups, until one works.
   let followFailures = 0;
+  const handBack = (link) => {
+    // Too many follow-up reads failed: stop retrying the audited page and
+    // have live-status-v1.js watch ``link``'s status region again, as a
+    // pending one at the backoff pace. Its next answer that still says
+    // newer figures are ready settles the region and asks for one more
+    // follow-up (parishkit:reread); any other answer is adopted, and the
+    // region is watched at the server's pace from then on.
+    follow = null;
+    const status = link.closest("[data-live-status]");
+    if (!status) return;
+    const pace = FOLLOW_BACKOFF_MS[Math.min(followFailures - REREAD_FAILURES, FOLLOW_BACKOFF_MS.length - 1)];
+    status.setAttribute("data-live-pending", "");
+    status.setAttribute("data-live-interval", String(pace));
+    status.dispatchEvent(new CustomEvent("parishkit:live-watch", {bubbles: true}));
+  };
   const followNow = () => {
     // Re-read for the figures status now, or again in REREAD_MIN_MS.
     window.clearTimeout(followTimer);
@@ -3081,6 +3107,7 @@
     quietRead(link, (outcome) => {
       if (link !== follow) return;
       if (outcome === "ok" || outcome === "gone") {
+        if (outcome === "ok") followFailures = 0;
         follow = null;
         return;
       }
@@ -3091,15 +3118,20 @@
       }
       if (outcome === "failed") {
         followFailures += 1;
-        if (followFailures >= REREAD_FAILURES) rereadProblem(link, UPDATES_RETRYING);
+        if (followFailures >= REREAD_FAILURES) {
+          rereadProblem(link, UPDATES_RETRYING);
+          handBack(link);
+          return;
+        }
       }
+      // A busy reader or an aborted read was never audited; wait and try
+      // again. A hidden tab catches up when shown (below).
       if (outcome !== "hidden") followTimer = window.setTimeout(followNow, REREAD_MIN_MS);
     });
   };
   document.addEventListener("parishkit:reread", (event) => {
     if (!(event.target instanceof HTMLAnchorElement)) return;
     follow = event.target;
-    followFailures = 0;
     followNow();
   });
   document.addEventListener("visibilitychange", () => {
