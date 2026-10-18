@@ -154,8 +154,7 @@ automatically.
 {% include "stewardship/table-navigator.html" with table=emails label=emails_navigator_label %}
 <form method="post" action="{{ emails_url }}" id="leader-emails" data-review-open="emails-review" data-select-table data-missing-hint="{% translate 'Select at least one leader to use Email selected.' %}">{% csrf_token %}
   <div class="bulk-bar">
-    {% button type="submit" variant="secondary" name="scope" value="selected" data-bulk-action %}{% translate "Email selected" %}{% endbutton %}
-    {% if emails.count %}{% button type="submit" variant="secondary" name="scope" value="all" %}{% translate "Email all" %}{% endbutton %}{% else %}{% button type="submit" variant="secondary" name="scope" value="all" disabled=True aria-describedby="emails-reason" %}{% translate "Email all" %}{% endbutton %}{% endif %}
+    {% button type="submit" variant="secondary" data-bulk-action %}{% translate "Email selected" %}{% endbutton %}
     {% translate "Nobody to email: no user has the role Ministry leader." as emails_empty_hint %}{% include "stewardship/table-selection.html" with hint_id="emails-reason" empty_hint=emails_empty_hint %}
   </div>
   <div class="table-scroll" tabindex="0" role="region" aria-labelledby="emails-table-caption">

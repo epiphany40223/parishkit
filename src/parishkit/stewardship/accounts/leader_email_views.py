@@ -3,7 +3,7 @@
 The section sits below the ParishSoft Ministry leaders table on ``users``
 (``user_views.users`` draws it with ``emails_context``): one table of the
 Ministry leader users with their Last emailed outcome, whose Email selected
-and Email all post the ticked addresses here, to ``user_leader_emails``
+posts the ticked addresses here, to ``user_leader_emails``
 (``/admin/users/leader-emails/``). It answers with the **Email Ministry
 leaders** review, a fragment the page shows in the shared review dialog
 (UX conventions, "Review dialog"). The dialog's Apply posts the signed
@@ -64,7 +64,6 @@ SALT = "stewardship-leader-emails-v1"
 # At most this many addresses in one Email selected post: more than any page
 # of the table can show.
 CHOSEN_LIMIT = 2000
-SCOPES = {"selected", "all"}
 CHANGED = _(
     "Something changed since this review: the mode, the campaign, a user, or "
     "a leader's Ministries or open requests. Nothing was sent."
@@ -164,23 +163,21 @@ def emails_context(rows, paging, carry):
 
 
 def _choice(parameters):
-    """The scope and chosen addresses, or refuse the form.
+    """The chosen addresses, or refuse the form.
 
-    ``scope`` is ``all`` or ``selected``; ticked rows post ``email``, which
-    ``all`` ignores, since the table's form posts them with either button.
+    The table's form posts the ticked rows as ``email`` and nothing else
+    (there is no Email all on the page; ``pk-admin users email-leaders --all``
+    plans every leader without this form).
     """
-    allowed = {"csrfmiddlewaretoken", "scope", "email"}
+    allowed = {"csrfmiddlewaretoken", "email"}
     if set(parameters) - allowed or any(
         len(values) != 1 for name, values in parameters.lists() if name != "email"
     ):
         raise unexpected_fields(parameters, allowed=allowed, multiple={"email"})
-    scope = parameters.get("scope")
     emails = parameters.getlist("email")
-    if scope not in SCOPES or len(emails) > CHOSEN_LIMIT:
+    if len(emails) > CHOSEN_LIMIT:
         # No sources: the fields were allowed; a value is malformed.
         raise unexpected_fields()
-    if scope == "all":
-        return None
     try:
         chosen = [clean_email(email) for email in emails]
     except UserRefused:
@@ -189,7 +186,7 @@ def _choice(parameters):
     if not chosen:
         raise UserFacingError(
             _("No leader was chosen."),
-            fix=_("Tick the leaders to email, or choose Email all."),
+            fix=_("Tick the leaders to email."),
         )
     return chosen
 
@@ -204,7 +201,7 @@ def _recheck(request, service, actor):
 
 
 def _review(request, service, actor):
-    """Answer Email selected or Email all with the review fragment."""
+    """Answer Email selected with the review fragment."""
     from .user_reads import policy_identities, user_list
     from .user_views import _users
 
@@ -327,7 +324,7 @@ def _confirm(request, actor):
 def user_leader_emails(request):
     """Review emailing the chosen Ministry leaders, or record the reviewed send.
 
-    The review (Email selected, Email all) reads each leader's Ministries
+    The review (Email selected) reads each leader's Ministries
     and counts now and signs who is emailed for one Apply; Apply
     (``action=confirm``) records it. Neither sends anything itself.
     """

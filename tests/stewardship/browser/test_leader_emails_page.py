@@ -74,7 +74,10 @@ def test_the_section_and_its_review_are_accessible(
         ), path
         assert axe_violations(page, axe_source) == [], path
     page.goto(component_origin + LIST)
-    page.get_by_role("button", name="Email all").click()
+    region(page).get_by_role(
+        "checkbox", name="Select Leader, Lee (leader@example.org)"
+    ).check()
+    page.get_by_role("button", name="Email selected").click()
     visible(page.get_by_role("dialog", name="Review Ministry leader emails"))
     assert axe_violations(page, axe_source) == []
 
@@ -113,10 +116,9 @@ def test_ticking_a_row_enables_email_selected_without_moving_anything(
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + LIST)
     selected = page.get_by_role("button", name="Email selected")
-    everyone = page.get_by_role("button", name="Email all")
     reason = page.locator(REASON)
     eventually(page, f"document.querySelector('{REASON}').textContent.trim() !== ''")
-    assert selected.is_disabled() and everyone.is_enabled()
+    assert selected.is_disabled()
     assert reason.inner_text() == "Select at least one leader to use Email selected."
     before = boxes(page)
     region(page).get_by_role(
@@ -131,12 +133,9 @@ def test_ticking_a_row_enables_email_selected_without_moving_anything(
 
 
 def test_nobody_to_email_says_why(page, component_origin):
-    """With no Ministry leader user, both buttons are unavailable, with why."""
+    """With no Ministry leader user, Email selected is unavailable, with why."""
     page.goto(component_origin + SINGLE)
     assert page.get_by_role("button", name="Email selected").is_disabled()
-    everyone = page.get_by_role("button", name="Email all")
-    assert everyone.is_disabled()
-    assert everyone.get_attribute("aria-describedby") == "emails-reason"
     eventually(
         page,
         f"document.querySelector('{REASON}').textContent.includes('Nobody to email')",
@@ -150,6 +149,7 @@ def test_no_campaign_with_ministries_replaces_the_table(page, component_origin):
     """The section explains itself and offers nothing to apply."""
     page.goto(component_origin + EMAILS_UNAVAILABLE)
     visible(page.locator("#emails-unavailable").get_by_text(str(NO_CAMPAIGN)))
+    assert page.get_by_role("button", name="Email selected").count() == 0
     assert page.get_by_role("button", name="Email all").count() == 0
 
 
@@ -164,9 +164,8 @@ def test_email_selected_reviews_then_applies_in_place(page, component_origin):
     with page.expect_request(lambda request: request.method == "POST") as sent:
         page.get_by_role("button", name="Email selected").click()
     fields = parse_qs(sent.value.post_data or "")
-    assert fields["scope"] == ["selected"]
     assert fields["email"] == ["cy.young@example.org"]
-    assert set(fields) == {"csrfmiddlewaretoken", "scope", "email"}
+    assert set(fields) == {"csrfmiddlewaretoken", "email"}
     dialog = page.get_by_role("dialog", name="Review Ministry leader emails")
     visible(dialog)
     assert page.evaluate("document.activeElement.id") == "emails-review-title"

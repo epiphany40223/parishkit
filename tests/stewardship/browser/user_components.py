@@ -30,7 +30,7 @@ The browser checks need no database:
   (#1356) for one leader.
 - ``LIST``'s third table, Email Ministry leaders (#1592), lists
   ``EMAIL_ROWS``: one leader never emailed, one emailed and delivered. Its
-  Email selected and Email all post to ``EMAILS``, which answers with the
+  Email selected posts to ``EMAILS``, which answers with the
   review of two leaders' emails in Testing with one skipped; the dialog's
   Apply posts there too. ``LIST_EMAILS`` is ``LIST`` whose regions redraw
   from ``EMAILED``, where the never-emailed leader's email is queued;

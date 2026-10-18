@@ -71,6 +71,8 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 ORIGIN = "https://portal.example.org"
 EMAILS = "/admin/users/leader-emails/"
+# Ticking every leader the Testing and Production fixtures create.
+EVERYONE = {"email": ["ann@example.org", "both@example.org"]}
 # The Ministry leader users each deployment adds (the leader Members
 # test_ministry_reports' setup promotes lead these Ministries; nobody@ is a
 # user ParishSoft lists as leading nothing).
@@ -79,6 +81,8 @@ LEADER_USERS = (
     ("leader-4-9@example.org", "Both, Leader"),
     ("nobody@example.org", "Nobody, Leader"),
 )
+# Ticking every one of them, as the Production fixture's Email selected would.
+EVERYONE_PRODUCTION = {"email": [email for email, _name in LEADER_USERS]}
 
 
 # The three checks as they were before 0117 (frozen copies of the
@@ -754,11 +758,11 @@ def test_no_apply_while_mail_is_paused(production):
     """The review and Apply refuse in plain words, and the guard refuses in SQL."""
     _harness, browser = production
     with web():
-        review = post(browser, EMAILS, {"scope": "all"})
+        review = post(browser, EMAILS, EVERYONE_PRODUCTION)
     preview = re.search(r'name="preview" value="([^"]+)"', review.content.decode())[1]
     seed(PAUSE)
     with web():
-        refused_review = post(browser, EMAILS, {"scope": "all"})
+        refused_review = post(browser, EMAILS, EVERYONE_PRODUCTION)
         refused_apply = post(browser, EMAILS, {"action": "confirm", "preview": preview})
     for response in (refused_review, refused_apply):
         assert response.status_code == 400
@@ -772,7 +776,7 @@ def test_a_replayed_apply_during_a_pause_says_its_emails_are_held(production):
     """A double click landing after a pause names the first Apply's emails."""
     _harness, browser = production
     with web():
-        review = post(browser, EMAILS, {"scope": "all"})
+        review = post(browser, EMAILS, EVERYONE_PRODUCTION)
         preview = re.search(r'name="preview" value="([^"]+)"', review.content.decode())[
             1
         ]
@@ -793,7 +797,7 @@ def test_a_testing_pause_flag_does_not_refuse(testing):
     _store, browser = testing
     seed(PAUSE)
     with web():
-        review = post(browser, EMAILS, {"scope": "all"})
+        review = post(browser, EMAILS, EVERYONE_PRODUCTION)
     assert review.status_code == 200
     request, created = recorded(["ann@example.org"])
     assert created and request.mode == "testing"
@@ -805,7 +809,7 @@ def test_an_expired_review_gets_the_shared_refusal(production, monkeypatch):
 
     _harness, browser = production
     with web():
-        review = post(browser, EMAILS, {"scope": "all"})
+        review = post(browser, EMAILS, EVERYONE_PRODUCTION)
     preview = re.search(r'name="preview" value="([^"]+)"', review.content.decode())[1]
     monkeypatch.setattr(refusals, "PREVIEW_MAX_AGE", -1)
     with web():
@@ -839,7 +843,7 @@ def test_apply_refuses_counts_that_differ_from_the_review(production, monkeypatc
 
     monkeypatch.setattr(leader_email_views, "read_facts", stale)
     with web():
-        review = post(browser, EMAILS, {"scope": "all"})
+        review = post(browser, EMAILS, EVERYONE_PRODUCTION)
     monkeypatch.undo()
     preview = re.search(r'name="preview" value="([^"]+)"', review.content.decode())[1]
     with web():
@@ -852,7 +856,7 @@ def test_apply_refuses_counts_that_differ_from_the_review(production, monkeypatc
     ).exists()
     # The same review read now applies.
     with web():
-        review = post(browser, EMAILS, {"scope": "all"})
+        review = post(browser, EMAILS, EVERYONE_PRODUCTION)
         preview = re.search(r'name="preview" value="([^"]+)"', review.content.decode())[
             1
         ]
@@ -1005,7 +1009,7 @@ def region(body):
 
 
 def test_the_users_page_reviews_and_applies_the_emails(testing):
-    """The section lists the leaders; Email all reviews; Apply records once."""
+    """The section lists the leaders; Email selected reviews; Apply records once."""
     store, browser = testing
     with web():
         response = browser.get(USERS)
@@ -1016,7 +1020,7 @@ def test_the_users_page_reviews_and_applies_the_emails(testing):
         assert f'name="email" value="{email}"' in section
     assert section.count("Never") >= 2
     with web():
-        review = post(browser, EMAILS, {"scope": "all"})
+        review = post(browser, EMAILS, EVERYONE)
     assert review.status_code == 200
     body = review.content.decode()
     assert "data-review-answer" in body and "2 emails" in body
@@ -1057,7 +1061,7 @@ def test_the_review_binds_the_testing_recipient_only_by_digest(testing):
     _store, browser = testing
     recipient = SystemConfiguration.objects.get().testing_recipient
     with web():
-        review = post(browser, EMAILS, {"scope": "all"})
+        review = post(browser, EMAILS, EVERYONE)
     preview = re.search(r'name="preview" value="([^"]+)"', review.content.decode())[1]
     payload = token_payload(preview)
     assert '"recipient"' in payload
@@ -1073,7 +1077,7 @@ def test_the_review_binds_the_testing_recipient_only_by_digest(testing):
     assert not LeaderEmailRequest.objects.exists()
     # The same review read now applies and records the current address.
     with web():
-        review = post(browser, EMAILS, {"scope": "all"})
+        review = post(browser, EMAILS, EVERYONE)
         preview = re.search(r'name="preview" value="([^"]+)"', review.content.decode())[
             1
         ]
@@ -1088,11 +1092,11 @@ def test_email_selected_needs_a_choice_and_skips_non_leaders(testing):
     """No tick is refused; a non-leader address is listed as skipped."""
     _store, browser = testing
     with web():
-        empty = post(browser, EMAILS, {"scope": "selected"})
+        empty = post(browser, EMAILS, {})
         skipped = post(
             browser,
             EMAILS,
-            {"scope": "selected", "email": ["ann@example.org", "admin@example.org"]},
+            {"email": ["ann@example.org", "admin@example.org"]},
         )
     assert empty.status_code == 400
     assert skipped.status_code == 200
@@ -1110,7 +1114,7 @@ def test_other_roles_get_no_review(auth_service, google):
     browser, login = signed_in()
     assert login.status_code == 302
     with web():
-        response = post(browser, EMAILS, {"scope": "all"})
+        response = post(browser, EMAILS, EVERYONE)
     assert response.status_code == 403
     assert not AuditEvent.objects.filter(
         event_type="user_leader_emails_reviewed"

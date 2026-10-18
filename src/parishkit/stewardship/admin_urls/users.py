@@ -33,8 +33,8 @@ patterns = [
         leader_import_views.user_leader_import,
         name="user_leader_import",
     ),
-    # The Email Ministry leaders review answers that table's Email selected
-    # and Email all; its Apply posts here too and records the request (#1592).
+    # The Email Ministry leaders review answers that table's Email selected;
+    # its Apply posts here too and records the request (#1592).
     path(
         "users/leader-emails/",
         leader_email_views.user_leader_emails,

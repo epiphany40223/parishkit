@@ -5724,19 +5724,20 @@ Outgoing mail uses for a delivery state ("Delivered", "Not sure it
 arrived" and the rest), "Cancelled: the mode or Testing recipient changed"
 when the mode or Testing recipient changed between Apply and the emails'
 preparation (nothing was sent), or "Never". A Ministry leader user with no Name is
-listed under their email, so Email all never skips them. The table follows the shared
+listed under their email, so the table never hides them. The table follows the shared
 [Admin tables](../ui-conventions/spec.md#admin-tables): Name, Email, Last
 successful sign-in and Last emailed sort on the server, Name by default,
 and it pages and refreshes in place. Its bulk bar is the shared one:
-**Email selected** and **Email all** are available only while there is
-someone to email (Email selected only while a row is ticked), and the bar's
-reserved reason line says why when they are not, so ticking a row moves
-nothing. With no Ministry leader user, the table says so and both buttons
-are unavailable. The section shows nothing to email while there is no
-current campaign with Ministries, or the current campaign is archived (its
+**Email selected** is available only while a row is ticked, and the
+bar's reserved reason line says why when it is not, so ticking a row moves
+nothing. There is deliberately no Email all button: the Administrator
+chooses the leaders to email (`pk-admin users email-leaders --all` still
+plans every leader). With no Ministry leader user, the table says so and
+the button is unavailable. The section shows nothing to email while there
+is no current campaign with Ministries, or the current campaign is archived (its
 leaders no longer sign in to work it, #527); its line says why.
 
-Email selected and Email all open the **Email Ministry leaders** review in
+Email selected opens the **Email Ministry leaders** review in
 the [review dialog](../ui-conventions/spec.md#review-dialog). It is a full
 review, because it shows what the page does not: for each leader who will
 be emailed, their Ministries in the current campaign with each one's open

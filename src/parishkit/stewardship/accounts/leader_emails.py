@@ -100,7 +100,7 @@ def leader_rows(rows):
     small) and whether its preparation Task was cancelled, and the latest
     requests' recipient rows with their messages' states. A leader user with
     no Name (such as one converted from an older sign-in rule) is listed
-    under their email instead, so Email all never skips them silently.
+    under their email instead, so the table never hides them silently.
     """
     leaders = [
         row | {"name": row["name"] or row["email"]}
