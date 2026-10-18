@@ -16,8 +16,16 @@ from uuid import UUID
 from django.db import IntegrityError
 from django.utils.html import format_html
 
+from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.observability import Event, emit_failure
-from parishkit.stewardship.pipeline import Action, Stage, Stream
+from parishkit.stewardship.pipeline import (
+    Action,
+    Stage,
+    Stream,
+    allowed_actions,
+    census_by_hand,
+    census_placement,
+)
 from parishkit.stewardship.responses.census_review import (
     BulkStale,
     decide_census_changes,
@@ -246,12 +254,52 @@ class CensusDecisions:
             raise PermissionError("A census change is unavailable.")
         return ids, found
 
+    @staticmethod
+    def _offered(principal, action, versions, proposals):
+        """Refuse an action a chosen change's stage does not offer this reader.
+
+        The services and their guards allow some decisions the worklist does
+        not offer (Entered by hand on a Conflict, which is accepted first;
+        Accept on an Ignored change, which goes back to review first), so the
+        page's own offer (``pipeline.allowed_actions``) is checked here, as
+        the ``DecisionService`` contract asks. A change whose version moved
+        since the page was drawn is left to the service, which answers with
+        the stale notice rather than a refusal.
+        """
+        roles = frozenset(
+            role
+            for role, capability in (
+                ("staff", Capability.MANUAL_CENSUS),
+                ("administrator", Capability.PUBLISH_CENSUS),
+            )
+            if allows(principal, capability)
+        )
+        for pk, proposal in proposals.items():
+            if proposal.version != versions[pk]:
+                continue
+            stage = census_placement(
+                decision=proposal.decision,
+                execution=proposal.execution,
+                handling=proposal.handling,
+                entity_kind=proposal.entity_kind,
+                admin_value_set=proposal.admin_value_set,
+            ).stage
+            offered = allowed_actions(
+                Stream.CENSUS,
+                stage,
+                roles,
+                by_hand=census_by_hand(proposal.handling, proposal.entity_kind),
+            )
+            if action not in offered:
+                raise ValueError("This census change does not offer that action now.")
+
     def decide(self, principal, decision):
         """Record ``decision`` for ``principal``; the notice the page shows."""
         if decision.action is Action.ADD:
             # Census Add is its own slice (#1710); the page offers no Add.
             raise ValueError("Census changes take no Add yet.")
         versions, proposals = self._proposals(decision)
+        self._offered(principal, decision.action, versions, proposals)
         value = None
         if decision.action is Action.EDIT:
             (proposal,) = proposals.values()

@@ -278,6 +278,10 @@ SELECT p.id::text, p.entity_kind, p.entity_key, p.field,
         JOIN stewardship_proposal_review base ON base.proposal_id=pr.id
             AND base.accepted_base AND base.accepted_source_id=pr.current_source_id
         WHERE pr.superseded_by_id=p.id AND pr.decision='approved'
+          -- The same answer again: a different one is a new request.
+          AND stewardship_response_comparison_v1(p.field,pr.submitted_value)
+              IS NOT DISTINCT FROM
+              stewardship_response_comparison_v1(p.field,p.submitted_value)
           AND NOT EXISTS (SELECT 1 FROM stewardship_proposal_review later
               WHERE later.proposal_id=pr.id
                 AND later.expected_version>base.expected_version

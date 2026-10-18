@@ -2288,7 +2288,7 @@ or the bulk bar, each decision with an optional note, acting
   on a change accepted over a Conflict puts it back to *Conflict*, and the
   accepted base no longer counts, so no later Accept can publish over
   ParishSoft's value without deciding the Conflict again. A reviewer's
-  value is kept until the next Edit or Accept.
+  value is kept (a later Accept keeps it too) until the next Edit.
 
 Each is offered only while the change's stage allows it
 ([individual actions](../review-pipeline/spec.md#individual-actions)): never

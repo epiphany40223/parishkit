@@ -157,3 +157,31 @@ def test_reopening_an_ignored_change_needs_a_note_over_http(response_service, go
         browser, ROUTE, decide(prefix, "back_to_review", note="Asked again")
     )
     assert response.status_code == 200 and b"sent back to review." in body
+
+
+def test_only_what_the_stage_offers_is_recorded(response_service, google):
+    """The services allow more than the worklist offers; the page refuses the
+    rest: Entered by hand on a Conflict (accepted first) and Accept on an
+    Ignored change (back to review first)."""
+    from .test_census_conflict_postgresql import conflicted
+
+    harness, _, _, rows = prepared(response_service)
+    browser = staff_browser(google)
+    prefix = conflicted(rows["prefix"], "Mr.")
+    response, _ = search(browser, ROUTE, decide(prefix, "entered_by_hand"))
+    assert response.status_code == 400
+    assert not ProposalResolution.objects.exists()
+    search(browser, ROUTE, decide(rows["home_address"], "ignore"))
+    response, _ = search(browser, ROUTE, decide(fresh(rows["home_address"]), "accept"))
+    assert response.status_code == 400
+    assert state(rows["home_address"])[0] == "ignored"
+
+
+def test_a_rebound_entered_by_hand_key_is_a_409(response_service, google):
+    """The same drawn form sent again with another note asks for a reload."""
+    harness, _, _, rows = prepared(response_service)
+    browser = staff_browser(google)
+    form = decide(rows["email_opt_out"], "entered_by_hand")
+    assert search(browser, ROUTE, form)[0].status_code == 200
+    response, _ = search(browser, ROUTE, form | {"note": "Another"})
+    assert response.status_code == 409

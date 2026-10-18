@@ -12,6 +12,7 @@ import pytest
 from django.db import IntegrityError, transaction
 
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.pipeline import Decision
 from parishkit.stewardship.reports.census_changes import REOPENED, census_rows
 from parishkit.stewardship.reports.census_worklist import worklist_rows
 from parishkit.stewardship.responses import effective
@@ -154,3 +155,48 @@ def test_an_answer_over_an_accepted_base_comes_back_as_a_conflict(response_servi
     row = worklist_rows([shown[str(successor.pk)]])[0]
     assert row["reopened"] and row["decided_by"] == "Family"
     assert row["note"] == REOPENED
+
+
+def test_a_real_parishsoft_change_brings_the_conflict_back_held(
+    live_response_service,
+):
+    """With ParishSoft's value really changed (a promoted download), an
+    approval over it is not carried to the Family's same answer: the new
+    row is a Conflict that shows the earlier Accepted, not in force, and why
+    it is back. A different answer is a new request, with no such line."""
+    from .response_builders import response_source
+    from .test_census_conflict_postgresql import accept
+    from .test_response_revisit_postgresql import revisit as revisit_form
+    from .test_response_submission_postgresql import form_and_answers, submit
+    from .test_source_families_postgresql import prepare, promote
+
+    harness = live_response_service
+    earlier, claim = prepare(response_source())
+    promote(earlier, claim, harness.campaign, harness.rings)
+    form, answers = form_and_answers(harness)
+    answers["members"]["3"]["first_name"] = "Requested name"
+    submit(harness, form, answers)
+    data = response_source()
+    data.members[3]["firstName"] = "Updated source"
+    current, claim = prepare(data)
+    with task_login(ServiceRole.WORKER, exact=True):
+        promote(current, claim, harness.campaign, harness.rings)
+    accept(ProposedChange.objects.get(field="first_name"))
+    harness, form, answers, _ = revisit_form(harness)
+    with web_login():
+        submit(harness, form, answers)
+    successor = ProposedChange.objects.get(field="first_name", superseded_by=None)
+    assert (successor.decision, successor.execution) == ("unreviewed", "conflict")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True), transaction.atomic():
+        shown = {row["id"]: row for row in census_rows(harness.campaign.pk)}
+    row = worklist_rows([shown[str(successor.pk)]])[0]
+    assert row["placement"].held_decision is Decision.ACCEPTED
+    assert (row["decided_by"], row["note"]) == ("Family", REOPENED)
+    harness, form, answers, _ = revisit_form(harness)
+    answers["members"]["3"]["first_name"] = "Another name"
+    with web_login():
+        submit(harness, form, answers)
+    latest = ProposedChange.objects.get(field="first_name", superseded_by=None)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True), transaction.atomic():
+        shown = {row["id"]: row for row in census_rows(harness.campaign.pk)}
+    assert not shown[str(latest.pk)]["reopened"]
