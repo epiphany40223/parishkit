@@ -184,7 +184,7 @@ def test_the_slack_step_takes_the_token_and_offers_turning_slack_off(
     assert "checks only that the token looks like a Slack bot token" in notice
     assert place(page, "[data-setup-slack-off]")[1] < place(page, "form.panel")[1]
     has_text(
-        page.locator(".setup-saved strong"),
+        page.locator(".setup-saved strong:not([hidden])"),
         "A Slack bot token is saved for this channel.",
     )
     switch = page.get_by_label("Enable Slack notifications")
@@ -197,14 +197,30 @@ def test_the_slack_step_takes_the_token_and_offers_turning_slack_off(
     # The saved token is kept for its own channel: Save is available empty.
     assert not token.evaluate("node => node.required")
     assert save.is_enabled()
-    # A new channel needs the token again, and Save waits for it.
+    # A new channel needs the token again, and Save waits for it. The saved
+    # token's note follows the field in place and moves nothing.
+    same = page.get_by_text("A Slack bot token is saved for this channel.")
+    other = page.get_by_text("A Slack bot token is saved, but for a different channel.")
+    visible(same)
+    hidden(other)
+    below = place(page, "#" + channel.get_attribute("id"))
     channel.fill("C0NEWCHANNEL")
     channel.dispatch_event("input")
+    visible(other)
+    hidden(same)
+    assert same_place(place(page, "#" + channel.get_attribute("id")), below)
     assert token.evaluate("node => node.required")
     assert save.is_disabled()
     token.fill("xoxb-1-2-fixture")
     token.dispatch_event("input")
     assert save.is_enabled()
+    # The original channel is the saved one again.
+    channel.fill("CFIXTURE")
+    channel.dispatch_event("input")
+    visible(same)
+    hidden(other)
+    channel.fill("C0NEWCHANNEL")
+    channel.dispatch_event("input")
     assert axe_violations(page, axe_source) == []
     # Unticking hides the channel and token, and the switch stays put.
     before = place(page, "#" + switch.get_attribute("id"))

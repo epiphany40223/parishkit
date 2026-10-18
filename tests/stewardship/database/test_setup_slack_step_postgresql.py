@@ -123,6 +123,8 @@ def test_a_malformed_token_saves_nothing(setup_http, google):
         refused = save(browser, token="not a slack token")
         assert refused.status_code == 400
         assert b"This does not look like a Slack bot token." in refused.content
+        # The refused token is never echoed back into the page.
+        assert b"not a slack token" not in refused.content
         assert SetupAttempt.objects.get().version == before
         assert saved_channel() is None and staged() is None
 
