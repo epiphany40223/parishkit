@@ -14,7 +14,7 @@ The service functions System health's **Clear the halt** (PR 4b) and the
   loop (``jobs.mail_halt``).
 
 Every check here runs again in the clear signal's SQL guard (frozen
-migration 0114), in the signal's own transaction under its advisory lock;
+migration 0115), in the signal's own transaction under its advisory lock;
 this module's checks only give the reader the reason in words first. No
 recent sign-in is required (#1547): an enabled Administrator with a live
 session may clear a halt, from the page or the command line.

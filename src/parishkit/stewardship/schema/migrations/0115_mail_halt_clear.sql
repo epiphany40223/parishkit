@@ -1,4 +1,4 @@
--- Frozen forward migration file 0114 (the repository-wide file sequence):
+-- Frozen forward migration file 0115 (the repository-wide file sequence):
 -- clear a halted mail sender, server side (ADM-13 PR 4a, #530). This file is
 -- installed by its Django migration in the jobs app and must never change
 -- once released; tests/stewardship/test_schema_migration_files.py pins its
@@ -273,7 +273,7 @@ DECLARE
 BEGIN
     FOR i IN 1..3 LOOP
         IF to_regclass(guarded[i][1]) IS NULL OR to_regprocedure(guarded[i][3]) IS NULL THEN
-            RAISE EXCEPTION 'Migration 0114: the clear a halted mail sender objects are not installed';
+            RAISE EXCEPTION 'Migration 0115: the clear a halted mail sender objects are not installed';
         END IF;
     END LOOP;
     FOR i IN 1..3 LOOP
@@ -281,26 +281,26 @@ BEGIN
         IF EXISTS(SELECT 1 FROM pg_class c, aclexplode(coalesce(c.relacl,
                       acldefault('r',c.relowner))) a
                   WHERE c.oid=guarded[i][1]::regclass AND a.grantee=0) THEN
-            RAISE EXCEPTION 'Migration 0114: PUBLIC holds a privilege on %', guarded[i][1];
+            RAISE EXCEPTION 'Migration 0115: PUBLIC holds a privilege on %', guarded[i][1];
         END IF;
         IF NOT EXISTS(SELECT 1 FROM pg_proc p
             WHERE p.oid=guarded[i][3]::regprocedure AND NOT p.prosecdef
               AND p.proconfig=ARRAY['search_path=pg_catalog, public, pg_temp'])
            OR has_function_privilege('public', guarded[i][3], 'EXECUTE') THEN
-            RAISE EXCEPTION 'Migration 0114: the guard % has the wrong security or search_path', guarded[i][3];
+            RAISE EXCEPTION 'Migration 0115: the guard % has the wrong security or search_path', guarded[i][3];
         END IF;
         IF NOT EXISTS(SELECT 1 FROM pg_trigger t
             WHERE t.tgrelid=guarded[i][1]::regclass AND t.tgname=guarded[i][2]
               AND t.tgenabled='O' AND t.tgfoid=guarded[i][3]::regprocedure
               AND t.tgtype=31) THEN
-            RAISE EXCEPTION 'Migration 0114: the guard trigger % was not created', guarded[i][2];
+            RAISE EXCEPTION 'Migration 0115: the guard trigger % was not created', guarded[i][2];
         END IF;
     END LOOP;
     IF NOT EXISTS(SELECT 1 FROM pg_proc p
         WHERE p.oid='public.stewardship_mail_halt_guard_v1()'::regprocedure
           AND p.prosrc LIKE '%pk_stewardship_mail_dispatch%'
           AND p.prosrc LIKE '%interval ''1 hour''%') THEN
-        RAISE EXCEPTION 'Migration 0114: the mail halt guard is not the one this file installs';
+        RAISE EXCEPTION 'Migration 0115: the mail halt guard is not the one this file installs';
     END IF;
     IF NOT EXISTS(SELECT 1 FROM pg_proc p
         WHERE p.oid='public.stewardship_mail_halt_clear_guard_v1()'::regprocedure
@@ -314,7 +314,7 @@ BEGIN
           AND p.prosrc LIKE '%delivery_unknown%'
           AND p.prosrc LIKE '%interval ''5 minutes''%'
           AND p.prosrc NOT LIKE '%authenticated_at%') THEN
-        RAISE EXCEPTION 'Migration 0114: the clear signal guard is not the one this file installs';
+        RAISE EXCEPTION 'Migration 0115: the clear signal guard is not the one this file installs';
     END IF;
     IF NOT EXISTS(SELECT 1 FROM pg_proc p
         WHERE p.oid='public.stewardship_mailbox_check_guard_v1()'::regprocedure
@@ -326,14 +326,14 @@ BEGIN
           AND p.prosrc LIKE '%login.principal_id=NEW.actor_id%'
           AND p.prosrc LIKE '%can no longer be run%'
           AND p.prosrc NOT LIKE '%authenticated_at%') THEN
-        RAISE EXCEPTION 'Migration 0114: the mailbox check guard is not the one this file installs';
+        RAISE EXCEPTION 'Migration 0115: the mailbox check guard is not the one this file installs';
     END IF;
     IF (SELECT count(*) FROM pg_constraint
         WHERE conrelid IN ('public.stewardship_mail_halt'::regclass,
                            'public.stewardship_mailbox_check'::regclass)
           AND conname IN ('mail_halt_kind','mailbox_check_state','mailbox_check_shape')
           AND contype='c' AND convalidated)<>3 THEN
-        RAISE EXCEPTION 'Migration 0114: the mail halt and mailbox check checks were not created';
+        RAISE EXCEPTION 'Migration 0115: the mail halt and mailbox check checks were not created';
     END IF;
     IF NOT EXISTS(SELECT 1 FROM pg_constraint
         WHERE conrelid='public.stewardship_mail_halt_clear'::regclass
@@ -343,12 +343,12 @@ BEGIN
        OR NOT EXISTS(SELECT 1 FROM pg_constraint
         WHERE conrelid='public.stewardship_mail_halt_clear'::regclass
           AND contype='u') THEN
-        RAISE EXCEPTION 'Migration 0114: the clear signal''s halt key was not created';
+        RAISE EXCEPTION 'Migration 0115: the clear signal''s halt key was not created';
     END IF;
     IF (SELECT count(*) FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid
         WHERE c.relname IN ('mail_halt_newest','mailbox_check_newest')
           AND i.indisvalid)<>2 THEN
-        RAISE EXCEPTION 'Migration 0114: the mail halt and mailbox check indexes were not created';
+        RAISE EXCEPTION 'Migration 0115: the mail halt and mailbox check indexes were not created';
     END IF;
 END
 $check$;

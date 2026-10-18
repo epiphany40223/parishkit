@@ -1595,7 +1595,7 @@ Specification: [System health](../../specs/stewardship/admin-portal/spec.md#syst
 - [x] ADM-13.13 — dashboard slice 5: the Backups and Debug logging tiles: their Working summaries in a fixed order, the Backups page findings as Warning items of the tile's problems, and panels that repeat none of their tiles' problems.
 - [x] ADM-13.14 — dashboard slice 6: the page-load and services tiles: their summaries and states chosen in one place, each page-load finding as its tile's problem item with its link drawn only while relevant, a Version panel that repeats none of its problems, and Accept this change once's step-up notice only while the sign-in is stale.
 - [x] ADM-13.15 — dashboard slice 7: Home and the critical-problems banner.
-- [x] ADM-13.16 — PR 4a: the halt identities in the marker, the halt record, the clear signal and the mailbox check request with their guards and grants (frozen migration 0114), the consumers recording halts and reading the signal, the mailbox check in mail-dispatch, `mail_halt_cleared`, and `system mail-clear-preview` and `system mail-clear`.
+- [x] ADM-13.16 — PR 4a: the halt identities in the marker, the halt record, the clear signal and the mailbox check request with their guards and grants (frozen migration 0115), the consumers recording halts and reading the signal, the mailbox check in mail-dispatch, `mail_halt_cleared`, and `system mail-clear-preview` and `system mail-clear`.
 - [ ] ADM-13.17 — PR 4b: the Clear the halt button in the Mail tile, with its preview, the in-place mailbox check and the critical-problems banner's acknowledgement of the halt's `mail_provider_failed` entries.
 
 Evidence: In progress. ADM-13.00 is this docs-only change: the Admin portal
@@ -1758,7 +1758,7 @@ returning the cleared switch's id, so the operator's `debug_logging_allowed`
 names the switch too, checked by
 `tests/stewardship/database/test_debug_off_switch_postgresql.py`.
 ADM-13.16 (PR 4a, the server side of Clear the halt) adds the frozen
-forward migration `0114_mail_halt_clear.sql` (`stewardship_jobs.0033`):
+forward migration `0115_mail_halt_clear.sql` (`stewardship_jobs.0033`):
 the halt record (mail dispatch writes it), the clear signal and the
 mailbox check request (the web writes them, for an Administrator with a
 live session and no recent sign-in, #1547), each with its invoker guard,

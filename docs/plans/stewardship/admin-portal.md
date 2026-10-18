@@ -503,7 +503,7 @@ of 2026-10-04 are recorded in the specification.
    guide and mail-provider outage runbook updates. Security-focused review.
    It lands in two parts (2026-10-17): **4a** the halt identities in the
    marker, the halt record, the clear signal and the mailbox check request
-   with their guards and grants (frozen migration 0114), the consumers
+   with their guards and grants (frozen migration 0115), the consumers
    recording halts and reading the signal, the check in `mail-dispatch`,
    `mail_halt_cleared`, `system mail-clear-preview` and `system mail-clear`,
    and the guide and runbook updates, with security and concurrency

@@ -1,7 +1,7 @@
 """Forward migration: clear a halted mail sender, server side (ADM-13 PR 4a, #530).
 
-Its SQL is the frozen file ``schema/migrations/0114_mail_halt_clear.sql``
-(prefix 0114 in the repository-wide file sequence), read whole and never
+Its SQL is the frozen file ``schema/migrations/0115_mail_halt_clear.sql``
+(prefix 0115 in the repository-wide file sequence), read whole and never
 parsed. It creates ``stewardship_mail_halt`` (one halt, recorded by mail
 dispatch), ``stewardship_mail_halt_clear`` (an Administrator's clear signal
 for one halt, recorded by the web) and ``stewardship_mailbox_check`` (an
@@ -30,18 +30,17 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0114_mail_halt_clear.sql"
+    / "0115_mail_halt_clear.sql"
 )
 
 
 class Migration(migrations.Migration):
     dependencies = [
         # The jobs app's previous migration, and the migration that installs
-        # the previous frozen file on main (0110), so the files apply in
-        # prefix order. Frozen files 0111 to 0113 are assigned to other pull
-        # requests; whichever lands last before this one is named here then.
+        # the previous frozen file (0114, no sign-in age, #1547, which merges
+        # just before this one), so the files apply in prefix order.
         ("stewardship_jobs", "0032_debug_off_clear_subject"),
-        ("stewardship_reports", "0030_financial_local_days"),
+        ("stewardship_accounts", "0027_no_sign_in_age"),
     ]
 
     operations = [

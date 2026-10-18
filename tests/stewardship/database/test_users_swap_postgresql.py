@@ -395,7 +395,7 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # rerun (``CLOSURE_REPLACED``) puts 0112's guard back, so
 # ``CLOSURE_REPLACED_ONLY``, which runs after it, runs 0113's replacement
 # statement alone; the one-time correction does not run again.
-# 0114 (#530) creates three tables (in CLOSURE_TABLES) and their guards
+# 0115 (#530) creates three tables (in CLOSURE_TABLES) and their guards
 # (``CLOSURE_CREATED``), and replaces nothing.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
@@ -618,7 +618,7 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_reports", "0029_point_in_time_exports"),
     ),
-    # 0114 (#530) creates the mail halt, clear signal and mailbox check
+    # 0115 (#530) creates the mail halt, clear signal and mailbox check
     # tables (in CLOSURE_TABLES) with their three guards; all go, so its
     # file installs whole again.
     **dict.fromkeys(
@@ -1406,7 +1406,7 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
             # Point-in-time exports' discard record (0109, #1398): only its
             # owner-run functions write it; fact compaction reads it.
             "stewardship_export_discard": ("pk_stewardship_worker", "SELECT"),
-            # Clear the halt's halt records (0114, #530): mail dispatch
+            # Clear the halt's halt records (0115, #530): mail dispatch
             # records them; web only reads them.
             "stewardship_mail_halt": ("pk_stewardship_mail_dispatch", "INSERT"),
         }

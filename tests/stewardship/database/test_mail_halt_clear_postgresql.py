@@ -5,7 +5,7 @@ from their idle loop they record the halt, mail dispatch runs a mailbox
 check an Administrator asked for, and once an Administrator's clear signal
 names the halt each consumer lifts it, removes the marker only while it
 still names that halt, and admits one probe. The three guards of frozen
-migration 0114 are the boundary on their own: who may write each record,
+migration 0115 are the boundary on their own: who may write each record,
 the one live mailbox check, and every check the clear repeats under its
 lock. ``system mail-clear-preview`` and ``system mail-clear`` run the
 shared service functions on the restricted web login, with no recent
@@ -50,7 +50,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 MIGRATIONS = Path(__file__).resolve().parents[3] / (
     "src/parishkit/stewardship/schema/migrations"
 )
-TEXT = (MIGRATIONS / "0114_mail_halt_clear.sql").read_text(encoding="utf-8")
+TEXT = (MIGRATIONS / "0115_mail_halt_clear.sql").read_text(encoding="utf-8")
 CHECK = re.search(r"^DO \$check\$.*?^\$check\$;", TEXT, re.M | re.S)[0]
 
 
@@ -667,7 +667,7 @@ def test_a_halt_records_its_start_from_the_decision(tmp_path):
 
 
 def test_the_migration_check_passes_and_refuses_drift():
-    """0114's DO block passes as installed and raises on a guard that lost a
+    """0115's DO block passes as installed and raises on a guard that lost a
     boundary, a definer guard, a PUBLIC grant or a missing trigger; all
     rolled back."""
     start = TEXT.index("CREATE FUNCTION public.stewardship_mail_halt_clear_guard_v1(")
@@ -702,7 +702,7 @@ def test_the_migration_check_passes_and_refuses_drift():
     ):
         with (
             connection.cursor() as cursor,
-            pytest.raises(DatabaseError, match="0114"),
+            pytest.raises(DatabaseError, match="0115"),
             transaction.atomic(),
         ):
             cursor.execute(change_sql)

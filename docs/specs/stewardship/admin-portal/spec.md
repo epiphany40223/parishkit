@@ -7848,7 +7848,7 @@ halt.
 
 **Delivery.** ADM-13 PR 4 lands in two parts: **4a** the halt identities,
 the halt record, the clear signal and the mailbox check request with their
-guards (frozen migration 0114), the consumers recording halts, reading the
+guards (frozen migration 0115), the consumers recording halts, reading the
 signal and running the check, `mail_halt_cleared` and the two commands;
 **4b** the **Clear the halt** button in the Mail tile with its preview, the
 in-place mailbox check, and the critical-problems banner's acknowledgement

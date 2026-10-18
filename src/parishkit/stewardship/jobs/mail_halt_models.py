@@ -13,7 +13,7 @@ PR 4a lets an Administrator clear the halt instead, through three records:
   which the ``mail-dispatch`` main process runs (the web holds no Workspace
   credential) and settles with its outcome.
 
-The guards in ``schema/migrations/0114_mail_halt_clear.sql`` are the
+The guards in ``schema/migrations/0115_mail_halt_clear.sql`` are the
 boundary; every time is the database's. No row holds a message, recipient,
 address, host or credential.
 """
