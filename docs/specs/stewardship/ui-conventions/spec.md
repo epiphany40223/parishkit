@@ -55,7 +55,7 @@ when it lands.
   [Review, Apply and Change status](#review-apply-and-change-status),
   [review dialog](#review-dialog),
   [conditional fields](#conditional-fields),
-  [binary choices](#binary-choices),
+  [binary choices](#binary-choices), [tabs](#tabs),
   [Basic and Advanced modes](#basic-and-advanced-modes),
   [single-campaign interim](#single-campaign-interim),
   [addresses and legacy URLs](#addresses-and-legacy-urls),
@@ -1759,6 +1759,83 @@ Testing rehearsal.
   and has no menu for that choice, and its view no longer hands the
   template the choice's options. Any other menu built from a loop is
   checked in review.
+
+### Tabs
+
+**Rule.** A page that shows several views of one subject, each too large or
+too different to share one screen, draws them as **tabs**: a row of tabs
+above one panel area, the chosen tab filled. Choosing a tab shows its panel
+in place. **Why.** One subject should stay on one page with one address,
+and every such page should look and work the same, so a reader learns it
+once; separate pages reload on every switch, and drawing every panel up front
+makes each open of the page pay for every panel. **Shared code.**
+`components/tabs.html` (the tab row and the panels), `web/tabs.py` (`Tab`
+and `tab_set`, which read the address and build each tab's link), the tab
+behaviour in `ui-v1.js` and the `.tabs` style in `ui-v1.css`;
+`test_tabs.py` (the component, the helper and the guards) and the browser
+tests in `browser/test_tabs.py`. **Precedent.**
+[#1712](https://github.com/epiphany40223/parishkit/issues/1712)
+(Administrator, 2026-10-18), for the Family hub
+([#1678](https://github.com/epiphany40223/parishkit/issues/1678)).
+
+- **Not this pattern.** Two views of a page are a
+  [binary choice](#binary-choices); a filter stays in its filter form; a
+  wizard's steps are a [step bar](#step-bars); a link to another page
+  belongs in the menu or the page's text.
+- **Address.** The chosen tab is in the address as a bare `?tab=<key>`
+  parameter; a page has at most one tab row. An address without it, or one
+  whose key names no tab or an unavailable one, shows the first available
+  tab, with no error. Each tab's link is the page's own address with only
+  that `tab` and the parameters the page names as its own (`carry`), never
+  a panel's filters. Choosing a tab adds a history entry, unlike a binary
+  choice, because a tab is navigation: Back and Forward step between the
+  tabs in place, and a reload, a bookmark or a link opens the tab it names.
+- **Lazy panels.** The server draws only the chosen tab's panel; every other
+  panel is drawn empty and hidden. The first time a tab is chosen, the
+  browser fetches the page at that tab's address and swaps in only its
+  panel ([in-place controls](#in-place-controls), `data-in-place-only`).
+  A panel once drawn stays until the next load, so choosing its tab again
+  shows it with no request. When a panel cannot be fetched (no answer, or
+  a refusal), the page is reloaded at the tab's address, as an ordinary
+  load would draw it. Each panel is a region marked
+  `data-in-place-own`: a control inside a panel refreshes only the region it
+  names, and another answer never empties a panel already drawn. While a
+  save is in flight a tab is not switched, and the live region says "Still
+  saving…".
+- **In place.** Choosing a tab never reloads the page or moves it: the
+  page above the panels stays put, focus stays on the tab, and when a
+  shorter panel replaces a taller one the panel area keeps the height the
+  reader's place needs (as `data-keep-height` regions do,
+  [no layout shift](#no-layout-shift)), so the tab row never moves under
+  the pointer. A fetched panel's tab label is announced; Back and Forward
+  switch quietly, moving no focus.
+- **Keyboard and screen readers.** The WAI-ARIA tabs pattern with manual
+  activation: a `tablist` named by its label, each tab a `tab` with
+  `aria-selected` and `aria-controls`, each panel a `tabpanel` named by its
+  tab. Only the chosen tab is in the Tab order (roving `tabindex`); Left
+  and Right arrows move focus between tabs, wrapping at the ends, and Home
+  and End move to the first and last. Enter or Space chooses the focused
+  tab, so arrowing past a tab never loads its panel. Tab from the row moves
+  into the panel, which is focusable.
+- **Unavailable tabs.** A tab that applies but cannot be opened now is
+  greyed, marked `aria-disabled`, still reached by the arrow keys, and shows
+  its reason in a tip on hover, focus and tap, as an
+  [unavailable control](#unavailable-menu-pages) does; choosing it does
+  nothing. A tab that does not apply to this page is left out, not greyed
+  ([conditional fields](#conditional-fields)).
+- **Counts.** A tab may show a count after its label (a number of items in
+  its panel), which is part of its accessible name.
+- **Look.** Every tab keeps one size and weight, so choosing one changes
+  only colours. The chosen tab is filled in the accent colour, which shows
+  the choice in force, whatever the page's primary button is
+  ([#1713](https://github.com/epiphany40223/parishkit/issues/1713)); the
+  focus ring sits inside the tab, drawn in the paper colour on the chosen
+  one; the colours are theme tokens, so the row follows the
+  [colour scheme](#colour-scheme). On a narrow screen the tab row scrolls
+  sideways inside its own container, and the page never does.
+- **Script.** Tabs need the script, as the whole Admin portal does
+  ([JavaScript requirement](#javascript-requirement)); there is no
+  no-script fallback.
 
 ### Basic and Advanced modes
 
