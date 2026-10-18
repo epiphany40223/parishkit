@@ -275,6 +275,16 @@ shown to Families. For a non-terminal Member, census fields are:
   Separated, or Widowed; and
 - primary spoken language: English, Spanish, or Other with required text.
 
+ParishSoft reads a Member's gender as a one-character code. The form shows `M`,
+`F` and `U` (any case, outer spaces ignored) as Male, Female and Unspecified,
+and keeping that word is no change: the answer stores ParishSoft's code, the
+same baseline the database's submission guard reads, so no proposal is made.
+Choosing a different word is an ordinary change. Any other source text, such
+as an unknown code, still shows as the current record, and a blank is never
+read as Unspecified. Reports show the same words for an existing Member's code
+([#1621](https://github.com/epiphany40223/parishkit/issues/1621)). This
+decoding only reads; it writes nothing to ParishSoft.
+
 The normalized internal model distinguishes a ParishSoft blank marital value
 from an accidentally omitted browser field while mapping explicit Unknown to
 the supported blank on manual/API processing.
