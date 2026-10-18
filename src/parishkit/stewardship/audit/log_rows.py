@@ -277,6 +277,7 @@ ACTIVITY_TYPES = {
         "mail_provider_failed",
         "retry_refusal_unrecorded",
         "user_leader_emails_requested",
+        "admin_cmd_users_email_leaders",
     ),
     "parishsoft": (
         "source_promoted",

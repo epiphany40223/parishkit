@@ -5827,9 +5827,11 @@ the same function, so no form supplies them, and it records the
 `user_leader_emails_requested` audit event with the count. The signed
 review binds the Testing recipient only by its digest, never the address
 (the review is signed, not encrypted); Apply refuses the review as changed
-when the current Testing recipient's digest differs. The command line
-does not have this action yet
-([#1622](https://github.com/epiphany40223/parishkit/issues/1622)).
+when the current Testing recipient's digest differs. On the command
+line it is `pk-admin users email-leaders`
+([admin automation](../admin-automation/spec.md#users-and-follow-up),
+[#1622](https://github.com/epiphany40223/parishkit/issues/1622)), through
+the same functions and guard.
 
 Rejected: emailing every ParishSoft leader, users or not (access needs an
 explicit user), putting request details in the email, sending at import or

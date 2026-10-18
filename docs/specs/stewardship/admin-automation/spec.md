@@ -3322,7 +3322,7 @@ unknown email `not_available`, and a key used with another intent `invalid`.
 | `user_new`, `user_edit`, `user_delete` | `users preview`, `users confirm` (#952 slice 5): a change document adds, changes or deletes users, including the [high-impact changes](#high-impact-changes) |
 | `user_name_suggestions` | Covered by `users preview` (#952 slice 5): a new user in the change document without a `name` gets the [default from ParishSoft](../admin-portal/spec.md#name-from-parishsoft), which the preview shows; the other suggested Member names are only counted, under the [personal data](#personal-data-on-the-command-line) rule. Each such lookup is audited and counts toward the Administrator's 60 lookups an hour; past that the preview is `unavailable`. The lookup definer checks the command session itself, so a session it refuses (ended, begun before a recovery, or no longer an Administrator's) is `session_ended` |
 | `user_leader_import` | `users import-leaders --preview`, `users import-leaders --confirm` (#952 leaders slice) |
-| `user_leader_emails` | Pending: `users email-leaders --preview`, `users email-leaders --confirm`, in a later slice of [#1592](https://github.com/epiphany40223/parishkit/issues/1592) ([#1622](https://github.com/epiphany40223/parishkit/issues/1622)) |
+| `user_leader_emails` | `users email-leaders --preview`, `users email-leaders --confirm` ([#1622](https://github.com/epiphany40223/parishkit/issues/1622)) |
 | `user_rules`, `rule_apply`, `rule_base`, `rule_request` | Retired by #952: removed with the rule tables and autosave when the users commands land; no rule commands are built |
 | `chair_confirmations`, `chair_reviews`, `assignments` | Retired by #922: removed with Ministry assignments and Chairperson flows; no commands are built |
 | `security_event_acknowledge`, `critical_events_acknowledge` | `events list`, `events acknowledge` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); see below |
@@ -3373,6 +3373,38 @@ checks, audit and alerts:
   listing is audited and a session the definer refuses is `session_ended`.
   The confirmation records `admin_cmd_users_import_leaders` and the page's
   import audit events.
+- `users email-leaders --preview` is the
+  [Email Ministry leaders](../admin-portal/spec.md#email-ministry-leaders)
+  review: `--all` or repeated `--email` choose whom (one is required), and
+  it prints each leader who would be emailed with the Ministries and open
+  request counts the email states, who is skipped and why, the mode and,
+  in Testing, the page's note that every email goes to the Testing
+  recipient (whose address it does not print). `users email-leaders
+  --confirm --token …` is its Apply. Both run the page's own functions
+  (`leader_email_views.review_facts`, `review_plan`, `review_token` and
+  `apply_review`), so the review is signed with the page's salt and binding
+  and either channel applies the other's. The leaders' facts are read under
+  the command's own session, through the same definer, so each review is
+  audited by count and a session the definer refuses is `session_ended`.
+  The request's database guard decides as for the page (the web login, a
+  current Administrator, the reviewed configuration, campaign, mode and
+  Testing recipient, at most 100 addresses, each a Ministry leader user
+  leading one of the campaign's Ministries, mail not paused), and the
+  reviewed facts must match those it records. A changed or expired review
+  is `stale_version` (the guard's refusals included), paused mail
+  `not_available` for both, a review with no current campaign with
+  Ministries or an archived campaign `not_available`, and another
+  Administrator's review `denied`. Neither is fresh-gated, as the page's
+  review dialog asks for no recent sign-in. `--confirm` prompts, as every
+  other command that sends mail does (`send confirm`, `delivery resend`,
+  `test sample`): after the Administrator role is checked and before any
+  transaction it shows how many leaders are emailed and the mode, never an
+  address or name, and `--yes` answers it; `--preview` takes no `--yes`.
+  The review token binds the Testing recipient by digest only, since a
+  signed token is readable. The confirmation records
+  `admin_cmd_users_email_leaders` with the page's
+  `user_leader_emails_requested`, once: applying the same review again
+  returns the first request. No document names a parishioner.
 
 These need a full-scope session, except `users list` and
 `users preview-upgrade`; none is fresh-gated, as the page asks for no fresh

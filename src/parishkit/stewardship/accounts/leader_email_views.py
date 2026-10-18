@@ -16,6 +16,11 @@ that again after building its answer. Each leader's Ministries and counts
 are read through the ``stewardship_leader_emails_v1`` definer
 (``leader_emails.read_facts``), so a posted address only chooses among the
 Ministry leader users read now; the request's guard reads them again itself.
+
+``pk-admin users email-leaders`` (#1622, ``admin_users``) builds the same
+review and records the same request through ``review_facts``,
+``review_plan``, ``review_token`` and ``apply_review``, so the page and the
+command line sign one binding and refuse alike.
 """
 
 from uuid import UUID, uuid4
@@ -200,17 +205,34 @@ def _recheck(request, service, actor):
         raise PermissionError("Users reader changed.")
 
 
-def _review(request, service, actor):
-    """Answer Email selected with the review fragment."""
-    from .user_reads import policy_identities, user_list
-    from .user_views import _users
+def review_facts(session_key):
+    """Refuse a review that cannot be sent now, else read the leaders' facts.
 
-    chosen = _choice(request.POST)
+    The page's review and ``pk-admin users email-leaders --preview`` (#1622)
+    both start here: no current campaign with Ministries, an archived
+    campaign or paused mail is refused (``UserFacingError``) before
+    anything is read; otherwise the definer reads every Ministry leader
+    user's facts under ``session_key`` (the browser's or the command's own
+    Admin session) and records its count-only audit event.
+    """
     blocked = unavailable()
     if blocked is not None:
         raise UserFacingError(blocked, fix=_("Nothing was sent."))
     refuse_while_paused()
-    facts = read_facts(request.session.session_key)
+    return read_facts(session_key)
+
+
+def review_plan(service, facts, chosen):
+    """Plan the emails in one read-only snapshot of the users and the mode.
+
+    Returns ``(plan, configuration, runtime_row)``: ``plan_emails``' answer
+    for the ``chosen`` addresses (None for every leader), the users'
+    configuration ``user_views._users`` read, and the runtime row with the
+    mode, Testing recipient and current campaign the review is signed for.
+    """
+    from .user_reads import policy_identities, user_list
+    from .user_views import _users
+
     with read_transaction():
         configuration, records = _users(service)
         rows = user_list(records, policy_identities(records))
@@ -218,29 +240,46 @@ def _review(request, service, actor):
             "mode", "testing_recipient", "current_campaign_id"
         ).get()
         plan = plan_emails(leader_rows(rows), facts, chosen)
-        request._stewardship_display_configuration = configuration
+    return plan, configuration, runtime_row
+
+
+def review_token(actor, configuration, runtime_row, plan):
+    """The signed review one Apply records, or None with nobody to email.
+
+    The page and the command line sign the same intent, bound to the
+    Administrator (not the channel), so either may apply the other's.
+    """
+    if not plan.emailed:
+        return None
     testing = runtime_row.mode == "testing"
-    token = None
-    if plan.emailed:
-        token = signing.dumps(
-            {
-                "actor": str(actor.identity),
-                "key": str(uuid4()),
-                "configuration": str(configuration.active_configuration.pk),
-                "campaign": str(runtime_row.current_campaign_id),
-                "mode": runtime_row.mode,
-                # The token is signed, not encrypted, so it binds the Testing
-                # recipient by digest and never carries the address itself.
-                "recipient": _recipient_binding(
-                    runtime_row.testing_recipient if testing else None
-                ),
-                "addresses": plan.addresses,
-                # What the review showed each leader's email would state;
-                # Apply is refused when the guard works out anything else.
-                "facts": plan.digest,
-            },
-            salt=SALT,
-        )
+    return signing.dumps(
+        {
+            "actor": str(actor.identity),
+            "key": str(uuid4()),
+            "configuration": str(configuration.active_configuration.pk),
+            "campaign": str(runtime_row.current_campaign_id),
+            "mode": runtime_row.mode,
+            # The token is signed, not encrypted, so it binds the Testing
+            # recipient by digest and never carries the address itself.
+            "recipient": _recipient_binding(
+                runtime_row.testing_recipient if testing else None
+            ),
+            "addresses": plan.addresses,
+            # What the review showed each leader's email would state;
+            # Apply is refused when the guard works out anything else.
+            "facts": plan.digest,
+        },
+        salt=SALT,
+    )
+
+
+def _review(request, service, actor):
+    """Answer Email selected with the review fragment."""
+    chosen = _choice(request.POST)
+    facts = review_facts(request.session.session_key)
+    plan, configuration, runtime_row = review_plan(service, facts, chosen)
+    request._stewardship_display_configuration = configuration
+    testing = runtime_row.mode == "testing"
     return render(
         request,
         "stewardship/user-leader-emails.html",
@@ -252,7 +291,7 @@ def _review(request, service, actor):
             ],
             "remaining": plan.remaining,
             "testing_recipient": runtime_row.testing_recipient if testing else None,
-            "preview": token,
+            "preview": review_token(actor, configuration, runtime_row, plan),
         },
     )
 
@@ -277,6 +316,40 @@ def _current_recipient(intent):
     return current
 
 
+def apply_review(actor, token):
+    """Record the signed review ``token`` once; returns ``(intent, created)``.
+
+    The page's Apply and ``pk-admin users email-leaders --confirm`` (#1622)
+    both end here. An expired review is the shared stale refusal and a
+    tampered one ``BadSignature``; another Administrator's review is a
+    ``PermissionError``; paused mail is refused (``UserFacingError``) before
+    anything is recorded. A review whose configuration, campaign, mode,
+    leaders, Ministries or counts changed since is ``UserFacingStale``
+    (``CHANGED``), and nothing is recorded; so is one whose Testing
+    recipient changed (``_current_recipient``). A replay of the same review
+    records nothing more (``created`` is false).
+    """
+    intent = load_preview(token, salt=SALT)
+    if intent["actor"] != str(actor.identity):
+        raise PermissionError("The review belongs to another Administrator.")
+    refuse_while_paused(UUID(intent["key"]))
+    testing_recipient = _current_recipient(intent)
+    try:
+        _, created = request_emails(
+            actor.identity,
+            key=UUID(intent["key"]),
+            addresses=intent["addresses"],
+            configuration_id=UUID(intent["configuration"]),
+            campaign_id=UUID(intent["campaign"]),
+            mode=intent["mode"],
+            testing_recipient=testing_recipient,
+            reviewed=intent["facts"],
+        )
+    except (IntegrityError, LeaderEmailsChanged):
+        raise UserFacingStale(CHANGED, fix=CHANGED_FIX, reason="stale_page") from None
+    return intent, created
+
+
 def _confirm(request, actor):
     """Record the reviewed request once; answer with a short fragment.
 
@@ -295,25 +368,7 @@ def _confirm(request, actor):
         len(values) != 1 for _, values in request.POST.lists()
     ):
         raise unexpected_fields(request.POST, allowed=allowed)
-    # An expired review is the shared plain refusal; a tampered one is a 400.
-    intent = load_preview(request.POST.get("preview", ""), salt=SALT)
-    if intent["actor"] != str(actor.identity):
-        raise PermissionError("The review belongs to another Administrator.")
-    refuse_while_paused(UUID(intent["key"]))
-    testing_recipient = _current_recipient(intent)
-    try:
-        _, created = request_emails(
-            actor.identity,
-            key=UUID(intent["key"]),
-            addresses=intent["addresses"],
-            configuration_id=UUID(intent["configuration"]),
-            campaign_id=UUID(intent["campaign"]),
-            mode=intent["mode"],
-            testing_recipient=testing_recipient,
-            reviewed=intent["facts"],
-        )
-    except (IntegrityError, LeaderEmailsChanged):
-        raise UserFacingStale(CHANGED, fix=CHANGED_FIX, reason="stale_page") from None
+    intent, created = apply_review(actor, request.POST.get("preview", ""))
     count = len(intent["addresses"])
     return HttpResponse(
         f'<p data-leader-emails-queued="{count}" data-created="{int(created)}"></p>'
